@@ -240,7 +240,6 @@ impl<'a> HelpScreen<'a> {
                 None,
                 "Store a secret in the Automic Vault keychain.",
             ),
-            command_line("gate", None, "Block until a manual approval is decided."),
             HelpLine::plain(""),
             section_line("EXECUTION CONTROL"),
             command_line(
@@ -248,6 +247,7 @@ impl<'a> HelpScreen<'a> {
                 None,
                 "Run agents with approval gates for all commands.",
             ),
+            command_line("gate", None, "Block until a manual approval is decided."),
             HelpLine::plain(""),
             section_line("LOCAL SYSTEM"),
             command_line("serve", None, "Start the local read-only protocol daemon."),
