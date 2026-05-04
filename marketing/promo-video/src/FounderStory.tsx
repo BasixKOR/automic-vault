@@ -378,30 +378,13 @@ const Idea: React.FC = () => {
 };
 
 const SoBuiltIt: React.FC = () => {
-  const frame = useCurrentFrame();
-  const out = interpolate(frame, [sec(1.25), sec(1.48)], [1, 0], clamp);
-
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: out }}>
-      <div
-        style={{
-          color: ink,
-          fontFamily: sans,
-          fontSize: 92,
-          fontWeight: 800,
-          letterSpacing: 0,
-          lineHeight: 1.08,
-          opacity: fade(frame, 5, 22),
-          transform: `translateY(${interpolate(frame, [5, 22], [18, 0], {
-            ...clamp,
-            easing: softEase,
-          })}px)`,
-          textShadow: "0 24px 48px rgba(0,0,0,0.72)",
-        }}
-      >
-        So I built it.
-      </div>
-    </AbsoluteFill>
+    <WordFlashSequence
+      words={["so", "i", "built", "it."]}
+      start={0}
+      weights={[8, 6, 16, 10]}
+      size={178}
+    />
   );
 };
 
