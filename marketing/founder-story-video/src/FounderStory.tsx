@@ -10,7 +10,13 @@ const mono =
 const display =
   '"Barlow Condensed", "Arial Narrow", "IBM Plex Sans Condensed", Impact, sans-serif';
 
-export const founderStoryDurationInFrames = 360;
+const firstEnd = 54;
+const webEnd = 99;
+const scanEnd = 189;
+const radarEnd = 309;
+const closeEnd = 369;
+
+export const founderStoryDurationInFrames = closeEnd;
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -68,7 +74,7 @@ const SceneText: React.FC<{
 
 const Background: React.FC = () => {
   const frame = useCurrentFrame();
-  const gridY = interpolate(frame, [0, 360], [0, -86], clamp);
+  const gridY = interpolate(frame, [0, closeEnd], [0, -86], clamp);
   const noiseA = frame % 2 === 0 ? 0.055 : 0.035;
   const noiseB = frame % 5 === 0 ? 0.04 : 0.02;
 
@@ -134,10 +140,11 @@ const Background: React.FC = () => {
 const ScanningBeam: React.FC = () => {
   const frame = useCurrentFrame();
   const opacity =
-    frame >= 90 && frame < 180
-      ? fade(frame, 90, 104) * interpolate(frame, [166, 180], [1, 0], clamp)
+    frame >= webEnd && frame < scanEnd
+      ? fade(frame, webEnd, webEnd + 14) *
+        interpolate(frame, [scanEnd - 14, scanEnd], [1, 0], clamp)
       : 0;
-  const left = interpolate(frame, [96, 174], [-12, 101], clamp);
+  const left = interpolate(frame, [webEnd + 6, scanEnd - 6], [-12, 101], clamp);
 
   return (
     <AbsoluteFill style={{ opacity }}>
@@ -171,11 +178,12 @@ const ScanningBeam: React.FC = () => {
 const RadarRing: React.FC = () => {
   const frame = useCurrentFrame();
   const opacity =
-    frame >= 180 && frame < 300
-      ? fade(frame, 184, 204) * interpolate(frame, [278, 300], [1, 0], clamp)
+    frame >= scanEnd && frame < radarEnd
+      ? fade(frame, scanEnd + 4, scanEnd + 24) *
+        interpolate(frame, [radarEnd - 22, radarEnd], [1, 0], clamp)
       : 0;
-  const size = interpolate(frame, [180, 300], [140, 760], clamp);
-  const ringOpacity = interpolate(frame, [180, 300], [0.38, 0], clamp);
+  const size = interpolate(frame, [scanEnd, radarEnd], [140, 760], clamp);
+  const ringOpacity = interpolate(frame, [scanEnd, radarEnd], [0.38, 0], clamp);
 
   return (
     <AbsoluteFill
@@ -200,11 +208,7 @@ const RadarRing: React.FC = () => {
 
 const RocketClose: React.FC = () => {
   const frame = useCurrentFrame();
-  const visible = frame >= 300;
-  const flicker = visible && frame < 330 && frame % 11 === 0 ? 0.86 : 1;
-  const logoOpacity = visible ? flicker : 0;
-  const wordOpacity = frame >= 310 ? 1 : 0;
-  const urlOpacity = frame >= 324 ? 0.82 : 0;
+  const visible = frame >= radarEnd;
 
   return (
     <AbsoluteFill style={{ opacity: visible ? 1 : 0 }}>
@@ -234,7 +238,7 @@ const RocketClose: React.FC = () => {
             width: 250,
             height: 250,
             objectFit: "contain",
-            opacity: logoOpacity,
+            opacity: 1,
             transform: "translateY(-82px)",
             filter: "drop-shadow(0 0 24px rgba(192,34,29,0.28))",
           }}
@@ -247,7 +251,7 @@ const RocketClose: React.FC = () => {
             width: 660,
             height: 308,
             objectFit: "contain",
-            opacity: wordOpacity,
+            opacity: 1,
             filter: "drop-shadow(0 18px 24px rgba(0,0,0,0.66))",
           }}
         />
@@ -260,7 +264,7 @@ const RocketClose: React.FC = () => {
             fontSize: 30,
             fontWeight: 600,
             letterSpacing: 0,
-            opacity: urlOpacity,
+            opacity: 0.82,
             textShadow: "0 0 14px rgba(192,34,29,0.24), 0 16px 28px rgba(0,0,0,0.7)",
           }}
         >
@@ -273,31 +277,34 @@ const RocketClose: React.FC = () => {
 
 export const FounderStory: React.FC = () => {
   const frame = useCurrentFrame();
-  const zoom = frame >= 180 && frame < 300 ? interpolate(frame, [180, 300], [1, 1.035], clamp) : 1;
+  const zoom =
+    frame >= scanEnd && frame < radarEnd
+      ? interpolate(frame, [scanEnd, radarEnd], [1, 1.035], clamp)
+      : 1;
 
   return (
     <AbsoluteFill style={{ background: black }}>
       <AbsoluteFill style={{ transform: `scale(${zoom})` }}>
         <Background />
         <RadarRing />
-        <SceneText lines={["I built Homebrew."]} start={0} end={45} size={58} />
+        <SceneText lines={["I built Homebrew."]} start={0} end={firstEnd} size={58} />
         <SceneText
           lines={["Right as Web 2 began."]}
-          start={45}
-          end={90}
+          start={firstEnd}
+          end={webEnd}
           size={88}
           dramatic
         />
         <SceneText
           lines={["Something new is starting."]}
-          start={90}
-          end={180}
+          start={webEnd}
+          end={scanEnd}
           size={62}
         />
         <SceneText
           lines={["So I’m building again."]}
-          start={180}
-          end={300}
+          start={scanEnd}
+          end={radarEnd}
           size={66}
         />
       </AbsoluteFill>
