@@ -28,6 +28,7 @@ const fade = (frame: number, start: number, end: number) =>
 const IntroScene: React.FC = () => {
   const frame = useCurrentFrame();
   const opacity = fade(frame, 10, 34) * interpolate(frame, [webEnd - 24, webEnd], [1, 0], clamp);
+  const webLineOpacity = fade(frame, 44, 56);
   const scale = interpolate(frame, [0, webEnd], [1, 1.006], clamp);
 
   return (
@@ -66,6 +67,7 @@ const IntroScene: React.FC = () => {
             letterSpacing: 0.4,
             lineHeight: 1.02,
             marginTop: 18,
+            opacity: webLineOpacity,
           }}
         >
           Right as Web 2 began.
