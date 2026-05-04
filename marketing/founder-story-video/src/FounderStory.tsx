@@ -240,8 +240,7 @@ const KineticLine: React.FC<{
 const RocketLogoClose: React.FC<{ start: number; end: number }> = ({ start, end }) => {
   const frame = useCurrentFrame();
   const localFrame = frame - start;
-  const opacity =
-    fade(frame, start, start + 16) * interpolate(frame, [end - 18, end], [1, 0], clamp);
+  const opacity = fade(frame, start, start + 16);
   const logoOpacity = fade(localFrame, 8, 22);
   const logoY = interpolate(localFrame, [0, 26], [-54, -82], {
     ...clamp,
@@ -353,7 +352,7 @@ export const FounderStory: React.FC = () => {
         size={58}
       />
       <TerminalLine
-        text="At the dawn of Web 2.0"
+        text="At the dawn of Web 2"
         start={t.web}
         typeDuration={sec(1.25)}
         y={462}
