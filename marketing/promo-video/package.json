@@ -23,7 +23,9 @@
     "dev": "remotion studio",
     "build": "remotion bundle",
     "render": "remotion render AutomicVaultPromo out/automic-vault-promo.mp4 --muted",
+    "render:founder": "remotion render AutomicVaultFounderStory out/automic-vault-founder-story.mp4 --muted",
     "still": "remotion still AutomicVaultPromo",
+    "still:founder": "remotion still AutomicVaultFounderStory",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"
   },
