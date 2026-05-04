@@ -1,6 +1,6 @@
 # Automic Vault
 
-Security focused base tooling suite for macOS.
+Package manager, secrets manager, and execution control plane for the agentic era.
 
 [![Download .DMG](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download .DMG")](https://github.com/automic-vault/automic-vault/releases/latest)
 
@@ -9,11 +9,9 @@ Security focused base tooling suite for macOS.
 > - 20k⭐︎: We’ll add Linux support
 > - 50k⭐︎: We’ll add Windows support
 
-&nbsp;
-
 > [!IMPORTANT]
 >
-> Automic Vault is not affiliated with any cryptocurrency or token.
+> Automic Vault is NOT AFFILIATED with any cryptocurrency or token.
 
 &nbsp;
 
