@@ -431,6 +431,24 @@ const Close: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
+      <Img
+        src={staticFile("rocket-grid.png")}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          opacity: 0.78,
+          filter: "contrast(1.08) saturate(0.84) sepia(0.18) brightness(0.5)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(90deg, rgba(2,3,3,0.9) 0%, rgba(2,3,3,0.54) 48%, rgba(2,3,3,0.9) 100%), radial-gradient(circle at 58% 76%, rgba(216,58,47,0.24), transparent 18%), radial-gradient(circle at center, transparent 0, rgba(2,3,3,0.14) 34%, rgba(2,3,3,0.76) 82%)",
+        }}
+      />
       <AbsoluteFill
         style={{
           opacity: flash * 0.26,
