@@ -26,6 +26,25 @@ const clamp = {
 const fade = (frame: number, start: number, end: number) =>
   interpolate(frame, [start, end], [0, 1], clamp);
 
+const typedText = (value: string, frame: number, start: number, end: number) => {
+  const characters = Math.round(interpolate(frame, [start, end], [0, value.length], clamp));
+  return value.slice(0, characters);
+};
+
+const TypedLine: React.FC<{
+  children: string;
+  frame: number;
+  start: number;
+  end: number;
+}> = ({ children, frame, start, end }) => (
+  <span style={{ position: "relative", display: "inline-block" }}>
+    <span style={{ visibility: "hidden" }}>{children}</span>
+    <span style={{ position: "absolute", inset: 0, whiteSpace: "pre" }}>
+      {typedText(children, frame, start, end)}
+    </span>
+  </span>
+);
+
 const IntroScene: React.FC = () => {
   const frame = useCurrentFrame();
   const opacity = fade(frame, 12, 38) * interpolate(frame, [webEnd - 30, webEnd], [1, 0], clamp);
@@ -57,7 +76,9 @@ const IntroScene: React.FC = () => {
             lineHeight: 1.2,
           }}
         >
-          I built Homebrew
+          <TypedLine frame={frame} start={14} end={48}>
+            I built Homebrew
+          </TypedLine>
         </div>
         <div
           style={{
@@ -71,7 +92,9 @@ const IntroScene: React.FC = () => {
             opacity: webLineOpacity,
           }}
         >
-          At the dawn of Web 2
+          <TypedLine frame={frame} start={78} end={112}>
+            At the dawn of Web 2
+          </TypedLine>
         </div>
       </div>
     </AbsoluteFill>
@@ -87,6 +110,11 @@ const SceneText: React.FC<{
   dramatic?: boolean;
 }> = ({ lines, start, end, size = 58, y = 0, dramatic = false }) => {
   const frame = useCurrentFrame();
+  const typeStart = start + (dramatic ? 8 : 16);
+  const typeEnd = Math.min(
+    end - (dramatic ? 14 : 28),
+    typeStart + Math.max(24, Math.ceil(Math.max(...lines.map((line) => line.length)) * 1.15)),
+  );
   const opacity =
     fade(frame, start + (dramatic ? 4 : 10), start + (dramatic ? 14 : 34)) *
     interpolate(frame, [end - (dramatic ? 8 : 24), end], [1, 0], clamp);
@@ -117,7 +145,11 @@ const SceneText: React.FC<{
         }}
       >
         {lines.map((line) => (
-          <div key={line}>{line}</div>
+          <div key={line}>
+            <TypedLine frame={frame} start={typeStart} end={typeEnd}>
+              {line}
+            </TypedLine>
+          </div>
         ))}
       </div>
     </AbsoluteFill>
@@ -321,7 +353,9 @@ const RocketClose: React.FC = () => {
             textShadow: "0 0 14px rgba(192,34,29,0.24), 0 16px 28px rgba(0,0,0,0.7)",
           }}
         >
-          https://automicvault.com
+          <TypedLine frame={frame} start={388} end={416}>
+            https://automicvault.com
+          </TypedLine>
         </div>
       </AbsoluteFill>
     </AbsoluteFill>
@@ -342,7 +376,7 @@ export const FounderStory: React.FC = () => {
         <RadarRing />
         <IntroScene />
         <SceneText
-          lines={["An agentic dawn rises"]}
+          lines={["The autonomous dawn is imminent"]}
           start={webEnd}
           end={scanEnd}
           size={62}
