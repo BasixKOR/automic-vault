@@ -464,7 +464,7 @@ export const FounderStory: React.FC = () => {
             start={sec(0.8)}
             typeDuration={sec(1.2)}
             y={348}
-            holdUntil={sec(7.15)}
+            holdUntil={sec(11.75)}
             cursorUntil={sec(2.9)}
           />
           <TerminalLine
@@ -472,16 +472,19 @@ export const FounderStory: React.FC = () => {
             start={sec(3.05)}
             typeDuration={sec(1.25)}
             y={452}
-            holdUntil={sec(7.15)}
+            holdUntil={sec(11.75)}
             size={52}
             muted
             cursorUntil={sec(5.2)}
           />
-          <KineticLine
-            text="Now it's the start of the agent era."
-            start={sec(7.55)}
-            end={sec(11.75)}
-            size={76}
+          <TerminalLine
+            text="now it's the start of the agent era."
+            start={sec(5.65)}
+            typeDuration={sec(1.8)}
+            y={556}
+            holdUntil={sec(11.75)}
+            size={50}
+            cursorUntil={sec(8.05)}
           />
           {openSourceLines.map(([text, start, end, size, accent]) => (
             <KineticLine
