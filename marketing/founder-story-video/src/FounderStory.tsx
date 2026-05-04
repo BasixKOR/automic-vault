@@ -10,7 +10,6 @@ const mono =
 const display =
   '"Barlow Condensed", "Arial Narrow", "IBM Plex Sans Condensed", Impact, sans-serif';
 
-const firstEnd = 54;
 const webEnd = 99;
 const scanEnd = 189;
 const radarEnd = 309;
@@ -25,6 +24,56 @@ const clamp = {
 
 const fade = (frame: number, start: number, end: number) =>
   interpolate(frame, [start, end], [0, 1], clamp);
+
+const IntroScene: React.FC = () => {
+  const frame = useCurrentFrame();
+  const opacity = fade(frame, 10, 34) * interpolate(frame, [webEnd - 24, webEnd], [1, 0], clamp);
+  const scale = interpolate(frame, [0, webEnd], [1, 1.006], clamp);
+
+  return (
+    <AbsoluteFill
+      style={{
+        alignItems: "center",
+        justifyContent: "center",
+        opacity,
+        transform: `scale(${scale})`,
+      }}
+    >
+      <div
+        style={{
+          textAlign: "center",
+          textShadow: "0 0 18px rgba(192,34,29,0.22), 0 24px 46px rgba(0,0,0,0.72)",
+        }}
+      >
+        <div
+          style={{
+            color: text,
+            fontFamily: mono,
+            fontSize: 58,
+            fontWeight: 600,
+            letterSpacing: 0,
+            lineHeight: 1.2,
+          }}
+        >
+          I built Homebrew.
+        </div>
+        <div
+          style={{
+            color: red,
+            fontFamily: display,
+            fontSize: 72,
+            fontWeight: 760,
+            letterSpacing: 0.4,
+            lineHeight: 1.02,
+            marginTop: 18,
+          }}
+        >
+          Right as Web 2 began.
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
 
 const SceneText: React.FC<{
   lines: string[];
@@ -287,14 +336,7 @@ export const FounderStory: React.FC = () => {
       <AbsoluteFill style={{ transform: `scale(${zoom})` }}>
         <Background />
         <RadarRing />
-        <SceneText lines={["I built Homebrew."]} start={0} end={firstEnd} size={58} />
-        <SceneText
-          lines={["Right as Web 2 began."]}
-          start={firstEnd}
-          end={webEnd}
-          size={88}
-          dramatic
-        />
+        <IntroScene />
         <SceneText
           lines={["Something new is starting."]}
           start={webEnd}
