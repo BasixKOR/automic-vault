@@ -39,7 +39,7 @@ const TypedLine: React.FC<{
 }> = ({ children, frame, start, end }) => (
   <span style={{ position: "relative", display: "inline-block" }}>
     <span style={{ visibility: "hidden" }}>{children}</span>
-    <span style={{ position: "absolute", inset: 0, whiteSpace: "pre" }}>
+    <span style={{ position: "absolute", inset: 0, textAlign: "left", whiteSpace: "pre" }}>
       {typedText(children, frame, start, end)}
     </span>
   </span>
