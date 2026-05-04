@@ -1,4 +1,11 @@
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
+import {
+  AbsoluteFill,
+  Easing,
+  Img,
+  interpolate,
+  staticFile,
+  useCurrentFrame,
+} from "remotion";
 
 const black = "#020303";
 const ink = "#e6d7b2";
@@ -230,6 +237,97 @@ const KineticLine: React.FC<{
   );
 };
 
+const RocketLogoClose: React.FC<{ start: number; end: number }> = ({ start, end }) => {
+  const frame = useCurrentFrame();
+  const localFrame = frame - start;
+  const opacity =
+    fade(frame, start, start + 16) * interpolate(frame, [end - 18, end], [1, 0], clamp);
+  const logoOpacity = fade(localFrame, 8, 22);
+  const logoY = interpolate(localFrame, [0, 26], [-54, -82], {
+    ...clamp,
+    easing: hardEase,
+  });
+  const logoScale = interpolate(localFrame, [0, 26, end - start], [0.86, 1.02, 1], {
+    ...clamp,
+    easing: hardEase,
+  });
+  const wordOpacity = fade(localFrame, 24, 44);
+  const urlOpacity = fade(localFrame, 44, 64);
+  const redFlash = interpolate(localFrame, [10, 20, 34], [0, 1, 0], clamp);
+
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <Img
+        src={staticFile("rocket-grid.png")}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          opacity: 0.8,
+          filter: "contrast(1.08) saturate(0.84) sepia(0.18) brightness(0.5)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(90deg, rgba(2,3,3,0.92) 0%, rgba(2,3,3,0.5) 50%, rgba(2,3,3,0.92) 100%), radial-gradient(circle at 58% 76%, rgba(216,58,47,0.24), transparent 18%), radial-gradient(circle at center, transparent 0, rgba(2,3,3,0.14) 34%, rgba(2,3,3,0.78) 82%)",
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          opacity: redFlash * 0.28,
+          background:
+            "radial-gradient(circle at center, rgba(216,58,47,0.42), transparent 22%)",
+        }}
+      />
+      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
+        <Img
+          src={staticFile("icon.png")}
+          style={{
+            position: "absolute",
+            width: 270,
+            height: 270,
+            objectFit: "contain",
+            opacity: logoOpacity,
+            transform: `translateY(${logoY}px) scale(${logoScale})`,
+            filter:
+              "drop-shadow(0 0 32px rgba(216,58,47,0.3)) drop-shadow(0 0 14px rgba(124,255,188,0.14))",
+          }}
+        />
+        <Img
+          src={staticFile("wordmark.png")}
+          style={{
+            position: "absolute",
+            top: 538,
+            width: 700,
+            height: 326,
+            objectFit: "contain",
+            opacity: wordOpacity,
+            filter: "drop-shadow(0 18px 24px rgba(0,0,0,0.62))",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 92,
+            color: inkMuted,
+            fontFamily: mono,
+            fontSize: 34,
+            fontWeight: 700,
+            letterSpacing: 0,
+            opacity: urlOpacity,
+            textShadow: "0 16px 28px rgba(0,0,0,0.7)",
+          }}
+        >
+          https://automicvault.com
+        </div>
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
 export const FounderStory: React.FC = () => {
   const frame = useCurrentFrame();
   const t = {
@@ -277,13 +375,7 @@ export const FounderStory: React.FC = () => {
         size={112}
         accent
       />
-      <KineticLine
-        text="Automic Vault"
-        start={t.vault}
-        end={t.end}
-        size={132}
-        product
-      />
+      <RocketLogoClose start={t.vault} end={t.end} />
     </AbsoluteFill>
   );
 };
