@@ -468,7 +468,7 @@ export const FounderStory: React.FC = () => {
             cursorUntil={sec(2.9)}
           />
           <TerminalLine
-            text="It helped define Web 2.0."
+            text="At the dawn of Web 2.0."
             start={sec(3.05)}
             typeDuration={sec(1.25)}
             y={452}
@@ -478,7 +478,7 @@ export const FounderStory: React.FC = () => {
             cursorUntil={sec(5.2)}
           />
           <TerminalLine
-            text="now it's the start of the agent era."
+            text="It's now the dawn of agents."
             start={sec(5.65)}
             typeDuration={sec(1.8)}
             y={556}
