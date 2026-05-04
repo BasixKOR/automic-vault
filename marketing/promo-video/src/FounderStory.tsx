@@ -14,6 +14,7 @@ const black = "#020303";
 const ink = "#e6d7b2";
 const inkMuted = "#a88f6d";
 const green = "#7cffbc";
+const red = "#d83a2f";
 const line = "rgba(230, 215, 178, 0.14)";
 const mono =
   '"Geist Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
@@ -46,7 +47,10 @@ const typedText = (text: string, frame: number, start: number, duration: number)
   return text.slice(0, Math.ceil(text.length * progress));
 };
 
-const BlackField: React.FC<{ haze?: number }> = ({ haze = 0.24 }) => (
+const BlackField: React.FC<{ haze?: number; redHaze?: number }> = ({
+  haze = 0.24,
+  redHaze = 0,
+}) => (
   <AbsoluteFill style={{ background: black }}>
     <AbsoluteFill
       style={{
@@ -60,6 +64,13 @@ const BlackField: React.FC<{ haze?: number }> = ({ haze = 0.24 }) => (
         opacity: 0.1,
         background:
           "repeating-linear-gradient(0deg, rgba(230,215,178,0.06) 0, rgba(230,215,178,0.06) 1px, transparent 1px, transparent 7px)",
+      }}
+    />
+    <AbsoluteFill
+      style={{
+        opacity: redHaze,
+        background:
+          "radial-gradient(circle at 70% 46%, rgba(216,58,47,0.3), transparent 22%), linear-gradient(90deg, transparent, rgba(216,58,47,0.08), transparent)",
       }}
     />
     <AbsoluteFill
@@ -155,7 +166,8 @@ const KineticLine: React.FC<{
   size?: number;
   weight?: number;
   muted?: boolean;
-}> = ({ text, start, end, size = 74, weight = 800, muted = false }) => {
+  accent?: "red" | "green";
+}> = ({ text, start, end, size = 74, weight = 800, muted = false, accent }) => {
   const frame = useCurrentFrame();
   const inAmount = fade(frame, start, start + 10);
   const outAmount = interpolate(frame, [end - 10, end], [1, 0], clamp);
@@ -179,7 +191,7 @@ const KineticLine: React.FC<{
       <div
         style={{
           maxWidth: 1540,
-          color: muted ? inkMuted : ink,
+          color: accent === "red" ? red : accent === "green" ? green : muted ? inkMuted : ink,
           fontFamily: sans,
           fontSize: size,
           fontWeight: weight,
@@ -187,7 +199,10 @@ const KineticLine: React.FC<{
           lineHeight: 1.08,
           textAlign: "center",
           transform: `translateY(${lift}px) scale(${scale})`,
-          textShadow: "0 26px 48px rgba(0,0,0,0.66)",
+          textShadow:
+            accent === "red"
+              ? "0 0 34px rgba(216,58,47,0.28), 0 26px 48px rgba(0,0,0,0.66)"
+              : "0 26px 48px rgba(0,0,0,0.66)",
         }}
       >
         {text}
@@ -201,7 +216,8 @@ const WordFlashSequence: React.FC<{
   start: number;
   weights: number[];
   size?: number;
-}> = ({ words, start, weights, size = 122 }) => {
+  accentWords?: Record<string, "red" | "green">;
+}> = ({ words, start, weights, size = 122, accentWords = {} }) => {
   const frame = useCurrentFrame();
   let cursor = start;
   const items = words.map((word, index) => {
@@ -238,7 +254,12 @@ const WordFlashSequence: React.FC<{
           >
             <div
               style={{
-                color: ink,
+                color:
+                  accentWords[item.word.toLowerCase()] === "red"
+                    ? red
+                    : accentWords[item.word.toLowerCase()] === "green"
+                      ? green
+                      : ink,
                 fontFamily: sans,
                 fontSize: size,
                 fontWeight: 850,
@@ -246,7 +267,10 @@ const WordFlashSequence: React.FC<{
                 lineHeight: 1,
                 textAlign: "center",
                 transform: `scale(${scale})`,
-                textShadow: "0 28px 50px rgba(0,0,0,0.72)",
+                textShadow:
+                  accentWords[item.word.toLowerCase()] === "red"
+                    ? "0 0 34px rgba(216,58,47,0.3), 0 28px 50px rgba(0,0,0,0.72)"
+                    : "0 28px 50px rgba(0,0,0,0.72)",
               }}
             >
               {item.word}
@@ -287,7 +311,7 @@ const HingeLine: React.FC = () => {
           lineHeight: 1.13,
           textAlign: "center",
           transform: `scale(${scale})`,
-          textShadow: "0 24px 48px rgba(0,0,0,0.72)",
+          textShadow: "0 0 30px rgba(216,58,47,0.18), 0 24px 48px rgba(0,0,0,0.72)",
         }}
       >
         And we just... let agents loose on all of it.
@@ -332,6 +356,7 @@ const Idea: React.FC = () => {
         <div
           style={{
             ...lineStyle,
+            color: red,
             position: "absolute",
             opacity: lineOpacity(secondStart, sec(33.1)),
             transform: `translateY(${interpolate(
@@ -359,7 +384,7 @@ const Idea: React.FC = () => {
       >
         <div
           style={{
-            color: ink,
+            color: red,
             fontFamily: mono,
             fontSize: 58,
             fontWeight: 700,
@@ -384,6 +409,7 @@ const SoBuiltIt: React.FC = () => {
       start={0}
       weights={[8, 6, 16, 10]}
       size={178}
+      accentWords={{ "it.": "red" }}
     />
   );
 };
@@ -409,7 +435,7 @@ const Close: React.FC = () => {
         style={{
           opacity: flash * 0.26,
           background:
-            "radial-gradient(circle at center, rgba(124,255,188,0.34), transparent 21%)",
+            "radial-gradient(circle at center, rgba(216,58,47,0.36), transparent 21%)",
         }}
       />
       <Img
@@ -421,7 +447,8 @@ const Close: React.FC = () => {
           objectFit: "contain",
           opacity: logoOpacity,
           transform: `translateY(${logoY}px) scale(${logoScale})`,
-          filter: "drop-shadow(0 0 30px rgba(124,255,188,0.24))",
+          filter:
+            "drop-shadow(0 0 30px rgba(216,58,47,0.28)) drop-shadow(0 0 14px rgba(124,255,188,0.14))",
         }}
       />
       <Img
@@ -469,7 +496,18 @@ export const FounderStory: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ background: black }}>
-      {!blackBeat ? <BlackField haze={frame < sec(16) ? 0.16 : 0.24} /> : null}
+      {!blackBeat ? (
+        <BlackField
+          haze={frame < sec(16) ? 0.16 : 0.24}
+          redHaze={
+            frame >= sec(21) && frame < sec(26.55)
+              ? 0.22
+              : frame >= sec(34.18)
+                ? 0.12
+                : 0
+          }
+        />
+      ) : null}
       {!blackBeat ? (
         <>
           <TerminalLine
@@ -501,9 +539,23 @@ export const FounderStory: React.FC = () => {
             words={["I", "started", "looking", "at", "what", "agents", "actually", "run", "on."]}
             start={sec(16.15)}
             weights={[5, 10, 9, 5, 6, 8, 10, 5, 6]}
+            accentWords={{ agents: "red" }}
           />
           {realizationLines.map(([text, start, end, size]) => (
-            <KineticLine key={text} text={text} start={start} end={end} size={size} />
+            <KineticLine
+              key={text}
+              text={text}
+              start={start}
+              end={end}
+              size={size}
+              accent={
+                text.includes("secrets") ||
+                text.includes("delete prod") ||
+                text.includes("one line")
+                  ? "red"
+                  : undefined
+              }
+            />
           ))}
           <HingeLine />
           <Idea />
