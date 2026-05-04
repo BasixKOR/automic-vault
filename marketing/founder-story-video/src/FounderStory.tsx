@@ -23,7 +23,7 @@ const sans =
 
 const fps = 30;
 const sec = (value: number) => Math.round(value * fps);
-export const founderStoryDurationInFrames = sec(40);
+export const founderStoryDurationInFrames = sec(42.6);
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -282,48 +282,68 @@ const WordFlashSequence: React.FC<{
   );
 };
 
-const AgentsLine: React.FC = () => {
+const OpenSourceRunsOn: React.FC<{ start: number; end: number }> = ({ start, end }) => {
   const frame = useCurrentFrame();
-  const start = sec(15.4);
-  const end = sec(17.6);
-  const opacity = fade(frame, start, start + 8) * interpolate(frame, [end - 8, end], [1, 0], clamp);
-  const lift = interpolate(frame, [start, start + 12], [22, 0], {
+  const headingOpacity =
+    fade(frame, start, start + 8) * interpolate(frame, [end - 10, end], [1, 0], clamp);
+  const firstStart = start + sec(0.7);
+  const secondStart = firstStart + sec(2);
+  const headingY = interpolate(frame, [start, start + 12], [18, 0], {
     ...clamp,
     easing: softEase,
   });
+  const bulletOpacity = (bulletStart: number, bulletEnd: number) =>
+    fade(frame, bulletStart, bulletStart + 7) *
+    interpolate(frame, [bulletEnd - 8, bulletEnd], [1, 0], clamp);
+
+  const bulletStyle: React.CSSProperties = {
+    position: "absolute",
+    left: 176,
+    top: 328,
+    maxWidth: 1260,
+    color: red,
+    fontFamily: sans,
+    fontSize: 92,
+    fontWeight: 850,
+    letterSpacing: 0,
+    lineHeight: 1.04,
+    textShadow: "0 0 34px rgba(216,58,47,0.3), 0 28px 50px rgba(0,0,0,0.72)",
+  };
 
   return (
-    <AbsoluteFill
-      style={{
-        alignItems: "center",
-        justifyContent: "center",
-        opacity,
-      }}
-    >
+    <AbsoluteFill>
       <div
         style={{
-          maxWidth: 1540,
-          color: ink,
-          fontFamily: sans,
-          fontSize: 82,
+          position: "absolute",
+          left: 148,
+          top: 128,
+          color: inkMuted,
+          fontFamily: mono,
+          fontSize: 44,
           fontWeight: 800,
           letterSpacing: 0,
-          lineHeight: 1.08,
-          textAlign: "center",
-          transform: `translateY(${lift}px)`,
-          textShadow: "0 26px 48px rgba(0,0,0,0.66)",
+          opacity: headingOpacity,
+          transform: `translateY(${headingY}px)`,
+          textShadow: "0 18px 38px rgba(0,0,0,0.7)",
         }}
       >
-        <span
-          style={{
-            color: red,
-            fontStyle: "italic",
-            textShadow: "0 0 34px rgba(216,58,47,0.3), 0 26px 48px rgba(0,0,0,0.66)",
-          }}
-        >
-          Agents
-        </span>{" "}
-        run on open source
+        OPEN SOURCE RUNS ON
+      </div>
+      <div
+        style={{
+          ...bulletStyle,
+          opacity: bulletOpacity(firstStart, secondStart),
+        }}
+      >
+        - Plain Text Secrets.
+      </div>
+      <div
+        style={{
+          ...bulletStyle,
+          opacity: bulletOpacity(secondStart, end),
+        }}
+      >
+        - One liners that can delete prod.
       </div>
     </AbsoluteFill>
   );
@@ -428,30 +448,39 @@ const Close: React.FC = () => {
 
 export const FounderStory: React.FC = () => {
   const frame = useCurrentFrame();
-  const openSourceLines = [
-    ["Everything runs on open source", sec(12.7), sec(15.0), 78, undefined],
-    ["Open source runs on Plain Text Secrets.", sec(18.0), sec(20.5), 76, "red"],
-    ["One liners that can delete prod.", sec(20.85), sec(23.45), 84, "red"],
-  ] as const;
-  const infrastructureLines = [
-    ["We needed better infrastructure.", sec(24.75), sec(27.05), 76, undefined],
-    ["We need it at the layer where tools actually live.", sec(27.35), sec(29.95), 66, undefined],
-    ["What if the package manager was also the security layer?", sec(30.25), sec(33.1), 64, "red"],
-    ["I've done this before.", sec(33.35), sec(35.05), 72, undefined],
-  ] as const;
+  const t = {
+    homebrew: sec(0),
+    web: sec(2.25),
+    agentsDawn: sec(4.85),
+    didItAgain: sec(7.9),
+    introducing: sec(9.9),
+    everythingOpenSource: sec(12.65),
+    agentsOpenSource: sec(15.35),
+    openSourceRunsOn: sec(17.95),
+    blackOne: sec(22.65),
+    infrastructure: sec(23.95),
+    toolsLayer: sec(26.55),
+    securityLayer: sec(29.45),
+    controlPlane: sec(32.55),
+    doneBefore: sec(35.65),
+    builtIt: sec(37.45),
+    blackTwo: sec(38.65),
+    close: sec(38.95),
+    end: sec(42.6),
+  };
   const blackBeat =
-    (frame >= sec(23.45) && frame < sec(24.75)) ||
-    (frame >= sec(36.05) && frame < sec(36.35));
+    (frame >= t.blackOne && frame < t.infrastructure) ||
+    (frame >= t.blackTwo && frame < t.close);
 
   return (
     <AbsoluteFill style={{ background: black }}>
       {!blackBeat ? (
         <BlackField
-          haze={frame < sec(16) ? 0.16 : 0.24}
+          haze={frame < t.everythingOpenSource ? 0.16 : 0.24}
           redHaze={
-            frame >= sec(18) && frame < sec(23.45)
+            frame >= t.openSourceRunsOn && frame < t.blackOne
               ? 0.22
-              : frame >= sec(33.35)
+              : frame >= t.securityLayer
                 ? 0.12
                 : 0
           }
@@ -460,62 +489,97 @@ export const FounderStory: React.FC = () => {
       {!blackBeat ? (
         <>
           <TerminalLine
-            text="I created Homebrew."
-            start={sec(0.8)}
+            text="I created Homebrew"
+            start={t.homebrew}
             typeDuration={sec(1.2)}
             y={348}
-            holdUntil={sec(11.75)}
-            cursorUntil={sec(2.9)}
+            holdUntil={t.agentsDawn}
+            cursorUntil={sec(1.7)}
           />
           <TerminalLine
-            text="At the dawn of Web 2.0."
-            start={sec(3.05)}
+            text="At the dawn of Web 2.0"
+            start={t.web}
             typeDuration={sec(1.25)}
             y={452}
-            holdUntil={sec(11.75)}
+            holdUntil={t.agentsDawn}
             size={52}
             muted
-            cursorUntil={sec(5.2)}
+            cursorUntil={sec(4.1)}
           />
-          <TerminalLine
-            text="It's now the dawn of agents."
-            start={sec(5.65)}
-            typeDuration={sec(1.8)}
-            y={556}
-            holdUntil={sec(11.75)}
-            size={50}
-            cursorUntil={sec(8.05)}
+          <KineticLine
+            text="It's now the dawn of agents"
+            start={t.agentsDawn}
+            end={t.didItAgain}
+            size={82}
           />
-          {openSourceLines.map(([text, start, end, size, accent]) => (
-            <KineticLine
-              key={text}
-              text={text}
-              start={start}
-              end={end}
-              size={size}
-              accent={accent}
-            />
-          ))}
-          <AgentsLine />
-          {infrastructureLines.map(([text, start, end, size, accent]) => (
-            <KineticLine
-              key={text}
-              text={text}
-              start={start}
-              end={end}
-              size={size}
-              accent={accent}
-            />
-          ))}
-          <Sequence from={sec(35.15)} durationInFrames={sec(0.9)}>
+          <KineticLine
+            text="So I did it again"
+            start={t.didItAgain}
+            end={t.introducing}
+            size={84}
+          />
+          <KineticLine
+            text="Introducing Automic Vault"
+            start={t.introducing}
+            end={t.everythingOpenSource}
+            size={88}
+            accent="red"
+          />
+          <KineticLine
+            text="Everything runs on open source"
+            start={t.everythingOpenSource}
+            end={t.agentsOpenSource}
+            size={78}
+          />
+          <KineticLine
+            text="Agents run on open source"
+            start={t.agentsOpenSource}
+            end={t.openSourceRunsOn}
+            size={82}
+            accent="red"
+          />
+          <OpenSourceRunsOn start={t.openSourceRunsOn} end={t.blackOne} />
+          <KineticLine
+            text="We need better infrastructure."
+            start={t.infrastructure}
+            end={t.toolsLayer}
+            size={76}
+          />
+          <KineticLine
+            text="We need it at the layer where tools actually live."
+            start={t.toolsLayer}
+            end={t.securityLayer}
+            size={66}
+          />
+          <KineticLine
+            text="What if the package manager was also the security layer?"
+            start={t.securityLayer}
+            end={t.controlPlane}
+            size={64}
+            accent="red"
+          />
+          <KineticLine
+            text="Also the execution control plane?"
+            start={t.controlPlane}
+            end={t.doneBefore}
+            size={76}
+            accent="red"
+          />
+          <KineticLine
+            text="I've done this before."
+            start={t.doneBefore}
+            end={t.builtIt}
+            size={72}
+          />
+          <Sequence from={t.builtIt} durationInFrames={t.blackTwo - t.builtIt}>
             <SoBuiltIt />
           </Sequence>
-          <Sequence from={sec(36.35)} durationInFrames={sec(3.65)}>
+          <Sequence from={t.close} durationInFrames={t.end - t.close}>
             <Close />
           </Sequence>
         </>
       ) : null}
-      {!blackBeat && frame < sec(36.05) ? (
+      {!blackBeat && frame < t.blackTwo ? (
         <AbsoluteFill
           style={{
             opacity: 0.12,
