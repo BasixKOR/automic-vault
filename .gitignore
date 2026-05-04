@@ -1,0 +1,15 @@
+/.envrc
+.DS_Store
+/output/playwright
+/.playwright-cli
+/.build
+/src/gui/.build
+/cache
+/data/db.json
+/data/combined.json
+/data/isotopes.json
+/data/isotopes/
+/data/radioisotopes/
+/target
+/src/target
+/dist/

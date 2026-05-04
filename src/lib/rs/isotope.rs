@@ -1,0 +1,1549 @@
+use super::*;
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::CString;
+#[cfg(target_os = "macos")]
+use std::ffi::c_char;
+use std::io;
+use std::os::unix::fs::MetadataExt;
+use std::os::unix::io::AsRawFd;
+
+const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
+const APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
+const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-changed";
+const USER_APPROVAL_SUBDIR: &str = "isotope";
+const ALWAYS_ALLOW_PATH: &str =
+    "/Library/Application Support/Automic Vault/isotope/always-allow.json";
+
+#[derive(Debug)]
+struct IsotopeOptions {
+    replace_existing_env: bool,
+    keys: Vec<String>,
+    target: PathBuf,
+    args: Vec<OsString>,
+}
+
+#[derive(Debug)]
+struct SaveSecretOptions {
+    key: String,
+}
+
+#[derive(Debug)]
+struct IsotopePreparedExecution {
+    exec_fd: i32,
+    exec_path: String,
+    argv: Vec<String>,
+    env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct IsotopeApprovalRequestSnapshot {
+    id: String,
+    keys: Vec<String>,
+    executable_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_path: Option<String>,
+    requested_executable_path: String,
+    argv: Vec<String>,
+    cwd: String,
+    parent_process: ParentProcessSnapshot,
+    can_always_allow: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ParentProcessSnapshot {
+    pid: i32,
+    executable_path: Option<String>,
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct IsotopeApprovalDecision {
+    id: String,
+    approved: bool,
+    always_allow: bool,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct IsotopeAlwaysAllowEntry {
+    executable_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_path: Option<String>,
+    keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsotopeAlwaysAllowScope {
+    executable_path: String,
+    script_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+struct IsotopeAlwaysAllowStore {
+    entries: Vec<IsotopeAlwaysAllowEntry>,
+}
+
+impl IsotopeAlwaysAllowStore {
+    fn always_allows_keys(&self, scope: &IsotopeAlwaysAllowScope, keys: &[String]) -> bool {
+        let allowed_keys = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.executable_path == scope.executable_path
+                    && entry.script_path == scope.script_path
+            })
+            .flat_map(|entry| entry.keys.iter())
+            .collect::<BTreeSet<_>>();
+        keys.iter().all(|key| allowed_keys.contains(key))
+    }
+}
+
+trait CredentialStore {
+    fn load_secret(&self, key: &str) -> Result<String, String>;
+    fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
+}
+
+struct KeychainCredentialStore;
+
+pub fn isotope_main_entry() {
+    let mut args = env::args_os();
+    let program = args.next().unwrap_or_else(|| OsString::from("isotope"));
+    let program_name = Path::new(&program)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("isotope");
+    let result = run_isotope_entry(program_name, args);
+    if let Err(err) = result {
+        eprintln!("{program_name}: {err}");
+        process::exit(1);
+    }
+}
+
+pub(crate) fn run_isotope_entry(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+    dispatch_isotope(program_name, args, &KeychainCredentialStore)
+}
+
+pub(crate) fn run_save_entry(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+    dispatch_save(program_name, args, &KeychainCredentialStore)
+}
+
+fn dispatch_isotope(
+    program_name: &str,
+    mut args: env::ArgsOs,
+    store: &dyn CredentialStore,
+) -> Result<(), String> {
+    let Some(first_arg) = args.next() else {
+        print_isotope_usage(program_name);
+        return Err("missing key and target binary".to_string());
+    };
+
+    if is_help_flag(&first_arg) {
+        print_isotope_usage(program_name);
+        return Ok(());
+    }
+
+    if is_version_flag(&first_arg) {
+        println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    let options = parse_isotope_options(program_name, first_arg, args)?;
+    if is_root() {
+        return Err("must not be run as root".to_string());
+    }
+    run_isotope(&options, store)
+}
+
+fn dispatch_save(
+    program_name: &str,
+    args: env::ArgsOs,
+    store: &dyn CredentialStore,
+) -> Result<(), String> {
+    let Some(options) = parse_save_options(program_name, args)? else {
+        return Ok(());
+    };
+    let value = read_save_secret()?;
+    run_save(&options, &value, store)
+}
+
+fn parse_isotope_options(
+    program_name: &str,
+    first_arg: OsString,
+    args: impl Iterator<Item = OsString>,
+) -> Result<IsotopeOptions, String> {
+    let mut replace_existing_env = false;
+    let mut keys = Vec::new();
+    let mut seen_keys = BTreeSet::new();
+    let mut iter = std::iter::once(first_arg).chain(args);
+
+    while let Some(arg) = iter.next() {
+        if arg == "--replace-existing-env" {
+            replace_existing_env = true;
+            continue;
+        }
+        if arg == "--allow-existing-env" {
+            return Err(
+                "--allow-existing-env has been replaced by --replace-existing-env".to_string(),
+            );
+        }
+        if arg == "--force" {
+            return Err("--force has been replaced by --replace-existing-env".to_string());
+        }
+        if arg == "--import" || arg == "--migrate" {
+            return Err("credential import and migration are no longer supported".to_string());
+        }
+
+        let value = arg
+            .to_str()
+            .ok_or_else(|| "isotope arguments must be valid UTF-8".to_string())?;
+        if let Some(key) = value.strip_prefix('+') {
+            validate_key_name(key)?;
+            if !seen_keys.insert(key.to_string()) {
+                return Err(format!("duplicate key requested: {key}"));
+            }
+            keys.push(key.to_string());
+            continue;
+        }
+
+        if keys.is_empty() {
+            return Err("at least one +KEY must be provided before the target".to_string());
+        }
+
+        keys.sort();
+        let target = PathBuf::from(arg);
+        if !target.is_absolute() {
+            return Err("target binary path must be absolute".to_string());
+        }
+        return Ok(IsotopeOptions {
+            replace_existing_env,
+            keys,
+            target,
+            args: iter.collect(),
+        });
+    }
+
+    print_isotope_usage(program_name);
+    Err("missing target binary".to_string())
+}
+
+fn parse_save_options<I>(program_name: &str, args: I) -> Result<Option<SaveSecretOptions>, String>
+where
+    I: Iterator<Item = OsString>,
+{
+    let mut positionals = Vec::new();
+
+    for arg in args {
+        if is_help_flag(&arg) {
+            print_save_usage(program_name);
+            return Ok(None);
+        }
+        if is_version_flag(&arg) {
+            println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+            return Ok(None);
+        }
+
+        if arg == "--allow" || arg == "--allow-path" {
+            return Err(
+                "--allow/--allow-path have been removed; approve injection with av inject"
+                    .to_string(),
+            );
+        }
+
+        positionals.push(arg);
+        if positionals.len() > 1 {
+            return Err("supports KEY only; provide the secret on stdin".to_string());
+        }
+    }
+
+    let key = parse_save_key(program_name, &positionals)?;
+    validate_key_name(&key)?;
+    Ok(Some(SaveSecretOptions { key }))
+}
+
+fn parse_save_key(program_name: &str, positionals: &[OsString]) -> Result<String, String> {
+    if positionals.is_empty() {
+        print_save_usage(program_name);
+        return Err("missing KEY".to_string());
+    }
+    let [key] = positionals else {
+        return Err("supports KEY only; provide the secret on stdin".to_string());
+    };
+    let key = key
+        .to_str()
+        .ok_or_else(|| "secret key must be valid UTF-8".to_string())?;
+    if key.contains('=') {
+        return Err("supports KEY only; provide the secret on stdin".to_string());
+    }
+    let key = key.trim();
+    Ok(key.to_string())
+}
+
+fn read_save_secret() -> Result<String, String> {
+    let mut stdin = io::stdin();
+    let mut value = String::new();
+
+    if stdin.is_terminal() {
+        eprint!("Secret: ");
+        io::stderr()
+            .flush()
+            .map_err(|err| format!("failed to flush prompt: {err}"))?;
+        read_secret_line_no_echo(&mut stdin, &mut value)?;
+        eprintln!();
+    } else {
+        stdin
+            .read_to_string(&mut value)
+            .map_err(|err| format!("failed to read secret from stdin: {err}"))?;
+    }
+
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return Err("empty isotope secret value".to_string());
+    }
+    Ok(value)
+}
+
+fn read_secret_line_no_echo(stdin: &mut io::Stdin, value: &mut String) -> Result<(), String> {
+    let fd = stdin.as_raw_fd();
+    let mut termios = std::mem::MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: tcgetattr initializes termios when it succeeds for a valid fd.
+    if unsafe { libc::tcgetattr(fd, termios.as_mut_ptr()) } != 0 {
+        return Err(format!(
+            "failed to read terminal settings: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    // SAFETY: tcgetattr succeeded above, so termios is initialized.
+    let original = unsafe { termios.assume_init() };
+    let mut hidden = original;
+    hidden.c_lflag &= !libc::ECHO;
+    // SAFETY: fd is stdin and hidden is a valid termios value derived from tcgetattr.
+    if unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &hidden) } != 0 {
+        return Err(format!(
+            "failed to disable terminal echo: {}",
+            io::Error::last_os_error()
+        ));
+    }
+
+    let read_result = stdin.read_line(value);
+    // SAFETY: original is the termios value returned by tcgetattr for this fd.
+    let restore_result = unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &original) };
+    if restore_result != 0 {
+        return Err(format!(
+            "failed to restore terminal echo: {}",
+            io::Error::last_os_error()
+        ));
+    }
+
+    read_result.map_err(|err| format!("failed to read secret: {err}"))?;
+    Ok(())
+}
+
+fn validate_key_name(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("empty isotope key name".to_string());
+    }
+    let mut chars = key.chars();
+    let first = chars.next().unwrap();
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return Err(format!("invalid isotope key name: {key}"));
+    }
+    if chars.any(|ch| !(ch == '_' || ch.is_ascii_alphanumeric())) {
+        return Err(format!("invalid isotope key name: {key}"));
+    }
+    Ok(())
+}
+
+fn run_save(
+    options: &SaveSecretOptions,
+    value: &str,
+    store: &dyn CredentialStore,
+) -> Result<(), String> {
+    store.store_secret(&options.key, value)?;
+    println!("saved {}", options.key);
+    Ok(())
+}
+
+fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<(), String> {
+    disable_core_dumps()?;
+
+    let resolved_target = fs::canonicalize(&options.target)
+        .map_err(|err| format!("failed to resolve {}: {err}", options.target.display()))?;
+    let resolved_target_string = resolved_target
+        .to_str()
+        .ok_or_else(|| "resolved target path must be valid UTF-8".to_string())?
+        .to_string();
+
+    let existing_env_keys = check_environment_conflicts(&options.keys);
+    let credential_keys = credential_keys_to_load(
+        &options.keys,
+        &existing_env_keys,
+        options.replace_existing_env,
+    );
+
+    let file = File::open(&resolved_target)
+        .map_err(|err| format!("failed to open {}: {err}", resolved_target.display()))?;
+    validate_regular_target(&resolved_target, &file)?;
+    validate_parent_directories(&options.target)?;
+    let always_allow_scope = always_allow_scope(
+        &resolved_target_string,
+        &resolved_target,
+        &file,
+        &options.args,
+    );
+    let can_always_allow = always_allow_scope.is_ok();
+
+    if !credential_keys.is_empty()
+        && !(can_always_allow
+            && always_allows_usage(
+                always_allow_scope
+                    .as_ref()
+                    .expect("validated always-allow scope"),
+                &credential_keys,
+            )?)
+    {
+        request_isotope_approval(
+            &resolved_target_string,
+            always_allow_scope.as_ref().ok(),
+            options,
+            &credential_keys,
+            can_always_allow,
+        )?;
+    }
+
+    let mut env_map = env::vars().collect::<BTreeMap<_, _>>();
+    let mut credentials = load_credentials(store, &credential_keys)?;
+    for (key, value) in &credentials {
+        env_map.insert(key.clone(), value.clone());
+    }
+
+    let prepared = prepare_execution(&file, options, env_map)?;
+    let result = exec_prepared(prepared);
+    zeroize_credentials(&mut credentials);
+    result
+}
+
+fn check_environment_conflicts(keys: &[String]) -> BTreeSet<String> {
+    let mut existing_env_keys = BTreeSet::new();
+    for key in keys {
+        if env::var_os(key).is_some() {
+            existing_env_keys.insert(key.clone());
+        }
+    }
+
+    for key in &existing_env_keys {
+        eprintln!(
+            "isotope: warning: environment variable {key} is already set; \
+             leaving existing value unchanged \
+             (replace with: --replace-existing-env)"
+        );
+    }
+
+    existing_env_keys
+}
+
+fn credential_keys_to_load(
+    keys: &[String],
+    existing_env_keys: &BTreeSet<String>,
+    replace_existing_env: bool,
+) -> Vec<String> {
+    keys.iter()
+        .filter(|key| replace_existing_env || !existing_env_keys.contains(*key))
+        .cloned()
+        .collect()
+}
+
+fn load_credentials(
+    store: &dyn CredentialStore,
+    keys: &[String],
+) -> Result<BTreeMap<String, String>, String> {
+    let mut credentials = BTreeMap::new();
+    for key in keys {
+        credentials.insert(key.clone(), store.load_secret(key)?);
+    }
+    Ok(credentials)
+}
+
+fn validate_regular_target(path: &Path, file: &File) -> Result<(), String> {
+    let metadata = file
+        .metadata()
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    if !metadata.is_file() {
+        return Err("target binary must be a regular file".to_string());
+    }
+    Ok(())
+}
+
+fn validate_target_root_installation(path: &Path, file: &File) -> Result<(), String> {
+    let metadata = file
+        .metadata()
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    validate_target_file_metadata(metadata.uid(), metadata.mode())?;
+    validate_parent_directories(path)
+}
+
+fn validate_target_file_metadata(uid: u32, mode: u32) -> Result<(), String> {
+    if uid != 0 {
+        return Err("target binary must be owned by root".to_string());
+    }
+    if mode & ((libc::S_IWGRP | libc::S_IWOTH) as u32) != 0 {
+        return Err("target binary must not be writable by group or others".to_string());
+    }
+    if mode & 0o111 == 0 {
+        return Err("target binary must be executable".to_string());
+    }
+    Ok(())
+}
+
+fn validate_parent_directories(path: &Path) -> Result<(), String> {
+    for directory in path.ancestors().skip(1) {
+        let metadata = fs::metadata(directory)
+            .map_err(|err| format!("failed to stat {}: {err}", directory.display()))?;
+        validate_directory_mode(directory, metadata.mode())?;
+    }
+    Ok(())
+}
+
+fn validate_directory_mode(path: &Path, mode: u32) -> Result<(), String> {
+    if mode & ((libc::S_IWGRP | libc::S_IWOTH) as u32) != 0 {
+        return Err(format!(
+            "directory must not be writable by group or others: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn always_allow_scope(
+    executable_path: &str,
+    resolved_executable_path: &Path,
+    file: &File,
+    args: &[OsString],
+) -> Result<IsotopeAlwaysAllowScope, String> {
+    validate_target_root_installation(resolved_executable_path, file)?;
+    let script_path = interpreter_script_path_for_always_allow(resolved_executable_path, args)?;
+    Ok(IsotopeAlwaysAllowScope {
+        executable_path: executable_path.to_string(),
+        script_path: script_path
+            .map(|path| {
+                path.to_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| "script path must be valid UTF-8".to_string())
+            })
+            .transpose()?,
+    })
+}
+
+fn interpreter_script_path_for_always_allow(
+    executable_path: &Path,
+    args: &[OsString],
+) -> Result<Option<PathBuf>, String> {
+    if executable_file_name(executable_path) == Some("env") {
+        return Err("env always-allow is not supported".to_string());
+    }
+    if !is_script_interpreter(executable_path) {
+        return Ok(None);
+    }
+    let script_path = interpreter_script_operand(args)
+        .ok_or_else(|| "interpreter always-allow requires a root-owned script file".to_string())?;
+    let script_path = resolve_script_operand(script_path)?;
+    let file = File::open(&script_path)
+        .map_err(|err| format!("failed to open {}: {err}", script_path.display()))?;
+    validate_regular_target(&script_path, &file)?;
+    validate_target_root_installation(&script_path, &file)?;
+    Ok(Some(script_path))
+}
+
+fn is_script_interpreter(path: &Path) -> bool {
+    let Some(file_name) = executable_file_name(path) else {
+        return false;
+    };
+    matches!(
+        file_name,
+        "bash"
+            | "dash"
+            | "env"
+            | "ksh"
+            | "node"
+            | "osascript"
+            | "perl"
+            | "python"
+            | "python3"
+            | "ruby"
+            | "sh"
+            | "zsh"
+    ) || is_versioned_python_name(file_name)
+}
+
+fn is_versioned_python_name(file_name: &str) -> bool {
+    let Some(suffix) = file_name.strip_prefix("python") else {
+        return false;
+    };
+    !suffix.is_empty() && suffix.chars().all(|ch| ch == '.' || ch.is_ascii_digit())
+}
+
+fn executable_file_name(path: &Path) -> Option<&str> {
+    path.file_name().and_then(|value| value.to_str())
+}
+
+fn interpreter_script_operand(args: &[OsString]) -> Option<&Path> {
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].to_str()?;
+        if arg == "--" {
+            return args.get(index + 1).map(Path::new);
+        }
+        if !arg.starts_with('-') || arg == "-" {
+            return args.get(index).map(Path::new);
+        }
+        if interpreter_option_takes_value(arg) {
+            index += 2;
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+fn interpreter_option_takes_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-c" | "-m" | "-S" | "-e" | "-I" | "-l" | "-x" | "-C" | "-M" | "-d" | "-r"
+    )
+}
+
+fn resolve_script_operand(path: &Path) -> Result<PathBuf, String> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {err}"))?
+            .join(path)
+    };
+    fs::canonicalize(&path).map_err(|err| format!("failed to resolve {}: {err}", path.display()))
+}
+
+fn always_allows_usage(scope: &IsotopeAlwaysAllowScope, keys: &[String]) -> Result<bool, String> {
+    let store = load_always_allow_store()?;
+    Ok(store.always_allows_keys(scope, keys))
+}
+
+fn load_always_allow_store() -> Result<IsotopeAlwaysAllowStore, String> {
+    let path = Path::new(ALWAYS_ALLOW_PATH);
+    if !path.exists() {
+        return Ok(IsotopeAlwaysAllowStore::default());
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    serde_json::from_str(&contents)
+        .map_err(|err| format!("failed to decode {}: {err}", path.display()))
+}
+
+fn request_isotope_approval(
+    executable_path: &str,
+    always_allow_scope: Option<&IsotopeAlwaysAllowScope>,
+    options: &IsotopeOptions,
+    credential_keys: &[String],
+    can_always_allow: bool,
+) -> Result<(), String> {
+    let request_id = format!(
+        "{}-{}",
+        process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| format!("failed to compute request timestamp: {err}"))?
+            .as_millis()
+    );
+    let request = IsotopeApprovalRequestSnapshot {
+        id: request_id.clone(),
+        keys: credential_keys.to_vec(),
+        executable_path: executable_path.to_string(),
+        script_path: always_allow_scope.and_then(|scope| scope.script_path.clone()),
+        requested_executable_path: options
+            .target
+            .to_str()
+            .ok_or_else(|| "target path must be valid UTF-8".to_string())?
+            .to_string(),
+        argv: options
+            .args
+            .iter()
+            .map(|arg| {
+                arg.to_str()
+                    .ok_or_else(|| "arguments must be valid UTF-8".to_string())
+                    .map(str::to_string)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        cwd: env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {err}"))?
+            .to_string_lossy()
+            .into_owned(),
+        parent_process: parent_process_snapshot(),
+        can_always_allow,
+    };
+
+    let pending_url = pending_approval_path()?;
+    write_json(&pending_url, &request)?;
+    if let Err(err) = ping_isotope_approval_app() {
+        let _ = fs::remove_file(&pending_url);
+        return Err(err);
+    }
+    wait_for_isotope_decision(&request_id)
+}
+
+fn parent_process_snapshot() -> ParentProcessSnapshot {
+    let pid = unsafe { libc::getppid() };
+    let executable_path = parent_process_path(pid);
+    let display_name = executable_path
+        .as_deref()
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .map(str::to_string);
+
+    ParentProcessSnapshot {
+        pid,
+        executable_path,
+        display_name,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn parent_process_path(pid: i32) -> Option<String> {
+    let output = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if path.is_empty() { None } else { Some(path) }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn parent_process_path(_pid: i32) -> Option<String> {
+    None
+}
+
+fn wait_for_isotope_decision(id: &str) -> Result<(), String> {
+    let decision_url = decision_path(id)?;
+    loop {
+        if let Ok(contents) = fs::read_to_string(&decision_url) {
+            let decision: IsotopeApprovalDecision = serde_json::from_str(&contents)
+                .map_err(|err| format!("failed to decode isotope approval decision: {err}"))?;
+            if decision.id != id {
+                return Err("isotope approval decision id mismatch".to_string());
+            }
+            clear_approval_files(id);
+            if decision.approved {
+                return Ok(());
+            }
+            return Err(decision
+                .reason
+                .unwrap_or_else(|| "key injection denied".to_string()));
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+fn clear_approval_files(id: &str) {
+    if let Ok(path) = pending_approval_path() {
+        let _ = fs::remove_file(path);
+    }
+    if let Ok(path) = decision_path(id) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn user_approval_root() -> Result<PathBuf, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set".to_string())?;
+    Ok(home
+        .join("Library")
+        .join("Application Support")
+        .join("Automic Vault")
+        .join(USER_APPROVAL_SUBDIR))
+}
+
+fn pending_approval_path() -> Result<PathBuf, String> {
+    Ok(user_approval_root()?.join("pending-approval.json"))
+}
+
+fn decision_path(id: &str) -> Result<PathBuf, String> {
+    Ok(user_approval_root()?
+        .join("decisions")
+        .join(format!("{id}.json")))
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("invalid approval path {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    let payload = serde_json::to_vec_pretty(value)
+        .map_err(|err| format!("failed to encode approval request: {err}"))?;
+    fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+#[cfg(target_os = "macos")]
+fn ping_isotope_approval_app() -> Result<(), String> {
+    let status = Command::new("/usr/bin/open")
+        .args(["-b", APP_BUNDLE_IDENTIFIER])
+        .status()
+        .map_err(|err| format!("failed to ping Automic Vault.app: {err}"))?;
+    if !status.success() {
+        return Err("failed to ping Automic Vault.app for isotope approval".to_string());
+    }
+    post_distributed_notification(APPROVAL_NOTIFICATION)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ping_isotope_approval_app() -> Result<(), String> {
+    Err("isotope approvals are only available on macOS".to_string())
+}
+
+fn prepare_execution(
+    file: &File,
+    options: &IsotopeOptions,
+    env: BTreeMap<String, String>,
+) -> Result<IsotopePreparedExecution, String> {
+    let fd = file.as_raw_fd();
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        if flags == -1 {
+            return Err(format!(
+                "failed to inspect file descriptor flags: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        if libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) == -1 {
+            return Err(format!(
+                "failed to clear close-on-exec flag: {}",
+                io::Error::last_os_error()
+            ));
+        }
+    }
+
+    let exec_path = options
+        .target
+        .to_str()
+        .ok_or_else(|| "target path must be valid UTF-8".to_string())?
+        .to_string();
+    let mut argv = Vec::with_capacity(options.args.len() + 1);
+    argv.push(exec_path.clone());
+    for arg in &options.args {
+        let arg = arg
+            .to_str()
+            .ok_or_else(|| "arguments must be valid UTF-8".to_string())?;
+        argv.push(arg.to_string());
+    }
+
+    Ok(IsotopePreparedExecution {
+        exec_fd: fd,
+        exec_path,
+        argv,
+        env,
+    })
+}
+
+fn exec_prepared(prepared: IsotopePreparedExecution) -> Result<(), String> {
+    validate_exec_path_for_prepared_execution(prepared.exec_fd, &prepared.exec_path)?;
+    let path = prepared.exec_path;
+    let path_cstr = CString::new(path.clone())
+        .map_err(|_| "validated execution path contains interior NUL".to_string())?;
+    let argv = build_exec_cstrings(&prepared.argv)?;
+    let env = build_exec_environment(&prepared.env)?;
+    let argv_ptrs = argv
+        .iter()
+        .map(|value| value.as_ptr())
+        .chain([std::ptr::null()])
+        .collect::<Vec<_>>();
+    let env_ptrs = env
+        .iter()
+        .map(|value| value.as_ptr())
+        .chain([std::ptr::null()])
+        .collect::<Vec<_>>();
+
+    unsafe {
+        libc::execve(path_cstr.as_ptr(), argv_ptrs.as_ptr(), env_ptrs.as_ptr());
+    }
+
+    Err(format!(
+        "failed to execute {}: {}",
+        path,
+        io::Error::last_os_error()
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn validate_exec_path_for_prepared_execution(fd: i32, path: &str) -> Result<(), String> {
+    verify_fd_matches_path(fd, path)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn validate_exec_path_for_prepared_execution(_fd: i32, _path: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[cfg(test)]
+fn path_for_open_fd(fd: i32) -> Result<String, String> {
+    let mut buffer = vec![0_u8; libc::MAXPATHLEN as usize];
+    let rc = unsafe { libc::fcntl(fd, libc::F_GETPATH, buffer.as_mut_ptr()) };
+    if rc == -1 {
+        return Err(format!(
+            "failed to resolve executable path from validated descriptor: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    let nul = buffer
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(buffer.len());
+    String::from_utf8(buffer[..nul].to_vec())
+        .map_err(|_| "validated descriptor path is not valid UTF-8".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn verify_fd_matches_path(fd: i32, path: &str) -> Result<(), String> {
+    let mut fd_stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    let mut path_stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+
+    let fstat_rc = unsafe { libc::fstat(fd, fd_stat.as_mut_ptr()) };
+    if fstat_rc == -1 {
+        return Err(format!(
+            "failed to stat validated descriptor before exec: {}",
+            io::Error::last_os_error()
+        ));
+    }
+
+    let path_cstr = CString::new(path)
+        .map_err(|_| "validated descriptor path contains interior NUL".to_string())?;
+    let stat_rc = unsafe { libc::stat(path_cstr.as_ptr(), path_stat.as_mut_ptr()) };
+    if stat_rc == -1 {
+        return Err(format!(
+            "failed to stat executable path before exec: {}",
+            io::Error::last_os_error()
+        ));
+    }
+
+    let fd_stat = unsafe { fd_stat.assume_init() };
+    let path_stat = unsafe { path_stat.assume_init() };
+    if fd_stat.st_dev != path_stat.st_dev || fd_stat.st_ino != path_stat.st_ino {
+        return Err("validated executable changed before exec".to_string());
+    }
+
+    Ok(())
+}
+
+fn build_exec_cstrings(values: &[String]) -> Result<Vec<CString>, String> {
+    values
+        .iter()
+        .map(|value| {
+            CString::new(value.as_str()).map_err(|_| "argument contains interior NUL".to_string())
+        })
+        .collect()
+}
+
+fn build_exec_environment(env: &BTreeMap<String, String>) -> Result<Vec<CString>, String> {
+    env.iter()
+        .map(|(key, value)| {
+            CString::new(format!("{key}={value}"))
+                .map_err(|_| format!("environment entry contains interior NUL: {key}"))
+        })
+        .collect()
+}
+
+fn disable_core_dumps() -> Result<(), String> {
+    let limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    let rc = unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) };
+    if rc == 0 {
+        return Ok(());
+    }
+    Err(format!(
+        "failed to disable core dumps: {}",
+        io::Error::last_os_error()
+    ))
+}
+
+fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
+    for value in credentials.values_mut() {
+        unsafe {
+            value.as_mut_vec().fill(0);
+        }
+        value.clear();
+    }
+    credentials.clear();
+}
+
+impl CredentialStore for KeychainCredentialStore {
+    fn load_secret(&self, key: &str) -> Result<String, String> {
+        keychain_read_secret(KEYCHAIN_SERVICE, key)
+    }
+
+    fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+        keychain_write_secret(KEYCHAIN_SERVICE, key, value)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_read_secret(service: &str, account: &str) -> Result<String, String> {
+    unsafe extern "C" {
+        fn isotope_copy_generic_password_json(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> *mut c_char;
+    }
+
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let value = unsafe {
+        isotope_copy_generic_password_json(service_cstr.as_ptr(), account_cstr.as_ptr(), &mut error)
+    };
+    if value.is_null() {
+        let message = unsafe { take_bridge_string(error) }
+            .unwrap_or_else(|| "keychain lookup failed".to_string());
+        return Err(format!("failed to load isotope key {account}: {message}"));
+    }
+
+    unsafe { take_bridge_string(value) }
+        .ok_or_else(|| "keychain returned invalid UTF-8".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_read_secret(_service: &str, _account: &str) -> Result<String, String> {
+    Err("isotope keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_write_secret(service: &str, account: &str, value: &str) -> Result<(), String> {
+    unsafe extern "C" {
+        fn isotope_store_generic_password_json(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            value_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> bool;
+    }
+
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let value_cstr =
+        CString::new(value).map_err(|_| "invalid keychain secret value".to_string())?;
+    let mut error = std::ptr::null_mut();
+    if unsafe {
+        isotope_store_generic_password_json(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            value_cstr.as_ptr(),
+            &mut error,
+        )
+    } {
+        return Ok(());
+    }
+
+    let message =
+        unsafe { take_bridge_string(error) }.unwrap_or_else(|| "keychain write failed".to_string());
+    Err(format!("failed to store isotope key {account}: {message}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_write_secret(_service: &str, _account: &str, _value: &str) -> Result<(), String> {
+    Err("isotope keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn post_distributed_notification(name: &str) -> Result<(), String> {
+    unsafe extern "C" {
+        fn isotope_post_distributed_notification(
+            name_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> bool;
+    }
+
+    let name_cstr =
+        CString::new(name).map_err(|_| "invalid distributed notification name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    if unsafe { isotope_post_distributed_notification(name_cstr.as_ptr(), &mut error) } {
+        return Ok(());
+    }
+    Err(unsafe { take_bridge_string(error) }
+        .unwrap_or_else(|| "failed to post isotope approval notification".to_string()))
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn take_bridge_string(value: *mut c_char) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+
+    unsafe extern "C" {
+        fn isotope_free_c_string(value: *mut c_char);
+    }
+
+    let bytes = unsafe { std::ffi::CStr::from_ptr(value) }
+        .to_str()
+        .ok()
+        .map(str::to_owned);
+    unsafe { isotope_free_c_string(value) };
+    bytes
+}
+
+pub fn print_isotope_usage(program_name: &str) {
+    println!(
+        "\
+Usage: {program_name} [--replace-existing-env] +KEY [+KEY...] /absolute/path/to/executable-or-script [args...]
+
+Asks Automic Vault to approve injecting the named keys into the target process."
+    );
+}
+
+pub fn print_save_usage(program_name: &str) {
+    println!(
+        "\
+Usage: {program_name} KEY
+
+Stores a trimmed secret in the Automic Vault keychain. Feed the secret on stdin,
+or run from an interactive terminal to be prompted without echo. Empty trimmed
+keys or values are rejected."
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    #[derive(Default)]
+    struct StubCredentialStore {
+        secrets: BTreeMap<String, Result<String, String>>,
+    }
+
+    impl CredentialStore for StubCredentialStore {
+        fn load_secret(&self, key: &str) -> Result<String, String> {
+            self.secrets
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| Err("missing stub credential".to_string()))
+        }
+
+        fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn isotopes_parse_options_accepts_explicit_keys() {
+        let options = parse_isotope_options(
+            "av inject",
+            OsString::from("+APPLE_USERNAME"),
+            vec![
+                OsString::from("+APPLE_PASSWORD"),
+                OsString::from("/bin/bash"),
+                OsString::from("script.sh"),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert_eq!(
+            options.keys,
+            vec!["APPLE_PASSWORD".to_string(), "APPLE_USERNAME".to_string()]
+        );
+        assert_eq!(options.target, PathBuf::from("/bin/bash"));
+        assert_eq!(options.args, vec![OsString::from("script.sh")]);
+    }
+
+    #[test]
+    fn isotopes_parse_options_rejects_import_and_migrate() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("--import"),
+            vec![OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("no longer supported"));
+
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("--migrate"),
+            vec![OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("no longer supported"));
+    }
+
+    #[test]
+    fn isotopes_parse_options_requires_keys_before_target() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("/bin/bash"),
+            Vec::<OsString>::new().into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("at least one +KEY"));
+    }
+
+    #[test]
+    fn isotopes_validate_key_name_rejects_invalid_environment_names() {
+        assert!(validate_key_name("TOKEN").is_ok());
+        assert!(validate_key_name("_TOKEN_1").is_ok());
+        assert!(validate_key_name("1TOKEN").is_err());
+        assert!(validate_key_name("TOKEN-NAME").is_err());
+    }
+
+    #[test]
+    fn isotopes_parse_options_accepts_replace_existing_env_flag() {
+        let options = parse_isotope_options(
+            "av inject",
+            OsString::from("--replace-existing-env"),
+            vec![OsString::from("+TOKEN"), OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap();
+        assert!(options.replace_existing_env);
+    }
+
+    #[test]
+    fn isotopes_parse_options_rejects_removed_allow_existing_env_flag() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("--allow-existing-env"),
+            vec![OsString::from("+TOKEN"), OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("--replace-existing-env"));
+    }
+
+    #[test]
+    fn isotopes_parse_options_rejects_removed_force_flag() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("--force"),
+            vec![OsString::from("+TOKEN"), OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("--replace-existing-env"));
+    }
+
+    #[test]
+    fn isotopes_parse_save_options_accepts_key_only() {
+        let options = parse_save_options("av save", vec![OsString::from("FOO")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(options.key, "FOO");
+    }
+
+    #[test]
+    fn isotopes_parse_save_options_trims_key() {
+        let options = parse_save_options("av save", vec![OsString::from(" FOO ")].into_iter())
+            .unwrap()
+            .unwrap();
+        assert_eq!(options.key, "FOO");
+    }
+
+    #[test]
+    fn isotopes_parse_save_options_rejects_invalid_assignment() {
+        let err =
+            parse_save_options("av save", vec![OsString::from("FOO=bar")].into_iter()).unwrap_err();
+        assert!(err.contains("KEY only"));
+
+        let err =
+            parse_save_options("av save", vec![OsString::from("1FOO")].into_iter()).unwrap_err();
+        assert!(err.contains("invalid isotope key name"));
+
+        let err = parse_save_options("av save", vec![OsString::from(" ")].into_iter()).unwrap_err();
+        assert!(err.contains("empty isotope key name"));
+
+        let err = parse_save_options(
+            "av save",
+            vec![OsString::from("FOO"), OsString::from("bar")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("KEY only"));
+    }
+
+    #[test]
+    fn isotopes_parse_save_options_rejects_removed_allow_path() {
+        let err = parse_save_options(
+            "av save",
+            vec![
+                OsString::from("--allow"),
+                OsString::from("/usr/bin/env"),
+                OsString::from("FOO"),
+            ]
+            .into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("removed"));
+
+        let err = parse_save_options(
+            "av save",
+            vec![
+                OsString::from("--allow-path"),
+                OsString::from("/usr/bin/env"),
+                OsString::from("FOO"),
+            ]
+            .into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("removed"));
+    }
+
+    #[test]
+    fn isotopes_check_environment_conflicts_warns_on_existing_env() {
+        let _guard = TEST_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        unsafe { env::set_var("APPLE_USERNAME", "existing") };
+        let existing = check_environment_conflicts(&["APPLE_USERNAME".to_string()]);
+        assert!(existing.contains("APPLE_USERNAME"));
+        unsafe { env::remove_var("APPLE_USERNAME") };
+    }
+
+    #[test]
+    fn isotopes_skip_loading_credentials_for_existing_env() {
+        let existing_env_keys = BTreeSet::from(["APPLE_USERNAME".to_string()]);
+        let keys = vec!["APPLE_PASSWORD".to_string(), "APPLE_USERNAME".to_string()];
+        let credential_keys = credential_keys_to_load(&keys, &existing_env_keys, false);
+        assert_eq!(credential_keys, vec!["APPLE_PASSWORD".to_string()]);
+    }
+
+    #[test]
+    fn isotopes_skip_approval_when_existing_env_covers_requested_keys() {
+        let existing_env_keys = BTreeSet::from(["AWS_ACCESS_KEY_ID".to_string()]);
+        let keys = vec!["AWS_ACCESS_KEY_ID".to_string()];
+        let credential_keys = credential_keys_to_load(&keys, &existing_env_keys, false);
+        assert!(credential_keys.is_empty());
+    }
+
+    #[test]
+    fn isotopes_replace_existing_env_loads_all_credentials() {
+        let existing_env_keys = BTreeSet::from(["APPLE_USERNAME".to_string()]);
+        let keys = vec!["APPLE_PASSWORD".to_string(), "APPLE_USERNAME".to_string()];
+        let credential_keys = credential_keys_to_load(&keys, &existing_env_keys, true);
+        assert_eq!(credential_keys, keys);
+    }
+
+    #[test]
+    fn isotopes_load_credentials_uses_explicit_key_names() {
+        let mut store = StubCredentialStore::default();
+        store
+            .secrets
+            .insert("TOKEN".to_string(), Ok("secret".to_string()));
+        let loaded = load_credentials(&store, &["TOKEN".to_string()]).unwrap();
+        assert_eq!(loaded["TOKEN"], "secret");
+    }
+
+    #[test]
+    fn isotopes_always_allow_accepts_keys_split_across_entries() {
+        let store = IsotopeAlwaysAllowStore {
+            entries: vec![
+                IsotopeAlwaysAllowEntry {
+                    executable_path: "/bin/tool".to_string(),
+                    script_path: None,
+                    keys: vec!["A".to_string()],
+                },
+                IsotopeAlwaysAllowEntry {
+                    executable_path: "/bin/tool".to_string(),
+                    script_path: None,
+                    keys: vec!["B".to_string()],
+                },
+            ],
+        };
+        let scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/tool".to_string(),
+            script_path: None,
+        };
+        let other_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/other".to_string(),
+            script_path: None,
+        };
+        assert!(store.always_allows_keys(&scope, &["A".to_string(), "B".to_string()]));
+        assert!(!store.always_allows_keys(&scope, &["A".to_string(), "C".to_string()]));
+        assert!(!store.always_allows_keys(&other_scope, &["A".to_string()]));
+    }
+
+    #[test]
+    fn isotopes_always_allow_requires_matching_script_scope() {
+        let store = IsotopeAlwaysAllowStore {
+            entries: vec![IsotopeAlwaysAllowEntry {
+                executable_path: "/opt/python/bin/python3.14".to_string(),
+                script_path: Some("/opt/awscli/bin/aws".to_string()),
+                keys: vec!["AWS_ACCESS_KEY_ID".to_string()],
+            }],
+        };
+        let aws_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/opt/python/bin/python3.14".to_string(),
+            script_path: Some("/opt/awscli/bin/aws".to_string()),
+        };
+        let other_script_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/opt/python/bin/python3.14".to_string(),
+            script_path: Some("/opt/awscli/bin/other".to_string()),
+        };
+        let missing_script_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/opt/python/bin/python3.14".to_string(),
+            script_path: None,
+        };
+
+        assert!(store.always_allows_keys(&aws_scope, &["AWS_ACCESS_KEY_ID".to_string()]));
+        assert!(!store.always_allows_keys(&other_script_scope, &["AWS_ACCESS_KEY_ID".to_string()]));
+        assert!(
+            !store.always_allows_keys(&missing_script_scope, &["AWS_ACCESS_KEY_ID".to_string()])
+        );
+    }
+
+    #[test]
+    fn isotopes_validate_target_file_metadata_rejects_non_root_or_writable_targets() {
+        let err = validate_target_file_metadata(501, 0o755).unwrap_err();
+        assert!(err.contains("owned by root"));
+
+        let err = validate_target_file_metadata(0, 0o775).unwrap_err();
+        assert!(err.contains("writable by group or others"));
+
+        let err = validate_target_file_metadata(0, 0o644).unwrap_err();
+        assert!(err.contains("executable"));
+    }
+
+    #[test]
+    fn isotopes_always_allow_rejects_non_root_owned_interpreter_scripts() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("script.sh");
+        fs::write(&script, b"#!/bin/sh\n").unwrap();
+        let err = interpreter_script_path_for_always_allow(
+            Path::new("/bin/bash"),
+            &[OsString::from(script.as_os_str())],
+        )
+        .unwrap_err();
+        assert!(err.contains("owned by root"));
+    }
+
+    #[test]
+    fn isotopes_always_allow_rejects_inline_interpreter_commands() {
+        let err = interpreter_script_path_for_always_allow(
+            Path::new("/bin/bash"),
+            &[OsString::from("-c"), OsString::from("echo hi")],
+        )
+        .unwrap_err();
+        assert!(err.contains("root-owned script file"));
+    }
+
+    #[test]
+    fn isotopes_always_allow_rejects_env_launchers() {
+        let err = interpreter_script_path_for_always_allow(
+            Path::new("/usr/bin/env"),
+            &[OsString::from("bash"), OsString::from("script.sh")],
+        )
+        .unwrap_err();
+        assert!(err.contains("env always-allow"));
+    }
+
+    #[test]
+    fn isotopes_detect_versioned_python_as_interpreter() {
+        assert!(is_script_interpreter(Path::new(
+            "/opt/awscli/bin/python3.14"
+        )));
+        assert!(is_script_interpreter(Path::new("/bin/python3")));
+        assert!(!is_script_interpreter(Path::new("/bin/python-config")));
+    }
+
+    #[test]
+    fn isotopes_validate_parent_directories_rejects_group_writable_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("safe");
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let target = nested.join("tool");
+        fs::write(&target, b"#!/bin/sh\n").unwrap();
+
+        let mut permissions = fs::metadata(&nested).unwrap().permissions();
+        permissions.set_mode(0o777);
+        fs::set_permissions(&nested, permissions).unwrap();
+
+        let err = validate_parent_directories(&target).unwrap_err();
+        assert!(err.contains("directory must not be writable"));
+    }
+
+    #[test]
+    fn isotopes_prepare_execution_preserves_argv_zero_and_env() {
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"#!/bin/sh\n").unwrap();
+        let file = File::open(&tool).unwrap();
+        let options = IsotopeOptions {
+            replace_existing_env: false,
+            keys: vec!["TOKEN".to_string()],
+            target: tool.clone(),
+            args: vec![OsString::from("--flag"), OsString::from("value")],
+        };
+        let prepared = prepare_execution(
+            &file,
+            &options,
+            BTreeMap::from([("TOKEN".to_string(), "secret".to_string())]),
+        )
+        .unwrap();
+        assert_eq!(prepared.exec_fd, file.as_raw_fd());
+        assert_eq!(prepared.exec_path, tool.to_string_lossy().into_owned());
+        assert_eq!(
+            prepared.argv,
+            vec![
+                tool.to_string_lossy().into_owned(),
+                "--flag".to_string(),
+                "value".to_string()
+            ]
+        );
+        assert_eq!(prepared.env["TOKEN"], "secret");
+    }
+
+    #[test]
+    fn isotopes_prepare_execution_uses_requested_symlink_for_exec() {
+        let temp = tempfile::tempdir().unwrap();
+        let real_tool = temp.path().join("real-tool");
+        let requested_tool = temp.path().join("requested-tool");
+        fs::write(&real_tool, b"#!/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink(&real_tool, &requested_tool).unwrap();
+        let file = File::open(fs::canonicalize(&requested_tool).unwrap()).unwrap();
+        let options = IsotopeOptions {
+            replace_existing_env: false,
+            keys: vec!["TOKEN".to_string()],
+            target: requested_tool.clone(),
+            args: Vec::new(),
+        };
+
+        let prepared = prepare_execution(&file, &options, BTreeMap::new()).unwrap();
+
+        assert_eq!(
+            prepared.exec_path,
+            requested_tool.to_string_lossy().into_owned()
+        );
+        assert_eq!(
+            prepared.argv,
+            vec![requested_tool.to_string_lossy().into_owned()]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn isotopes_path_for_open_fd_returns_opened_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"#!/bin/sh\n").unwrap();
+        let file = File::open(&tool).unwrap();
+        let resolved = path_for_open_fd(file.as_raw_fd()).unwrap();
+        let expected = fs::canonicalize(&tool).unwrap();
+        assert_eq!(resolved, expected.to_string_lossy());
+        verify_fd_matches_path(file.as_raw_fd(), &resolved).unwrap();
+    }
+}

@@ -1,0 +1,572 @@
+use std::borrow::Cow;
+use std::io::IsTerminal;
+
+use super::*;
+
+pub(crate) fn print_i_usage(program: &str) {
+    println!(
+        "Usage: {program} [-f | --force] <package|brew:formula|cask:cask|isotope:name|npm:package|pip:package>..."
+    );
+    println!();
+    println!(
+        "Installs self-contained packages under {}.",
+        opt_pkg_root().display()
+    );
+}
+
+pub(crate) fn print_uninstall_usage(program: &str) {
+    println!(
+        "Usage: {program} <package|brew:formula|cask:cask|isotope:name|npm:package|pip:package>..."
+    );
+    println!();
+    println!(
+        "Removes installed packages from {}.",
+        opt_pkg_root().display()
+    );
+}
+
+pub(crate) fn print_outdated_usage(program: &str) {
+    println!(
+        "Usage: {program} [package|brew:formula|cask:cask|isotope:name|npm:package|pip:package]..."
+    );
+    println!();
+    println!("Lists installed packages with newer versions available.");
+}
+
+pub(crate) fn print_update_usage(program: &str) {
+    println!(
+        "Usage: {program} [package|brew:formula|cask:cask|isotope:name|npm:package|pip:package]..."
+    );
+    println!();
+    println!("Reinstalls installed packages with newer versions available.");
+}
+
+pub(crate) fn print_list_usage(program: &str) {
+    println!(
+        "Usage: {program} [package|brew:formula|cask:cask|isotope:name|npm:package|pip:package]..."
+    );
+    println!();
+    println!("Lists installed packages with their versions.");
+}
+
+pub(crate) fn print_info_usage(program: &str) {
+    println!(
+        "Usage: {program} <package|brew:formula|cask:cask|isotope:name|npm:package|pip:package>"
+    );
+    println!();
+    println!("Shows package metadata, install status, and update status.");
+}
+
+pub(crate) fn print_search_usage(program: &str) {
+    println!("Usage: {program} <query>");
+    println!();
+    println!("Searches available packages.");
+}
+
+pub(crate) fn print_serve_usage(program: &str) {
+    println!("Usage: {program}");
+    println!();
+    println!("Starts the local read-only protocol daemon.");
+}
+
+pub(crate) fn print_pkg_usage(program: &str) {
+    HelpScreen::new(program, terminal_columns(), stdout_supports_ansi()).print();
+}
+
+#[derive(Copy, Clone)]
+enum HelpStyle {
+    Primary,
+    Red,
+    Dim,
+}
+
+struct HelpFragment<'a> {
+    style: HelpStyle,
+    text: Cow<'a, str>,
+}
+
+struct HelpLine<'a> {
+    fragments: Vec<HelpFragment<'a>>,
+}
+
+struct HelpScreen<'a> {
+    program: &'a str,
+    columns: usize,
+    color: bool,
+}
+
+impl<'a> HelpLine<'a> {
+    fn plain(text: &'a str) -> Self {
+        Self {
+            fragments: vec![HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed(text),
+            }],
+        }
+    }
+
+    fn fragments(fragments: Vec<HelpFragment<'a>>) -> Self {
+        Self { fragments }
+    }
+
+    fn render(&self, color: bool) -> String {
+        let mut line = String::new();
+        for fragment in &self.fragments {
+            line.push_str(&paint(&fragment.text, fragment.style, color));
+        }
+        line
+    }
+
+    fn width(&self) -> usize {
+        self.fragments
+            .iter()
+            .map(|fragment| fragment.text.chars().count())
+            .sum()
+    }
+}
+
+impl<'a> HelpScreen<'a> {
+    const COMMAND_PANE_WIDTH: usize = 78;
+    const DESC_COLUMN: usize = 21;
+    const SECTION_MARKER: &'static str = "▪";
+    const LEGEND_COLUMN: usize = Self::COMMAND_PANE_WIDTH + 2;
+    const LEGEND_MIN_COLUMNS: usize = Self::LEGEND_COLUMN + 32;
+
+    fn new(program: &'a str, columns: usize, color: bool) -> Self {
+        Self {
+            program,
+            columns,
+            color,
+        }
+    }
+
+    fn print(&self) {
+        let show_legend = self.columns >= Self::LEGEND_MIN_COLUMNS;
+
+        println!("{}", self.top_rule());
+        println!(
+            "{}",
+            HelpLine::fragments(vec![
+                HelpFragment {
+                    style: HelpStyle::Red,
+                    text: Cow::Borrowed("AUTOMIC VAULT  "),
+                },
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("Secure package installs  "),
+                },
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("Controlled execution  "),
+                },
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("Approved secrets"),
+                },
+            ])
+            .render(self.color)
+        );
+        println!();
+        println!(
+            "{}",
+            HelpLine::fragments(vec![HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed("USAGE"),
+            }])
+            .render(self.color)
+        );
+        println!("{}", self.usage_line());
+        println!();
+
+        let legend = if show_legend {
+            self.legend_lines()
+        } else {
+            Vec::new()
+        };
+        for (index, line) in self.command_lines().iter().enumerate() {
+            self.print_with_legend(line, legend.get(index));
+        }
+
+        println!();
+        println!("{}", self.rule_with_star());
+        println!(
+            "{}",
+            HelpLine::fragments(vec![
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("TYPE "),
+                },
+                HelpFragment {
+                    style: HelpStyle::Primary,
+                    text: Cow::Borrowed(self.program),
+                },
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed(" <subcommand> --help FOR DETAILS ON A COMMAND."),
+                },
+            ])
+            .render(self.color)
+        );
+        println!();
+    }
+
+    fn command_lines(&self) -> Vec<HelpLine<'static>> {
+        vec![
+            section_line("PACKAGE SYSTEM"),
+            command_line("install", Some("i"), "Install a self-contained package."),
+            command_line("info", None, "Show package metadata and local status."),
+            command_line("search", None, "Search available packages."),
+            command_line(
+                "list",
+                Some("ls"),
+                "List installed packages with their versions.",
+            ),
+            command_line(
+                "outdated",
+                None,
+                "List installed packages with updates available.",
+            ),
+            command_line(
+                "update",
+                Some("up"),
+                "Reinstall installed packages with updates available.",
+            ),
+            command_line("uninstall", Some("rm"), "Remove an installed package."),
+            HelpLine::plain(""),
+            section_line("ACCESS CONTROL"),
+            command_line("inject", None, "Inject approved secrets into a process."),
+            command_line(
+                "save",
+                None,
+                "Store a secret in the Automic Vault keychain.",
+            ),
+            command_line("gate", None, "Block until a manual approval is decided."),
+            HelpLine::plain(""),
+            section_line("EXECUTION CONTROL"),
+            command_line(
+                "contain",
+                None,
+                "Run agents with approval gates for all commands.",
+            ),
+            HelpLine::plain(""),
+            section_line("LOCAL SYSTEM"),
+            command_line("serve", None, "Start the local read-only protocol daemon."),
+        ]
+    }
+
+    fn legend_lines(&self) -> Vec<HelpLine<'static>> {
+        vec![
+            legend_rule("┌", "┐"),
+            HelpLine::fragments(vec![
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("│  "),
+                },
+                HelpFragment {
+                    style: HelpStyle::Red,
+                    text: Cow::Borrowed("LEGEND"),
+                },
+                HelpFragment {
+                    style: HelpStyle::Dim,
+                    text: Cow::Borrowed("                      │"),
+                },
+            ]),
+            legend_blank(),
+            legend_syntax("<>", "required"),
+            legend_syntax("[]", "optional"),
+            legend_syntax("...", "repeatable"),
+            legend_mark(Self::SECTION_MARKER, "system domain"),
+            legend_syntax("i, ls, up", "aliases"),
+            legend_blank(),
+            legend_rule("└", "┘"),
+        ]
+    }
+
+    fn print_with_legend(&self, line: &HelpLine<'_>, legend: Option<&HelpLine<'_>>) {
+        let left = line.render(self.color);
+        if let Some(legend) = legend
+            && line.width() < Self::LEGEND_COLUMN
+        {
+            let gap = Self::LEGEND_COLUMN - line.width();
+            println!("{left}{}{}", " ".repeat(gap), legend.render(self.color));
+            return;
+        }
+        println!("{left}");
+    }
+
+    fn rule(&self) -> String {
+        paint(&"─".repeat(self.rule_width()), HelpStyle::Red, self.color)
+    }
+
+    fn top_rule(&self) -> String {
+        let width = self.rule_width();
+        if width < 2 {
+            return paint("★", HelpStyle::Red, self.color);
+        }
+        format!(
+            "{}{}",
+            paint(&"─".repeat(width - 2), HelpStyle::Red, self.color),
+            paint(" ★", HelpStyle::Red, self.color)
+        )
+    }
+
+    fn rule_with_star(&self) -> String {
+        let width = self.rule_width();
+        if width < 7 {
+            return self.rule();
+        }
+
+        let left = width / 2 - 2;
+        let right = width - left - 4;
+        format!(
+            "{} {}  {}", // 2 spaces on right because the star renders wide
+            paint(&"─".repeat(left), HelpStyle::Red, self.color),
+            paint("★", HelpStyle::Red, self.color),
+            paint(&"─".repeat(right), HelpStyle::Red, self.color)
+        )
+    }
+
+    fn rule_width(&self) -> usize {
+        self.columns.clamp(48, 120)
+    }
+
+    fn usage_line(&self) -> String {
+        HelpLine::fragments(vec![
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed("  "),
+            },
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed(self.program),
+            },
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed(" "),
+            },
+            HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed("<"),
+            },
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed("subcommand"),
+            },
+            HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed(">"),
+            },
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed(" "),
+            },
+            HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed("["),
+            },
+            HelpFragment {
+                style: HelpStyle::Primary,
+                text: Cow::Borrowed("args"),
+            },
+            HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed("..."),
+            },
+            HelpFragment {
+                style: HelpStyle::Dim,
+                text: Cow::Borrowed("]"),
+            },
+        ])
+        .render(self.color)
+    }
+}
+
+fn section_line(title: &'static str) -> HelpLine<'static> {
+    let prefix_width = 2 + title.chars().count() + 1;
+    let rule_width = HelpScreen::COMMAND_PANE_WIDTH.saturating_sub(prefix_width);
+    HelpLine::fragments(vec![
+        HelpFragment {
+            style: HelpStyle::Red,
+            text: Cow::Borrowed(HelpScreen::SECTION_MARKER),
+        },
+        HelpFragment {
+            style: HelpStyle::Red,
+            text: Cow::Borrowed(" "),
+        },
+        HelpFragment {
+            style: HelpStyle::Red,
+            text: Cow::Borrowed(title),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Borrowed(" "),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Owned("─".repeat(rule_width)),
+        },
+    ])
+}
+
+fn command_line(
+    command: &'static str,
+    alias: Option<&'static str>,
+    description: &'static str,
+) -> HelpLine<'static> {
+    let alias_width = alias.map_or(0, |value| value.chars().count() + 3);
+    let mut fragments = vec![
+        HelpFragment {
+            style: HelpStyle::Primary,
+            text: Cow::Borrowed("  "),
+        },
+        HelpFragment {
+            style: HelpStyle::Primary,
+            text: Cow::Borrowed(command),
+        },
+    ];
+
+    if let Some(alias) = alias {
+        fragments.push(HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Owned(format!(" ({alias})")),
+        });
+    }
+
+    fragments.extend([
+        HelpFragment {
+            style: HelpStyle::Primary,
+            text: Cow::Owned(command_padding(command, alias_width)),
+        },
+        HelpFragment {
+            style: HelpStyle::Primary,
+            text: Cow::Borrowed(description),
+        },
+    ]);
+    HelpLine::fragments(fragments)
+}
+
+fn command_padding(command: &str, alias_width: usize) -> String {
+    " ".repeat(
+        HelpScreen::DESC_COLUMN
+            .saturating_sub(2)
+            .saturating_sub(command.chars().count() + alias_width),
+    )
+}
+
+fn terminal_columns() -> usize {
+    if let Ok(columns) = env::var("COLUMNS")
+        && let Ok(columns) = columns.parse::<usize>()
+        && columns > 0
+    {
+        return columns;
+    }
+
+    let mut size = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let rc = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut size) };
+    if rc == 0 && size.ws_col > 0 {
+        usize::from(size.ws_col)
+    } else {
+        120
+    }
+}
+
+fn stdout_supports_ansi() -> bool {
+    if env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+
+    if env::var("CLICOLOR_FORCE").is_ok_and(|value| value != "0") {
+        return true;
+    }
+
+    std::io::stdout().is_terminal() && env::var("TERM").map_or(true, |term| term != "dumb")
+}
+
+fn paint(text: &str, style: HelpStyle, color: bool) -> String {
+    if !color {
+        return text.to_string();
+    }
+
+    let code = match style {
+        HelpStyle::Primary => return text.to_string(),
+        HelpStyle::Red => "38;2;224;90;71",
+        HelpStyle::Dim => "2",
+    };
+    format!("\x1b[{code}m{text}\x1b[0m")
+}
+
+fn legend_rule(left: &'static str, right: &'static str) -> HelpLine<'static> {
+    HelpLine::fragments(vec![
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Borrowed(left),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Owned("─".repeat(30)),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Borrowed(right),
+        },
+    ])
+}
+
+fn legend_blank() -> HelpLine<'static> {
+    HelpLine::fragments(vec![HelpFragment {
+        style: HelpStyle::Dim,
+        text: Cow::Borrowed("│                              │"),
+    }])
+}
+
+fn legend_syntax(token: &'static str, description: &'static str) -> HelpLine<'static> {
+    legend_item(token, description, HelpStyle::Dim)
+}
+
+fn legend_mark(token: &'static str, description: &'static str) -> HelpLine<'static> {
+    legend_item(token, description, HelpStyle::Red)
+}
+
+fn legend_item(
+    token: &'static str,
+    description: &'static str,
+    token_style: HelpStyle,
+) -> HelpLine<'static> {
+    HelpLine::fragments(vec![
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Borrowed("│  "),
+        },
+        HelpFragment {
+            style: token_style,
+            text: Cow::Borrowed(token),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Owned(" ".repeat(10_usize.saturating_sub(token.chars().count()))),
+        },
+        HelpFragment {
+            style: HelpStyle::Primary,
+            text: Cow::Borrowed(description),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Owned(" ".repeat(18_usize.saturating_sub(description.chars().count()))),
+        },
+        HelpFragment {
+            style: HelpStyle::Dim,
+            text: Cow::Borrowed("│"),
+        },
+    ])
+}
+
+pub(crate) fn print_mode_usage(mode: Mode, program: &str) {
+    match mode {
+        Mode::I => print_i_usage(program),
+    }
+}

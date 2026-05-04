@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automic Vault CLI Docs</title>
+  <meta
+    name="description"
+    content="CLI documentation for Automic Vault package installs, approved
+    secret injection, and vaulted command execution."
+  >
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Automic Vault CLI Docs">
+  <meta
+    property="og:description"
+    content="Install tools, inject secrets, and run agents behind approval
+    gates from the Automic Vault command line."
+  >
+  <meta property="og:url" content="https://www.automicvault.com/docs/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap"
+    rel="stylesheet"
+  >
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles.css?v=1">
+</head>
+<body>
+  <div class="docs-shell" id="top">
+    <header class="docs-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img
+          class="brand-mark"
+          src="../assets/icon@2x.webp"
+          alt=""
+          width="54"
+          height="54"
+          aria-hidden="true"
+        >
+        <img
+          class="brand-wordmark"
+          src="../assets/wordmark.webp"
+          alt="Automic Vault"
+          width="996"
+          height="257"
+        >
+      </a>
+
+      <nav class="top-nav" aria-label="Documentation navigation">
+        <a href="#commands">Commands</a>
+        <a href="#packages">Packages</a>
+        <a href="#secrets">Secrets</a>
+        <a href="#contain">Contain</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="docs-hero" aria-labelledby="docs-title">
+        <div class="hero-copy">
+          <p class="kicker">CLI reference</p>
+          <h1 id="docs-title">Operate from the terminal. Keep authority gated.</h1>
+          <p class="lede">
+            Automic Vault ships the <code>av</code> command for package installs,
+            approved secret injection, and sandboxed command execution. These
+            docs cover the CLI only: no app workflows, no GUI setup screens.
+          </p>
+          <div class="hero-actions" aria-label="Primary documentation links">
+            <a class="button primary" href="#quick-start">
+              Start with <code>av</code>
+              <span aria-hidden="true">›</span>
+            </a>
+            <a class="button secondary" href="#reference">
+              Command reference
+              <span aria-hidden="true">›</span>
+            </a>
+          </div>
+        </div>
+
+        <figure class="brandkit-panel" aria-label="Automic Vault brand kit">
+          <img
+            src="../assets/brandkit.webp"
+            alt="Automic Vault command line brand kit"
+            width="1024"
+            height="1536"
+          >
+        </figure>
+
+        <div class="signal-strip" aria-label="Automic Vault CLI model">
+          <div>
+            <span>Package roots</span>
+            <strong><code>/opt</code></strong>
+          </div>
+          <div>
+            <span>Stub path</span>
+            <strong><code>/usr/local/bin</code></strong>
+          </div>
+          <div>
+            <span>Debug roots</span>
+            <strong><code>/tmp/opt</code></strong>
+          </div>
+        </div>
+      </section>
+
+      <div class="docs-layout">
+        <aside class="toc" aria-label="Page table of contents">
+          <a href="#quick-start">Quick Start</a>
+          <a href="#commands">Command Map</a>
+          <a href="#packages">Packages</a>
+          <a href="#secrets">Secrets</a>
+          <a href="#shebang-injection">Shebang Injection</a>
+          <a href="#contain">Contained Execution</a>
+          <a href="#reference">Reference</a>
+          <a href="#formats">Names and Output</a>
+          <a href="#faq">FAQ</a>
+        </aside>
+
+        <article class="docs-content">
+          <section class="doc-section intro-grid" id="quick-start">
+            <div>
+              <p class="kicker">Quick start</p>
+              <h2>Install a tool, inspect it, then run agents through a gate.</h2>
+              <p>
+                <code>av</code> is designed around three terminal surfaces. Package
+                commands manage trusted tool installs. <code>av save</code> and
+                <code>av inject</code> keep credentials out of readable files and process
+                environments until an approved executable needs them. <code>av contain</code>
+                runs an agent or command with a synthetic toolchain where host
+                tool execution is mediated.
+              </p>
+            </div>
+
+            <div class="terminal-frame" data-copy-scope>
+              <div class="terminal-bar">
+                <span>bootstrap</span>
+                <button class="copy-button" type="button" data-copy>
+                  Copy
+                </button>
+              </div>
+              <pre><code>tmp="$(mktemp)" \
+  &amp;&amp; /usr/bin/curl -sSfL https://automicvault.com/av.pkg -o "$tmp" \
+  &amp;&amp; exec 3&lt;"$tmp" \
+  &amp;&amp; /usr/sbin/spctl -a -vv --type install /dev/fd/3 \
+  &amp;&amp; /usr/sbin/pkgutil --check-signature /dev/fd/3 \
+    | grep -q 'Team Identifier: ZU76A67LGU' \
+  &amp;&amp; /usr/bin/sudo /usr/sbin/installer -pkg /dev/fd/3 -target / \
+  &amp;&amp; exec 3&lt;&amp;-</code></pre>
+            </div>
+          </section>
+
+          <section class="doc-section command-map" id="commands">
+            <div class="section-heading">
+              <p class="kicker">Command map</p>
+              <h2>The CLI is split by runtime boundary.</h2>
+            </div>
+
+            <div class="command-grid">
+              <a href="#packages" class="command-tile">
+                <span>Package system</span>
+                <strong><code>install</code>, <code>info</code>, <code>search</code>, <code>list</code>, <code>outdated</code>,
+                  <code>update</code>, <code>uninstall</code></strong>
+                <small>Installs and reports on self-contained packages.</small>
+              </a>
+              <a href="#secrets" class="command-tile tall">
+                <span>Access control</span>
+                <strong><code>save</code>, <code>inject</code></strong>
+                <small>
+                  Stores secrets in the keychain and injects selected keys only
+                  when an approved executable runs.
+                </small>
+              </a>
+              <a href="#contain" class="command-tile">
+                <span>Execution control</span>
+                <strong><code>contain</code></strong>
+                <small>
+                  Runs commands inside a sandbox with approval gates for host
+                  tool execution.
+                </small>
+              </a>
+              <a href="#reference" class="command-tile">
+                <span>Local system</span>
+                <strong><code>serve</code>, <code>help</code>, <code>--version</code></strong>
+                <small>Local protocol daemon and built-in help surfaces.</small>
+              </a>
+            </div>
+          </section>
+
+          <section class="doc-section" id="packages">
+            <div class="section-heading">
+              <p class="kicker">Package commands</p>
+              <h2>Install under controlled roots.</h2>
+              <p>
+                Release builds install packages under <code>/opt</code> and place command
+                stubs in <code>/usr/local/bin</code>. Debug builds use <code>/tmp/opt</code> and
+                <code>/tmp/usr/local/bin</code>, which keeps development runs separate
+                from production installs.
+              </p>
+            </div>
+
+            <div class="terminal-frame" data-copy-scope>
+              <div class="terminal-bar">
+                <span>package workflow</span>
+                <button class="copy-button" type="button" data-copy>
+                  Copy
+                </button>
+              </div>
+              <pre><code>av install ripgrep
+av install brew:ffmpeg npm:@anthropic-ai/claude-code pip:httpie
+av info --json ripgrep
+av list --jsonl
+av outdated
+sudo av update
+sudo av uninstall ripgrep</code></pre>
+            </div>
+
+            <dl class="reference-list">
+              <div>
+                <dt><code>av install</code> or <code>av i</code></dt>
+                <dd>
+                  Installs one or more packages. Use <code>-f</code> or <code>--force</code> to
+                  reinstall an existing package.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av search &lt;query&gt;</code></dt>
+                <dd>
+                  Searches available packages. Supports <code>--json</code> and
+                  <code>--jsonl</code> for machine-readable output.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av info &lt;package&gt;</code></dt>
+                <dd>
+                  Shows metadata, install status, update status, and security
+                  state for one package.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av list</code> or <code>av ls</code></dt>
+                <dd>
+                  Lists installed packages. With no package arguments it lists
+                  everything installed through Automic Vault.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av outdated</code></dt>
+                <dd>
+                  Lists installed packages with newer versions available.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av update</code> or <code>av up</code></dt>
+                <dd>
+                  Reinstalls packages with updates available. With no package
+                  arguments it selects all installed packages.
+                </dd>
+              </div>
+              <div>
+                <dt><code>av uninstall</code> or <code>av rm</code></dt>
+                <dd>
+                  Removes one or more installed packages.
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="doc-section split-section" id="secrets">
+            <div class="section-heading">
+              <p class="kicker">Secret injection</p>
+              <h2>Store credentials once. Inject only the keys requested.</h2>
+              <p>
+                <code>av save</code> writes a key to the Automic Vault keychain service.
+                <code>av inject</code> loads named keys and executes an absolute target
+                path with those values in its environment after approval. Key
+                names must start with a letter or underscore and may contain
+                only ASCII letters, digits, and underscores.
+                Secret values are read from stdin, or from a hidden prompt when
+                run interactively.
+              </p>
+            </div>
+
+            <div class="terminal-frame" data-copy-scope>
+              <div class="terminal-bar">
+                <span>keychain flow</span>
+                <button class="copy-button" type="button" data-copy>
+                  Copy
+                </button>
+              </div>
+              <pre><code>printf '%s\n' 'example_value' | av save GITHUB_TOKEN
+av inject +GITHUB_TOKEN /usr/local/bin/gh auth status
+av inject --replace-existing-env +AWS_ACCESS_KEY_ID \
+  +AWS_SECRET_ACCESS_KEY /usr/local/bin/aws sts get-caller-identity</code></pre>
+            </div>
+
+            <div class="callout">
+              <strong>Approval scope</strong>
+              <p>
+                Always-allow is intentionally narrow. The target must resolve
+                to a root-owned executable that is not writable by group or
+                others, and parent directories must not be group- or
+                world-writable. Interpreter approvals are tied to a root-owned
+                script path.
+              </p>
+            </div>
+          </section>
+
+          <section class="doc-section split-section" id="shebang-injection">
+            <div class="section-heading">
+              <p class="kicker">Shebang injection</p>
+              <h2>Use <code>av inject</code> as the script interpreter.</h2>
+              <p>
+                Occasionally used scripts can ask Automic Vault for just the
+                secrets they need by putting <code>av inject</code> in the
+                shebang. This keeps the secret out of the repository and out of
+                shell startup files while still making the script easy to run.
+              </p>
+            </div>
+
+            <div class="terminal-frame" data-copy-scope>
+              <div class="terminal-bar">
+                <span>script shebang</span>
+                <button class="copy-button" type="button" data-copy>
+                  Copy
+                </button>
+              </div>
+              <pre><code>printf '%s\n' 'app-specific-password' | av save APPLE_PASSWORD
+
+head -n 1 scripts/build-dmg.sh
+#!/usr/local/bin/av inject +APPLE_PASSWORD /usr/local/bin/bash
+
+scripts/build-dmg.sh --notarize</code></pre>
+            </div>
+
+            <div class="callout">
+              <strong>Approval behavior</strong>
+              <p>
+                A project script such as <code>./scripts/build-dmg.sh</code>
+                requires approval every time because it is not root-owned. That
+                is useful for occasional workflows like notarizing a DMG. If a
+                script needs the same secret often, move it to a root-owned
+                location and make the script itself root-owned so approval can
+                be recorded for that trusted path.
+              </p>
+            </div>
+          </section>
+
+          <section class="doc-section" id="contain">
+            <div class="section-heading">
+              <p class="kicker">Contained execution</p>
+              <h2>Run an agent with a synthetic PATH and mediated host tools.</h2>
+              <p>
+                <code>av contain</code> launches a command through <code>sandbox-exec</code>, replaces
+                <code>PATH</code> with generated stubs, and routes stub execution back to
+                the local vault daemon for approval. This is the CLI surface for
+                letting an agent attempt tool use while keeping host execution
+                visible and interruptible.
+              </p>
+            </div>
+
+            <div class="terminal-frame" data-copy-scope>
+              <div class="terminal-bar">
+                <span>contained execution</span>
+                <button class="copy-button" type="button" data-copy>
+                  Copy
+                </button>
+              </div>
+              <pre><code>av contain codex
+av contain toolchain --json
+av contain sandbox-profile --allow /usr/local/bin/av</code></pre>
+            </div>
+
+            <div class="process-lane" aria-label="Contained execution sequence">
+              <div>
+                <span>1</span>
+                <strong>Agent command starts</strong>
+                <p><code>av contain &lt;command&gt;</code> resolves the initial executable.</p>
+              </div>
+              <div>
+                <span>2</span>
+                <strong>Synthetic toolchain replaces PATH</strong>
+                <p>Generated stubs call <code>av contain --proxy</code> for host tools.</p>
+              </div>
+              <div>
+                <span>3</span>
+                <strong>Daemon approves execution</strong>
+                <p>The local vault daemon streams approval and output events.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="doc-section reference-section" id="reference">
+            <div class="section-heading">
+              <p class="kicker">Reference</p>
+              <h2>Command forms.</h2>
+            </div>
+
+            <div class="usage-table" role="table" aria-label="CLI usage table">
+              <div role="row">
+                <span role="cell"><code>av help [command]</code></span>
+                <p role="cell">Prints the top-level help or a command topic.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av --version</code></span>
+                <p role="cell">Prints the CLI version from <code>Cargo.toml</code>.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av install [-f] &lt;package&gt;...</code></span>
+                <p role="cell">Installs packages. Alias: <code>av i</code>.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av info [--json|--jsonl] &lt;package&gt;</code></span>
+                <p role="cell">Shows one package.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av search [--json|--jsonl] &lt;query&gt;</code></span>
+                <p role="cell">Searches package metadata.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av list [--json|--jsonl] [package...]</code></span>
+                <p role="cell">Lists installed packages. Alias: <code>av ls</code>.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av outdated [--json|--jsonl] [package...]</code></span>
+                <p role="cell">Lists packages with newer versions.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av update [package...]</code></span>
+                <p role="cell">Reinstalls outdated packages. Alias: <code>av up</code>.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av uninstall &lt;package&gt;...</code></span>
+                <p role="cell">Removes packages. Alias: <code>av rm</code>.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av save KEY</code></span>
+                <p role="cell">Stores a secret read from stdin or a hidden prompt.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av inject [+KEY...] /abs/tool [args...]</code></span>
+                <p role="cell">Executes an absolute target with approved keys.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av contain &lt;command&gt; [args...]</code></span>
+                <p role="cell">Runs a command inside the vaulted sandbox.</p>
+              </div>
+              <div role="row">
+                <span role="cell"><code>av serve</code></span>
+                <p role="cell">Starts the local read-only protocol daemon.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="doc-section formats-section" id="formats">
+            <div class="section-heading">
+              <p class="kicker">Names and output</p>
+              <h2>Use qualifiers when the package source matters.</h2>
+            </div>
+
+            <div class="format-grid">
+              <div>
+                <strong>Package names</strong>
+                <p><code>ripgrep</code>, <code>brew:ffmpeg</code>, <code>cask:visual-studio-code</code></p>
+              </div>
+              <div>
+                <strong>Agent-oriented packages</strong>
+                <p><code>isotope:gh</code>, <code>isotope:aws-cli</code></p>
+              </div>
+              <div>
+                <strong>Language registries</strong>
+                <p><code>npm:@scope/name</code>, <code>npm:name@1.2.3</code>, <code>pip:httpie</code></p>
+              </div>
+              <div>
+                <strong>Machine output</strong>
+                <p>
+                  <code>--json</code> prints one JSON value. <code>--jsonl</code> prints one JSON
+                  object per line where supported.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section class="doc-section faq-section" id="faq">
+            <div class="section-heading">
+              <p class="kicker">FAQ</p>
+              <h2>Operational notes from the CLI boundary.</h2>
+              <p>
+                These answers are scoped to the command-line surfaces documented
+                above: package installs, keychain-backed injection, and vaulted
+                execution.
+              </p>
+            </div>
+
+            <div class="faq-list">
+              <details open>
+                <summary>Why are isotope credentials unavailable over SSH?</summary>
+                <p>
+                  The macOS login keychain may not be unlocked or trusted inside
+                  a fresh SSH session. Unlock the login keychain in that session
+                  before running commands that need injected secrets:
+                  <code>security unlock-keychain
+                  ~/Library/Keychains/login.keychain-db</code>. macOS will ask
+                  for your login password when it unlocks the keychain.
+                </p>
+              </details>
+
+              <details>
+                <summary>Should Automic Vault manage SSH passphrases?</summary>
+                <p>
+                  Use the macOS keychain support that SSH already provides for
+                  passphrases. Automic Vault focuses on package tools, approved
+                  environment injection, and command execution gates rather than
+                  replacing SSH's keychain integration.
+                </p>
+              </details>
+
+              <details>
+                <summary>Is this iCloud Keychain?</summary>
+                <p>
+                  No. Automic Vault uses local keychain-backed storage for CLI
+                  secrets. Syncing agent-facing credentials through iCloud would
+                  be convenient in some cases, but it expands where those
+                  credentials can appear.
+                </p>
+              </details>
+
+              <details>
+                <summary>Can a tool still use a secret after approval?</summary>
+                <p>
+                  Yes. Automic Vault keeps agents from reading the stored secret
+                  directly, but an approved tool receives the requested values
+                  for that execution. Treat approvals as capability grants:
+                  approve the specific executable and command path you intend to
+                  trust.
+                </p>
+              </details>
+
+              <details>
+                <summary>Can approvals last for a terminal session?</summary>
+                <p>
+                  The design allows narrow always-allow records for root-owned,
+                  non-writable executables and root-owned interpreter scripts.
+                  Session-style approval is a natural fit for tools such as
+                  <code>aws</code> or <code>gh</code>, but the scope still needs
+                  to stay tied to the executable or script that receives the
+                  injected keys.
+                </p>
+              </details>
+
+              <details>
+                <summary>Can this replace dotenv files for scripts?</summary>
+                <p>
+                  That is the intended direction for sensitive scripts: keep
+                  secrets out of project files, approve the root-owned
+                  interpreter or script path, then inject only the keys the
+                  script needs. For agent runs, <code>av contain</code> can add a
+                  second execution gate around the tool invocation itself.
+                </p>
+              </details>
+
+              <details>
+                <summary>What about prod?</summary>
+                <p>
+                  Automic Vault will support Linux at 20,000 GitHub stars. Star
+                  the project at
+                  <a href="https://github.com/automic-vault/automic-vault">
+                    github.com/automic-vault/automic-vault</a>.
+                </p>
+              </details>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+  </div>
+
+  <script src="./docs.js?v=1"></script>
+</body>
+</html>

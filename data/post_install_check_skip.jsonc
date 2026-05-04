@@ -1,0 +1,24 @@
+[
+  // Formulae with post_install hooks that we either implement or can skip
+  "ca-certificates", //TODO does super complex rebuild of the certs which we should probs do lol
+  "glib", // creates directory that we have due to consolidation
+  "shared-mime-info", //TODO (like probs nobody cares though)
+  "libheif", //TODO updates shared mime info
+  "fontconfig", //TODO regenerates the font cache (probs is fine to not…?)
+  "gnutls", //TODO yeah we need to reimplement or do a more general fix for cert.pem checks
+  "unbound", //TODO https://github.com/Homebrew/homebrew-core/blob/61659a355b44ff685a0338c8ad9fa24e04575155/Formula/u/unbound.rb#L59
+  "librsvg", //TODO https://github.com/Homebrew/homebrew-core/blob/b57a52a47643553c66a2965a30f167181e9972c3/Formula/lib/librsvg.rb
+  "gdk-pixbuf", //TODO https://github.com/Homebrew/homebrew-core/blob/a5ef1fec008b0d214be193ac59e9ce12a62824bc/Formula/g/gdk-pixbuf.rb#L85
+  "postgresql@18", // seems Homebrew specific
+  "llvm@20", //TODO https://github.com/Homebrew/homebrew-core/blob/e83a5e3748363c2a421ed9756febbb4168c8ef94/Formula/l/llvm.rb#L498
+  "llvm@21",
+  "node", //TODO like, seems safe but dunno
+
+  "gcc", // does nothing on macOS (linux does loads tho)
+
+  "scikit-image", // just remove .pyc files (and we can do that as an additional GENERAL step)
+  "scipy",        // SAME ^^
+
+  // leave last so we can add trailing commas to new entries above
+  "openssl@3"
+]

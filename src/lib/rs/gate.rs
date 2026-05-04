@@ -1,0 +1,305 @@
+use super::*;
+
+#[cfg(target_os = "macos")]
+use std::ffi::{CString, c_char};
+
+const APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
+const APPROVAL_NOTIFICATION: &str = "com.automicvault.gate-approval.pending-changed";
+const USER_APPROVAL_SUBDIR: &str = "gate";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GateOptions {
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct GateApprovalRequestSnapshot {
+    id: String,
+    message: String,
+    cwd: String,
+    parent_process: ParentProcessSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ParentProcessSnapshot {
+    pid: i32,
+    executable_path: Option<String>,
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct GateApprovalDecision {
+    id: String,
+    approved: bool,
+    reason: Option<String>,
+}
+
+pub(crate) fn run_gate_entry(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+    let Some(options) = parse_gate_options(program_name, args)? else {
+        return Ok(());
+    };
+    request_gate_approval(&options)
+}
+
+fn parse_gate_options<I>(program_name: &str, mut args: I) -> Result<Option<GateOptions>, String>
+where
+    I: Iterator<Item = OsString>,
+{
+    let Some(first_arg) = args.next() else {
+        print_gate_usage(program_name);
+        return Err("missing gate message".to_string());
+    };
+
+    if is_help_flag(&first_arg) {
+        print_gate_usage(program_name);
+        return Ok(None);
+    }
+
+    if is_version_flag(&first_arg) {
+        println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+        return Ok(None);
+    }
+
+    if args.next().is_some() {
+        return Err("supports a single gate message".to_string());
+    }
+
+    let message = first_arg
+        .to_str()
+        .ok_or_else(|| "gate message must be valid UTF-8".to_string())?
+        .trim()
+        .to_string();
+    if message.is_empty() {
+        return Err("empty gate message".to_string());
+    }
+
+    Ok(Some(GateOptions { message }))
+}
+
+fn request_gate_approval(options: &GateOptions) -> Result<(), String> {
+    let request_id = format!(
+        "{}-{}",
+        process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| format!("failed to compute request timestamp: {err}"))?
+            .as_millis()
+    );
+    let request = GateApprovalRequestSnapshot {
+        id: request_id.clone(),
+        message: options.message.clone(),
+        cwd: env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {err}"))?
+            .to_string_lossy()
+            .into_owned(),
+        parent_process: parent_process_snapshot(),
+    };
+
+    let pending_url = pending_approval_path()?;
+    write_json(&pending_url, &request)?;
+    if let Err(err) = ping_gate_approval_app() {
+        let _ = fs::remove_file(&pending_url);
+        return Err(err);
+    }
+    wait_for_gate_decision(&request_id)
+}
+
+fn parent_process_snapshot() -> ParentProcessSnapshot {
+    let pid = unsafe { libc::getppid() };
+    let executable_path = parent_process_path(pid);
+    let display_name = executable_path
+        .as_deref()
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .map(str::to_string);
+
+    ParentProcessSnapshot {
+        pid,
+        executable_path,
+        display_name,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn parent_process_path(pid: i32) -> Option<String> {
+    let output = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if path.is_empty() { None } else { Some(path) }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn parent_process_path(_pid: i32) -> Option<String> {
+    None
+}
+
+fn wait_for_gate_decision(id: &str) -> Result<(), String> {
+    let decision_url = decision_path(id)?;
+    loop {
+        if let Ok(contents) = fs::read_to_string(&decision_url) {
+            let decision: GateApprovalDecision = serde_json::from_str(&contents)
+                .map_err(|err| format!("failed to decode gate approval decision: {err}"))?;
+            if decision.id != id {
+                return Err("gate approval decision id mismatch".to_string());
+            }
+            clear_approval_files(id);
+            if decision.approved {
+                return Ok(());
+            }
+            return Err(decision.reason.unwrap_or_else(|| "gate denied".to_string()));
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+fn clear_approval_files(id: &str) {
+    if let Ok(path) = pending_approval_path() {
+        let _ = fs::remove_file(path);
+    }
+    if let Ok(path) = decision_path(id) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn user_approval_root() -> Result<PathBuf, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set".to_string())?;
+    Ok(home
+        .join("Library")
+        .join("Application Support")
+        .join("Automic Vault")
+        .join(USER_APPROVAL_SUBDIR))
+}
+
+fn pending_approval_path() -> Result<PathBuf, String> {
+    Ok(user_approval_root()?.join("pending-approval.json"))
+}
+
+fn decision_path(id: &str) -> Result<PathBuf, String> {
+    Ok(user_approval_root()?
+        .join("decisions")
+        .join(format!("{id}.json")))
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("invalid approval path {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    let payload = serde_json::to_vec_pretty(value)
+        .map_err(|err| format!("failed to encode gate approval request: {err}"))?;
+    fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+#[cfg(target_os = "macos")]
+fn ping_gate_approval_app() -> Result<(), String> {
+    let status = Command::new("/usr/bin/open")
+        .args(["-b", APP_BUNDLE_IDENTIFIER])
+        .status()
+        .map_err(|err| format!("failed to ping Automic Vault.app: {err}"))?;
+    if !status.success() {
+        return Err("failed to ping Automic Vault.app for gate approval".to_string());
+    }
+    post_distributed_notification(APPROVAL_NOTIFICATION)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ping_gate_approval_app() -> Result<(), String> {
+    Err("gate approvals are only available on macOS".to_string())
+}
+
+pub fn print_gate_usage(program_name: &str) {
+    println!(
+        "\
+Usage: {program_name} <message>
+
+Asks Automic Vault to approve a manual gate and blocks until a decision is made."
+    );
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn take_bridge_string(value: *mut c_char) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+
+    unsafe extern "C" {
+        fn isotope_free_c_string(value: *mut c_char);
+    }
+
+    let bytes = unsafe { std::ffi::CStr::from_ptr(value) }
+        .to_str()
+        .ok()
+        .map(str::to_owned);
+    unsafe { isotope_free_c_string(value) };
+    bytes
+}
+
+#[cfg(target_os = "macos")]
+fn post_distributed_notification(name: &str) -> Result<(), String> {
+    let name = CString::new(name).map_err(|_| "invalid notification name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    unsafe extern "C" {
+        fn isotope_post_distributed_notification(
+            name_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> bool;
+    }
+    if unsafe { isotope_post_distributed_notification(name.as_ptr(), &mut error) } {
+        return Ok(());
+    }
+    Err(unsafe { take_bridge_string(error) }
+        .unwrap_or_else(|| "failed to post gate approval notification".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gate_parse_options_accepts_message() {
+        let options = parse_gate_options(
+            "av gate",
+            vec![OsString::from("Approve aws config export-credentials")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(options.message, "Approve aws config export-credentials");
+    }
+
+    #[test]
+    fn gate_parse_options_trims_message() {
+        let options = parse_gate_options("av gate", vec![OsString::from(" approve ")].into_iter())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(options.message, "approve");
+    }
+
+    #[test]
+    fn gate_parse_options_rejects_empty_message() {
+        let err =
+            parse_gate_options("av gate", vec![OsString::from("   ")].into_iter()).unwrap_err();
+
+        assert!(err.contains("empty gate message"));
+    }
+
+    #[test]
+    fn gate_parse_options_rejects_extra_arguments() {
+        let err = parse_gate_options(
+            "av gate",
+            vec![OsString::from("approve"), OsString::from("extra")].into_iter(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("single gate message"));
+    }
+}

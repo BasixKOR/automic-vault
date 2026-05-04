@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+combined_path="${repo_root}/data/combined.json"
+cache_control="public, max-age=3600"
+interval_seconds=3600
+run_once=false
+color_mode="auto"
+isotope_args=()
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/update-db.sh [--once] [--interval-seconds SECONDS]
+                            [--skip-isotope-builds]
+                            [--color auto|always|never] [--no-color]
+
+Refresh isotope metadata, rebuild the Homebrew package database, rebuild
+data/combined.json, and upload it as /db.json.
+
+By default this runs continuously. After each update it waits for 60 minutes
+minus the time spent updating before starting the next update.
+
+Options:
+  --once                      Run one update and exit.
+  --interval-seconds SECONDS  Target interval between update starts.
+                              Defaults to 3600.
+  --skip-isotope-builds       Pass --skip-builds to build-isotopes.sh.
+  --color auto|always|never   Control terminal color output.
+                              Defaults to auto.
+  --no-color                  Disable terminal color output.
+  --help                      Show this help.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --once)
+      run_once=true
+      shift
+      ;;
+    --interval-seconds)
+      if [[ $# -lt 2 ]]; then
+        echo "--interval-seconds requires a value" >&2
+        exit 1
+      fi
+      interval_seconds="$2"
+      shift 2
+      ;;
+    --skip-isotope-builds)
+      isotope_args+=(--skip-builds)
+      shift
+      ;;
+    --color)
+      if [[ $# -lt 2 ]]; then
+        echo "--color requires auto, always, or never" >&2
+        exit 1
+      fi
+      color_mode="$2"
+      shift 2
+      ;;
+    --no-color)
+      color_mode="never"
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "${color_mode}" in
+  auto|always|never)
+    ;;
+  *)
+    echo "--color must be auto, always, or never" >&2
+    exit 1
+    ;;
+esac
+
+if ! [[ "${interval_seconds}" =~ ^[0-9]+$ ]] || [[ "${interval_seconds}" -eq 0 ]]; then
+  echo "--interval-seconds must be a positive integer" >&2
+  exit 1
+fi
+
+use_color=false
+if [[ "${color_mode}" == "always" ]]; then
+  use_color=true
+elif [[ "${color_mode}" == "auto" ]]; then
+  if [[ -t 2 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+    use_color=true
+  fi
+fi
+
+if [[ "${use_color}" == true ]]; then
+  bold=$'\033[1m'
+  dim=$'\033[2m'
+  red=$'\033[31m'
+  green=$'\033[32m'
+  blue=$'\033[34m'
+  yellow=$'\033[33m'
+  reset=$'\033[0m'
+  glyph_step="◆"
+  glyph_ok="✓"
+  glyph_warn="!"
+  glyph_error="✗"
+else
+  bold=""
+  dim=""
+  red=""
+  green=""
+  blue=""
+  yellow=""
+  reset=""
+  glyph_step=">"
+  glyph_ok="OK"
+  glyph_warn="WARN"
+  glyph_error="ERROR"
+fi
+
+log() {
+  local level="$1"
+  local message="$2"
+  local color glyph
+
+  case "${level}" in
+    INFO)
+      color="${blue}"
+      glyph="${glyph_step}"
+      ;;
+    OK)
+      color="${green}"
+      glyph="${glyph_ok}"
+      ;;
+    WARN)
+      color="${yellow}"
+      glyph="${glyph_warn}"
+      ;;
+    ERROR)
+      color="${red}"
+      glyph="${glyph_error}"
+      ;;
+    *)
+      color=""
+      glyph="${level}"
+      ;;
+  esac
+
+  if [[ "${use_color}" == true ]]; then
+    printf '%s %s%s%s %s%s%s %s\n' \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+      "${color}" \
+      "${glyph}" \
+      "${reset}" \
+      "${dim}" \
+      "${level}" \
+      "${reset}" \
+      "${message}" >&2
+  else
+    printf '[%s] %-5s %s\n' \
+      "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+      "${level}" \
+      "${message}" >&2
+  fi
+}
+
+log_header() {
+  log INFO "${bold}Publishing combined database${reset}"
+  log INFO "${dim}data/combined.json -> s3://${WWW_BUCKET}/db.json${reset}"
+}
+
+die() {
+  log ERROR "$1"
+  exit 1
+}
+
+for tool in aws; do
+  command -v "${tool}" >/dev/null 2>&1 || {
+    die "Missing required tool: ${tool}."
+  }
+done
+
+if [[ -z "${WWW_BUCKET:-}" ]]; then
+  die "Set WWW_BUCKET in .envrc."
+fi
+
+format_duration() {
+  local seconds="$1"
+  local hours=$((seconds / 3600))
+  local minutes=$(((seconds % 3600) / 60))
+  local remainder=$((seconds % 60))
+
+  if [[ "${hours}" -gt 0 ]]; then
+    printf '%dh %dm %ds' "${hours}" "${minutes}" "${remainder}"
+  elif [[ "${minutes}" -gt 0 ]]; then
+    printf '%dm %ds' "${minutes}" "${remainder}"
+  else
+    printf '%ds' "${remainder}"
+  fi
+}
+
+run_step() {
+  local name="$1"
+  shift
+  local started_at elapsed
+
+  log INFO "Starting ${name}"
+  started_at="$(date +%s)"
+  if "$@"; then
+    elapsed=$(($(date +%s) - started_at))
+    log OK "Finished ${name} in $(format_duration "${elapsed}")"
+    return 0
+  fi
+
+  elapsed=$(($(date +%s) - started_at))
+  log ERROR "Failed ${name} after $(format_duration "${elapsed}")"
+  return 1
+}
+
+update_once() {
+  local started_at elapsed size_bytes
+
+  started_at="$(date +%s)"
+  log INFO "Update cycle started"
+
+  run_step "isotope update" \
+    "${script_dir}/build-isotopes.sh" "${isotope_args[@]}" || return 1
+  run_step "Homebrew database update" \
+    "${script_dir}/build-db.py" --refresh || return 1
+  run_step "combined database build" \
+    "${script_dir}/build-combined-json.py" || return 1
+
+  if [[ ! -f "${combined_path}" ]]; then
+    log ERROR "Combined database was not created at ${combined_path}"
+    return 1
+  fi
+
+  size_bytes="$(wc -c <"${combined_path}" | tr -d '[:space:]')"
+  run_step "combined database upload to s3://${WWW_BUCKET}/db.json" \
+    aws s3 cp "${combined_path}" "s3://${WWW_BUCKET}/db.json" \
+      --content-type "application/json" \
+      --cache-control "${cache_control}" || return 1
+
+  elapsed=$(($(date +%s) - started_at))
+  log OK "Update cycle completed in $(format_duration "${elapsed}")"
+  log OK "Uploaded ${size_bytes} bytes with Cache-Control: ${cache_control}"
+  return 0
+}
+
+log_header
+log INFO "Target update interval is $(format_duration "${interval_seconds}")"
+
+while true; do
+  cycle_started_at="$(date +%s)"
+
+  if update_once; then
+    status=0
+  else
+    status=$?
+    log ERROR "Update cycle failed with exit status ${status}"
+  fi
+
+  if [[ "${run_once}" == "true" ]]; then
+    exit "${status}"
+  fi
+
+  elapsed=$(($(date +%s) - cycle_started_at))
+  if [[ "${elapsed}" -lt "${interval_seconds}" ]]; then
+    sleep_seconds=$((interval_seconds - elapsed))
+    log INFO "Sleeping $(format_duration "${sleep_seconds}") before next update"
+    sleep "${sleep_seconds}"
+  else
+    log WARN "Cycle took $(format_duration "${elapsed}"); starting next update immediately"
+  fi
+done

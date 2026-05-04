@@ -1,0 +1,233 @@
+#!/usr/local/bin/av inject +APPLE_PASSWORD /usr/local/bin/bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+source "${repo_root}/scripts/cli-style.sh"
+cli_style_init "Automic Vault"
+build_dir="${repo_root}/target/gui"
+target_dir="${repo_root}/target"
+default_background="${repo_root}/assets/dmg-bg@2x.png"
+finder_left=120
+finder_top=120
+finder_width=720
+finder_height=405
+icon_size=128
+app_icon_x=220
+applications_icon_x=500
+
+output_path=""
+background_path=""
+volume_name=""
+prepared_background_path=""
+notarize=false
+install_app=false
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
+                            [--volume-name NAME] [--notarize] [--install]
+
+Build the release app bundle and package it into a DMG in target/.
+
+Options:
+  --output PATH       Write the final DMG to PATH.
+  --background PATH   Use PATH as the Finder window background image.
+  --volume-name NAME  Override the mounted DMG volume name.
+  --notarize          Submit the DMG for notarization and staple it.
+  --notorize          Alias for --notarize.
+  --install           Install the built app bundle into /Applications.
+  --help              Show this help.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      output_path="$2"
+      shift 2
+      ;;
+    --background)
+      background_path="$2"
+      shift 2
+      ;;
+    --volume-name)
+      volume_name="$2"
+      shift 2
+      ;;
+    --notorize|--notarize)
+      notarize=true
+      shift
+      ;;
+    --install)
+      install_app=true
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      cli_error "Unknown argument: $1"
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "${background_path}" && -f "${default_background}" ]]; then
+  background_path="${default_background}"
+fi
+
+if [[ -n "${background_path}" && ! -f "${background_path}" ]]; then
+  cli_die "Background image not found: ${background_path}"
+fi
+
+# if [[ -n "${background_path}" ]]; then
+#   finder_width="$(
+#     sips -g pixelWidth "${background_path}" 2>/dev/null |
+#       awk '/pixelWidth:/ {print $2; exit}'
+#   )"
+#   finder_height="$(
+#     sips -g pixelHeight "${background_path}" 2>/dev/null |
+#       awk '/pixelHeight:/ {print $2; exit}'
+#   )"
+# fi
+
+applications_icon_y=$((finder_height / 2 - 60))
+app_icon_y="${applications_icon_y}"
+
+cli_title "Build Automic Vault DMG"
+cli_step "Building release app bundle"
+app_path="$("${repo_root}/scripts/build-app.sh" --release)"
+app_name="$(basename "${app_path}")"
+app_stem="${app_name%.app}"
+plist_path="${app_path}/Contents/Info.plist"
+icon_name="$(
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "${plist_path}" \
+    2>/dev/null || printf 'gui-icon'
+)"
+volume_icon_path="${app_path}/Contents/Resources/${icon_name}.icns"
+
+version="$(
+  /usr/libexec/PlistBuddy -c \
+    'Print :CFBundleShortVersionString' \
+    "${plist_path}" 2>/dev/null || printf '0.1'
+)"
+
+if [[ -z "${volume_name}" ]]; then
+  volume_name="${app_stem}"
+fi
+
+safe_version="${version// /-}"
+default_output="${target_dir}/${app_stem// /-}-${safe_version}.dmg"
+
+if [[ -z "${output_path}" ]]; then
+  output_path="${default_output}"
+fi
+
+mkdir -p "${build_dir}" "${target_dir}"
+mkdir -p "$(dirname "${output_path}")"
+output_dir="$(cd "$(dirname "${output_path}")" && pwd)"
+output_path="${output_dir}/$(basename "${output_path}")"
+
+final_dmg="${output_path}"
+cli_info "Version: ${version}"
+cli_info "Output: ${final_dmg}"
+if [[ -n "${background_path}" ]]; then
+  cli_info "Background: ${background_path}"
+fi
+
+rm -f "${final_dmg}"
+create_dmg_args=(
+  --volname "${volume_name}"
+  --window-pos "${finder_left}" "${finder_top}"
+  --window-size "${finder_width}" "${finder_height}"
+  --icon-size "${icon_size}"
+  --icon "${app_name}" "${app_icon_x}" "${app_icon_y}"
+  --app-drop-link "${applications_icon_x}" "${applications_icon_y}"
+  --format ULFO
+  --filesystem APFS
+  --hdiutil-quiet
+)
+
+if [[ -n "${background_path}" ]]; then
+  create_dmg_args+=(
+    --background "${background_path}"
+  )
+fi
+
+if [[ -f "${volume_icon_path}" ]]; then
+  create_dmg_args+=(
+    --volicon "${volume_icon_path}"
+  )
+fi
+
+cli_require_tool create-dmg
+cli_step "Composing disk image"
+create-dmg \
+  "${create_dmg_args[@]}" \
+  "${final_dmg}" \
+  "${app_path}" \
+  >&2
+
+if [[ "${notarize}" == "true" ]]; then
+  cli_step "Submitting DMG for notarization"
+  if [[ -z "${APPLE_USERNAME:-}" ]]; then
+    cli_die "APPLE_USERNAME is required for notarization"
+  fi
+
+  if [[ -z "${APPLE_PASSWORD:-}" ]]; then
+    cli_die "APPLE_PASSWORD is required for notarization"
+  fi
+
+  if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
+    cli_die "CODESIGN_IDENTITY is required for notarization"
+  fi
+
+  if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
+    team_id="${BASH_REMATCH[1]}"
+  else
+    cli_error "Unable to extract Apple team ID from CODESIGN_IDENTITY"
+    cli_die "Expected an identity like: Developer ID Application: Name (TEAMID)"
+  fi
+
+  xcrun notarytool submit \
+    --apple-id "${APPLE_USERNAME}" \
+    --team-id "${team_id}" \
+    --password "${APPLE_PASSWORD}" \
+    --wait \
+    "${final_dmg}" \
+    >&2
+
+  cli_step "Stapling notarization ticket"
+  xcrun stapler staple "${final_dmg}" >&2
+fi
+
+if [[ "${install_app}" == "true" ]]; then
+  cli_step "Installing app into /Applications"
+  install_mount="$(mktemp -d "${TMPDIR:-/tmp}/automic-vault-install.XXXXXX")"
+  cleanup_install_mount() {
+    hdiutil detach "${install_mount}" >/dev/null 2>&1 || true
+    rmdir "${install_mount}" >/dev/null 2>&1 || true
+  }
+  trap cleanup_install_mount EXIT
+
+  hdiutil attach \
+    -nobrowse \
+    -readonly \
+    -mountpoint "${install_mount}" \
+    "${final_dmg}" \
+    >/dev/null
+
+  mounted_app_path="${install_mount}/${app_name}"
+  install_path="/Applications/${app_name}"
+  rm -rf "${install_path}"
+  ditto "${mounted_app_path}" "${install_path}"
+  sudo cp -f "${mounted_app_path}/Contents/Resources/av" /usr/local/bin/av
+  sudo chmod 755 /usr/local/bin/av
+fi
+
+cli_done "DMG ready"
+echo "${final_dmg}"
