@@ -515,26 +515,25 @@ export const FounderStory: React.FC = () => {
             start={sec(0.8)}
             typeDuration={sec(1.15)}
             y={390}
-            holdUntil={sec(7.85)}
+            holdUntil={sec(8.25)}
             cursorUntil={sec(3.1)}
           />
           <TerminalLine
-            text="That was 17 years ago."
+            text="the right tool for the birth of web 2"
             start={sec(4.05)}
-            typeDuration={sec(1.35)}
+            typeDuration={sec(1.7)}
             y={492}
-            holdUntil={sec(7.85)}
+            holdUntil={sec(8.25)}
+            size={46}
             muted
             cursorUntil={sec(7)}
           />
           <KineticLine
-            text="Been fairly quiet since."
-            start={sec(8.35)}
-            end={sec(11.7)}
-            size={70}
-            muted
+            text="now it's the birth of the agent era"
+            start={sec(8.65)}
+            end={sec(15.8)}
+            size={76}
           />
-          <KineticLine text="Then agents happened." start={sec(12.2)} end={sec(15.8)} size={86} />
           <WordFlashSequence
             words={["I", "started", "looking", "at", "what", "agents", "actually", "run", "on."]}
             start={sec(16.15)}
