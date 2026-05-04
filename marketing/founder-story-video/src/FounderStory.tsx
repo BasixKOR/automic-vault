@@ -259,10 +259,11 @@ const RadarRing: React.FC = () => {
 
 const RocketClose: React.FC = () => {
   const frame = useCurrentFrame();
-  const visible = frame >= radarEnd;
+  const opacity =
+    frame >= radarEnd ? fade(frame, radarEnd, radarEnd + 22) : 0;
 
   return (
-    <AbsoluteFill style={{ opacity: visible ? 1 : 0 }}>
+    <AbsoluteFill style={{ opacity }}>
       <Img
         src={staticFile("rocket-grid.png")}
         style={{
@@ -340,7 +341,7 @@ export const FounderStory: React.FC = () => {
         <RadarRing />
         <IntroScene />
         <SceneText
-          lines={["Something new is starting."]}
+          lines={["Something new is starting…"]}
           start={webEnd}
           end={scanEnd}
           size={62}
