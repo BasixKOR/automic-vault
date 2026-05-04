@@ -10,10 +10,10 @@ const mono =
 const display =
   '"Barlow Condensed", "Arial Narrow", "IBM Plex Sans Condensed", Impact, sans-serif';
 
-const webEnd = 99;
-const scanEnd = 189;
-const radarEnd = 309;
-const closeEnd = 369;
+const webEnd = 156;
+const scanEnd = 246;
+const radarEnd = 366;
+const closeEnd = 426;
 
 export const founderStoryDurationInFrames = closeEnd;
 
@@ -27,8 +27,8 @@ const fade = (frame: number, start: number, end: number) =>
 
 const IntroScene: React.FC = () => {
   const frame = useCurrentFrame();
-  const opacity = fade(frame, 10, 34) * interpolate(frame, [webEnd - 24, webEnd], [1, 0], clamp);
-  const webLineOpacity = fade(frame, 44, 56);
+  const opacity = fade(frame, 12, 38) * interpolate(frame, [webEnd - 30, webEnd], [1, 0], clamp);
+  const webLineOpacity = fade(frame, 72, 88);
   const scale = interpolate(frame, [0, webEnd], [1, 1.006], clamp);
 
   return (
