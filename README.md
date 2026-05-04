@@ -15,6 +15,13 @@ Package manager, secrets manager, and execution control plane for the agentic er
 
 &nbsp;
 
+## What is This?
+
+If you got here first then go here before continuing:
+[www.automicvault.com/](https://www.automicvault.com/).
+
+&nbsp;
+
 
 ## Isotopes
 
