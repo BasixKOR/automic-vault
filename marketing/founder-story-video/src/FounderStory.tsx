@@ -5,6 +5,7 @@ const red = "#c0221d";
 const redDim = "rgba(192, 34, 29, 0.22)";
 const redFaint = "rgba(192, 34, 29, 0.1)";
 const text = "#d7c7a1";
+const textWarm = "#ead8aa";
 const mono =
   '"IBM Plex Mono", "Geist Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace';
 const display =
@@ -60,11 +61,11 @@ const IntroScene: React.FC = () => {
         </div>
         <div
           style={{
-            color: red,
+            color: textWarm,
             fontFamily: display,
-            fontSize: 72,
-            fontWeight: 760,
-            letterSpacing: 0.4,
+            fontSize: 68,
+            fontWeight: 680,
+            letterSpacing: 0.2,
             lineHeight: 1.02,
             marginTop: 18,
             opacity: webLineOpacity,
