@@ -220,16 +220,6 @@ const WordFlashSequence: React.FC<{
       {items.map((item) => {
         const end = item.start + item.duration;
         const visible = frame >= item.start && frame < end;
-        const inFrames = Math.min(3, Math.max(1, Math.floor(item.duration / 3)));
-        const outFrames = Math.min(4, Math.max(1, Math.floor(item.duration / 2)));
-        const opacity = visible
-          ? interpolate(
-              frame,
-              [item.start, item.start + inFrames, end - outFrames, end],
-              [0, 1, 1, 0],
-              clamp,
-            )
-          : 0;
         const scale = visible
           ? interpolate(frame, [item.start, end], [0.986, 1.014], {
               ...clamp,
@@ -243,7 +233,7 @@ const WordFlashSequence: React.FC<{
             style={{
               alignItems: "center",
               justifyContent: "center",
-              opacity,
+              opacity: visible ? 1 : 0,
             }}
           >
             <div
