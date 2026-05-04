@@ -1,7 +1,7 @@
 {
-  "name": "promo-video",
+  "name": "founder-story-video",
   "version": "1.0.0",
-  "description": "Automic Vault product promo Remotion video",
+  "description": "Automic Vault founder story Remotion video",
   "repository": {},
   "license": "UNLICENSED",
   "private": true,
@@ -22,8 +22,8 @@
   "scripts": {
     "dev": "remotion studio",
     "build": "remotion bundle",
-    "render": "remotion render AutomicVaultPromo out/automic-vault-promo.mp4 --muted",
-    "still": "remotion still AutomicVaultPromo",
+    "render": "remotion render AutomicVaultFounderStory out/automic-vault-founder-story.mp4 --muted",
+    "still": "remotion still AutomicVaultFounderStory",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"
   },
