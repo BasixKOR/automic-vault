@@ -282,12 +282,12 @@ const WordFlashSequence: React.FC<{
   );
 };
 
-const HingeLine: React.FC = () => {
+const AgentsLine: React.FC = () => {
   const frame = useCurrentFrame();
-  const start = sec(26.95);
-  const end = sec(29.65);
-  const opacity = fade(frame, start, start + 16) * interpolate(frame, [end - 14, end], [1, 0], clamp);
-  const scale = interpolate(frame, [start, start + 22, end], [0.972, 1, 1.012], {
+  const start = sec(15.4);
+  const end = sec(17.6);
+  const opacity = fade(frame, start, start + 8) * interpolate(frame, [end - 8, end], [1, 0], clamp);
+  const lift = interpolate(frame, [start, start + 12], [22, 0], {
     ...clamp,
     easing: softEase,
   });
@@ -302,102 +302,29 @@ const HingeLine: React.FC = () => {
     >
       <div
         style={{
-          maxWidth: 1460,
+          maxWidth: 1540,
           color: ink,
           fontFamily: sans,
-          fontSize: 76,
-          fontWeight: 700,
+          fontSize: 82,
+          fontWeight: 800,
           letterSpacing: 0,
-          lineHeight: 1.13,
+          lineHeight: 1.08,
           textAlign: "center",
-          transform: `scale(${scale})`,
-          textShadow: "0 0 30px rgba(216,58,47,0.18), 0 24px 48px rgba(0,0,0,0.72)",
+          transform: `translateY(${lift}px)`,
+          textShadow: "0 26px 48px rgba(0,0,0,0.66)",
         }}
       >
-        And we just... let agents loose on all of it.
+        <span
+          style={{
+            color: red,
+            fontStyle: "italic",
+            textShadow: "0 0 34px rgba(216,58,47,0.3), 0 26px 48px rgba(0,0,0,0.66)",
+          }}
+        >
+          Agents
+        </span>{" "}
+        run on open source
       </div>
-    </AbsoluteFill>
-  );
-};
-
-const Idea: React.FC = () => {
-  const frame = useCurrentFrame();
-  const firstStart = sec(30.45);
-  const secondStart = sec(31.25);
-  const close = sec(34);
-  const lineStyle: React.CSSProperties = {
-    color: ink,
-    fontFamily: sans,
-    fontSize: 68,
-    fontWeight: 800,
-    letterSpacing: 0,
-    lineHeight: 1.08,
-    textAlign: "center",
-    textShadow: "0 26px 48px rgba(0,0,0,0.66)",
-  };
-  const lineOpacity = (start: number, end: number) =>
-    fade(frame, start, start + 10) * interpolate(frame, [end - 10, end], [1, 0], clamp);
-
-  return (
-    <AbsoluteFill>
-      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
-        <div
-          style={{
-            ...lineStyle,
-            opacity: lineOpacity(firstStart, sec(33.1)),
-            transform: `translateY(${interpolate(frame, [firstStart, firstStart + 14], [10, -46], {
-              ...clamp,
-              easing: softEase,
-            })}px)`,
-          }}
-        >
-          What if package management, secrets,
-        </div>
-        <div
-          style={{
-            ...lineStyle,
-            color: red,
-            position: "absolute",
-            opacity: lineOpacity(secondStart, sec(33.1)),
-            transform: `translateY(${interpolate(
-              frame,
-              [secondStart, secondStart + 14],
-              [54, 44],
-              {
-                ...clamp,
-                easing: softEase,
-              },
-            )}px)`,
-          }}
-        >
-          and execution control were the same thing?
-        </div>
-      </AbsoluteFill>
-      <AbsoluteFill
-        style={{
-          alignItems: "center",
-          justifyContent: "center",
-          opacity:
-            fade(frame, sec(33.15), sec(33.5)) *
-            interpolate(frame, [close - 8, close], [1, 0], clamp),
-        }}
-      >
-        <div
-          style={{
-            color: red,
-            fontFamily: mono,
-            fontSize: 58,
-            fontWeight: 700,
-            letterSpacing: 0,
-            transform: `translateY(${interpolate(frame, [sec(33.15), sec(33.55)], [18, 0], {
-              ...clamp,
-              easing: softEase,
-            })}px)`,
-          }}
-        >
-          Nobody had done it.
-        </div>
-      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -407,7 +334,7 @@ const SoBuiltIt: React.FC = () => {
     <WordFlashSequence
       words={["so", "i", "built", "it."]}
       start={0}
-      weights={[8, 6, 16, 10]}
+      weights={[5, 4, 10, 7]}
       size={178}
       accentWords={{ "it.": "red" }}
     />
@@ -501,16 +428,20 @@ const Close: React.FC = () => {
 
 export const FounderStory: React.FC = () => {
   const frame = useCurrentFrame();
-  const realizationLines = [
-    ["Open source ecosystems.", sec(18.95), sec(20.75), 84],
-    ["Full of plain text secrets.", sec(21.0), sec(22.75), 82],
-    ["Commands that can delete prod.", sec(23.0), sec(24.9), 82],
-    ["With one line.", sec(25.15), sec(26.35), 94],
+  const openSourceLines = [
+    ["Everything runs on open source", sec(12.7), sec(15.0), 78, undefined],
+    ["Open source runs on Plain Text Secrets.", sec(18.0), sec(20.5), 76, "red"],
+    ["One liners that can delete prod.", sec(20.85), sec(23.45), 84, "red"],
+  ] as const;
+  const infrastructureLines = [
+    ["We needed better infrastructure.", sec(24.75), sec(27.05), 76, undefined],
+    ["We need it at the layer where tools actually live.", sec(27.35), sec(29.95), 66, undefined],
+    ["What if the package manager was also the security layer?", sec(30.25), sec(33.1), 64, "red"],
+    ["I've done this before.", sec(33.35), sec(35.05), 72, undefined],
   ] as const;
   const blackBeat =
-    (frame >= sec(26.55) && frame < sec(26.6)) ||
-    (frame >= sec(29.65) && frame < sec(30.45)) ||
-    (frame >= sec(34) && frame < sec(34.18));
+    (frame >= sec(23.45) && frame < sec(24.75)) ||
+    (frame >= sec(36.05) && frame < sec(36.35));
 
   return (
     <AbsoluteFill style={{ background: black }}>
@@ -518,9 +449,9 @@ export const FounderStory: React.FC = () => {
         <BlackField
           haze={frame < sec(16) ? 0.16 : 0.24}
           redHaze={
-            frame >= sec(21) && frame < sec(26.55)
+            frame >= sec(18) && frame < sec(23.45)
               ? 0.22
-              : frame >= sec(34.18)
+              : frame >= sec(33.35)
                 ? 0.12
                 : 0
           }
@@ -529,62 +460,59 @@ export const FounderStory: React.FC = () => {
       {!blackBeat ? (
         <>
           <TerminalLine
-            text="I made Homebrew."
+            text="I created Homebrew."
             start={sec(0.8)}
-            typeDuration={sec(1.15)}
-            y={390}
-            holdUntil={sec(8.25)}
-            cursorUntil={sec(3.1)}
+            typeDuration={sec(1.2)}
+            y={348}
+            holdUntil={sec(7.15)}
+            cursorUntil={sec(2.9)}
           />
           <TerminalLine
-            text="the right tool for the birth of web 2"
-            start={sec(4.05)}
-            typeDuration={sec(1.7)}
-            y={492}
-            holdUntil={sec(8.25)}
-            size={46}
+            text="It helped define Web 2.0."
+            start={sec(3.05)}
+            typeDuration={sec(1.25)}
+            y={452}
+            holdUntil={sec(7.15)}
+            size={52}
             muted
-            cursorUntil={sec(7)}
+            cursorUntil={sec(5.2)}
           />
           <KineticLine
-            text="now it's the birth of the agent era"
-            start={sec(8.65)}
-            end={sec(15.8)}
+            text="Now it's the start of the agent era."
+            start={sec(7.55)}
+            end={sec(11.75)}
             size={76}
           />
-          <WordFlashSequence
-            words={["I", "started", "looking", "at", "what", "agents", "actually", "run", "on."]}
-            start={sec(16.15)}
-            weights={[5, 10, 9, 5, 6, 8, 10, 5, 6]}
-            accentWords={{ agents: "red" }}
-          />
-          {realizationLines.map(([text, start, end, size]) => (
+          {openSourceLines.map(([text, start, end, size, accent]) => (
             <KineticLine
               key={text}
               text={text}
               start={start}
               end={end}
               size={size}
-              accent={
-                text.includes("secrets") ||
-                text.includes("delete prod") ||
-                text.includes("one line")
-                  ? "red"
-                  : undefined
-              }
+              accent={accent}
             />
           ))}
-          <HingeLine />
-          <Idea />
-          <Sequence from={sec(34.18)} durationInFrames={sec(1.52)}>
+          <AgentsLine />
+          {infrastructureLines.map(([text, start, end, size, accent]) => (
+            <KineticLine
+              key={text}
+              text={text}
+              start={start}
+              end={end}
+              size={size}
+              accent={accent}
+            />
+          ))}
+          <Sequence from={sec(35.15)} durationInFrames={sec(0.9)}>
             <SoBuiltIt />
           </Sequence>
-          <Sequence from={sec(35.9)} durationInFrames={sec(4.1)}>
+          <Sequence from={sec(36.35)} durationInFrames={sec(3.65)}>
             <Close />
           </Sequence>
         </>
       ) : null}
-      {!blackBeat && frame < sec(34) ? (
+      {!blackBeat && frame < sec(36.05) ? (
         <AbsoluteFill
           style={{
             opacity: 0.12,
