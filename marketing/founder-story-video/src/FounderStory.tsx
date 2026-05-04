@@ -56,7 +56,7 @@ const IntroScene: React.FC = () => {
             lineHeight: 1.2,
           }}
         >
-          I built Homebrew.
+          I built Homebrew
         </div>
         <div
           style={{
@@ -70,7 +70,7 @@ const IntroScene: React.FC = () => {
             opacity: webLineOpacity,
           }}
         >
-          Right as Web 2 began.
+          At the dawn of Web 2
         </div>
       </div>
     </AbsoluteFill>
@@ -341,13 +341,13 @@ export const FounderStory: React.FC = () => {
         <RadarRing />
         <IntroScene />
         <SceneText
-          lines={["Something new is starting…"]}
+          lines={["The agentic dawn is rising…"]}
           start={webEnd}
           end={scanEnd}
           size={62}
         />
         <SceneText
-          lines={["So I’m building again."]}
+          lines={["So I’m building again"]}
           start={scanEnd}
           end={radarEnd}
           size={66}
