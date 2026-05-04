@@ -79,7 +79,6 @@
           <p class="kicker">/// our agents were autonomous.<br>/// they deleted prod.<br>/// never again.</p>
           <h1 id="hero-title">
             <span>Human<br>Approval<br>Required.</span>
-            <!-- <span>Nothing executes without you.</span> -->
           </h1>
           <p class="lede">
             Automic Vault puts you back in control — before agents touch your
@@ -209,7 +208,7 @@
         <div class="law-stack">
           <article>
             <span>01</span>
-            <h3>Nothing executes without your say.</h3>
+            <h3>Nothing <i>sensitive</i> executes without your say.</h3>
             <p>Agents propose. You approve.</p>
           </article>
           <article>
@@ -232,6 +231,8 @@
               <span></span>
             </div>
             <pre><code><span class="shell-prompt">$</span> echo "$prompt" | codex --full-auto
+codex: executing `npm install`
+<span class="vault-line" style="opacity: 0.5;">av: command auto approved</span>
 codex: executing `npm publish`
 <span class="vault-line">av: approval gate triggered</span></code></pre>
           </div>
@@ -402,7 +403,7 @@ codex: executing `npm publish`
 
       <section class="section tool-fit feature-section" aria-labelledby="tool-fit-title">
         <div class="section-copy">
-          <p class="kicker">/// why not just use&hellip;</p>
+          <p class="kicker">/// comparing Automic Vault</p>
           <h2 id="tool-fit-title">
             The right tool is the one that fits the threat.
           </h2>
@@ -416,9 +417,12 @@ codex: executing `npm publish`
               </p>
             </div>
             <p class="fit-distinction">
-              <code>brew install</code> works exactly as before. The
+              We install Homebrew packages the same as <code>brew</code>. The
               difference is what happens underneath &mdash; the package root is
-              immutable, and nothing else can touch it.
+              immutable and installations only get access to their transitive stack.
+            </p>
+            <p class="fit-distinction">
+              With Automic Vault agents can’t modify their stack or *themselves*.
             </p>
           </article>
           <article class="fit-card">
@@ -438,17 +442,22 @@ codex: executing `npm publish`
           </article>
           <article class="fit-card">
             <div>
-              <h3>Keycard</h3>
+              <h3 class="fit-card-long-title">
+                Agent Built-in Execution Control
+              </h3>
               <p class="fit-positioning">
-                Great for governing agents at enterprise scale. Not designed
-                for the individual developer.
+                Great for basic guardrails. Not designed for your system.
               </p>
             </div>
             <p class="fit-distinction">
-              SDKs, infrastructure, a security team, a budget. Automic Vault
-              is for the developer who wants control today, locally, without
-              standing up a platform.
+              Claude Code, Cursor, Codex &mdash; they all ship with some
+              execution controls. But those controls live inside the agent.
+              Automic Vault lives at the layer beneath it &mdash; the tools,
+              the secrets, the packages the agent runs on.
             </p>
+            <p class="fit-distinction">
+              If the agent is compromised, its built-in controls are compromised too.
+              Ours aren't.
           </article>
         </div>
       </section>

@@ -2,14 +2,12 @@
 
 Security focused base tooling suite for macOS.
 
+[![Download .DMG](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download .DMG")](https://github.com/automic-vault/automic-vault/releases/latest)
+
 > [!NOTE]
 >
 > - 20k⭐︎: We’ll add Linux support
 > - 50k⭐︎: We’ll add Windows support
-
-![Automic Vault app screenshot](./assets/gui-screenshot.gif)
-
-https://automicvault.com
 
 &nbsp;
 

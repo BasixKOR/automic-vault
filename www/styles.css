@@ -1190,7 +1190,7 @@ h2 {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   min-height: 340px;
   min-width: 0;
   padding: clamp(22px, 2.4vw, 30px);
@@ -1220,6 +1220,11 @@ h2 {
   text-transform: uppercase;
 }
 
+.fit-card-long-title {
+  font-size: clamp(1.9rem, 2.55vw, 2.8rem);
+  line-height: 0.98;
+}
+
 .fit-positioning {
   max-width: 24rem;
   margin-top: 16px;
@@ -1232,7 +1237,7 @@ h2 {
 }
 
 .fit-distinction {
-  margin-top: 36px;
+  margin-top: 18px;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: clamp(0.95rem, 1.12vw, 1.05rem);
