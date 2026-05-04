@@ -1,4 +1,4 @@
-import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 
 const black = "#020203";
 const red = "#c0221d";
@@ -7,6 +7,8 @@ const redFaint = "rgba(192, 34, 29, 0.1)";
 const text = "#d7c7a1";
 const mono =
   '"IBM Plex Mono", "Geist Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace';
+const display =
+  '"Barlow Condensed", "Arial Narrow", "IBM Plex Sans Condensed", Impact, sans-serif';
 
 export const founderStoryDurationInFrames = 360;
 
@@ -24,11 +26,13 @@ const SceneText: React.FC<{
   end: number;
   size?: number;
   y?: number;
-}> = ({ lines, start, end, size = 58, y = 0 }) => {
+  dramatic?: boolean;
+}> = ({ lines, start, end, size = 58, y = 0, dramatic = false }) => {
   const frame = useCurrentFrame();
   const opacity =
-    fade(frame, start + 10, start + 34) *
-    interpolate(frame, [end - 24, end], [1, 0], clamp);
+    fade(frame, start + (dramatic ? 4 : 10), start + (dramatic ? 14 : 34)) *
+    interpolate(frame, [end - (dramatic ? 8 : 24), end], [1, 0], clamp);
+  const scale = interpolate(frame, [start, end], dramatic ? [1, 1.028] : [1, 1.006], clamp);
 
   return (
     <AbsoluteFill
@@ -36,19 +40,22 @@ const SceneText: React.FC<{
         alignItems: "center",
         justifyContent: "center",
         opacity,
-        transform: `translateY(${y}px)`,
+        transform: `translateY(${y}px) scale(${scale})`,
       }}
     >
       <div
         style={{
-          color: text,
-          fontFamily: mono,
+          color: dramatic ? red : text,
+          fontFamily: dramatic ? display : mono,
           fontSize: size,
-          fontWeight: 600,
-          letterSpacing: 0,
-          lineHeight: 1.28,
+          fontWeight: dramatic ? 800 : 600,
+          letterSpacing: dramatic ? 1.2 : 0,
+          lineHeight: dramatic ? 0.96 : 1.28,
           textAlign: "center",
-          textShadow: "0 0 18px rgba(192,34,29,0.28), 0 24px 46px rgba(0,0,0,0.72)",
+          textTransform: dramatic ? "uppercase" : "none",
+          textShadow: dramatic
+            ? "0 0 20px rgba(192,34,29,0.34), 0 26px 54px rgba(0,0,0,0.8)"
+            : "0 0 18px rgba(192,34,29,0.22), 0 24px 46px rgba(0,0,0,0.72)",
         }}
       >
         {lines.map((line) => (
@@ -191,33 +198,75 @@ const RadarRing: React.FC = () => {
   );
 };
 
-const FinalTitle: React.FC = () => {
+const RocketClose: React.FC = () => {
   const frame = useCurrentFrame();
   const visible = frame >= 300;
-  const flicker = visible && frame < 336 && frame % 9 === 0 ? 0.72 : 1;
+  const flicker = visible && frame < 330 && frame % 11 === 0 ? 0.86 : 1;
+  const logoOpacity = visible ? flicker : 0;
+  const wordOpacity = frame >= 310 ? 1 : 0;
+  const urlOpacity = frame >= 324 ? 0.82 : 0;
 
   return (
-    <AbsoluteFill
-      style={{
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: visible ? flicker : 0,
-      }}
-    >
-      <div
+    <AbsoluteFill style={{ opacity: visible ? 1 : 0 }}>
+      <Img
+        src={staticFile("rocket-grid.png")}
         style={{
-          color: red,
-          fontFamily: mono,
-          fontSize: 86,
-          fontWeight: 700,
-          letterSpacing: 6,
-          lineHeight: 1,
-          textAlign: "center",
-          textShadow: "0 0 16px rgba(192,34,29,0.34), 0 28px 52px rgba(0,0,0,0.78)",
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          opacity: 0.78,
+          filter: "contrast(1.12) saturate(0.82) sepia(0.14) brightness(0.44)",
         }}
-      >
-        AUTOMIC VAULT
-      </div>
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(90deg, rgba(2,2,3,0.94), rgba(2,2,3,0.5) 50%, rgba(2,2,3,0.94)), radial-gradient(circle at center, transparent 0, rgba(0,0,0,0.76) 78%)",
+        }}
+      />
+      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
+        <Img
+          src={staticFile("icon.png")}
+          style={{
+            position: "absolute",
+            width: 250,
+            height: 250,
+            objectFit: "contain",
+            opacity: logoOpacity,
+            transform: "translateY(-82px)",
+            filter: "drop-shadow(0 0 24px rgba(192,34,29,0.28))",
+          }}
+        />
+        <Img
+          src={staticFile("wordmark.png")}
+          style={{
+            position: "absolute",
+            top: 532,
+            width: 660,
+            height: 308,
+            objectFit: "contain",
+            opacity: wordOpacity,
+            filter: "drop-shadow(0 18px 24px rgba(0,0,0,0.66))",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 90,
+            color: text,
+            fontFamily: mono,
+            fontSize: 30,
+            fontWeight: 600,
+            letterSpacing: 0,
+            opacity: urlOpacity,
+            textShadow: "0 0 14px rgba(192,34,29,0.24), 0 16px 28px rgba(0,0,0,0.7)",
+          }}
+        >
+          https://automicvault.com
+        </div>
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -231,7 +280,14 @@ export const FounderStory: React.FC = () => {
       <AbsoluteFill style={{ transform: `scale(${zoom})` }}>
         <Background />
         <RadarRing />
-        <SceneText lines={["I built Homebrew.", "Right as Web 2 began."]} start={0} end={90} />
+        <SceneText lines={["I built Homebrew."]} start={0} end={45} size={58} />
+        <SceneText
+          lines={["Right as Web 2 began."]}
+          start={45}
+          end={90}
+          size={88}
+          dramatic
+        />
         <SceneText
           lines={["Something new is starting."]}
           start={90}
@@ -246,7 +302,7 @@ export const FounderStory: React.FC = () => {
         />
       </AbsoluteFill>
       <ScanningBeam />
-      <FinalTitle />
+      <RocketClose />
       <AbsoluteFill
         style={{
           border: `1px solid ${redFaint}`,
