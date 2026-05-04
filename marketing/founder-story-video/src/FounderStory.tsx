@@ -341,7 +341,7 @@ export const FounderStory: React.FC = () => {
         <RadarRing />
         <IntroScene />
         <SceneText
-          lines={["The agentic dawn is rising…"]}
+          lines={["An agentic dawn rises"]}
           start={webEnd}
           end={scanEnd}
           size={62}
