@@ -30,7 +30,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=17">
+  <link rel="stylesheet" href="./styles.css?v=18">
 </head>
 <body>
   <div class="site-shell" id="top">
@@ -397,6 +397,59 @@ codex: executing `npm publish`
               gated behind explicit approval.
             </p>
           </aside>
+        </div>
+      </section>
+
+      <section class="section tool-fit feature-section" aria-labelledby="tool-fit-title">
+        <div class="section-copy">
+          <p class="kicker">/// why not just use&hellip;</p>
+          <h2 id="tool-fit-title">
+            The right tool is the one that fits the threat.
+          </h2>
+        </div>
+        <div class="fit-grid" aria-label="Competitor comparison">
+          <article class="fit-card">
+            <div>
+              <h3>Homebrew</h3>
+              <p class="fit-positioning">
+                Great for installing software. Not designed to secure it.
+              </p>
+            </div>
+            <p class="fit-distinction">
+              <code>brew install</code> works exactly as before. The
+              difference is what happens underneath &mdash; the package root is
+              immutable, and nothing else can touch it.
+            </p>
+          </article>
+          <article class="fit-card">
+            <div>
+              <h3>1Password</h3>
+              <p class="fit-positioning">
+                Great for protecting secrets at rest. Not designed to control
+                how they're used.
+              </p>
+            </div>
+            <p class="fit-distinction">
+              Automic Vault ensures only the right tool gets a secret &mdash;
+              and only at the moment it needs it. No other process can read
+              what <code>gh</code> holds. There's no retrieve step. No
+              plaintext moment.
+            </p>
+          </article>
+          <article class="fit-card">
+            <div>
+              <h3>Keycard</h3>
+              <p class="fit-positioning">
+                Great for governing agents at enterprise scale. Not designed
+                for the individual developer.
+              </p>
+            </div>
+            <p class="fit-distinction">
+              SDKs, infrastructure, a security team, a budget. Automic Vault
+              is for the developer who wants control today, locally, without
+              standing up a platform.
+            </p>
+          </article>
         </div>
       </section>
 
