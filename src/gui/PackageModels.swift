@@ -840,6 +840,18 @@ struct PackagePresentation: Equatable {
     let detail: PackageDetail?
     let freshness: CGFloat
 
+    var isInstalledIsotope: Bool {
+        switch item {
+        case .installed(let record):
+            if case .isotope = record.source {
+                return true
+            }
+            return record.name.hasPrefix("isotope:")
+        case .recommendation, .available, .command:
+            return false
+        }
+    }
+
     var hasPlainTextSecretAlert: Bool {
         plainTextSecretAlertSource != nil
     }

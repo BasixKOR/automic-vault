@@ -94,6 +94,7 @@ final class PackageFieldView: NSView {
         private var renderedDescriptionColor: NSColor?
         private var renderedTextBounds = CGRect.zero
         private var renderedHazardSymbolFrame: CGRect?
+        private var renderedInstalledIsotopeState = false
         private var renderedHazardState = false
         private var renderedHazardSource: PackageSecurityNotice.Source?
 
@@ -185,7 +186,7 @@ final class PackageFieldView: NSView {
             guard package.hasPlainTextSecretAlert else {
                 return nil
             }
-            let title = attributedTitle(includeHazardSymbol: true)
+            let title = attributedTitle(includeStatusSymbols: true)
             let titleBounds = title.boundingRect(
                 with: CGSize(
                     width: CGFloat.greatestFiniteMagnitude,
@@ -213,6 +214,7 @@ final class PackageFieldView: NSView {
                 || renderedTitleColor != titleColor
                 || renderedVersionColor != versionColor
                 || renderedDescriptionColor != descriptionColor
+                || renderedInstalledIsotopeState != package.isInstalledIsotope
                 || renderedHazardState != package.hasPlainTextSecretAlert
                 || renderedHazardSource != package.plainTextSecretAlertSource
             guard needsRebuild else { return }
@@ -222,13 +224,14 @@ final class PackageFieldView: NSView {
             renderedTitleColor = titleColor
             renderedVersionColor = versionColor
             renderedDescriptionColor = descriptionColor
+            renderedInstalledIsotopeState = package.isInstalledIsotope
             renderedHazardState = package.hasPlainTextSecretAlert
             renderedHazardSource = package.plainTextSecretAlertSource
             updateHazardAppearance()
         }
 
         private func rebuildText(maxWidth: CGFloat) {
-            let title = attributedTitle(includeHazardSymbol: true)
+            let title = attributedTitle(includeStatusSymbols: true)
             let rendered = NSMutableAttributedString(attributedString: title)
             if shouldInlineSecondaryText() || !titleFitsSingleLine(title, maxWidth: maxWidth) {
                 rendered.append(NSAttributedString(string: inlineSecondaryTextGap()))
@@ -259,7 +262,7 @@ final class PackageFieldView: NSView {
             hazardEffect.layout(in: bounds, symbolFrame: renderedHazardSymbolFrame)
         }
 
-        private func attributedTitle(includeHazardSymbol: Bool) -> NSAttributedString {
+        private func attributedTitle(includeStatusSymbols: Bool) -> NSAttributedString {
             let title = NSMutableAttributedString(
                 string: package.displayName,
                 attributes: [
@@ -268,12 +271,19 @@ final class PackageFieldView: NSView {
                     .kern: 0.2
                 ]
             )
-            guard includeHazardSymbol, package.hasPlainTextSecretAlert else {
+            guard includeStatusSymbols else {
                 return title
             }
 
-            title.append(hazardSymbolGap())
-            title.append(hazardSymbol())
+            if package.isInstalledIsotope {
+                title.append(statusSymbolGap())
+                title.append(installedIsotopeSymbol())
+            }
+
+            if package.hasPlainTextSecretAlert {
+                title.append(statusSymbolGap())
+                title.append(hazardSymbol())
+            }
             return title
         }
 
@@ -281,8 +291,14 @@ final class PackageFieldView: NSView {
             guard package.hasPlainTextSecretAlert else {
                 return nil
             }
-            let prefix = attributedTitle(includeHazardSymbol: false)
-            let gap = hazardSymbolGap()
+            let prefix = NSMutableAttributedString(
+                attributedString: attributedTitle(includeStatusSymbols: false)
+            )
+            if package.isInstalledIsotope {
+                prefix.append(statusSymbolGap())
+                prefix.append(installedIsotopeSymbol())
+            }
+            let gap = statusSymbolGap()
             let symbol = hazardSymbol()
             let prefixWidth = ceil(
                 prefix.boundingRect(
@@ -317,12 +333,26 @@ final class PackageFieldView: NSView {
             )
         }
 
-        private func hazardSymbolGap() -> NSAttributedString {
+        private func statusSymbolGap() -> NSAttributedString {
             NSAttributedString(
                 string: " ",
                 attributes: [
                     .font: UIStyle.monoFont(size: Metrics.hazardSymbolGapFontSize),
                     .kern: 0
+                ]
+            )
+        }
+
+        private func installedIsotopeSymbol() -> NSAttributedString {
+            NSAttributedString(
+                string: "🔒︎",
+                attributes: [
+                    .font: UIStyle.monoFont(
+                        size: Metrics.hazardSymbolFontSize,
+                        weight: .medium
+                    ),
+                    .foregroundColor: UIStyle.accent,
+                    .kern: 0.2
                 ]
             )
         }
