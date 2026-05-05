@@ -12042,6 +12042,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn run_i_vendor_installs_from_local_archive_and_writes_receipts_and_stubs() {
         let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
         let package_name = "coverage-vendor";
         let opt_root = opt_pkg_root();
         let install_root = opt_root.join(package_name);
@@ -12119,6 +12120,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn run_i_npm_and_pip_install_with_local_formula_tools() {
         let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
         let opt_root = opt_pkg_root();
         let bin_root = managed_bin_root();
         for package_name in ["npm:coverage-npm", "pip:coverage-pip"] {

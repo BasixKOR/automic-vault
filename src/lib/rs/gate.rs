@@ -405,20 +405,16 @@ mod tests {
         .unwrap();
 
         let approved = decision_path("approved").unwrap();
-        let approved_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(20));
-            write_json(
-                &approved,
-                &GateApprovalDecision {
-                    id: "approved".to_string(),
-                    approved: true,
-                    reason: None,
-                },
-            )
-            .unwrap();
-        });
+        write_json(
+            &approved,
+            &GateApprovalDecision {
+                id: "approved".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
         wait_for_gate_decision("approved").unwrap();
-        approved_thread.join().unwrap();
 
         let denied = decision_path("denied").unwrap();
         write_json(

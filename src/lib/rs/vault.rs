@@ -879,9 +879,6 @@ fn is_executable_file(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct EnvGuard {
         previous: Vec<(&'static str, Option<OsString>)>,
@@ -921,12 +918,13 @@ mod tests {
 
     #[test]
     fn subs_filtered_environment_keeps_expected_keys_only() {
-        unsafe {
-            env::set_var("HOME", "/tmp/home");
-            env::set_var("PATH", "/tmp/bin");
-            env::set_var("SECRET_TOKEN", "nope");
-            env::set_var(VAULT_AGENT_ID_ENV, "agent-1");
-        }
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let _env = EnvGuard::set(&[
+            ("HOME", "/tmp/home"),
+            ("PATH", "/tmp/bin"),
+            ("SECRET_TOKEN", "nope"),
+            (VAULT_AGENT_ID_ENV, "agent-1"),
+        ]);
 
         let filtered = filtered_vault_environment();
         assert_eq!(filtered.get("HOME"), Some(&"/tmp/home".to_string()));
@@ -1031,7 +1029,7 @@ mod tests {
 
     #[test]
     fn subs_vault_resolution_helpers_cover_paths_and_env() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let bin = temp.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
@@ -1092,7 +1090,7 @@ mod tests {
             })
         }
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let success_socket = temp.path().join("success.sock");
         let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, success_socket.to_str().unwrap())]);
@@ -1173,7 +1171,7 @@ mod tests {
 
     #[test]
     fn subs_notify_containment_started_sends_best_effort_event() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let socket = temp.path().join("containment.sock");
         let listener = UnixListener::bind(&socket).unwrap();
@@ -1207,7 +1205,7 @@ mod tests {
 
     #[test]
     fn subs_toolchain_and_sandbox_commands_cover_success_paths() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let vault_binary = temp.path().join("vault");
         write_executable(&vault_binary);
