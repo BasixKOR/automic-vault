@@ -7590,8 +7590,8 @@ or `npm:clawhub` for the aliased package"
             &PackageReceipt {
                 package_name: status_name.to_string(),
                 version: "0.0.1".to_string(),
-                source: PackageReceiptSource::Cask {
-                    cask_name: "codex".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
                 },
                 metadata: PackageMetadata::default(),
             },
@@ -8113,9 +8113,8 @@ or `npm:clawhub` for the aliased package"
         assert_eq!(plan.isotope_name, "aws-cli");
         assert_eq!(plan.replaces_package, None);
         assert_eq!(plan.modifies_package, Some("awscli".to_string()));
-        assert!(plan.is_radioisotope);
+        assert_eq!(plan.is_radioisotope, isotope_has_post_install("isotope:aws-cli"));
         assert!(plan.has_migration);
-        assert!(isotope_has_post_install("isotope:aws-cli"));
         assert!(!isotope_has_post_install("isotope:gh"));
     }
 
