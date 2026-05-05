@@ -9,6 +9,9 @@ cli_style_init "Automic Vault"
 build_dir="${repo_root}/target/gui"
 target_dir="${repo_root}/target"
 default_background="${repo_root}/assets/dmg-bg@2x.png"
+release_s3_uri="s3://automicvault.com/Automic Vault.dmg"
+release_cloudfront_alias="${AUTOMIC_VAULT_RELEASE_DOMAIN:-automicvault.com}"
+release_cloudfront_path="/Automic%20Vault.dmg"
 finder_left=120
 finder_top=120
 finder_width=720
@@ -79,9 +82,54 @@ publish_github_release() {
     cli_die "Draft release remains unpublished: ${tag}"
   fi
 
+  publish_public_dmg "${dmg_path}" "${tag}"
+
   cli_step "Publishing GitHub release ${tag}"
   if ! gh release edit "${tag}" --draft=false >&2; then
     cli_error "Release publish failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
+}
+
+publish_public_dmg() {
+  local dmg_path="$1"
+  local tag="$2"
+  local distribution_id
+
+  cli_require_tool aws
+  cli_step "Uploading DMG to ${release_s3_uri}"
+  if ! aws s3 cp \
+    "${dmg_path}" \
+    "${release_s3_uri}" \
+    --content-type application/x-apple-diskimage \
+    >&2; then
+    cli_error "S3 upload failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
+
+  distribution_id="${AUTOMIC_VAULT_CLOUDFRONT_DISTRIBUTION_ID:-}"
+  if [[ -z "${distribution_id}" ]]; then
+    cli_step "Finding CloudFront distribution for ${release_cloudfront_alias}"
+    if ! distribution_id="$(
+        aws cloudfront list-distributions \
+        --query "DistributionList.Items[?Aliases.Items && contains(join(',', Aliases.Items), '${release_cloudfront_alias}')].Id | [0]" \
+        --output text
+      )"; then
+      cli_error "CloudFront distribution lookup failed"
+      cli_die "Draft release remains unpublished: ${tag}"
+    fi
+  fi
+
+  if [[ -z "${distribution_id}" || "${distribution_id}" == "None" ]]; then
+    cli_die "Unable to find CloudFront distribution for ${release_cloudfront_alias}"
+  fi
+
+  cli_step "Invalidating CloudFront path ${release_cloudfront_path}"
+  if ! aws cloudfront create-invalidation \
+    --distribution-id "${distribution_id}" \
+    --paths "${release_cloudfront_path}" \
+    >&2; then
+    cli_error "CloudFront invalidation failed"
     cli_die "Draft release remains unpublished: ${tag}"
   fi
 }
