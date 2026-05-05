@@ -4,6 +4,7 @@
 /.playwright-cli
 /.build
 /src/gui/.build
+/vendor/AppUpdater/.build
 /cache
 /data/db.json
 /data/combined.json
