@@ -24,7 +24,7 @@ fn subs_vault_cli_covers_help_version_and_tooling_commands() {
 
     let output = run_vault(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av contain 0.1.0"));
+    assert!(stdout(&output).contains("av contain 1.0.0"));
 
     let output = run_vault(&["toolchain", "--help"]);
     assert!(output.status.success());

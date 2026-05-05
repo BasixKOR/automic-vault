@@ -34,7 +34,7 @@ fn subs_isotope_cli_covers_help_version_and_missing_target() {
 
     let output = run_isotope(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av inject 0.1.0"));
+    assert!(stdout(&output).contains("av inject 1.0.0"));
 
     let output = run_isotope(&[]);
     assert!(!output.status.success());
@@ -52,7 +52,7 @@ fn subs_save_cli_covers_help_version_and_parse_errors() {
 
     let output = run_save(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av save 0.1.0"));
+    assert!(stdout(&output).contains("av save 1.0.0"));
 
     let output = run_save(&[]);
     assert!(!output.status.success());

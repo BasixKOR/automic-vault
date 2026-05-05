@@ -139,7 +139,7 @@ fn subs_gate_cli_covers_help_version_and_parse_errors() {
 
     let output = run_nuke(&["gate", "--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av gate 0.1.0"));
+    assert!(stdout(&output).contains("av gate 1.0.0"));
 
     let output = run_nuke(&["gate"]);
     assert!(!output.status.success());
