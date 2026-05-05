@@ -1,0 +1,37 @@
+name: Rust Coverage
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  coveralls:
+    name: Coveralls
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate Rust coverage
+        run: >
+          cargo llvm-cov --workspace --lcov --output-path lcov.info
+
+      - name: Upload Rust coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: lcov.info
+          format: lcov
+          github-token: ${{ secrets.GITHUB_TOKEN }}
