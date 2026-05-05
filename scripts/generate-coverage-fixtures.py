@@ -3,7 +3,7 @@ import json
 import os
 
 
-OUTPUT_PATH = os.path.join("data", "combined.json")
+OUTPUT_PATH = os.path.join("src", "lib", "rs", "fixtures", "coverage-combined.json")
 
 
 def _ensure_cwd():
@@ -92,12 +92,22 @@ def main():
                         popularity_rank=2,
                         last_updated_at="2026-05-04T00:00:00Z",
                     ),
+                    "sqlite-utils": _formula(
+                        "SQLite utility collection",
+                        popularity_rank=5,
+                        last_updated_at="2026-05-01T00:00:00Z",
+                    ),
                 },
                 "casks": {
                     "automic-fixture": _cask(
                         "Fixture cask",
                         popularity_rank=4,
                         last_updated_at="2026-05-02T00:00:00Z",
+                    ),
+                    "codex": _cask(
+                        "OpenAI Codex",
+                        popularity_rank=6,
+                        last_updated_at="2026-05-01T00:00:00Z",
                     ),
                 },
             },
@@ -116,10 +126,15 @@ def main():
                 },
             },
             "npm": {
+                "coverage-npm": {"homebrewDeps": ["node"]},
                 "openclaw": {"homebrewDeps": ["sqlite"]},
                 "qmd": {"homebrewDeps": ["sqlite"]},
             },
             "pip": {
+                "coverage-pip": {
+                    "homebrewDeps": [],
+                    "pythonFormula": "python@3.14",
+                },
                 "psycopg2": {
                     "homebrewDeps": ["libpq"],
                     "pythonFormula": "python@3.12",
@@ -132,11 +147,25 @@ def main():
             },
         },
     }
+    _validate(data)
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2, sort_keys=True)
         handle.write("\n")
     print(f"Wrote {OUTPUT_PATH}")
+
+
+def _validate(data):
+    sources = data["sources"]
+    db = sources["db"]
+    assert db["schema"] == 6
+    assert db["formulas"]["ripgrep"]["aliases"] == ["rg"]
+    assert db["formulas"]["node"]["aliases"] == ["node@25"]
+    assert db["casks"]["codex"]["version"]
+    assert sources["isotopes"]["gh"]["replaces"] == "brew:gh"
+    assert sources["isotopes"]["aws-cli"]["modifies"] == "brew:awscli"
+    assert sources["npm"]["coverage-npm"]["homebrewDeps"] == ["node"]
+    assert sources["pip"]["coverage-pip"]["pythonFormula"] == "python@3.14"
 
 
 if __name__ == "__main__":

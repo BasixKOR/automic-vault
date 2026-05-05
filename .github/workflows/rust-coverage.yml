@@ -26,11 +26,12 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage fixtures
-        run: scripts/generate-coverage-fixtures.py
+        run: /usr/bin/python3 scripts/generate-coverage-fixtures.py
 
       - name: Generate Rust coverage
         run: >
           cargo llvm-cov --workspace --lcov --output-path lcov.info
+          -- --test-threads=1
 
       - name: Upload Rust coverage to Coveralls
         uses: coverallsapp/github-action@v2

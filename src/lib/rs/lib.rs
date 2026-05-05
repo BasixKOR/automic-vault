@@ -120,7 +120,10 @@ mod post_install_hooks {
 }
 
 const DB_SCHEMA_VERSION: u32 = 6;
+#[cfg(not(test))]
 const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("../../../data/combined.json");
+#[cfg(test)]
+const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("fixtures/coverage-combined.json");
 const EMBEDDED_POST_INSTALL_CHECK_SKIP: &str =
     include_str!("../../../data/post_install_check_skip.jsonc");
 const REMOTE_COMBINED_DATA_URL: &str = "https://automicvault.com/db.json";
@@ -261,13 +264,22 @@ struct RemoteCombinedDataMetadata {
 
 fn embedded_combined_data() -> &'static CombinedData {
     COMBINED_DATA.get_or_init(|| {
-        load_trusted_remote_combined_data().unwrap_or_else(|| {
+        #[cfg(not(test))]
+        {
+            load_trusted_remote_combined_data().unwrap_or_else(|| {
+                serde_json::from_slice(EMBEDDED_COMBINED_DATA)
+                    .expect("failed to parse embedded combined package data JSON")
+            })
+        }
+        #[cfg(test)]
+        {
             serde_json::from_slice(EMBEDDED_COMBINED_DATA)
                 .expect("failed to parse embedded combined package data JSON")
-        })
+        }
     })
 }
 
+#[cfg(not(test))]
 fn load_trusted_remote_combined_data() -> Option<CombinedData> {
     load_trusted_remote_combined_data_from(
         Path::new(REMOTE_COMBINED_DATA_DIR),
@@ -7854,7 +7866,7 @@ or `npm:clawhub` for the aliased package"
                 cask_name: "codex".to_string()
             })
         );
-        assert!(cask.latest_version.is_some() || cask.homebrew_info_error.is_some());
+        assert_eq!(cask.latest_version, Some("1.0.0".to_string()));
 
         let isotope =
             resolve_package_info(&config, &RequestedPackage::Isotope("gh".to_string())).unwrap();
@@ -10939,6 +10951,54 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 DB_SCHEMA_VERSION + 1,
                 DB_SCHEMA_VERSION
             )
+        );
+    }
+
+    #[test]
+    fn embedded_coverage_fixture_carries_test_contract_data() {
+        let data = embedded_combined_data();
+        let db = &data.sources.db;
+
+        assert_eq!(data.generated_at, "2026-05-05T00:00:00Z");
+        assert_eq!(db.schema, DB_SCHEMA_VERSION);
+        assert_eq!(
+            db.formulas
+                .get("ripgrep")
+                .expect("coverage fixture should include ripgrep")
+                .aliases,
+            vec!["rg".to_string()]
+        );
+        assert_eq!(
+            db.formulas
+                .get("node")
+                .expect("coverage fixture should include node")
+                .aliases,
+            vec!["node@25".to_string()]
+        );
+        assert_eq!(
+            db.casks
+                .get("codex")
+                .expect("coverage fixture should include codex cask")
+                .version,
+            "1.0.0"
+        );
+        assert_eq!(
+            data.sources
+                .isotopes
+                .get("gh")
+                .expect("coverage fixture should include gh isotope")
+                .replaces
+                .as_deref(),
+            Some("brew:gh")
+        );
+        assert_eq!(
+            data.sources
+                .pip
+                .get("coverage-pip")
+                .expect("coverage fixture should include coverage pip package")
+                .python_formula
+                .as_deref(),
+            Some("python@3.14")
         );
     }
 
