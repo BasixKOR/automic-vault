@@ -342,7 +342,7 @@ fn explicitly_installed_homebrew_packages()
     let mut packages = report
         .formulae
         .into_iter()
-        .filter(|formula| formula.installed_on_request)
+        .filter(HomebrewInfoFormula::is_installed_on_request)
         .map(|formula| core::HomebrewMigrationPackageSummary {
             name: formula.name,
             version: formula
@@ -391,14 +391,22 @@ struct HomebrewInfoFormula {
     description: String,
     #[serde(default)]
     installed: Vec<HomebrewInfoInstall>,
-    #[serde(default)]
-    installed_on_request: bool,
+}
+
+impl HomebrewInfoFormula {
+    fn is_installed_on_request(&self) -> bool {
+        self.installed
+            .iter()
+            .any(|install| install.installed_on_request)
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct HomebrewInfoInstall {
     #[serde(default)]
     version: String,
+    #[serde(default)]
+    installed_on_request: bool,
 }
 
 pub(crate) fn system_info() -> core::SystemInfoResponse {
@@ -1033,6 +1041,42 @@ fn write_isotope_always_allow_store(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn homebrew_info_formula_reads_nested_on_request_flag() {
+        let report: HomebrewInfoReport = serde_json::from_value(serde_json::json!({
+            "formulae": [
+                {
+                    "name": "dependency",
+                    "installed": [
+                        {
+                            "version": "1.0.0",
+                            "installed_on_request": false
+                        }
+                    ]
+                },
+                {
+                    "name": "explicit",
+                    "installed": [
+                        {
+                            "version": "2.0.0",
+                            "installed_on_request": true
+                        }
+                    ]
+                }
+            ]
+        }))
+        .unwrap();
+
+        let explicit = report
+            .formulae
+            .iter()
+            .filter(|formula| formula.is_installed_on_request())
+            .map(|formula| formula.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(explicit, vec!["explicit"]);
+    }
 
     #[test]
     fn install_binary_at_copies_binary_and_sets_mode() {
