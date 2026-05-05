@@ -41,6 +41,7 @@ Options:
   --notorize          Alias for --notarize.
   --install           Install the built app bundle into /Applications.
   --publish           Create a GitHub release for vX.Y.Z with the DMG.
+                      Requires --notarize.
   --help              Show this help.
 EOF
 }
@@ -122,6 +123,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${publish_release}" == "true" && "${notarize}" != "true" ]]; then
+  cli_die "--publish requires --notarize"
+fi
 
 if [[ -z "${background_path}" && -f "${default_background}" ]]; then
   background_path="${default_background}"
