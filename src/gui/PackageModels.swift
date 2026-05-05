@@ -287,9 +287,9 @@ struct PackageDetail: Decodable, Equatable {
         return PackageSecurityNotice(
             source: .isotope,
             applyPackageName: nil,
-            headline: "EXPOSED SECRET ALERT",
-            body: "Some installed packages expose secrets to agents or malware " +
-                "after migration you should upgrade them to Automic Vault isotopes " +
+            headline: "EXPOSED SECRETS",
+            body: "Some `brew` installed packages expose secrets to agents or malware. " +
+                "After migration upgrade them to Automic Vault isotopes " +
                 "to ensure their security.",
             caveats: .bullets(homebrewMigration.hazardSummaries),
             learnMoreURL: PackageSecurityNotice.defaultLearnMoreURL
