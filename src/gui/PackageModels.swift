@@ -795,7 +795,7 @@ struct PackageRecommendation: Equatable {
                 formula: homebrewMigrationName,
                 description: "Installs the explicitly requested packages from " +
                     "/opt/homebrew into Automic Vault. After migration, their " +
-                    "Homebrew packages will be deleted.",
+                    "Homebrew packages will be uninstalled.",
                 homepage: nil,
                 license: nil,
                 dependencies: migration.packageNames
