@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
   statuses: write
 
 jobs:
@@ -26,20 +25,8 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate isotope metadata
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/build-isotopes.sh --skip-builds
-
-      - name: Generate package database
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/build-db.py
-
-      - name: Generate combined database
-        run: scripts/build-combined-json.py
+      - name: Generate coverage fixtures
+        run: scripts/generate-coverage-fixtures.py
 
       - name: Generate Rust coverage
         run: >
