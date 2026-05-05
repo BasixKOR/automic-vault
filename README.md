@@ -1,4 +1,4 @@
-# Automic Vault [![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+# Automic Vault
 
 Package manager, secrets manager, and execution control plane for autonomous
 agents.
@@ -15,7 +15,10 @@ agents.
 >
 > Automic Vault is NOT AFFILIATED with any cryptocurrency or token.
 
+> [![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+
 &nbsp;
+
 
 ## What is This?
 
