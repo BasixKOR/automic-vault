@@ -5260,8 +5260,15 @@ fn rewrite_prefixes_in_bytes(
                     .map(|offset| suffix_index + offset)
                     .unwrap_or(segment.len());
                 let suffix = &segment[suffix_index..path_end];
-                if let Some(destination) =
-                    macho_binary_rewrite_destination(rule, suffix, path, root, future_root)
+                let original_path_len = path_end - absolute;
+                if let Some(destination) = macho_binary_rewrite_destination(
+                    rule,
+                    suffix,
+                    original_path_len,
+                    path,
+                    root,
+                    future_root,
+                )
                 {
                     output.extend_from_slice(destination.as_bytes());
                     cursor = path_end;
@@ -5303,6 +5310,7 @@ fn binary_rewrite_destination(rule: &RewriteRule, mode: BinaryRewriteMode<'_>) -
 fn macho_binary_rewrite_destination(
     rule: &RewriteRule,
     suffix: &[u8],
+    max_len: usize,
     path: &Path,
     root: &Path,
     future_root: &Path,
@@ -5321,11 +5329,13 @@ fn macho_binary_rewrite_destination(
     let future_parent = future_path.parent()?;
     let relative = relative_path_from(future_parent, rewritten_path);
     let loader_path = format!("@loader_path/{}", relative.to_string_lossy());
-    if loader_path.len() < rewritten.len() {
-        Some(loader_path)
-    } else {
-        Some(rewritten)
+    if loader_path.len() < rewritten.len() && loader_path.len() <= max_len {
+        return Some(loader_path);
     }
+    if rewritten.len() <= max_len {
+        return Some(rewritten);
+    }
+    Some(loader_path)
 }
 
 fn unsupported_homebrew_rewrite_error(
