@@ -287,10 +287,10 @@ struct PackageDetail: Decodable, Equatable {
         return PackageSecurityNotice(
             source: .isotope,
             applyPackageName: nil,
-            headline: "HOMEBREW SECRET MIGRATION",
-            body: "Some explicitly installed Homebrew packages have Automic Vault " +
-                "radioisotope detectors. Review these before migration because the " +
-                "Homebrew packages will be removed after their Vault packages are installed.",
+            headline: "EXPOSED SECRET ALERT",
+            body: "Some installed packages expose secrets to agents or malware " +
+                "after migration you should upgrade them to Automic Vault isotopes " +
+                "to ensure their security.",
             caveats: .bullets(homebrewMigration.hazardSummaries),
             learnMoreURL: PackageSecurityNotice.defaultLearnMoreURL
         )
