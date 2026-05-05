@@ -7,6 +7,8 @@ const ISOTOPE_ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
 const DEFAULT_SEARCH_PAGE_SIZE: usize = 100;
 const MAX_SEARCH_PAGE_SIZE: usize = 200;
+const HOMEBREW_CELLAR_PATH: &str = "/opt/homebrew/Cellar";
+const HOMEBREW_BINARY_PATH: &str = "/opt/homebrew/bin/brew";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HelperCommand {
@@ -281,6 +283,122 @@ pub(crate) fn list_outdated_packages() -> Result<core::ListOutdatedResponse, Str
     .collect();
 
     Ok(core::ListOutdatedResponse { packages })
+}
+
+pub(crate) fn homebrew_migration_recommendation()
+-> Result<core::HomebrewMigrationRecommendationResponse, String> {
+    if !homebrew_cellar_has_packages(Path::new(HOMEBREW_CELLAR_PATH))? {
+        return Ok(core::HomebrewMigrationRecommendationResponse {
+            packages: Vec::new(),
+            hazards: Vec::new(),
+        });
+    }
+
+    let packages = explicitly_installed_homebrew_packages()?;
+    let hazards = packages
+        .iter()
+        .filter_map(|package| homebrew_migration_hazard_for_package(&package.name))
+        .collect();
+
+    Ok(core::HomebrewMigrationRecommendationResponse { packages, hazards })
+}
+
+fn homebrew_cellar_has_packages(cellar: &Path) -> Result<bool, String> {
+    match fs::read_dir(cellar) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry =
+                    entry.map_err(|err| format!("failed to read {}: {err}", cellar.display()))?;
+                let name = entry.file_name();
+                if name.to_string_lossy().starts_with('.') {
+                    continue;
+                }
+                if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(format!("failed to read {}: {err}", cellar.display())),
+    }
+}
+
+fn explicitly_installed_homebrew_packages()
+-> Result<Vec<core::HomebrewMigrationPackageSummary>, String> {
+    let output = Command::new(HOMEBREW_BINARY_PATH)
+        .args(["info", "--json=v2", "--installed"])
+        .output()
+        .map_err(|err| format!("failed to run {HOMEBREW_BINARY_PATH}: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{HOMEBREW_BINARY_PATH} info failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let report: HomebrewInfoReport = serde_json::from_slice(&output.stdout)
+        .map_err(|err| format!("failed to parse Homebrew package inventory: {err}"))?;
+    let mut packages = report
+        .formulae
+        .into_iter()
+        .filter(|formula| formula.installed_on_request)
+        .map(|formula| core::HomebrewMigrationPackageSummary {
+            name: formula.name,
+            version: formula
+                .installed
+                .first()
+                .and_then(|install| empty_string_as_none(install.version.clone())),
+            description: empty_string_as_none(formula.description),
+        })
+        .collect::<Vec<_>>();
+    packages.sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
+    packages.dedup_by(|left, right| left.name == right.name);
+    Ok(packages)
+}
+
+fn homebrew_migration_hazard_for_package(
+    package_name: &str,
+) -> Option<core::HomebrewMigrationHazardSummary> {
+    let state = package_security_state_for_identifiers([
+        package_name.to_string(),
+        format!("{BREW_PACKAGE_PREFIX}{package_name}"),
+    ])?;
+    if !state.install_is_insecure && state.error.is_none() {
+        return None;
+    }
+    Some(core::HomebrewMigrationHazardSummary {
+        package_name: package_name.to_string(),
+        isotope_name: state.isotope_name,
+        error: state.error,
+    })
+}
+
+fn empty_string_as_none(value: String) -> Option<String> {
+    if value.is_empty() { None } else { Some(value) }
+}
+
+#[derive(Debug, Deserialize)]
+struct HomebrewInfoReport {
+    #[serde(default)]
+    formulae: Vec<HomebrewInfoFormula>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HomebrewInfoFormula {
+    name: String,
+    #[serde(default, rename = "desc")]
+    description: String,
+    #[serde(default)]
+    installed: Vec<HomebrewInfoInstall>,
+    #[serde(default)]
+    installed_on_request: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct HomebrewInfoInstall {
+    #[serde(default)]
+    version: String,
 }
 
 pub(crate) fn system_info() -> core::SystemInfoResponse {

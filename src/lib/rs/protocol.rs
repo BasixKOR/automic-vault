@@ -184,6 +184,12 @@ fn dispatch_request(
                 ops::list_outdated_packages()
             })
         }
+        core::ProtocolMethod::PackagesHomebrewMigrationRecommendation => {
+            respond(request.id, request.params, |params: EmptyParams| {
+                let _ = params;
+                ops::homebrew_migration_recommendation()
+            })
+        }
         core::ProtocolMethod::PackagesIsotopeMigrationPlan => {
             respond(request.id, request.params, |params: IsotopeParams| {
                 ops::isotope_migration_plan(&params.isotope)
@@ -368,6 +374,10 @@ mod tests {
         assert_eq!(
             core::ProtocolMethod::parse("packages.migrateIsotope"),
             Some(core::ProtocolMethod::PackagesMigrateIsotope)
+        );
+        assert_eq!(
+            core::ProtocolMethod::parse("packages.homebrewMigrationRecommendation"),
+            Some(core::ProtocolMethod::PackagesHomebrewMigrationRecommendation)
         );
     }
 

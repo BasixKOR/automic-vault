@@ -855,6 +855,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var outdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var installedPackages: [PackagePresentation] = []
     private var recommendations: [PackagePresentation] = []
+    private var homebrewMigrationRecommendation: HomebrewMigrationRecommendation?
     private var areRecommendationsVisibleInInstalledList = false
     private var searchResults: [PackagePresentation] = []
     private var searchResultsQuery: String?
@@ -866,6 +867,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var reloadRequestID = 0
     private var searchRequestID = 0
     private var detailRequestID = 0
+    private var homebrewMigrationRequestID = 0
     private var loadingDetailItemID: String?
     private var activeOverlayOperationID = 0
     private var snapshotObserver: NSObjectProtocol?
@@ -1356,11 +1358,13 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         areRecommendationsVisibleInInstalledList = false
         let requestID = reloadRequestID + 1
         reloadRequestID = requestID
+        homebrewMigrationRecommendation = nil
         installedRecords = []
         installedPackages = []
         refreshRecommendations()
         applyStatusSnapshot(statusStore.loadSnapshot())
         reloadVisiblePackagesForSearch()
+        loadHomebrewMigrationRecommendation(requestID: requestID)
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -1414,6 +1418,35 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             guard self.isReloadingPackages == false else { return }
             self.areRecommendationsVisibleInInstalledList = true
             self.refreshRecommendations()
+        }
+    }
+
+    private func loadHomebrewMigrationRecommendation(requestID: Int) {
+        let migrationRequestID = homebrewMigrationRequestID + 1
+        homebrewMigrationRequestID = migrationRequestID
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let recommendation = try self.bridge.fetchHomebrewMigrationRecommendation()
+                DispatchQueue.main.async {
+                    guard self.reloadRequestID == requestID,
+                          self.homebrewMigrationRequestID == migrationRequestID else {
+                        return
+                    }
+                    self.homebrewMigrationRecommendation = recommendation.packages.isEmpty
+                        ? nil
+                        : recommendation
+                    self.refreshRecommendations()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard self.reloadRequestID == requestID,
+                          self.homebrewMigrationRequestID == migrationRequestID else {
+                        return
+                    }
+                    self.homebrewMigrationRecommendation = nil
+                    self.refreshRecommendations()
+                }
+            }
         }
     }
 
@@ -1527,7 +1560,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             bridge.xcodeCLTRecommendation(),
             PackageRecommendation.agenticToolingPack(
                 missingPackageNames: toolingPackMissingPackageNames
-            )
+            ),
+            homebrewMigrationRecommendation.flatMap(PackageRecommendation.homebrewMigration)
         ].compactMap { $0 }
 
         let activeRecommendationNames = Set(activeRecommendations.map(\.packageName))
@@ -1541,7 +1575,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         [
             PackageRecommendation.automicVaultCLTName,
             PackageRecommendation.xcodeCLTName,
-            PackageRecommendation.agenticToolingPackName
+            PackageRecommendation.agenticToolingPackName,
+            PackageRecommendation.homebrewMigrationName
         ]
         .filter { activeRecommendationNames.contains($0) == false }
         .forEach { detailsByPackageName.removeValue(forKey: $0) }

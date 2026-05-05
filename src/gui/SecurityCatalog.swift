@@ -18,7 +18,7 @@ struct PackageSecurityNotice: Equatable {
     let caveats: Caveats?
     let learnMoreURL: URL
 
-    fileprivate static let defaultLearnMoreURL = URL(string: "https://github.com/automic-vault/")!
+    static let defaultLearnMoreURL = URL(string: "https://github.com/automic-vault/")!
 
     init(
         source: Source,

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.3";
+pub(crate) const PROTOCOL_VERSION: &str = "1.4";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -10,6 +10,7 @@ pub(crate) enum ProtocolMethod {
     PackagesInfo,
     PackagesSearch,
     PackagesListOutdated,
+    PackagesHomebrewMigrationRecommendation,
     PackagesIsotopeMigrationPlan,
     PackagesMigrateIsotope,
     SystemInfo,
@@ -24,6 +25,9 @@ impl ProtocolMethod {
             "packages.info" => Some(Self::PackagesInfo),
             "packages.search" => Some(Self::PackagesSearch),
             "packages.listOutdated" => Some(Self::PackagesListOutdated),
+            "packages.homebrewMigrationRecommendation" => {
+                Some(Self::PackagesHomebrewMigrationRecommendation)
+            }
             "packages.isotopeMigrationPlan" => Some(Self::PackagesIsotopeMigrationPlan),
             "packages.migrateIsotope" => Some(Self::PackagesMigrateIsotope),
             "system.info" => Some(Self::SystemInfo),
@@ -93,6 +97,28 @@ pub(crate) struct SearchPackageSummary {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct ListOutdatedResponse {
     pub(crate) packages: Vec<OutdatedPackageSummary>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct HomebrewMigrationRecommendationResponse {
+    pub(crate) packages: Vec<HomebrewMigrationPackageSummary>,
+    pub(crate) hazards: Vec<HomebrewMigrationHazardSummary>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct HomebrewMigrationPackageSummary {
+    pub(crate) name: String,
+    pub(crate) version: Option<String>,
+    pub(crate) description: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct HomebrewMigrationHazardSummary {
+    #[serde(rename = "packageName")]
+    pub(crate) package_name: String,
+    #[serde(rename = "isotopeName")]
+    pub(crate) isotope_name: String,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

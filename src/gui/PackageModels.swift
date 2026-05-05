@@ -81,7 +81,8 @@ struct PackageRecord: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: nil
+            installPackageNames: nil,
+            homebrewMigration: nil
         )
     }
 }
@@ -120,6 +121,7 @@ struct PackageDetail: Decodable, Equatable {
     let npmPackageInfoError: String?
     let securityState: PackageSecurityState?
     let installPackageNames: [String]?
+    let homebrewMigration: HomebrewMigrationRecommendation?
 
     var primaryDescription: String {
         if let description = homebrewInfo?.description, !description.isEmpty {
@@ -254,7 +256,8 @@ struct PackageDetail: Decodable, Equatable {
             npmHomepage: npmHomepage,
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
-            installPackageNames: installPackageNames
+            installPackageNames: installPackageNames,
+            homebrewMigration: homebrewMigration
         )
     }
 
@@ -271,8 +274,61 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var securityNotice: PackageSecurityNotice? {
-        SecurityCatalog.shared.notice(for: self)
+        if let migrationNotice {
+            return migrationNotice
+        }
+        return SecurityCatalog.shared.notice(for: self)
     }
+
+    private var migrationNotice: PackageSecurityNotice? {
+        guard let homebrewMigration, homebrewMigration.hazards.isEmpty == false else {
+            return nil
+        }
+        return PackageSecurityNotice(
+            source: .isotope,
+            applyPackageName: nil,
+            headline: "HOMEBREW SECRET MIGRATION",
+            body: "Some explicitly installed Homebrew packages have Automic Vault " +
+                "radioisotope detectors. Review these before migration because the " +
+                "Homebrew packages will be removed after their Vault packages are installed.",
+            caveats: .bullets(homebrewMigration.hazardSummaries),
+            learnMoreURL: PackageSecurityNotice.defaultLearnMoreURL
+        )
+    }
+}
+
+struct HomebrewMigrationRecommendation: Decodable, Equatable {
+    let packages: [HomebrewMigrationPackage]
+    let hazards: [HomebrewMigrationHazard]
+
+    var packageNames: [String] {
+        packages.map(\.name)
+    }
+
+    var installPackageNames: [String] {
+        packageNames.map { "brew:\($0)" }
+    }
+
+    var hazardSummaries: [String] {
+        hazards.map { hazard in
+            if let error = hazard.error, error.isEmpty == false {
+                return "\(hazard.packageName): isotope:\(hazard.isotopeName) detection failed (\(error))"
+            }
+            return "\(hazard.packageName): isotope:\(hazard.isotopeName) detector triggered"
+        }
+    }
+}
+
+struct HomebrewMigrationPackage: Decodable, Equatable {
+    let name: String
+    let version: String?
+    let description: String?
+}
+
+struct HomebrewMigrationHazard: Decodable, Equatable {
+    let packageName: String
+    let isotopeName: String
+    let error: String?
 }
 
 struct PackagePopularity: Decodable, Equatable {
@@ -425,7 +481,8 @@ struct PackageSearchResult: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: nil
+            installPackageNames: nil,
+            homebrewMigration: nil
         )
     }
 
@@ -522,6 +579,7 @@ struct PackageRecommendation: Equatable {
     static let automicVaultCLTName = "Automic Vault CLT"
     static let xcodeCLTName = "Xcode CLT"
     static let agenticToolingPackName = "Agentic Tooling Pack"
+    static let homebrewMigrationName = "Homebrew Migration"
     static let agenticToolingPackPackageNames = [
         "ffmpeg-full",
         "imagemagick-full",
@@ -604,7 +662,8 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: nil
+            installPackageNames: nil,
+            homebrewMigration: nil
         )
         return PackageRecommendation(
             packageName: automicVaultCLTName,
@@ -646,7 +705,8 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: nil
+            installPackageNames: nil,
+            homebrewMigration: nil
         )
         return PackageRecommendation(
             packageName: xcodeCLTName,
@@ -691,13 +751,67 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: missingPackageNames.map { "brew:\($0)" }
+            installPackageNames: missingPackageNames.map { "brew:\($0)" },
+            homebrewMigration: nil
         )
         return PackageRecommendation(
             packageName: agenticToolingPackName,
             installedVersion: nil,
             latestVersion: nil,
             missingPackageNames: missingPackageNames,
+            detail: detail,
+            description: description
+        )
+    }
+
+    static func homebrewMigration(
+        _ migration: HomebrewMigrationRecommendation
+    ) -> PackageRecommendation? {
+        guard migration.packages.isEmpty == false else {
+            return nil
+        }
+        let packageCount = migration.packages.count
+        let hazardCount = migration.hazards.count
+        let description = hazardCount > 0
+            ? "Migrate \(packageCount) explicit Homebrew packages; \(hazardCount) need radioisotope review."
+            : "Migrate \(packageCount) explicitly installed Homebrew packages into the vault."
+        let detail = PackageDetail(
+            packageName: homebrewMigrationName,
+            qualifiedName: homebrewMigrationName,
+            installRoot: "/opt",
+            installed: false,
+            source: nil,
+            sourceError: nil,
+            aliases: [],
+            aliasesError: nil,
+            installedVersion: nil,
+            latestVersion: nil,
+            latestVersionError: nil,
+            executablePaths: [],
+            executablePathsError: nil,
+            popularity: nil,
+            lastUpdatedAt: nil,
+            homebrewInfo: HomebrewPackageInfo(
+                formula: homebrewMigrationName,
+                description: "Installs the explicitly requested packages from " +
+                    "/opt/homebrew into Automic Vault. After migration, their " +
+                    "Homebrew packages will be deleted.",
+                homepage: nil,
+                license: nil,
+                dependencies: migration.packageNames
+            ),
+            homebrewInfoError: nil,
+            npmHomepage: nil,
+            npmPackageInfoError: nil,
+            securityState: nil,
+            installPackageNames: migration.installPackageNames,
+            homebrewMigration: migration
+        )
+        return PackageRecommendation(
+            packageName: homebrewMigrationName,
+            installedVersion: nil,
+            latestVersion: nil,
+            missingPackageNames: migration.packageNames,
             detail: detail,
             description: description
         )
