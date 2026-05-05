@@ -192,7 +192,7 @@ fn execute_command(
     context: *mut c_void,
     progress_callback: Option<ProgressCallback>,
 ) -> *mut c_char {
-    if let Err(err) = verify_helper_codesign_identity() {
+    if let Err(err) = verify_helper_identity_for_command() {
         return encode_error(err);
     }
     let context = context as usize;
@@ -215,6 +215,16 @@ fn execute_command(
             r#"{{"Err":"failed to encode helper result: {err}"}}"#
         )),
     }
+}
+
+#[cfg(not(test))]
+fn verify_helper_identity_for_command() -> Result<(), String> {
+    verify_helper_codesign_identity()
+}
+
+#[cfg(test)]
+fn verify_helper_identity_for_command() -> Result<(), String> {
+    Ok(())
 }
 
 fn parse_packages(packages_json: *const c_char) -> Vec<PackageSpec> {
@@ -344,20 +354,24 @@ mod tests {
             ptr::null_mut(),
             Some(capture_progress),
         ));
-        assert!(serde_json::from_str::<serde_json::Value>(&response)
-            .unwrap()
-            .get("Err")
-            .is_some());
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&response)
+                .unwrap()
+                .get("Err")
+                .is_some()
+        );
 
         let response = raw_to_string(nuke_helper_uninstall(
             packages.as_ptr(),
             ptr::null_mut(),
             Some(capture_progress),
         ));
-        assert!(serde_json::from_str::<serde_json::Value>(&response)
-            .unwrap()
-            .get("Err")
-            .is_some());
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&response)
+                .unwrap()
+                .get("Err")
+                .is_some()
+        );
     }
 
     #[test]
@@ -375,7 +389,8 @@ mod tests {
                 None,
             ),
         ] {
-            let value = serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
+            let value =
+                serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
             assert!(value.get("Err").is_some());
         }
     }

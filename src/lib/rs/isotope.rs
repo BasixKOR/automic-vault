@@ -727,14 +727,23 @@ fn parent_process_path(_pid: i32) -> Option<String> {
 
 fn wait_for_isotope_decision(id: &str) -> Result<(), String> {
     let decision_url = decision_path(id)?;
+    let pending_url = pending_approval_path()?;
+    wait_for_isotope_decision_at(id, &pending_url, &decision_url)
+}
+
+fn wait_for_isotope_decision_at(
+    id: &str,
+    pending_url: &Path,
+    decision_url: &Path,
+) -> Result<(), String> {
     loop {
-        if let Ok(contents) = fs::read_to_string(&decision_url) {
+        if let Ok(contents) = fs::read_to_string(decision_url) {
             let decision: IsotopeApprovalDecision = serde_json::from_str(&contents)
                 .map_err(|err| format!("failed to decode isotope approval decision: {err}"))?;
             if decision.id != id {
                 return Err("isotope approval decision id mismatch".to_string());
             }
-            clear_approval_files(id);
+            clear_approval_files_at(pending_url, decision_url);
             if decision.approved {
                 return Ok(());
             }
@@ -746,13 +755,9 @@ fn wait_for_isotope_decision(id: &str) -> Result<(), String> {
     }
 }
 
-fn clear_approval_files(id: &str) {
-    if let Ok(path) = pending_approval_path() {
-        let _ = fs::remove_file(path);
-    }
-    if let Ok(path) = decision_path(id) {
-        let _ = fs::remove_file(path);
-    }
+fn clear_approval_files_at(pending_url: &Path, decision_url: &Path) {
+    let _ = fs::remove_file(pending_url);
+    let _ = fs::remove_file(decision_url);
 }
 
 fn user_approval_root() -> Result<PathBuf, String> {
@@ -1372,7 +1377,7 @@ mod tests {
             },
         )
         .unwrap();
-        wait_for_isotope_decision("request-1").unwrap();
+        wait_for_isotope_decision_at("request-1", &pending, &decision).unwrap();
         assert!(!pending.exists());
         assert!(!decision.exists());
 
@@ -1387,7 +1392,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(wait_for_isotope_decision("request-2").unwrap_err(), "no");
+        assert_eq!(
+            wait_for_isotope_decision_at("request-2", &pending, &denied).unwrap_err(),
+            "no"
+        );
 
         let mismatched = decision_path("request-3").unwrap();
         write_json(
@@ -1401,7 +1409,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            wait_for_isotope_decision("request-3")
+            wait_for_isotope_decision_at("request-3", &pending, &mismatched)
                 .unwrap_err()
                 .contains("id mismatch")
         );

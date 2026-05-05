@@ -1001,30 +1001,28 @@ mod tests {
     #[test]
     fn subs_vault_dispatch_rejects_invalid_modes_and_args() {
         assert!(dispatch_vault("vault", Vec::<OsString>::new().into_iter()).is_err());
+        assert!(dispatch_vault("vault", vec![OsString::from("--help")].into_iter()).is_ok());
+        assert!(dispatch_vault("vault", vec![OsString::from("--version")].into_iter()).is_ok());
         assert!(
-            dispatch_vault("vault", vec![OsString::from("--help")].into_iter()).is_ok()
+            run_proxy(Vec::<OsString>::new().into_iter())
+                .unwrap_err()
+                .contains("missing proxy stub path")
         );
         assert!(
-            dispatch_vault("vault", vec![OsString::from("--version")].into_iter()).is_ok()
+            run_internal_exec("vault", Vec::<OsString>::new().into_iter())
+                .unwrap_err()
+                .contains("restricted")
         );
-        assert!(run_proxy(Vec::<OsString>::new().into_iter())
-            .unwrap_err()
-            .contains("missing proxy stub path"));
-        assert!(run_internal_exec("vault", Vec::<OsString>::new().into_iter())
-            .unwrap_err()
-            .contains("restricted"));
-        assert!(run_toolchain_command(
-            "vault",
-            vec![OsString::from("--unknown")].into_iter(),
-        )
-        .unwrap_err()
-        .contains("unknown toolchain"));
-        assert!(run_sandbox_profile_command(
-            "vault",
-            vec![OsString::from("--allow")].into_iter(),
-        )
-        .unwrap_err()
-        .contains("missing value"));
+        assert!(
+            run_toolchain_command("vault", vec![OsString::from("--unknown")].into_iter(),)
+                .unwrap_err()
+                .contains("unknown toolchain")
+        );
+        assert!(
+            run_sandbox_profile_command("vault", vec![OsString::from("--allow")].into_iter(),)
+                .unwrap_err()
+                .contains("missing value")
+        );
     }
 
     #[test]
@@ -1045,12 +1043,16 @@ mod tests {
 
         assert_eq!(resolve_vault_socket_path().unwrap(), socket);
         assert_eq!(resolve_initial_executable("demo-tool").unwrap(), tool);
-        assert!(resolve_initial_executable("missing-tool")
-            .unwrap_err()
-            .contains("not found"));
-        assert!(resolve_initial_executable("/tmp/not-executable")
-            .unwrap_err()
-            .contains("not executable"));
+        assert!(
+            resolve_initial_executable("missing-tool")
+                .unwrap_err()
+                .contains("not found")
+        );
+        assert!(
+            resolve_initial_executable("/tmp/not-executable")
+                .unwrap_err()
+                .contains("not executable")
+        );
         assert_eq!(
             find_executable_in_paths("demo-tool", [bin.to_str().unwrap()]).unwrap(),
             bin.join("demo-tool")
@@ -1067,9 +1069,11 @@ mod tests {
         .unwrap();
         assert_eq!(intent.agent_id, Some("agent-42".to_string()));
         assert_eq!(intent.args, vec!["--flag"]);
-        assert!(build_execution_intent("bad/tool".to_string(), Vec::new())
-            .unwrap_err()
-            .contains("path separators"));
+        assert!(
+            build_execution_intent("bad/tool".to_string(), Vec::new())
+                .unwrap_err()
+                .contains("path separators")
+        );
     }
 
     #[test]
@@ -1163,9 +1167,11 @@ mod tests {
             )
             .unwrap();
         });
-        assert!(request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
-            .unwrap_err()
-            .contains("vaultd error 500"));
+        assert!(
+            request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+                .unwrap_err()
+                .contains("vaultd error 500")
+        );
         error.join().unwrap();
     }
 

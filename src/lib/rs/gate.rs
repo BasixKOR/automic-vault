@@ -140,14 +140,23 @@ fn parent_process_path(_pid: i32) -> Option<String> {
 
 fn wait_for_gate_decision(id: &str) -> Result<(), String> {
     let decision_url = decision_path(id)?;
+    let pending_url = pending_approval_path()?;
+    wait_for_gate_decision_at(id, &pending_url, &decision_url)
+}
+
+fn wait_for_gate_decision_at(
+    id: &str,
+    pending_url: &Path,
+    decision_url: &Path,
+) -> Result<(), String> {
     loop {
-        if let Ok(contents) = fs::read_to_string(&decision_url) {
+        if let Ok(contents) = fs::read_to_string(decision_url) {
             let decision: GateApprovalDecision = serde_json::from_str(&contents)
                 .map_err(|err| format!("failed to decode gate approval decision: {err}"))?;
             if decision.id != id {
                 return Err("gate approval decision id mismatch".to_string());
             }
-            clear_approval_files(id);
+            clear_approval_files_at(pending_url, decision_url);
             if decision.approved {
                 return Ok(());
             }
@@ -157,13 +166,9 @@ fn wait_for_gate_decision(id: &str) -> Result<(), String> {
     }
 }
 
-fn clear_approval_files(id: &str) {
-    if let Ok(path) = pending_approval_path() {
-        let _ = fs::remove_file(path);
-    }
-    if let Ok(path) = decision_path(id) {
-        let _ = fs::remove_file(path);
-    }
+fn clear_approval_files_at(pending_url: &Path, decision_url: &Path) {
+    let _ = fs::remove_file(pending_url);
+    let _ = fs::remove_file(decision_url);
 }
 
 fn user_approval_root() -> Result<PathBuf, String> {
@@ -382,7 +387,7 @@ mod tests {
 
         assert!(pending.exists());
         assert!(decision.exists());
-        clear_approval_files("request-1");
+        clear_approval_files_at(&pending, &decision);
         assert!(!pending.exists());
         assert!(!decision.exists());
     }
@@ -414,7 +419,7 @@ mod tests {
             },
         )
         .unwrap();
-        wait_for_gate_decision("approved").unwrap();
+        wait_for_gate_decision_at("approved", &pending, &approved).unwrap();
 
         let denied = decision_path("denied").unwrap();
         write_json(
@@ -426,7 +431,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(wait_for_gate_decision("denied").unwrap_err(), "not now");
+        assert_eq!(
+            wait_for_gate_decision_at("denied", &pending, &denied).unwrap_err(),
+            "not now"
+        );
 
         let mismatch = decision_path("mismatch").unwrap();
         write_json(
@@ -439,14 +447,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            wait_for_gate_decision("mismatch").unwrap_err(),
+            wait_for_gate_decision_at("mismatch", &pending, &mismatch).unwrap_err(),
             "gate approval decision id mismatch"
         );
 
-        fs::create_dir_all(decision_path("bad").unwrap().parent().unwrap()).unwrap();
-        fs::write(decision_path("bad").unwrap(), b"not json").unwrap();
+        let bad = decision_path("bad").unwrap();
+        fs::create_dir_all(bad.parent().unwrap()).unwrap();
+        fs::write(&bad, b"not json").unwrap();
         assert!(
-            wait_for_gate_decision("bad")
+            wait_for_gate_decision_at("bad", &pending, &bad)
                 .unwrap_err()
                 .contains("failed to decode gate approval decision")
         );
