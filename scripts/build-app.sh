@@ -336,7 +336,12 @@ cli_info "Output: $APP_DIR"
 
 mkdir -p "$BUILD_DIR"
 cli_step "Building Rust binaries"
-cargo build --release --bin av --bin nuke-helper --manifest-path "$ROOT_DIR/Cargo.toml"
+cargo build \
+  --release \
+  --features packaged-db \
+  --bin av \
+  --bin nuke-helper \
+  --manifest-path "$ROOT_DIR/Cargo.toml"
 cli_step "Building Cocoa app"
 xcrun swift build \
   --package-path "$GUI_DIR" \
