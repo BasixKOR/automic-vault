@@ -134,7 +134,7 @@ const REMOTE_COMBINED_DATA_CHECK_INTERVAL_SECONDS: u64 = 60 * 60;
 const BREW_PACKAGE_PREFIX: &str = "brew:";
 const CASK_PACKAGE_PREFIX: &str = "cask:";
 const ISOTOPE_PACKAGE_PREFIX: &str = "isotope:";
-const ISOTOPE_INSTALL_ROOT_DIR: &str = "iso";
+const ISOTOPE_INSTALL_ROOT_DIR: &str = "isotopes";
 const PKG_DISPLAY_NAME: &str = "av";
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const RELOCATABLE_HOMEBREW_PREFIX: &str = "/opt/homebrew";
@@ -8089,7 +8089,7 @@ or `npm:clawhub` for the aliased package"
     #[test]
     fn installed_package_names_include_isotopes_from_subdir() {
         let temp = TempDir::new().unwrap();
-        fs::create_dir_all(temp.path().join("iso/gh")).unwrap();
+        fs::create_dir_all(temp.path().join("isotopes/gh")).unwrap();
 
         let mut names = installed_package_names(temp.path()).unwrap();
         names.sort();
@@ -8225,14 +8225,17 @@ or `npm:clawhub` for the aliased package"
     fn isotope_stub_executables_use_replaced_formula_metadata() {
         let isotope = isotope_package_data("aws-cli").unwrap();
         let discovered = vec![
-            ("aws".to_string(), PathBuf::from("/opt/iso/aws-cli/bin/aws")),
+            (
+                "aws".to_string(),
+                PathBuf::from("/opt/isotopes/aws-cli/bin/aws"),
+            ),
             (
                 "aws_completer".to_string(),
-                PathBuf::from("/opt/iso/aws-cli/bin/aws_completer"),
+                PathBuf::from("/opt/isotopes/aws-cli/bin/aws_completer"),
             ),
             (
                 "python3.14".to_string(),
-                PathBuf::from("/opt/iso/aws-cli/bin/python3.14"),
+                PathBuf::from("/opt/isotopes/aws-cli/bin/python3.14"),
             ),
         ];
 
@@ -8405,7 +8408,7 @@ or `npm:clawhub` for the aliased package"
                 },
                 InstalledPackageRef {
                     package_name: "isotope:alpha".to_string(),
-                    install_root: PathBuf::from("/opt/iso/alpha"),
+                    install_root: PathBuf::from("/opt/isotopes/alpha"),
                 },
             ],
             |package| {
@@ -8809,7 +8812,7 @@ or `npm:clawhub` for the aliased package"
     #[test]
     fn rewrite_binary_uses_absolute_macho_path_when_loader_path_is_longer() {
         let root = PathBuf::from("/tmp/nucleus/.tmp08cFDL/python@3.14/3.14.4_1");
-        let future_root = PathBuf::from("/tmp/opt/iso/aws-cli");
+        let future_root = PathBuf::from("/tmp/opt/isotopes/aws-cli");
         let path = root.join(
             "Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/\
              _zstd.cpython-314-darwin.so",
@@ -8835,7 +8838,9 @@ or `npm:clawhub` for the aliased package"
         .unwrap();
 
         assert!(changed);
-        assert!(find_subslice(&bytes, b"/tmp/opt/iso/aws-cli/lib/libzstd.1.dylib\0").is_some());
+        assert!(
+            find_subslice(&bytes, b"/tmp/opt/isotopes/aws-cli/lib/libzstd.1.dylib\0").is_some()
+        );
         assert!(find_subslice(&bytes, b"@loader_path/../../../../../../../lib").is_none());
         assert!(find_subslice(&bytes, b"@@HOMEBREW_PREFIX@@/opt/zstd").is_none());
     }
@@ -10627,12 +10632,12 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
-    fn package_install_root_uses_short_isotope_prefix() {
+    fn package_install_root_uses_isotopes_prefix() {
         let temp = TempDir::new().unwrap();
 
         let install_root = package_install_root(temp.path(), "isotope:gh").unwrap();
 
-        assert_eq!(install_root, temp.path().join("iso/gh"));
+        assert_eq!(install_root, temp.path().join("isotopes/gh"));
     }
 
     #[test]
