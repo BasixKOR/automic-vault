@@ -1,6 +1,23 @@
 {
   "brew:bash": ["bashbug"],
   "brew:awscli": ["aws_completer"],
+  "brew:tesseract": [
+    "lstmtraining",
+    "lstmeval",
+    "mftraining",
+    "cntraining",
+    "shapeclustering",
+    "unicharset_extractor",
+    "merge_unicharsets",
+    "set_unicharset_properties",
+    "combine_lang_model",
+    "combine_tessdata",
+    "dawg2wordlist",
+    "wordlist2dawg",
+    "text2image",
+    "classifier_tester",
+    "ambiguous_words"
+  ],
   "brew:ffmpeg-full": [
     "aviocat",
     "bisect-create",
