@@ -78,6 +78,7 @@ final class PackageFieldView: NSView {
 
     private final class PackageNodeLayer: CALayer {
         let textLayer = CATextLayer()
+        let isotopeSymbolLayer = CALayer()
         let hazardEffect = PackageNodeHazardEffect()
         var package: PackagePresentation
         var basePosition = CGPoint.zero
@@ -95,6 +96,7 @@ final class PackageFieldView: NSView {
         private var renderedVersionColor: NSColor?
         private var renderedDescriptionColor: NSColor?
         private var renderedTextBounds = CGRect.zero
+        private var renderedIsotopeSymbolFrame: CGRect?
         private var renderedHazardSymbolFrame: CGRect?
         private var renderedInstalledIsotopeState = false
         private var renderedHazardState = false
@@ -155,6 +157,16 @@ final class PackageFieldView: NSView {
             textLayer.isWrapped = true
             if textLayer.superlayer == nil {
                 addSublayer(textLayer)
+            }
+            isotopeSymbolLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+            isotopeSymbolLayer.actions = [
+                "contents": NSNull(),
+                "position": NSNull(),
+                "bounds": NSNull(),
+                "opacity": NSNull()
+            ]
+            if isotopeSymbolLayer.superlayer == nil {
+                addSublayer(isotopeSymbolLayer)
             }
             hazardEffect.install(in: self)
             updateHazardAppearance()
@@ -260,7 +272,9 @@ final class PackageFieldView: NSView {
                 height: height
             )
             renderedTextBounds = textRect
+            renderedIsotopeSymbolFrame = isotopeSymbolFrame(textTopY: y)
             renderedHazardSymbolFrame = hazardSymbolFrame(textTopY: y)
+            layoutIsotopeSymbol()
             hazardEffect.layout(in: bounds, symbolFrame: renderedHazardSymbolFrame)
         }
 
@@ -279,7 +293,7 @@ final class PackageFieldView: NSView {
 
             if package.isInstalledIsotope {
                 title.append(statusSymbolGap())
-                title.append(installedIsotopeSymbol())
+                title.append(installedIsotopeSymbolSpacer())
             }
 
             if package.hasPlainTextSecretAlert {
@@ -298,7 +312,7 @@ final class PackageFieldView: NSView {
             )
             if package.isInstalledIsotope {
                 prefix.append(statusSymbolGap())
-                prefix.append(installedIsotopeSymbol())
+                prefix.append(installedIsotopeSymbolSpacer())
             }
             let gap = statusSymbolGap()
             let symbol = hazardSymbol()
@@ -345,7 +359,92 @@ final class PackageFieldView: NSView {
             )
         }
 
-        private func installedIsotopeSymbol() -> NSAttributedString {
+        private func installedIsotopeSymbolSpacer() -> NSAttributedString {
+            NSAttributedString(
+                string: " ",
+                attributes: [
+                    .font: NSFont.systemFont(
+                        ofSize: Metrics.isotopeSymbolSize,
+                        weight: .medium
+                    ),
+                    .foregroundColor: NSColor.clear,
+                    .kern: 0
+                ]
+            )
+        }
+
+        private func isotopeSymbolFrame(textTopY: CGFloat) -> CGRect? {
+            guard package.isInstalledIsotope else {
+                return nil
+            }
+            let prefix = NSMutableAttributedString(
+                attributedString: attributedTitle(includeStatusSymbols: false)
+            )
+            let gap = statusSymbolGap()
+            let spacer = installedIsotopeSymbolSpacer()
+            let titleBounds = prefix.boundingRect(
+                with: CGSize(
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                ),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+            let prefixWidth = ceil(
+                prefix.boundingRect(
+                    with: CGSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: CGFloat.greatestFiniteMagnitude
+                    ),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                ).width
+            )
+            let gapWidth = ceil(
+                gap.boundingRect(
+                    with: CGSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: CGFloat.greatestFiniteMagnitude
+                    ),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                ).width
+            )
+            let spacerBounds = spacer.boundingRect(
+                with: CGSize(
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                ),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+            let firstLineOffset = max(
+                0,
+                renderedTextBounds.height - ceil(titleBounds.height)
+            )
+            return CGRect(
+                x: textLayer.frame.minX + prefixWidth + gapWidth,
+                y: textTopY - firstLineOffset + Metrics.isotopeSymbolBaselineOffset,
+                width: ceil(spacerBounds.width),
+                height: Metrics.isotopeSymbolSize
+            )
+        }
+
+        private func layoutIsotopeSymbol() {
+            guard package.isInstalledIsotope,
+                  let frame = renderedIsotopeSymbolFrame,
+                  let image = installedIsotopeSymbolImage() else {
+                isotopeSymbolLayer.contents = nil
+                isotopeSymbolLayer.frame = .zero
+                return
+            }
+
+            isotopeSymbolLayer.contents = image
+            isotopeSymbolLayer.frame = CGRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: Metrics.isotopeSymbolSize,
+                height: Metrics.isotopeSymbolSize
+            )
+        }
+
+        private func installedIsotopeSymbolImage() -> CGImage? {
             let symbolConfiguration = NSImage.SymbolConfiguration(
                 pointSize: Metrics.isotopeSymbolSize,
                 weight: .medium,
@@ -358,31 +457,15 @@ final class PackageFieldView: NSView {
                 systemSymbolName: "lock.fill",
                 accessibilityDescription: "Installed isotope"
             )?.withSymbolConfiguration(symbolConfiguration) else {
-                return NSAttributedString(
-                    string: "\u{1F512}\u{FE0E}",
-                    attributes: [
-                        .font: UIStyle.monoFont(
-                            size: Metrics.hazardSymbolFontSize,
-                            weight: .medium
-                        ),
-                        .foregroundColor: UIStyle.accent,
-                        .kern: 0.2
-                    ]
-                )
+                return nil
             }
 
             image.isTemplate = false
-
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            attachment.bounds = CGRect(
-                x: 0,
-                y: Metrics.isotopeSymbolBaselineOffset,
-                width: Metrics.isotopeSymbolSize,
-                height: Metrics.isotopeSymbolSize
+            return image.cgImage(
+                forProposedRect: nil,
+                context: nil,
+                hints: nil
             )
-
-            return NSAttributedString(attachment: attachment)
         }
 
         private func hazardSymbol() -> NSAttributedString {
