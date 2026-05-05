@@ -25,8 +25,12 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate coverage fixtures
-        run: /usr/bin/python3 scripts/generate-coverage-fixtures.py
+      - name: Verify coverage fixtures
+        run: |
+          /usr/bin/python3 scripts/generate-coverage-fixtures.py
+          git diff --exit-code -- \
+            data/combined.json \
+            src/lib/rs/fixtures/coverage-combined.json
 
       - name: Generate Rust coverage
         run: >
