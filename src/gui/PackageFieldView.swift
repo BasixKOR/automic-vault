@@ -42,6 +42,8 @@ final class PackageFieldView: NSView {
         static let inlineMetadataGap = "   "
         static let hazardSymbolGapFontSize: CGFloat = 5
         static let hazardSymbolFontSize: CGFloat = 15
+        static let isotopeSymbolSize: CGFloat = 13
+        static let isotopeSymbolBaselineOffset: CGFloat = -1
         static let versionBaselineOffset: CGFloat = -2
         static let descriptionBaselineOffset: CGFloat = 0
         static let bracketInsetX: CGFloat = 4
@@ -344,17 +346,43 @@ final class PackageFieldView: NSView {
         }
 
         private func installedIsotopeSymbol() -> NSAttributedString {
-            NSAttributedString(
-                string: "🔒︎",
-                attributes: [
-                    .font: UIStyle.monoFont(
-                        size: Metrics.hazardSymbolFontSize,
-                        weight: .medium
-                    ),
-                    .foregroundColor: UIStyle.accent,
-                    .kern: 0.2
-                ]
+            let symbolConfiguration = NSImage.SymbolConfiguration(
+                pointSize: Metrics.isotopeSymbolSize,
+                weight: .medium,
+                scale: .small
+            ).applying(
+                NSImage.SymbolConfiguration(paletteColors: [UIStyle.accent])
             )
+
+            guard let image = NSImage(
+                systemSymbolName: "lock.fill",
+                accessibilityDescription: "Installed isotope"
+            )?.withSymbolConfiguration(symbolConfiguration) else {
+                return NSAttributedString(
+                    string: "\u{1F512}\u{FE0E}",
+                    attributes: [
+                        .font: UIStyle.monoFont(
+                            size: Metrics.hazardSymbolFontSize,
+                            weight: .medium
+                        ),
+                        .foregroundColor: UIStyle.accent,
+                        .kern: 0.2
+                    ]
+                )
+            }
+
+            image.isTemplate = false
+
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = CGRect(
+                x: 0,
+                y: Metrics.isotopeSymbolBaselineOffset,
+                width: Metrics.isotopeSymbolSize,
+                height: Metrics.isotopeSymbolSize
+            )
+
+            return NSAttributedString(attachment: attachment)
         }
 
         private func hazardSymbol() -> NSAttributedString {
