@@ -985,6 +985,148 @@ mod tests {
             "/bin/python-config"
         )));
     }
+
+    #[test]
+    fn helper_command_errors_emit_progress_error() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let result = execute_helper_command(
+            HelperCommand::Install {
+                packages: Vec::new(),
+            },
+            move |event| captured.lock().unwrap().push(event),
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(
+            events.lock().unwrap().last(),
+            Some(ProgressEvent::Error { .. })
+        ));
+    }
+
+    #[test]
+    fn helper_command_routes_isotope_and_always_allow_errors() {
+        for command in [
+            HelperCommand::InstallIsotopeRoot {
+                isotope_name: String::new(),
+            },
+            HelperCommand::ConvertRadioisotope {
+                isotope_name: "bad/name".to_string(),
+            },
+            HelperCommand::InstallIsotopeStubs {
+                isotope_name: String::new(),
+            },
+            HelperCommand::RememberIsotopeAlwaysAllow {
+                executable_path: String::new(),
+                script_path: None,
+                keys: Vec::new(),
+            },
+        ] {
+            let result = execute_helper_command(command, |_| {});
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn package_search_wrappers_cover_pagination_edges() {
+        let empty = search_packages("", 0, 10).unwrap();
+        assert_eq!(empty.total_count, 0);
+        assert!(empty.packages.is_empty());
+        assert_eq!(empty.next_offset, None);
+
+        let default_page = list_available_packages(0, 0).unwrap();
+        assert!(default_page.total_count >= default_page.packages.len());
+        assert!(default_page.packages.len() <= DEFAULT_SEARCH_PAGE_SIZE);
+
+        let capped_page = list_available_packages(0, usize::MAX).unwrap();
+        assert!(capped_page.packages.len() <= MAX_SEARCH_PAGE_SIZE);
+
+        let past_end = search_packages("rg", usize::MAX / 2, 1).unwrap();
+        assert!(past_end.packages.is_empty());
+        assert_eq!(past_end.next_offset, None);
+
+        let pulse = list_pulse_packages(0, 1).unwrap();
+        assert_eq!(pulse.packages.len(), 1);
+        assert!(pulse.next_offset.is_some());
+    }
+
+    #[test]
+    fn validation_helpers_cover_limits_versions_and_isotope_names() {
+        assert_eq!(search_page_size(0), DEFAULT_SEARCH_PAGE_SIZE);
+        assert_eq!(search_page_size(1), 1);
+        assert_eq!(search_page_size(usize::MAX), MAX_SEARCH_PAGE_SIZE);
+
+        assert_eq!(normalized_isotope_name("isotope:gh").unwrap(), "gh");
+        assert_eq!(normalized_isotope_name("aws-cli").unwrap(), "aws-cli");
+        assert!(normalized_isotope_name("").unwrap_err().contains("missing"));
+        assert!(normalized_isotope_name("bad/name")
+            .unwrap_err()
+            .contains("invalid"));
+
+        assert_eq!(
+            validate_optional_version(Some(" 1.2.3 ")).unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert!(validate_optional_version(Some(" ")).is_err());
+        assert!(validate_optional_version(Some("1.2.3 beta")).is_err());
+
+        assert!(validate_install_specs(Vec::new()).is_err());
+        assert!(validate_install_specs(vec![PackageSpec {
+            name: "npm:openclaw".to_string(),
+            version: Some("4.5.6".to_string()),
+        }])
+        .is_ok());
+        assert!(validate_install_specs(vec![PackageSpec {
+            name: "brew:sqlite".to_string(),
+            version: Some("3".to_string()),
+        }])
+        .unwrap_err()
+        .contains("does not support explicit version"));
+        assert!(validate_uninstall_specs(vec![PackageSpec {
+            name: "npm:openclaw".to_string(),
+            version: Some("4.5.6".to_string()),
+        }])
+        .unwrap_err()
+        .contains("cannot specify a version"));
+    }
+
+    #[test]
+    fn isotope_always_allow_validation_rejects_bad_inputs() {
+        assert!(validate_isotope_keys(&[]).unwrap_err().contains("at least one"));
+        assert!(validate_isotope_keys(&["".to_string()])
+            .unwrap_err()
+            .contains("empty"));
+        assert!(validate_isotope_keys(&["1BAD".to_string()])
+            .unwrap_err()
+            .contains("invalid"));
+        assert!(validate_isotope_keys(&["GOOD_1".to_string()]).is_ok());
+
+        assert!(validate_isotope_always_allow_script("/bin/sh", None)
+            .unwrap_err()
+            .contains("requires a script path"));
+        assert!(validate_isotope_always_allow_script("/bin/echo", Some("/tmp/script"))
+            .unwrap_err()
+            .contains("requires an interpreter target"));
+        assert_eq!(
+            validate_isotope_always_allow_script("/bin/echo", None).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn always_allow_store_reports_decode_errors() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("always-allow.json");
+        fs::write(&path, b"{not json").unwrap();
+
+        assert!(load_isotope_always_allow_store(&path)
+            .unwrap_err()
+            .contains("failed to decode"));
+        assert_eq!(
+            load_isotope_always_allow_store(&temp.path().join("missing.json")).unwrap(),
+            IsotopeAlwaysAllowStore::default()
+        );
+    }
 }
 
 fn require_root() -> Result<(), String> {

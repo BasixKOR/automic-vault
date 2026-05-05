@@ -260,3 +260,138 @@ fn sanitize_environment() {
         unsafe { std::env::remove_var(key) };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr;
+    use std::sync::Mutex;
+
+    static CALLBACK_EVENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    extern "C" fn capture_progress(_context: *mut c_void, value: *const c_char) {
+        CALLBACK_EVENTS
+            .lock()
+            .unwrap()
+            .push(c_string(value).unwrap());
+    }
+
+    fn raw_to_string(value: *mut c_char) -> String {
+        assert!(!value.is_null());
+        let string = c_string(value).unwrap();
+        nuke_helper_free_string(value);
+        string
+    }
+
+    #[test]
+    fn helper_parse_functions_accept_null_invalid_and_valid_json() {
+        assert!(parse_packages(ptr::null()).is_empty());
+        assert!(parse_string_array(ptr::null()).is_empty());
+
+        let invalid = CString::new("not json").unwrap();
+        assert!(parse_packages(invalid.as_ptr()).is_empty());
+        assert!(parse_string_array(invalid.as_ptr()).is_empty());
+
+        let packages = CString::new(r#"[{"name":"npm:openclaw","version":"4.5.6"}]"#).unwrap();
+        assert_eq!(
+            parse_packages(packages.as_ptr()),
+            vec![PackageSpec {
+                name: "npm:openclaw".to_string(),
+                version: Some("4.5.6".to_string()),
+            }]
+        );
+
+        let keys = CString::new(r#"["AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY"]"#).unwrap();
+        assert_eq!(
+            parse_string_array(keys.as_ptr()),
+            vec![
+                "AWS_ACCESS_KEY_ID".to_string(),
+                "AWS_SECRET_ACCESS_KEY".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn helper_c_string_and_error_encoding_handle_nulls_and_messages() {
+        assert_eq!(c_string(ptr::null()).unwrap(), "");
+
+        let encoded = raw_to_string(encode_error("nope".to_string()));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&encoded).unwrap(),
+            serde_json::json!({"Err": "nope"})
+        );
+
+        let raw = string_into_raw("hello".to_string());
+        assert_eq!(raw_to_string(raw), "hello");
+        nuke_helper_free_string(ptr::null_mut());
+    }
+
+    #[test]
+    fn helper_ffi_wrappers_return_json_errors_and_progress() {
+        CALLBACK_EVENTS.lock().unwrap().clear();
+        let packages = CString::new("[]").unwrap();
+        let response = raw_to_string(nuke_helper_install(
+            packages.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some());
+        assert!(!CALLBACK_EVENTS.lock().unwrap().is_empty());
+
+        let response = raw_to_string(nuke_helper_update(
+            packages.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        assert!(serde_json::from_str::<serde_json::Value>(&response)
+            .unwrap()
+            .get("Err")
+            .is_some());
+
+        let response = raw_to_string(nuke_helper_uninstall(
+            packages.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        assert!(serde_json::from_str::<serde_json::Value>(&response)
+            .unwrap()
+            .get("Err")
+            .is_some());
+    }
+
+    #[test]
+    fn helper_isotope_and_av_wrappers_accept_null_strings() {
+        for response in [
+            nuke_helper_install_av(ptr::null(), ptr::null(), ptr::null_mut(), None),
+            nuke_helper_install_isotope_root(ptr::null(), ptr::null_mut(), None),
+            nuke_helper_convert_radioisotope(ptr::null(), ptr::null_mut(), None),
+            nuke_helper_install_isotope_stubs(ptr::null(), ptr::null_mut(), None),
+            nuke_helper_remember_isotope_always_allow(
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null_mut(),
+                None,
+            ),
+        ] {
+            let value = serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
+            assert!(value.get("Err").is_some());
+        }
+    }
+
+    #[test]
+    fn helper_sanitize_environment_removes_inherited_controls() {
+        unsafe {
+            std::env::set_var("PKG_ALLOW", "all");
+            std::env::set_var("PACKAGE_MAGINAT0R_LVL", "9000");
+            std::env::set_var("HOMEBREW_PREFIX", "/tmp/homebrew");
+        }
+
+        sanitize_environment();
+
+        assert!(std::env::var_os("PKG_ALLOW").is_none());
+        assert!(std::env::var_os("PACKAGE_MAGINAT0R_LVL").is_none());
+        assert!(std::env::var_os("HOMEBREW_PREFIX").is_none());
+    }
+}

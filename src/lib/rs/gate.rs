@@ -262,6 +262,31 @@ fn post_distributed_notification(name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = env::var_os(key);
+            unsafe { env::set_var(key, value) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { env::set_var(self.key, value) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
 
     #[test]
     fn gate_parse_options_accepts_message() {
@@ -301,5 +326,134 @@ mod tests {
         .unwrap_err();
 
         assert!(err.contains("single gate message"));
+    }
+
+    #[test]
+    fn gate_paths_are_derived_from_home() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+
+        assert_eq!(
+            user_approval_root().unwrap(),
+            temp.path()
+                .join("Library/Application Support/Automic Vault/gate")
+        );
+        assert_eq!(
+            pending_approval_path().unwrap(),
+            temp.path()
+                .join("Library/Application Support/Automic Vault/gate/pending-approval.json")
+        );
+        assert_eq!(
+            decision_path("abc").unwrap(),
+            temp.path()
+                .join("Library/Application Support/Automic Vault/gate/decisions/abc.json")
+        );
+    }
+
+    #[test]
+    fn gate_write_json_and_clear_approval_files() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+        let pending = pending_approval_path().unwrap();
+        let decision = decision_path("request-1").unwrap();
+
+        write_json(
+            &pending,
+            &GateApprovalRequestSnapshot {
+                id: "request-1".to_string(),
+                message: "approve".to_string(),
+                cwd: "/tmp".to_string(),
+                parent_process: ParentProcessSnapshot {
+                    pid: 123,
+                    executable_path: Some("/bin/sh".to_string()),
+                    display_name: Some("sh".to_string()),
+                },
+            },
+        )
+        .unwrap();
+        write_json(
+            &decision,
+            &GateApprovalDecision {
+                id: "request-1".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+
+        assert!(pending.exists());
+        assert!(decision.exists());
+        clear_approval_files("request-1");
+        assert!(!pending.exists());
+        assert!(!decision.exists());
+    }
+
+    #[test]
+    fn gate_wait_for_decision_handles_approval_denial_and_bad_files() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+        let pending = pending_approval_path().unwrap();
+        write_json(
+            &pending,
+            &GateApprovalRequestSnapshot {
+                id: "approved".to_string(),
+                message: "approve".to_string(),
+                cwd: "/tmp".to_string(),
+                parent_process: parent_process_snapshot(),
+            },
+        )
+        .unwrap();
+
+        let approved = decision_path("approved").unwrap();
+        let approved_thread = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            write_json(
+                &approved,
+                &GateApprovalDecision {
+                    id: "approved".to_string(),
+                    approved: true,
+                    reason: None,
+                },
+            )
+            .unwrap();
+        });
+        wait_for_gate_decision("approved").unwrap();
+        approved_thread.join().unwrap();
+
+        let denied = decision_path("denied").unwrap();
+        write_json(
+            &denied,
+            &GateApprovalDecision {
+                id: "denied".to_string(),
+                approved: false,
+                reason: Some("not now".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(wait_for_gate_decision("denied").unwrap_err(), "not now");
+
+        let mismatch = decision_path("mismatch").unwrap();
+        write_json(
+            &mismatch,
+            &GateApprovalDecision {
+                id: "other".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_gate_decision("mismatch").unwrap_err(),
+            "gate approval decision id mismatch"
+        );
+
+        fs::create_dir_all(decision_path("bad").unwrap().parent().unwrap()).unwrap();
+        fs::write(decision_path("bad").unwrap(), b"not json").unwrap();
+        assert!(wait_for_gate_decision("bad")
+            .unwrap_err()
+            .contains("failed to decode gate approval decision"));
     }
 }

@@ -332,6 +332,28 @@ struct IsotopeParams {
 mod tests {
     use super::*;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = env::var_os(key);
+            unsafe { env::set_var(key, value) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { env::set_var(self.key, value) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
+
     #[test]
     fn protocol_method_rejects_unknown_names() {
         assert_eq!(core::ProtocolMethod::parse("packages.install"), None);
@@ -395,5 +417,117 @@ mod tests {
 
         assert_eq!(error.id, 11);
         assert_eq!(error.error.code, 500);
+    }
+
+    #[test]
+    fn dispatch_line_ignores_invalid_json_and_serializes_errors() {
+        let temp = TempDir::new().unwrap();
+        let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
+
+        assert_eq!(dispatch_line("{not json", &logger), None);
+        let error = dispatch_line(
+            r#"{"id":42,"method":"packages.nope","params":{}}"#,
+            &logger,
+        )
+        .unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&error).unwrap(),
+            serde_json::json!({
+                "id": 42,
+                "error": {
+                    "code": 404,
+                    "message": "unknown method"
+                }
+            })
+        );
+        assert!(fs::read_to_string(temp.path().join("nucleus.log"))
+            .unwrap()
+            .contains("ignored invalid JSON request"));
+    }
+
+    #[test]
+    fn dispatch_line_serializes_success_response() {
+        let temp = TempDir::new().unwrap();
+        let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
+        let response = dispatch_line(r#"{"id":5,"method":"system.info","params":{}}"#, &logger)
+            .unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response).unwrap(),
+            serde_json::json!({
+                "id": 5,
+                "result": {
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "protocolVersion": core::PROTOCOL_VERSION,
+                    "buildId": env!("NUKE_BUILD_ID")
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn dispatch_request_covers_query_page_and_isotope_methods() {
+        let available = dispatch_request(core::ProtocolRequest {
+            id: 1,
+            method: "packages.listAvailable".to_string(),
+            params: serde_json::json!({"offset": 0, "limit": 1}),
+        })
+        .unwrap();
+        assert_eq!(available["id"], 1);
+        assert!(available["result"]["packages"].as_array().unwrap().len() <= 1);
+
+        let search = dispatch_request(core::ProtocolRequest {
+            id: 2,
+            method: "packages.search".to_string(),
+            params: serde_json::json!({"query": "rg", "offset": 0, "limit": 5}),
+        })
+        .unwrap();
+        assert_eq!(search["id"], 2);
+        assert!(search["result"]["totalCount"].as_u64().unwrap() >= 1);
+
+        let pulse = dispatch_request(core::ProtocolRequest {
+            id: 3,
+            method: "packages.listPulse".to_string(),
+            params: serde_json::json!({"offset": 0, "limit": 2}),
+        })
+        .unwrap();
+        assert_eq!(pulse["id"], 3);
+
+        let plan = dispatch_request(core::ProtocolRequest {
+            id: 4,
+            method: "packages.isotopeMigrationPlan".to_string(),
+            params: serde_json::json!({"isotope": "aws-cli"}),
+        })
+        .unwrap();
+        assert_eq!(plan["result"]["isotopeName"], "aws-cli");
+        assert_eq!(plan["result"]["modifiesPackage"], "awscli");
+    }
+
+    #[test]
+    fn protocol_paths_logger_and_socket_cleanup_use_home() {
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+        let paths = ProtocolPaths::resolve().unwrap();
+
+        assert_eq!(
+            paths.socket_path,
+            temp.path()
+                .join("Library/Application Support/Automic Vault/nucleus.sock")
+        );
+        assert_eq!(paths.log_path, temp.path().join("Library/Logs/nucleus.log"));
+
+        fs::create_dir_all(&paths.log_dir).unwrap();
+        let logger = Logger::new(&paths.log_path).unwrap();
+        log_message(&logger, "hello protocol");
+        assert_eq!(fs::read_to_string(&paths.log_path).unwrap(), "hello protocol\n");
+
+        fs::create_dir_all(&paths.socket_dir).unwrap();
+        fs::write(&paths.socket_path, b"stale").unwrap();
+        {
+            let _cleanup = SocketCleanup::new(paths.socket_path.clone());
+            assert!(paths.socket_path.exists());
+        }
+        assert!(!paths.socket_path.exists());
     }
 }
