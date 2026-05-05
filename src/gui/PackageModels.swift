@@ -544,7 +544,6 @@ struct PackageRecommendation: Equatable {
         "hyperfine",
         "deno",
         "go",
-        "pkg-config",
         "pkgconf",
         "cmake",
         "poppler",
