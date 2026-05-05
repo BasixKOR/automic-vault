@@ -7428,7 +7428,7 @@ or `npm:clawhub` for the aliased package"
         let npm_root = opt_root.join("npm/openclaw");
         let scoped_npm_root = opt_root.join("npm/@scope/tool");
         let pip_root = opt_root.join("pip/psycopg2");
-        let isotope_root = opt_root.join("iso/gh");
+        let isotope_root = opt_root.join("isotopes/gh");
         fs::create_dir_all(&formula_root).unwrap();
         fs::create_dir_all(&npm_root).unwrap();
         fs::create_dir_all(&scoped_npm_root).unwrap();
