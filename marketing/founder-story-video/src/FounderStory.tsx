@@ -4,6 +4,7 @@ const black = "#020203";
 const red = "#c0221d";
 const redDim = "rgba(192, 34, 29, 0.22)";
 const redFaint = "rgba(192, 34, 29, 0.1)";
+const radarGreen = "68, 220, 140";
 const text = "#d7c7a1";
 const textWarm = "#ead8aa";
 const mono =
@@ -11,10 +12,10 @@ const mono =
 const display =
   '"Barlow Condensed", "Arial Narrow", "IBM Plex Sans Condensed", Impact, sans-serif';
 
-const webEnd = 156;
-const scanEnd = 246;
-const radarEnd = 366;
-const closeEnd = 426;
+const webEnd = 192;
+const scanEnd = 282;
+const radarEnd = 402;
+const closeEnd = 462;
 
 export const founderStoryDurationInFrames = closeEnd;
 
@@ -281,9 +282,9 @@ const RadarRing: React.FC = () => {
         style={{
           width: size,
           height: size,
-          border: `1px solid rgba(192,34,29,${ringOpacity})`,
+          border: `1px solid rgba(${radarGreen},${ringOpacity})`,
           borderRadius: "50%",
-          boxShadow: `0 0 42px rgba(192,34,29,${ringOpacity * 0.38})`,
+          boxShadow: `0 0 42px rgba(${radarGreen},${ringOpacity * 0.42})`,
         }}
       />
     </AbsoluteFill>
@@ -353,7 +354,7 @@ const RocketClose: React.FC = () => {
             textShadow: "0 0 14px rgba(192,34,29,0.24), 0 16px 28px rgba(0,0,0,0.7)",
           }}
         >
-          <TypedLine frame={frame} start={388} end={416}>
+          <TypedLine frame={frame} start={radarEnd + 22} end={radarEnd + 50}>
             https://automicvault.com
           </TypedLine>
         </div>
