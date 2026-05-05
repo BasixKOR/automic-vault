@@ -141,7 +141,10 @@ pub(crate) fn run_vault_entry(program_name: &str, args: env::ArgsOs) -> Result<(
     dispatch_vault(program_name, args)
 }
 
-fn dispatch_vault(program_name: &str, mut args: env::ArgsOs) -> Result<(), String> {
+fn dispatch_vault<I>(program_name: &str, mut args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     let Some(first_arg) = args.next() else {
         print_vault_usage(program_name);
         return Err("missing command".to_string());
@@ -173,7 +176,10 @@ fn dispatch_vault(program_name: &str, mut args: env::ArgsOs) -> Result<(), Strin
     run_sandboxed_command(first_arg, args)
 }
 
-fn run_proxy(mut args: env::ArgsOs) -> Result<(), String> {
+fn run_proxy<I>(mut args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     let stub_path = args
         .next()
         .ok_or_else(|| "missing proxy stub path".to_string())?;
@@ -187,7 +193,10 @@ fn run_proxy(mut args: env::ArgsOs) -> Result<(), String> {
     request_vault_execution(intent)
 }
 
-fn run_sandboxed_command(command: OsString, args: env::ArgsOs) -> Result<(), String> {
+fn run_sandboxed_command<I>(command: OsString, args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     let command = command
         .into_string()
         .map_err(|_| "command must be valid UTF-8".to_string())?;
@@ -242,7 +251,10 @@ fn run_sandboxed_command(command: OsString, args: env::ArgsOs) -> Result<(), Str
     Err(format!("failed to enter sandbox: {}", sandbox.exec()))
 }
 
-fn run_internal_exec(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+fn run_internal_exec<I>(program_name: &str, args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     match env::var(VAULT_TRUSTED_INTERNAL_ENV) {
         Ok(value) if value == VAULT_TRUSTED_INTERNAL_VALUE => {}
         _ => {
@@ -287,7 +299,10 @@ fn run_internal_exec(program_name: &str, args: env::ArgsOs) -> Result<(), String
     })
 }
 
-fn run_toolchain_command(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+fn run_toolchain_command<I>(program_name: &str, args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     let mut socket_path: Option<PathBuf> = None;
     let mut vault_binary: Option<PathBuf> = None;
     let mut json_output = false;
@@ -338,7 +353,10 @@ fn run_toolchain_command(program_name: &str, args: env::ArgsOs) -> Result<(), St
     Ok(())
 }
 
-fn run_sandbox_profile_command(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+fn run_sandbox_profile_command<I>(program_name: &str, args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
     let mut allowed_path: Option<PathBuf> = None;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
@@ -495,7 +513,10 @@ fn notify_containment_started(session: &VaultContainmentSession) {
         .and_then(|_| stream.flush());
 }
 
-fn capture_proxy_intent(tool: String, args: env::ArgsOs) -> Result<ExecutionIntent, String> {
+fn capture_proxy_intent<I>(tool: String, args: I) -> Result<ExecutionIntent, String>
+where
+    I: Iterator<Item = OsString>,
+{
     let mut captured_args = Vec::new();
     for arg in args {
         captured_args.push(
@@ -857,6 +878,46 @@ fn is_executable_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        previous: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn set(values: &[(&'static str, &str)]) -> Self {
+            let previous = values
+                .iter()
+                .map(|(key, value)| {
+                    let previous = env::var_os(key);
+                    unsafe { env::set_var(key, value) };
+                    (*key, previous)
+                })
+                .collect();
+            Self { previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, previous) in self.previous.drain(..).rev() {
+                match previous {
+                    Some(value) => unsafe { env::set_var(key, value) },
+                    None => unsafe { env::remove_var(key) },
+                }
+            }
+        }
+    }
+
+    fn write_executable(path: &Path) {
+        fs::write(path, b"#!/bin/sh\n").unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
 
     #[test]
     fn subs_filtered_environment_keeps_expected_keys_only() {
@@ -937,5 +998,245 @@ mod tests {
         .unwrap();
         assert_eq!(intent.tool, "git");
         assert_eq!(intent.args, vec!["status"]);
+    }
+
+    #[test]
+    fn subs_vault_dispatch_rejects_invalid_modes_and_args() {
+        assert!(dispatch_vault("vault", Vec::<OsString>::new().into_iter()).is_err());
+        assert!(
+            dispatch_vault("vault", vec![OsString::from("--help")].into_iter()).is_ok()
+        );
+        assert!(
+            dispatch_vault("vault", vec![OsString::from("--version")].into_iter()).is_ok()
+        );
+        assert!(run_proxy(Vec::<OsString>::new().into_iter())
+            .unwrap_err()
+            .contains("missing proxy stub path"));
+        assert!(run_internal_exec("vault", Vec::<OsString>::new().into_iter())
+            .unwrap_err()
+            .contains("restricted"));
+        assert!(run_toolchain_command(
+            "vault",
+            vec![OsString::from("--unknown")].into_iter(),
+        )
+        .unwrap_err()
+        .contains("unknown toolchain"));
+        assert!(run_sandbox_profile_command(
+            "vault",
+            vec![OsString::from("--allow")].into_iter(),
+        )
+        .unwrap_err()
+        .contains("missing value"));
+    }
+
+    #[test]
+    fn subs_vault_resolution_helpers_cover_paths_and_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let tool = bin.join("demo-tool");
+        write_executable(&tool);
+        let socket = temp.path().join("vault.sock");
+        let _env = EnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("PATH", bin.to_str().unwrap()),
+            (VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap()),
+            (VAULT_AGENT_ID_ENV, "agent-42"),
+        ]);
+
+        assert_eq!(resolve_vault_socket_path().unwrap(), socket);
+        assert_eq!(resolve_initial_executable("demo-tool").unwrap(), tool);
+        assert!(resolve_initial_executable("missing-tool")
+            .unwrap_err()
+            .contains("not found"));
+        assert!(resolve_initial_executable("/tmp/not-executable")
+            .unwrap_err()
+            .contains("not executable"));
+        assert_eq!(
+            find_executable_in_paths("demo-tool", [bin.to_str().unwrap()]).unwrap(),
+            bin.join("demo-tool")
+        );
+        assert_eq!(
+            resolve_host_tool_path("definitely-not-a-real-tool"),
+            PathBuf::from("definitely-not-a-real-tool")
+        );
+
+        let intent = capture_proxy_intent(
+            "demo-tool".to_string(),
+            vec![OsString::from("--flag")].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(intent.agent_id, Some("agent-42".to_string()));
+        assert_eq!(intent.args, vec!["--flag"]);
+        assert!(build_execution_intent("bad/tool".to_string(), Vec::new())
+            .unwrap_err()
+            .contains("path separators"));
+    }
+
+    #[test]
+    fn subs_request_vault_execution_handles_success_and_errors() {
+        fn serve_once<F>(socket: &Path, respond: F) -> thread::JoinHandle<()>
+        where
+            F: FnOnce(VaultClientRequest, &mut UnixStream) + Send + 'static,
+        {
+            let listener = UnixListener::bind(socket).unwrap();
+            thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request = serde_json::from_str::<VaultClientRequest>(&line).unwrap();
+                respond(request, &mut stream);
+            })
+        }
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let success_socket = temp.path().join("success.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, success_socket.to_str().unwrap())]);
+        let success = serve_once(&success_socket, |request, stream| {
+            let VaultClientRequest::ApprovalRequest { id, .. } = request else {
+                panic!("unexpected request")
+            };
+            for event in [
+                VaultDaemonEvent::ApprovalResponse {
+                    id: id.clone(),
+                    approved: true,
+                    reason: None,
+                },
+                VaultDaemonEvent::ExecChunk {
+                    id: id.clone(),
+                    stream: "stdout".to_string(),
+                    data: "ok\n".to_string(),
+                },
+                VaultDaemonEvent::ExecChunk {
+                    id: id.clone(),
+                    stream: "stderr".to_string(),
+                    data: "warn\n".to_string(),
+                },
+                VaultDaemonEvent::ExecComplete { id, exit_code: 0 },
+            ] {
+                writeln!(stream, "{}", serde_json::to_string(&event).unwrap()).unwrap();
+            }
+        });
+        request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+            .unwrap();
+        success.join().unwrap();
+
+        let denied_socket = temp.path().join("denied.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, denied_socket.to_str().unwrap())]);
+        let denied = serve_once(&denied_socket, |request, stream| {
+            let VaultClientRequest::ApprovalRequest { id, .. } = request else {
+                panic!("unexpected request")
+            };
+            writeln!(
+                stream,
+                "{}",
+                serde_json::to_string(&VaultDaemonEvent::ApprovalResponse {
+                    id,
+                    approved: false,
+                    reason: Some("denied".to_string()),
+                })
+                .unwrap()
+            )
+            .unwrap();
+        });
+        assert_eq!(
+            request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+                .unwrap_err(),
+            "denied"
+        );
+        denied.join().unwrap();
+
+        let error_socket = temp.path().join("error.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, error_socket.to_str().unwrap())]);
+        let error = serve_once(&error_socket, |_request, stream| {
+            writeln!(
+                stream,
+                "{}",
+                serde_json::to_string(&VaultDaemonEvent::Error {
+                    id: None,
+                    code: 500,
+                    message: "boom".to_string(),
+                })
+                .unwrap()
+            )
+            .unwrap();
+        });
+        assert!(request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+            .unwrap_err()
+            .contains("vaultd error 500"));
+        error.join().unwrap();
+    }
+
+    #[test]
+    fn subs_notify_containment_started_sends_best_effort_event() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let socket = temp.path().join("containment.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap())]);
+        let handle = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            serde_json::from_str::<VaultClientRequest>(&line).unwrap()
+        });
+        let session = VaultContainmentSession {
+            id: "session".to_string(),
+            pid: 1,
+            agent_id: "agent".to_string(),
+            command: "git".to_string(),
+            args: vec!["status".to_string()],
+            cwd: "/tmp".to_string(),
+            initial_executable_path: "/usr/bin/git".to_string(),
+            toolchain_root: "/tmp/vault".to_string(),
+            bin_dir: "/tmp/vault/bin".to_string(),
+            sandbox_profile_path: "/tmp/vault/vault.sb".to_string(),
+            socket_path: socket.to_string_lossy().into_owned(),
+        };
+
+        notify_containment_started(&session);
+        assert_eq!(
+            handle.join().unwrap(),
+            VaultClientRequest::ContainmentStarted { session }
+        );
+    }
+
+    #[test]
+    fn subs_toolchain_and_sandbox_commands_cover_success_paths() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let vault_binary = temp.path().join("vault");
+        write_executable(&vault_binary);
+        let socket = temp.path().join("vault.sock");
+        let _env = EnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            (VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap()),
+        ]);
+
+        run_toolchain_command(
+            "vault",
+            vec![
+                OsString::from("--socket"),
+                OsString::from(socket.as_os_str()),
+                OsString::from("--vault-bin"),
+                OsString::from(vault_binary.as_os_str()),
+                OsString::from("--json"),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        run_sandbox_profile_command(
+            "vault",
+            vec![
+                OsString::from("--allow"),
+                OsString::from(vault_binary.as_os_str()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
     }
 }
