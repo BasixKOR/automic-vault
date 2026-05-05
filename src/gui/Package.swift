@@ -11,7 +11,8 @@ let package = Package(
     ],
     dependencies: [
         .package(
-            path: "../../vendor/AppUpdater"
+            url: "https://github.com/mxcl/AppUpdater.git",
+            from: "2.1.1"
         ),
     ],
     targets: [
