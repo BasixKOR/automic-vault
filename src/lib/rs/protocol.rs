@@ -425,11 +425,8 @@ mod tests {
         let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
 
         assert_eq!(dispatch_line("{not json", &logger), None);
-        let error = dispatch_line(
-            r#"{"id":42,"method":"packages.nope","params":{}}"#,
-            &logger,
-        )
-        .unwrap();
+        let error =
+            dispatch_line(r#"{"id":42,"method":"packages.nope","params":{}}"#, &logger).unwrap();
 
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&error).unwrap(),
@@ -441,17 +438,19 @@ mod tests {
                 }
             })
         );
-        assert!(fs::read_to_string(temp.path().join("nucleus.log"))
-            .unwrap()
-            .contains("ignored invalid JSON request"));
+        assert!(
+            fs::read_to_string(temp.path().join("nucleus.log"))
+                .unwrap()
+                .contains("ignored invalid JSON request")
+        );
     }
 
     #[test]
     fn dispatch_line_serializes_success_response() {
         let temp = TempDir::new().unwrap();
         let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
-        let response = dispatch_line(r#"{"id":5,"method":"system.info","params":{}}"#, &logger)
-            .unwrap();
+        let response =
+            dispatch_line(r#"{"id":5,"method":"system.info","params":{}}"#, &logger).unwrap();
 
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&response).unwrap(),
@@ -506,6 +505,7 @@ mod tests {
 
     #[test]
     fn protocol_paths_logger_and_socket_cleanup_use_home() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
         let paths = ProtocolPaths::resolve().unwrap();
@@ -520,7 +520,10 @@ mod tests {
         fs::create_dir_all(&paths.log_dir).unwrap();
         let logger = Logger::new(&paths.log_path).unwrap();
         log_message(&logger, "hello protocol");
-        assert_eq!(fs::read_to_string(&paths.log_path).unwrap(), "hello protocol\n");
+        assert_eq!(
+            fs::read_to_string(&paths.log_path).unwrap(),
+            "hello protocol\n"
+        );
 
         fs::create_dir_all(&paths.socket_dir).unwrap();
         fs::write(&paths.socket_path, b"stale").unwrap();
@@ -529,5 +532,51 @@ mod tests {
             assert!(paths.socket_path.exists());
         }
         assert!(!paths.socket_path.exists());
+    }
+
+    #[test]
+    fn run_server_accepts_json_requests_and_removes_socket() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new_in("/tmp").unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+        let paths = ProtocolPaths::resolve().unwrap();
+        let socket_path = paths.socket_path.clone();
+        let handle = thread::spawn(run_server);
+
+        let mut stream = (0..50)
+            .find_map(|_| match UnixStream::connect(&socket_path) {
+                Ok(stream) => Some(stream),
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(20));
+                    None
+                }
+            })
+            .expect("protocol server should create a socket");
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({"id": 9, "method": "system.info", "params": {}})
+        )
+        .unwrap();
+        stream.flush().unwrap();
+
+        let mut response = String::new();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut response)
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(response.trim()).unwrap()["id"],
+            9
+        );
+        drop(stream);
+
+        SERVER_RUNNING.store(false, Ordering::SeqCst);
+        handle.join().unwrap().unwrap();
+        assert!(!socket_path.exists());
+        assert!(
+            fs::read_to_string(paths.log_path)
+                .unwrap()
+                .contains("protocol server shutting down")
+        );
     }
 }

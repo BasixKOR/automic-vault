@@ -262,9 +262,6 @@ fn post_distributed_notification(name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct EnvGuard {
         key: &'static str,
@@ -330,7 +327,7 @@ mod tests {
 
     #[test]
     fn gate_paths_are_derived_from_home() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
 
@@ -353,7 +350,7 @@ mod tests {
 
     #[test]
     fn gate_write_json_and_clear_approval_files() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
         let pending = pending_approval_path().unwrap();
@@ -392,7 +389,7 @@ mod tests {
 
     #[test]
     fn gate_wait_for_decision_handles_approval_denial_and_bad_files() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
         let pending = pending_approval_path().unwrap();
@@ -452,8 +449,10 @@ mod tests {
 
         fs::create_dir_all(decision_path("bad").unwrap().parent().unwrap()).unwrap();
         fs::write(decision_path("bad").unwrap(), b"not json").unwrap();
-        assert!(wait_for_gate_decision("bad")
-            .unwrap_err()
-            .contains("failed to decode gate approval decision"));
+        assert!(
+            wait_for_gate_decision("bad")
+                .unwrap_err()
+                .contains("failed to decode gate approval decision")
+        );
     }
 }

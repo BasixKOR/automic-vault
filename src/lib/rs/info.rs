@@ -1041,7 +1041,10 @@ pub(crate) fn homebrew_package_info_from_formula_info(
     }
 }
 
-fn isotope_homebrew_info(isotope_name: &str, isotope: &IsotopePackageData) -> HomebrewPackageInfo {
+pub(crate) fn isotope_homebrew_info(
+    isotope_name: &str,
+    isotope: &IsotopePackageData,
+) -> HomebrewPackageInfo {
     HomebrewPackageInfo {
         formula: isotope_name.to_string(),
         description: isotope

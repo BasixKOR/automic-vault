@@ -938,6 +938,25 @@ mod tests {
     }
 
     #[test]
+    fn install_binary_at_reports_invalid_sources_and_targets() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("staged-dir");
+        fs::create_dir_all(&source_dir).unwrap();
+        assert!(
+            install_binary_at(&source_dir, &temp.path().join("av"), "av")
+                .unwrap_err()
+                .contains("is not a file")
+        );
+
+        let missing = temp.path().join("missing-av");
+        assert!(
+            install_binary_at(&missing, &temp.path().join("av"), "av")
+                .unwrap_err()
+                .contains("failed to stat")
+        );
+    }
+
+    #[test]
     fn cli_tool_installs_for_source_expands_staging_directory() {
         let temp = TempDir::new().unwrap();
         let installs = cli_tool_installs_for_source(temp.path());
@@ -948,6 +967,17 @@ mod tests {
                 "av",
                 temp.path().join("av"),
                 PathBuf::from("/usr/local/bin/av")
+            )]
+        );
+
+        let file = temp.path().join("av");
+        fs::write(&file, b"av").unwrap();
+        assert_eq!(
+            cli_tool_installs_for_source(&file),
+            vec![(
+                PKG_DISPLAY_NAME,
+                file,
+                PathBuf::from(HELPER_AV_INSTALL_TARGET)
             )]
         );
     }
@@ -1007,6 +1037,23 @@ mod tests {
     #[test]
     fn helper_command_routes_isotope_and_always_allow_errors() {
         for command in [
+            HelperCommand::Update {
+                packages: vec![PackageSpec {
+                    name: "rg".to_string(),
+                    version: None,
+                }],
+            },
+            HelperCommand::Uninstall {
+                packages: vec![PackageSpec {
+                    name: "rg".to_string(),
+                    version: None,
+                }],
+            },
+            HelperCommand::UpdateAll,
+            HelperCommand::InstallAv {
+                source_path: "/tmp/av".to_string(),
+                caller_path: "/tmp/Automic Vault.app".to_string(),
+            },
             HelperCommand::InstallIsotopeRoot {
                 isotope_name: String::new(),
             },
@@ -1059,9 +1106,11 @@ mod tests {
         assert_eq!(normalized_isotope_name("isotope:gh").unwrap(), "gh");
         assert_eq!(normalized_isotope_name("aws-cli").unwrap(), "aws-cli");
         assert!(normalized_isotope_name("").unwrap_err().contains("missing"));
-        assert!(normalized_isotope_name("bad/name")
-            .unwrap_err()
-            .contains("invalid"));
+        assert!(
+            normalized_isotope_name("bad/name")
+                .unwrap_err()
+                .contains("invalid")
+        );
 
         assert_eq!(
             validate_optional_version(Some(" 1.2.3 ")).unwrap(),
@@ -1071,42 +1120,119 @@ mod tests {
         assert!(validate_optional_version(Some("1.2.3 beta")).is_err());
 
         assert!(validate_install_specs(Vec::new()).is_err());
-        assert!(validate_install_specs(vec![PackageSpec {
-            name: "npm:openclaw".to_string(),
-            version: Some("4.5.6".to_string()),
-        }])
-        .is_ok());
-        assert!(validate_install_specs(vec![PackageSpec {
-            name: "brew:sqlite".to_string(),
-            version: Some("3".to_string()),
-        }])
-        .unwrap_err()
-        .contains("does not support explicit version"));
-        assert!(validate_uninstall_specs(vec![PackageSpec {
-            name: "npm:openclaw".to_string(),
-            version: Some("4.5.6".to_string()),
-        }])
-        .unwrap_err()
-        .contains("cannot specify a version"));
+        assert!(
+            validate_install_specs(vec![PackageSpec {
+                name: "npm:openclaw".to_string(),
+                version: Some("4.5.6".to_string()),
+            }])
+            .is_ok()
+        );
+        assert!(
+            validate_install_specs(vec![
+                PackageSpec {
+                    name: "cask:cursor".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "isotope:gh".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "pip:My_Package.Name".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "rg".to_string(),
+                    version: None,
+                },
+            ])
+            .is_ok()
+        );
+        assert!(
+            validate_install_specs(vec![PackageSpec {
+                name: "brew:sqlite".to_string(),
+                version: Some("3".to_string()),
+            }])
+            .unwrap_err()
+            .contains("does not support explicit version")
+        );
+        assert!(
+            validate_uninstall_specs(vec![PackageSpec {
+                name: "npm:openclaw".to_string(),
+                version: Some("4.5.6".to_string()),
+            }])
+            .unwrap_err()
+            .contains("cannot specify a version")
+        );
+        let too_many = (0..=MAX_HELPER_PACKAGES)
+            .map(|index| PackageSpec {
+                name: format!("pkg-{index}"),
+                version: None,
+            })
+            .collect();
+        assert!(
+            validate_install_specs(too_many)
+                .unwrap_err()
+                .contains("at most")
+        );
+        assert_eq!(
+            validate_uninstall_specs(vec![
+                PackageSpec {
+                    name: "brew:ripgrep".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "cask:cursor".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "isotope:gh".to_string(),
+                    version: None,
+                },
+                PackageSpec {
+                    name: "pip:My_Package.Name".to_string(),
+                    version: None,
+                },
+            ])
+            .unwrap(),
+            vec![
+                "ripgrep".to_string(),
+                "cursor".to_string(),
+                "isotope:gh".to_string(),
+                "pip:my-package-name".to_string()
+            ]
+        );
     }
 
     #[test]
     fn isotope_always_allow_validation_rejects_bad_inputs() {
-        assert!(validate_isotope_keys(&[]).unwrap_err().contains("at least one"));
-        assert!(validate_isotope_keys(&["".to_string()])
-            .unwrap_err()
-            .contains("empty"));
-        assert!(validate_isotope_keys(&["1BAD".to_string()])
-            .unwrap_err()
-            .contains("invalid"));
+        assert!(
+            validate_isotope_keys(&[])
+                .unwrap_err()
+                .contains("at least one")
+        );
+        assert!(
+            validate_isotope_keys(&["".to_string()])
+                .unwrap_err()
+                .contains("empty")
+        );
+        assert!(
+            validate_isotope_keys(&["1BAD".to_string()])
+                .unwrap_err()
+                .contains("invalid")
+        );
         assert!(validate_isotope_keys(&["GOOD_1".to_string()]).is_ok());
 
-        assert!(validate_isotope_always_allow_script("/bin/sh", None)
-            .unwrap_err()
-            .contains("requires a script path"));
-        assert!(validate_isotope_always_allow_script("/bin/echo", Some("/tmp/script"))
-            .unwrap_err()
-            .contains("requires an interpreter target"));
+        assert!(
+            validate_isotope_always_allow_script("/bin/sh", None)
+                .unwrap_err()
+                .contains("requires a script path")
+        );
+        assert!(
+            validate_isotope_always_allow_script("/bin/echo", Some("/tmp/script"))
+                .unwrap_err()
+                .contains("requires an interpreter target")
+        );
         assert_eq!(
             validate_isotope_always_allow_script("/bin/echo", None).unwrap(),
             None
@@ -1119,9 +1245,11 @@ mod tests {
         let path = temp.path().join("always-allow.json");
         fs::write(&path, b"{not json").unwrap();
 
-        assert!(load_isotope_always_allow_store(&path)
-            .unwrap_err()
-            .contains("failed to decode"));
+        assert!(
+            load_isotope_always_allow_store(&path)
+                .unwrap_err()
+                .contains("failed to decode")
+        );
         assert_eq!(
             load_isotope_always_allow_store(&temp.path().join("missing.json")).unwrap(),
             IsotopeAlwaysAllowStore::default()

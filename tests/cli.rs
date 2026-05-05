@@ -74,9 +74,33 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av update"));
 
+    let output = run_nuke(&["help", "i"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av i"));
+
+    let output = run_nuke(&["help", "uninstall"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av uninstall"));
+
+    let output = run_nuke(&["help", "outdated"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av outdated"));
+
+    let output = run_nuke(&["help", "list"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av list"));
+
     let output = run_nuke(&["help", "info"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av info"));
+
+    let output = run_nuke(&["help", "search"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av search"));
+
+    let output = run_nuke(&["help", "serve"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av serve"));
 
     let output = run_nuke(&["help", "inject"]);
     assert!(output.status.success());
@@ -202,4 +226,63 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
         assert!(!output.status.success());
         assert!(stderr(&output).contains("av: must be run as root"));
     }
+}
+
+#[test]
+fn subs_query_commands_cover_success_and_output_modes() {
+    let output = run_nuke(&["search", "rg"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("ripgrep"));
+
+    let output = run_nuke(&["search", "--json", "rg"]);
+    assert!(output.status.success());
+    let search: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(search.as_array().unwrap().iter().any(|package| {
+        package["package_name"] == "ripgrep" || package["package_name"] == "rg"
+    }));
+
+    let output = run_nuke(&["search", "rg", "--jsonl"]);
+    assert!(output.status.success());
+    assert!(
+        stdout(&output)
+            .lines()
+            .all(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
+    );
+
+    let output = run_nuke(&["info", "--json", "rg"]);
+    assert!(output.status.success());
+    let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(info["package_name"] == "ripgrep" || info["package_name"] == "rg");
+
+    let output = run_nuke(&["info", "rg", "--jsonl"]);
+    assert!(output.status.success());
+    let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(info["package_name"] == "ripgrep" || info["package_name"] == "rg");
+
+    let output = run_nuke(&["list", "--json"]);
+    assert!(output.status.success());
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+
+    let output = run_nuke(&["list", "--jsonl"]);
+    assert!(output.status.success());
+    assert!(
+        stdout(&output)
+            .lines()
+            .all(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
+    );
+}
+
+#[test]
+fn subs_serve_command_covers_non_server_paths() {
+    let output = run_nuke(&["serve", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av serve"));
+
+    let output = run_nuke(&["serve", "--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("av serve {}", pkg_version())));
+
+    let output = run_nuke(&["serve", "--bad"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown argument '--bad'"));
 }

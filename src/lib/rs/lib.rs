@@ -53,6 +53,14 @@ mod isotope_integrations {
 mod stubs;
 mod vault;
 
+#[cfg(test)]
+static GLOBAL_TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
+    GLOBAL_TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub use cli::main_entry;
 pub(crate) use cli::*;
 pub(crate) use cli_help::*;
@@ -7251,6 +7259,639 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
+    fn package_info_helpers_cover_identity_formatting_and_wrapping() {
+        assert_eq!(
+            requested_package_name(&RequestedPackage::Alias {
+                alias: "pg".to_string(),
+                target: PackageAliasTarget::PipPackage("psycopg2".to_string()),
+            }),
+            "pip:psycopg2"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::Isotope("gh".to_string())),
+            "isotope:gh"
+        );
+        let status = PackageStatus {
+            package_name: "npm:openclaw".to_string(),
+            source: PackageReceiptSource::Npm {
+                package_name: "openclaw".to_string(),
+            },
+            installed_version: "1.0.0".to_string(),
+            latest_version: "1.0.0".to_string(),
+        };
+        assert_eq!(
+            requested_package_from_status(&status),
+            RequestedPackage::NpmPackage {
+                package: "openclaw".to_string(),
+                version: None,
+            }
+        );
+        assert!(status.is_outdated() == false);
+        assert_eq!(
+            compare_package_names_for_search_order("npm:@scope/zeta", "brew:alpha"),
+            std::cmp::Ordering::Greater
+        );
+
+        for (source, qualified, label) in [
+            (
+                PackageReceiptSource::Formula {
+                    root_formula: "python@3.12".to_string(),
+                },
+                "brew:python@3.12",
+                "Homebrew",
+            ),
+            (
+                PackageReceiptSource::Cask {
+                    cask_name: "visual-studio-code".to_string(),
+                },
+                "cask:visual-studio-code",
+                "Homebrew Cask",
+            ),
+            (
+                PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
+                },
+                "isotope:gh",
+                "Isotope",
+            ),
+            (
+                PackageReceiptSource::Vendor {
+                    vendor_name: "deno".to_string(),
+                },
+                "av:deno",
+                "Subs",
+            ),
+            (
+                PackageReceiptSource::Npm {
+                    package_name: "openclaw".to_string(),
+                },
+                "npm:openclaw",
+                "npm",
+            ),
+            (
+                PackageReceiptSource::Pip {
+                    package_name: "psycopg2".to_string(),
+                },
+                "pip:psycopg2",
+                "PyPI",
+            ),
+        ] {
+            assert_eq!(package_source_qualified_name(&source), qualified);
+            assert_eq!(format_source_field(Some(&source)), label);
+        }
+        assert_eq!(format_source_field(None), "Unknown");
+
+        let mut info = PackageInfo {
+            package_name: "python@3.12".to_string(),
+            qualified_name: String::new(),
+            install_root: PathBuf::from("/opt/python@3.12"),
+            installed: true,
+            source: Some(PackageReceiptSource::Formula {
+                root_formula: "python@3.12".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: Some("3.12.1".to_string()),
+            latest_version: Some("3.12.2".to_string()),
+            latest_version_error: None,
+            executable_paths: vec!["/usr/local/bin/python3.12".to_string()],
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: Some(HomebrewPackageInfo {
+                formula: "python@3.12".to_string(),
+                description: Some("A language runtime".to_string()),
+                homepage: Some("https://www.python.org".to_string()),
+                license: Some("Python-2.0".to_string()),
+                dependencies: vec!["openssl@3".to_string(), "sqlite".to_string()],
+            }),
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+        };
+        populate_package_info_identity(&mut info);
+        assert_eq!(info.qualified_name, "brew:python@3.12");
+        assert_eq!(
+            format_version_status(&info),
+            Some("update available (3.12.2)".to_string())
+        );
+        let rendered = format_package_info(&info);
+        assert!(rendered.contains("Dependencies"));
+        assert!(rendered.contains("Formula Page"));
+        assert!(rendered.contains("/usr/local/bin/python3.12"));
+        assert!(
+            rendered
+                .lines()
+                .all(|line| line.chars().count() <= INFO_WIDTH)
+        );
+
+        assert_eq!(string_or_none("  value  "), Some("value".to_string()));
+        assert_eq!(string_or_none(" \n\t "), None);
+        assert_eq!(split_text_hard("abcdefgh", 3), vec!["abc", "def", "gh"]);
+        assert_eq!(
+            wrap_text("alpha beta\n\nsupercalifragilistic", 8),
+            vec!["alpha", "beta", "", "supercal", "ifragili", "stic"]
+        );
+        assert_eq!(
+            wrap_tokens(&["alpha".to_string(), "beta".to_string()], 2, 3),
+            vec!["  alpha   beta"]
+        );
+        assert_eq!(
+            homebrew_formula_page_url("python@3.12"),
+            "https://formulae.brew.sh/formula/python@3.12"
+        );
+        assert!(plain_box_top().starts_with("╭"));
+        assert!(section_top("Executables").contains("Executables"));
+        assert!(plain_box_bottom().starts_with("╰"));
+        assert!(section_bottom().starts_with("╰"));
+    }
+
+    #[test]
+    fn package_info_source_resolution_and_scanning_cover_fallbacks() {
+        let temp = TempDir::new().unwrap();
+        let opt_root = temp.path().join("opt");
+        let formula_root = opt_root.join("python@3.12");
+        let npm_root = opt_root.join("npm/openclaw");
+        let scoped_npm_root = opt_root.join("npm/@scope/tool");
+        let pip_root = opt_root.join("pip/psycopg2");
+        let isotope_root = opt_root.join("iso/gh");
+        fs::create_dir_all(&formula_root).unwrap();
+        fs::create_dir_all(&npm_root).unwrap();
+        fs::create_dir_all(&scoped_npm_root).unwrap();
+        fs::create_dir_all(&pip_root).unwrap();
+        fs::create_dir_all(&isotope_root).unwrap();
+        fs::write(opt_root.join("README"), b"skip").unwrap();
+        fs::create_dir_all(opt_root.join(".tmp")).unwrap();
+        fs::create_dir_all(opt_root.join("homebrew")).unwrap();
+        write_package_receipt(
+            &formula_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "python@3.12".to_string(),
+                version: "3.12.1".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "python@3.12".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_package_receipt(
+            &npm_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "npm:openclaw".to_string(),
+                version: "4.5.6".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "openclaw".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_stub_manifest(
+            &formula_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["python3.12".to_string(), "pip3.12".to_string()],
+            },
+        )
+        .unwrap();
+
+        let refs = installed_package_refs(&opt_root).unwrap();
+        assert!(
+            refs.iter()
+                .any(|package| package.package_name == "python@3.12")
+        );
+        assert!(
+            refs.iter()
+                .any(|package| package.package_name == "npm:openclaw")
+        );
+        assert!(
+            refs.iter()
+                .any(|package| package.package_name == "npm:@scope/tool")
+        );
+        assert!(
+            refs.iter()
+                .any(|package| package.package_name == "pip:psycopg2")
+        );
+        assert!(
+            refs.iter()
+                .any(|package| package.package_name == "isotope:gh")
+        );
+        assert_eq!(
+            installed_stub_paths_at(&formula_root).unwrap(),
+            vec![
+                managed_bin_root().join("pip3.12").display().to_string(),
+                managed_bin_root().join("python3.12").display().to_string(),
+            ]
+        );
+        assert!(
+            load_or_resolve_package_receipt("missing", temp.path())
+                .unwrap_err()
+                .contains("missing package metadata")
+        );
+        assert!(
+            resolve_installed_package_record_at("file", &opt_root.join("README"))
+                .unwrap_err()
+                .contains("not a directory")
+        );
+        assert!(
+            resolve_installed_package_record_at("absent", &opt_root.join("absent"))
+                .unwrap_err()
+                .contains("is not installed")
+        );
+
+        let mut warnings = Vec::new();
+        let records = resolve_scanned_package_records(
+            refs.clone(),
+            |package| {
+                if package.package_name == "pip:psycopg2" {
+                    Err("bad receipt".to_string())
+                } else {
+                    Ok(InstalledPackageRecord {
+                        package_name: package.package_name.clone(),
+                        source: PackageReceiptSource::Formula {
+                            root_formula: package.package_name.clone(),
+                        },
+                        installed_version: "1.0.0".to_string(),
+                    })
+                }
+            },
+            |message| warnings.push(message),
+        )
+        .unwrap();
+        assert!(
+            records
+                .iter()
+                .any(|record| record.package_name == "python@3.12")
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|message| message.contains("bad receipt"))
+        );
+
+        let statuses = resolve_scanned_package_statuses(
+            refs,
+            |package| {
+                Ok(PackageStatus {
+                    package_name: package.package_name.clone(),
+                    source: PackageReceiptSource::Formula {
+                        root_formula: package.package_name.clone(),
+                    },
+                    installed_version: "1.0.0".to_string(),
+                    latest_version: if package.package_name == "npm:openclaw" {
+                        "2.0.0".to_string()
+                    } else {
+                        "1.0.0".to_string()
+                    },
+                })
+            },
+            |_message| {},
+        )
+        .unwrap();
+        assert_eq!(
+            filter_outdated_package_statuses(statuses)
+                .into_iter()
+                .map(|status| status.package_name)
+                .collect::<Vec<_>>(),
+            vec!["npm:openclaw".to_string()]
+        );
+    }
+
+    #[test]
+    fn package_record_and_status_wrappers_use_requested_selection() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let record_name = "coverage-record";
+        let status_name = "coverage-cask-status";
+        let record_root = opt_root.join(record_name);
+        let status_root = opt_root.join(status_name);
+        for root in [&record_root, &status_root] {
+            if fs::symlink_metadata(root).is_ok() {
+                remove_path(root).unwrap();
+            }
+            fs::create_dir_all(root).unwrap();
+        }
+        write_package_receipt(
+            &record_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: record_name.to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: record_name.to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_package_receipt(
+            &status_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: status_name.to_string(),
+                version: "0.0.1".to_string(),
+                source: PackageReceiptSource::Cask {
+                    cask_name: "codex".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let records = resolve_installed_package_records(&PackageSelection::Requested(vec![
+            RequestedPackage::Auto(record_name.to_string()),
+            RequestedPackage::Auto(record_name.to_string()),
+        ]))
+        .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].package_name, record_name);
+        assert_eq!(
+            resolve_installed_package_record(record_name)
+                .unwrap()
+                .installed_version,
+            "1.0.0"
+        );
+
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let statuses = resolve_package_statuses(
+            &config,
+            &PackageSelection::Requested(vec![RequestedPackage::Auto(status_name.to_string())]),
+        )
+        .unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].package_name, status_name);
+        assert_eq!(statuses[0].installed_version, "0.0.1");
+        assert!(statuses[0].is_outdated());
+        assert_eq!(
+            resolve_outdated_package_statuses(
+                &config,
+                &PackageSelection::Requested(vec![RequestedPackage::Auto(status_name.to_string())])
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+
+        remove_path(&record_root).unwrap();
+        remove_path(&status_root).unwrap();
+    }
+
+    #[test]
+    fn package_info_metadata_helpers_cover_source_variants() {
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::HomebrewCask(
+                "visual-studio-code".to_string()
+            )),
+            Some(PackageReceiptSource::Cask {
+                cask_name: "visual-studio-code".to_string()
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::Alias {
+                alias: "node-tool".to_string(),
+                target: PackageAliasTarget::NpmPackage("openclaw".to_string()),
+            }),
+            Some(PackageReceiptSource::Npm {
+                package_name: "openclaw".to_string()
+            })
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("bun".to_string())).unwrap(),
+            PackageReceiptSource::Vendor {
+                vendor_name: "bun".to_string()
+            }
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto(
+                "definitely-not-a-package".to_string()
+            ))
+            .unwrap(),
+            PackageReceiptSource::Formula {
+                root_formula: "definitely-not-a-package".to_string(),
+            }
+        );
+        let (cask_aliases, cask_alias_error) =
+            resolve_aliases_for_source(&PackageReceiptSource::Cask {
+                cask_name: "visual-studio-code".to_string(),
+            });
+        assert!(cask_alias_error.is_none());
+        assert!(cask_aliases.is_empty());
+        assert!(
+            our_aliases_for_source(&PackageReceiptSource::Pip {
+                package_name: "psycopg2".to_string()
+            })
+            .is_empty()
+        );
+        assert!(
+            homebrew_aliases_for_formula("nonexistent-formula")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(formula_versioned_base("openssl@3"), Some("openssl"));
+        assert_eq!(formula_versioned_base("@3"), None);
+        assert_eq!(formula_versioned_base("openssl@stable"), None);
+
+        let mut formula = formula_info(false);
+        formula.desc = " Demo formula ".to_string();
+        formula.homepage = "https://example.com".to_string();
+        formula.license = Some(" MIT ".to_string());
+        formula.dependencies = vec!["openssl@3".to_string()];
+        assert_eq!(
+            homebrew_package_info_from_formula_info("demo", &formula),
+            HomebrewPackageInfo {
+                formula: "demo".to_string(),
+                description: Some("Demo formula".to_string()),
+                homepage: Some("https://example.com".to_string()),
+                license: Some("MIT".to_string()),
+                dependencies: vec!["openssl@3".to_string()],
+            }
+        );
+
+        let isotope = isotope_package_data("gh").unwrap();
+        let info = isotope_homebrew_info("gh", isotope);
+        assert_eq!(info.formula, "gh");
+        assert!(info.description.unwrap().contains("replacing brew:gh"));
+
+        let mut results = vec![
+            PackageSearchResult {
+                package_name: "openssl".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "openssl".to_string(),
+                },
+                summary: None,
+                latest_version: None,
+                homepage: None,
+                dependencies: Vec::new(),
+                rank: None,
+                last_updated_at: None,
+            },
+            PackageSearchResult {
+                package_name: "openssl@3".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "openssl@3".to_string(),
+                },
+                summary: None,
+                latest_version: None,
+                homepage: None,
+                dependencies: Vec::new(),
+                rank: None,
+                last_updated_at: None,
+            },
+            PackageSearchResult {
+                package_name: "pip:openssl".to_string(),
+                source: PackageReceiptSource::Pip {
+                    package_name: "openssl".to_string(),
+                },
+                summary: None,
+                latest_version: None,
+                homepage: None,
+                dependencies: Vec::new(),
+                rank: None,
+                last_updated_at: None,
+            },
+        ];
+        suppress_unversioned_formulae_with_versioned_search_results(&mut results);
+        assert_eq!(
+            results
+                .into_iter()
+                .map(|result| result.package_name)
+                .collect::<Vec<_>>(),
+            vec!["openssl@3".to_string(), "pip:openssl".to_string()]
+        );
+        assert!(formula_index_entry_matches(
+            &formula_index_entry("ripgrep", &["rg"], &["old-rg"]),
+            "old-rg"
+        ));
+    }
+
+    #[test]
+    fn resolve_uninstalled_package_info_populates_all_source_metadata() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let (base, server) = start_test_http_server(
+            vec![
+                (
+                    "/node.json".to_string(),
+                    br#"{
+                        "desc":"Node runtime",
+                        "homepage":"https://nodejs.org",
+                        "license":"MIT",
+                        "versions":{"stable":"22.0.0"},
+                        "dependencies":["openssl@3"],
+                        "bottle":{
+                            "stable":{
+                                "files":{
+                                    "all":{
+                                        "sha256":"node-sha",
+                                        "url":"https://example.test/node.tar.gz"
+                                    }
+                                }
+                            }
+                        },
+                        "disabled":false
+                    }"#
+                    .to_vec(),
+                ),
+                (
+                    "/coverage-npm".to_string(),
+                    br#"{
+                        "description":"Coverage npm package",
+                        "homepage":"https://example.test/coverage-npm",
+                        "dist-tags":{"latest":"1.2.3"},
+                        "versions":{
+                            "1.2.3":{
+                                "dist":{"tarball":"https://example.test/coverage-npm.tgz"}
+                            }
+                        }
+                    }"#
+                    .to_vec(),
+                ),
+                (
+                    "/coverage-pip/json".to_string(),
+                    br#"{
+                        "info":{
+                            "version":"2.3.4",
+                            "summary":"Coverage pip package",
+                            "home_page":"https://example.test/coverage-pip"
+                        }
+                    }"#
+                    .to_vec(),
+                ),
+            ],
+            4,
+        );
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(base.clone()),
+            npm_registry_root: Some(base.clone()),
+            pypi_root: Some(base),
+            ..Default::default()
+        });
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+
+        let formula = resolve_package_info(
+            &config,
+            &RequestedPackage::HomebrewFormula("node".to_string()),
+        )
+        .unwrap();
+        assert!(!formula.installed);
+        assert_eq!(formula.latest_version, Some("22.0.0".to_string()));
+        assert_eq!(
+            formula.homebrew_info.unwrap().description,
+            Some("Node runtime".to_string())
+        );
+
+        let cask = resolve_package_info(
+            &config,
+            &RequestedPackage::HomebrewCask("codex".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            cask.source,
+            Some(PackageReceiptSource::Cask {
+                cask_name: "codex".to_string()
+            })
+        );
+        assert!(cask.latest_version.is_some());
+
+        let isotope =
+            resolve_package_info(&config, &RequestedPackage::Isotope("gh".to_string())).unwrap();
+        assert!(isotope.latest_version.is_some());
+        assert!(
+            isotope
+                .homebrew_info
+                .unwrap()
+                .description
+                .unwrap()
+                .contains("replacing")
+        );
+
+        let npm = resolve_package_info(
+            &config,
+            &RequestedPackage::NpmPackage {
+                package: "coverage-npm".to_string(),
+                version: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(npm.latest_version, Some("1.2.3".to_string()));
+        assert_eq!(
+            npm.npm_homepage,
+            Some("https://example.test/coverage-npm".to_string())
+        );
+
+        let pip = resolve_package_info(
+            &config,
+            &RequestedPackage::PipPackage("coverage-pip".to_string()),
+        )
+        .unwrap();
+        assert_eq!(pip.latest_version, Some("2.3.4".to_string()));
+        server.join().unwrap();
+    }
+
+    #[test]
     fn parse_package_status_request_without_args_selects_all_installed() {
         let invocation = Invocation {
             binary_name: "av".to_string(),
@@ -11344,6 +11985,289 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn run_i_vendor_installs_from_local_archive_and_writes_receipts_and_stubs() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let package_name = "coverage-vendor";
+        let opt_root = opt_pkg_root();
+        let install_root = opt_root.join(package_name);
+        let bin_root = managed_bin_root();
+        let stub_path = bin_root.join(package_name);
+        for path in [&install_root, &stub_path] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        let temp = TempDir::new().unwrap();
+        let vendor_archive = temp.path().join("coverage-vendor.tar.gz");
+        write_test_archive(
+            &vendor_archive,
+            &[("pkg/bin/coverage-vendor", b"#!/bin/sh\nprintf coverage\n")],
+        );
+        let vendor_bytes = fs::read(&vendor_archive).unwrap();
+        let (vendor_base, vendor_server) =
+            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 1);
+        let version = Version::parse("0.0.0").unwrap();
+        register_test_download_url(&version, format!("{vendor_base}/vendor.tar.gz"));
+
+        let events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+
+        run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            vendor::VendorPackage {
+                name: package_name,
+                dependencies: &[],
+                executables: &["coverage-vendor"],
+                version: fake_vendor_version,
+                download_url: Some(test_download_url),
+                install: coverage_vendor_install_strategy,
+            },
+            Some(callback),
+        )
+        .unwrap();
+        vendor_server.join().unwrap();
+
+        let receipt = load_package_receipt(&install_root.join(ROOT_RECEIPT))
+            .unwrap()
+            .unwrap();
+        assert_eq!(receipt.package_name, package_name);
+        assert_eq!(receipt.version, "0.0.0");
+        assert_eq!(
+            receipt.source,
+            PackageReceiptSource::Vendor {
+                vendor_name: package_name.to_string(),
+            }
+        );
+        assert!(is_executable(&install_root.join("bin/coverage-vendor")));
+        assert!(is_executable(&stub_path));
+        assert_eq!(
+            load_stub_manifest(&install_root.join(STUB_MANIFEST))
+                .unwrap()
+                .stubs,
+            vec![package_name.to_string()]
+        );
+        assert!(events.lock().unwrap().iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
+        ));
+
+        remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+    }
+
+    #[test]
+    fn run_i_npm_and_pip_install_with_local_formula_tools() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        for package_name in ["npm:coverage-npm", "pip:coverage-pip"] {
+            let install_root = package_install_root(&opt_root, package_name).unwrap();
+            if fs::symlink_metadata(&install_root).is_ok() {
+                remove_path(&install_root).unwrap();
+            }
+        }
+        for stub in ["coverage-npm", "coverage-pip"] {
+            let path = bin_root.join(stub);
+            if fs::symlink_metadata(&path).is_ok() {
+                remove_path(&path).unwrap();
+            }
+        }
+
+        let temp = TempDir::new().unwrap();
+        let node_archive = temp.path().join("node.tar.gz");
+        let fake_npm = br#"#!/bin/sh
+set -eu
+prefix=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--prefix" ]; then
+    prefix="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+/bin/mkdir -p "$prefix/bin" "$prefix/lib/node_modules/coverage-npm"
+/bin/cat > "$prefix/bin/coverage-npm" <<'EOF'
+#!/bin/sh
+printf 'coverage-npm\n'
+EOF
+/bin/chmod +x "$prefix/bin/coverage-npm"
+"#;
+        write_test_bottle_archive(&node_archive, "node", "1.0.0", &[("bin/npm", fake_npm)]);
+        let node_bytes = fs::read(&node_archive).unwrap();
+        let node_sha = format!("{:x}", Sha256::digest(&node_bytes));
+
+        let python_archive = temp.path().join("python.tar.gz");
+        let fake_python = br#"#!/bin/sh
+set -eu
+if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
+  for last do :; done
+  /bin/mkdir -p "$last/bin"
+  /bin/cat > "$last/bin/python" <<'PY'
+#!/bin/sh
+if [ "${1:-}" = "-c" ]; then
+  printf '["coverage-pip"]\n'
+fi
+PY
+  /bin/chmod +x "$last/bin/python"
+  /bin/cat > "$last/bin/pip" <<'PIP'
+#!/bin/sh
+dir=$(/usr/bin/dirname "$0")
+/bin/cat > "$dir/coverage-pip" <<'ENTRY'
+#!/bin/sh
+printf 'coverage-pip\n'
+ENTRY
+/bin/chmod +x "$dir/coverage-pip"
+PIP
+  /bin/chmod +x "$last/bin/pip"
+  /usr/bin/touch "$last/pyvenv.cfg"
+fi
+"#;
+        write_test_bottle_archive(
+            &python_archive,
+            "python@3.14",
+            "3.14.0",
+            &[("bin/python3", fake_python)],
+        );
+        let python_bytes = fs::read(&python_archive).unwrap();
+        let python_sha = format!("{:x}", Sha256::digest(&python_bytes));
+
+        let (bottle_base, bottle_server) = start_test_http_server(
+            vec![
+                ("/node.tar.gz".to_string(), node_bytes),
+                ("/python.tar.gz".to_string(), python_bytes),
+            ],
+            2,
+        );
+        let node_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": node_sha,
+                            "url": format!("{bottle_base}/node.tar.gz"),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let python_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "3.14.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": python_sha,
+                            "url": format!("{bottle_base}/python.tar.gz"),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+
+        let (base, server) = start_test_http_server(
+            vec![
+                ("/node.json".to_string(), node_json),
+                ("/python@3.14.json".to_string(), python_json),
+                (
+                    "/coverage-npm".to_string(),
+                    br#"{
+                        "description":"Coverage npm package",
+                        "homepage":"https://example.test/coverage-npm",
+                        "dist-tags":{"latest":"1.2.3"},
+                        "versions":{
+                            "1.2.3":{
+                                "dist":{"tarball":"https://example.test/coverage-npm.tgz"}
+                            }
+                        }
+                    }"#
+                    .to_vec(),
+                ),
+                (
+                    "/coverage-pip/json".to_string(),
+                    br#"{
+                        "info":{
+                            "version":"2.3.4",
+                            "summary":"Coverage pip package",
+                            "home_page":"https://example.test/coverage-pip"
+                        }
+                    }"#
+                    .to_vec(),
+                ),
+            ],
+            6,
+        );
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(base.clone()),
+            npm_registry_root: Some(base.clone()),
+            pypi_root: Some(base),
+            ..Default::default()
+        });
+
+        run_i_npm(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "npm:coverage-npm".to_string(),
+            "coverage-npm".to_string(),
+            Some("1.2.3".to_string()),
+            InstallOptions {
+                allow_reinstall: false,
+            },
+            None,
+        )
+        .unwrap();
+        run_i_pip(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "pip:coverage-pip".to_string(),
+            "coverage-pip".to_string(),
+            None,
+        )
+        .unwrap();
+        server.join().unwrap();
+        bottle_server.join().unwrap();
+
+        let npm_root = opt_root.join("npm/coverage-npm");
+        let pip_root = opt_root.join("pip/coverage-pip");
+        assert!(is_executable(&npm_root.join("bin/coverage-npm")));
+        assert!(is_executable(&pip_root.join("bin/coverage-pip")));
+        assert!(is_executable(&bin_root.join("coverage-npm")));
+        assert!(is_executable(&bin_root.join("coverage-pip")));
+        assert_eq!(
+            load_package_receipt(&npm_root.join(ROOT_RECEIPT))
+                .unwrap()
+                .unwrap()
+                .version,
+            "1.2.3"
+        );
+        assert_eq!(
+            load_package_receipt(&pip_root.join(ROOT_RECEIPT))
+                .unwrap()
+                .unwrap()
+                .version,
+            "2.3.4"
+        );
+
+        remove_existing_package_install(&opt_root, "npm:coverage-npm", &bin_root).unwrap();
+        remove_existing_package_install(&opt_root, "pip:coverage-pip", &bin_root).unwrap();
+    }
+
+    #[test]
     fn unpack_vendor_archive_accepts_plain_tar_with_tgz_extension() {
         let temp = TempDir::new().unwrap();
         let archive = temp.path().join("plain.tgz");
@@ -11535,8 +12459,17 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         }
     }
 
+    fn coverage_vendor_install_strategy(_version: &semver::Version) -> vendor::InstallStrategy {
+        vendor::InstallStrategy::CopyFile {
+            source: "pkg/bin/coverage-vendor".to_string(),
+            destination_dir: "bin".to_string(),
+            destination_name: Some("coverage-vendor".to_string()),
+            mode: 0o755,
+            create_dirs: vec!["bin".to_string()],
+        }
+    }
+
     static TEST_DOWNLOAD_URLS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct TestEnvGuard {
         previous: Vec<(String, Option<OsString>)>,
@@ -11589,7 +12522,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     fn test_env_lock() -> &'static Mutex<()> {
-        TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
+        crate::global_test_env_lock()
     }
 
     fn test_download_urls() -> &'static Mutex<HashMap<String, String>> {

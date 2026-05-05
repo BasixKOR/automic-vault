@@ -1124,8 +1124,6 @@ keys or values are rejected."
 mod tests {
     use super::*;
 
-    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
     #[derive(Default)]
     struct StubCredentialStore {
         secrets: BTreeMap<String, Result<String, String>>,
@@ -1302,7 +1300,7 @@ mod tests {
 
     #[test]
     fn isotopes_check_environment_conflicts_warns_on_existing_env() {
-        let _guard = TEST_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::global_test_env_lock().lock().unwrap();
         unsafe { env::set_var("APPLE_USERNAME", "existing") };
         let existing = check_environment_conflicts(&["APPLE_USERNAME".to_string()]);
         assert!(existing.contains("APPLE_USERNAME"));
@@ -1331,6 +1329,151 @@ mod tests {
         let keys = vec!["APPLE_PASSWORD".to_string(), "APPLE_USERNAME".to_string()];
         let credential_keys = credential_keys_to_load(&keys, &existing_env_keys, true);
         assert_eq!(credential_keys, keys);
+    }
+
+    #[test]
+    fn isotopes_approval_files_and_decisions_cover_success_and_errors() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let previous_home = env::var_os("HOME");
+        unsafe { env::set_var("HOME", temp.path()) };
+
+        let root = user_approval_root().unwrap();
+        assert!(root.ends_with("Library/Application Support/Automic Vault/isotope"));
+        let pending = pending_approval_path().unwrap();
+        let decision = decision_path("request-1").unwrap();
+        write_json(
+            &pending,
+            &IsotopeApprovalRequestSnapshot {
+                id: "request-1".to_string(),
+                keys: vec!["TOKEN".to_string()],
+                executable_path: "/bin/sh".to_string(),
+                script_path: None,
+                requested_executable_path: "/bin/sh".to_string(),
+                argv: vec!["/bin/sh".to_string()],
+                cwd: "/tmp".to_string(),
+                parent_process: ParentProcessSnapshot {
+                    pid: 1,
+                    executable_path: Some("/sbin/launchd".to_string()),
+                    display_name: Some("launchd".to_string()),
+                },
+                can_always_allow: true,
+            },
+        )
+        .unwrap();
+        assert!(pending.is_file());
+        write_json(
+            &decision,
+            &IsotopeApprovalDecision {
+                id: "request-1".to_string(),
+                approved: true,
+                always_allow: false,
+                reason: None,
+            },
+        )
+        .unwrap();
+        wait_for_isotope_decision("request-1").unwrap();
+        assert!(!pending.exists());
+        assert!(!decision.exists());
+
+        let denied = decision_path("request-2").unwrap();
+        write_json(
+            &denied,
+            &IsotopeApprovalDecision {
+                id: "request-2".to_string(),
+                approved: false,
+                always_allow: false,
+                reason: Some("no".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(wait_for_isotope_decision("request-2").unwrap_err(), "no");
+
+        let mismatched = decision_path("request-3").unwrap();
+        write_json(
+            &mismatched,
+            &IsotopeApprovalDecision {
+                id: "other".to_string(),
+                approved: true,
+                always_allow: false,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert!(
+            wait_for_isotope_decision("request-3")
+                .unwrap_err()
+                .contains("id mismatch")
+        );
+
+        match previous_home {
+            Some(value) => unsafe { env::set_var("HOME", value) },
+            None => unsafe { env::remove_var("HOME") },
+        }
+    }
+
+    #[test]
+    fn isotopes_exec_environment_and_zeroize_helpers_cover_errors() {
+        assert!(build_exec_cstrings(&["ok".to_string()]).is_ok());
+        assert!(
+            build_exec_cstrings(&["bad\0arg".to_string()])
+                .unwrap_err()
+                .contains("interior NUL")
+        );
+
+        let mut env_map = BTreeMap::new();
+        env_map.insert("GOOD".to_string(), "value".to_string());
+        assert!(build_exec_environment(&env_map).is_ok());
+        env_map.insert("BAD".to_string(), "bad\0value".to_string());
+        assert!(
+            build_exec_environment(&env_map)
+                .unwrap_err()
+                .contains("environment entry")
+        );
+
+        let mut credentials = BTreeMap::new();
+        credentials.insert("TOKEN".to_string(), "secret".to_string());
+        zeroize_credentials(&mut credentials);
+        assert!(credentials.is_empty());
+        assert!(disable_core_dumps().is_ok());
+        let snapshot = parent_process_snapshot();
+        assert!(snapshot.pid > 0);
+    }
+
+    #[test]
+    fn isotopes_save_and_load_credentials_cover_store_paths() {
+        let mut store = StubCredentialStore::default();
+        store
+            .secrets
+            .insert("TOKEN".to_string(), Ok("secret".to_string()));
+        store
+            .secrets
+            .insert("BROKEN".to_string(), Err("missing".to_string()));
+
+        let options = SaveSecretOptions {
+            key: "TOKEN".to_string(),
+        };
+        run_save(&options, "stored", &store).unwrap();
+        assert_eq!(
+            load_credentials(&store, &["TOKEN".to_string()])
+                .unwrap()
+                .get("TOKEN")
+                .cloned(),
+            Some("secret".to_string())
+        );
+        assert_eq!(
+            load_credentials(&store, &["BROKEN".to_string()]).unwrap_err(),
+            "missing"
+        );
+        assert_eq!(
+            parse_save_key("av save", &[OsString::from(" TOKEN ")]).unwrap(),
+            "TOKEN"
+        );
+        assert!(
+            parse_save_key("av save", &[])
+                .unwrap_err()
+                .contains("missing")
+        );
     }
 
     #[test]

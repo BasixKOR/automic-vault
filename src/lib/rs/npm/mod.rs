@@ -25,3 +25,21 @@ pub(crate) fn install_leaf_name(package: &str) -> String {
 pub(crate) fn executable_name(package: &str) -> String {
     install_leaf_name(package)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn npm_names_cover_scoped_and_unscoped_packages() {
+        assert_eq!(qualified_name("openclaw"), "npm:openclaw");
+        assert_eq!(install_relative_path("openclaw"), PathBuf::from("openclaw"));
+        assert_eq!(
+            install_relative_path("@scope/tool"),
+            PathBuf::from("@scope").join("tool")
+        );
+        assert_eq!(install_leaf_name("@scope/tool"), "tool");
+        assert_eq!(install_leaf_name("@scope"), "@scope");
+        assert_eq!(executable_name("@scope/tool"), "tool");
+    }
+}
