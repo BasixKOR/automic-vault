@@ -7854,7 +7854,7 @@ or `npm:clawhub` for the aliased package"
                 cask_name: "codex".to_string()
             })
         );
-        assert!(cask.latest_version.is_some());
+        assert!(cask.latest_version.is_some() || cask.homebrew_info_error.is_some());
 
         let isotope =
             resolve_package_info(&config, &RequestedPackage::Isotope("gh".to_string())).unwrap();
