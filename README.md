@@ -1,10 +1,10 @@
-# Automic Vault
+# Automic Vault [![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
 
 Package manager, secrets manager, and execution control plane for autonomous
 agents.
 
 [![Download .DMG](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download .DMG")](https://github.com/automic-vault/automic-vault/releases/latest)
-[![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+
 
 > [!NOTE]
 >
