@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::ffi::OsStr;
 #[cfg(target_os = "macos")]
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
 use std::io::ErrorKind;
@@ -5058,6 +5059,9 @@ fn relocate_file(
         fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
 
     if let Ok(text) = std::str::from_utf8(&bytes) {
+        if is_documentation_text_path(path, root) {
+            return Ok(());
+        }
         let rewritten = rewrite_text(text, path, formula, rules)?;
         if rewritten.as_bytes() != bytes.as_slice() {
             ensure_writable(path)?;
@@ -5084,6 +5088,44 @@ fn relocate_file(
         codesign_if_macho(path, &bytes, progress)?;
     }
     Ok(())
+}
+
+fn is_documentation_text_path(path: &Path, root: &Path) -> bool {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let mut components = relative
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value),
+            _ => None,
+        });
+    let first = components.next();
+    let second = components.next();
+    if first == Some(OsStr::new("share")) && second == Some(OsStr::new("doc")) {
+        return true;
+    }
+
+    let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    let stem = file_name
+        .split_once('.')
+        .map_or(file_name, |(stem, _)| stem)
+        .to_ascii_uppercase();
+    let prefixes = [
+        "AUTHORS",
+        "CHANGELOG",
+        "CHANGES",
+        "COPYING",
+        "HISTORY",
+        "LICENSE",
+        "NEWS",
+        "NOTICE",
+        "README",
+        "THANKS",
+    ];
+    prefixes
+        .iter()
+        .any(|prefix| stem == *prefix || stem.starts_with(&format!("{prefix}-")))
 }
 
 fn rewrite_text(
@@ -5268,8 +5310,7 @@ fn rewrite_prefixes_in_bytes(
                     path,
                     root,
                     future_root,
-                )
-                {
+                ) {
                     output.extend_from_slice(destination.as_bytes());
                     cursor = path_end;
                     continue;
@@ -8327,6 +8368,54 @@ long_prefix = re.compile(r'@@HOMEBREW_CELLAR@@/python@3.12/[0-9\\._abrc]+')\n",
             "if os.path.realpath(sys.executable).startswith('/opt/python@3.12'):\n\
 long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         );
+    }
+
+    #[test]
+    fn relocate_file_skips_documentation_with_homebrew_placeholders() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("libssh2").join("1.11.1_1");
+        let path = root.join("NEWS");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            &path,
+            "Changelog for the libssh2 project. Generated with git2news.pl\n\
+@@HOMEBREW_PREFIX@@/include -> @@HOMEBREW_CELLAR@@/autoconf/2.72/bin/autoconf\n",
+        )
+        .unwrap();
+
+        let rules = vec![
+            RewriteRule {
+                source: "@@HOMEBREW_PREFIX@@".to_string(),
+                destination: "/opt/bat".to_string(),
+            },
+            RewriteRule {
+                source: "@@HOMEBREW_CELLAR@@/autoconf/2.72".to_string(),
+                destination: "/opt/bat".to_string(),
+            },
+        ];
+
+        relocate_file(&path, &root, Path::new("/opt/bat"), "libssh2", &rules, None).unwrap();
+
+        let unchanged = fs::read_to_string(&path).unwrap();
+        assert!(unchanged.contains("@@HOMEBREW_PREFIX@@/include"));
+        assert!(unchanged.contains("@@HOMEBREW_CELLAR@@/autoconf/2.72/bin/autoconf"));
+    }
+
+    #[test]
+    fn documentation_detection_covers_share_doc_and_changelog_names() {
+        let root = Path::new("/tmp/keg");
+        assert!(is_documentation_text_path(
+            Path::new("/tmp/keg/share/doc/foo/config.example"),
+            root
+        ));
+        assert!(is_documentation_text_path(
+            Path::new("/tmp/keg/CHANGELOG.md"),
+            root
+        ));
+        assert!(!is_documentation_text_path(
+            Path::new("/tmp/keg/lib/pkgconfig/foo.pc"),
+            root
+        ));
     }
 
     #[test]
