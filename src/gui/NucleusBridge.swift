@@ -82,6 +82,15 @@ final class NucleusBridge {
         let packages: [OutdatedPackageRecord]
     }
 
+    private struct HomebrewMigrationRecommendationResponse: Decodable {
+        let packages: [HomebrewMigrationPackage]
+        let hazards: [HomebrewMigrationHazard]
+
+        var recommendation: HomebrewMigrationRecommendation {
+            HomebrewMigrationRecommendation(packages: packages, hazards: hazards)
+        }
+    }
+
     private struct SystemInfoResponse: Decodable {
         let protocolVersion: String
         let version: String
@@ -216,6 +225,14 @@ final class NucleusBridge {
             params: EmptyParams(),
             as: ListOutdatedResponse.self
         ).packages
+    }
+
+    func fetchHomebrewMigrationRecommendation() throws -> HomebrewMigrationRecommendation {
+        try performProtocolRequest(
+            method: "packages.homebrewMigrationRecommendation",
+            params: EmptyParams(),
+            as: HomebrewMigrationRecommendationResponse.self
+        ).recommendation
     }
 
     func fetchSearchResults(

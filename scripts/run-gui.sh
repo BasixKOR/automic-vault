@@ -9,6 +9,35 @@ cli_style_init "Automic Vault"
 
 background=false
 
+terminate_existing_app() {
+  cli_step "Stopping existing app instances"
+
+  /usr/bin/osascript \
+    -e 'tell application id "com.automicvault" to quit' \
+    >/dev/null 2>&1 || true
+  /usr/bin/osascript \
+    -e 'tell application id "com.automicvault.menu-helper" to quit' \
+    >/dev/null 2>&1 || true
+
+  local deadline=$((SECONDS + 5))
+  while pgrep -f \
+    'Automic Vault(\.app)?/Contents/MacOS/Automic Vault|Automic Vault Menu(\.app)?/Contents/MacOS/Automic Vault Menu' \
+    >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      pkill -TERM -f \
+        'Automic Vault(\.app)?/Contents/MacOS/Automic Vault|Automic Vault Menu(\.app)?/Contents/MacOS/Automic Vault Menu' \
+        >/dev/null 2>&1 || true
+      break
+    fi
+    sleep 0.1
+  done
+
+  pkill -TERM -f \
+    'Automic Vault\.app/Contents/Resources/av serve|Automic Vault Menu\.app/Contents/Resources/av serve' \
+    >/dev/null 2>&1 || true
+  rm -f "${HOME}/Library/Application Support/Automic Vault/nucleus.sock"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --background)
@@ -28,6 +57,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 cli_title "Run Automic Vault"
+terminate_existing_app
 cli_step "Preparing local app bundle"
 app_path="$("${repo_root}/scripts/build-app.sh")"
 cli_info "App: ${app_path}"
@@ -35,7 +65,8 @@ cli_info "App: ${app_path}"
 if [[ "${background}" == "true" ]]; then
   cli_step "Launching app"
   "${app_path}/Contents/MacOS/Automic Vault" &
-  wait $!
+  cli_info "PID: $!"
+  exit 0
 fi
 
 cli_step "Launching app"
