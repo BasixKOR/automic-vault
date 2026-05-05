@@ -80,7 +80,7 @@ cli_info() {
     printf '%s│%s %s%s %s%s\n' \
       "$CLI_MAGENTA" "$CLI_RESET" "$CLI_DIM" "$CLI_INFO" "$message" "$CLI_RESET" >&2
   else
-    printf '- %s\n' "$message" >&2
+    printf '%s %s\n' "-" "$message" >&2
   fi
 }
 
@@ -115,4 +115,3 @@ cli_require_tool() {
     cli_die "${tool} is required"
   fi
 }
-
