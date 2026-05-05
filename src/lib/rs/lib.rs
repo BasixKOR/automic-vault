@@ -11470,19 +11470,6 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     fn resolve_package_search_results_matches_formula_names_and_aliases() {
         let _env_lock = test_env_lock().lock().unwrap();
         let formula_index = formula_index_entries().unwrap();
-        let (formula_alias, formula_name, formula_summary) = formula_index
-            .iter()
-            .find_map(|entry| {
-                entry.aliases.first().cloned().map(|alias| {
-                    (
-                        alias,
-                        entry.name.clone(),
-                        string_or_none(&entry.summary)
-                            .expect("embedded db alias-bearing formula should have a summary"),
-                    )
-                })
-            })
-            .expect("embedded db should carry at least one formula alias");
         let rg_formula = formula_alias_index()
             .unwrap()
             .get("rg")
@@ -11498,16 +11485,16 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &Config {
                 bottle_tag: "arm64_tahoe".to_string(),
             },
-            &formula_alias,
+            "rg",
         )
         .unwrap();
         assert!(results.iter().any(|result| {
-            result.package_name == formula_name
+            result.package_name == rg_formula
                 && result.source
                     == PackageReceiptSource::Formula {
-                        root_formula: formula_name.clone(),
+                        root_formula: rg_formula.clone(),
                     }
-                && result.summary == Some(formula_summary.clone())
+                && result.summary == Some(rg_summary.clone())
                 && result.latest_version.is_none()
                 && result.homepage.is_none()
                 && result.dependencies.is_empty()
