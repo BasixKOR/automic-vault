@@ -3,7 +3,10 @@ import json
 import os
 
 
-OUTPUT_PATH = os.path.join("src", "lib", "rs", "fixtures", "coverage-combined.json")
+OUTPUT_PATHS = [
+    os.path.join("src", "lib", "rs", "fixtures", "coverage-combined.json"),
+    os.path.join("data", "combined.json"),
+]
 
 
 def _ensure_cwd():
@@ -148,11 +151,12 @@ def main():
         },
     }
     _validate(data)
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    print(f"Wrote {OUTPUT_PATH}")
+    for output_path in OUTPUT_PATHS:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        print(f"Wrote {output_path}")
 
 
 def _validate(data):
