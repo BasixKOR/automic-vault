@@ -292,7 +292,8 @@ struct PackageDetail: Decodable, Equatable {
                 "After migration upgrade them to Automic Vault isotopes " +
                 "to ensure their security.",
             caveats: .bullets(homebrewMigration.hazardSummaries),
-            learnMoreURL: PackageSecurityNotice.defaultLearnMoreURL
+            learnMoreURL: homebrewMigration.learnMoreURL
+                ?? PackageSecurityNotice.defaultLearnMoreURL
         )
     }
 }
@@ -317,6 +318,10 @@ struct HomebrewMigrationRecommendation: Decodable, Equatable {
             return "\(hazard.packageName): isotope:\(hazard.isotopeName) detector triggered"
         }
     }
+
+    var learnMoreURL: URL? {
+        hazards.lazy.compactMap(\.radioisotopeReadmeURL).first
+    }
 }
 
 struct HomebrewMigrationPackage: Decodable, Equatable {
@@ -329,6 +334,19 @@ struct HomebrewMigrationHazard: Decodable, Equatable {
     let packageName: String
     let isotopeName: String
     let error: String?
+
+    var radioisotopeReadmeURL: URL? {
+        var pathAllowed = CharacterSet.urlPathAllowed
+        pathAllowed.remove("/")
+        guard let isotopePath = isotopeName.addingPercentEncoding(
+            withAllowedCharacters: pathAllowed
+        ) else {
+            return nil
+        }
+        return URL(
+            string: "https://github.com/automic-vault/radioisotopes/tree/main/\(isotopePath)#readme"
+        )
+    }
 }
 
 struct PackagePopularity: Decodable, Equatable {
