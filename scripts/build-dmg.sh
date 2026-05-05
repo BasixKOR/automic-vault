@@ -23,11 +23,13 @@ volume_name=""
 prepared_background_path=""
 notarize=false
 install_app=false
+publish_release=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
                             [--volume-name NAME] [--notarize] [--install]
+                            [--publish]
 
 Build the release app bundle and package it into a DMG in target/.
 
@@ -38,8 +40,49 @@ Options:
   --notarize          Submit the DMG for notarization and staple it.
   --notorize          Alias for --notarize.
   --install           Install the built app bundle into /Applications.
+  --publish           Create a GitHub release for vX.Y.Z with the DMG.
   --help              Show this help.
 EOF
+}
+
+publish_github_release() {
+  local tag="$1"
+  local version="$2"
+  local dmg_path="$3"
+  local asset_label
+  local target_ref
+  local -a release_args
+
+  asset_label="$(basename "${dmg_path}")"
+  target_ref="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
+
+  if [[ "${target_ref}" == "HEAD" ]]; then
+    target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
+  fi
+
+  release_args=(
+    "${tag}"
+    --draft
+    --generate-notes
+    --target "${target_ref}"
+    --title "Automic Vault ${version}"
+  )
+
+  cli_require_tool gh
+  cli_step "Creating draft GitHub release ${tag}"
+  gh release create "${release_args[@]}" >&2
+
+  cli_step "Uploading DMG to GitHub release"
+  if ! gh release upload "${tag}" "${dmg_path}#${asset_label}" >&2; then
+    cli_error "DMG upload failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
+
+  cli_step "Publishing GitHub release ${tag}"
+  if ! gh release edit "${tag}" --draft=false >&2; then
+    cli_error "Release publish failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -62,6 +105,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --install)
       install_app=true
+      shift
+      ;;
+    --publish)
+      publish_release=true
       shift
       ;;
     --help|-h)
@@ -227,6 +274,14 @@ if [[ "${install_app}" == "true" ]]; then
   ditto "${mounted_app_path}" "${install_path}"
   sudo cp -f "${mounted_app_path}/Contents/Resources/av" /usr/local/bin/av
   sudo chmod 755 /usr/local/bin/av
+fi
+
+if [[ "${publish_release}" == "true" ]]; then
+  if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    cli_die "Release publishing requires an X.Y.Z version, got: ${version}"
+  fi
+
+  publish_github_release "v${version}" "${version}" "${final_dmg}"
 fi
 
 cli_done "DMG ready"
