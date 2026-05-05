@@ -43,7 +43,6 @@ final class PackageFieldView: NSView {
         static let hazardSymbolGapFontSize: CGFloat = 5
         static let hazardSymbolFontSize: CGFloat = 15
         static let isotopeSymbolSize: CGFloat = 13
-        static let isotopeSymbolBaselineOffset: CGFloat = -1
         static let versionBaselineOffset: CGFloat = -2
         static let descriptionBaselineOffset: CGFloat = 0
         static let bracketInsetX: CGFloat = 4
@@ -418,9 +417,10 @@ final class PackageFieldView: NSView {
                 0,
                 renderedTextBounds.height - ceil(titleBounds.height)
             )
+            let titleBaselineOffset = abs(UIStyle.monoFont(size: 13).descender)
             return CGRect(
                 x: textLayer.frame.minX + prefixWidth + gapWidth,
-                y: textTopY - firstLineOffset + Metrics.isotopeSymbolBaselineOffset,
+                y: textTopY - firstLineOffset + titleBaselineOffset,
                 width: ceil(spacerBounds.width),
                 height: Metrics.isotopeSymbolSize
             )
