@@ -62,13 +62,18 @@ def main():
                 "schema": 6,
                 "generated_at": "2026-05-05T00:00:00Z",
                 "entries": {
+                    "aws": "awscli",
+                    "aws_completer": "awscli",
                     "bash": "bash",
+                    "gh": "gh",
                     "libpq": "libpq",
                     "rg": "ripgrep",
                     "sqlite": "sqlite",
                 },
                 "formulas": {
+                    "awscli": _formula("Official Amazon AWS command-line interface"),
                     "bash": _formula("Bourne-Again SHell"),
+                    "gh": _formula("GitHub command-line tool"),
                     "libpq": _formula("Postgres client library"),
                     "node": _formula(
                         "JavaScript runtime",
@@ -99,8 +104,15 @@ def main():
             "isotopes": {
                 "aws-cli": {
                     "name": "isotope:aws-cli",
-                    "replaces": "brew:awscli",
+                    "modifies": "brew:awscli",
+                    "migrate": "aws configure import --csv file://$1",
                     "version": "1.0.0",
+                },
+                "gh": {
+                    "name": "isotope:gh",
+                    "replaces": "brew:gh",
+                    "migrate": "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
+                    "version": "2.80.0",
                 },
             },
             "npm": {
