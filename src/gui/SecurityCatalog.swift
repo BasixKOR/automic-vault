@@ -93,6 +93,13 @@ final class SecurityCatalog {
                     ?? PackageSecurityNotice.defaultLearnMoreURL
             )
         }
+        if let securityState = detail.securityState,
+           securityState.installIsInsecure {
+            return PackageSecurityNotice(
+                source: .isotope,
+                applyPackageName: "isotope:\(securityState.isotopeName)"
+            )
+        }
         return nil
     }
 

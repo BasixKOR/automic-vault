@@ -16,7 +16,13 @@ terminate_existing_app() {
     -e 'tell application id "com.automicvault" to quit' \
     >/dev/null 2>&1 || true
   /usr/bin/osascript \
+    -e 'tell application id "com.automicvault.debug" to quit' \
+    >/dev/null 2>&1 || true
+  /usr/bin/osascript \
     -e 'tell application id "com.automicvault.menu-helper" to quit' \
+    >/dev/null 2>&1 || true
+  /usr/bin/osascript \
+    -e 'tell application id "com.automicvault.debug.menu-helper" to quit' \
     >/dev/null 2>&1 || true
 
   local deadline=$((SECONDS + 5))
@@ -35,6 +41,9 @@ terminate_existing_app() {
   pkill -TERM -f \
     'Automic Vault\.app/Contents/Resources/av serve|Automic Vault Menu\.app/Contents/Resources/av serve' \
     >/dev/null 2>&1 || true
+  rm -rf \
+    "${HOME}/Library/Saved Application State/com.automicvault.savedState" \
+    "${HOME}/Library/Saved Application State/com.automicvault.debug.savedState"
   rm -f "${HOME}/Library/Application Support/Automic Vault/nucleus.sock"
 }
 
@@ -64,8 +73,7 @@ cli_info "App: ${app_path}"
 
 if [[ "${background}" == "true" ]]; then
   cli_step "Launching app"
-  "${app_path}/Contents/MacOS/Automic Vault" &
-  cli_info "PID: $!"
+  /usr/bin/open -n "${app_path}"
   exit 0
 fi
 

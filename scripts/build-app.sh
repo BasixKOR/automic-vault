@@ -99,6 +99,16 @@ NUKE_BUILD_ID="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || pri
 APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 
+if [[ "$CONFIGURATION" == "release" ]]; then
+  APP_BUNDLE_ID="com.automicvault"
+  MENU_BUNDLE_ID="com.automicvault.menu-helper"
+  HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
+else
+  APP_BUNDLE_ID="com.automicvault.debug"
+  MENU_BUNDLE_ID="com.automicvault.debug.menu-helper"
+  HELPER_BUNDLE_ID="com.automicvault.debug.nuke-helper"
+fi
+
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
     APPLE_TEAM_ID="${match[1]}"
@@ -106,9 +116,9 @@ if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
 fi
 
 if [[ -n "$APPLE_TEAM_ID" ]]; then
-  HELPER_REQUIREMENT="identifier \"com.automicvault.nuke-helper\" and anchor apple generic and certificate leaf[subject.OU] = \"$APPLE_TEAM_ID\""
+  HELPER_REQUIREMENT="identifier \"$HELPER_BUNDLE_ID\" and anchor apple generic and certificate leaf[subject.OU] = \"$APPLE_TEAM_ID\""
 else
-  HELPER_REQUIREMENT="identifier \"com.automicvault.nuke-helper\" and anchor apple generic"
+  HELPER_REQUIREMENT="identifier \"$HELPER_BUNDLE_ID\" and anchor apple generic"
 fi
 
 export APPLE_TEAM_ID
@@ -411,7 +421,7 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key>
   <string>gui-icon</string>
   <key>CFBundleIdentifier</key>
-  <string>com.automicvault</string>
+  <string>${APP_BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -420,7 +430,7 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <string>APPL</string>
   <key>SMPrivilegedExecutables</key>
   <dict>
-    <key>com.automicvault.nuke-helper</key>
+    <key>${HELPER_BUNDLE_ID}</key>
     <string>${HELPER_REQUIREMENT}</string>
   </dict>
   <key>CFBundleShortVersionString</key>
@@ -459,7 +469,7 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key>
   <string>${MENU_APP_ICON_NAME}</string>
   <key>CFBundleIdentifier</key>
-  <string>com.automicvault.menu-helper</string>
+  <string>${MENU_BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -484,17 +494,17 @@ PLIST
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   cli_step "Signing bundle with Developer ID"
-  sign_binary "$RESOURCES_DIR/av" com.automicvault.av
-  sign_binary "$MENU_RESOURCES_DIR/av" com.automicvault.menu-helper.av
+  sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av"
+  sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av"
   sign_binary \
     "$HELPER_EXECUTABLE" \
-    com.automicvault.nuke-helper \
+    "$HELPER_BUNDLE_ID" \
     "$ROOT_DIR/src/helper/NukeHelper.entitlements"
-  sign_binary "$MENU_EXECUTABLE" com.automicvault.menu-helper
-  sign_bundle "$MENU_APP_DIR" com.automicvault.menu-helper
+  sign_binary "$MENU_EXECUTABLE" "$MENU_BUNDLE_ID"
+  sign_bundle "$MENU_APP_DIR" "$MENU_BUNDLE_ID"
   sign_bundle \
     "$APP_DIR" \
-    com.automicvault \
+    "$APP_BUNDLE_ID" \
     "$ROOT_DIR/src/gui/AutomicVault.entitlements"
 else
   cli_step "Signing bundle ad-hoc"
