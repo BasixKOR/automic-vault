@@ -15,7 +15,7 @@ agents.
 >
 > Automic Vault is NOT AFFILIATED with any cryptocurrency or token.
 
-> [![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/automic-vault/automic-vault/badge.svg?branch=main)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
 
 &nbsp;
 
