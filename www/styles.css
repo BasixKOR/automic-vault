@@ -859,6 +859,35 @@ h2 {
     #030506;
 }
 
+.approval .section-copy ul {
+  display: grid;
+  gap: 11px;
+  margin: 18px 0 24px;
+  padding: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: clamp(0.92rem, 1.06vw, 1.02rem);
+  line-height: 1.55;
+  list-style: none;
+}
+
+.approval .section-copy li {
+  position: relative;
+  padding-left: 1.35em;
+}
+
+.approval .section-copy li::before {
+  content: ">";
+  position: absolute;
+  left: 0;
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.approval .section-copy ul + p {
+  margin-top: 30px;
+}
+
 .immutable-installs {
   background:
     linear-gradient(180deg, rgba(214, 199, 161, 0.06), transparent 30%),
