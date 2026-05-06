@@ -153,7 +153,7 @@
       <section class="section secrets feature-section" id="secrets">
         <div class="section-copy">
           <p class="kicker">/// Secrets</p>
-          <h2>No plain text secrets for agents to expose or exploit.</h2>
+          <h2>We patch away plain text secrets</h2>
           <p>
             Open source tools have long leaked authority through readable
             config files, shell commands, and process environments. That is no
@@ -180,15 +180,18 @@
       <section class="section approval feature-section" id="approval">
         <div class="section-copy">
           <p class="kicker">/// Approval Gates</p>
-          <h2>Sensitive actions blocked at the <i>installation</i> layer</h2>
+          <h2>We patch gates inside the tools themselves</h2>
           <p>
-            Automic Vault puts human approval gates in front of the moments
-            that matter: executing tools, revealing secrets, and crossing from
-            agent intent into system authority.
-          <br><br>
-            Packages are installed immutably as root, patched so the approval
-            gates cannot be bypassed by malware or agents that escaped their
-            sandboxes.
+            Patching the tools and securing the secrets means there’s no way
+            to bypass our gates.
+          </p>
+          <p>
+            We only gate the moments that matter: executing tools, revealing
+            secrets, and crossing from agent intent into system authority.
+          </p>
+          <p>
+            We’re packaging experts, intimately familiar with the tools you love.
+            We know where to put the gates so you’re secure without being annoyed.
           </p>
         </div>
         <div class="approval-prompts" aria-label="Approval request examples">
@@ -212,6 +215,47 @@
               <i>Deny</i>
               <i>Approve</i>
             </div>
+          </article>
+        </div>
+      </section>
+
+      <section
+        class="section immutable-installs feature-section"
+        id="immutable-installs"
+      >
+        <div class="section-copy">
+          <p class="kicker">/// Immutable Installs</p>
+          <h2>The install surface stays fixed after you approve it.</h2>
+          <p>
+            Approval gates only hold if the underlying toolchain cannot drift
+            behind your back. Automic Vault installs each package into an
+            immutable root, constrains what it can reach, and makes upgrades
+            explicit human-visible events.
+          </p>
+        </div>
+        <div class="case-files" aria-label="Immutable install guarantees">
+          <article class="tool-proof">
+            <span>01</span>
+            <p>
+              Each tool gets a sealed package root. Agents can run what was
+              installed, but they cannot rewrite binaries, patch the package in
+              place, or smuggle in a replacement.
+            </p>
+          </article>
+          <article class="tool-proof">
+            <span>02</span>
+            <p>
+              Dependencies stay transitive, not ambient. An install only sees
+              the stack it actually depends on instead of reaching sideways
+              into unrelated packages.
+            </p>
+          </article>
+          <article class="tool-proof">
+            <span>03</span>
+            <p>
+              Upgrades happen on purpose. The stack you reviewed remains the
+              stack the agent executes until a human explicitly changes it.
+            </p>
           </article>
         </div>
       </section>
@@ -338,12 +382,11 @@
           <aside class="tool-proof" aria-label="GitHub CLI token protection">
             <span>Case file: GitHub CLI</span>
             <p>We patched <code>gh</code> to:</p>
-              <ul>
-                <li>Securely seal its token in the macOS keychain such that the only tool that can access it is itself.</li>
-                <li>Guard sensitive actions behind human approval gates</li>
-              </ul>
-              <p><a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.</p>
-            </p>
+            <ul>
+              <li>Securely seal its token in the macOS keychain such that the only tool that can access it is itself.</li>
+              <li>Guard sensitive actions behind human approval gates.</li>
+            </ul>
+            <p><a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.</p>
           </aside>
           <aside class="tool-proof" aria-label="AWS CLI credential protection">
             <span>Case file: AWS CLI</span>
@@ -398,6 +441,10 @@
               and only at the moment it needs it. No other process can read
               what <code>gh</code> holds. There's no retrieve step. No
               plaintext moment.
+            </p>
+            <p class="fit-distinction">
+              The 1Password cli, <code>op</code>, has controls
+              but they are not granular at the <i>installation layer</i>.
             </p>
           </article>
           <article class="fit-card">
