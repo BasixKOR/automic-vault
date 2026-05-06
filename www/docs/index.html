@@ -486,16 +486,41 @@ av contain sandbox-profile --allow /usr/local/bin/av</code></pre>
           <section class="doc-section faq-section" id="faq">
             <div class="section-heading">
               <p class="kicker">FAQ</p>
-              <h2>Operational notes from the CLI boundary.</h2>
+              <h2>Operational trust notes.</h2>
               <p>
-                These answers are scoped to the command-line surfaces documented
-                above: package installs, keychain-backed injection, and vaulted
-                execution.
+                These answers cover package installs, keychain-backed injection,
+                vaulted execution, and the trust boundaries around the Mac apps
+                Automic Vault works with.
               </p>
             </div>
 
             <div class="faq-list">
               <details open>
+                <summary>Why does Codex.app not need to be installed as root?</summary>
+                <p>
+                  <code>Codex.app</code> is code-signed. A future Automic Vault
+                  release will check code-signing identities for critical GUI
+                  apps that are not installed as root. Reinstalling Codex as
+                  root would make the app less conventional: macOS apps do not
+                  generally expect that layout, and some can break when forced
+                  into it.
+                </p>
+              </details>
+
+              <details>
+                <summary>Why does Automic Vault.app not need to be installed as root?</summary>
+                <p>
+                  Automic Vault does not need the app bundle itself to be
+                  root-owned. It needs a safe installation path. A future
+                  <code>.pkg</code> release will install through the macOS
+                  installer system, which verifies code signing end to end. If
+                  malware or an agent resigned Automic Vault, including with an
+                  ad hoc signature, the installation system would stop working
+                  because of the way Automic Vault verifies itself internally.
+                </p>
+              </details>
+
+              <details>
                 <summary>Why are isotope credentials unavailable over SSH?</summary>
                 <p>
                   The macOS login keychain may not be unlocked or trusted inside

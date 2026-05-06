@@ -30,7 +30,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=18">
+  <link rel="stylesheet" href="./styles.css?v=20">
 </head>
 <body>
   <div class="site-shell" id="top">
@@ -62,7 +62,7 @@
       <nav class="nav" aria-label="Main navigation">
         <a href="#secrets">Secrets</a>
         <a href="#approval">Approvals</a>
-        <a href="#product">Product</a>
+        <a href="#package-manager">Product</a>
         <a href="/docs/">Docs</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
@@ -76,9 +76,9 @@
         </div>
 
         <div class="hero-copy">
-          <p class="kicker">/// our agents were autonomous.<br>/// they deleted prod.<br>/// never again.</p>
+          <p class="kicker">/// deeper than guardrails</p>
           <h1 id="hero-title">
-            <span>Human<br>Approval<br>Required</span>
+            <span>Security at the layer that actually matters</span>
           </h1>
           <p class="lede">
             Run agents autonomously without losing secrets, control, or your mind.
@@ -155,10 +155,14 @@
           <p class="kicker">/// Secrets</p>
           <h2>We patch away plain text secrets</h2>
           <p>
-            Open source tools have long leaked authority through readable
-            config files, shell commands, and process environments. That is no
-            longer acceptable when agents and malware can both operate your
-            computer at machine speed.
+            Open Source was built assuming you would not let another intelligence have filesystem access.
+            Plain text secrets are (sadly) the norm.
+          </p>
+          <p>
+            Automic Vault patches packages so the only thing getting those secrets is the tool itself.
+          </p>
+          <p>
+            Agents and malware can suck it.
           </p>
         </div>
         <div class="comparison" aria-label="AWS CLI credential storage comparison">
@@ -182,17 +186,26 @@
           <p class="kicker">/// Approval Gates</p>
           <h2>We patch gates into the tools themselves</h2>
           <p>
-            Patching the tools and securing the secrets means there’s no way
-            to bypass our gates.
+            Agents come with increasingly comprehensive execution controls.
+            But it's the wrong layer.
           </p>
+          <ul>
+            <li>Configuration is painful and error-prone.</li>
+            <li>Defaults tend to be all or nothing—neither of which are fun or safe.</li>
+            <li>If agents are compromised the gates are compromised too.</li>
+          </ul>
           <p>
-            We only gate the moments that matter: executing tools, revealing
-            secrets, and crossing from agent intent into system authority.
+            Automic Vault patches the tools themselves.
           </p>
-          <p>
-            We’re packaging experts, intimately familiar with the tools you love.
-            We know where to put the gates so you’re secure without being annoyed.
-          </p>
+          <ul>
+            <li>The gates cannot be bypassed.</li>
+            <li>They are applied as needed, not before the commands run.</li>
+            <li>
+              Security that is tedious gets turned off. We don’t want you to turn it off.
+              We're intimiately familiar with the corpus of Open Source.
+              We put the gates in *tastefully*.
+            </li>
+          </ul>
         </div>
         <div class="approval-prompts" aria-label="Approval request examples">
           <article class="approval-card prompt-card">
@@ -248,13 +261,24 @@
               into unrelated packages.
             </p>
           </article>
-          <article class="tool-proof">
-            <span>03</span>
+          <aside class="tool-proof" aria-label="GitHub CLI token protection">
+            <span>Case file: GitHub CLI</span>
+            <p>We patched <code>gh</code> to:</p>
+            <ul>
+              <li>Securely seal its token in the macOS keychain such that the only tool that can access it is itself.</li>
+              <li>Guard sensitive actions behind human approval gates.</li>
+            </ul>
+            <p><a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.</p>
+          </aside>
+          <aside class="tool-proof" aria-label="AWS CLI credential protection">
+            <span>Case file: AWS CLI</span>
             <p>
-              Upgrades happen on purpose. The stack you reviewed remains the
-              stack the agent executes until a human explicitly changes it.
+              We patched <code>aws-cli</code> so credentials stay behind
+              Automic Vault instead of sitting in plaintext config files.
+              Agents can invoke AWS capabilities, but credential export stays
+              gated behind explicit approval.
             </p>
-          </article>
+          </aside>
         </div>
       </section>
 
@@ -262,7 +286,7 @@
         <div class="friction-copy">
           <p class="kicker">/// zero friction</p>
           <h2 id="friction-title">
-            Use your tools the same as before.
+            Use your tools the same as you do now.
           </h2>
           <h3>We patched the tools so you don’t have to patch yourself.</h3>
         </div>
@@ -327,16 +351,36 @@
         </div>
       </section>
 
-      <section class="section product feature-section" id="product">
+      <section class="section package-manager feature-section" id="package-manager">
         <div class="section-copy">
-          <p class="kicker">/// deeper than guardrails</p>
-          <h2>Security at the layer that actually matters.</h2>
+          <p class="kicker">/// Automic Vault.app</p>
+          <h2>The Package Manager you always wanted.</h2>
           <p>
-            Other tools wrap agents in rules. Automic Vault rebuilds the tools
-            themselves — so security isn't bolted on, it's built in.
+            A native Mac interface for finding, inspecting, installing, and
+            updating packages, paired with the <code>av</code> CLI when you do
+            want the terminal.
           </p>
+          <ul class="app-feature-list" aria-label="Automic Vault app features">
+            <li>Touch ID for installs and updates.</li>
+            <li>Notifications for updates.</li>
+            <li>Menu bar applet.</li>
+            <li>GUI search and package info.</li>
+            <li>Inline browser for package homepages and release changelogs.</li>
+            <li>Opt-in auto updates.</li>
+            <li>Remote package control for other Macs.</li>
+            <li>Multi-source package installation.</li>
+            <li>Alerts for security issues.</li>
+          </ul>
         </div>
-        <div class="feature-panel">
+        <div class="app-showcase">
+          <figure class="app-screenshot">
+            <img
+              src="./assets/gui-screenshot.webp"
+              alt="Automic Vault app showing package search and package details"
+              width="2984"
+              height="1944"
+            >
+          </figure>
           <div class="package-rail" aria-label="Nucleus install model">
             <div>
               <span>Source</span>
@@ -355,46 +399,6 @@
               <strong>/opt</strong>
             </div>
           </div>
-          <ul class="feature-list">
-            <li>
-              <strong>Rebuilt from the ground up.</strong>
-              <span>
-                Not wrapped, not patched — the tools themselves are different.
-              </span>
-            </li>
-            <li>
-              <strong>Multi&hyphen;source.</strong>
-              <span>
-                Get our security guarantees whatever the package source.
-              </span>
-            </li>
-            <li>
-              <strong>Immutable Installations.</strong>
-              <span>
-                Agents can use tools. They can't alter them (or themselves).
-              </span>
-            </li>
-          </ul>
-        </div>
-        <div class="case-files" aria-label="Tool security case files">
-          <aside class="tool-proof" aria-label="GitHub CLI token protection">
-            <span>Case file: GitHub CLI</span>
-            <p>We patched <code>gh</code> to:</p>
-            <ul>
-              <li>Securely seal its token in the macOS keychain such that the only tool that can access it is itself.</li>
-              <li>Guard sensitive actions behind human approval gates.</li>
-            </ul>
-            <p><a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.</p>
-          </aside>
-          <aside class="tool-proof" aria-label="AWS CLI credential protection">
-            <span>Case file: AWS CLI</span>
-            <p>
-              We patched <code>aws-cli</code> so credentials stay behind
-              Automic Vault instead of sitting in plaintext config files.
-              Agents can invoke AWS capabilities, but credential export stays
-              gated behind explicit approval.
-            </p>
-          </aside>
         </div>
       </section>
 
