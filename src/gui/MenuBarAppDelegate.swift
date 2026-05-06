@@ -301,7 +301,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     }.count,
                     outdatedPackages: outdatedPackages,
                     refreshedAt: Date(),
-                    lastError: nil
+                    lastError: nil,
+                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
                 )
             } catch {
                 nextSnapshot = NucleusStatusSnapshot(
@@ -312,7 +313,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     lastError: .init(
                         message: "Refresh failed during \(reason): \(error.localizedDescription)",
                         refreshedAt: Date()
-                    )
+                    ),
+                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
                 )
             }
 
@@ -326,7 +328,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func apply(snapshot: NucleusStatusSnapshot) {
         self.snapshot = snapshot
-        refreshedItem.title = "Last Refresh: \(formattedRefresh(snapshot.refreshedAt))"
+        refreshedItem.title = "Last Refresh: \(refreshStatusText(for: snapshot))"
         if let error = snapshot.lastError {
             errorItem.isHidden = false
             errorItem.title = error.message
@@ -428,6 +430,15 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             parts.append("app update available")
         }
         return parts.isEmpty ? "Automic Vault" : parts.joined(separator: ", ")
+    }
+
+    private func refreshStatusText(for snapshot: NucleusStatusSnapshot) -> String {
+        switch snapshot.remoteDatabaseRefreshState {
+        case .normal:
+            return formattedRefresh(snapshot.refreshedAt)
+        case .pendingHelperInstallation:
+            return "pending helper installation"
+        }
     }
 
     private func adjustedIcon(

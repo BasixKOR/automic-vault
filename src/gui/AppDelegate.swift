@@ -215,7 +215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshRemoteDatabase() {
         helperBridge.refreshRemoteDatabase { result in
-            if case .failure(let error) = result {
+            switch result {
+            case .success(.completed(_)):
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+            case .success(.pendingHelperInstallation):
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.pendingHelperInstallation)
+            case .failure(let error):
                 NSLog("remote database refresh failed: %@", error.localizedDescription)
             }
         }
@@ -446,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch result {
             case .success:
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
                 self.saveIsotopeDecision(
                     approval: approval,
                     approved: true,

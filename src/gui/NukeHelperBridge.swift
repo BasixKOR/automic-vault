@@ -42,6 +42,11 @@ enum NukeHelperProgressEvent {
     case error(message: String)
 }
 
+enum NukeHelperMaintenanceResult {
+    case completed(updated: Bool)
+    case pendingHelperInstallation
+}
+
 @objc(AVPackageSpec)
 final class AVPackageSpec: NSObject, NSSecureCoding {
     static var supportsSecureCoding: Bool { true }
@@ -154,6 +159,11 @@ final class NukeHelperBridge {
     private var connection: NSXPCConnection?
     private let progressRelay = NukeHelperProgressRelay()
 
+    private enum HelperBlessingPolicy {
+        case blessIfNeeded
+        case installedOnly
+    }
+
     func authenticateBiometrics(reason: String, completion: @escaping (Result<Void, Error>) -> Void) {
         let context = LAContext()
         context.localizedCancelTitle = "Abort"
@@ -222,7 +232,15 @@ final class NukeHelperBridge {
     func checkForUpdates(completion: @escaping (Result<Bool, Error>) -> Void) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: nil)
+                guard let proxy = try self.remoteProxy(
+                    progressHandler: nil,
+                    blessingPolicy: .installedOnly
+                ) else {
+                    DispatchQueue.main.async {
+                        completion(.success(false))
+                    }
+                    return
+                }
                 proxy.checkForUpdates { hasUpdates in
                     DispatchQueue.main.async {
                         completion(.success(hasUpdates))
@@ -236,10 +254,20 @@ final class NukeHelperBridge {
         }
     }
 
-    func refreshRemoteDatabase(completion: ((Result<Bool, Error>) -> Void)? = nil) {
+    func refreshRemoteDatabase(
+        completion: ((Result<NukeHelperMaintenanceResult, Error>) -> Void)? = nil
+    ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: nil)
+                guard let proxy = try self.remoteProxy(
+                    progressHandler: nil,
+                    blessingPolicy: .installedOnly
+                ) else {
+                    DispatchQueue.main.async {
+                        completion?(.success(.pendingHelperInstallation))
+                    }
+                    return
+                }
                 proxy.refreshRemoteDatabase { updated in
                     if updated {
                         self.queue.async {
@@ -248,7 +276,7 @@ final class NukeHelperBridge {
                         }
                     }
                     DispatchQueue.main.async {
-                        completion?(.success(updated))
+                        completion?(.success(.completed(updated: updated)))
                     }
                 }
             } catch {
@@ -265,7 +293,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.updateAll { result in
                     self.complete(result, completion: completion)
                 }
@@ -284,7 +312,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.installAv(sourcePath) { result in
                     self.complete(result, completion: completion)
                 }
@@ -303,7 +331,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.installIsotopeStubs(isotopeName) { result in
                     self.complete(result, completion: completion)
                 }
@@ -322,7 +350,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.installIsotopeRoot(isotopeName) { result in
                     self.complete(result, completion: completion)
                 }
@@ -341,7 +369,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.convertRadioisotope(isotopeName) { result in
                     self.complete(result, completion: completion)
                 }
@@ -361,7 +389,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(
+                let proxy = try self.privilegedRemoteProxy(
                     progressHandler: nil,
                     errorHandler: { error in
                         DispatchQueue.main.async {
@@ -391,7 +419,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.install(packages) { result in
                     self.complete(result, completion: completion)
                 }
@@ -410,7 +438,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.update(packages) { result in
                     self.complete(result, completion: completion)
                 }
@@ -429,7 +457,7 @@ final class NukeHelperBridge {
     ) {
         queue.async {
             do {
-                let proxy = try self.remoteProxy(progressHandler: progress)
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.uninstall(packages) { result in
                     self.complete(result, completion: completion)
                 }
@@ -462,19 +490,56 @@ final class NukeHelperBridge {
         return .success(NukeHelperResult(message: message, processedPackages: processedPackages))
     }
 
-    private func remoteProxy(
+    private func privilegedRemoteProxy(
         progressHandler: ((NukeHelperProgressEvent) -> Void)?
     ) throws -> NukeHelperProtocol {
-        try remoteProxy(progressHandler: progressHandler) { error in
+        try privilegedRemoteProxy(progressHandler: progressHandler) { error in
+            NSLog("nuke-helper XPC error: %@", error.localizedDescription)
+        }
+    }
+
+    private func privilegedRemoteProxy(
+        progressHandler: ((NukeHelperProgressEvent) -> Void)?,
+        errorHandler: @escaping (Error) -> Void
+    ) throws -> NukeHelperProtocol {
+        guard let proxy = try remoteProxy(
+            progressHandler: progressHandler,
+            blessingPolicy: .blessIfNeeded,
+            errorHandler: errorHandler
+        ) else {
+            throw NukeHelperBridgeError.connectionFailed("Unable to acquire helper proxy.")
+        }
+        return proxy
+    }
+
+    private func remoteProxy(
+        progressHandler: ((NukeHelperProgressEvent) -> Void)?,
+        blessingPolicy: HelperBlessingPolicy
+    ) throws -> NukeHelperProtocol? {
+        try remoteProxy(progressHandler: progressHandler, blessingPolicy: blessingPolicy) { error in
             NSLog("nuke-helper XPC error: %@", error.localizedDescription)
         }
     }
 
     private func remoteProxy(
         progressHandler: ((NukeHelperProgressEvent) -> Void)?,
+        blessingPolicy: HelperBlessingPolicy = .blessIfNeeded,
         errorHandler: @escaping (Error) -> Void
-    ) throws -> NukeHelperProtocol {
-        if try helperRequiresBlessing() {
+    ) throws -> NukeHelperProtocol? {
+        let requiresBlessing: Bool
+        do {
+            requiresBlessing = try helperRequiresBlessing()
+        } catch {
+            if blessingPolicy == .installedOnly {
+                return nil
+            }
+            throw error
+        }
+
+        if requiresBlessing {
+            guard blessingPolicy == .blessIfNeeded else {
+                return nil
+            }
             try ensureBlessableBuild()
             try blessHelper()
             connection?.invalidate()

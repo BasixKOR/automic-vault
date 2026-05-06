@@ -6,18 +6,25 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         let refreshedAt: Date
     }
 
+    enum RemoteDatabaseRefreshState: String, Codable {
+        case normal
+        case pendingHelperInstallation
+    }
+
     let installedCount: Int
     let hazardousPackageCount: Int
     let outdatedPackages: [OutdatedPackageRecord]
     let refreshedAt: Date
     let lastError: ErrorSnapshot?
+    let remoteDatabaseRefreshState: RemoteDatabaseRefreshState
 
     static let empty = NucleusStatusSnapshot(
         installedCount: 0,
         hazardousPackageCount: 0,
         outdatedPackages: [],
         refreshedAt: .distantPast,
-        lastError: nil
+        lastError: nil,
+        remoteDatabaseRefreshState: .normal
     )
 
     var outdatedPackagesByName: [String: OutdatedPackageRecord] {
@@ -30,6 +37,7 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         case outdatedPackages
         case refreshedAt
         case lastError
+        case remoteDatabaseRefreshState
     }
 
     init(
@@ -37,13 +45,15 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         hazardousPackageCount: Int,
         outdatedPackages: [OutdatedPackageRecord],
         refreshedAt: Date,
-        lastError: ErrorSnapshot?
+        lastError: ErrorSnapshot?,
+        remoteDatabaseRefreshState: RemoteDatabaseRefreshState = .normal
     ) {
         self.installedCount = installedCount
         self.hazardousPackageCount = hazardousPackageCount
         self.outdatedPackages = outdatedPackages
         self.refreshedAt = refreshedAt
         self.lastError = lastError
+        self.remoteDatabaseRefreshState = remoteDatabaseRefreshState
     }
 
     init(from decoder: Decoder) throws {
@@ -61,6 +71,23 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         lastError = try container.decodeIfPresent(
             ErrorSnapshot.self,
             forKey: .lastError
+        )
+        remoteDatabaseRefreshState = try container.decodeIfPresent(
+            RemoteDatabaseRefreshState.self,
+            forKey: .remoteDatabaseRefreshState
+        ) ?? .normal
+    }
+
+    func withRemoteDatabaseRefreshState(
+        _ state: RemoteDatabaseRefreshState
+    ) -> NucleusStatusSnapshot {
+        NucleusStatusSnapshot(
+            installedCount: installedCount,
+            hazardousPackageCount: hazardousPackageCount,
+            outdatedPackages: outdatedPackages,
+            refreshedAt: refreshedAt,
+            lastError: lastError,
+            remoteDatabaseRefreshState: state
         )
     }
 }
@@ -148,6 +175,16 @@ final class NucleusStatusStore {
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: .atomic)
         post(NucleusStatusNotification.snapshotDidChange)
+    }
+
+    func saveRemoteDatabaseRefreshState(
+        _ state: NucleusStatusSnapshot.RemoteDatabaseRefreshState
+    ) throws {
+        let snapshot = loadSnapshot()
+        guard snapshot.remoteDatabaseRefreshState != state else {
+            return
+        }
+        try saveSnapshot(snapshot.withRemoteDatabaseRefreshState(state))
     }
 
     func loadStartAtLoginSnapshot() -> StartAtLoginSnapshot {

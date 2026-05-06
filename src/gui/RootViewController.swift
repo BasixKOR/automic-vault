@@ -2581,7 +2581,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.reloadPackages()
                     self.refreshRecommendations()
                     self.refreshUpdateAvailability()
-                    self.statusStore.requestRefresh()
+                    self.refreshMenuBarAfterPrivilegedHelperOperation()
                     if self.hasCLTRecommendationUpdate {
                         self.startAutomicVaultCLTInstallOperation()
                     }
@@ -2644,7 +2644,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     )
                     self.refreshRecommendations()
                     self.reloadPackages()
-                    self.statusStore.requestRefresh()
+                    self.refreshMenuBarAfterPrivilegedHelperOperation()
                 case .failure(let error):
                     overlay.fail(message: error.localizedDescription)
                     self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
@@ -2964,7 +2964,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                             self.reloadPackages()
                             self.refreshRecommendations()
                             self.refreshUpdateAvailability()
-                            self.statusStore.requestRefresh()
+                            self.refreshMenuBarAfterPrivilegedHelperOperation()
                         case .failure(let error):
                             overlay.fail(message: error.localizedDescription)
                             self.presentHelperError(
@@ -3147,6 +3147,11 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         bridge.invalidate()
     }
 
+    private func refreshMenuBarAfterPrivilegedHelperOperation() {
+        try? statusStore.saveRemoteDatabaseRefreshState(.normal)
+        statusStore.requestRefresh()
+    }
+
     private func startPackageMutation(
         _ kind: PackageMutationKind,
         detail: PackageDetail,
@@ -3198,7 +3203,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 self.reloadPackages()
                 self.refreshRecommendations()
                 self.refreshUpdateAvailability()
-                self.statusStore.requestRefresh()
+                self.refreshMenuBarAfterPrivilegedHelperOperation()
             case .failure(let error):
                 overlay.fail(message: error.localizedDescription)
                 self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
