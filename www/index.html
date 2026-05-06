@@ -180,7 +180,7 @@
       <section class="section approval feature-section" id="approval">
         <div class="section-copy">
           <p class="kicker">/// Approval Gates</p>
-          <h2>Block sensitive actions at the <i>installation</i> layer</h2>
+          <h2>Sensitive actions blocked at the <i>installation</i> layer</h2>
           <p>
             Automic Vault puts human approval gates in front of the moments
             that matter: executing tools, revealing secrets, and crossing from
@@ -337,18 +337,18 @@
         <div class="case-files" aria-label="Tool security case files">
           <aside class="tool-proof" aria-label="GitHub CLI token protection">
             <span>Case file: GitHub CLI</span>
-            <p>
-              We aftermarket modded <code>gh</code> to securely seal its
-              token in the macOS keychain. No other process can read it,
-              print it or dump it. Explicit requests of the tool itself to
-              dump a token are gated behind an Automic Vault approval prompt.
-              <a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.
+            <p>We patched <code>gh</code> to:</p>
+              <ul>
+                <li>Securely seal its token in the macOS keychain such that the only tool that can access it is itself.</li>
+                <li>Guard sensitive actions behind human approval gates</li>
+              </ul>
+              <p><a href="https://github.com/automic-vault/gh-cli">Check out the patches</a>.</p>
             </p>
           </aside>
           <aside class="tool-proof" aria-label="AWS CLI credential protection">
             <span>Case file: AWS CLI</span>
             <p>
-              We adapted <code>aws-cli</code> so credentials stay behind
+              We patched <code>aws-cli</code> so credentials stay behind
               Automic Vault instead of sitting in plaintext config files.
               Agents can invoke AWS capabilities, but credential export stays
               gated behind explicit approval.
@@ -363,13 +363,18 @@
           <h2 id="tool-fit-title">
             The right tool is the one that fits the threat.
           </h2>
+          <p>
+            Automic Vault is a package manager, secrets manager and execution
+            control manager combined. This unlocks new levels of security and
+            control never before seen.
+          </p>
         </div>
         <div class="fit-grid" aria-label="Competitor comparison">
           <article class="fit-card">
             <div>
               <h3>Homebrew</h3>
               <p class="fit-positioning">
-                Great for installing software. Not designed to secure it.
+                Package Manager
               </p>
             </div>
             <p class="fit-distinction">
@@ -385,8 +390,7 @@
             <div>
               <h3>1Password</h3>
               <p class="fit-positioning">
-                Great for protecting secrets at rest. Not designed to control
-                how they're used.
+                Secrets Manager
               </p>
             </div>
             <p class="fit-distinction">
@@ -399,10 +403,10 @@
           <article class="fit-card">
             <div>
               <h3 class="fit-card-long-title">
-                Agent Built-in Execution Control
+                Built-in Execution Controls
               </h3>
               <p class="fit-positioning">
-                Great for basic guardrails. Not designed for your system.
+                Execution Control
               </p>
             </div>
             <p class="fit-distinction">

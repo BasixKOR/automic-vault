@@ -473,6 +473,7 @@ h2 {
   font-weight: 800;
   line-height: 0.9;
   letter-spacing: 0.035em;
+  text-wrap: pretty;
 }
 
 .section-copy p:last-child {
@@ -530,20 +531,6 @@ h2 {
   box-shadow:
     inset 0 1px 0 rgba(214, 199, 161, 0.08),
     inset 24px 0 42px -38px rgba(216, 58, 47, 0.72);
-}
-
-.tool-proof::after {
-  content: "secrets:sealed·agents:contained";
-  position: absolute;
-  right: 18px;
-  bottom: 16px;
-  color: rgba(184, 155, 115, 0.14);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  pointer-events: none;
 }
 
 .case-files .tool-proof {
