@@ -14,6 +14,10 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
         case external
     }
 
+    private enum WebColors {
+        static let initialBackground = "#121614"
+    }
+
     private final class PassiveWebView: WKWebView {
         override var acceptsFirstResponder: Bool {
             false
@@ -125,6 +129,11 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
         webView.wantsLayer = true
         webView.layer?.backgroundColor = UIStyle.surface.cgColor
         webView.layer?.masksToBounds = true
+        webView.enclosingScrollView?.drawsBackground = false
+        webView.enclosingScrollView?.backgroundColor = UIStyle.surface
+        if #available(macOS 11.0, *) {
+            webView.underPageBackgroundColor = UIStyle.surface
+        }
         webView.setValue(false, forKey: "drawsBackground")
         webView.setValue(false, forKey: "drawsTransparentBackground")
         webView.allowsMagnification = false
@@ -355,7 +364,7 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
             html, body {
               margin: 0;
               min-height: 100vh;
-              background: #121614;
+              background: \(WebColors.initialBackground);
             }
           </style>
         </head>
@@ -418,7 +427,7 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
             :root { color-scheme: dark; }
             html, body {
               margin: 0;
-              background: #121614;
+              background: \(WebColors.initialBackground);
               color: #d9dfda;
               font-family: "SF Mono", "Menlo", monospace;
             }
@@ -545,9 +554,11 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
     }
 
     private func setLoadedExternalBackground(_ loaded: Bool) {
-        webView.layer?.backgroundColor = (
-            loaded ? NSColor.white : UIStyle.surface
-        ).cgColor
+        let color = loaded ? UIStyle.background : UIStyle.surface
+        webView.layer?.backgroundColor = color.cgColor
+        if #available(macOS 11.0, *) {
+            webView.underPageBackgroundColor = color
+        }
     }
 
     private func shouldOpenExternally(for navigationAction: WKNavigationAction)
@@ -567,6 +578,32 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
     private static func makeWebConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         let controller = WKUserContentController()
+        let initialBackground = WebColors.initialBackground
+        let initialBackgroundScript = """
+        (function() {
+          var css =
+            'html:not([data-av-page-painted]), ' +
+            'body:not([data-av-page-painted]) {' +
+            'background: \(initialBackground) !important;' +
+            '}';
+          var style = document.createElement('style');
+          style.id = 'av-initial-background';
+          style.textContent = css;
+          (document.head || document.documentElement).appendChild(style);
+          requestAnimationFrame(function() {
+            document.documentElement.setAttribute('data-av-page-painted', '');
+            if (document.body) {
+              document.body.setAttribute('data-av-page-painted', '');
+            }
+            requestAnimationFrame(function() {
+              var existing = document.getElementById('av-initial-background');
+              if (existing) {
+                existing.remove();
+              }
+            });
+          });
+        })();
+        """
         let script = """
         (function() {
           var existing = document.querySelector('meta[name="viewport"]');
@@ -581,6 +618,13 @@ final class ExternalSurfaceView: NSView, WKNavigationDelegate {
           document.body.style.overscrollBehavior = 'none';
         })();
         """
+        controller.addUserScript(
+            WKUserScript(
+                source: initialBackgroundScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
         controller.addUserScript(
             WKUserScript(
                 source: script,
