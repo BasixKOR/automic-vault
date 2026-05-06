@@ -1611,9 +1611,29 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private var installedPalettePackages: [PackagePresentation] {
         if areRecommendationsVisibleInInstalledList {
-            return installedPackages + recommendations
+            return installedPackages + installedPaletteSecondaryPackages
         }
         return installedPackages
+    }
+
+    private var installedPaletteSecondaryPackages: [PackagePresentation] {
+        if shouldShowPulseRecommendationCommand {
+            return recommendations + [pulseRecommendationCommand]
+        }
+        return recommendations
+    }
+
+    private var shouldShowPulseRecommendationCommand: Bool {
+        installedPackages.count < 3
+    }
+
+    private var pulseRecommendationCommand: PackagePresentation {
+        let command = PaletteCommand.pulse.paletteItem
+        return PackagePresentation(
+            item: .command(command),
+            detail: nil,
+            freshness: freshness(for: command.selectionID)
+        )
     }
 
     private func installedRecommendationPackageNames() -> Set<String> {
@@ -1881,7 +1901,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
-            return recommendations.isEmpty ? nil : recommendations.count
+            let count = installedPaletteSecondaryPackages.count
+            return count == 0 ? nil : count
         case .search:
             return totalDiscoveryCount
         case .command, .commandBrowser:
