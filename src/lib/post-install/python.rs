@@ -120,3 +120,69 @@ fn write_symlink(path: &Path, target: &Path) -> Result<(), String> {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn python_supports_and_version_parsing_cover_edge_cases() {
+        assert!(supports("python@3.13"));
+        assert!(!supports("openssl@3"));
+        assert_eq!(
+            parse_formula_version("python@3.14"),
+            Some(Version::new(3, 14, 0))
+        );
+        assert_eq!(parse_formula_version("python@3"), None);
+        assert_eq!(parse_formula_version("python@3.14.1"), None);
+        assert_eq!(parse_formula_version("python@x.14"), None);
+    }
+
+    #[test]
+    fn python_discovery_and_symlink_creation_cover_success_and_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let install_root = temp.path().join("opt/python");
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(install_root.join("python@3.12")).unwrap();
+        fs::create_dir_all(install_root.join("python@3.13")).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        fs::write(bin_dir.join("python3.12"), b"").unwrap();
+        fs::write(bin_dir.join("pip3.12"), b"").unwrap();
+        fs::write(bin_dir.join("python3.13"), b"").unwrap();
+        fs::write(bin_dir.join("pip3.13"), b"").unwrap();
+
+        let installed = discover_installed_pythons(&install_root, &bin_dir).unwrap();
+        assert_eq!(
+            installed.iter().map(|python| python.version.clone()).collect::<Vec<_>>(),
+            vec![Version::new(3, 13, 0), Version::new(3, 12, 0)]
+        );
+
+        let outcome = post_install(&install_root.join("python@3.13"), &bin_dir).unwrap();
+        assert_eq!(
+            outcome.managed_stubs,
+            vec![
+                "pip".to_string(),
+                "pip3".to_string(),
+                "python".to_string(),
+                "python3".to_string(),
+            ]
+        );
+        assert_eq!(fs::read_link(bin_dir.join("python3")).unwrap(), PathBuf::from("python3.13"));
+        assert_eq!(fs::read_link(bin_dir.join("pip3")).unwrap(), PathBuf::from("pip3.13"));
+        assert_eq!(fs::read_link(bin_dir.join("python")).unwrap(), PathBuf::from("python3"));
+        assert_eq!(fs::read_link(bin_dir.join("pip")).unwrap(), PathBuf::from("pip3"));
+
+        let empty_root = temp.path().join("empty-root");
+        fs::create_dir_all(empty_root.join("python@3.15")).unwrap();
+        let err = post_install(&empty_root.join("python@3.15"), &bin_dir).unwrap_err();
+        assert!(err.contains("no installed python stubs found"));
+
+        let err = discover_installed_pythons(&temp.path().join("missing-root"), &bin_dir)
+            .unwrap_err();
+        assert!(err.contains("failed to read"));
+
+        let err = write_symlink(&bin_dir.join("broken"), Path::new("/")).unwrap_err();
+        assert!(err.contains("failed to compute relative target"));
+    }
+}

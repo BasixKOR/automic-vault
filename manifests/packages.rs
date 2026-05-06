@@ -194,6 +194,50 @@ pub fn get(name: &str) -> Option<VendorPackage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::sync::Arc;
+    use std::thread;
+
+    fn start_test_http_server(
+        routes: Vec<(String, u16, Vec<u8>)>,
+        request_count: usize,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let routes = Arc::new(routes.into_iter().collect::<Vec<_>>());
+        let handle = thread::spawn(move || {
+            for _ in 0..request_count {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]).to_string();
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap();
+                let (status_code, body) = routes
+                    .iter()
+                    .find(|(route, _, _)| route == path)
+                    .map(|(_, status, body)| (*status, body.clone()))
+                    .unwrap_or((404, Vec::new()));
+                let status_text = match status_code {
+                    200 => "200 OK",
+                    404 => "404 Not Found",
+                    500 => "500 Internal Server Error",
+                    _ => "400 Bad Request",
+                };
+                let response = format!(
+                    "HTTP/1.1 {status_text}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+                stream.write_all(&body).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        (format!("http://{address}"), handle)
+    }
 
     #[test]
     fn vendor_registry_contains_all_packages() {
@@ -246,5 +290,117 @@ mod tests {
             }
             _ => panic!("bun should install from the extracted archive directory"),
         }
+    }
+
+    #[test]
+    fn vendor_registry_http_helpers_cover_success_paths() {
+        let package_metadata = br#"{
+            "dist-tags": {"latest": "1.2.3"},
+            "versions": {
+                "1.2.3": {
+                    "dist": {"tarball": "https://example.test/archive.tgz"},
+                    "dependencies": {"node": "^22.0.0"}
+                },
+                "1.2.4-beta.1": {
+                    "dist": {"tarball": "https://example.test/beta.tgz"}
+                },
+                "1.2.2": {
+                    "dist": {"tarball": "https://example.test/older.tgz"}
+                }
+            }
+        }"#
+        .to_vec();
+        let release = br#"{"tag_name":"bun-v1.2.3"}"#.to_vec();
+        let (server_root, handle) = start_test_http_server(
+            vec![
+                (
+                    "/repos/oven-sh/bun/releases/latest".to_string(),
+                    200,
+                    release,
+                ),
+                ("/bun".to_string(), 200, package_metadata),
+            ],
+            6,
+        );
+
+        crate::config::set_test_endpoint_overrides(crate::config::TestEndpointOverrides {
+            github_api_root: Some(server_root.clone()),
+            npm_registry_root: Some(server_root.clone()),
+            ..Default::default()
+        });
+        assert_eq!(
+            github_latest_tag("oven-sh/bun").unwrap(),
+            "bun-v1.2.3".to_string()
+        );
+        assert_eq!(npm_latest_tag("bun").unwrap(), "1.2.3");
+        assert_eq!(
+            npm_tarball_url("bun", &Version::parse("1.2.3").unwrap()).unwrap(),
+            "https://example.test/archive.tgz"
+        );
+        assert_eq!(
+            npm_versions_desc("bun").unwrap(),
+            vec![
+                Version::parse("1.2.3").unwrap(),
+                Version::parse("1.2.2").unwrap(),
+            ]
+        );
+        assert_eq!(
+            npm_dependency_constraint("bun", &Version::parse("1.2.3").unwrap(), "node").unwrap(),
+            Some("^22.0.0".to_string())
+        );
+        assert_eq!(
+            npm_dependency_constraint("bun", &Version::parse("1.2.2").unwrap(), "node").unwrap(),
+            None
+        );
+        crate::config::clear_test_endpoint_overrides();
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn vendor_registry_http_helpers_cover_error_paths() {
+        let invalid_json = b"{".to_vec();
+        let package_metadata = br#"{
+            "dist-tags": {"latest": "1.2.3"},
+            "versions": {
+                "1.2.3": {"dist": {"tarball": "https://example.test/archive.tgz"}}
+            }
+        }"#
+        .to_vec();
+        let (server_root, handle) = start_test_http_server(
+            vec![
+                (
+                    "/repos/oven-sh/bun/releases/latest".to_string(),
+                    500,
+                    Vec::new(),
+                ),
+                ("/broken".to_string(), 200, invalid_json),
+                ("/bun".to_string(), 200, package_metadata),
+            ],
+            3,
+        );
+
+        crate::config::set_test_endpoint_overrides(crate::config::TestEndpointOverrides {
+            github_api_root: Some(server_root.clone()),
+            npm_registry_root: Some(server_root.clone()),
+            ..Default::default()
+        });
+        let err = github_latest_tag("oven-sh/bun").unwrap_err();
+        assert!(err.contains("failed to fetch latest release for oven-sh/bun: http 500"));
+
+        let err = npm_latest_tag("broken").unwrap_err();
+        assert!(err.contains("failed to fetch npm metadata for broken"));
+
+        let err = npm_tarball_url("bun", &Version::parse("9.9.9").unwrap()).unwrap_err();
+        assert!(err.contains("missing version 9.9.9"));
+        crate::config::clear_test_endpoint_overrides();
+
+        assert_eq!(
+            parse_semver("1.2.3", "bun").unwrap(),
+            Version::parse("1.2.3").unwrap()
+        );
+        assert!(parse_semver("not-semver", "bun").is_err());
+
+        handle.join().unwrap();
     }
 }
