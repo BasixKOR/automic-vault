@@ -180,44 +180,18 @@
       <section class="section approval feature-section" id="approval">
         <div class="section-copy">
           <p class="kicker">/// Approval Gates</p>
-          <h2>Let agents run. Block sensitive actions at the <i>installation</i> layer</h2>
+          <h2>Block sensitive actions at the <i>installation</i> layer</h2>
           <p>
             Automic Vault puts human approval gates in front of the moments
             that matter: executing tools, revealing secrets, and crossing from
             agent intent into system authority.
+          <br><br>
+            Packages are installed immutably as root, patched so the approval
+            gates cannot be bypassed by malware or agents that escaped their
+            sandboxes.
           </p>
         </div>
-        <div class="law-stack">
-          <article>
-            <span>01</span>
-            <h3>Nothing <i>sensitive</i> executes without your say.</h3>
-            <p>Agents propose. You approve.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <h3>The toolchain is locked.</h3>
-            <p>Agents can't quietly alter what they run on.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <h3>Secrets stay sealed.</h3>
-            <p>Agents get capability, never the keys.</p>
-          </article>
-        </div>
         <div class="approval-prompts" aria-label="Approval request examples">
-          <div class="approval-terminal" aria-label="Agent command terminal">
-            <div class="terminal-titlebar" aria-hidden="true">
-              <i></i>
-              <i></i>
-              <i></i>
-              <span></span>
-            </div>
-            <pre><code><span class="shell-prompt">$</span> echo "$prompt" | codex --full-auto
-codex: executing `npm install`
-<span class="vault-line" style="opacity: 0.5;">av: command auto approved</span>
-codex: executing `npm publish`
-<span class="vault-line">av: approval gate triggered</span></code></pre>
-          </div>
           <article class="approval-card prompt-card">
             <span>Automic Vault</span>
             <strong>npm publish request</strong>
@@ -248,7 +222,7 @@ codex: executing `npm publish`
           <h2 id="friction-title">
             Your workflow doesn't change. Your exposure does.
           </h2>
-          <h3>Your habits stay familiar. Your exposure changes.</h3>
+          <h3>We adapt to you. We don’t like tools that force you to change how you work.</h3>
         </div>
         <div class="friction-tables">
           <table class="friction-diff" aria-label="Things that do not change">
