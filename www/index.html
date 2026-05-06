@@ -81,8 +81,7 @@
             <span>Human<br>Approval<br>Required.</span>
           </h1>
           <p class="lede">
-            Automic Vault puts you back in control — before agents touch your
-            secrets, run your tools, or cross a line you didn't draw.
+            Keep your secrets safe and your agent tool-use in check from the right layer: the package manager.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="/Automic Vault.dmg">
@@ -162,35 +161,18 @@
             computer at machine speed.
           </p>
         </div>
-        <figure class="secret-art" aria-hidden="true">
-          <img
-            src="./assets/vault-line-art.svg"
-            alt=""
-            width="760"
-            height="520"
-          >
-        </figure>
-        <div class="comparison" aria-label="GitHub CLI token access comparison">
+        <div class="comparison" aria-label="AWS CLI credential storage comparison">
           <div class="terminal before">
             <span>Before</span>
-            <code>$ gh auth token</code>
-            <strong>gho_************************************</strong>
-            <p>Any process that can run the CLI can dump the token.</p>
-          </div>
-          <div class="approval-card">
-            <span>Automic Vault</span>
-            <strong>GitHub token request</strong>
-            <p>gh wants to reveal a secret. Approve in Automic Vault?</p>
-            <div class="approval-actions" aria-hidden="true">
-              <i>Deny</i>
-              <i>Approve</i>
-            </div>
+            <code class="terminal-command"><span class="shell-prompt">$</span> <span>cat ~/.aws/credentials</span></code>
+            <strong>[default]<br>aws_access_key_id = AKIA<span class="secret-blur">IOSFODNN7EXAMPLE</span><br>aws_secret_access_key = <span class="secret-blur">wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</span></strong>
+            <p>Agents, malware—<i>any process</i> that can read the file can snatch your credentials.</p>
           </div>
           <div class="terminal after">
             <span>After</span>
-            <code>$ gh auth token</code>
-            <strong>approval required in app</strong>
-            <p>The key stays sealed unless a human explicitly allows access.</p>
+            <code class="terminal-command"><span class="shell-prompt">$</span> <span>cat ~/.aws/credentials</span></code>
+            <strong>file not found</strong>
+            <p>Automic Vault patches critical tools to store secrets encrypted in the keychain.</p>
           </div>
         </div>
       </section>
@@ -198,7 +180,7 @@
       <section class="section approval feature-section" id="approval">
         <div class="section-copy">
           <p class="kicker">/// Approval Gates</p>
-          <h2>Let agents run. Decide when they actually do.</h2>
+          <h2>Let agents run. Block sensitive actions at the <i>installation</i> layer</h2>
           <p>
             Automic Vault puts human approval gates in front of the moments
             that matter: executing tools, revealing secrets, and crossing from
@@ -247,10 +229,10 @@ codex: executing `npm publish`
           </article>
           <article class="approval-card prompt-card">
             <span>Automic Vault</span>
-            <strong>pandoc install request</strong>
+            <strong>GitHub token request</strong>
             <p>
-              Agent wants to install <code>pandoc</code> (PDF manipulation
-              suite). Approve?
+              Agent wants to run <code>gh auth token</code> and reveal a
+              secret. Approve?
             </p>
             <div class="approval-actions" aria-hidden="true">
               <i>Deny</i>
