@@ -375,6 +375,16 @@ mod tests {
     }
 
     #[test]
+    fn helper_update_all_and_background_refresh_wrappers_return_stable_shapes() {
+        let response = raw_to_string(nuke_helper_update_all(ptr::null_mut(), None));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+
+        assert!(!nuke_helper_check_for_updates());
+        assert!(!nuke_helper_refresh_remote_database());
+    }
+
+    #[test]
     fn helper_isotope_and_av_wrappers_accept_null_strings() {
         for response in [
             nuke_helper_install_av(ptr::null(), ptr::null(), ptr::null_mut(), None),
@@ -392,6 +402,51 @@ mod tests {
             let value =
                 serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
             assert!(value.get("Err").is_some());
+        }
+    }
+
+    #[test]
+    fn helper_wrappers_accept_explicit_strings_and_optional_callbacks() {
+        let source_path = CString::new("/tmp/Automic Vault.app").unwrap();
+        let caller_path = CString::new("/Applications/Automic Vault.app").unwrap();
+        let isotope = CString::new("gh").unwrap();
+        let executable = CString::new("/usr/local/bin/python").unwrap();
+        let script = CString::new("/tmp/script.py").unwrap();
+        let keys = CString::new(r#"["OPENAI_API_KEY"]"#).unwrap();
+
+        for response in [
+            nuke_helper_install_av(
+                source_path.as_ptr(),
+                caller_path.as_ptr(),
+                ptr::null_mut(),
+                Some(capture_progress),
+            ),
+            nuke_helper_install_isotope_root(
+                isotope.as_ptr(),
+                ptr::null_mut(),
+                Some(capture_progress),
+            ),
+            nuke_helper_convert_radioisotope(
+                isotope.as_ptr(),
+                ptr::null_mut(),
+                Some(capture_progress),
+            ),
+            nuke_helper_install_isotope_stubs(
+                isotope.as_ptr(),
+                ptr::null_mut(),
+                Some(capture_progress),
+            ),
+            nuke_helper_remember_isotope_always_allow(
+                executable.as_ptr(),
+                script.as_ptr(),
+                keys.as_ptr(),
+                ptr::null_mut(),
+                Some(capture_progress),
+            ),
+        ] {
+            let value =
+                serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
+            assert!(value.get("Err").is_some() || value.get("Ok").is_some());
         }
     }
 

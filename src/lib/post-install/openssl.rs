@@ -64,3 +64,56 @@ fn move_ca_certificates_dir(source_dir: &Path, target_dir: &Path) -> Result<(), 
 fn path_exists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openssl_supports_and_post_install_moves_certificates() {
+        assert!(supports("openssl@3"));
+        assert!(!supports("python@3.13"));
+
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path();
+        let source_dir = prefix.join(super::super::OPENSSL_CA_CERTIFICATES_DIR);
+        let target_dir = prefix.join(super::super::OPENSSL_CERT_PEM_DESTINATION_DIR);
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::write(
+            source_dir.join("cert.pem"),
+            b"certificate-from-source",
+        )
+        .unwrap();
+        fs::write(source_dir.join("extra.pem"), b"extra").unwrap();
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::write(target_dir.join("existing.pem"), b"existing").unwrap();
+
+        post_install(prefix).unwrap();
+
+        assert_eq!(
+            fs::read(target_dir.join("cert.pem")).unwrap(),
+            b"certificate-from-source"
+        );
+        assert_eq!(fs::read(target_dir.join("extra.pem")).unwrap(), b"extra");
+        assert_eq!(fs::read(target_dir.join("existing.pem")).unwrap(), b"existing");
+        assert!(!path_exists(&source_dir));
+    }
+
+    #[test]
+    fn openssl_helpers_cover_move_and_missing_path_cases() {
+        let temp = tempfile::tempdir().unwrap();
+        let source_dir = temp.path().join("source");
+        let target_dir = temp.path().join("target");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::write(source_dir.join("cert.pem"), b"certificate").unwrap();
+
+        move_ca_certificates_dir(&source_dir, &target_dir).unwrap();
+        assert_eq!(fs::read(target_dir.join("cert.pem")).unwrap(), b"certificate");
+        assert!(!path_exists(&source_dir));
+        assert!(path_exists(&target_dir));
+
+        let err = move_ca_certificates_dir(&source_dir, &target_dir).unwrap_err();
+        assert!(err.contains("failed to read"));
+        assert!(!path_exists(&temp.path().join("does-not-exist")));
+    }
+}
