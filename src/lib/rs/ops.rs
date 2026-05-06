@@ -8,6 +8,7 @@ const ISOTOPE_ALWAYS_ALLOW_PATH: &str =
 const DEFAULT_SEARCH_PAGE_SIZE: usize = 100;
 const MAX_SEARCH_PAGE_SIZE: usize = 200;
 const HOMEBREW_CELLAR_PATH: &str = "/opt/homebrew/Cellar";
+const HOMEBREW_CASKROOM_PATH: &str = "/opt/homebrew/Caskroom";
 const HOMEBREW_BINARY_PATH: &str = "/opt/homebrew/bin/brew";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -287,7 +288,9 @@ pub(crate) fn list_outdated_packages() -> Result<core::ListOutdatedResponse, Str
 
 pub(crate) fn homebrew_migration_recommendation()
 -> Result<core::HomebrewMigrationRecommendationResponse, String> {
-    if !homebrew_cellar_has_packages(Path::new(HOMEBREW_CELLAR_PATH))? {
+    if !homebrew_package_root_has_packages(Path::new(HOMEBREW_CELLAR_PATH))?
+        && !homebrew_package_root_has_packages(Path::new(HOMEBREW_CASKROOM_PATH))?
+    {
         return Ok(core::HomebrewMigrationRecommendationResponse {
             packages: Vec::new(),
             hazards: Vec::new(),
@@ -303,12 +306,12 @@ pub(crate) fn homebrew_migration_recommendation()
     Ok(core::HomebrewMigrationRecommendationResponse { packages, hazards })
 }
 
-fn homebrew_cellar_has_packages(cellar: &Path) -> Result<bool, String> {
-    match fs::read_dir(cellar) {
+fn homebrew_package_root_has_packages(root: &Path) -> Result<bool, String> {
+    match fs::read_dir(root) {
         Ok(entries) => {
             for entry in entries {
                 let entry =
-                    entry.map_err(|err| format!("failed to read {}: {err}", cellar.display()))?;
+                    entry.map_err(|err| format!("failed to read {}: {err}", root.display()))?;
                 let name = entry.file_name();
                 if name.to_string_lossy().starts_with('.') {
                     continue;
@@ -320,7 +323,7 @@ fn homebrew_cellar_has_packages(cellar: &Path) -> Result<bool, String> {
             Ok(false)
         }
         Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(format!("failed to read {}: {err}", cellar.display())),
+        Err(err) => Err(format!("failed to read {}: {err}", root.display())),
     }
 }
 
@@ -339,7 +342,16 @@ fn explicitly_installed_homebrew_packages()
 
     let report: HomebrewInfoReport = serde_json::from_slice(&output.stdout)
         .map_err(|err| format!("failed to parse Homebrew package inventory: {err}"))?;
-    let mut packages = report
+    let mut packages = homebrew_migration_packages_from_report(report);
+    packages.sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
+    packages.dedup_by(|left, right| left.name == right.name);
+    Ok(packages)
+}
+
+fn homebrew_migration_packages_from_report(
+    report: HomebrewInfoReport,
+) -> Vec<core::HomebrewMigrationPackageSummary> {
+    let formulae = report
         .formulae
         .into_iter()
         .filter(HomebrewInfoFormula::is_installed_on_request)
@@ -350,20 +362,29 @@ fn explicitly_installed_homebrew_packages()
                 .first()
                 .and_then(|install| empty_string_as_none(install.version.clone())),
             description: empty_string_as_none(formula.description),
+        });
+    let casks = report.casks.into_iter().filter_map(|cask| {
+        let name = empty_string_as_none(cask.token)?;
+        Some(core::HomebrewMigrationPackageSummary {
+            name: crate::cask::qualified_name(&name),
+            version: empty_string_as_none(cask.version),
+            description: empty_string_as_none(cask.description),
         })
-        .collect::<Vec<_>>();
-    packages.sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
-    packages.dedup_by(|left, right| left.name == right.name);
-    Ok(packages)
+    });
+
+    formulae.chain(casks).collect()
 }
 
 fn homebrew_migration_hazard_for_package(
     package_name: &str,
 ) -> Option<core::HomebrewMigrationHazardSummary> {
-    let state = package_security_state_for_identifiers([
-        package_name.to_string(),
-        format!("{BREW_PACKAGE_PREFIX}{package_name}"),
-    ])?;
+    let mut identifiers = vec![package_name.to_string()];
+    if let Some(cask) = package_name.strip_prefix(CASK_PACKAGE_PREFIX) {
+        identifiers.push(cask.to_string());
+    } else {
+        identifiers.push(format!("{BREW_PACKAGE_PREFIX}{package_name}"));
+    }
+    let state = package_security_state_for_identifiers(identifiers)?;
     if !state.install_is_insecure && state.error.is_none() {
         return None;
     }
@@ -382,6 +403,8 @@ fn empty_string_as_none(value: String) -> Option<String> {
 struct HomebrewInfoReport {
     #[serde(default)]
     formulae: Vec<HomebrewInfoFormula>,
+    #[serde(default)]
+    casks: Vec<HomebrewInfoCask>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -407,6 +430,16 @@ struct HomebrewInfoInstall {
     version: String,
     #[serde(default)]
     installed_on_request: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct HomebrewInfoCask {
+    #[serde(default)]
+    token: String,
+    #[serde(default, rename = "desc")]
+    description: String,
+    #[serde(default)]
+    version: String,
 }
 
 pub(crate) fn system_info() -> core::SystemInfoResponse {
@@ -1076,6 +1109,62 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(explicit, vec!["explicit"]);
+    }
+
+    #[test]
+    fn homebrew_migration_packages_include_casks_without_on_request_flag() {
+        let report: HomebrewInfoReport = serde_json::from_value(serde_json::json!({
+            "formulae": [
+                {
+                    "name": "dependency",
+                    "desc": "Dependency formula",
+                    "installed": [
+                        {
+                            "version": "1.0.0",
+                            "installed_on_request": false
+                        }
+                    ]
+                },
+                {
+                    "name": "explicit",
+                    "desc": "Explicit formula",
+                    "installed": [
+                        {
+                            "version": "2.0.0",
+                            "installed_on_request": true
+                        }
+                    ]
+                }
+            ],
+            "casks": [
+                {
+                    "token": "cursor",
+                    "desc": "Cursor editor",
+                    "version": "3.0.0"
+                }
+            ]
+        }))
+        .unwrap();
+
+        let mut packages = homebrew_migration_packages_from_report(report);
+        packages
+            .sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
+
+        assert_eq!(
+            packages,
+            vec![
+                core::HomebrewMigrationPackageSummary {
+                    name: "cask:cursor".to_string(),
+                    version: Some("3.0.0".to_string()),
+                    description: Some("Cursor editor".to_string()),
+                },
+                core::HomebrewMigrationPackageSummary {
+                    name: "explicit".to_string(),
+                    version: Some("2.0.0".to_string()),
+                    description: Some("Explicit formula".to_string()),
+                },
+            ]
+        );
     }
 
     #[test]

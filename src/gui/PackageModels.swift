@@ -307,7 +307,9 @@ struct HomebrewMigrationRecommendation: Decodable, Equatable {
     }
 
     var installPackageNames: [String] {
-        packageNames.map { "brew:\($0)" }
+        packageNames.map { packageName in
+            packageName.hasPrefix("cask:") ? packageName : "brew:\(packageName)"
+        }
     }
 
     var hazardSummaries: [String] {
@@ -791,8 +793,8 @@ struct PackageRecommendation: Equatable {
         let packageCount = migration.packages.count
         let hazardCount = migration.hazards.count
         let description = hazardCount > 0
-            ? "Migrate \(packageCount) explicit Homebrew packages; \(hazardCount) need radioisotope review."
-            : "Migrate \(packageCount) explicitly installed Homebrew packages into the vault."
+            ? "Migrate \(packageCount) Homebrew packages and casks; \(hazardCount) need radioisotope review."
+            : "Migrate \(packageCount) Homebrew packages and casks into the vault."
         let detail = PackageDetail(
             packageName: homebrewMigrationName,
             qualifiedName: homebrewMigrationName,
@@ -811,8 +813,8 @@ struct PackageRecommendation: Equatable {
             lastUpdatedAt: nil,
             homebrewInfo: HomebrewPackageInfo(
                 formula: homebrewMigrationName,
-                description: "Installs the explicitly requested packages from " +
-                    "/opt/homebrew into Automic Vault. After migration, their " +
+                description: "Installs selected packages and casks from /opt/homebrew " +
+                    "into Automic Vault. After migration, their " +
                     "Homebrew packages will be uninstalled.",
                 homepage: nil,
                 license: nil,
