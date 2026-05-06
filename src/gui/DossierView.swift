@@ -818,7 +818,10 @@ final class DossierView: NSView {
             primaryActionButton.frame = CGRect(
                 x: contentMinX,
                 y: buttonY,
-                width: min(Metrics.actionButtonWidth, availableButtonWidth),
+                width: min(
+                    primaryActionButtonWidth(maximum: availableButtonWidth),
+                    availableButtonWidth
+                ),
                 height: Metrics.actionButtonHeight
             )
         } else {
@@ -902,6 +905,9 @@ final class DossierView: NSView {
             updateButton.isHidden = !(detail.installed && detail.isOutdated)
             updateButton.isEnabled = !isActionInFlight
             primaryActionButton.title = detail.installed ? "UNINSTALL" : "INSTALL"
+            if detail.isHomebrewMigrationCandidate {
+                primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
+            }
             primaryActionButton.isHidden = false
             primaryActionButton.isEnabled = !isActionInFlight
             renderDependencies(detail.dependencies)
@@ -1506,6 +1512,17 @@ final class DossierView: NSView {
         let source = detail.source?.displayLabel.lowercased() ?? "vendor"
         let status = detail.installed ? "installed" : "available"
         return "\(version) · \(source) · \(status)"
+    }
+
+    private func primaryActionButtonWidth(maximum: CGFloat) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: primaryActionButton.font ?? UIStyle.monoFont(size: 11, weight: .medium),
+            .kern: 0.0
+        ]
+        let titleWidth = ceil(
+            (primaryActionButton.title as NSString).size(withAttributes: attributes).width
+        )
+        return min(max(Metrics.actionButtonWidth, titleWidth + 28), maximum)
     }
 
     private func popularityText(for detail: PackageDetail) -> NSAttributedString? {

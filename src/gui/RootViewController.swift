@@ -856,6 +856,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var installedPackages: [PackagePresentation] = []
     private var recommendations: [PackagePresentation] = []
     private var homebrewMigrationRecommendation: HomebrewMigrationRecommendation?
+    private var homebrewInstalledPackageNames = Set<String>()
     private var areRecommendationsVisibleInInstalledList = false
     private var searchResults: [PackagePresentation] = []
     private var searchResultsQuery: String?
@@ -1359,6 +1360,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let requestID = reloadRequestID + 1
         reloadRequestID = requestID
         homebrewMigrationRecommendation = nil
+        homebrewInstalledPackageNames = []
         installedRecords = []
         installedPackages = []
         refreshRecommendations()
@@ -1435,6 +1437,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.homebrewMigrationRecommendation = recommendation.packages.isEmpty
                         ? nil
                         : recommendation
+                    self.refreshInstalledPackages()
                     self.refreshRecommendations()
                 }
             } catch {
@@ -1444,6 +1447,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                         return
                     }
                     self.homebrewMigrationRecommendation = nil
+                    self.refreshInstalledPackages()
                     self.refreshRecommendations()
                 }
             }
@@ -1502,12 +1506,29 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func rebuildInstalledPackages() {
-        installedPackages = installedRecords.map { record in
+        homebrewInstalledPackageNames.forEach {
+            detailsByPackageName.removeValue(forKey: $0)
+        }
+        let homebrewRecords = homebrewMigrationRecommendation?.packages.map(\.record) ?? []
+        homebrewInstalledPackageNames = Set(homebrewRecords.map(\.name))
+        let records = (installedRecords + homebrewRecords).sorted {
+            let left = $0.name.packageSearchOrderName
+            let right = $1.name.packageSearchOrderName
+            if left == right {
+                return $0.name < $1.name
+            }
+            return left < right
+        }
+
+        installedPackages = records.map { record in
             let mergedRecord: PackageRecord
             if let outdated = outdatedPackagesByName[record.name] {
                 mergedRecord = record.applying(outdated: outdated)
             } else {
                 mergedRecord = record
+            }
+            if mergedRecord.isHomebrewMigrationCandidate {
+                detailsByPackageName[mergedRecord.name] = mergedRecord.fallbackDetail
             }
 
             return PackagePresentation(
@@ -1605,6 +1626,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 names.append(String(record.name.dropFirst("brew:".count)))
             }
             return names
+        } + homebrewInstalledPackageNames.flatMap { name in
+            [name, name.strippingPrefix("brew:")].compactMap { $0 }
         })
     }
 
@@ -2760,6 +2783,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func beginPackageMutation(for detail: PackageDetail) {
+        if detail.isHomebrewMigrationCandidate {
+            beginHomebrewMigration(for: detail)
+            return
+        }
         if detail.isAutomicVaultCLT {
             beginAutomicVaultCLTInstallFlow()
             return
@@ -3150,6 +3177,157 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private func refreshMenuBarAfterPrivilegedHelperOperation() {
         try? statusStore.saveRemoteDatabaseRefreshState(.normal)
         statusStore.requestRefresh()
+    }
+
+    private func beginHomebrewMigration(for detail: PackageDetail) {
+        helperBridge.authenticateBiometrics(
+            reason: "Authorize privileged Automic Vault migration for \(detail.packageName)."
+        ) { result in
+            switch result {
+            case .success:
+                self.startHomebrewMigration(for: detail)
+            case .failure(let error):
+                self.presentHelperError(error)
+            }
+        }
+    }
+
+    private func startHomebrewMigration(for detail: PackageDetail) {
+        let operationID = beginOverlayOperation()
+        isRunningPackageOperation = true
+        let overlay = presentUpdateOverlay()
+        overlay.onRetry = { [weak self] in
+            self?.startHomebrewMigration(for: detail)
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.dismissUpdateOverlay()
+        }
+        overlay.configure(
+            title: "HOMEBREW MIGRATION",
+            awaitingClearance: "Preparing migration",
+            idleStatus: "Nucleus migration channel ready",
+            successOperation: "Migration Complete",
+            failureOperation: "Migration Halted"
+        )
+
+        let packageNames = detail.helperPackageNames
+        overlay.begin(
+            packages: packageNames,
+            activationLog: "Installing \(detail.packageName) with Automic Vault."
+        )
+        let packages = packageNames.map { AVPackageSpec(name: $0) }
+        helperBridge.install(
+            packages: packages,
+            progress: { event in
+                guard self.activeOverlayOperationID == operationID else { return }
+                overlay.handle(event: event)
+            }
+        ) { result in
+            guard self.activeOverlayOperationID == operationID else { return }
+            switch result {
+            case .success(let summary):
+                self.runHomebrewUninstallAfterMigration(
+                    detail: detail,
+                    summary: summary,
+                    operationID: operationID,
+                    overlay: overlay
+                )
+            case .failure(let error):
+                self.isRunningPackageOperation = false
+                overlay.fail(message: error.localizedDescription)
+                self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
+                self.refreshRecommendations()
+                self.refreshUpdateAvailability()
+            }
+        }
+    }
+
+    private func runHomebrewUninstallAfterMigration(
+        detail: PackageDetail,
+        summary: NukeHelperResult,
+        operationID: Int,
+        overlay: UpdateProgressViewController
+    ) {
+        overlay.handle(event: .log(
+            package: detail.packageName,
+            message: "removing original Homebrew install"
+        ))
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.uninstallHomebrewPackage(packageName: detail.packageName)
+            DispatchQueue.main.async {
+                guard self.activeOverlayOperationID == operationID else { return }
+                self.isRunningPackageOperation = false
+                summary.processedPackages.forEach {
+                    self.detailsByPackageName.removeValue(forKey: $0)
+                }
+                self.detailsByPackageName.removeValue(forKey: detail.packageName)
+                switch result {
+                case .success:
+                    overlay.succeed(
+                        message: "Installed with Automic Vault and removed Homebrew package",
+                        packages: summary.processedPackages + [detail.packageName]
+                    )
+                    self.reloadPackages()
+                    self.refreshRecommendations()
+                    self.refreshUpdateAvailability()
+                    self.refreshMenuBarAfterPrivilegedHelperOperation()
+                case .failure(let error):
+                    overlay.fail(message: error.localizedDescription)
+                    self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
+                    self.reloadPackages()
+                    self.refreshRecommendations()
+                    self.refreshUpdateAvailability()
+                    self.refreshMenuBarAfterPrivilegedHelperOperation()
+                }
+            }
+        }
+    }
+
+    private static func uninstallHomebrewPackage(packageName: String) -> Result<Void, Error> {
+        let formulaPrefix = "brew:"
+        let caskPrefix = "cask:"
+        let arguments: [String]
+        if let formula = packageName.strippingPrefix(formulaPrefix), formula.isEmpty == false {
+            arguments = ["uninstall", formula]
+        } else if let cask = packageName.strippingPrefix(caskPrefix), cask.isEmpty == false {
+            arguments = ["uninstall", "--cask", cask]
+        } else {
+            return .failure(NSError(
+                domain: "AutomicVault.HomebrewMigration",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "unsupported Homebrew package \(packageName)"]
+            ))
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/brew")
+        process.arguments = arguments
+        let errorPipe = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errorPipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorText = String(data: errorData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = errorText?.isEmpty == false
+                    ? errorText!
+                    : "brew exited with status \(process.terminationStatus)"
+                return .failure(NSError(
+                    domain: "AutomicVault.HomebrewMigration",
+                    code: Int(process.terminationStatus),
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Installed with Automic Vault, but Homebrew uninstall failed: \(message)"
+                    ]
+                ))
+            }
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
     }
 
     private func startPackageMutation(

@@ -43,6 +43,7 @@ final class PackageFieldView: NSView {
         static let hazardSymbolGapFontSize: CGFloat = 5
         static let hazardSymbolFontSize: CGFloat = 15
         static let isotopeSymbolSize: CGFloat = 13
+        static let homebrewSymbolFontSize: CGFloat = 13
         static let versionBaselineOffset: CGFloat = -2
         static let descriptionBaselineOffset: CGFloat = 0
         static let bracketInsetX: CGFloat = 4
@@ -98,6 +99,7 @@ final class PackageFieldView: NSView {
         private var renderedIsotopeSymbolFrame: CGRect?
         private var renderedHazardSymbolFrame: CGRect?
         private var renderedInstalledIsotopeState = false
+        private var renderedHomebrewMigrationCandidateState = false
         private var renderedHazardState = false
         private var renderedHazardSource: PackageSecurityNotice.Source?
 
@@ -228,6 +230,7 @@ final class PackageFieldView: NSView {
                 || renderedVersionColor != versionColor
                 || renderedDescriptionColor != descriptionColor
                 || renderedInstalledIsotopeState != package.isInstalledIsotope
+                || renderedHomebrewMigrationCandidateState != package.isHomebrewMigrationCandidate
                 || renderedHazardState != package.hasPlainTextSecretAlert
                 || renderedHazardSource != package.plainTextSecretAlertSource
             guard needsRebuild else { return }
@@ -238,6 +241,7 @@ final class PackageFieldView: NSView {
             renderedVersionColor = versionColor
             renderedDescriptionColor = descriptionColor
             renderedInstalledIsotopeState = package.isInstalledIsotope
+            renderedHomebrewMigrationCandidateState = package.isHomebrewMigrationCandidate
             renderedHazardState = package.hasPlainTextSecretAlert
             renderedHazardSource = package.plainTextSecretAlertSource
             updateHazardAppearance()
@@ -295,6 +299,11 @@ final class PackageFieldView: NSView {
                 title.append(installedIsotopeSymbolSpacer())
             }
 
+            if package.isHomebrewMigrationCandidate {
+                title.append(statusSymbolGap())
+                title.append(homebrewWarningSymbol())
+            }
+
             if package.hasPlainTextSecretAlert {
                 title.append(statusSymbolGap())
                 title.append(hazardSymbol())
@@ -312,6 +321,10 @@ final class PackageFieldView: NSView {
             if package.isInstalledIsotope {
                 prefix.append(statusSymbolGap())
                 prefix.append(installedIsotopeSymbolSpacer())
+            }
+            if package.isHomebrewMigrationCandidate {
+                prefix.append(statusSymbolGap())
+                prefix.append(homebrewWarningSymbol())
             }
             let gap = statusSymbolGap()
             let symbol = hazardSymbol()
@@ -368,6 +381,20 @@ final class PackageFieldView: NSView {
                     ),
                     .foregroundColor: NSColor.clear,
                     .kern: 0
+                ]
+            )
+        }
+
+        private func homebrewWarningSymbol() -> NSAttributedString {
+            NSAttributedString(
+                string: "⚠",
+                attributes: [
+                    .font: UIStyle.monoFont(
+                        size: Metrics.homebrewSymbolFontSize,
+                        weight: .medium
+                    ),
+                    .foregroundColor: UIStyle.warning,
+                    .kern: 0.2
                 ]
             )
         }
@@ -1777,17 +1804,20 @@ final class PackageFieldView: NSView {
             targetOpacity = 0.1
         }
 
+        let accentColor = layer.package.isHomebrewMigrationCandidate
+            ? UIStyle.warning
+            : UIStyle.text
         if layer.isSelectedNode {
-            targetTitleColor = UIStyle.text.withAlphaComponent(0.98)
-            targetVersionColor = UIStyle.text.withAlphaComponent(0.72)
+            targetTitleColor = accentColor.withAlphaComponent(0.98)
+            targetVersionColor = accentColor.withAlphaComponent(0.72)
             targetDescriptionColor = UIStyle.text.withAlphaComponent(0.64)
         } else if layer.isHovered {
-            targetTitleColor = UIStyle.text.withAlphaComponent(0.93)
-            targetVersionColor = UIStyle.text.withAlphaComponent(0.62)
+            targetTitleColor = accentColor.withAlphaComponent(0.93)
+            targetVersionColor = accentColor.withAlphaComponent(0.62)
             targetDescriptionColor = UIStyle.text.withAlphaComponent(0.56)
         } else {
-            targetTitleColor = UIStyle.text.withAlphaComponent(0.88)
-            targetVersionColor = UIStyle.text.withAlphaComponent(0.58)
+            targetTitleColor = accentColor.withAlphaComponent(0.88)
+            targetVersionColor = accentColor.withAlphaComponent(0.58)
             targetDescriptionColor = UIStyle.text.withAlphaComponent(0.50)
         }
 

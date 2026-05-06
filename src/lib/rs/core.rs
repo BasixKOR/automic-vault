@@ -110,6 +110,8 @@ pub(crate) struct HomebrewMigrationPackageSummary {
     pub(crate) name: String,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    #[serde(rename = "securityState")]
+    pub(crate) security_state: Option<PackageSecurityState>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

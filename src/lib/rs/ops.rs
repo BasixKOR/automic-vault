@@ -355,36 +355,56 @@ fn homebrew_migration_packages_from_report(
         .formulae
         .into_iter()
         .filter(HomebrewInfoFormula::is_installed_on_request)
-        .map(|formula| core::HomebrewMigrationPackageSummary {
-            name: formula.name,
-            version: formula
-                .installed
-                .first()
-                .and_then(|install| empty_string_as_none(install.version.clone())),
-            description: empty_string_as_none(formula.description),
+        .map(|formula| {
+            let name = format!("{BREW_PACKAGE_PREFIX}{}", formula.name);
+            let security_state = homebrew_migration_security_state_for_package(&name);
+            core::HomebrewMigrationPackageSummary {
+                name,
+                version: formula
+                    .installed
+                    .iter()
+                    .find(|install| install.installed_on_request)
+                    .and_then(|install| empty_string_as_none(install.version.clone())),
+                description: empty_string_as_none(formula.description),
+                security_state,
+            }
         });
     let casks = report.casks.into_iter().filter_map(|cask| {
         let name = empty_string_as_none(cask.token)?;
+        if embedded_cask(&name).is_err() {
+            return None;
+        }
+        let name = crate::cask::qualified_name(&name);
+        let security_state = homebrew_migration_security_state_for_package(&name);
         Some(core::HomebrewMigrationPackageSummary {
-            name: crate::cask::qualified_name(&name),
+            name,
             version: empty_string_as_none(cask.version),
             description: empty_string_as_none(cask.description),
+            security_state,
         })
     });
 
     formulae.chain(casks).collect()
 }
 
-fn homebrew_migration_hazard_for_package(
+fn homebrew_migration_security_state_for_package(
     package_name: &str,
-) -> Option<core::HomebrewMigrationHazardSummary> {
+) -> Option<PackageSecurityState> {
     let mut identifiers = vec![package_name.to_string()];
     if let Some(cask) = package_name.strip_prefix(CASK_PACKAGE_PREFIX) {
         identifiers.push(cask.to_string());
+    } else if let Some(formula) = package_name.strip_prefix(BREW_PACKAGE_PREFIX) {
+        identifiers.push(formula.to_string());
     } else {
         identifiers.push(format!("{BREW_PACKAGE_PREFIX}{package_name}"));
     }
-    let state = package_security_state_for_identifiers(identifiers)?;
+    package_security_state_for_identifiers(identifiers)
+}
+
+fn homebrew_migration_hazard_for_package(
+    package_name: &str,
+) -> Option<core::HomebrewMigrationHazardSummary> {
+    let state = homebrew_migration_security_state_for_package(package_name)?;
     if !state.install_is_insecure && state.error.is_none() {
         return None;
     }
@@ -1112,7 +1132,7 @@ mod tests {
     }
 
     #[test]
-    fn homebrew_migration_packages_include_casks_without_on_request_flag() {
+    fn homebrew_migration_packages_include_supported_casks_without_on_request_flag() {
         let report: HomebrewInfoReport = serde_json::from_value(serde_json::json!({
             "formulae": [
                 {
@@ -1138,9 +1158,14 @@ mod tests {
             ],
             "casks": [
                 {
-                    "token": "cursor",
-                    "desc": "Cursor editor",
+                    "token": "codex",
+                    "desc": "Codex CLI",
                     "version": "3.0.0"
+                },
+                {
+                    "token": "unsupported-cask",
+                    "desc": "Unsupported cask",
+                    "version": "4.0.0"
                 }
             ]
         }))
@@ -1154,14 +1179,16 @@ mod tests {
             packages,
             vec![
                 core::HomebrewMigrationPackageSummary {
-                    name: "cask:cursor".to_string(),
+                    name: "cask:codex".to_string(),
                     version: Some("3.0.0".to_string()),
-                    description: Some("Cursor editor".to_string()),
+                    description: Some("Codex CLI".to_string()),
+                    security_state: homebrew_migration_security_state_for_package("cask:codex"),
                 },
                 core::HomebrewMigrationPackageSummary {
-                    name: "explicit".to_string(),
+                    name: "brew:explicit".to_string(),
                     version: Some("2.0.0".to_string()),
                     description: Some("Explicit formula".to_string()),
+                    security_state: homebrew_migration_security_state_for_package("brew:explicit"),
                 },
             ]
         );

@@ -19,6 +19,8 @@ enum UIStyle {
     static let quietText = NSColor(calibratedWhite: 0.92, alpha: 0.40)
     static let accent = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.66, alpha: 1.0)
     static let accentShadow = NSColor(calibratedRed: 0.42, green: 0.86, blue: 0.66, alpha: 0.16)
+    static let warning = NSColor(calibratedRed: 0.95, green: 0.72, blue: 0.20, alpha: 1.0)
+    static let warningShadow = NSColor(calibratedRed: 0.95, green: 0.72, blue: 0.20, alpha: 0.16)
     static let danger = NSColor(calibratedRed: 0.92, green: 0.31, blue: 0.35, alpha: 1.0)
     static let separator = NSColor(calibratedWhite: 1.0, alpha: 0.048)
     static let spine = NSColor(calibratedWhite: 1.0, alpha: 0.07)

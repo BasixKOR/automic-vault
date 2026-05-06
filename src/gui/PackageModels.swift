@@ -11,6 +11,13 @@ private let packageSearchOrderPrefixes = [
 ]
 
 extension String {
+    func strippingPrefix(_ prefix: String) -> String? {
+        guard hasPrefix(prefix) else {
+            return nil
+        }
+        return String(dropFirst(prefix.count))
+    }
+
     var packageSearchOrderName: String {
         for prefix in packageSearchOrderPrefixes where hasPrefix(prefix) {
             return String(dropFirst(prefix.count)).packageScopeOrderName
@@ -34,6 +41,62 @@ struct PackageRecord: Decodable, Equatable {
     let description: String?
     let latestVersion: String?
     let securityState: PackageSecurityState?
+    let installRoot: String?
+    let installPackageNames: [String]?
+    let isHomebrewMigrationCandidate: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case source
+        case version
+        case description
+        case latestVersion
+        case securityState
+        case installRoot
+        case installPackageNames
+        case isHomebrewMigrationCandidate
+    }
+
+    init(
+        name: String,
+        source: PackageSource?,
+        version: String,
+        description: String?,
+        latestVersion: String? = nil,
+        securityState: PackageSecurityState?,
+        installRoot: String? = nil,
+        installPackageNames: [String]? = nil,
+        isHomebrewMigrationCandidate: Bool = false
+    ) {
+        self.name = name
+        self.source = source
+        self.version = version
+        self.description = description
+        self.latestVersion = latestVersion
+        self.securityState = securityState
+        self.installRoot = installRoot
+        self.installPackageNames = installPackageNames
+        self.isHomebrewMigrationCandidate = isHomebrewMigrationCandidate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        source = try container.decodeIfPresent(PackageSource.self, forKey: .source)
+        version = try container.decode(String.self, forKey: .version)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        latestVersion = try container.decodeIfPresent(String.self, forKey: .latestVersion)
+        securityState = try container.decodeIfPresent(PackageSecurityState.self, forKey: .securityState)
+        installRoot = try container.decodeIfPresent(String.self, forKey: .installRoot)
+        installPackageNames = try container.decodeIfPresent(
+            [String].self,
+            forKey: .installPackageNames
+        )
+        isHomebrewMigrationCandidate = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .isHomebrewMigrationCandidate
+        ) ?? false
+    }
 
     var isOutdated: Bool {
         guard let latestVersion, !latestVersion.isEmpty else {
@@ -49,7 +112,10 @@ struct PackageRecord: Decodable, Equatable {
             version: version,
             description: description,
             latestVersion: outdated.latestVersion,
-            securityState: securityState
+            securityState: securityState,
+            installRoot: installRoot,
+            installPackageNames: installPackageNames,
+            isHomebrewMigrationCandidate: isHomebrewMigrationCandidate
         )
     }
 
@@ -57,7 +123,7 @@ struct PackageRecord: Decodable, Equatable {
         PackageDetail(
             packageName: name,
             qualifiedName: name,
-            installRoot: "/opt",
+            installRoot: installRoot ?? "/opt",
             installed: true,
             source: source,
             sourceError: nil,
@@ -81,7 +147,7 @@ struct PackageRecord: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: nil,
+            installPackageNames: installPackageNames,
             homebrewMigration: nil
         )
     }
@@ -181,6 +247,9 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var installCommand: String {
+        if isHomebrewMigrationCandidate {
+            return "av install \(helperPackageNames.joined(separator: " "))"
+        }
         if isAutomicVaultCLT {
             return "Install bundled av"
         }
@@ -273,28 +342,14 @@ struct PackageDetail: Decodable, Equatable {
         packageName == PackageRecommendation.xcodeCLTName
     }
 
-    var securityNotice: PackageSecurityNotice? {
-        if let migrationNotice {
-            return migrationNotice
-        }
-        return SecurityCatalog.shared.notice(for: self)
+    var isHomebrewMigrationCandidate: Bool {
+        installRoot.hasPrefix("/opt/homebrew/")
+            && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
+            && installed
     }
 
-    private var migrationNotice: PackageSecurityNotice? {
-        guard let homebrewMigration, homebrewMigration.hazards.isEmpty == false else {
-            return nil
-        }
-        return PackageSecurityNotice(
-            source: .isotope,
-            applyPackageName: nil,
-            headline: "EXPOSED SECRETS",
-            body: "Some `brew` installed packages expose secrets to agents or malware. " +
-                "After migration upgrade them to Automic Vault isotopes " +
-                "to ensure their security.",
-            caveats: .bullets(homebrewMigration.hazardSummaries),
-            learnMoreURL: homebrewMigration.learnMoreURL
-                ?? PackageSecurityNotice.defaultLearnMoreURL
-        )
+    var securityNotice: PackageSecurityNotice? {
+        return SecurityCatalog.shared.notice(for: self)
     }
 }
 
@@ -308,7 +363,9 @@ struct HomebrewMigrationRecommendation: Decodable, Equatable {
 
     var installPackageNames: [String] {
         packageNames.map { packageName in
-            packageName.hasPrefix("cask:") ? packageName : "brew:\(packageName)"
+            packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:")
+                ? packageName
+                : "brew:\(packageName)"
         }
     }
 
@@ -330,6 +387,45 @@ struct HomebrewMigrationPackage: Decodable, Equatable {
     let name: String
     let version: String?
     let description: String?
+    let securityState: PackageSecurityState?
+
+    var source: PackageSource {
+        if let caskName = name.strippingPrefix("cask:") {
+            return .cask(caskName: caskName)
+        }
+        if let formula = name.strippingPrefix("brew:") {
+            return .formula(rootFormula: formula)
+        }
+        return .formula(rootFormula: name)
+    }
+
+    var installRoot: String {
+        if let caskName = name.strippingPrefix("cask:") {
+            return "/opt/homebrew/Caskroom/\(caskName)"
+        }
+        let formula = name.strippingPrefix("brew:") ?? name
+        return "/opt/homebrew/Cellar/\(formula)"
+    }
+
+    var record: PackageRecord {
+        PackageRecord(
+            name: normalizedName,
+            source: source,
+            version: version ?? "installed",
+            description: description,
+            securityState: securityState,
+            installRoot: installRoot,
+            installPackageNames: [normalizedName],
+            isHomebrewMigrationCandidate: true
+        )
+    }
+
+    private var normalizedName: String {
+        if name.hasPrefix("brew:") || name.hasPrefix("cask:") {
+            return name
+        }
+        return "brew:\(name)"
+    }
 }
 
 struct HomebrewMigrationHazard: Decodable, Equatable {
@@ -867,6 +963,15 @@ struct PackagePresentation: Equatable {
                 return true
             }
             return record.name.hasPrefix("isotope:")
+        case .recommendation, .available, .command:
+            return false
+        }
+    }
+
+    var isHomebrewMigrationCandidate: Bool {
+        switch item {
+        case .installed(let record):
+            return record.isHomebrewMigrationCandidate
         case .recommendation, .available, .command:
             return false
         }
