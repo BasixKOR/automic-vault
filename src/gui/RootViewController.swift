@@ -1575,12 +1575,19 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             PackageRecommendation.agenticToolingPackPackageNames.filter {
                 installedPackageNames.contains($0) == false
             }
+        let unixPlusPlusPackMissingPackageNames =
+            PackageRecommendation.unixPlusPlusPackPackageNames.filter {
+                installedPackageNames.contains($0) == false
+            }
 
         let activeRecommendations = [
             bridge.cliToolsRecommendation(),
             bridge.xcodeCLTRecommendation(),
             PackageRecommendation.agenticToolingPack(
                 missingPackageNames: toolingPackMissingPackageNames
+            ),
+            PackageRecommendation.unixPlusPlusPack(
+                missingPackageNames: unixPlusPlusPackMissingPackageNames
             ),
             homebrewMigrationRecommendation.flatMap(PackageRecommendation.homebrewMigration)
         ].compactMap { $0 }
@@ -1597,6 +1604,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             PackageRecommendation.automicVaultCLTName,
             PackageRecommendation.xcodeCLTName,
             PackageRecommendation.agenticToolingPackName,
+            PackageRecommendation.unixPlusPlusPackName,
             PackageRecommendation.homebrewMigrationName
         ]
         .filter { activeRecommendationNames.contains($0) == false }

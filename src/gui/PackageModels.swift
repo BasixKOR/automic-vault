@@ -723,6 +723,7 @@ struct PackageRecommendation: Equatable {
     static let automicVaultCLTName = "Automic Vault CLT"
     static let xcodeCLTName = "Xcode CLT"
     static let agenticToolingPackName = "Agentic Tooling Pack"
+    static let unixPlusPlusPackName = "UNIX++ Pack"
     static let homebrewMigrationName = "Homebrew Migration"
     static let agenticToolingPackPackageNames = [
         "ffmpeg-full",
@@ -751,6 +752,31 @@ struct PackageRecommendation: Equatable {
         "tesseract",
         "exiftool",
         "pandoc"
+    ]
+    static let unixPlusPlusPackPackageNames = [
+        "bat",
+        "bat-extras",
+        "eza",
+        "fd",
+        "ripgrep",
+        "sd",
+        "dust",
+        "duf",
+        "procs",
+        "bottom",
+        "zoxide",
+        "fzf",
+        "git-delta",
+        "hyperfine",
+        "tokei",
+        "choose",
+        "jq",
+        "yq",
+        "xh",
+        "doggo",
+        "miller",
+        "entr",
+        "watchexec"
     ]
 
     let packageName: String
@@ -900,6 +926,52 @@ struct PackageRecommendation: Equatable {
         )
         return PackageRecommendation(
             packageName: agenticToolingPackName,
+            installedVersion: nil,
+            latestVersion: nil,
+            missingPackageNames: missingPackageNames,
+            detail: detail,
+            description: description
+        )
+    }
+
+    static func unixPlusPlusPack(missingPackageNames: [String]) -> PackageRecommendation? {
+        guard missingPackageNames.isEmpty == false else {
+            return nil
+        }
+        let description =
+            "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work."
+        let detail = PackageDetail(
+            packageName: unixPlusPlusPackName,
+            qualifiedName: unixPlusPlusPackName,
+            installRoot: "/opt",
+            installed: false,
+            source: nil,
+            sourceError: nil,
+            aliases: [],
+            aliasesError: nil,
+            installedVersion: nil,
+            latestVersion: nil,
+            latestVersionError: nil,
+            executablePaths: [],
+            executablePathsError: nil,
+            popularity: nil,
+            lastUpdatedAt: nil,
+            homebrewInfo: HomebrewPackageInfo(
+                formula: unixPlusPlusPackName,
+                description: description,
+                homepage: nil,
+                license: nil,
+                dependencies: unixPlusPlusPackPackageNames
+            ),
+            homebrewInfoError: nil,
+            npmHomepage: nil,
+            npmPackageInfoError: nil,
+            securityState: nil,
+            installPackageNames: missingPackageNames.map { "brew:\($0)" },
+            homebrewMigration: nil
+        )
+        return PackageRecommendation(
+            packageName: unixPlusPlusPackName,
             installedVersion: nil,
             latestVersion: nil,
             missingPackageNames: missingPackageNames,
