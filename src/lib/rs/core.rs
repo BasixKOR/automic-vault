@@ -110,6 +110,9 @@ pub(crate) struct HomebrewMigrationPackageSummary {
     pub(crate) name: String,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    pub(crate) tap: Option<String>,
+    #[serde(rename = "isMigratable")]
+    pub(crate) is_migratable: bool,
     #[serde(rename = "securityState")]
     pub(crate) security_state: Option<PackageSecurityState>,
 }

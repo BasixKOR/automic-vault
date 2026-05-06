@@ -907,9 +907,11 @@ final class DossierView: NSView {
             primaryActionButton.title = detail.installed ? "UNINSTALL" : "INSTALL"
             if detail.isHomebrewMigrationCandidate {
                 primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
+            } else if detail.isUnsupportedHomebrewInstall {
+                primaryActionButton.title = "UNSUPPORTED TAP"
             }
             primaryActionButton.isHidden = false
-            primaryActionButton.isEnabled = !isActionInFlight
+            primaryActionButton.isEnabled = !isActionInFlight && !detail.isUnsupportedHomebrewInstall
             renderDependencies(detail.dependencies)
             renderExecutables(detail.executablePaths, error: detail.executablePathsError)
         } else {
@@ -970,6 +972,7 @@ final class DossierView: NSView {
         let isEnabled = active == false && currentDetail != nil
         updateButton.isEnabled = isEnabled
         primaryActionButton.isEnabled = isEnabled
+            && currentDetail?.isUnsupportedHomebrewInstall != true
         if let notice = currentSecurityNotice {
             securityApplyButton.isEnabled = isEnabled && securityApplyButtonIsEnabled(notice: notice)
         } else {

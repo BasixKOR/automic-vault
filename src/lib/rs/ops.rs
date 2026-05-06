@@ -356,8 +356,10 @@ fn homebrew_migration_packages_from_report(
         .into_iter()
         .filter(HomebrewInfoFormula::is_installed_on_request)
         .map(|formula| {
-            let name = format!("{BREW_PACKAGE_PREFIX}{}", formula.name);
-            let security_state = homebrew_migration_security_state_for_package(&name);
+            let is_migratable = formula.is_migratable();
+            let name = format!("{BREW_PACKAGE_PREFIX}{}", formula.migration_display_name());
+            let security_state =
+                homebrew_migration_security_state_for_package(&name, &[formula.name.as_str()]);
             core::HomebrewMigrationPackageSummary {
                 name,
                 version: formula
@@ -366,6 +368,8 @@ fn homebrew_migration_packages_from_report(
                     .find(|install| install.installed_on_request)
                     .and_then(|install| empty_string_as_none(install.version.clone())),
                 description: empty_string_as_none(formula.description),
+                tap: empty_string_as_none(formula.tap),
+                is_migratable,
                 security_state,
             }
         });
@@ -375,11 +379,13 @@ fn homebrew_migration_packages_from_report(
             return None;
         }
         let name = crate::cask::qualified_name(&name);
-        let security_state = homebrew_migration_security_state_for_package(&name);
+        let security_state = homebrew_migration_security_state_for_package(&name, &[]);
         Some(core::HomebrewMigrationPackageSummary {
             name,
             version: empty_string_as_none(cask.version),
             description: empty_string_as_none(cask.description),
+            tap: None,
+            is_migratable: true,
             security_state,
         })
     });
@@ -389,6 +395,7 @@ fn homebrew_migration_packages_from_report(
 
 fn homebrew_migration_security_state_for_package(
     package_name: &str,
+    additional_identifiers: &[&str],
 ) -> Option<PackageSecurityState> {
     let mut identifiers = vec![package_name.to_string()];
     if let Some(cask) = package_name.strip_prefix(CASK_PACKAGE_PREFIX) {
@@ -398,13 +405,18 @@ fn homebrew_migration_security_state_for_package(
     } else {
         identifiers.push(format!("{BREW_PACKAGE_PREFIX}{package_name}"));
     }
+    identifiers.extend(
+        additional_identifiers
+            .iter()
+            .map(|identifier| identifier.to_string()),
+    );
     package_security_state_for_identifiers(identifiers)
 }
 
 fn homebrew_migration_hazard_for_package(
     package_name: &str,
 ) -> Option<core::HomebrewMigrationHazardSummary> {
-    let state = homebrew_migration_security_state_for_package(package_name)?;
+    let state = homebrew_migration_security_state_for_package(package_name, &[])?;
     if !state.install_is_insecure && state.error.is_none() {
         return None;
     }
@@ -430,6 +442,10 @@ struct HomebrewInfoReport {
 #[derive(Debug, Deserialize)]
 struct HomebrewInfoFormula {
     name: String,
+    #[serde(default)]
+    full_name: String,
+    #[serde(default)]
+    tap: String,
     #[serde(default, rename = "desc")]
     description: String,
     #[serde(default)]
@@ -441,6 +457,20 @@ impl HomebrewInfoFormula {
         self.installed
             .iter()
             .any(|install| install.installed_on_request)
+    }
+
+    fn is_migratable(&self) -> bool {
+        self.tap.is_empty() || self.tap == "homebrew/core"
+    }
+
+    fn migration_display_name(&self) -> &str {
+        if self.is_migratable() {
+            return &self.name;
+        }
+        if self.full_name.contains('/') {
+            return &self.full_name;
+        }
+        &self.name
     }
 }
 
@@ -1147,11 +1177,37 @@ mod tests {
                 },
                 {
                     "name": "explicit",
+                    "full_name": "explicit",
+                    "tap": "homebrew/core",
                     "desc": "Explicit formula",
                     "installed": [
                         {
                             "version": "2.0.0",
                             "installed_on_request": true
+                        }
+                    ]
+                },
+                {
+                    "name": "custom",
+                    "full_name": "example/tap/custom",
+                    "tap": "example/tap",
+                    "desc": "Tapped formula",
+                    "installed": [
+                        {
+                            "version": "9.0.0",
+                            "installed_on_request": true
+                        }
+                    ]
+                },
+                {
+                    "name": "tapped-dependency",
+                    "full_name": "example/tap/tapped-dependency",
+                    "tap": "example/tap",
+                    "desc": "Tapped dependency",
+                    "installed": [
+                        {
+                            "version": "8.0.0",
+                            "installed_on_request": false
                         }
                     ]
                 }
@@ -1182,13 +1238,34 @@ mod tests {
                     name: "cask:codex".to_string(),
                     version: Some("3.0.0".to_string()),
                     description: Some("Codex CLI".to_string()),
-                    security_state: homebrew_migration_security_state_for_package("cask:codex"),
+                    tap: None,
+                    is_migratable: true,
+                    security_state: homebrew_migration_security_state_for_package(
+                        "cask:codex",
+                        &[]
+                    ),
+                },
+                core::HomebrewMigrationPackageSummary {
+                    name: "brew:example/tap/custom".to_string(),
+                    version: Some("9.0.0".to_string()),
+                    description: Some("Tapped formula".to_string()),
+                    tap: Some("example/tap".to_string()),
+                    is_migratable: false,
+                    security_state: homebrew_migration_security_state_for_package(
+                        "brew:example/tap/custom",
+                        &["custom"],
+                    ),
                 },
                 core::HomebrewMigrationPackageSummary {
                     name: "brew:explicit".to_string(),
                     version: Some("2.0.0".to_string()),
                     description: Some("Explicit formula".to_string()),
-                    security_state: homebrew_migration_security_state_for_package("brew:explicit"),
+                    tap: Some("homebrew/core".to_string()),
+                    is_migratable: true,
+                    security_state: homebrew_migration_security_state_for_package(
+                        "brew:explicit",
+                        &["explicit"],
+                    ),
                 },
             ]
         );

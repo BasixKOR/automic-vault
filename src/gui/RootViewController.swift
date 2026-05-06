@@ -1527,7 +1527,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             } else {
                 mergedRecord = record
             }
-            if mergedRecord.isHomebrewMigrationCandidate {
+            if mergedRecord.isHomebrewMigrationCandidate || mergedRecord.isUnsupportedHomebrewInstall {
                 detailsByPackageName[mergedRecord.name] = mergedRecord.fallbackDetail
             }
 

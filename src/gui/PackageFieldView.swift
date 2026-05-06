@@ -230,7 +230,7 @@ final class PackageFieldView: NSView {
                 || renderedVersionColor != versionColor
                 || renderedDescriptionColor != descriptionColor
                 || renderedInstalledIsotopeState != package.isInstalledIsotope
-                || renderedHomebrewMigrationCandidateState != package.isHomebrewMigrationCandidate
+                || renderedHomebrewMigrationCandidateState != package.isHomebrewInstall
                 || renderedHazardState != package.hasPlainTextSecretAlert
                 || renderedHazardSource != package.plainTextSecretAlertSource
             guard needsRebuild else { return }
@@ -241,7 +241,7 @@ final class PackageFieldView: NSView {
             renderedVersionColor = versionColor
             renderedDescriptionColor = descriptionColor
             renderedInstalledIsotopeState = package.isInstalledIsotope
-            renderedHomebrewMigrationCandidateState = package.isHomebrewMigrationCandidate
+            renderedHomebrewMigrationCandidateState = package.isHomebrewInstall
             renderedHazardState = package.hasPlainTextSecretAlert
             renderedHazardSource = package.plainTextSecretAlertSource
             updateHazardAppearance()
@@ -299,7 +299,7 @@ final class PackageFieldView: NSView {
                 title.append(installedIsotopeSymbolSpacer())
             }
 
-            if package.isHomebrewMigrationCandidate {
+            if package.isHomebrewInstall {
                 title.append(statusSymbolGap())
                 title.append(homebrewWarningSymbol())
             }
@@ -322,7 +322,7 @@ final class PackageFieldView: NSView {
                 prefix.append(statusSymbolGap())
                 prefix.append(installedIsotopeSymbolSpacer())
             }
-            if package.isHomebrewMigrationCandidate {
+            if package.isHomebrewInstall {
                 prefix.append(statusSymbolGap())
                 prefix.append(homebrewWarningSymbol())
             }
@@ -1804,7 +1804,7 @@ final class PackageFieldView: NSView {
             targetOpacity = 0.1
         }
 
-        let accentColor = layer.package.isHomebrewMigrationCandidate
+        let accentColor = layer.package.isHomebrewInstall
             ? UIStyle.warning
             : UIStyle.text
         if layer.isSelectedNode {
