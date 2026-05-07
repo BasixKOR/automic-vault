@@ -14,11 +14,11 @@ release_cloudfront_alias="${AUTOMIC_VAULT_RELEASE_DOMAIN:-automicvault.com}"
 release_cloudfront_path="/Automic%20Vault.dmg"
 finder_left=120
 finder_top=120
-finder_width=720
-finder_height=405
+finder_width=796
+finder_height=494
 icon_size=128
-app_icon_x=220
-applications_icon_x=500
+app_icon_x=243
+applications_icon_x=553
 
 output_path=""
 background_path=""
