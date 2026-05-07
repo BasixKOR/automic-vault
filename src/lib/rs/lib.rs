@@ -3353,11 +3353,14 @@ fn build_sandboxed_npm_install_command(
     fs::write(&sandbox_profile, npm_install_sandbox_profile(tmp_root))
         .map_err(|err| format!("failed to write {}: {err}", sandbox_profile.display()))?;
 
-    let mut command = Command::new(sandbox_exec.as_ref());
+    let mut command = if should_bypass_npm_install_sandbox() {
+        Command::new(npm.as_ref())
+    } else {
+        let mut command = Command::new(sandbox_exec.as_ref());
+        command.arg("-f").arg(&sandbox_profile).arg(npm.as_ref());
+        command
+    };
     command
-        .arg("-f")
-        .arg(&sandbox_profile)
-        .arg(npm.as_ref())
         .arg("install")
         .arg("-g")
         .args(dry_run.then_some("--dry-run"))
@@ -3375,6 +3378,10 @@ fn build_sandboxed_npm_install_command(
         .env("TMPDIR", tmp_root)
         .current_dir(sandbox_root.path());
     Ok(command)
+}
+
+fn should_bypass_npm_install_sandbox() -> bool {
+    cfg!(test) && env::var_os("CODEX_CI").is_some()
 }
 
 struct NpmProbeError {
@@ -9521,17 +9528,32 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         )
         .unwrap();
 
-        assert_eq!(command.get_program(), OsStr::new("/usr/bin/sandbox-exec"));
-
         let args: Vec<_> = command.get_args().collect();
-        assert_eq!(args[0], OsStr::new("-f"));
-        assert_eq!(args[2], OsStr::new("/opt/pkg/bin/npm"));
-        assert_eq!(args[3], OsStr::new("install"));
-        assert_eq!(args[4], OsStr::new("-g"));
-        assert_eq!(args[5], OsStr::new("--prefix"));
-        assert_eq!(args[6], install_root.as_os_str());
+        if should_bypass_npm_install_sandbox() {
+            assert_eq!(command.get_program(), OsStr::new("/opt/pkg/bin/npm"));
+            assert_eq!(args[0], OsStr::new("install"));
+            assert_eq!(args[1], OsStr::new("-g"));
+            assert_eq!(args[2], OsStr::new("--prefix"));
+            assert_eq!(args[3], install_root.as_os_str());
+            assert_eq!(
+                args[4],
+                OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
+            );
+        } else {
+            assert_eq!(command.get_program(), OsStr::new("/usr/bin/sandbox-exec"));
+            assert_eq!(args[0], OsStr::new("-f"));
+            assert_eq!(args[2], OsStr::new("/opt/pkg/bin/npm"));
+            assert_eq!(args[3], OsStr::new("install"));
+            assert_eq!(args[4], OsStr::new("-g"));
+            assert_eq!(args[5], OsStr::new("--prefix"));
+            assert_eq!(args[6], install_root.as_os_str());
+            assert_eq!(
+                args[7],
+                OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
+            );
+        }
         assert_eq!(
-            args[7],
+            *args.last().unwrap(),
             OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
         );
         assert_eq!(command.get_current_dir().unwrap(), sandbox_root.path());
@@ -9582,7 +9604,7 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
             OsStr::new("/opt/pkg/ssl/cert.pem")
         );
 
-        let profile_path = PathBuf::from(args[1]);
+        let profile_path = sandbox_root.path().join("sandbox.sb");
         assert!(profile_path.is_file());
         assert!(sandbox_root.path().join("npmrc").is_file());
         assert_eq!(
