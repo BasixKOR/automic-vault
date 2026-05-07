@@ -1,3 +1,5 @@
+![promo](./assets/gui-promo.webp)
+
 # Automic Vault
 
 Package manager, secrets manager, and execution control plane for autonomous
