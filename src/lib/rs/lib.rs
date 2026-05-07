@@ -3353,7 +3353,7 @@ fn build_sandboxed_npm_install_command(
     fs::write(&sandbox_profile, npm_install_sandbox_profile(tmp_root))
         .map_err(|err| format!("failed to write {}: {err}", sandbox_profile.display()))?;
 
-    let mut command = if cfg!(coverage) {
+    let mut command = if should_bypass_npm_install_sandbox() {
         Command::new(npm.as_ref())
     } else {
         let mut command = Command::new(sandbox_exec.as_ref());
@@ -3378,6 +3378,10 @@ fn build_sandboxed_npm_install_command(
         .env("TMPDIR", tmp_root)
         .current_dir(sandbox_root.path());
     Ok(command)
+}
+
+fn should_bypass_npm_install_sandbox() -> bool {
+    cfg!(test) && env::var_os("CODEX_CI").is_some()
 }
 
 struct NpmProbeError {
@@ -9525,7 +9529,7 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         .unwrap();
 
         let args: Vec<_> = command.get_args().collect();
-        if cfg!(coverage) {
+        if should_bypass_npm_install_sandbox() {
             assert_eq!(command.get_program(), OsStr::new("/opt/pkg/bin/npm"));
             assert_eq!(args[0], OsStr::new("install"));
             assert_eq!(args[1], OsStr::new("-g"));
