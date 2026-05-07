@@ -12,6 +12,7 @@ enum NukeHelperBridgeError: Error, LocalizedError {
     case operationFailed(String)
     case biometricUnavailable(String)
     case biometricDenied(String)
+    case biometricCanceled
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ enum NukeHelperBridgeError: Error, LocalizedError {
              .biometricUnavailable(let message),
              .biometricDenied(let message):
             return message
+        case .biometricCanceled:
+            return "Authentication canceled."
         }
     }
 }
@@ -274,6 +277,8 @@ final class NukeHelperBridge {
             DispatchQueue.main.async {
                 if success {
                     completion(.success(()))
+                } else if Self.isUserAuthenticationCancel(error) {
+                    completion(.failure(NukeHelperBridgeError.biometricCanceled))
                 } else {
                     completion(.failure(NukeHelperBridgeError.biometricDenied(
                         error?.localizedDescription ?? "Biometric authorization failed."
@@ -281,6 +286,13 @@ final class NukeHelperBridge {
                 }
             }
         }
+    }
+
+    private static func isUserAuthenticationCancel(_ error: Error?) -> Bool {
+        guard let nsError = error as NSError? else {
+            return false
+        }
+        return LAError(_nsError: nsError).code == .userCancel
     }
 
     func checkForUpdates(completion: @escaping (Result<Bool, Error>) -> Void) {

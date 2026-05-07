@@ -3724,6 +3724,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         _ error: Error,
         suppressAlertWhenOverlayVisible: Bool = false
     ) {
+        if case NukeHelperBridgeError.biometricCanceled = error {
+            return
+        }
         if suppressAlertWhenOverlayVisible, updateOverlayController != nil {
             return
         }
