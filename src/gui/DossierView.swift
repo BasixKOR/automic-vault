@@ -905,7 +905,9 @@ final class DossierView: NSView {
             updateButton.isHidden = !(detail.installed && detail.isOutdated)
             updateButton.isEnabled = !isActionInFlight
             primaryActionButton.title = detail.installed ? "UNINSTALL" : "INSTALL"
-            if detail.isHomebrewMigrationCandidate {
+            if detail.homebrewMigration != nil {
+                primaryActionButton.title = "MIGRATE"
+            } else if detail.isHomebrewMigrationCandidate {
                 primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
             } else if detail.isUnsupportedHomebrewInstall {
                 primaryActionButton.title = "UNSUPPORTED TAP"

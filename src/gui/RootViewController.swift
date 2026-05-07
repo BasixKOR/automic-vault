@@ -2812,7 +2812,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func beginPackageMutation(for detail: PackageDetail) {
-        if detail.isHomebrewMigrationCandidate {
+        if detail.isHomebrewMigrationCandidate || detail.homebrewMigration != nil {
             beginHomebrewMigration(for: detail)
             return
         }
@@ -3240,6 +3240,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         )
 
         let packageNames = detail.helperPackageNames
+        let homebrewPackageNames = detail.homebrewMigration?.installPackageNames ?? [detail.packageName]
         overlay.begin(
             packages: packageNames,
             activationLog: "Installing \(detail.packageName) with Automic Vault."
@@ -3257,6 +3258,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             case .success(let summary):
                 self.runHomebrewUninstallAfterMigration(
                     detail: detail,
+                    homebrewPackageNames: homebrewPackageNames,
                     summary: summary,
                     operationID: operationID,
                     overlay: overlay
@@ -3273,16 +3275,20 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private func runHomebrewUninstallAfterMigration(
         detail: PackageDetail,
+        homebrewPackageNames: [String],
         summary: NukeHelperResult,
         operationID: Int,
         overlay: UpdateProgressViewController
     ) {
-        overlay.handle(event: .log(
-            package: detail.packageName,
-            message: "removing original Homebrew install"
-        ))
+        let uninstallPackageNames = homebrewPackageNames.isEmpty ? [detail.packageName] : homebrewPackageNames
+        for packageName in uninstallPackageNames {
+            overlay.handle(event: .log(
+                package: packageName,
+                message: "removing original Homebrew install"
+            ))
+        }
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.uninstallHomebrewPackage(packageName: detail.packageName)
+            let result = Self.uninstallHomebrewPackages(packageNames: uninstallPackageNames)
             DispatchQueue.main.async {
                 guard self.activeOverlayOperationID == operationID else { return }
                 self.isRunningPackageOperation = false
@@ -3294,7 +3300,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 case .success:
                     overlay.succeed(
                         message: "Installed with Automic Vault and removed Homebrew package",
-                        packages: summary.processedPackages + [detail.packageName]
+                        packages: summary.processedPackages + uninstallPackageNames
                     )
                     self.reloadPackages()
                     self.refreshRecommendations()
@@ -3310,6 +3316,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 }
             }
         }
+    }
+
+    private static func uninstallHomebrewPackages(packageNames: [String]) -> Result<Void, Error> {
+        for packageName in packageNames {
+            let result = uninstallHomebrewPackage(packageName: packageName)
+            if case .failure = result {
+                return result
+            }
+        }
+        return .success(())
     }
 
     private static func uninstallHomebrewPackage(packageName: String) -> Result<Void, Error> {
