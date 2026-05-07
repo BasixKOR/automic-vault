@@ -11,6 +11,8 @@ Prioritize:
 Do not optimize for novelty. Prefer changes that fit the existing shape of
 the repo.
 
+Commit (as Codex) after each completed job.
+
 ## Architecture First
 
 Before editing code, identify:
