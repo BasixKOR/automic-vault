@@ -835,7 +835,7 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
                 "qualified package name must not contain additional path separators".to_string(),
             );
         }
-        return Ok(formula.to_string());
+        return formula_install_package_name(formula);
     }
     if let Some(cask) = package.strip_prefix(CASK_PACKAGE_PREFIX) {
         if cask.is_empty() {
@@ -879,6 +879,18 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
     if vendor::get(package).is_none() {
         if let Some(target) = package_alias_target(package) {
             return Ok(target.display_name());
+        }
+        if let Ok(install_root) = package_install_root(&opt_pkg_root(), package)
+            && install_root_has_valid_receipt(package, &install_root).unwrap_or(false)
+        {
+            return Ok(package.to_string());
+        }
+        if let Some(provider_name) = embedded_provider_install_package_name(package)? {
+            return Ok(provider_name);
+        }
+        let formula = formula_install_package_name(package)?;
+        if formula != package {
+            return Ok(formula);
         }
     }
     Ok(package.to_string())
@@ -1111,7 +1123,7 @@ pub(crate) fn package_install_root(opt_root: &Path, package_name: &str) -> Resul
     Ok(opt_root.join(package_name))
 }
 
-fn parse_embedded_provider(value: &str) -> Result<Option<EmbeddedPackage>, String> {
+pub(crate) fn parse_embedded_provider(value: &str) -> Result<Option<EmbeddedPackage>, String> {
     if let Some(package) = value.strip_prefix("npm:") {
         if package.is_empty() {
             return Err("package qualifier 'npm:' is missing a package name".to_string());

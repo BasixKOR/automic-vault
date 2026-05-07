@@ -1488,7 +1488,7 @@ fn run_i_package_with_progress(
     options: InstallOptions,
     progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
 ) -> Result<(), String> {
-    let rollback_name = requested_package_name(&requested);
+    let mut rollback_name = requested_package_name(&requested);
     let result = match requested {
         RequestedPackage::Auto(package_name) => {
             if let Some(package) = vendor::get(&package_name) {
@@ -1507,15 +1507,17 @@ fn run_i_package_with_progress(
             } else {
                 match resolve_i_root_package(&package_name)? {
                     EmbeddedPackage::Formula(root_formula) => {
+                        let install_package_name = formula_install_package_name(&root_formula)?;
+                        rollback_name = install_package_name.clone();
                         prepare_install_target(
                             &opt_pkg_root(),
-                            &package_name,
+                            &install_package_name,
                             options.allow_reinstall,
                             &managed_bin_root(),
                         )?;
                         run_i_formula(
                             config,
-                            package_name.clone(),
+                            install_package_name,
                             root_formula,
                             progress_callback.clone(),
                         )
@@ -1556,13 +1558,15 @@ fn run_i_package_with_progress(
             )
         }
         RequestedPackage::HomebrewFormula(formula) => {
+            let package_name = formula_install_package_name(&formula)?;
+            rollback_name = package_name.clone();
             prepare_install_target(
                 &opt_pkg_root(),
-                &formula,
+                &package_name,
                 options.allow_reinstall,
                 &managed_bin_root(),
             )?;
-            run_i_formula(config, formula.clone(), formula, progress_callback.clone())
+            run_i_formula(config, package_name, formula, progress_callback.clone())
         }
         RequestedPackage::HomebrewCask(cask) => {
             prepare_install_target(
@@ -4221,10 +4225,40 @@ fn cask_alias_index(db: &Db) -> &'static HashMap<String, String> {
 }
 
 fn canonical_formula_name(formula: &str) -> Result<String, String> {
+    Ok(formula_install_package_name_with_aliases(
+        formula,
+        formula_alias_index()?,
+    ))
+}
+
+fn formula_install_package_name(formula: &str) -> Result<String, String> {
     Ok(canonical_formula_name_with_aliases(
         formula,
         formula_alias_index()?,
     ))
+}
+
+fn embedded_provider_install_package_name(package_name: &str) -> Result<Option<String>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    let Some(provider) = db.entries.get(package_name) else {
+        return Ok(None);
+    };
+    let Some(resolved) = crate::cli::parse_embedded_provider(provider)? else {
+        return Ok(None);
+    };
+    Ok(Some(match resolved {
+        EmbeddedPackage::Formula(formula) => formula_install_package_name(&formula)?,
+        EmbeddedPackage::Cask(cask) => cask,
+        EmbeddedPackage::NpmPackage(package) => npm_package_display_name(&package),
+    }))
+}
+
+fn formula_install_package_name_with_aliases(
+    formula: &str,
+    aliases: &HashMap<String, String>,
+) -> String {
+    canonical_formula_name_with_aliases(formula, aliases)
 }
 
 fn canonical_formula_name_with_aliases(formula: &str, aliases: &HashMap<String, String>) -> String {
@@ -6267,6 +6301,20 @@ mod tests {
     }
 
     #[test]
+    fn formula_install_package_name_uses_canonical_provider_name() {
+        let aliases = HashMap::from([("protoc".to_string(), "protobuf".to_string())]);
+
+        assert_eq!(
+            formula_install_package_name_with_aliases("protoc", &aliases),
+            "protobuf"
+        );
+        assert_eq!(
+            formula_install_package_name_with_aliases("protobuf", &aliases),
+            "protobuf"
+        );
+    }
+
+    #[test]
     fn resolve_i_root_formula_rejects_ambiguous_package_and_executable_names() {
         let db = test_db(&[("foo", "bar")]);
         assert_eq!(
@@ -6900,6 +6948,66 @@ or `npm:clawhub` for the aliased package"
                 packages: vec!["npm:clawhub".to_string()],
             })
         );
+    }
+
+    #[test]
+    fn parse_uninstall_request_uses_homebrew_provider_names_for_executables() {
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av rm".to_string(),
+            mode: None,
+        };
+        let request =
+            parse_uninstall_request_from_iter(&invocation, vec![OsString::from("rg")].into_iter())
+                .unwrap();
+
+        assert_eq!(
+            request,
+            Some(UninstallRequest {
+                packages: vec!["ripgrep".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn parse_uninstall_request_preserves_existing_legacy_executable_root() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let install_root = opt_root.join("rg");
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_path(&install_root).unwrap();
+        }
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "rg".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "ripgrep".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av rm".to_string(),
+            mode: None,
+        };
+        let request =
+            parse_uninstall_request_from_iter(&invocation, vec![OsString::from("rg")].into_iter())
+                .unwrap();
+
+        assert_eq!(
+            request,
+            Some(UninstallRequest {
+                packages: vec!["rg".to_string()],
+            })
+        );
+
+        remove_path(&install_root).unwrap();
     }
 
     #[test]

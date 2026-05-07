@@ -62,10 +62,10 @@ pub(crate) fn resolve_package_statuses(
             |message| eprintln!("{message}"),
         ),
         PackageSelection::Requested(packages) => {
-            let mut package_names = packages
-                .iter()
-                .map(requested_package_name)
-                .collect::<Vec<_>>();
+            let mut package_names = Vec::with_capacity(packages.len());
+            for package in packages {
+                package_names.push(requested_install_package_name(package)?);
+            }
             package_names.sort();
             package_names.dedup();
 
@@ -90,10 +90,10 @@ pub(crate) fn resolve_installed_package_records(
             |message| eprintln!("{message}"),
         ),
         PackageSelection::Requested(packages) => {
-            let mut package_names = packages
-                .iter()
-                .map(requested_package_name)
-                .collect::<Vec<_>>();
+            let mut package_names = Vec::with_capacity(packages.len());
+            for package in packages {
+                package_names.push(requested_install_package_name(package)?);
+            }
             package_names.sort();
             package_names.dedup();
 
@@ -255,6 +255,41 @@ pub(crate) fn requested_package_name(package: &RequestedPackage) -> String {
     }
 }
 
+pub(crate) fn requested_install_package_name(package: &RequestedPackage) -> Result<String, String> {
+    match package {
+        RequestedPackage::Auto(package_name) => {
+            if vendor::get(package_name).is_some() {
+                return Ok(package_name.clone());
+            }
+            if let Some(provider_name) = embedded_provider_install_package_name(package_name)? {
+                return Ok(provider_name);
+            }
+            let formula = formula_install_package_name(package_name)?;
+            if formula != *package_name {
+                return Ok(formula);
+            }
+            Ok(package_name.clone())
+        }
+        RequestedPackage::Alias { target, .. } => match target {
+            PackageAliasTarget::HomebrewFormula(formula) => formula_install_package_name(formula),
+            PackageAliasTarget::HomebrewCask(cask) => Ok(cask.clone()),
+            PackageAliasTarget::NpmPackage(package_name) => {
+                Ok(npm_package_display_name(package_name))
+            }
+            PackageAliasTarget::PipPackage(package_name) => {
+                Ok(pip_package_display_name(package_name))
+            }
+        },
+        RequestedPackage::HomebrewFormula(formula) => formula_install_package_name(formula),
+        RequestedPackage::HomebrewCask(cask) => Ok(cask.clone()),
+        RequestedPackage::Isotope(package_name) => {
+            Ok(format!("{ISOTOPE_PACKAGE_PREFIX}{package_name}"))
+        }
+        RequestedPackage::NpmPackage { package, .. } => Ok(npm_package_display_name(package)),
+        RequestedPackage::PipPackage(package_name) => Ok(pip_package_display_name(package_name)),
+    }
+}
+
 pub(crate) fn requested_package_from_status(status: &PackageStatus) -> RequestedPackage {
     match &status.source {
         PackageReceiptSource::Formula { root_formula } if status.package_name == *root_formula => {
@@ -281,7 +316,7 @@ pub(crate) fn resolve_package_info(
     config: &Config,
     requested: &RequestedPackage,
 ) -> Result<PackageInfo, String> {
-    let package_name = requested_package_name(requested);
+    let package_name = requested_install_package_name(requested)?;
     let install_root = package_info_install_root(requested, &package_name)?;
     let metadata = match fs::symlink_metadata(&install_root) {
         Ok(metadata) => Some(metadata),
