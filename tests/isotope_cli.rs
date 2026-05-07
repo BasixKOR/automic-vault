@@ -1,5 +1,9 @@
 use std::process::{Command, Output};
 
+fn pkg_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 fn run_isotope(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("inject")
@@ -34,7 +38,7 @@ fn subs_isotope_cli_covers_help_version_and_missing_target() {
 
     let output = run_isotope(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av inject 1.0.0"));
+    assert!(stdout(&output).contains(&format!("av inject {}", pkg_version())));
 
     let output = run_isotope(&[]);
     assert!(!output.status.success());
@@ -52,7 +56,7 @@ fn subs_save_cli_covers_help_version_and_parse_errors() {
 
     let output = run_save(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av save 1.0.0"));
+    assert!(stdout(&output).contains(&format!("av save {}", pkg_version())));
 
     let output = run_save(&[]);
     assert!(!output.status.success());

@@ -198,6 +198,21 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    struct TestEndpointGuard;
+
+    impl TestEndpointGuard {
+        fn set(overrides: crate::config::TestEndpointOverrides) -> Self {
+            crate::config::set_test_endpoint_overrides(overrides);
+            Self
+        }
+    }
+
+    impl Drop for TestEndpointGuard {
+        fn drop(&mut self) {
+            crate::config::clear_test_endpoint_overrides();
+        }
+    }
+
     fn start_test_http_server(
         routes: Vec<(String, u16, Vec<u8>)>,
         request_count: usize,
@@ -294,6 +309,7 @@ mod tests {
 
     #[test]
     fn vendor_registry_http_helpers_cover_success_paths() {
+        let _env_lock = crate::global_test_env_lock().lock().unwrap();
         let package_metadata = br#"{
             "dist-tags": {"latest": "1.2.3"},
             "versions": {
@@ -323,7 +339,7 @@ mod tests {
             6,
         );
 
-        crate::config::set_test_endpoint_overrides(crate::config::TestEndpointOverrides {
+        let _endpoints = TestEndpointGuard::set(crate::config::TestEndpointOverrides {
             github_api_root: Some(server_root.clone()),
             npm_registry_root: Some(server_root.clone()),
             ..Default::default()
@@ -352,13 +368,13 @@ mod tests {
             npm_dependency_constraint("bun", &Version::parse("1.2.2").unwrap(), "node").unwrap(),
             None
         );
-        crate::config::clear_test_endpoint_overrides();
 
         handle.join().unwrap();
     }
 
     #[test]
     fn vendor_registry_http_helpers_cover_error_paths() {
+        let _env_lock = crate::global_test_env_lock().lock().unwrap();
         let invalid_json = b"{".to_vec();
         let package_metadata = br#"{
             "dist-tags": {"latest": "1.2.3"},
@@ -380,7 +396,7 @@ mod tests {
             3,
         );
 
-        crate::config::set_test_endpoint_overrides(crate::config::TestEndpointOverrides {
+        let _endpoints = TestEndpointGuard::set(crate::config::TestEndpointOverrides {
             github_api_root: Some(server_root.clone()),
             npm_registry_root: Some(server_root.clone()),
             ..Default::default()
@@ -393,7 +409,6 @@ mod tests {
 
         let err = npm_tarball_url("bun", &Version::parse("9.9.9").unwrap()).unwrap_err();
         assert!(err.contains("missing version 9.9.9"));
-        crate::config::clear_test_endpoint_overrides();
 
         assert_eq!(
             parse_semver("1.2.3", "bun").unwrap(),

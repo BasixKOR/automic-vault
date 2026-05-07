@@ -1,5 +1,9 @@
 use std::process::{Command, Output};
 
+fn pkg_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 fn run_vault(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("contain")
@@ -24,7 +28,7 @@ fn subs_vault_cli_covers_help_version_and_tooling_commands() {
 
     let output = run_vault(&["--version"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("av contain 1.0.0"));
+    assert!(stdout(&output).contains(&format!("av contain {}", pkg_version())));
 
     let output = run_vault(&["toolchain", "--help"]);
     assert!(output.status.success());
