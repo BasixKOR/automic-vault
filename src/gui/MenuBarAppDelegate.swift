@@ -369,7 +369,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let shouldShowIndicator = outdatedCount > 0 || appUpdateSnapshot.updateAvailable
 
         if let statusIcon {
-            button.image = adjustedIcon(statusIcon, horizontalInset: 2, heightReduction: 2, offsetY: -0.5)
+            button.image = adjustedIcon(statusIcon, horizontalInset: 0, heightReduction: 0, offsetY: 0)
             button.imagePosition = shouldShowIndicator ? .imageLeading : .imageOnly
             button.imageScaling = .scaleNone
             if shouldShowIndicator {

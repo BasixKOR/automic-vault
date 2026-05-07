@@ -722,7 +722,8 @@ enum PackageListItem: Equatable {
 struct PackageRecommendation: Equatable {
     static let automicVaultCLTName = "Automic Vault CLT"
     static let xcodeCLTName = "Xcode CLT"
-    static let agenticToolingPackName = "Agentic Tooling Pack"
+    static let agenticToolingPackName = "Agentic Toolkit"
+    static let agentPackName = "Agent Pack"
     static let unixPlusPlusPackName = "UNIX++ Pack"
     static let homebrewMigrationName = "Homebrew Migration"
     static let agenticToolingPackPackageNames = [
@@ -752,6 +753,18 @@ struct PackageRecommendation: Equatable {
         "tesseract",
         "exiftool",
         "pandoc"
+    ]
+    static let agentPackPackageNames = [
+        "codex",
+        "claude-code",
+        "block-goose-cli",
+        "aider",
+        "opencode",
+        "gemini-cli",
+        "qwen-code",
+        "ccusage",
+        "llm",
+        "mods"
     ]
     static let unixPlusPlusPackPackageNames = [
         "bat",
@@ -893,7 +906,7 @@ struct PackageRecommendation: Equatable {
             return nil
         }
         let description =
-            "Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools."
+            "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools."
         let detail = PackageDetail(
             packageName: agenticToolingPackName,
             qualifiedName: agenticToolingPackName,
@@ -932,6 +945,61 @@ struct PackageRecommendation: Equatable {
             detail: detail,
             description: description
         )
+    }
+
+    static func agentPack(missingPackageNames: [String]) -> PackageRecommendation? {
+        guard missingPackageNames.isEmpty == false else {
+            return nil
+        }
+        let description =
+            "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection."
+        let detail = PackageDetail(
+            packageName: agentPackName,
+            qualifiedName: agentPackName,
+            installRoot: "/opt",
+            installed: false,
+            source: nil,
+            sourceError: nil,
+            aliases: [],
+            aliasesError: nil,
+            installedVersion: nil,
+            latestVersion: nil,
+            latestVersionError: nil,
+            executablePaths: [],
+            executablePathsError: nil,
+            popularity: nil,
+            lastUpdatedAt: nil,
+            homebrewInfo: HomebrewPackageInfo(
+                formula: agentPackName,
+                description: description,
+                homepage: nil,
+                license: nil,
+                dependencies: agentPackPackageNames
+            ),
+            homebrewInfoError: nil,
+            npmHomepage: nil,
+            npmPackageInfoError: nil,
+            securityState: nil,
+            installPackageNames: missingPackageNames.map(agentPackInstallPackageName),
+            homebrewMigration: nil
+        )
+        return PackageRecommendation(
+            packageName: agentPackName,
+            installedVersion: nil,
+            latestVersion: nil,
+            missingPackageNames: missingPackageNames,
+            detail: detail,
+            description: description
+        )
+    }
+
+    private static func agentPackInstallPackageName(_ packageName: String) -> String {
+        switch packageName {
+        case "codex":
+            return "cask:\(packageName)"
+        default:
+            return "brew:\(packageName)"
+        }
     }
 
     static func unixPlusPlusPack(missingPackageNames: [String]) -> PackageRecommendation? {

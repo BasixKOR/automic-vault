@@ -1575,6 +1575,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             PackageRecommendation.agenticToolingPackPackageNames.filter {
                 installedPackageNames.contains($0) == false
             }
+        let agentPackMissingPackageNames =
+            PackageRecommendation.agentPackPackageNames.filter {
+                installedPackageNames.contains($0) == false
+            }
         let unixPlusPlusPackMissingPackageNames =
             PackageRecommendation.unixPlusPlusPackPackageNames.filter {
                 installedPackageNames.contains($0) == false
@@ -1585,6 +1589,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             bridge.xcodeCLTRecommendation(),
             PackageRecommendation.agenticToolingPack(
                 missingPackageNames: toolingPackMissingPackageNames
+            ),
+            PackageRecommendation.agentPack(
+                missingPackageNames: agentPackMissingPackageNames
             ),
             PackageRecommendation.unixPlusPlusPack(
                 missingPackageNames: unixPlusPlusPackMissingPackageNames
@@ -1604,6 +1611,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             PackageRecommendation.automicVaultCLTName,
             PackageRecommendation.xcodeCLTName,
             PackageRecommendation.agenticToolingPackName,
+            PackageRecommendation.agentPackName,
             PackageRecommendation.unixPlusPlusPackName,
             PackageRecommendation.homebrewMigrationName
         ]
@@ -1650,12 +1658,19 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             if let source = record.source, case .formula(let rootFormula) = source {
                 names.append(rootFormula)
             }
+            if let source = record.source, case .cask(let caskName) = source {
+                names.append(caskName)
+            }
             if record.name.hasPrefix("brew:") {
                 names.append(String(record.name.dropFirst("brew:".count)))
             }
+            if record.name.hasPrefix("cask:") {
+                names.append(String(record.name.dropFirst("cask:".count)))
+            }
             return names
         } + homebrewInstalledPackageNames.flatMap { name in
-            [name, name.strippingPrefix("brew:")].compactMap { $0 }
+            [name, name.strippingPrefix("brew:"), name.strippingPrefix("cask:")]
+                .compactMap { $0 }
         })
     }
 
