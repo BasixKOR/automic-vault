@@ -139,6 +139,7 @@ final class DossierView: NSView {
     private struct DependencyCluster {
         let name: String
         let baseAlpha: CGFloat
+        let isInstalled: Bool
         let layer: CATextLayer
     }
 
@@ -914,7 +915,10 @@ final class DossierView: NSView {
             }
             primaryActionButton.isHidden = false
             primaryActionButton.isEnabled = !isActionInFlight && !detail.isUnsupportedHomebrewInstall
-            renderDependencies(detail.dependencies)
+            renderDependencies(
+                detail.dependencies,
+                installedDependencies: installedPackDependencies(for: detail)
+            )
             renderExecutables(detail.executablePaths, error: detail.executablePathsError)
         } else {
             titleLayer.string = nil
@@ -1199,7 +1203,10 @@ final class DossierView: NSView {
         hoveredExecutableName = nil
     }
 
-    private func renderDependencies(_ dependencies: [String]) {
+    private func renderDependencies(
+        _ dependencies: [String],
+        installedDependencies: Set<String>
+    ) {
         clearDependencies()
 
         guard dependencies.isEmpty == false else { return }
@@ -1217,10 +1224,48 @@ final class DossierView: NSView {
             self.layer?.addSublayer(layer)
 
             let alpha = min(0.80, 0.70 + CGFloat(index % 3) * 0.04)
-            let cluster = DependencyCluster(name: dependency, baseAlpha: alpha, layer: layer)
+            let cluster = DependencyCluster(
+                name: dependency,
+                baseAlpha: alpha,
+                isInstalled: installedDependencies.contains(dependency),
+                layer: layer
+            )
             dependencyClusters.append(cluster)
             applyStyle(to: cluster, hovered: false)
         }
+    }
+
+    private func installedPackDependencies(for detail: PackageDetail) -> Set<String> {
+        guard isInstallPack(detail),
+              let installPackageNames = detail.installPackageNames else {
+            return []
+        }
+
+        let missingPackageNames = Set(
+            installPackageNames.flatMap(Self.packageDependencyIdentifiers)
+        )
+        return Set(detail.dependencies.filter { missingPackageNames.contains($0) == false })
+    }
+
+    private func isInstallPack(_ detail: PackageDetail) -> Bool {
+        switch detail.packageName {
+        case PackageRecommendation.agenticToolingPackName,
+             PackageRecommendation.agentPackName,
+             PackageRecommendation.unixPlusPlusPackName:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func packageDependencyIdentifiers(_ packageName: String) -> [String] {
+        var identifiers = [packageName]
+        for prefix in ["brew:", "cask:", "npm:", "pip:"] {
+            if let unqualified = packageName.strippingPrefix(prefix) {
+                identifiers.append(unqualified)
+            }
+        }
+        return identifiers
     }
 
     private func renderExecutables(_ executables: [String], error: String?) {
@@ -1250,7 +1295,12 @@ final class DossierView: NSView {
             let alpha = error != nil
                 ? CGFloat(0.56)
                 : min(0.80, 0.70 + CGFloat(index % 3) * 0.04)
-            let cluster = DependencyCluster(name: executable, baseAlpha: alpha, layer: layer)
+            let cluster = DependencyCluster(
+                name: executable,
+                baseAlpha: alpha,
+                isInstalled: false,
+                layer: layer
+            )
             executableClusters.append(cluster)
             if error == nil, executables.isEmpty == false, executable.hasPrefix("/") {
                 executableURLs[executable] = URL(fileURLWithPath: executable)
@@ -1374,10 +1424,11 @@ final class DossierView: NSView {
                 attributes: attributes
             )
         } else {
+            let baseColor = cluster.isInstalled ? UIStyle.accent : UIStyle.text
             cluster.layer.string = UIStyle.attributedMonoText(
                 cluster.name,
                 size: 11,
-                color: UIStyle.text.withAlphaComponent(alpha),
+                color: baseColor.withAlphaComponent(alpha),
                 tracking: 0.2
             )
         }
