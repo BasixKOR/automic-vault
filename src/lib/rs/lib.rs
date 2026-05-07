@@ -298,7 +298,13 @@ fn load_trusted_remote_combined_data_from(
         return None;
     }
     let bytes = fs::read(path).ok()?;
-    serde_json::from_slice::<CombinedData>(&bytes).ok()
+    let data = serde_json::from_slice::<CombinedData>(&bytes).ok()?;
+    ensure_combined_data_schema(&data).ok()?;
+    Some(data)
+}
+
+fn ensure_combined_data_schema(data: &CombinedData) -> Result<(), String> {
+    ensure_db_schema(&data.sources.db)
 }
 
 #[cfg(any(test, feature = "packaged-db"))]
@@ -387,8 +393,10 @@ fn refresh_remote_combined_data_with(
         .into_reader()
         .read_to_end(&mut bytes)
         .map_err(|err| format!("failed to read {url}: {err}"))?;
-    serde_json::from_slice::<CombinedData>(&bytes)
+    let data = serde_json::from_slice::<CombinedData>(&bytes)
         .map_err(|err| format!("failed to parse {url}: {err}"))?;
+    ensure_combined_data_schema(&data)
+        .map_err(|err| format!("unsupported remote database {url}: {err}"))?;
     write_remote_combined_data(dir, data_path, &bytes)?;
     metadata.etag = etag.or(metadata.etag);
     metadata.checked_at = Some(now);
@@ -11236,6 +11244,21 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn trusted_remote_combined_data_rejects_future_schema_cache_file() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("db.json");
+        fs::write(
+            &path,
+            test_combined_data_json_with_db_schema(DB_SCHEMA_VERSION + 1),
+        )
+        .unwrap();
+        fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(load_trusted_remote_combined_data_from(temp.path(), &path, false).is_none());
+    }
+
+    #[test]
     fn refresh_remote_combined_data_uses_etags_and_validates_json() {
         let temp = TempDir::new().unwrap();
         let data_path = temp.path().join("db.json");
@@ -11260,6 +11283,32 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert!(requests[1].contains("If-None-Match: \"test-etag\""));
         let metadata = read_remote_combined_data_metadata(&meta_path);
         assert_eq!(metadata.etag.as_deref(), Some("\"test-etag\""));
+    }
+
+    #[test]
+    fn refresh_remote_combined_data_rejects_future_schema_without_replacing_cache() {
+        let temp = TempDir::new().unwrap();
+        let data_path = temp.path().join("db.json");
+        let meta_path = temp.path().join("db.meta.json");
+        let cached_data = test_combined_data_json();
+        fs::write(&data_path, &cached_data).unwrap();
+        let (base, server) = start_test_http_server(
+            vec![(
+                "/db.json".to_string(),
+                test_combined_data_json_with_db_schema(DB_SCHEMA_VERSION + 1),
+            )],
+            1,
+        );
+        let url = format!("{base}/db.json");
+
+        let err = refresh_remote_combined_data_with(&url, temp.path(), &data_path, &meta_path, 0)
+            .unwrap_err();
+
+        server.join().unwrap();
+        assert!(err.contains("unsupported remote database"));
+        assert!(err.contains("unsupported db schema"));
+        assert_eq!(fs::read(&data_path).unwrap(), cached_data);
+        assert!(!meta_path.exists());
     }
 
     #[test]
@@ -12978,13 +13027,17 @@ fi
     }
 
     fn test_combined_data_json() -> Vec<u8> {
+        test_combined_data_json_with_db_schema(DB_SCHEMA_VERSION)
+    }
+
+    fn test_combined_data_json_with_db_schema(db_schema: u32) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
             "schema": 1,
             "generated_at": "2026-05-05T00:00:00Z",
             "sources": {
                 "aliases": {},
                 "db": {
-                    "schema": DB_SCHEMA_VERSION,
+                    "schema": db_schema,
                     "generated_at": "2026-05-05T00:00:00Z",
                     "entries": {},
                     "npms": {}
