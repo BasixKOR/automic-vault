@@ -68,10 +68,10 @@ publish_github_release() {
     target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
   fi
 
-  release_notes_path="$(generate_release_notes "${tag}" "${target_ref}")"
-
   if [[ "${clobber_release}" == "true" ]]; then
-    clobber_github_release "${tag}"
+    release_notes_path="$(clobber_github_release "${tag}")"
+  else
+    release_notes_path="$(generate_release_notes "${tag}" "${target_ref}")"
   fi
 
   release_args=(
@@ -103,27 +103,38 @@ publish_github_release() {
 
 clobber_github_release() {
   local tag="$1"
+  local notes_path
   local view_error
 
   cli_require_tool gh
+  notes_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-notes.XXXXXX")"
   view_error="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-view.XXXXXX")"
 
-  if ! gh release view "${tag}" >/dev/null 2>"${view_error}"; then
+  if ! gh release view "${tag}" --json body --jq '.body' >"${notes_path}" 2>"${view_error}"; then
     if grep -Eiq 'release not found|not found|HTTP 404' "${view_error}"; then
       rm -f "${view_error}"
+      printf 'Rebuilt release %s.\n' "${tag}" >"${notes_path}"
+      printf '%s\n' "${notes_path}"
       return 0
     fi
 
     cat "${view_error}" >&2
-    rm -f "${view_error}"
+    rm -f "${notes_path}" "${view_error}"
     cli_die "Unable to check existing GitHub release ${tag}"
   fi
 
   rm -f "${view_error}"
+  if [[ ! -s "${notes_path}" ]]; then
+    printf 'Rebuilt release %s.\n' "${tag}" >"${notes_path}"
+  fi
+
   cli_step "Clobbering existing GitHub release ${tag}"
   if ! gh release delete "${tag}" --yes --cleanup-tag >&2; then
+    rm -f "${notes_path}"
     cli_die "Unable to clobber existing GitHub release ${tag}"
   fi
+
+  printf '%s\n' "${notes_path}"
 }
 
 latest_release_tag_before() {
