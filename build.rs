@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-changed=.git/HEAD");
     if let Ok(head_path) = std::fs::read_to_string(".git/HEAD") {
         if let Some(reference) = head_path.strip_prefix("ref: ") {
