@@ -1343,6 +1343,15 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         reloadPackages()
     }
 
+    #if DEBUG
+    @objc func runDebugFakeUpdate() {
+        guard !isRunningPackageOperation, !isRunningPrivilegedUpdate, !isInstallingAv else {
+            return
+        }
+        startDebugFakeUpdateOperation()
+    }
+    #endif
+
     private func resetDossierScrollPosition() {
         dossierScrollView.contentView.scroll(to: .zero)
         dossierScrollView.reflectScrolledClipView(dossierScrollView.contentView)
@@ -2661,6 +2670,50 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             }
         )
     }
+
+    #if DEBUG
+    private func startDebugFakeUpdateOperation() {
+        let operationID = beginOverlayOperation()
+        isRunningPrivilegedUpdate = true
+        let overlay = presentUpdateOverlay()
+        overlay.onRetry = { [weak self] in
+            self?.startDebugFakeUpdateOperation()
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.dismissUpdateOverlay()
+        }
+        overlay.configure(
+            title: "NUCLEUS DEBUG UPDATE",
+            awaitingClearance: "Debug channel primed",
+            idleStatus: "Synthetic package stream ready",
+            successOperation: "Debug Update Complete",
+            failureOperation: "Debug Update Halted"
+        )
+        overlay.begin(
+            packages: NukeHelperBridge.debugFakeUpdatePackages,
+            activationLog: "Debug fake update started. Using synthetic nucleus progress."
+        )
+        helperBridge.debugFakeUpdate(
+            progress: { event in
+                guard self.activeOverlayOperationID == operationID else { return }
+                overlay.handle(event: event)
+            },
+            completion: { result in
+                guard self.activeOverlayOperationID == operationID else { return }
+                self.isRunningPrivilegedUpdate = false
+                switch result {
+                case .success(let summary):
+                    overlay.succeed(
+                        message: summary.message,
+                        packages: summary.processedPackages
+                    )
+                case .failure(let error):
+                    overlay.fail(message: error.localizedDescription)
+                }
+            }
+        )
+    }
+    #endif
 
     private func startAutomicVaultCLTInstallOperation() {
         let stagedDirectory: URL

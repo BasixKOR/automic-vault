@@ -180,6 +180,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "r"
         )
         refreshItem.target = self
+        #if DEBUG
+        let fakeUpdateItem = windowMenu.addItem(
+            withTitle: "Run Fake Update",
+            action: #selector(runFakeUpdate(_:)),
+            keyEquivalent: "u"
+        )
+        fakeUpdateItem.keyEquivalentModifierMask = [.command, .shift]
+        fakeUpdateItem.target = self
+        windowMenu.addItem(.separator())
+        #endif
         windowMenu.addItem(
             withTitle: "Close",
             action: #selector(NSWindow.performClose(_:)),
@@ -282,6 +292,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? RootViewController)?.requestRefresh()
     }
+
+    #if DEBUG
+    @objc private func runFakeUpdate(_ sender: Any?) {
+        let window = makeOrRestoreMainWindow()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        (window.contentViewController as? RootViewController)?.runDebugFakeUpdate()
+    }
+    #endif
 
     private func toggleStartAtLoginFromHelper() {
         let service = SMAppService.loginItem(identifier: "com.automicvault.menu-helper")

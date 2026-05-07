@@ -13,6 +13,7 @@ private enum PackageStage: String {
 private final class ProgressStripView: NSView {
     private let trackLayer = CALayer()
     private let fillLayer = CALayer()
+    private var renderedProgress: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -31,16 +32,30 @@ private final class ProgressStripView: NSView {
     override func layout() {
         super.layout()
         trackLayer.frame = bounds
+        layoutFill(animated: false)
     }
 
     func setProgress(_ progress: CGFloat, animated: Bool) {
-        let clamped = max(0, min(progress, 1))
-        let target = CGRect(x: 0, y: 0, width: bounds.width * clamped, height: bounds.height)
+        renderedProgress = max(0, min(progress, 1))
+        layoutFill(animated: animated)
+    }
+
+    private func layoutFill(animated: Bool) {
+        let target = CGRect(
+            x: 0,
+            y: 0,
+            width: bounds.width * renderedProgress,
+            height: bounds.height
+        )
         CATransaction.begin()
         CATransaction.setAnimationDuration(animated ? 0.08 : 0)
         fillLayer.frame = target
         CATransaction.commit()
     }
+}
+
+private final class PackageProgressStackView: NSStackView {
+    override var isFlipped: Bool { true }
 }
 
 private final class PackageProgressRowView: NSView {
@@ -326,7 +341,7 @@ final class UpdateProgressViewController: NSViewController {
         let operationField = NSTextField(labelWithString: "")
         let statusField = NSTextField(labelWithString: "")
         let packageScrollView = NSScrollView(frame: .zero)
-        let packageStack = NSStackView()
+        let packageStack = PackageProgressStackView()
         let logScrollView = NSScrollView(frame: .zero)
         let logView = NSTextView(frame: .zero)
         let primaryButton = NSButton(title: "Abort", target: nil, action: nil)
@@ -369,10 +384,12 @@ final class UpdateProgressViewController: NSViewController {
             statusField.textColor = UIStyle.quietText
 
             packageStack.orientation = .vertical
+            packageStack.alignment = .width
             packageStack.spacing = 8
             packageScrollView.drawsBackground = false
             packageScrollView.borderType = .noBorder
             packageScrollView.hasVerticalScroller = true
+            packageScrollView.contentView.postsBoundsChangedNotifications = true
             packageScrollView.documentView = packageStack
             panel.addSubview(packageScrollView)
 
@@ -467,6 +484,8 @@ final class UpdateProgressViewController: NSViewController {
 
     private var rows: [String: PackageProgressRowView] = [:]
     private var orderedPackages: [String] = []
+    private var visiblePackages: Set<String> = []
+    private var acceptsNewVisiblePackages = true
     private var packageStates: [String: PackageRuntimeState] = [:]
     private var isTerminalState = false
     private var channelTitle = "NUCLEUS UPDATE CHANNEL"
@@ -521,6 +540,8 @@ final class UpdateProgressViewController: NSViewController {
 
     func begin(packages: [String], activationLog: String) {
         orderedPackages = packages
+        visiblePackages = Set(packages)
+        acceptsNewVisiblePackages = packages.isEmpty
         packageStates = Dictionary(
             uniqueKeysWithValues: packages.map { ($0, PackageRuntimeState()) }
         )
@@ -534,6 +555,7 @@ final class UpdateProgressViewController: NSViewController {
         }
         updateButtons(primaryTitle: "Abort", showSecondary: false)
         rebuildRows()
+        resetPackageScrollPosition()
     }
 
     func handle(event: NukeHelperProgressEvent) {
@@ -550,12 +572,13 @@ final class UpdateProgressViewController: NSViewController {
                 )
             }
         case .downloading(let package, let bytesPerSecond, let progress):
-            track(package)
+            let isVisiblePackage = track(package)
             let speedText = Self.format(speed: bytesPerSecond)
             setOperation("Updating \(package)")
             if shouldLogDownloadStart(for: package) {
                 appendLog("Downloading \(package)")
             }
+            guard isVisiblePackage else { return }
             guard shouldRenderDownloadUpdate(for: package, progress: CGFloat(progress)) else {
                 return
             }
@@ -566,11 +589,12 @@ final class UpdateProgressViewController: NSViewController {
                 speed: speedText
             )
         case .installing(let package):
-            track(package)
+            let isVisiblePackage = track(package)
             let state = packageStates[package] ?? PackageRuntimeState()
             if state.observedDownload {
                 setOperation("Extracting \(package)")
                 appendLog("Extracting \(package)")
+                guard isVisiblePackage else { return }
                 updateRow(
                     package: package,
                     stage: .extracting,
@@ -580,6 +604,7 @@ final class UpdateProgressViewController: NSViewController {
             } else {
                 setOperation("Installing \(package)")
                 appendLog("Installing \(package)")
+                guard isVisiblePackage else { return }
                 updateRow(
                     package: package,
                     stage: .installing,
@@ -588,13 +613,14 @@ final class UpdateProgressViewController: NSViewController {
                 )
             }
         case .log(let package, let message):
-            track(package)
+            _ = track(package)
             setOperation(Self.sentenceCase(message))
             appendLog("\(package): \(message)")
         case .completed(let package):
-            track(package)
+            let isVisiblePackage = track(package)
             setOperation("Sealing \(package)")
             appendLog("Completed \(package)")
+            guard isVisiblePackage else { return }
             updateRow(package: package, stage: .completed, progress: 1, speed: nil)
         case .error(let message):
             fail(message: message)
@@ -602,7 +628,9 @@ final class UpdateProgressViewController: NSViewController {
     }
 
     func succeed(message: String, packages: [String]) {
-        packages.forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
+        packages
+            .filter { acceptsNewVisiblePackages || visiblePackages.contains($0) }
+            .forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
         isTerminalState = true
         operationAnimator?.stop()
         setOperation(successOperationTitle)
@@ -624,12 +652,20 @@ final class UpdateProgressViewController: NSViewController {
         updateButtons(primaryTitle: "Retry", showSecondary: true)
     }
 
-    private func track(_ package: String) {
-        if rows[package] == nil {
-            orderedPackages.append(package)
-            packageStates[package] = packageStates[package] ?? PackageRuntimeState()
-            rebuildRows()
+    @discardableResult
+    private func track(_ package: String) -> Bool {
+        if acceptsNewVisiblePackages {
+            visiblePackages.insert(package)
         }
+        guard visiblePackages.contains(package) else {
+            packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+            return false
+        }
+        guard rows[package] == nil else { return true }
+        orderedPackages.append(package)
+        packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+        rebuildRows()
+        return true
     }
 
     private func rebuildRows() {
@@ -656,11 +692,12 @@ final class UpdateProgressViewController: NSViewController {
             row.heightAnchor.constraint(equalToConstant: 38).isActive = true
         }
         rootView.needsLayout = true
+        resetPackageScrollPosition()
     }
 
     private func updateRow(package: String, stage: PackageStage, progress: CGFloat, speed: String?) {
-        if rows[package] == nil {
-            track(package)
+        guard track(package) else {
+            return
         }
         var state = packageStates[package] ?? PackageRuntimeState()
         state.stage = stage
@@ -680,6 +717,12 @@ final class UpdateProgressViewController: NSViewController {
             speed: speed,
             animated: stage != .downloading
         )
+    }
+
+    private func resetPackageScrollPosition() {
+        guard let rootView = view as? RootView else { return }
+        rootView.packageScrollView.contentView.scroll(to: .zero)
+        rootView.packageScrollView.reflectScrolledClipView(rootView.packageScrollView.contentView)
     }
 
     private func shouldLogDownloadStart(for package: String) -> Bool {
