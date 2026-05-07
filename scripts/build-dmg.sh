@@ -347,7 +347,7 @@ fi
 #   )"
 # fi
 
-applications_icon_y=$((finder_height / 2 - 60))
+applications_icon_y=$(((finder_height / 2 - 60) * 6 / 5))
 app_icon_y="${applications_icon_y}"
 
 cli_title "Build Automic Vault DMG"
