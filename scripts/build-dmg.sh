@@ -27,12 +27,13 @@ prepared_background_path=""
 notarize=false
 install_app=false
 publish_release=false
+clobber_release=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
                             [--volume-name NAME] [--notarize] [--install]
-                            [--publish]
+                            [--publish] [--clobber]
 
 Build the release app bundle and package it into a DMG in target/.
 
@@ -45,6 +46,8 @@ Options:
   --install           Install the built app bundle into /Applications.
   --publish           Create a GitHub release for vX.Y.Z with the DMG.
                       Requires --notarize.
+  --clobber           Delete any existing GitHub release for vX.Y.Z before
+                      publishing. Requires --publish.
   --help              Show this help.
 EOF
 }
@@ -66,6 +69,10 @@ publish_github_release() {
   fi
 
   release_notes_path="$(generate_release_notes "${tag}" "${target_ref}")"
+
+  if [[ "${clobber_release}" == "true" ]]; then
+    clobber_github_release "${tag}"
+  fi
 
   release_args=(
     "${tag}"
@@ -91,6 +98,31 @@ publish_github_release() {
   if ! gh release edit "${tag}" --draft=false >&2; then
     cli_error "Release publish failed"
     cli_die "Draft release remains unpublished: ${tag}"
+  fi
+}
+
+clobber_github_release() {
+  local tag="$1"
+  local view_error
+
+  cli_require_tool gh
+  view_error="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-view.XXXXXX")"
+
+  if ! gh release view "${tag}" >/dev/null 2>"${view_error}"; then
+    if grep -Eiq 'release not found|not found|HTTP 404' "${view_error}"; then
+      rm -f "${view_error}"
+      return 0
+    fi
+
+    cat "${view_error}" >&2
+    rm -f "${view_error}"
+    cli_die "Unable to check existing GitHub release ${tag}"
+  fi
+
+  rm -f "${view_error}"
+  cli_step "Clobbering existing GitHub release ${tag}"
+  if ! gh release delete "${tag}" --yes --cleanup-tag >&2; then
+    cli_die "Unable to clobber existing GitHub release ${tag}"
   fi
 }
 
@@ -261,6 +293,10 @@ while [[ $# -gt 0 ]]; do
       publish_release=true
       shift
       ;;
+    --clobber)
+      clobber_release=true
+      shift
+      ;;
     --help|-h)
       usage
       exit 0
@@ -275,6 +311,10 @@ done
 
 if [[ "${publish_release}" == "true" && "${notarize}" != "true" ]]; then
   cli_die "--publish requires --notarize"
+fi
+
+if [[ "${clobber_release}" == "true" && "${publish_release}" != "true" ]]; then
+  cli_die "--clobber requires --publish"
 fi
 
 if [[ -z "${background_path}" && -f "${default_background}" ]]; then
