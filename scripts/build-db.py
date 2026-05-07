@@ -187,34 +187,34 @@ def _ghcr_repo_from_url(path):
 
 def _ghcr_bearer_token(repo, github_token):
     now = int(time.time())
-    cached = _GHCR_TOKENS.get(repo)
+    cache_key = (repo, bool(github_token))
+    cached = _GHCR_TOKENS.get(cache_key)
     if cached and cached["expires_at"] > now:
         return cached["token"]
 
-    if not github_token:
-        return None
     username = _github_username() or "x-access-token"
     scope = f"repository:{repo}:pull"
     query = urllib.parse.urlencode({"service": "ghcr.io", "scope": scope})
     url = f"{TOKEN_SERVICE}?{query}"
-    basic = base64.b64encode(
-        f"{username}:{github_token}".encode("utf-8")
-    ).decode("utf-8")
-    headers = {
-        "Authorization": f"Basic {basic}",
-        "User-Agent": USER_AGENT,
-    }
+    headers = {"User-Agent": USER_AGENT}
+    if github_token:
+        basic = base64.b64encode(
+            f"{username}:{github_token}".encode("utf-8")
+        ).decode("utf-8")
+        headers["Authorization"] = f"Basic {basic}"
     request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
             data = json.loads(response.read())
     except urllib.error.HTTPError as err:
+        if github_token:
+            return _ghcr_bearer_token(repo, None)
         print(f"Failed to get GHCR token for {repo}: {err}", file=sys.stderr)
         return None
     bearer = data.get("token")
     expires_in = data.get("expires_in", 300)
     if bearer:
-        _GHCR_TOKENS[repo] = {
+        _GHCR_TOKENS[cache_key] = {
             "token": bearer,
             "expires_at": now + int(expires_in) - 10,
         }
