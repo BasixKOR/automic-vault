@@ -44,9 +44,11 @@
         "aws": "awscli",
         "aws_completer": "awscli",
         "bash": "bash",
+        "coverage-npm": "npm:coverage-npm",
         "gh": "gh",
         "libpq": "libpq",
         "rg": "ripgrep",
+        "scoped-tool": "npm:@scope/scoped-tool",
         "sqlite": "sqlite"
       },
       "formulas": {
@@ -116,7 +118,31 @@
         }
       },
       "generated_at": "2026-05-05T00:00:00Z",
-      "schema": 6
+      "npms": {
+        "@scope/scoped-tool": {
+          "executable": "scoped-tool",
+          "homepage": "https://example.test/npm",
+          "last_updated_at": "2026-05-01T00:00:00Z",
+          "popularity": {
+            "downloads_per_30_days": 992,
+            "rank": 8
+          },
+          "summary": "Scoped npm tool",
+          "version": "2.0.0"
+        },
+        "coverage-npm": {
+          "executable": "coverage-npm",
+          "homepage": "https://example.test/npm",
+          "last_updated_at": "2026-05-01T00:00:00Z",
+          "popularity": {
+            "downloads_per_30_days": 993,
+            "rank": 7
+          },
+          "summary": "Coverage npm tool",
+          "version": "1.2.3"
+        }
+      },
+      "schema": 7
     },
     "isotopes": {
       "aws-cli": {

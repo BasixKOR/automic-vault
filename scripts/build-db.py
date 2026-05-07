@@ -18,8 +18,9 @@ CASKS_URL = "https://formulae.brew.sh/api/cask.json"
 CASK_ANALYTICS_URL = "https://formulae.brew.sh/api/analytics/cask-install/365d.json"
 CACHE_DIR = "cache"
 ECOSYSTEM = "brew.sh"
+NPM_ECOSYSTEM = "npmjs"
 DB_PATH = os.path.join("data", "db.json")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 HOMEWBREW_CORE_REPO = "Homebrew/homebrew-core"
 HOMEWBREW_CASK_REPO = "Homebrew/homebrew-cask"
 META_KEY = "__pkgdb_meta__"
@@ -30,6 +31,38 @@ DEFAULT_TIMEOUT = 60
 MANIFEST_ACCEPT = "application/vnd.oci.image.index.v1+json"
 TOKEN_SERVICE = "https://ghcr.io/token"
 FORCE_REFRESH = False
+NPM_REGISTRY_ROOT = "https://registry.npmjs.org"
+NPM_REPLICATE_CHANGES_URL = "https://replicate.npmjs.com/registry/_changes"
+NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search"
+NPM_DOWNLOADS_POINT_ROOT = "https://api.npmjs.org/downloads/point/last-month"
+NPM_MIN_MONTHLY_DOWNLOADS = 50_000
+NPM_SEARCH_PAGE_SIZE = 250
+NPM_SEARCH_MAX_PAGES = 4
+NPM_CHANGES_LIMIT = 5000
+NPM_INDEX_STATE_PATH = os.path.join(CACHE_DIR, NPM_ECOSYSTEM, "index.json")
+NPM_SEARCH_QUERIES = (
+    "cli",
+    "command",
+    "command-line",
+    "terminal",
+    "shell",
+    "devtool",
+    "runner",
+    "linter",
+    "formatter",
+    "generator",
+)
+NPM_SEED_PACKAGES = (
+    "tsx",
+    "vite",
+    "eslint",
+    "prettier",
+    "serve",
+    "nodemon",
+    "vitest",
+    "webpack-cli",
+    "rollup",
+)
 
 _GHCR_TOKENS = {}
 
@@ -40,13 +73,17 @@ def _ensure_cwd():
     os.chdir(root)
 
 
-def _cache_path(url):
+def _cache_path_for(url, ecosystem):
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    return os.path.join(CACHE_DIR, ECOSYSTEM, f"{digest}.json")
+    return os.path.join(CACHE_DIR, ecosystem, f"{digest}.json")
 
 
-def _read_cached_json(url):
-    path = _cache_path(url)
+def _cache_path(url):
+    return _cache_path_for(url, ECOSYSTEM)
+
+
+def _read_cached_json(url, ecosystem=ECOSYSTEM):
+    path = _cache_path_for(url, ecosystem)
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     with open(path, "rb") as handle:
@@ -67,12 +104,12 @@ def _write_cache(path, payload, etag, checked_at):
         json.dump(wrapper, handle)
 
 
-def _fetch_json(url, github_token=None):
-    path = _cache_path(url)
+def _fetch_json(url, github_token=None, ecosystem=ECOSYSTEM, accept="application/json"):
+    path = _cache_path_for(url, ecosystem)
     payload = None
     meta = {}
     if os.path.exists(path):
-        payload, meta = _read_cached_json(url)
+        payload, meta = _read_cached_json(url, ecosystem)
 
     checked_at = meta.get("checked_at")
     now = int(time.time())
@@ -83,7 +120,7 @@ def _fetch_json(url, github_token=None):
     ):
         return payload
 
-    headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+    headers = {"Accept": accept, "User-Agent": USER_AGENT}
     parsed = urllib.parse.urlparse(url)
     if parsed.hostname == "ghcr.io":
         headers["Accept"] = MANIFEST_ACCEPT
@@ -129,18 +166,6 @@ def _github_token():
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         return token.strip()
-    try:
-        result = subprocess.run(
-            ["gh", "auth", "token"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
-    token = result.stdout.strip()
-    if token:
-        return token
     return None
 
 
@@ -149,18 +174,6 @@ def _github_username():
         value = os.environ.get(key)
         if value:
             return value.strip()
-    try:
-        result = subprocess.run(
-            ["gh", "api", "user", "-q", ".login"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
-    username = result.stdout.strip()
-    if username:
-        return username
     return None
 
 
@@ -605,6 +618,329 @@ def _collect_cask_entries(casks, popularity_by_cask, updated_at_by_cask):
     return entries, metadata
 
 
+def _fetch_uncached_json(url, accept="application/json"):
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": accept, "User-Agent": USER_AGENT},
+    )
+    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
+        return json.loads(response.read())
+
+
+def _npm_package_url(package):
+    return f"{NPM_REGISTRY_ROOT}/{urllib.parse.quote(package, safe='@')}"
+
+
+def _npm_downloads_url(package):
+    return f"{NPM_DOWNLOADS_POINT_ROOT}/{urllib.parse.quote(package, safe='@/')}"
+
+
+def _npm_search_url(query, offset):
+    params = urllib.parse.urlencode(
+        {
+            "text": query,
+            "size": NPM_SEARCH_PAGE_SIZE,
+            "from": offset,
+            "quality": 0,
+            "maintenance": 0,
+            "popularity": 1,
+        }
+    )
+    return f"{NPM_SEARCH_URL}?{params}"
+
+
+def _npm_install_leaf_name(package):
+    if package.startswith("@") and "/" in package:
+        return package.rsplit("/", 1)[-1]
+    return package
+
+
+def _npm_matching_executable(package, bin_value):
+    leaf = _npm_install_leaf_name(package)
+    if isinstance(bin_value, str) and bin_value:
+        return leaf
+    if not isinstance(bin_value, dict):
+        return None
+    target = bin_value.get(leaf)
+    if isinstance(target, str) and target:
+        return leaf
+    return None
+
+
+def _npm_latest_version_doc(packument):
+    if not isinstance(packument, dict):
+        return None, None
+    latest = (packument.get("dist-tags") or {}).get("latest")
+    versions = packument.get("versions") or {}
+    if not isinstance(latest, str) or not isinstance(versions, dict):
+        return None, None
+    version_doc = versions.get(latest)
+    if not isinstance(version_doc, dict):
+        return None, None
+    return latest, version_doc
+
+
+def _npm_last_updated_at(packument, latest):
+    times = packument.get("time") if isinstance(packument, dict) else None
+    if not isinstance(times, dict):
+        return None
+    value = times.get(latest) or times.get("modified")
+    return value if isinstance(value, str) and value else None
+
+
+def _npm_metadata_from_packument(package, packument, monthly_downloads):
+    if monthly_downloads < NPM_MIN_MONTHLY_DOWNLOADS:
+        return None
+    latest, version_doc = _npm_latest_version_doc(packument)
+    if latest is None or version_doc is None:
+        return None
+    if version_doc.get("deprecated"):
+        return None
+    executable = _npm_matching_executable(package, version_doc.get("bin"))
+    if executable is None:
+        return None
+
+    summary = version_doc.get("description") or packument.get("description") or ""
+    homepage = version_doc.get("homepage") or packument.get("homepage") or ""
+    return {
+        "summary": summary if isinstance(summary, str) else "",
+        "homepage": homepage if isinstance(homepage, str) else "",
+        "version": latest,
+        "executable": executable,
+        "popularity": {
+            "downloads_per_30_days": monthly_downloads,
+            "rank": 0,
+        },
+        "last_updated_at": _npm_last_updated_at(packument, latest),
+    }
+
+
+def _fetch_npm_packument(package):
+    return _fetch_json(
+        _npm_package_url(package),
+        ecosystem=NPM_ECOSYSTEM,
+        accept="application/json",
+    )
+
+
+def _fetch_npm_monthly_downloads(package):
+    payload = _fetch_json(_npm_downloads_url(package), ecosystem=NPM_ECOSYSTEM)
+    if not isinstance(payload, dict):
+        return 0
+    return _parse_count(payload.get("downloads")) or 0
+
+
+def _fetch_npm_search_candidates():
+    candidates = {}
+    for package in NPM_SEED_PACKAGES:
+        try:
+            monthly = _fetch_npm_monthly_downloads(package)
+        except Exception as err:
+            print(f"Skipping seeded npm package {package}: {err}", file=sys.stderr)
+            continue
+        if monthly >= NPM_MIN_MONTHLY_DOWNLOADS:
+            candidates[package] = monthly
+
+    for query in NPM_SEARCH_QUERIES:
+        for page in range(NPM_SEARCH_MAX_PAGES):
+            url = _npm_search_url(query, page * NPM_SEARCH_PAGE_SIZE)
+            try:
+                payload = _fetch_json(url, ecosystem=NPM_ECOSYSTEM)
+            except urllib.error.HTTPError as err:
+                if err.code in (429, 503):
+                    print(
+                        f"Skipping npm search page for {query!r}: {err}",
+                        file=sys.stderr,
+                    )
+                    break
+                raise
+            except urllib.error.URLError as err:
+                print(
+                    f"Skipping npm search page for {query!r}: {err}",
+                    file=sys.stderr,
+                )
+                break
+            objects = payload.get("objects") if isinstance(payload, dict) else None
+            if not objects:
+                break
+            for item in objects:
+                package = item.get("package") if isinstance(item, dict) else None
+                downloads = item.get("downloads") if isinstance(item, dict) else None
+                if not isinstance(package, dict) or not isinstance(downloads, dict):
+                    continue
+                name = package.get("name")
+                monthly = _parse_count(downloads.get("monthly")) or 0
+                if not isinstance(name, str) or not name:
+                    continue
+                if monthly < NPM_MIN_MONTHLY_DOWNLOADS:
+                    continue
+                current = candidates.get(name)
+                if current is None or monthly > current:
+                    candidates[name] = monthly
+            if len(objects) < NPM_SEARCH_PAGE_SIZE:
+                break
+    return candidates
+
+
+def _read_npm_index_state():
+    if not os.path.exists(NPM_INDEX_STATE_PATH):
+        return {"last_seq": None, "packages": {}}
+    with open(NPM_INDEX_STATE_PATH, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        return {"last_seq": None, "packages": {}}
+    packages = payload.get("packages")
+    if not isinstance(packages, dict):
+        packages = {}
+    return {
+        "last_seq": payload.get("last_seq"),
+        "packages": packages,
+    }
+
+
+def _write_npm_index_state(last_seq, packages):
+    os.makedirs(os.path.dirname(NPM_INDEX_STATE_PATH), exist_ok=True)
+    with open(NPM_INDEX_STATE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "last_seq": last_seq,
+                "packages": packages,
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+
+
+def _current_npm_changes_sequence():
+    params = urllib.parse.urlencode({"descending": "true", "limit": 1})
+    payload = _fetch_uncached_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}")
+    return payload.get("last_seq") if isinstance(payload, dict) else None
+
+
+def _fetch_npm_changes_since(last_seq):
+    if last_seq is None:
+        return set(), set(), _current_npm_changes_sequence()
+
+    changed = set()
+    deleted = set()
+    next_seq = last_seq
+    while True:
+        params = urllib.parse.urlencode({"since": next_seq, "limit": NPM_CHANGES_LIMIT})
+        payload = _fetch_uncached_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}")
+        if not isinstance(payload, dict):
+            break
+        results = payload.get("results")
+        if not isinstance(results, list) or not results:
+            next_seq = payload.get("last_seq", next_seq)
+            break
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            package = item.get("id")
+            if not isinstance(package, str) or not package:
+                continue
+            if item.get("deleted"):
+                deleted.add(package)
+                changed.discard(package)
+            else:
+                changed.add(package)
+        next_seq = payload.get("last_seq", next_seq)
+        if len(results) < NPM_CHANGES_LIMIT:
+            break
+    return changed, deleted, next_seq
+
+
+def _collect_npm_metadata():
+    state = _read_npm_index_state()
+    packages = {
+        name: metadata
+        for name, metadata in state["packages"].items()
+        if isinstance(name, str) and isinstance(metadata, dict)
+    }
+
+    candidates = _fetch_npm_search_candidates()
+    changed, deleted, next_seq = _fetch_npm_changes_since(state.get("last_seq"))
+    for package in deleted:
+        packages.pop(package, None)
+
+    refresh_names = set(candidates)
+    refresh_names.update(package for package in changed if package in packages)
+    if changed:
+        print(
+            f"Processing {len(refresh_names)} npm candidates from "
+            f"{len(changed)} registry changes...",
+            file=sys.stderr,
+        )
+
+    completed = 0
+    max_workers = min(32, (os.cpu_count() or 4) * 4)
+
+    def refresh(package):
+        try:
+            monthly = candidates.get(package)
+            if monthly is None:
+                monthly = _fetch_npm_monthly_downloads(package)
+            packument = _fetch_npm_packument(package)
+            if packument is None:
+                return package, None
+            return package, _npm_metadata_from_packument(package, packument, monthly)
+        except Exception as err:
+            print(f"Failed to refresh npm package {package}: {err}", file=sys.stderr)
+            return package, packages.get(package)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(refresh, package): package
+            for package in sorted(refresh_names)
+        }
+        for future in as_completed(future_map):
+            package, metadata = future.result()
+            if metadata is None:
+                packages.pop(package, None)
+            else:
+                packages[package] = metadata
+            completed += 1
+            if completed % 100 == 0:
+                print(
+                    f"Refreshed {completed}/{len(refresh_names)} npm packages...",
+                    file=sys.stderr,
+                )
+
+    ranked = {}
+    sorted_packages = sorted(
+        packages.items(),
+        key=lambda item: (
+            -((item[1].get("popularity") or {}).get("downloads_per_30_days") or 0),
+            item[0],
+        ),
+    )
+    for rank, (package, metadata) in enumerate(sorted_packages, start=1):
+        popularity = metadata.setdefault("popularity", {})
+        popularity["rank"] = rank
+        ranked[package] = metadata
+
+    if next_seq is not None:
+        _write_npm_index_state(next_seq, ranked)
+    return ranked
+
+
+def _apply_npm_entries(ordered_entries, npm_metadata):
+    candidates = sorted(
+        npm_metadata.items(),
+        key=lambda item: (
+            -((item[1].get("popularity") or {}).get("downloads_per_30_days") or 0),
+            item[0],
+        ),
+    )
+    for package, metadata in candidates:
+        executable = metadata.get("executable")
+        if isinstance(executable, str) and executable:
+            ordered_entries.setdefault(executable, f"npm:{package}")
+    return ordered_entries
+
+
 def _sorted_entries(entries):
     ordered = {}
     for executable in sorted(entries.keys()):
@@ -646,6 +982,7 @@ def main():
             sys.exit(2)
 
     os.makedirs(os.path.join(CACHE_DIR, ECOSYSTEM), exist_ok=True)
+    os.makedirs(os.path.join(CACHE_DIR, NPM_ECOSYSTEM), exist_ok=True)
 
     github_token = _github_token()
 
@@ -773,7 +1110,9 @@ def main():
         popularity_by_cask,
         cask_updates,
     )
+    npm_metadata = _collect_npm_metadata()
     ordered_entries = _sorted_entries(_merge_entries(formula_entries, cask_entries))
+    ordered_entries = _apply_npm_entries(ordered_entries, npm_metadata)
 
     db = {
         "schema": SCHEMA_VERSION,
@@ -783,6 +1122,7 @@ def main():
         "entries": ordered_entries,
         "formulas": formulas,
         "casks": cask_metadata,
+        "npms": npm_metadata,
     }
 
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -792,7 +1132,8 @@ def main():
 
     print(
         f"Wrote {DB_PATH} with {len(ordered_entries)} executables "
-        f"and {len(formulas)} formulas, {len(cask_metadata)} casks"
+        f"and {len(formulas)} formulas, {len(cask_metadata)} casks, "
+        f"{len(npm_metadata)} npm packages"
     )
     if missing_manifests:
         print(

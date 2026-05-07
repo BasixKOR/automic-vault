@@ -119,7 +119,7 @@ mod post_install_hooks {
     }
 }
 
-const DB_SCHEMA_VERSION: u32 = 6;
+const DB_SCHEMA_VERSION: u32 = 7;
 #[cfg(all(not(test), feature = "packaged-db"))]
 const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("../../../data/combined.json");
 #[cfg(any(test, not(feature = "packaged-db")))]
@@ -474,6 +474,8 @@ struct Db {
     formulas: HashMap<String, EmbeddedFormulaMetadata>,
     #[serde(default)]
     casks: HashMap<String, EmbeddedCaskMetadata>,
+    #[serde(default)]
+    npms: HashMap<String, EmbeddedNpmMetadata>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -516,6 +518,25 @@ struct EmbeddedCaskBinary {
 #[derive(Debug, Clone, Deserialize, Default, Serialize, PartialEq, Eq)]
 struct EmbeddedPackagePopularity {
     installs_per_365_days: u64,
+    rank: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct EmbeddedNpmMetadata {
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    homepage: String,
+    version: String,
+    executable: String,
+    popularity: Option<EmbeddedNpmPopularity>,
+    last_updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct EmbeddedNpmPopularity {
+    #[allow(dead_code)]
+    downloads_per_30_days: u64,
     rank: u32,
 }
 
@@ -723,6 +744,7 @@ struct Invocation {
 enum EmbeddedPackage {
     Formula(String),
     Cask(String),
+    NpmPackage(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1461,13 +1483,13 @@ fn run_i_package_with_progress(
     let rollback_name = requested_package_name(&requested);
     let result = match requested {
         RequestedPackage::Auto(package_name) => {
-            prepare_install_target(
-                &opt_pkg_root(),
-                &package_name,
-                options.allow_reinstall,
-                &managed_bin_root(),
-            )?;
             if let Some(package) = vendor::get(&package_name) {
+                prepare_install_target(
+                    &opt_pkg_root(),
+                    &package_name,
+                    options.allow_reinstall,
+                    &managed_bin_root(),
+                )?;
                 run_i_vendor(
                     config,
                     package_name.clone(),
@@ -1476,16 +1498,41 @@ fn run_i_package_with_progress(
                 )
             } else {
                 match resolve_i_root_package(&package_name)? {
-                    EmbeddedPackage::Formula(root_formula) => run_i_formula(
+                    EmbeddedPackage::Formula(root_formula) => {
+                        prepare_install_target(
+                            &opt_pkg_root(),
+                            &package_name,
+                            options.allow_reinstall,
+                            &managed_bin_root(),
+                        )?;
+                        run_i_formula(
+                            config,
+                            package_name.clone(),
+                            root_formula,
+                            progress_callback.clone(),
+                        )
+                    }
+                    EmbeddedPackage::Cask(cask_name) => {
+                        prepare_install_target(
+                            &opt_pkg_root(),
+                            &package_name,
+                            options.allow_reinstall,
+                            &managed_bin_root(),
+                        )?;
+                        run_i_cask(
+                            config,
+                            package_name.clone(),
+                            cask_name,
+                            progress_callback.clone(),
+                        )
+                    }
+                    EmbeddedPackage::NpmPackage(npm_package) => run_i_package_with_progress(
                         config,
-                        package_name.clone(),
-                        root_formula,
-                        progress_callback.clone(),
-                    ),
-                    EmbeddedPackage::Cask(cask_name) => run_i_cask(
-                        config,
-                        package_name.clone(),
-                        cask_name,
+                        RequestedPackage::NpmPackage {
+                            package: npm_package,
+                            version: None,
+                        },
+                        options,
                         progress_callback.clone(),
                     ),
                 }
@@ -6130,6 +6177,7 @@ mod tests {
                 .collect(),
             formulas: HashMap::new(),
             casks: HashMap::new(),
+            npms: HashMap::new(),
         }
     }
 
@@ -6242,6 +6290,37 @@ package or `bar` for the package that provides the `foo` executable"
     }
 
     #[test]
+    fn resolve_i_root_package_supports_npm_providers() {
+        let db = test_db(&[("tsx", "npm:tsx")]);
+        assert_eq!(
+            resolve_i_root_package_with_db("tsx", &db, |_| Ok(false)).unwrap(),
+            EmbeddedPackage::NpmPackage("tsx".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_i_root_package_supports_scoped_npm_providers() {
+        let db = test_db(&[("scoped-tool", "npm:@scope/scoped-tool")]);
+        assert_eq!(
+            resolve_i_root_package_with_db("scoped-tool", &db, |_| Ok(false)).unwrap(),
+            EmbeddedPackage::NpmPackage("@scope/scoped-tool".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_i_root_package_rejects_formula_and_npm_executable_ambiguity() {
+        let db = test_db(&[("tsx", "npm:tsx")]);
+        assert_eq!(
+            resolve_i_root_package_with_db("tsx", &db, |_| Ok(true)),
+            Err(
+                "ambiguous install target 'tsx': use `brew:tsx` for the Homebrew \
+package or `npm:tsx` for the package that provides the `tsx` executable"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
     fn homebrew_executables_from_db_lists_formula_tools_without_prefix() {
         let db = test_db(&[
             ("ffmpeg", "ffmpeg"),
@@ -6256,6 +6335,18 @@ package or `bar` for the package that provides the `foo` executable"
                 "ffplay".to_string(),
                 "ffprobe".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn npm_package_executable_name_falls_back_to_install_leaf_name() {
+        assert_eq!(
+            npm_package_executable_name("unindexed-tool"),
+            "unindexed-tool"
+        );
+        assert_eq!(
+            npm_package_executable_name("@scope/unindexed-tool"),
+            "unindexed-tool"
         );
     }
 
@@ -11026,6 +11117,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             entries: HashMap::new(),
             formulas: HashMap::new(),
             casks: HashMap::new(),
+            npms: HashMap::new(),
         };
         assert_eq!(
             ensure_db_schema(&bad).unwrap_err(),
@@ -11668,6 +11760,23 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                         vendor_name: "bun".to_string(),
                     }
         }));
+
+        let npm_results = resolve_package_search_results(
+            &Config {
+                bottle_tag: "arm64_tahoe".to_string(),
+            },
+            "coverage-npm",
+        )
+        .unwrap();
+        assert!(npm_results.iter().any(|result| {
+            result.package_name == "npm:coverage-npm"
+                && result.source
+                    == PackageReceiptSource::Npm {
+                        package_name: "coverage-npm".to_string(),
+                    }
+                && result.summary == Some("Coverage npm tool".to_string())
+                && result.latest_version == Some("1.2.3".to_string())
+        }));
     }
 
     #[test]
@@ -11844,6 +11953,11 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                     .popularity
                     .map(|popularity| (popularity.rank, name))
             }))
+            .chain(db.npms.into_iter().filter_map(|(name, metadata)| {
+                metadata
+                    .popularity
+                    .map(|popularity| (popularity.rank, npm_package_display_name(&name)))
+            }))
             .collect::<Vec<_>>();
         ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
         ranked.dedup_by(|left, right| left.1 == right.1);
@@ -11875,6 +11989,13 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 && package.source
                     == PackageReceiptSource::Vendor {
                         vendor_name: "bun".to_string(),
+                    }
+        }));
+        assert!(available_packages.iter().any(|package| {
+            package.package_name == "npm:coverage-npm"
+                && package.source
+                    == PackageReceiptSource::Npm {
+                        package_name: "coverage-npm".to_string(),
                     }
         }));
     }
@@ -12832,7 +12953,8 @@ fi
                 "db": {
                     "schema": DB_SCHEMA_VERSION,
                     "generated_at": "2026-05-05T00:00:00Z",
-                    "entries": {}
+                    "entries": {},
+                    "npms": {}
                 },
                 "isotopes": {},
                 "npm": {},

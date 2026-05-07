@@ -939,7 +939,16 @@ pub(crate) fn npm_package_install_relative_path(package: &str) -> PathBuf {
 }
 
 pub(crate) fn npm_package_executable_name(package: &str) -> String {
-    crate::npm::executable_name(package)
+    load_db()
+        .ok()
+        .and_then(|db| ensure_db_schema(&db).ok().map(|_| db))
+        .and_then(|db| {
+            db.npms
+                .get(package)
+                .map(|metadata| metadata.executable.clone())
+        })
+        .filter(|executable| !executable.is_empty())
+        .unwrap_or_else(|| crate::npm::executable_name(package))
 }
 
 pub(crate) fn validate_pip_package_name(package: &str) -> Result<(), String> {
@@ -1103,6 +1112,12 @@ pub(crate) fn package_install_root(opt_root: &Path, package_name: &str) -> Resul
 }
 
 fn parse_embedded_provider(value: &str) -> Result<EmbeddedPackage, String> {
+    if let Some(package) = value.strip_prefix("npm:") {
+        if package.is_empty() {
+            return Err("package qualifier 'npm:' is missing a package name".to_string());
+        }
+        return Ok(EmbeddedPackage::NpmPackage(package.to_string()));
+    }
     if let Some(cask) = value.strip_prefix(CASK_PACKAGE_PREFIX) {
         if cask.is_empty() {
             return Err(format!(

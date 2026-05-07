@@ -22,6 +22,13 @@ def _popularity(rank):
     }
 
 
+def _npm_popularity(rank):
+    return {
+        "downloads_per_30_days": 1000 - rank,
+        "rank": rank,
+    }
+
+
 def _formula(summary, aliases=None, popularity_rank=None, last_updated_at=None):
     formula = {
         "summary": summary,
@@ -50,6 +57,17 @@ def _cask(summary, popularity_rank, last_updated_at):
     }
 
 
+def _npm(summary, version, executable, popularity_rank, last_updated_at):
+    return {
+        "summary": summary,
+        "homepage": "https://example.test/npm",
+        "version": version,
+        "executable": executable,
+        "popularity": _npm_popularity(popularity_rank),
+        "last_updated_at": last_updated_at,
+    }
+
+
 def main():
     _ensure_cwd()
     data = {
@@ -62,14 +80,16 @@ def main():
                 "qmd": "npm:@tobilu/qmd",
             },
             "db": {
-                "schema": 6,
+                "schema": 7,
                 "generated_at": "2026-05-05T00:00:00Z",
                 "entries": {
                     "aws": "awscli",
                     "aws_completer": "awscli",
                     "bash": "bash",
+                    "coverage-npm": "npm:coverage-npm",
                     "gh": "gh",
                     "libpq": "libpq",
+                    "scoped-tool": "npm:@scope/scoped-tool",
                     "rg": "ripgrep",
                     "sqlite": "sqlite",
                 },
@@ -110,6 +130,22 @@ def main():
                     "codex": _cask(
                         "OpenAI Codex",
                         popularity_rank=6,
+                        last_updated_at="2026-05-01T00:00:00Z",
+                    ),
+                },
+                "npms": {
+                    "coverage-npm": _npm(
+                        "Coverage npm tool",
+                        version="1.2.3",
+                        executable="coverage-npm",
+                        popularity_rank=7,
+                        last_updated_at="2026-05-01T00:00:00Z",
+                    ),
+                    "@scope/scoped-tool": _npm(
+                        "Scoped npm tool",
+                        version="2.0.0",
+                        executable="scoped-tool",
+                        popularity_rank=8,
                         last_updated_at="2026-05-01T00:00:00Z",
                     ),
                 },
@@ -162,10 +198,13 @@ def main():
 def _validate(data):
     sources = data["sources"]
     db = sources["db"]
-    assert db["schema"] == 6
+    assert db["schema"] == 7
     assert db["formulas"]["ripgrep"]["aliases"] == ["rg"]
     assert db["formulas"]["node"]["aliases"] == ["node@25"]
     assert db["casks"]["codex"]["version"]
+    assert db["entries"]["coverage-npm"] == "npm:coverage-npm"
+    assert db["entries"]["scoped-tool"] == "npm:@scope/scoped-tool"
+    assert db["npms"]["coverage-npm"]["executable"] == "coverage-npm"
     assert sources["isotopes"]["gh"]["replaces"] == "brew:gh"
     assert sources["isotopes"]["aws-cli"]["modifies"] == "brew:awscli"
     assert sources["npm"]["coverage-npm"]["homebrewDeps"] == ["node"]

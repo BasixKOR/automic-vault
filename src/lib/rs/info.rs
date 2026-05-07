@@ -384,6 +384,12 @@ pub(crate) fn resolve_package_search_results(
             }),
     );
     results.extend(
+        db.npms
+            .iter()
+            .filter(|(name, metadata)| npm_entry_matches(name, metadata, &lowered_query))
+            .map(|(name, metadata)| npm_search_result(name, metadata)),
+    );
+    results.extend(
         vendor::PACKAGES
             .iter()
             .copied()
@@ -432,6 +438,11 @@ pub(crate) fn resolve_available_package_results(
                 last_updated_at: metadata.last_updated_at,
             }),
     );
+    results.extend(
+        db.npms
+            .into_iter()
+            .map(|(name, metadata)| npm_search_result(&name, &metadata)),
+    );
     results.extend(vendor::PACKAGES.iter().copied().map(vendor_search_result));
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
@@ -454,6 +465,44 @@ fn vendor_entry_matches(entry: &vendor::VendorEntry, lowered_query: &str) -> boo
         || (entry.executables)()
             .iter()
             .any(|executable| executable.to_ascii_lowercase().contains(lowered_query))
+}
+
+fn npm_entry_matches(
+    package_name: &str,
+    metadata: &EmbeddedNpmMetadata,
+    lowered_query: &str,
+) -> bool {
+    package_name.to_ascii_lowercase().contains(lowered_query)
+        || format!("npm:{package_name}")
+            .to_ascii_lowercase()
+            .contains(lowered_query)
+        || metadata
+            .executable
+            .to_ascii_lowercase()
+            .contains(lowered_query)
+        || metadata
+            .summary
+            .to_ascii_lowercase()
+            .contains(lowered_query)
+}
+
+fn npm_search_result(package_name: &str, metadata: &EmbeddedNpmMetadata) -> PackageSearchResult {
+    let source = PackageReceiptSource::Npm {
+        package_name: package_name.to_string(),
+    };
+    PackageSearchResult {
+        package_name: package_source_qualified_name(&source),
+        source,
+        summary: string_or_none(&metadata.summary),
+        latest_version: Some(metadata.version.clone()),
+        homepage: string_or_none(&metadata.homepage),
+        dependencies: Vec::new(),
+        rank: metadata
+            .popularity
+            .as_ref()
+            .map(|popularity| popularity.rank),
+        last_updated_at: metadata.last_updated_at.clone(),
+    }
 }
 
 fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
@@ -944,6 +993,7 @@ pub(crate) fn infer_requested_package_source(
     Ok(match resolve_i_root_package(package_name)? {
         EmbeddedPackage::Formula(root_formula) => PackageReceiptSource::Formula { root_formula },
         EmbeddedPackage::Cask(cask_name) => PackageReceiptSource::Cask { cask_name },
+        EmbeddedPackage::NpmPackage(package_name) => PackageReceiptSource::Npm { package_name },
     })
 }
 
