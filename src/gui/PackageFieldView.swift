@@ -102,6 +102,7 @@ final class PackageFieldView: NSView {
         private var renderedHomebrewMigrationCandidateState = false
         private var renderedHazardState = false
         private var renderedHazardSource: PackageSecurityNotice.Source?
+        private var renderedHazardGhostState = false
 
         init(package: PackagePresentation) {
             self.package = package
@@ -233,6 +234,7 @@ final class PackageFieldView: NSView {
                 || renderedHomebrewMigrationCandidateState != package.isHomebrewInstall
                 || renderedHazardState != package.hasPlainTextSecretAlert
                 || renderedHazardSource != package.plainTextSecretAlertSource
+                || renderedHazardGhostState != package.plainTextSecretAlertIsGhosted
             guard needsRebuild else { return }
             rebuildText(maxWidth: bounds.width)
             renderedWidth = bounds.width
@@ -244,6 +246,7 @@ final class PackageFieldView: NSView {
             renderedHomebrewMigrationCandidateState = package.isHomebrewInstall
             renderedHazardState = package.hasPlainTextSecretAlert
             renderedHazardSource = package.plainTextSecretAlertSource
+            renderedHazardGhostState = package.plainTextSecretAlertIsGhosted
             updateHazardAppearance()
         }
 
@@ -496,14 +499,17 @@ final class PackageFieldView: NSView {
         }
 
         private func hazardSymbol() -> NSAttributedString {
-            NSAttributedString(
+            let color = package.plainTextSecretAlertIsGhosted
+                ? UIStyle.dimText.withAlphaComponent(0.46)
+                : UIStyle.danger
+            return NSAttributedString(
                 string: "☢",
                 attributes: [
                     .font: UIStyle.monoFont(
                         size: Metrics.hazardSymbolFontSize,
                         weight: .medium
                     ),
-                    .foregroundColor: UIStyle.danger,
+                    .foregroundColor: color,
                     .kern: 0.2
                 ]
             )
@@ -662,7 +668,11 @@ final class PackageFieldView: NSView {
         }
 
         private func updateHazardAppearance() {
-            hazardEffect.update(source: package.plainTextSecretAlertSource)
+            hazardEffect.update(
+                source: package.hasActivePlainTextSecretAlert
+                    ? package.plainTextSecretAlertSource
+                    : nil
+            )
         }
     }
 
@@ -1498,7 +1508,7 @@ final class PackageFieldView: NSView {
         hoveredPackageID = name
         if let name,
            let layer = nodeLayers[name],
-           layer.package.hasPlainTextSecretAlert {
+           layer.package.hasActivePlainTextSecretAlert {
             layer.hazardEffect.triggerSparkBurst(
                 source: layer.package.plainTextSecretAlertSource
             )
@@ -1996,10 +2006,10 @@ final class PackageFieldView: NSView {
         let hoveredAnchorFrame = hoveredPackageID.flatMap { nodeLayers[$0]?.frame }
         let selectedAnchorFrame = selectedPackageID.flatMap { nodeLayers[$0]?.frame }
         let hoveredIsHazard = hoveredPackageID
-            .flatMap { nodeLayers[$0]?.package.hasPlainTextSecretAlert }
+            .flatMap { nodeLayers[$0]?.package.hasActivePlainTextSecretAlert }
             ?? false
         let selectedIsHazard = selectedPackageID
-            .flatMap { nodeLayers[$0]?.package.hasPlainTextSecretAlert }
+            .flatMap { nodeLayers[$0]?.package.hasActivePlainTextSecretAlert }
             ?? false
 
         latentGridLayer.updateGrid(
@@ -2054,10 +2064,10 @@ final class PackageFieldView: NSView {
         let hoveredFrame = hoveredPackageID.flatMap { packageFrameForFocus(named: $0) }
         let selectedFrame = selectedPackageID.flatMap { packageFrameForFocus(named: $0) }
         let hoveredIsHazard = hoveredPackageID
-            .flatMap { nodeLayers[$0]?.package.hasPlainTextSecretAlert }
+            .flatMap { nodeLayers[$0]?.package.hasActivePlainTextSecretAlert }
             ?? false
         let selectedIsHazard = selectedPackageID
-            .flatMap { nodeLayers[$0]?.package.hasPlainTextSecretAlert }
+            .flatMap { nodeLayers[$0]?.package.hasActivePlainTextSecretAlert }
             ?? false
         updateHazardSmokeBrackets(
             hoverFrame: hoveredFrame,
@@ -2088,7 +2098,7 @@ final class PackageFieldView: NSView {
             layer.hazardEffect.layoutProtectedSource(
                 frame: textFrame,
                 text: layer.renderedText,
-                isActive: layer.package.hasPlainTextSecretAlert
+                isActive: layer.package.hasActivePlainTextSecretAlert
             )
         }
     }

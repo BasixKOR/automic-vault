@@ -565,6 +565,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let description: String?
     let homepage: String?
     let dependencies: [String]
+    let securityState: PackageSecurityState?
 
     enum CodingKeys: String, CodingKey {
         case name = "packageName"
@@ -576,6 +577,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case legacyDescription = "description"
         case homepage
         case dependencies
+        case securityState
     }
 
     init(from decoder: Decoder) throws {
@@ -594,6 +596,10 @@ struct PackageSearchResult: Decodable, Equatable {
             ?? container.decodeIfPresent(String.self, forKey: .legacyDescription)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
         dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+        securityState = try container.decodeIfPresent(
+            PackageSecurityState.self,
+            forKey: .securityState
+        )
     }
 
     var fallbackDetail: PackageDetail {
@@ -624,7 +630,7 @@ struct PackageSearchResult: Decodable, Equatable {
             homebrewInfoError: nil,
             npmHomepage: nil,
             npmPackageInfoError: nil,
-            securityState: nil,
+            securityState: securityState,
             installPackageNames: nil,
             homebrewMigration: nil
         )
@@ -1157,6 +1163,28 @@ struct PackagePresentation: Equatable {
 
     var hasPlainTextSecretAlert: Bool {
         plainTextSecretAlertSource != nil
+    }
+
+    var hasActivePlainTextSecretAlert: Bool {
+        hasPlainTextSecretAlert && !plainTextSecretAlertIsGhosted
+    }
+
+    var plainTextSecretAlertIsGhosted: Bool {
+        if let detail, detail.securityNotice != nil {
+            return !detail.installed
+        }
+        switch item {
+        case .installed:
+            return false
+        case .recommendation(let recommendation):
+            return recommendation.detail.securityNotice != nil
+                && !recommendation.detail.installed
+        case .available(let result):
+            let fallbackDetail = result.fallbackDetail
+            return fallbackDetail.securityNotice != nil && !fallbackDetail.installed
+        case .command:
+            return false
+        }
     }
 
     var plainTextSecretAlertSource: PackageSecurityNotice.Source? {

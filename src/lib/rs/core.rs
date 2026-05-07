@@ -92,6 +92,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    #[serde(rename = "securityState")]
+    pub(crate) security_state: Option<PackageSecurityState>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

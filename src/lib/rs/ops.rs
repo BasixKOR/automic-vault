@@ -253,11 +253,15 @@ fn search_page_size(limit: usize) -> usize {
 }
 
 fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSummary {
+    let qualified_name = package_source_qualified_name(&package.source);
+    let security_state =
+        package_security_state_for_identifiers([package.package_name.clone(), qualified_name]);
     core::SearchPackageSummary {
         name: package.package_name,
         source: package.source,
         version: package.latest_version,
         description: package.summary,
+        security_state,
     }
 }
 

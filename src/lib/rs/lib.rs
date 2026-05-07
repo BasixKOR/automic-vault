@@ -2208,10 +2208,6 @@ fn detect_isotope_install_is_insecure(name: &str) -> Option<Result<bool, String>
 }
 
 fn package_security_state(info: &PackageInfo) -> Option<PackageSecurityState> {
-    if !info.installed {
-        return None;
-    }
-
     let mut identifiers = vec![info.package_name.clone(), info.qualified_name.clone()];
     if let Some(source) = info.source.as_ref() {
         identifiers.push(package_source_qualified_name(source));
@@ -8305,6 +8301,60 @@ or `npm:clawhub` for the aliased package"
         let _env = TestEnvGuard::set(&[("HOME", temp.path().to_str().unwrap())]);
 
         let state = package_security_state_for_identifiers(["awscli".to_string()]);
+
+        if detect_isotope_install_is_insecure("aws-cli").is_some() {
+            assert_eq!(
+                state,
+                Some(PackageSecurityState {
+                    isotope_name: "aws-cli".to_string(),
+                    install_is_insecure: true,
+                    error: None,
+                })
+            );
+        } else {
+            assert_eq!(state, None);
+        }
+    }
+
+    #[test]
+    fn package_security_state_runs_detect_for_uninstalled_package_info() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let aws_dir = temp.path().join(".aws");
+        fs::create_dir_all(&aws_dir).unwrap();
+        fs::write(
+            aws_dir.join("credentials"),
+            "[default]\naws_secret_access_key = secret\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", temp.path().to_str().unwrap())]);
+
+        let info = PackageInfo {
+            package_name: "awscli".to_string(),
+            qualified_name: "brew:awscli".to_string(),
+            install_root: PathBuf::from("/opt/awscli"),
+            installed: false,
+            source: Some(PackageReceiptSource::Formula {
+                root_formula: "awscli".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: None,
+            latest_version: None,
+            latest_version_error: None,
+            executable_paths: Vec::new(),
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: None,
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+        };
+
+        let state = package_security_state(&info);
 
         if detect_isotope_install_is_insecure("aws-cli").is_some() {
             assert_eq!(

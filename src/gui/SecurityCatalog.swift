@@ -55,15 +55,13 @@ final class SecurityCatalog {
     private let enrichmentIdentifiers: Set<String>
 
     init(bundle: Bundle) {
-        isotopeIdentifiers = Set(Self.loadIsotopePackages(bundle: bundle).keys)
+        let isotopePackages = Self.loadIsotopePackages(bundle: bundle)
+        isotopeIdentifiers = Set(isotopePackages.keys)
         enrichmentIdentifiers = Self.loadEnrichmentIdentifiers(bundle: bundle)
-        isotopePackages = Self.loadIsotopePackages(bundle: bundle)
+        self.isotopePackages = isotopePackages
     }
 
     func notice(for detail: PackageDetail) -> PackageSecurityNotice? {
-        guard detail.installed else {
-            return nil
-        }
         let identifiers = packageIdentifiers(for: detail)
         if identifiers.isDisjoint(with: enrichmentIdentifiers) == false {
             return PackageSecurityNotice(
