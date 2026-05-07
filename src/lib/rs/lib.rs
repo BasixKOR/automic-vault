@@ -6339,6 +6339,29 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn resolve_i_root_package_ignores_unknown_qualified_entry_providers() {
+        let db = test_db(&[("future-tool", "future:provider")]);
+        assert_eq!(
+            resolve_i_root_package_with_db("future-tool", &db, |_| Ok(false)).unwrap(),
+            EmbeddedPackage::Formula("future-tool".to_string())
+        );
+    }
+
+    #[test]
+    fn ensure_alias_install_target_unambiguous_ignores_unknown_qualified_entry_providers() {
+        let db = test_db(&[("future-tool", "future:provider")]);
+        assert!(
+            ensure_alias_install_target_unambiguous_with_db(
+                "future-tool",
+                &PackageAliasTarget::NpmPackage("future-tool".to_string()),
+                &db,
+                |_| Ok(false),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn npm_package_executable_name_falls_back_to_install_leaf_name() {
         assert_eq!(
             npm_package_executable_name("unindexed-tool"),
@@ -11111,7 +11134,17 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         ensure_db_schema(&db).unwrap();
         assert_eq!(db.schema, DB_SCHEMA_VERSION);
 
-        let bad = Db {
+        let old = Db {
+            schema: DB_SCHEMA_VERSION - 1,
+            generated_at: String::new(),
+            entries: HashMap::new(),
+            formulas: HashMap::new(),
+            casks: HashMap::new(),
+            npms: HashMap::new(),
+        };
+        ensure_db_schema(&old).unwrap();
+
+        let future = Db {
             schema: DB_SCHEMA_VERSION + 1,
             generated_at: String::new(),
             entries: HashMap::new(),
@@ -11120,9 +11153,9 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             npms: HashMap::new(),
         };
         assert_eq!(
-            ensure_db_schema(&bad).unwrap_err(),
+            ensure_db_schema(&future).unwrap_err(),
             format!(
-                "unsupported db schema {} (expected {})",
+                "unsupported db schema {} (maximum supported {})",
                 DB_SCHEMA_VERSION + 1,
                 DB_SCHEMA_VERSION
             )

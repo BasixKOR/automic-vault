@@ -1111,12 +1111,12 @@ pub(crate) fn package_install_root(opt_root: &Path, package_name: &str) -> Resul
     Ok(opt_root.join(package_name))
 }
 
-fn parse_embedded_provider(value: &str) -> Result<EmbeddedPackage, String> {
+fn parse_embedded_provider(value: &str) -> Result<Option<EmbeddedPackage>, String> {
     if let Some(package) = value.strip_prefix("npm:") {
         if package.is_empty() {
             return Err("package qualifier 'npm:' is missing a package name".to_string());
         }
-        return Ok(EmbeddedPackage::NpmPackage(package.to_string()));
+        return Ok(Some(EmbeddedPackage::NpmPackage(package.to_string())));
     }
     if let Some(cask) = value.strip_prefix(CASK_PACKAGE_PREFIX) {
         if cask.is_empty() {
@@ -1124,9 +1124,12 @@ fn parse_embedded_provider(value: &str) -> Result<EmbeddedPackage, String> {
                 "package qualifier '{CASK_PACKAGE_PREFIX}' is missing a cask name"
             ));
         }
-        return Ok(EmbeddedPackage::Cask(cask.to_string()));
+        return Ok(Some(EmbeddedPackage::Cask(cask.to_string())));
     }
-    Ok(EmbeddedPackage::Formula(value.to_string()))
+    if value.contains(':') {
+        return Ok(None);
+    }
+    Ok(Some(EmbeddedPackage::Formula(value.to_string())))
 }
 
 pub(crate) fn resolve_i_root_package(package: &str) -> Result<EmbeddedPackage, String> {
@@ -1155,7 +1158,9 @@ where
     let Some(provider) = db.entries.get(package) else {
         return Ok(EmbeddedPackage::Formula(package.to_string()));
     };
-    let resolved = parse_embedded_provider(provider)?;
+    let Some(resolved) = parse_embedded_provider(provider)? else {
+        return Ok(EmbeddedPackage::Formula(package.to_string()));
+    };
     if provider == package {
         return Ok(resolved);
     }
@@ -1175,6 +1180,9 @@ where
     F: FnOnce(&str) -> Result<bool, String>,
 {
     if let Some(provider) = db.entries.get(alias) {
+        if parse_embedded_provider(provider)?.is_none() {
+            return Ok(());
+        }
         if provider == alias {
             return Err(ambiguous_alias_formula_message(alias, target));
         }
@@ -1218,9 +1226,9 @@ pub(crate) fn load_db() -> Result<Db, String> {
 }
 
 pub(crate) fn ensure_db_schema(db: &Db) -> Result<(), String> {
-    if db.schema != DB_SCHEMA_VERSION {
+    if db.schema > DB_SCHEMA_VERSION {
         return Err(format!(
-            "unsupported db schema {} (expected {})",
+            "unsupported db schema {} (maximum supported {})",
             db.schema, DB_SCHEMA_VERSION
         ));
     }
