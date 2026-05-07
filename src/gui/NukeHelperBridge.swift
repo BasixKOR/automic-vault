@@ -175,39 +175,40 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        let events: [(TimeInterval, NukeHelperProgressEvent)] = [
-            (0.20, .resolving),
-            (0.45, .downloading(package: "brew:sqlite", bytesPerSecond: 1_240_000, progress: 0.08)),
-            (0.60, .downloading(package: "brew:zstd", bytesPerSecond: 680_000, progress: 0.32)),
-            (0.70, .log(package: "brew:zstd", message: "dependency already current")),
-            (0.85, .downloading(package: "brew:sqlite", bytesPerSecond: 1_860_000, progress: 0.42)),
-            (1.10, .downloading(package: "brew:sqlite", bytesPerSecond: 2_100_000, progress: 0.86)),
-            (1.35, .installing(package: "brew:sqlite")),
-            (1.65, .completed(package: "brew:sqlite")),
-            (1.90, .downloading(package: "npm:tsx", bytesPerSecond: 910_000, progress: 0.18)),
-            (2.15, .downloading(package: "npm:tsx", bytesPerSecond: 1_120_000, progress: 0.57)),
-            (2.40, .downloading(package: "npm:tsx", bytesPerSecond: 1_180_000, progress: 0.96)),
-            (2.65, .installing(package: "npm:tsx")),
-            (2.90, .completed(package: "npm:tsx")),
-            (3.15, .downloading(package: "pypi:uv", bytesPerSecond: 1_450_000, progress: 0.22)),
-            (3.40, .downloading(package: "pypi:uv", bytesPerSecond: 1_760_000, progress: 0.71)),
-            (3.65, .installing(package: "pypi:uv")),
-            (3.95, .completed(package: "pypi:uv")),
-            (4.20, .downloading(package: "cask:keepingyouawake", bytesPerSecond: 840_000, progress: 0.28)),
-            (4.45, .downloading(package: "cask:keepingyouawake", bytesPerSecond: 960_000, progress: 0.74)),
-            (4.70, .installing(package: "cask:keepingyouawake")),
-            (4.95, .completed(package: "cask:keepingyouawake")),
-            (5.20, .downloading(package: "isotope:gh", bytesPerSecond: 1_320_000, progress: 0.35)),
-            (5.45, .downloading(package: "isotope:gh", bytesPerSecond: 1_480_000, progress: 0.88)),
-            (5.70, .installing(package: "isotope:gh")),
-            (6.00, .completed(package: "isotope:gh"))
-        ]
+        var events: [(TimeInterval, NukeHelperProgressEvent)] = [(0.20, .resolving)]
+        func appendDownload(package: String, start: TimeInterval, speed: UInt64) -> TimeInterval {
+            let steps: [Double] = [0.05, 0.14, 0.25, 0.38, 0.51, 0.66, 0.81, 0.94, 0.99]
+            let stepInterval = 0.24
+            for (index, step) in steps.enumerated() {
+                events.append((
+                    start + (Double(index) * stepInterval),
+                    .downloading(
+                        package: package,
+                        bytesPerSecond: speed + UInt64(index * 72_000),
+                        progress: step
+                    )
+                ))
+            }
+            let installAt = start + (Double(steps.count) * stepInterval) + 0.18
+            events.append((installAt, .installing(package: package)))
+            events.append((installAt + 0.24, .completed(package: package)))
+            return installAt + 0.48
+        }
+
+        var cursor = 0.45
+        cursor = appendDownload(package: "brew:sqlite", start: cursor, speed: 1_240_000)
+        events.append((0.60, .downloading(package: "brew:zstd", bytesPerSecond: 680_000, progress: 0.32)))
+        events.append((0.70, .log(package: "brew:zstd", message: "dependency already current")))
+        cursor = appendDownload(package: "npm:tsx", start: cursor, speed: 910_000)
+        cursor = appendDownload(package: "pypi:uv", start: cursor, speed: 1_450_000)
+        cursor = appendDownload(package: "cask:keepingyouawake", start: cursor, speed: 840_000)
+        cursor = appendDownload(package: "isotope:gh", start: cursor, speed: 1_320_000)
         for (delay, event) in events {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 progress(event)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.30) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + cursor + 0.20) {
             completion(.success(NukeHelperResult(
                 message: "Debug fake update complete",
                 processedPackages: Self.debugFakeUpdatePackages

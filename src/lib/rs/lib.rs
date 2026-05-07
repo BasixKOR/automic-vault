@@ -1294,9 +1294,6 @@ impl InstallProgress {
     }
 
     fn add_download_total(&self, total: Option<u64>) {
-        if !self.enabled {
-            return;
-        }
         let Some(total) = total else {
             return;
         };
@@ -8495,6 +8492,45 @@ or `npm:clawhub` for the aliased package"
         assert_eq!(
             json,
             r#"{"Log":{"package":"isotope:gh","message":"migrating secrets"}}"#
+        );
+    }
+
+    #[test]
+    fn install_progress_reports_download_fraction_without_terminal_bar() {
+        let events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+        let progress = InstallProgress::with_callback("brew:sqlite", Some(callback));
+
+        progress.begin_download_phase();
+        progress.add_download_total(Some(100));
+        progress.advance_download(25);
+        progress.advance_download(25);
+
+        let download_progress = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                ProgressEvent::Downloading { progress, .. } => Some(*progress),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            download_progress
+                .iter()
+                .any(|progress| (*progress - 0.25).abs() < f32::EPSILON),
+            "expected 25% download progress, got {download_progress:?}"
+        );
+        assert!(
+            download_progress
+                .iter()
+                .any(|progress| (*progress - 0.50).abs() < f32::EPSILON),
+            "expected 50% download progress, got {download_progress:?}"
         );
     }
 
