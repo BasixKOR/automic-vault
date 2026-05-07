@@ -54,6 +54,7 @@ publish_github_release() {
   local version="$2"
   local dmg_path="$3"
   local asset_label
+  local release_notes_path
   local target_ref
   local -a release_args
 
@@ -64,10 +65,12 @@ publish_github_release() {
     target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
   fi
 
+  release_notes_path="$(generate_release_notes "${tag}" "${target_ref}")"
+
   release_args=(
     "${tag}"
     --draft
-    --generate-notes
+    --notes-file "${release_notes_path}"
     --target "${target_ref}"
     --title "Automic Vault ${version}"
   )
@@ -89,6 +92,104 @@ publish_github_release() {
     cli_error "Release publish failed"
     cli_die "Draft release remains unpublished: ${tag}"
   fi
+}
+
+latest_release_tag_before() {
+  local target_tag="$1"
+  local release_tag
+  local releases
+
+  if ! releases="$(
+    gh release list \
+      --exclude-drafts \
+      --limit 50 \
+      --json tagName \
+      --jq '.[].tagName'
+  )"; then
+    cli_die "Unable to list GitHub releases"
+  fi
+
+  while IFS= read -r release_tag; do
+    if [[ -n "${release_tag}" && "${release_tag}" != "${target_tag}" ]]; then
+      printf '%s\n' "${release_tag}"
+      return 0
+    fi
+  done <<<"${releases}"
+
+  return 1
+}
+
+ensure_git_tag_available() {
+  local tag="$1"
+
+  if git -C "${repo_root}" rev-parse --verify --quiet "${tag}^{commit}" >/dev/null; then
+    return 0
+  fi
+
+  cli_step "Fetching release tag ${tag}"
+  if ! git -C "${repo_root}" fetch --quiet origin "refs/tags/${tag}:refs/tags/${tag}"; then
+    cli_die "Unable to fetch release tag ${tag}"
+  fi
+}
+
+generate_release_notes() {
+  local tag="$1"
+  local target_ref="$2"
+  local notes_path
+  local previous_tag
+  local prompt
+
+  cli_require_tool codex
+  cli_require_tool gh
+
+  notes_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-notes.XXXXXX")"
+
+  if previous_tag="$(latest_release_tag_before "${tag}")"; then
+    ensure_git_tag_available "${previous_tag}"
+    prompt="Summarize the user-facing changes in Automic Vault since the last release.
+
+Repository: ${repo_root}
+Previous release tag: ${previous_tag}
+New release tag: ${tag}
+Compare range: ${previous_tag}..${target_ref}
+
+Inspect the git history and diff for that range. Write concise GitHub release notes in Markdown.
+Focus on behavior, fixes, user-visible improvements, packaging, and operational changes.
+Do not include a title, preamble, commit hashes, contributor lists, or references to GitHub auto-generated notes.
+Do not edit files or create commits.
+Use short bullets grouped under clear headings only when useful."
+  else
+    prompt="Write initial GitHub release notes for Automic Vault.
+
+Repository: ${repo_root}
+New release tag: ${tag}
+Target ref: ${target_ref}
+
+Inspect the repository and recent git history. Write concise GitHub release notes in Markdown.
+Focus on behavior, fixes, user-visible improvements, packaging, and operational changes.
+Do not include a title, preamble, commit hashes, contributor lists, or references to GitHub auto-generated notes.
+Do not edit files or create commits.
+Use short bullets grouped under clear headings only when useful."
+  fi
+
+  cli_step "Generating release notes with Codex"
+  if ! codex exec \
+    --cd "${repo_root}" \
+    --sandbox read-only \
+    --config approval_policy=\"never\" \
+    --color never \
+    --ephemeral \
+    --output-last-message "${notes_path}" \
+    "${prompt}" \
+    >&2; then
+    cli_die "Codex release note generation failed"
+  fi
+
+  if [[ ! -s "${notes_path}" ]]; then
+    cli_die "Codex generated empty release notes"
+  fi
+
+  printf '%s\n' "${notes_path}"
 }
 
 publish_public_dmg() {
