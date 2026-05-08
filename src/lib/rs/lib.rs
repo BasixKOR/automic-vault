@@ -10985,6 +10985,139 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn package_name_validation_and_normalization_cover_error_paths() {
+        assert_eq!(
+            validate_npm_package_name(""),
+            Err("package qualifier 'npm:' is missing a package name".to_string())
+        );
+        assert_eq!(
+            validate_npm_package_name("@scope"),
+            Err("scoped npm package names must be in the form @scope/name".to_string())
+        );
+        assert_eq!(
+            validate_npm_package_name("@scope/name/extra"),
+            Err("scoped npm package names must be in the form @scope/name".to_string())
+        );
+        assert_eq!(
+            validate_npm_package_name("foo/bar"),
+            Err("npm package names must not contain path separators".to_string())
+        );
+        assert_eq!(
+            parse_npm_package_request("@scope/name@1.2.3").unwrap(),
+            ("@scope/name".to_string(), Some("1.2.3".to_string()))
+        );
+        assert_eq!(
+            parse_npm_package_request("openclaw@").unwrap_err(),
+            "npm package version must not be empty".to_string()
+        );
+        assert!(
+            parse_npm_package_request("openclaw@nope")
+                .unwrap_err()
+                .contains("invalid npm package version nope")
+        );
+
+        assert_eq!(
+            validate_pip_package_name(""),
+            Err("package qualifier 'pip:' is missing a package name".to_string())
+        );
+        assert_eq!(
+            validate_pip_package_name("foo/bar"),
+            Err("pip package names must not contain path separators".to_string())
+        );
+        assert_eq!(
+            validate_pip_package_name("bad!name"),
+            Err(
+                "pip package names may only contain ASCII letters, numbers, '.', '-' and '_'"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            normalize_pip_package_name("Py_Proj...Tool"),
+            "py-proj-tool".to_string()
+        );
+    }
+
+    #[test]
+    fn package_alias_and_embedded_provider_parsing_cover_variants() {
+        assert_eq!(
+            parse_package_alias_target("brew:").unwrap_err(),
+            "package qualifier 'brew:' is missing a formula name".to_string()
+        );
+        assert_eq!(
+            parse_package_alias_target("brew:foo/bar").unwrap_err(),
+            "qualified package name must not contain additional path separators".to_string()
+        );
+        assert_eq!(
+            parse_package_alias_target("cask:").unwrap_err(),
+            "package qualifier 'cask:' is missing a cask name".to_string()
+        );
+        assert_eq!(
+            parse_package_alias_target("npm:@scope/tool").unwrap(),
+            PackageAliasTarget::NpmPackage("@scope/tool".to_string())
+        );
+        assert_eq!(
+            parse_package_alias_target("pip:Py_Proj").unwrap(),
+            PackageAliasTarget::PipPackage("py-proj".to_string())
+        );
+        assert_eq!(
+            parse_package_alias_target("tool").unwrap_err(),
+            "alias targets must use a package qualifier".to_string()
+        );
+
+        assert_eq!(
+            parse_embedded_provider("npm:").unwrap_err(),
+            "package qualifier 'npm:' is missing a package name".to_string()
+        );
+        assert_eq!(
+            parse_embedded_provider("cask:").unwrap_err(),
+            "package qualifier 'cask:' is missing a cask name".to_string()
+        );
+        assert_eq!(parse_embedded_provider("brew:git").unwrap(), None);
+        assert_eq!(
+            parse_embedded_provider("ripgrep").unwrap(),
+            Some(EmbeddedPackage::Formula("ripgrep".to_string()))
+        );
+    }
+
+    #[test]
+    fn package_install_root_and_formula_recommendations_cover_edge_cases() {
+        let temp = TempDir::new().unwrap();
+
+        assert_eq!(
+            package_install_root(temp.path(), "npm:@scope/tool").unwrap(),
+            temp.path().join("npm/@scope/tool")
+        );
+        assert_eq!(
+            package_install_root(temp.path(), "pip:Py_Proj...Tool").unwrap(),
+            temp.path().join("pip/py-proj-tool")
+        );
+        assert_eq!(
+            package_install_root(temp.path(), "isotope:").unwrap_err(),
+            "package qualifier 'isotope:' is missing an isotope name".to_string()
+        );
+        assert_eq!(
+            package_install_root(temp.path(), "isotope:foo/bar").unwrap_err(),
+            "qualified package name must not contain additional path separators".to_string()
+        );
+        assert_eq!(
+            package_install_root(temp.path(), "npm:@scope").unwrap_err(),
+            "scoped npm package names must be in the form @scope/name".to_string()
+        );
+        assert_eq!(
+            package_install_root(temp.path(), "pip:bad/name").unwrap_err(),
+            "pip package names must not contain path separators".to_string()
+        );
+
+        let mut stderr = Vec::new();
+        write_full_formula_recommendation("ffmpeg", &mut stderr).unwrap();
+        assert!(String::from_utf8(stderr).unwrap().contains("ffmpeg-full"));
+
+        let mut stderr = Vec::new();
+        write_full_formula_recommendation("ripgrep", &mut stderr).unwrap();
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
     fn prepare_install_target_removes_incomplete_install() {
         let temp = TempDir::new().unwrap();
         let bin_dir = temp.path().join("bin");

@@ -1,4 +1,8 @@
 use std::process::{Command, Output};
+use std::{fs, path::PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStringExt;
 
 fn pkg_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -35,6 +39,50 @@ fn stdout(output: &Output) -> String {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn debug_opt_root() -> PathBuf {
+    PathBuf::from("/tmp/opt")
+}
+
+fn write_test_receipt(package_name: &str, version: &str, source: serde_json::Value) -> PathBuf {
+    let root = debug_opt_root().join(package_name);
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    fs::create_dir_all(root.join(".pkg")).unwrap();
+    fs::write(
+        root.join(".pkg/root-receipt.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "package_name": package_name,
+            "version": version,
+            "source": source,
+            "metadata": {},
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    root
+}
+
+struct PackageRootGuard {
+    root: PathBuf,
+}
+
+impl PackageRootGuard {
+    fn install(package_name: &str, version: &str, source: serde_json::Value) -> Self {
+        Self {
+            root: write_test_receipt(package_name, version, source),
+        }
+    }
+}
+
+impl Drop for PackageRootGuard {
+    fn drop(&mut self) {
+        if self.root.exists() {
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -259,6 +307,11 @@ fn subs_query_commands_cover_success_and_output_modes() {
     let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(info["package_name"] == "ripgrep" || info["package_name"] == "rg");
 
+    let output = run_nuke(&["info", "rg"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("ripgrep"));
+    assert!(stdout(&output).contains("Installed"));
+
     let output = run_nuke(&["list", "--json"]);
     assert!(output.status.success());
     serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
@@ -285,4 +338,72 @@ fn subs_serve_command_covers_non_server_paths() {
     let output = run_nuke(&["serve", "--bad"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("unknown argument '--bad'"));
+}
+
+#[test]
+fn subs_list_and_outdated_commands_cover_requested_outputs() {
+    let _installed = PackageRootGuard::install(
+        "coverage-cli-status",
+        "0.0.1",
+        serde_json::json!({
+            "kind": "isotope",
+            "isotope_name": "gh"
+        }),
+    );
+
+    let output = run_nuke(&["list", "coverage-cli-status"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("coverage-cli-status 0.0.1"));
+
+    let output = run_nuke(&["list", "coverage-cli-status", "--json"]);
+    assert!(output.status.success());
+    let listed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["package_name"], "coverage-cli-status");
+
+    let output = run_nuke(&["list", "coverage-cli-status", "--jsonl"]);
+    assert!(output.status.success());
+    let listed: serde_json::Value = serde_json::from_str(stdout(&output).trim()).unwrap();
+    assert_eq!(listed["package_name"], "coverage-cli-status");
+
+    let output = run_nuke(&["outdated", "coverage-cli-status"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("coverage-cli-status 0.0.1 ->"));
+
+    let output = run_nuke(&["outdated", "coverage-cli-status", "--json"]);
+    assert!(output.status.success());
+    let outdated: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(outdated.as_array().unwrap().len(), 1);
+    assert_eq!(outdated[0]["package_name"], "coverage-cli-status");
+
+    let output = run_nuke(&["outdated", "coverage-cli-status", "--jsonl"]);
+    assert!(output.status.success());
+    let outdated: serde_json::Value = serde_json::from_str(stdout(&output).trim()).unwrap();
+    assert_eq!(outdated["package_name"], "coverage-cli-status");
+}
+
+#[test]
+fn subs_help_fallback_and_non_utf8_arguments_report_errors() {
+    let output = run_nuke(&["help", "wat"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("USAGE"));
+    assert!(stdout(&output).contains("av <subcommand> [args...]"));
+
+    #[cfg(unix)]
+    {
+        let output = Command::new(env!("CARGO_BIN_EXE_av"))
+            .arg(std::ffi::OsString::from_vec(vec![0xff]))
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(stderr(&output).contains("av: subcommand must be valid UTF-8"));
+
+        let output = Command::new(env!("CARGO_BIN_EXE_av"))
+            .arg("gate")
+            .arg(std::ffi::OsString::from_vec(vec![0xff]))
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(stderr(&output).contains("av gate: gate message must be valid UTF-8"));
+    }
 }

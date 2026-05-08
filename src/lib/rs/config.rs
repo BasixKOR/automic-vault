@@ -115,3 +115,48 @@ pub(crate) struct TestEndpointOverrides {
     pub(crate) github_api_root: Option<String>,
     pub(crate) npm_registry_root: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct OverrideGuard;
+
+    impl OverrideGuard {
+        fn set(overrides: TestEndpointOverrides) -> Self {
+            set_test_endpoint_overrides(overrides);
+            Self
+        }
+    }
+
+    impl Drop for OverrideGuard {
+        fn drop(&mut self) {
+            clear_test_endpoint_overrides();
+        }
+    }
+
+    #[test]
+    fn config_debug_roots_match_expected_layout() {
+        assert_eq!(opt_pkg_root(), PathBuf::from("/tmp/opt"));
+        assert_eq!(opt_npm_root(), PathBuf::from("/tmp/opt/npm"));
+        assert_eq!(opt_pip_root(), PathBuf::from("/tmp/opt/pip"));
+        assert_eq!(managed_bin_root(), PathBuf::from("/tmp/usr/local/bin"));
+        assert!(!install_requires_root());
+        assert!(homebrew_debug_allowance_enabled());
+    }
+
+    #[test]
+    fn config_endpoint_overrides_replace_default_roots() {
+        let _guard = OverrideGuard::set(TestEndpointOverrides {
+            formula_api_root: Some("https://formula.example.test".to_string()),
+            pypi_root: Some("https://pypi.example.test".to_string()),
+            github_api_root: Some("https://github.example.test".to_string()),
+            npm_registry_root: Some("https://npm.example.test".to_string()),
+        });
+
+        assert_eq!(formula_api_root(), "https://formula.example.test");
+        assert_eq!(pypi_root(), "https://pypi.example.test");
+        assert_eq!(github_api_root(), "https://github.example.test");
+        assert_eq!(npm_registry_root(), "https://npm.example.test");
+    }
+}
