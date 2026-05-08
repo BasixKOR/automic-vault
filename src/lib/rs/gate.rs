@@ -267,6 +267,8 @@ fn post_distributed_notification(name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
 
     struct EnvGuard {
         key: &'static str,
@@ -331,6 +333,60 @@ mod tests {
     }
 
     #[test]
+    fn gate_parse_options_cover_help_version_and_non_utf8() {
+        assert_eq!(
+            parse_gate_options("av gate", vec![OsString::from("--help")].into_iter()).unwrap(),
+            None
+        );
+        assert_eq!(
+            parse_gate_options("av gate", vec![OsString::from("--version")].into_iter())
+                .unwrap(),
+            None
+        );
+
+        #[cfg(unix)]
+        assert_eq!(
+            parse_gate_options(
+                "av gate",
+                vec![OsString::from_vec(vec![0xff])].into_iter()
+            )
+            .unwrap_err(),
+            "gate message must be valid UTF-8".to_string()
+        );
+    }
+
+    #[test]
+    fn gate_wait_for_decision_wrapper_uses_default_paths() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+
+        let pending = pending_approval_path().unwrap();
+        write_json(
+            &pending,
+            &GateApprovalRequestSnapshot {
+                id: "wrapper-approved".to_string(),
+                message: "approve".to_string(),
+                cwd: "/tmp".to_string(),
+                parent_process: parent_process_snapshot(),
+            },
+        )
+        .unwrap();
+        let approved = decision_path("wrapper-approved").unwrap();
+        write_json(
+            &approved,
+            &GateApprovalDecision {
+                id: "wrapper-approved".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+
+        wait_for_gate_decision("wrapper-approved").unwrap();
+    }
+
+    #[test]
     fn gate_paths_are_derived_from_home() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
@@ -351,6 +407,15 @@ mod tests {
             temp.path()
                 .join("Library/Application Support/Automic Vault/gate/decisions/abc.json")
         );
+    }
+
+    #[test]
+    fn gate_user_approval_root_requires_home() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let _env = EnvGuard::set("HOME", "/tmp/gate-home");
+        unsafe { env::remove_var("HOME") };
+
+        assert_eq!(user_approval_root(), Err("HOME is not set".to_string()));
     }
 
     #[test]
