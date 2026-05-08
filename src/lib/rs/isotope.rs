@@ -5,6 +5,7 @@ use std::ffi::CString;
 #[cfg(target_os = "macos")]
 use std::ffi::c_char;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 
@@ -32,8 +33,8 @@ struct SaveSecretOptions {
 struct IsotopePreparedExecution {
     exec_fd: i32,
     exec_path: String,
-    argv: Vec<String>,
-    env: BTreeMap<String, String>,
+    argv: Vec<OsString>,
+    env: BTreeMap<OsString, OsString>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -412,10 +413,10 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
         )?;
     }
 
-    let mut env_map = env::vars().collect::<BTreeMap<_, _>>();
+    let mut env_map = env::vars_os().collect::<BTreeMap<_, _>>();
     let mut credentials = load_credentials(store, &credential_keys)?;
     for (key, value) in &credentials {
-        env_map.insert(key.clone(), value.clone());
+        env_map.insert(OsString::from(key), OsString::from(value));
     }
 
     let prepared = prepare_execution(&file, options, env_map)?;
@@ -812,7 +813,7 @@ fn ping_isotope_approval_app() -> Result<(), String> {
 fn prepare_execution(
     file: &File,
     options: &IsotopeOptions,
-    env: BTreeMap<String, String>,
+    env: BTreeMap<OsString, OsString>,
 ) -> Result<IsotopePreparedExecution, String> {
     let fd = file.as_raw_fd();
     unsafe {
@@ -837,12 +838,9 @@ fn prepare_execution(
         .ok_or_else(|| "target path must be valid UTF-8".to_string())?
         .to_string();
     let mut argv = Vec::with_capacity(options.args.len() + 1);
-    argv.push(exec_path.clone());
+    argv.push(OsString::from(&exec_path));
     for arg in &options.args {
-        let arg = arg
-            .to_str()
-            .ok_or_else(|| "arguments must be valid UTF-8".to_string())?;
-        argv.push(arg.to_string());
+        argv.push(arg.clone());
     }
 
     Ok(IsotopePreparedExecution {
@@ -943,20 +941,31 @@ fn verify_fd_matches_path(fd: i32, path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn build_exec_cstrings(values: &[String]) -> Result<Vec<CString>, String> {
+fn build_exec_cstrings(values: &[OsString]) -> Result<Vec<CString>, String> {
     values
         .iter()
         .map(|value| {
-            CString::new(value.as_str()).map_err(|_| "argument contains interior NUL".to_string())
+            CString::new(value.as_os_str().as_bytes())
+                .map_err(|_| "argument contains interior NUL".to_string())
         })
         .collect()
 }
 
-fn build_exec_environment(env: &BTreeMap<String, String>) -> Result<Vec<CString>, String> {
+fn build_exec_environment(env: &BTreeMap<OsString, OsString>) -> Result<Vec<CString>, String> {
     env.iter()
         .map(|(key, value)| {
-            CString::new(format!("{key}={value}"))
-                .map_err(|_| format!("environment entry contains interior NUL: {key}"))
+            let mut entry = Vec::with_capacity(
+                key.as_os_str().as_bytes().len() + 1 + value.as_os_str().as_bytes().len(),
+            );
+            entry.extend_from_slice(key.as_os_str().as_bytes());
+            entry.push(b'=');
+            entry.extend_from_slice(value.as_os_str().as_bytes());
+            CString::new(entry).map_err(|_| {
+                format!(
+                    "environment entry contains interior NUL: {}",
+                    key.to_string_lossy()
+                )
+            })
         })
         .collect()
 }
@@ -1128,6 +1137,8 @@ keys or values are rejected."
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStringExt;
 
     #[derive(Default)]
     struct StubCredentialStore {
@@ -1422,17 +1433,30 @@ mod tests {
 
     #[test]
     fn isotopes_exec_environment_and_zeroize_helpers_cover_errors() {
-        assert!(build_exec_cstrings(&["ok".to_string()]).is_ok());
+        assert!(build_exec_cstrings(&[OsString::from("ok")]).is_ok());
         assert!(
-            build_exec_cstrings(&["bad\0arg".to_string()])
+            build_exec_cstrings(&[OsString::from("bad\0arg")])
                 .unwrap_err()
                 .contains("interior NUL")
         );
 
         let mut env_map = BTreeMap::new();
-        env_map.insert("GOOD".to_string(), "value".to_string());
-        assert!(build_exec_environment(&env_map).is_ok());
-        env_map.insert("BAD".to_string(), "bad\0value".to_string());
+        env_map.insert(OsString::from("GOOD"), OsString::from("value"));
+        let built = build_exec_environment(&env_map).unwrap();
+        assert_eq!(built[0].as_bytes(), b"GOOD=value");
+
+        env_map.insert(
+            OsString::from("RAW"),
+            OsString::from_vec(b"/tmp/v\xffrp/script".to_vec()),
+        );
+        let built = build_exec_environment(&env_map).unwrap();
+        assert!(
+            built
+                .iter()
+                .any(|entry| entry.as_bytes() == b"RAW=/tmp/v\xffrp/script")
+        );
+
+        env_map.insert(OsString::from("BAD"), OsString::from("bad\0value"));
         assert!(
             build_exec_environment(&env_map)
                 .unwrap_err()
@@ -1642,7 +1666,7 @@ mod tests {
         let prepared = prepare_execution(
             &file,
             &options,
-            BTreeMap::from([("TOKEN".to_string(), "secret".to_string())]),
+            BTreeMap::from([(OsString::from("TOKEN"), OsString::from("secret"))]),
         )
         .unwrap();
         assert_eq!(prepared.exec_fd, file.as_raw_fd());
@@ -1650,12 +1674,12 @@ mod tests {
         assert_eq!(
             prepared.argv,
             vec![
-                tool.to_string_lossy().into_owned(),
-                "--flag".to_string(),
-                "value".to_string()
+                OsString::from(tool.to_string_lossy().as_ref()),
+                OsString::from("--flag"),
+                OsString::from("value")
             ]
         );
-        assert_eq!(prepared.env["TOKEN"], "secret");
+        assert_eq!(prepared.env[OsStr::new("TOKEN")], OsString::from("secret"));
     }
 
     #[test]
@@ -1681,7 +1705,7 @@ mod tests {
         );
         assert_eq!(
             prepared.argv,
-            vec![requested_tool.to_string_lossy().into_owned()]
+            vec![OsString::from(requested_tool.to_string_lossy().as_ref())]
         );
     }
 

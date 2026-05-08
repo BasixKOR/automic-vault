@@ -544,25 +544,26 @@ fn build_execution_intent(tool: String, args: Vec<String>) -> Result<ExecutionIn
 }
 
 fn filtered_vault_environment() -> BTreeMap<String, String> {
+    const KEYS: &[&str] = &[
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LOGNAME",
+        "PATH",
+        "PWD",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "USER",
+        VAULT_AGENT_ID_ENV,
+        VAULT_SOCKET_PATH_ENV,
+        VAULT_TOOLCHAIN_ROOT_ENV,
+    ];
+
     let mut filtered = BTreeMap::new();
-    for (key, value) in env::vars() {
-        if matches!(
-            key.as_str(),
-            "HOME"
-                | "LANG"
-                | "LC_ALL"
-                | "LOGNAME"
-                | "PATH"
-                | "PWD"
-                | "SHELL"
-                | "TERM"
-                | "TMPDIR"
-                | "USER"
-                | VAULT_AGENT_ID_ENV
-                | VAULT_SOCKET_PATH_ENV
-                | VAULT_TOOLCHAIN_ROOT_ENV
-        ) {
-            filtered.insert(key, value);
+    for key in KEYS {
+        if let Some(value) = env::var_os(key) {
+            filtered.insert((*key).to_string(), value.to_string_lossy().into_owned());
         }
     }
     filtered

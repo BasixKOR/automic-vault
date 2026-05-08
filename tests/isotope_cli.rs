@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
 use std::process::{Command, Output};
 
 fn pkg_version() -> &'static str {
@@ -26,6 +28,12 @@ fn stdout(output: &Output) -> String {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|candidate| candidate == needle)
 }
 
 #[test]
@@ -113,4 +121,28 @@ fn subs_isotope_rejects_root_execution_when_invoked_as_root() {
     let output = run_isotope(&["+TOKEN", "/bin/echo", "hi"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("must not be run as root"));
+}
+
+#[test]
+fn subs_isotope_preserves_non_utf8_environment_values() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("inject")
+        .args(["+SOME_SECRET", "/usr/bin/env"])
+        .env("SOME_SECRET", "expected")
+        .env("_", OsString::from_vec(b"/tmp/v\xffrp/script".to_vec()))
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "status: {:?}\nstderr: {}",
+        output.status,
+        stderr(&output)
+    );
+    assert!(contains_bytes(&output.stdout, b"SOME_SECRET=expected\n"));
+    assert!(contains_bytes(&output.stdout, b"_=/tmp/v\xffrp/script\n"));
 }
