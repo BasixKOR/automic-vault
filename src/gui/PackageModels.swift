@@ -1356,9 +1356,11 @@ struct PackagePresentation: Equatable {
         switch item {
         case .installed(let record):
             if record.installedVersions.count > 1 {
-                return record.installedVersions.joined(separator: ", ")
+                return record.installedVersions
+                    .map(Self.versionLabel)
+                    .joined(separator: ", ")
             }
-            return "v\(record.version)"
+            return Self.versionLabel(record.version)
         case .recommendation(let recommendation):
             if let installedVersion = recommendation.installedVersion,
                let latestVersion = recommendation.latestVersion,
@@ -1377,6 +1379,10 @@ struct PackagePresentation: Equatable {
         case .command(let command):
             return command.description
         }
+    }
+
+    private static func versionLabel(_ version: String) -> String {
+        version.hasPrefix("v") ? version : "v\(version)"
     }
 
     var listSecondaryText: String {

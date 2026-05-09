@@ -227,9 +227,12 @@ fn group_installed_versioned_formulae(
         primary.name = base;
         primary.installed_versions = versions
             .iter()
+            .map(|package| package.version.clone())
+            .collect();
+        primary.install_package_names = versions
+            .iter()
             .map(|package| package.name.clone())
             .collect();
-        primary.install_package_names = primary.installed_versions.clone();
         primary
     }));
     passthrough
@@ -1473,6 +1476,36 @@ mod tests {
         ];
         packages.sort_by(|left, right| compare_versioned_package_names_desc(left, right));
         assert_eq!(packages, ["python@3.14", "python@3.13", "python@3.9"]);
+    }
+
+    #[test]
+    fn grouped_versioned_formulae_report_versions_separately_from_package_names() {
+        let grouped = group_installed_versioned_formulae(vec![
+            installed_formula_summary("python@3.13", "3.13.9"),
+            installed_formula_summary("python@3.14", "3.14.1"),
+        ]);
+
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0].name, "python");
+        assert_eq!(grouped[0].installed_versions, ["3.14.1", "3.13.9"]);
+        assert_eq!(
+            grouped[0].install_package_names,
+            ["python@3.14", "python@3.13"]
+        );
+    }
+
+    fn installed_formula_summary(name: &str, version: &str) -> core::InstalledPackageSummary {
+        core::InstalledPackageSummary {
+            name: name.to_string(),
+            source: PackageReceiptSource::Formula {
+                root_formula: name.to_string(),
+            },
+            version: version.to_string(),
+            description: None,
+            installed_versions: Vec::new(),
+            install_package_names: Vec::new(),
+            security_state: None,
+        }
     }
 
     #[test]
