@@ -197,12 +197,12 @@ final class NukeHelperBridge {
         }
 
         var cursor = 0.45
-        cursor = appendDownload(package: "brew:sqlite", start: cursor, speed: 1_240_000)
-        events.append((0.60, .downloading(package: "brew:zstd", bytesPerSecond: 680_000, progress: 0.32)))
-        events.append((0.70, .log(package: "brew:zstd", message: "dependency already current")))
+        cursor = appendDownload(package: "sqlite", start: cursor, speed: 1_240_000)
+        events.append((0.60, .downloading(package: "zstd", bytesPerSecond: 680_000, progress: 0.32)))
+        events.append((0.70, .log(package: "zstd", message: "dependency already current")))
         cursor = appendDownload(package: "npm:tsx", start: cursor, speed: 910_000)
         cursor = appendDownload(package: "pypi:uv", start: cursor, speed: 1_450_000)
-        cursor = appendDownload(package: "cask:keepingyouawake", start: cursor, speed: 840_000)
+        cursor = appendDownload(package: "keepingyouawake", start: cursor, speed: 840_000)
         cursor = appendDownload(package: "isotope:gh", start: cursor, speed: 1_320_000)
         for (delay, event) in events {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {

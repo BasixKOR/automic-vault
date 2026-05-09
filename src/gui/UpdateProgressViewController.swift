@@ -572,7 +572,9 @@ final class UpdateProgressViewController: NSViewController {
                 )
             }
         case .downloading(let package, let bytesPerSecond, let progress):
-            let isVisiblePackage = track(package)
+            let visiblePackage = visiblePackageName(forProgressPackage: package)
+            let isVisiblePackage = visiblePackage != nil
+            let rowPackage = visiblePackage ?? package
             let speedText = Self.format(speed: bytesPerSecond)
             setOperation("Updating \(package)")
             if shouldLogDownloadStart(for: package) {
@@ -583,20 +585,22 @@ final class UpdateProgressViewController: NSViewController {
                 return
             }
             updateRow(
-                package: package,
+                package: rowPackage,
                 stage: .downloading,
                 progress: downloadProgress(for: CGFloat(progress)),
                 speed: speedText
             )
         case .installing(let package):
-            let isVisiblePackage = track(package)
-            let state = packageStates[package] ?? PackageRuntimeState()
+            let visiblePackage = visiblePackageName(forProgressPackage: package)
+            let isVisiblePackage = visiblePackage != nil
+            let rowPackage = visiblePackage ?? package
+            let state = packageStates[rowPackage] ?? packageStates[package] ?? PackageRuntimeState()
             if state.observedDownload {
                 setOperation("Extracting \(package)")
                 appendLog("Extracting \(package)")
                 guard isVisiblePackage else { return }
                 updateRow(
-                    package: package,
+                    package: rowPackage,
                     stage: .extracting,
                     progress: extractProgress(from: state.lastRenderedProgress),
                     speed: nil
@@ -606,7 +610,7 @@ final class UpdateProgressViewController: NSViewController {
                 appendLog("Installing \(package)")
                 guard isVisiblePackage else { return }
                 updateRow(
-                    package: package,
+                    package: rowPackage,
                     stage: .installing,
                     progress: ProgressLayout.installFloor,
                     speed: nil
@@ -617,11 +621,13 @@ final class UpdateProgressViewController: NSViewController {
             setOperation(Self.sentenceCase(message))
             appendLog("\(package): \(message)")
         case .completed(let package):
-            let isVisiblePackage = track(package)
+            let visiblePackage = visiblePackageName(forProgressPackage: package)
+            let isVisiblePackage = visiblePackage != nil
+            let rowPackage = visiblePackage ?? package
             setOperation("Sealing \(package)")
             appendLog("Completed \(package)")
             guard isVisiblePackage else { return }
-            updateRow(package: package, stage: .completed, progress: 1, speed: nil)
+            updateRow(package: rowPackage, stage: .completed, progress: 1, speed: nil)
         case .error(let message):
             fail(message: message)
         }
@@ -629,7 +635,7 @@ final class UpdateProgressViewController: NSViewController {
 
     func succeed(message: String, packages: [String]) {
         packages
-            .filter { acceptsNewVisiblePackages || visiblePackages.contains($0) }
+            .compactMap(visiblePackageName(forProgressPackage:))
             .forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
         isTerminalState = true
         operationAnimator?.stop()
@@ -666,6 +672,28 @@ final class UpdateProgressViewController: NSViewController {
         packageStates[package] = packageStates[package] ?? PackageRuntimeState()
         rebuildRows()
         return true
+    }
+
+    private func visiblePackageName(forProgressPackage package: String) -> String? {
+        if acceptsNewVisiblePackages {
+            visiblePackages.insert(package)
+        }
+        if visiblePackages.contains(package) {
+            return package
+        }
+        let qualifiedCandidates = [
+            "brew:\(package)",
+            "cask:\(package)"
+        ].filter { visiblePackages.contains($0) }
+        guard qualifiedCandidates.count == 1 else {
+            packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+            return nil
+        }
+        let visiblePackage = qualifiedCandidates[0]
+        packageStates[visiblePackage] = packageStates[visiblePackage]
+            ?? packageStates[package]
+            ?? PackageRuntimeState()
+        return visiblePackage
     }
 
     private func rebuildRows() {
