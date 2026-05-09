@@ -352,6 +352,20 @@ mod tests {
     }
 
     #[test]
+    fn gate_parent_snapshot_covers_display_name_derivation() {
+        let snapshot = parent_process_snapshot();
+        assert!(snapshot.pid > 0);
+        assert_eq!(
+            snapshot.display_name.as_deref(),
+            snapshot
+                .executable_path
+                .as_deref()
+                .and_then(|path| Path::new(path).file_name())
+                .and_then(|name| name.to_str())
+        );
+    }
+
+    #[test]
     fn gate_wait_for_decision_wrapper_uses_default_paths() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();

@@ -1944,3 +1944,108 @@ pub(crate) fn extract_semver_from_text(text: &str) -> Option<semver::Version> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_test_receipt(
+        package_name: &str,
+        version: &str,
+        source: PackageReceiptSource,
+    ) -> PathBuf {
+        let install_root = opt_pkg_root().join(package_name);
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_path(&install_root).unwrap();
+        }
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: package_name.to_string(),
+                version: version.to_string(),
+                source,
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        install_root
+    }
+
+    #[test]
+    fn status_and_record_wrappers_cover_all_installed_and_requested_paths() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let record_root = write_test_receipt(
+            "coverage-all-record",
+            "1.0.0",
+            PackageReceiptSource::Formula {
+                root_formula: "coverage-all-record".to_string(),
+            },
+        );
+        let status_root = write_test_receipt(
+            "coverage-all-status",
+            "0.0.1",
+            PackageReceiptSource::Isotope {
+                isotope_name: "gh".to_string(),
+            },
+        );
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+
+        let all_statuses = resolve_package_statuses(&config, &PackageSelection::AllInstalled).unwrap();
+        assert!(all_statuses.iter().any(|status| {
+            status.package_name == "coverage-all-status"
+                && status.installed_version == "0.0.1"
+                && status.latest_version != "0.0.1"
+        }));
+
+        let requested_statuses = resolve_package_statuses(
+            &config,
+            &PackageSelection::Requested(vec![RequestedPackage::Auto(
+                "coverage-all-status".to_string(),
+            )]),
+        )
+        .unwrap();
+        assert_eq!(requested_statuses.len(), 1);
+        assert_eq!(requested_statuses[0].package_name, "coverage-all-status");
+
+        let all_records = resolve_installed_package_records(&PackageSelection::AllInstalled).unwrap();
+        assert!(all_records.iter().any(|record| {
+            record.package_name == "coverage-all-record" && record.installed_version == "1.0.0"
+        }));
+
+        let requested_records = resolve_installed_package_records(&PackageSelection::Requested(vec![
+            RequestedPackage::Auto("coverage-all-record".to_string()),
+        ]))
+        .unwrap();
+        assert_eq!(requested_records.len(), 1);
+        assert_eq!(requested_records[0].package_name, "coverage-all-record");
+
+        remove_path(&record_root).unwrap();
+        remove_path(&status_root).unwrap();
+    }
+
+    #[test]
+    fn package_status_at_rejects_missing_and_non_directory_roots() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let missing = temp.path().join("missing");
+        assert!(
+            resolve_package_status_at(&config, "missing", &missing)
+                .unwrap_err()
+                .contains("is not installed")
+        );
+
+        let file = temp.path().join("not-a-directory");
+        fs::write(&file, b"hi").unwrap();
+        assert!(
+            resolve_package_status_at(&config, "file", &file)
+                .unwrap_err()
+                .contains("is not a directory")
+        );
+    }
+}

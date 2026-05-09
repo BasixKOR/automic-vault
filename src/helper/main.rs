@@ -387,6 +387,18 @@ mod tests {
                 .get("Err")
                 .is_some()
         );
+
+        let response = raw_to_string(nuke_helper_make_default(
+            packages.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&response)
+                .unwrap()
+                .get("Err")
+                .is_some()
+        );
     }
 
     #[test]
