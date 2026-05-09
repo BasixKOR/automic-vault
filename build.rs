@@ -110,6 +110,7 @@ fn generate_isotope_integrations() {
         "pub(crate) struct IsotopeIntegration {\n",
         "  pub(crate) name: &'static str,\n",
         "  pub(crate) detect: Option<fn() -> Result<bool, String>>,\n",
+        "  pub(crate) detect_reasons: Option<fn() -> Result<Vec<String>, String>>,\n",
         "  pub(crate) migrate: Option<fn() -> Result<(), String>>,\n",
         "  pub(crate) post_install: Option<fn() -> Result<(), String>>,\n",
         "}\n\n",
@@ -145,6 +146,14 @@ fn generate_isotope_integrations() {
         } else {
             "None".to_string()
         };
+        let detect_reasons = if entry.has_detect_reasons {
+            format!(
+                "Some({}::detect::install_insecurity_reasons)",
+                entry.module_name
+            )
+        } else {
+            "None".to_string()
+        };
         let migrate = if entry.migrate_path.is_some() {
             format!("Some({}::migrate::migrate_credentials)", entry.module_name)
         } else {
@@ -157,10 +166,10 @@ fn generate_isotope_integrations() {
         };
         output.push_str(&format!(
             concat!(
-                "  IsotopeIntegration {{ name: {:?}, detect: {}, migrate: {}, ",
-                "post_install: {} }},\n"
+                "  IsotopeIntegration {{ name: {:?}, detect: {}, detect_reasons: {}, ",
+                "migrate: {}, post_install: {} }},\n"
             ),
-            entry.isotope_name, detect, migrate, post_install
+            entry.isotope_name, detect, detect_reasons, migrate, post_install
         ));
     }
     output.push_str("];\n");
@@ -213,10 +222,16 @@ fn collect_isotope_integrations(
         if post_install_path.exists() {
             println!("cargo:rerun-if-changed={}", post_install_path.display());
         }
+        let has_detect_reasons = detect_path
+            .exists()
+            .then(|| std::fs::read_to_string(&detect_path).unwrap_or_default())
+            .is_some_and(|contents| contents.contains("pub fn install_insecurity_reasons"));
+
         entries.push(IsotopeIntegrationInput {
             module_name: rust_module_name(&isotope_name),
             isotope_name,
             detect_path: detect_path.exists().then_some(detect_path),
+            has_detect_reasons,
             migrate_path: migrate_path.exists().then_some(migrate_path),
             post_install_path: post_install_path.exists().then_some(post_install_path),
         });
@@ -227,6 +242,7 @@ struct IsotopeIntegrationInput {
     module_name: String,
     isotope_name: String,
     detect_path: Option<std::path::PathBuf>,
+    has_detect_reasons: bool,
     migrate_path: Option<std::path::PathBuf>,
     post_install_path: Option<std::path::PathBuf>,
 }

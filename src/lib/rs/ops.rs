@@ -519,6 +519,7 @@ fn homebrew_migration_hazard_for_package(
     Some(core::HomebrewMigrationHazardSummary {
         package_name: package_name.to_string(),
         isotope_name: state.isotope_name,
+        reasons: state.reasons,
         error: state.error,
     })
 }

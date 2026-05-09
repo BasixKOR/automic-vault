@@ -15,6 +15,7 @@ struct PackageSecurityNotice: Equatable {
     let applyPackageName: String?
     let headline: String
     let body: String
+    let reasons: [String]
     let caveats: Caveats?
     let learnMoreURL: URL
 
@@ -25,6 +26,7 @@ struct PackageSecurityNotice: Equatable {
         applyPackageName: String?,
         headline: String = Self.defaultHeadline,
         body: String = Self.defaultBody,
+        reasons: [String] = [],
         caveats: Caveats? = nil,
         learnMoreURL: URL = Self.defaultLearnMoreURL
     ) {
@@ -32,6 +34,7 @@ struct PackageSecurityNotice: Equatable {
         self.applyPackageName = applyPackageName
         self.headline = headline
         self.body = body
+        self.reasons = reasons
         self.caveats = caveats
         self.learnMoreURL = learnMoreURL
     }
@@ -86,6 +89,7 @@ final class SecurityCatalog {
                     ?? PackageSecurityNotice.defaultHeadline,
                 body: matchedIsotope.justification?.detail
                     ?? PackageSecurityNotice.defaultBody,
+                reasons: detail.securityState?.reasons ?? [],
                 caveats: matchedIsotope.caveats?.noticeCaveats,
                 learnMoreURL: matchedIsotope.learnMoreURL
                     ?? PackageSecurityNotice.defaultLearnMoreURL
@@ -95,7 +99,8 @@ final class SecurityCatalog {
            securityState.installIsInsecure {
             return PackageSecurityNotice(
                 source: .isotope,
-                applyPackageName: "isotope:\(securityState.isotopeName)"
+                applyPackageName: "isotope:\(securityState.isotopeName)",
+                reasons: securityState.reasons
             )
         }
         return nil

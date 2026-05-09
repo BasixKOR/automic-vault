@@ -174,7 +174,23 @@ struct PackageRecord: Decodable, Equatable {
 struct PackageSecurityState: Decodable, Equatable {
     let isotopeName: String
     let installIsInsecure: Bool
+    let reasons: [String]
     let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case isotopeName
+        case installIsInsecure
+        case reasons
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isotopeName = try container.decode(String.self, forKey: .isotopeName)
+        installIsInsecure = try container.decode(Bool.self, forKey: .installIsInsecure)
+        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
 }
 
 struct OutdatedPackageRecord: Codable, Equatable {
@@ -660,7 +676,23 @@ struct HomebrewMigrationPackage: Decodable, Equatable {
 struct HomebrewMigrationHazard: Decodable, Equatable {
     let packageName: String
     let isotopeName: String
+    let reasons: [String]
     let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case packageName
+        case isotopeName
+        case reasons
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        packageName = try container.decode(String.self, forKey: .packageName)
+        isotopeName = try container.decode(String.self, forKey: .isotopeName)
+        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
 
     var radioisotopeReadmeURL: URL? {
         var pathAllowed = CharacterSet.urlPathAllowed

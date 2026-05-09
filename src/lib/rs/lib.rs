@@ -584,6 +584,7 @@ struct PackageSecurityState {
     isotope_name: String,
     #[serde(rename = "installIsInsecure")]
     install_is_insecure: bool,
+    reasons: Vec<String>,
     error: Option<String>,
 }
 
@@ -2286,9 +2287,19 @@ fn run_generated_isotope_post_install(name: &str) -> Option<Result<(), String>> 
     Some(post_install())
 }
 
-fn detect_isotope_install_is_insecure(name: &str) -> Option<Result<bool, String>> {
-    let detect = isotope_integration(name)?.detect?;
-    Some(detect())
+fn detect_isotope_install_reasons(name: &str) -> Option<Result<Vec<String>, String>> {
+    let integration = isotope_integration(name)?;
+    if let Some(detect_reasons) = integration.detect_reasons {
+        return Some(detect_reasons());
+    }
+    let detect = integration.detect?;
+    Some(detect().map(|install_is_insecure| {
+        if install_is_insecure {
+            vec![format!("isotope:{name} detector triggered")]
+        } else {
+            Vec::new()
+        }
+    }))
 }
 
 fn package_security_state(info: &PackageInfo) -> Option<PackageSecurityState> {
@@ -2333,16 +2344,18 @@ where
 }
 
 fn package_security_state_for_isotope(isotope_name: &str) -> Option<PackageSecurityState> {
-    let result = detect_isotope_install_is_insecure(isotope_name)?;
+    let result = detect_isotope_install_reasons(isotope_name)?;
     Some(match result {
-        Ok(install_is_insecure) => PackageSecurityState {
+        Ok(reasons) => PackageSecurityState {
             isotope_name: isotope_name.to_string(),
-            install_is_insecure,
+            install_is_insecure: !reasons.is_empty(),
+            reasons,
             error: None,
         },
         Err(err) => PackageSecurityState {
             isotope_name: isotope_name.to_string(),
             install_is_insecure: false,
+            reasons: Vec::new(),
             error: Some(err),
         },
     })
@@ -8606,15 +8619,19 @@ or `npm:clawhub` for the aliased package"
 
         let state = package_security_state_for_identifiers(["awscli".to_string()]);
 
-        if detect_isotope_install_is_insecure("aws-cli").is_some() {
-            assert_eq!(
-                state,
-                Some(PackageSecurityState {
-                    isotope_name: "aws-cli".to_string(),
-                    install_is_insecure: true,
-                    error: None,
-                })
+        if detect_isotope_install_reasons("aws-cli").is_some() {
+            let state = state.expect("aws-cli should have security state");
+            assert_eq!(state.isotope_name, "aws-cli");
+            assert!(state.install_is_insecure);
+            assert!(
+                state
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.contains("AWS shared credentials file")),
+                "expected credentials reason, got {:?}",
+                state.reasons
             );
+            assert_eq!(state.error, None);
         } else {
             assert_eq!(state, None);
         }
@@ -8661,15 +8678,19 @@ or `npm:clawhub` for the aliased package"
 
         let state = package_security_state(&info);
 
-        if detect_isotope_install_is_insecure("aws-cli").is_some() {
-            assert_eq!(
-                state,
-                Some(PackageSecurityState {
-                    isotope_name: "aws-cli".to_string(),
-                    install_is_insecure: true,
-                    error: None,
-                })
+        if detect_isotope_install_reasons("aws-cli").is_some() {
+            let state = state.expect("aws-cli should have security state");
+            assert_eq!(state.isotope_name, "aws-cli");
+            assert!(state.install_is_insecure);
+            assert!(
+                state
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.contains("AWS shared credentials file")),
+                "expected credentials reason, got {:?}",
+                state.reasons
             );
+            assert_eq!(state.error, None);
         } else {
             assert_eq!(state, None);
         }

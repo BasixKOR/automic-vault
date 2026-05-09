@@ -109,9 +109,9 @@ final class DossierView: NSView {
         static let securityNoticeIconWidth: CGFloat = 34
         static let securityNoticeIconHeight: CGFloat = 40
         static let securityNoticeHeadlineTopInset: CGFloat = 6
-        static let securityNoticeCaveatsTopGap: CGFloat = 8
-        static let securityNoticeCaveatsHeaderHeight: CGFloat = 12
-        static let securityNoticeCaveatsBodyTopGap: CGFloat = 7
+        static let securityNoticeDetailTopGap: CGFloat = 8
+        static let securityNoticeDetailHeaderHeight: CGFloat = 12
+        static let securityNoticeDetailBodyTopGap: CGFloat = 7
         static let securityNoticeButtonTopGap: CGFloat = 10
         static let securityNoticeButtonHeight: CGFloat = 28
         static let securityNoticeButtonGap: CGFloat = 10
@@ -169,6 +169,8 @@ final class DossierView: NSView {
     private let securityNoticeIconLayer = CATextLayer()
     private let securityNoticeHeadlineLayer = CATextLayer()
     private let securityNoticeBodyLayer = CATextLayer()
+    private let securityNoticeReasonsHeaderLayer = CATextLayer()
+    private let securityNoticeReasonsBodyLayer = CATextLayer()
     private let securityNoticeCaveatsHeaderLayer = CATextLayer()
     private let securityNoticeCaveatsBodyLayer = CATextLayer()
     private let popularityHeaderLayer = CATextLayer()
@@ -268,6 +270,8 @@ final class DossierView: NSView {
             securityNoticeIconLayer,
             securityNoticeHeadlineLayer,
             securityNoticeBodyLayer,
+            securityNoticeReasonsHeaderLayer,
+            securityNoticeReasonsBodyLayer,
             securityNoticeCaveatsHeaderLayer,
             securityNoticeCaveatsBodyLayer,
             popularityHeaderLayer,
@@ -620,16 +624,44 @@ final class DossierView: NSView {
             )
             noticeCursorY = securityNoticeBodyLayer.frame.maxY
 
+            if securityNoticeReasonsBodyLayer.string != nil {
+                noticeCursorY += Metrics.securityNoticeDetailTopGap
+                securityNoticeReasonsHeaderLayer.frame = CGRect(
+                    x: noticeContentMinX,
+                    y: noticeCursorY,
+                    width: noticeContentWidth,
+                    height: Metrics.securityNoticeDetailHeaderHeight
+                )
+                noticeCursorY = securityNoticeReasonsHeaderLayer.frame.maxY
+                    + Metrics.securityNoticeDetailBodyTopGap
+
+                let reasonsHeight = heightForNoticeText(
+                    in: securityNoticeReasonsBodyLayer,
+                    width: noticeContentWidth,
+                    minimumHeight: 16
+                )
+                securityNoticeReasonsBodyLayer.frame = CGRect(
+                    x: noticeContentMinX,
+                    y: noticeCursorY,
+                    width: noticeContentWidth,
+                    height: reasonsHeight
+                )
+                noticeCursorY = securityNoticeReasonsBodyLayer.frame.maxY
+            } else {
+                securityNoticeReasonsHeaderLayer.frame = .zero
+                securityNoticeReasonsBodyLayer.frame = .zero
+            }
+
             if securityNoticeCaveatsBodyLayer.string != nil {
-                noticeCursorY += Metrics.securityNoticeCaveatsTopGap
+                noticeCursorY += Metrics.securityNoticeDetailTopGap
                 securityNoticeCaveatsHeaderLayer.frame = CGRect(
                     x: noticeContentMinX,
                     y: noticeCursorY,
                     width: noticeContentWidth,
-                    height: Metrics.securityNoticeCaveatsHeaderHeight
+                    height: Metrics.securityNoticeDetailHeaderHeight
                 )
                 noticeCursorY = securityNoticeCaveatsHeaderLayer.frame.maxY
-                    + Metrics.securityNoticeCaveatsBodyTopGap
+                    + Metrics.securityNoticeDetailBodyTopGap
 
                 let caveatsHeight = heightForNoticeText(
                     in: securityNoticeCaveatsBodyLayer,
@@ -704,6 +736,8 @@ final class DossierView: NSView {
             securityNoticeIconLayer.frame = .zero
             securityNoticeHeadlineLayer.frame = .zero
             securityNoticeBodyLayer.frame = .zero
+            securityNoticeReasonsHeaderLayer.frame = .zero
+            securityNoticeReasonsBodyLayer.frame = .zero
             securityNoticeCaveatsHeaderLayer.frame = .zero
             securityNoticeCaveatsBodyLayer.frame = .zero
             securityLearnMoreButton.frame = .zero
@@ -1018,6 +1052,8 @@ final class DossierView: NSView {
             securityNoticeIconLayer.string = nil
             securityNoticeHeadlineLayer.string = nil
             securityNoticeBodyLayer.string = nil
+            securityNoticeReasonsHeaderLayer.string = nil
+            securityNoticeReasonsBodyLayer.string = nil
             securityNoticeCaveatsHeaderLayer.string = nil
             securityNoticeCaveatsBodyLayer.string = nil
             popularityHeaderLayer.string = nil
@@ -1120,6 +1156,8 @@ final class DossierView: NSView {
             securityNoticeIconLayer.string = nil
             securityNoticeHeadlineLayer.string = nil
             securityNoticeBodyLayer.string = nil
+            securityNoticeReasonsHeaderLayer.string = nil
+            securityNoticeReasonsBodyLayer.string = nil
             securityNoticeCaveatsHeaderLayer.string = nil
             securityNoticeCaveatsBodyLayer.string = nil
             securityLearnMoreButton.isHidden = true
@@ -1142,6 +1180,10 @@ final class DossierView: NSView {
             tracking: 0.2
         )
         securityNoticeBodyLayer.string = securityNoticeBodyText(from: notice.body)
+        securityNoticeReasonsHeaderLayer.string = notice.reasons.isEmpty
+            ? nil
+            : UIStyle.sectionHeaderText("Detection")
+        securityNoticeReasonsBodyLayer.string = securityNoticeReasonsText(notice.reasons)
         securityNoticeCaveatsHeaderLayer.string = notice.caveats == nil
             ? nil
             : UIStyle.sectionHeaderText("Caveats")
@@ -1239,6 +1281,16 @@ final class DossierView: NSView {
                 .joined(separator: "\n")
             return securityNoticeBodyText(from: markdown)
         }
+    }
+
+    private func securityNoticeReasonsText(_ reasons: [String]) -> NSAttributedString? {
+        guard reasons.isEmpty == false else {
+            return nil
+        }
+        let markdown = reasons
+            .map { "- \(normalizedCaveatBullet($0))" }
+            .joined(separator: "\n")
+        return securityNoticeBodyText(from: markdown)
     }
 
     private func normalizedCaveatBullet(_ caveat: String) -> String {
@@ -1826,6 +1878,8 @@ final class DossierView: NSView {
                 securityNoticeIconLayer,
                 securityNoticeHeadlineLayer,
                 securityNoticeBodyLayer,
+                securityNoticeReasonsHeaderLayer,
+                securityNoticeReasonsBodyLayer,
                 securityNoticeCaveatsHeaderLayer,
                 securityNoticeCaveatsBodyLayer
             ])

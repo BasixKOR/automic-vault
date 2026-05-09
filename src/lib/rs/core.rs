@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.5";
+pub(crate) const PROTOCOL_VERSION: &str = "1.6";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -131,6 +131,7 @@ pub(crate) struct HomebrewMigrationHazardSummary {
     pub(crate) package_name: String,
     #[serde(rename = "isotopeName")]
     pub(crate) isotope_name: String,
+    pub(crate) reasons: Vec<String>,
     pub(crate) error: Option<String>,
 }
 
