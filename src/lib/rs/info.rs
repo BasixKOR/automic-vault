@@ -735,23 +735,13 @@ pub(crate) fn formula_display_alias(
     if formula_versioned_base(&entry.name) == Some(base) {
         return Some(entry.name.clone());
     }
-    entry
-        .aliases
-        .iter()
-        .find(|alias| formula_versioned_base(alias) == Some(base))
-        .cloned()
-        .or_else(|| formula_version_alias(base, version))
-}
-
-pub(crate) fn latest_formula_display_alias(
-    entry: &FormulaIndexEntry,
-    base: &str,
-    version: &str,
-) -> Option<String> {
-    if formula_versioned_base(&entry.name) == Some(base) {
-        return Some(entry.name.clone());
-    }
-    formula_version_alias(base, version).or_else(|| formula_display_alias(entry, base, version))
+    formula_version_alias(base, version).or_else(|| {
+        entry
+            .aliases
+            .iter()
+            .find(|alias| formula_versioned_base(alias) == Some(base))
+            .cloned()
+    })
 }
 
 fn formula_family_entries(root_formula: &str) -> Result<Vec<FormulaIndexEntry>, String> {
@@ -803,48 +793,18 @@ fn formula_version_options(root_formula: &str) -> Result<Vec<FormulaVersionOptio
         return Ok(Vec::new());
     }
 
-    candidates.sort_by(|left, right| compare_version_strings(&left.1, &right.1));
+    candidates.sort_by(|left, right| compare_version_strings(&right.1, &left.1));
     let latest_formula = candidates
-        .last()
+        .first()
         .map(|(entry, _, _)| entry.name.clone())
         .unwrap_or_else(|| root_formula.to_string());
     let recommended_formula = candidates
         .iter()
-        .rev()
         .find(|(_, version, _)| version_is_recommendable(version))
         .map(|(entry, _, _)| entry.name.clone());
 
-    let latest_package_name = if candidates.iter().any(|(entry, _, _)| entry.name == base) {
-        base.clone()
-    } else {
-        latest_formula.clone()
-    };
-    let latest_version = candidates
-        .iter()
-        .find(|(entry, _, _)| entry.name == latest_formula)
-        .map(|(_, version, _)| version.clone());
-    let latest_alias = candidates
-        .iter()
-        .find(|(entry, _, _)| entry.name == latest_formula)
-        .and_then(|(entry, version, _)| latest_formula_display_alias(entry, &base, version));
-
     let mut options = Vec::new();
-    options.push(build_formula_version_option(
-        "@latest".to_string(),
-        latest_alias,
-        latest_package_name.clone(),
-        latest_formula.clone(),
-        latest_version,
-        true,
-        recommended_formula
-            .as_deref()
-            .is_some_and(|formula| formula == latest_formula),
-    )?);
-
     for (entry, version, alias_name) in candidates {
-        if entry.name == latest_formula && entry.name == latest_package_name {
-            continue;
-        }
         let display_name = alias_name.clone().unwrap_or_else(|| entry.name.clone());
         options.push(build_formula_version_option(
             display_name,
@@ -852,7 +812,7 @@ fn formula_version_options(root_formula: &str) -> Result<Vec<FormulaVersionOptio
             entry.name.clone(),
             entry.name.clone(),
             Some(version),
-            false,
+            entry.name == latest_formula,
             recommended_formula
                 .as_deref()
                 .is_some_and(|formula| formula == entry.name),

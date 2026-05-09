@@ -12257,18 +12257,10 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             formula_display_alias(&python, "python", "3.14.1"),
             Some("python@3.14".to_string())
         );
-        assert_eq!(
-            latest_formula_display_alias(&python, "python", "3.14.1"),
-            Some("python@3.14".to_string())
-        );
 
         let node = formula_index_entry("node", &["node@25"], &[]);
         assert_eq!(
-            formula_display_alias(&node, "node", "25.2.0"),
-            Some("node@25".to_string())
-        );
-        assert_eq!(
-            latest_formula_display_alias(&node, "node", "26.0.0"),
+            formula_display_alias(&node, "node", "26.0.0"),
             Some("node@26".to_string())
         );
     }

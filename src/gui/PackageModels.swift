@@ -478,9 +478,6 @@ struct PackageVersionOption: Decodable, Equatable {
 
     var menuTitle: String {
         var title = displayName
-        if displayName == "@latest", let aliasName {
-            title += " (\(aliasName))"
-        }
         if isRecommended {
             title += " recommended"
         }

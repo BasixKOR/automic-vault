@@ -217,7 +217,8 @@ fn group_installed_versioned_formulae(
     }
 
     passthrough.extend(grouped.into_iter().map(|(base, mut versions)| {
-        versions.sort_by(|left, right| left.name.cmp(&right.name));
+        versions
+            .sort_by(|left, right| compare_versioned_package_names_desc(&left.name, &right.name));
         let mut primary = versions
             .iter()
             .find(|package| package.name == base)
@@ -234,6 +235,30 @@ fn group_installed_versioned_formulae(
     passthrough
         .sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
     passthrough
+}
+
+fn compare_versioned_package_names_desc(left: &str, right: &str) -> std::cmp::Ordering {
+    let (left_base, left_version) = left.rsplit_once('@').unwrap_or((left, ""));
+    let (right_base, right_version) = right.rsplit_once('@').unwrap_or((right, ""));
+    left_base
+        .cmp(right_base)
+        .then_with(|| compare_version_suffixes(right_version, left_version))
+        .then_with(|| right.cmp(left))
+}
+
+fn compare_version_suffixes(left: &str, right: &str) -> std::cmp::Ordering {
+    let mut left_parts = left.split(['.', '_']).map(|part| part.parse::<u64>());
+    let mut right_parts = right.split(['.', '_']).map(|part| part.parse::<u64>());
+    loop {
+        match (left_parts.next(), right_parts.next()) {
+            (None, None) => return left.cmp(right),
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(Ok(left)), Some(Ok(right))) if left != right => return left.cmp(&right),
+            (Some(Ok(_)), Some(Ok(_))) => continue,
+            _ => return left.cmp(right),
+        }
+    }
 }
 
 pub(crate) fn list_available_packages(
@@ -1437,6 +1462,17 @@ mod tests {
         assert!(!is_isotope_script_interpreter(Path::new(
             "/bin/python-config"
         )));
+    }
+
+    #[test]
+    fn versioned_package_name_sort_places_newer_versions_first() {
+        let mut packages = vec![
+            "python@3.13".to_string(),
+            "python@3.14".to_string(),
+            "python@3.9".to_string(),
+        ];
+        packages.sort_by(|left, right| compare_versioned_package_names_desc(left, right));
+        assert_eq!(packages, ["python@3.14", "python@3.13", "python@3.9"]);
     }
 
     #[test]

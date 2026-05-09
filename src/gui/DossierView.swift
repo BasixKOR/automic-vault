@@ -129,6 +129,8 @@ final class DossierView: NSView {
         static let destinationToInstallGap: CGFloat = 16
         static let versionSelectorGap: CGFloat = 10
         static let versionSelectorHeight: CGFloat = 26
+        static let versionHintTopGap: CGFloat = 7
+        static let versionHintBottomGap: CGFloat = 16
         static let installCommandTopGap: CGFloat = 6
         static let installCommandVisualLift: CGFloat = 6
         static let commandToButtonGap: CGFloat = 14
@@ -178,6 +180,7 @@ final class DossierView: NSView {
     private let installDestinationHeaderLayer = CATextLayer()
     private let installDestinationLayer = CATextLayer()
     private let versionSelectorHeaderLayer = CATextLayer()
+    private let versionSelectorHintLayer = CATextLayer()
     private let versionSelector = NSPopUpButton(frame: .zero, pullsDown: false)
     private let commandHeaderLayer = CATextLayer()
     private let installCommandLayer = CATextLayer()
@@ -276,6 +279,7 @@ final class DossierView: NSView {
             installDestinationHeaderLayer,
             installDestinationLayer,
             versionSelectorHeaderLayer,
+            versionSelectorHintLayer,
             commandHeaderLayer,
             installCommandLayer
         ] {
@@ -833,9 +837,22 @@ final class DossierView: NSView {
                 width: contentWidth,
                 height: Metrics.versionSelectorHeight
             )
-            cursorY = versionSelector.frame.maxY + Metrics.destinationToInstallGap
+            cursorY = versionSelector.frame.maxY + Metrics.versionHintTopGap
+            let hintHeight = heightForText(
+                in: versionSelectorHintLayer,
+                width: contentWidth,
+                minimumHeight: 14
+            )
+            versionSelectorHintLayer.frame = CGRect(
+                x: contentMinX,
+                y: cursorY,
+                width: contentWidth,
+                height: hintHeight
+            )
+            cursorY = versionSelectorHintLayer.frame.maxY + Metrics.versionHintBottomGap
         } else {
             versionSelectorHeaderLayer.frame = .zero
+            versionSelectorHintLayer.frame = .zero
             versionSelector.frame = .zero
         }
 
@@ -1021,6 +1038,7 @@ final class DossierView: NSView {
             installDestinationFrame = .zero
             installDestinationLayer.string = nil
             versionSelectorHeaderLayer.string = nil
+            versionSelectorHintLayer.string = nil
             versionSelector.removeAllItems()
             versionSelector.isHidden = true
             selectedVersionOptionPackageName = nil
@@ -1090,6 +1108,9 @@ final class DossierView: NSView {
         versionSelectorHeaderLayer.string = detail.versionOptions.isEmpty
             ? nil
             : UIStyle.sectionHeaderText("Version")
+        versionSelectorHintLayer.string = detail.versionOptions.isEmpty
+            ? nil
+            : versionSelectorHintText(for: detail)
         commandHeaderLayer.string = UIStyle.sectionHeaderText("Install Vector")
     }
 
@@ -1656,9 +1677,11 @@ final class DossierView: NSView {
         guard detail.versionOptions.isEmpty == false else {
             versionSelector.removeAllItems()
             versionSelector.isHidden = true
+            versionSelectorHintLayer.string = nil
             selectedVersionOptionPackageName = nil
             return
         }
+        versionSelectorHintLayer.string = versionSelectorHintText(for: detail)
         versionSelector.removeAllItems()
         for option in detail.versionOptions {
             versionSelector.addItem(withTitle: option.menuTitle)
@@ -1678,6 +1701,19 @@ final class DossierView: NSView {
             versionSelector.selectItem(at: index)
         }
         versionSelector.isHidden = false
+    }
+
+    private func versionSelectorHintText(for detail: PackageDetail) -> NSAttributedString {
+        let supportsSideBySideStubs = detail.versionOptions.contains(where: \.supportsSideBySideStubs)
+        let text = supportsSideBySideStubs
+            ? "multiple versions can be installed side by side"
+            : "multiple versions can be installed, but only one stubs into /usr/local/bin"
+        return UIStyle.attributedMonoText(
+            text,
+            size: 10.5,
+            color: UIStyle.text.withAlphaComponent(0.54),
+            tracking: 0.1
+        )
     }
 
     private func selectedVersionOption(from detail: PackageDetail) -> PackageVersionOption? {
@@ -1815,7 +1851,7 @@ final class DossierView: NSView {
             layers.append(contentsOf: [installDestinationHeaderLayer, installDestinationLayer])
         }
         if sections.contains("version") {
-            layers.append(versionSelectorHeaderLayer)
+            layers.append(contentsOf: [versionSelectorHeaderLayer, versionSelectorHintLayer])
         }
         if sections.contains("command") {
             layers.append(contentsOf: [commandHeaderLayer, installCommandLayer])
