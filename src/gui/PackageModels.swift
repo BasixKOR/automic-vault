@@ -208,6 +208,32 @@ struct PackageDetail: Decodable, Equatable {
     let homebrewMigration: HomebrewMigrationRecommendation?
     let versionOptions: [PackageVersionOption]
 
+    enum CodingKeys: String, CodingKey {
+        case packageName
+        case qualifiedName
+        case installRoot
+        case installed
+        case source
+        case sourceError
+        case aliases
+        case aliasesError
+        case installedVersion
+        case latestVersion
+        case latestVersionError
+        case executablePaths
+        case executablePathsError
+        case popularity
+        case lastUpdatedAt
+        case homebrewInfo
+        case homebrewInfoError
+        case npmHomepage
+        case npmPackageInfoError
+        case securityState
+        case installPackageNames
+        case homebrewMigration
+        case versionOptions
+    }
+
     init(
         packageName: String,
         qualifiedName: String,
@@ -256,6 +282,54 @@ struct PackageDetail: Decodable, Equatable {
         self.installPackageNames = installPackageNames
         self.homebrewMigration = homebrewMigration
         self.versionOptions = versionOptions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        packageName = try container.decode(String.self, forKey: .packageName)
+        qualifiedName = try container.decode(String.self, forKey: .qualifiedName)
+        installRoot = try container.decode(String.self, forKey: .installRoot)
+        installed = try container.decode(Bool.self, forKey: .installed)
+        source = try container.decodeIfPresent(PackageSource.self, forKey: .source)
+        sourceError = try container.decodeIfPresent(String.self, forKey: .sourceError)
+        aliases = try container.decode([String].self, forKey: .aliases)
+        aliasesError = try container.decodeIfPresent(String.self, forKey: .aliasesError)
+        installedVersion = try container.decodeIfPresent(String.self, forKey: .installedVersion)
+        latestVersion = try container.decodeIfPresent(String.self, forKey: .latestVersion)
+        latestVersionError = try container.decodeIfPresent(String.self, forKey: .latestVersionError)
+        executablePaths = try container.decode([String].self, forKey: .executablePaths)
+        executablePathsError = try container.decodeIfPresent(
+            String.self,
+            forKey: .executablePathsError
+        )
+        popularity = try container.decodeIfPresent(PackagePopularity.self, forKey: .popularity)
+        lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
+        homebrewInfo = try container.decodeIfPresent(
+            HomebrewPackageInfo.self,
+            forKey: .homebrewInfo
+        )
+        homebrewInfoError = try container.decodeIfPresent(String.self, forKey: .homebrewInfoError)
+        npmHomepage = try container.decodeIfPresent(String.self, forKey: .npmHomepage)
+        npmPackageInfoError = try container.decodeIfPresent(
+            String.self,
+            forKey: .npmPackageInfoError
+        )
+        securityState = try container.decodeIfPresent(
+            PackageSecurityState.self,
+            forKey: .securityState
+        )
+        installPackageNames = try container.decodeIfPresent(
+            [String].self,
+            forKey: .installPackageNames
+        )
+        homebrewMigration = try container.decodeIfPresent(
+            HomebrewMigrationRecommendation.self,
+            forKey: .homebrewMigration
+        )
+        versionOptions = try container.decodeIfPresent(
+            [PackageVersionOption].self,
+            forKey: .versionOptions
+        ) ?? []
     }
 
     var primaryDescription: String {
