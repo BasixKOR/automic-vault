@@ -24,6 +24,10 @@ load_build_env() {
   done <"$env_file"
 }
 
+rust_protocol_version() {
+  awk -F'"' '/PROTOCOL_VERSION[[:space:]]*:/ { print $2; exit }' "$ROOT_DIR/src/lib/rs/core.rs"
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/build-app.sh [--debug|--release]
@@ -93,7 +97,8 @@ ICON_NAME="gui-icon"
 ICONSET_DIR="$BUILD_DIR/$ICON_NAME.iconset"
 ICON_ICNS="$BUILD_DIR/$ICON_NAME.icns"
 [[ -n "${MIN_MACOS_VERSION:-}" ]] || cli_die "Set MIN_MACOS_VERSION in .env"
-[[ -n "${NUKE_PROTOCOL_VERSION:-}" ]] || cli_die "Set NUKE_PROTOCOL_VERSION in .env"
+NUKE_PROTOCOL_VERSION="$(rust_protocol_version)"
+[[ -n "$NUKE_PROTOCOL_VERSION" ]] || cli_die "Could not read PROTOCOL_VERSION from src/lib/rs/core.rs"
 [[ -n "${NUKE_HELPER_VERSION:-}" ]] || cli_die "Set NUKE_HELPER_VERSION in .env"
 NUKE_BUILD_ID="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown')"
 APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
