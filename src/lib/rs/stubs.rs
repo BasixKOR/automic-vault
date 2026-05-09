@@ -11,7 +11,10 @@ pub(crate) fn remove_package_stubs_from_bin(
 
     for stub in manifest.stubs {
         if shared_stubs.contains(&stub) {
-            continue;
+            let path = bin_dir.join(&stub);
+            if !stub_belongs_to_package(&path, package_name)? {
+                continue;
+            }
         }
         let path = bin_dir.join(&stub);
         if path.exists() || fs::symlink_metadata(&path).is_ok() {
@@ -413,6 +416,20 @@ pub(crate) fn write_stub(
     permissions.set_mode(0o755);
     fs::set_permissions(stub_path, permissions)
         .map_err(|err| format!("failed to chmod {}: {err}", stub_path.display()))
+}
+
+pub(crate) fn stub_belongs_to_package(
+    stub_path: &Path,
+    package_name: &str,
+) -> Result<bool, String> {
+    let data = match fs::read_to_string(stub_path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(format!("failed to read {}: {err}", stub_path.display())),
+    };
+    Ok(data
+        .lines()
+        .any(|line| line == format!("{STUB_HEADER} {package_name}")))
 }
 
 pub(crate) fn write_venv_stub(

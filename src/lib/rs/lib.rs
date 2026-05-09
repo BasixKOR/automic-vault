@@ -911,6 +911,34 @@ struct PackageInfo {
     npm_homepage: Option<String>,
     npm_package_info_error: Option<String>,
     security_state: Option<PackageSecurityState>,
+    #[serde(rename = "versionOptions", skip_serializing_if = "Vec::is_empty")]
+    version_options: Vec<FormulaVersionOption>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct FormulaVersionOption {
+    #[serde(rename = "displayName")]
+    display_name: String,
+    #[serde(rename = "aliasName")]
+    alias_name: Option<String>,
+    #[serde(rename = "packageName")]
+    package_name: String,
+    #[serde(rename = "installPackageName")]
+    install_package_name: String,
+    #[serde(rename = "rootFormula")]
+    root_formula: String,
+    version: Option<String>,
+    #[serde(rename = "installRoot")]
+    install_root: PathBuf,
+    installed: bool,
+    #[serde(rename = "stubActive")]
+    stub_active: bool,
+    #[serde(rename = "isLatest")]
+    is_latest: bool,
+    #[serde(rename = "isRecommended")]
+    is_recommended: bool,
+    #[serde(rename = "supportsSideBySideStubs")]
+    supports_side_by_side_stubs: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -7281,6 +7309,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7325,6 +7354,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7375,6 +7405,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7416,6 +7447,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7451,6 +7483,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7491,6 +7524,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: Some("https://www.example.com/openclaw".to_string()),
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let rendered = format_package_info(&info);
@@ -7615,6 +7649,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
         populate_package_info_identity(&mut info);
         assert_eq!(info.qualified_name, "brew:python@3.12");
@@ -8064,7 +8099,7 @@ or `npm:clawhub` for the aliased package"
                     .to_vec(),
                 ),
             ],
-            4,
+            5,
         );
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(base.clone()),
@@ -8423,6 +8458,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         populate_package_info_metadata(
@@ -8544,6 +8580,8 @@ or `npm:clawhub` for the aliased package"
             version: "2.80.0".to_string(),
             description: None,
             security_state: None,
+            installed_versions: Vec::new(),
+            install_package_names: Vec::new(),
         };
         let json = serde_json::to_string(&summary).unwrap();
 
@@ -8618,6 +8656,7 @@ or `npm:clawhub` for the aliased package"
             npm_homepage: None,
             npm_package_info_error: None,
             security_state: None,
+            version_options: Vec::new(),
         };
 
         let state = package_security_state(&info);
@@ -12157,9 +12196,9 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
-    fn resolve_package_search_results_shows_versioned_formula_aliases() {
+    fn resolve_package_search_results_collapses_versioned_formula_aliases_to_family_base() {
         let _env_lock = test_env_lock().lock().unwrap();
-        let alias = formula_index_entries()
+        let (alias, base) = formula_index_entries()
             .unwrap()
             .iter()
             .find_map(|entry| {
@@ -12167,7 +12206,10 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                     .aliases
                     .iter()
                     .find(|alias| formula_versioned_base(alias).is_some())
-                    .map(|alias| alias.to_string())
+                    .and_then(|alias| {
+                        formula_versioned_base(alias)
+                            .map(|base| (alias.to_string(), base.to_string()))
+                    })
             })
             .expect("embedded db should carry at least one versioned formula alias");
 
@@ -12179,71 +12221,55 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         )
         .unwrap();
         assert!(
-            results.iter().any(|result| result.package_name == alias),
-            "search should include matching versioned aliases as display results"
+            results.iter().any(|result| result.package_name == base),
+            "search should include the family base for matching versioned aliases"
+        );
+        assert!(
+            results.iter().all(|result| result.package_name != alias),
+            "search should not surface versioned aliases as separate display results"
         );
     }
 
     #[test]
-    fn search_results_prefer_versioned_formulae_over_unversioned_family_base() {
-        fn formula_search_result(name: &str) -> PackageSearchResult {
-            PackageSearchResult {
-                package_name: name.to_string(),
-                source: PackageReceiptSource::Formula {
-                    root_formula: name.to_string(),
-                },
-                summary: None,
-                latest_version: None,
-                homepage: None,
-                dependencies: Vec::new(),
-                rank: None,
-                last_updated_at: None,
-            }
-        }
-
-        let mut results = vec![
-            formula_search_result("gcc"),
-            formula_search_result("gcc@14"),
-            formula_search_result("gcc@15"),
-        ];
-        suppress_unversioned_formulae_with_versioned_search_results(&mut results);
+    fn formula_family_search_results_use_unversioned_family_base() {
+        let versioned = formula_family_search_result(&formula_index_entry("gcc@15", &[], &[]));
         assert_eq!(
-            results
-                .iter()
-                .map(|result| result.package_name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["gcc@14", "gcc@15"]
+            (
+                versioned.package_name.as_str(),
+                package_source_qualified_name(&versioned.source)
+            ),
+            ("gcc", "brew:gcc@15".to_string())
+        );
+        let aliased = formula_family_search_result(&formula_index_entry("node", &["node@25"], &[]));
+        assert_eq!(
+            (
+                aliased.package_name.as_str(),
+                package_source_qualified_name(&aliased.source)
+            ),
+            ("node", "brew:node".to_string())
+        );
+    }
+
+    #[test]
+    fn formula_display_aliases_cover_major_and_minor_version_families() {
+        let python = formula_index_entry("python@3.14", &["python@3"], &[]);
+        assert_eq!(
+            formula_display_alias(&python, "python", "3.14.1"),
+            Some("python@3.14".to_string())
+        );
+        assert_eq!(
+            latest_formula_display_alias(&python, "python", "3.14.1"),
+            Some("python@3.14".to_string())
         );
 
-        let mut alias_results = vec![PackageSearchResult {
-            package_name: "node@25".to_string(),
-            source: PackageReceiptSource::Formula {
-                root_formula: "node".to_string(),
-            },
-            summary: None,
-            latest_version: None,
-            homepage: None,
-            dependencies: Vec::new(),
-            rank: None,
-            last_updated_at: None,
-        }];
-        suppress_unversioned_formulae_with_versioned_search_results(&mut alias_results);
+        let node = formula_index_entry("node", &["node@25"], &[]);
         assert_eq!(
-            alias_results
-                .iter()
-                .map(|result| result.package_name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["node@25"]
+            formula_display_alias(&node, "node", "25.2.0"),
+            Some("node@25".to_string())
         );
-
-        let mut unversioned_results = vec![formula_search_result("ripgrep")];
-        suppress_unversioned_formulae_with_versioned_search_results(&mut unversioned_results);
         assert_eq!(
-            unversioned_results
-                .iter()
-                .map(|result| result.package_name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["ripgrep"]
+            latest_formula_display_alias(&node, "node", "26.0.0"),
+            Some("node@26".to_string())
         );
     }
 

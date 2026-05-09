@@ -4,6 +4,7 @@ import QuartzCore
 protocol DossierViewDelegate: AnyObject {
     func dossierView(_ view: DossierView, didRequestPrimaryActionFor detail: PackageDetail)
     func dossierView(_ view: DossierView, didRequestUpdateActionFor detail: PackageDetail)
+    func dossierView(_ view: DossierView, didRequestDefaultActionFor detail: PackageDetail)
     func dossierView(_ view: DossierView, didRequestSecurityActionFor detail: PackageDetail)
 }
 
@@ -126,6 +127,8 @@ final class DossierView: NSView {
         static let executableRowGap: CGFloat = 20
         static let executableToDestinationGap: CGFloat = 16
         static let destinationToInstallGap: CGFloat = 16
+        static let versionSelectorGap: CGFloat = 10
+        static let versionSelectorHeight: CGFloat = 26
         static let installCommandTopGap: CGFloat = 6
         static let installCommandVisualLift: CGFloat = 6
         static let commandToButtonGap: CGFloat = 14
@@ -174,11 +177,18 @@ final class DossierView: NSView {
     private let executablesHeaderLayer = CATextLayer()
     private let installDestinationHeaderLayer = CATextLayer()
     private let installDestinationLayer = CATextLayer()
+    private let versionSelectorHeaderLayer = CATextLayer()
+    private let versionSelector = NSPopUpButton(frame: .zero, pullsDown: false)
     private let commandHeaderLayer = CATextLayer()
     private let installCommandLayer = CATextLayer()
     private let updateButton = DossierActionButton(title: "UPDATE", target: nil, action: nil)
     private let primaryActionButton = DossierActionButton(
         title: "INSTALL",
+        target: nil,
+        action: nil
+    )
+    private let makeDefaultButton = DossierActionButton(
+        title: "MAKE DEFAULT",
         target: nil,
         action: nil
     )
@@ -202,6 +212,7 @@ final class DossierView: NSView {
     private var executableURLs: [String: URL] = [:]
     private var installDestinationFrame: CGRect = .zero
     private var installDestinationURL: URL?
+    private var selectedVersionOptionPackageName: String?
     private var isHoveringInstallDestination = false
     private var trackingArea: NSTrackingArea?
     private var currentDetail: PackageDetail?
@@ -264,6 +275,7 @@ final class DossierView: NSView {
             executablesHeaderLayer,
             installDestinationHeaderLayer,
             installDestinationLayer,
+            versionSelectorHeaderLayer,
             commandHeaderLayer,
             installCommandLayer
         ] {
@@ -284,6 +296,7 @@ final class DossierView: NSView {
         dependenciesHeaderLayer.string = UIStyle.sectionHeaderText("Dependencies")
         executablesHeaderLayer.string = UIStyle.sectionHeaderText("Executables")
         installDestinationHeaderLayer.string = UIStyle.sectionHeaderText("Install Destination")
+        versionSelectorHeaderLayer.string = UIStyle.sectionHeaderText("Version")
         commandHeaderLayer.string = UIStyle.sectionHeaderText("Install Vector")
 
         updateButton.font = UIStyle.monoFont(size: 11, weight: .medium)
@@ -349,6 +362,19 @@ final class DossierView: NSView {
         primaryActionButton.action = #selector(handlePrimaryAction)
         primaryActionButton.isHidden = true
         addSubview(primaryActionButton)
+
+        makeDefaultButton.font = UIStyle.monoFont(size: 11, weight: .medium)
+        makeDefaultButton.palette = primaryActionButton.palette
+        makeDefaultButton.target = self
+        makeDefaultButton.action = #selector(handleMakeDefaultAction)
+        makeDefaultButton.isHidden = true
+        addSubview(makeDefaultButton)
+
+        versionSelector.font = UIStyle.monoFont(size: 11, weight: .regular)
+        versionSelector.target = self
+        versionSelector.action = #selector(handleVersionSelection)
+        versionSelector.isHidden = true
+        addSubview(versionSelector)
 
         securityLearnMoreButton.font = UIStyle.monoFont(size: 11, weight: .medium)
         securityLearnMoreButton.palette = DossierActionButton.Palette(
@@ -793,6 +819,26 @@ final class DossierView: NSView {
             cursorY += Metrics.executableToDestinationGap
         }
 
+        if versionSelectorHeaderLayer.string != nil, versionSelector.isHidden == false {
+            versionSelectorHeaderLayer.frame = CGRect(
+                x: contentMinX,
+                y: cursorY,
+                width: contentWidth,
+                height: 16
+            )
+            cursorY = versionSelectorHeaderLayer.frame.maxY + Metrics.versionSelectorGap
+            versionSelector.frame = CGRect(
+                x: contentMinX,
+                y: cursorY,
+                width: contentWidth,
+                height: Metrics.versionSelectorHeight
+            )
+            cursorY = versionSelector.frame.maxY + Metrics.destinationToInstallGap
+        } else {
+            versionSelectorHeaderLayer.frame = .zero
+            versionSelector.frame = .zero
+        }
+
         commandHeaderLayer.frame = CGRect(
             x: contentMinX,
             y: cursorY,
@@ -825,10 +871,20 @@ final class DossierView: NSView {
                 ),
                 height: Metrics.actionButtonHeight
             )
+            if makeDefaultButton.isHidden {
+                makeDefaultButton.frame = .zero
+            } else {
+                makeDefaultButton.frame = CGRect(
+                    x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+                    y: buttonY,
+                    width: min(Metrics.actionButtonWidth, max(availableButtonWidth - primaryActionButton.frame.width - Metrics.actionButtonGap, 0)),
+                    height: Metrics.actionButtonHeight
+                )
+            }
         } else {
             let splitButtonWidth = min(
                 Metrics.actionButtonWidth,
-                max((availableButtonWidth - Metrics.actionButtonGap) / 2, 0)
+                max((availableButtonWidth - Metrics.actionButtonGap * 2) / 3, 0)
             )
             updateButton.frame = CGRect(
                 x: contentMinX,
@@ -842,13 +898,25 @@ final class DossierView: NSView {
                 width: splitButtonWidth,
                 height: Metrics.actionButtonHeight
             )
+            if makeDefaultButton.isHidden {
+                makeDefaultButton.frame = .zero
+            } else {
+                makeDefaultButton.frame = CGRect(
+                    x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+                    y: buttonY,
+                    width: splitButtonWidth,
+                    height: Metrics.actionButtonHeight
+                )
+            }
         }
         UIStyle.layoutControlChrome(in: updateButton.layer)
         UIStyle.layoutControlChrome(in: primaryActionButton.layer)
+        UIStyle.layoutControlChrome(in: makeDefaultButton.layer)
 
         let contentHeight = max(
             updateButton.frame.maxY,
-            primaryActionButton.frame.maxY
+            primaryActionButton.frame.maxY,
+            makeDefaultButton.frame.maxY
         ) + Metrics.bottomInset
         let targetHeight = max(superview?.bounds.height ?? 0, contentHeight)
         if abs(frame.height - targetHeight) > 0.5 {
@@ -893,19 +961,21 @@ final class DossierView: NSView {
             applySecurityNoticeStyle()
             popularityLayer.string = popularityText(for: detail)
             applyLastUpdatedStyle()
+            configureVersionSelector(for: detail)
+            let actionDetail = selectedActionDetail(from: detail)
             installCommandLayer.string = UIStyle.attributedMonoText(
-                detail.installCommand,
+                actionDetail.installCommand,
                 size: 12,
                 color: UIStyle.text.withAlphaComponent(0.66),
                 tracking: 0.1
             )
-            installDestinationURL = detail.installed
-                ? URL(fileURLWithPath: detail.installRoot, isDirectory: true)
+            installDestinationURL = actionDetail.installed
+                ? URL(fileURLWithPath: actionDetail.installRoot, isDirectory: true)
                 : nil
             applyInstallDestinationStyle()
-            updateButton.isHidden = !(detail.installed && detail.isOutdated)
+            updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
             updateButton.isEnabled = !isActionInFlight
-            primaryActionButton.title = detail.installed ? "UNINSTALL" : "INSTALL"
+            primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
             if detail.homebrewMigration != nil {
                 primaryActionButton.title = "MIGRATE"
             } else if detail.isHomebrewMigrationCandidate {
@@ -913,6 +983,8 @@ final class DossierView: NSView {
             } else if detail.isUnsupportedHomebrewInstall {
                 primaryActionButton.title = "UNSUPPORTED TAP"
             }
+            makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
+            makeDefaultButton.isEnabled = !isActionInFlight
             primaryActionButton.isHidden = false
             primaryActionButton.isEnabled = !isActionInFlight && !detail.isUnsupportedHomebrewInstall
             renderDependencies(
@@ -948,10 +1020,16 @@ final class DossierView: NSView {
             installDestinationLayer.frame = .zero
             installDestinationFrame = .zero
             installDestinationLayer.string = nil
+            versionSelectorHeaderLayer.string = nil
+            versionSelector.removeAllItems()
+            versionSelector.isHidden = true
+            selectedVersionOptionPackageName = nil
             updateButton.isHidden = true
             updateButton.isEnabled = false
             primaryActionButton.isHidden = true
             primaryActionButton.isEnabled = false
+            makeDefaultButton.isHidden = true
+            makeDefaultButton.isEnabled = false
             securityLearnMoreButton.isHidden = true
             securityApplyButton.isHidden = true
             clearDependencies()
@@ -979,6 +1057,7 @@ final class DossierView: NSView {
         updateButton.isEnabled = isEnabled
         primaryActionButton.isEnabled = isEnabled
             && currentDetail?.isUnsupportedHomebrewInstall != true
+        makeDefaultButton.isEnabled = isEnabled
         if let notice = currentSecurityNotice {
             securityApplyButton.isEnabled = isEnabled && securityApplyButtonIsEnabled(notice: notice)
         } else {
@@ -1008,6 +1087,9 @@ final class DossierView: NSView {
         installDestinationHeaderLayer.string = showsInstallDestination(for: detail)
             ? UIStyle.sectionHeaderText("Install Destination")
             : nil
+        versionSelectorHeaderLayer.string = detail.versionOptions.isEmpty
+            ? nil
+            : UIStyle.sectionHeaderText("Version")
         commandHeaderLayer.string = UIStyle.sectionHeaderText("Install Vector")
     }
 
@@ -1570,6 +1652,58 @@ final class DossierView: NSView {
         return "\(version) · \(source) · \(status)"
     }
 
+    private func configureVersionSelector(for detail: PackageDetail) {
+        guard detail.versionOptions.isEmpty == false else {
+            versionSelector.removeAllItems()
+            versionSelector.isHidden = true
+            selectedVersionOptionPackageName = nil
+            return
+        }
+        versionSelector.removeAllItems()
+        for option in detail.versionOptions {
+            versionSelector.addItem(withTitle: option.menuTitle)
+            versionSelector.lastItem?.representedObject = option.packageName
+        }
+        let preferred = selectedVersionOptionPackageName.flatMap { packageName in
+            detail.versionOptions.first(where: { $0.packageName == packageName })
+        }
+            ?? detail.versionOptions.first(where: \.stubActive)
+            ?? detail.versionOptions.first(where: \.installed)
+            ?? detail.versionOptions.first(where: \.isRecommended)
+            ?? detail.versionOptions.first(where: \.isLatest)
+            ?? detail.versionOptions.first
+        selectedVersionOptionPackageName = preferred?.packageName
+        if let packageName = preferred?.packageName,
+           let index = detail.versionOptions.firstIndex(where: { $0.packageName == packageName }) {
+            versionSelector.selectItem(at: index)
+        }
+        versionSelector.isHidden = false
+    }
+
+    private func selectedVersionOption(from detail: PackageDetail) -> PackageVersionOption? {
+        if let packageName = selectedVersionOptionPackageName,
+           let option = detail.versionOptions.first(where: { $0.packageName == packageName }) {
+            return option
+        }
+        return detail.versionOptions.first
+    }
+
+    private func selectedActionDetail(from detail: PackageDetail) -> PackageDetail {
+        guard let option = selectedVersionOption(from: detail) else {
+            return detail
+        }
+        return detail.selecting(versionOption: option)
+    }
+
+    private func showsMakeDefaultButton(for detail: PackageDetail) -> Bool {
+        guard let option = selectedVersionOption(from: detail) else {
+            return false
+        }
+        return option.installed
+            && option.stubActive == false
+            && option.supportsSideBySideStubs == false
+    }
+
     private func primaryActionButtonWidth(maximum: CGFloat) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: primaryActionButton.font ?? UIStyle.monoFont(size: 11, weight: .medium),
@@ -1629,6 +1763,7 @@ final class DossierView: NSView {
         if dependenciesHeaderLayer.string != nil { sections.insert("dependencies") }
         if executablesHeaderLayer.string != nil { sections.insert("executables") }
         if installDestinationHeaderLayer.string != nil { sections.insert("installDestination") }
+        if versionSelectorHeaderLayer.string != nil { sections.insert("version") }
         if commandHeaderLayer.string != nil { sections.insert("command") }
         return sections
     }
@@ -1678,6 +1813,9 @@ final class DossierView: NSView {
         }
         if sections.contains("installDestination") {
             layers.append(contentsOf: [installDestinationHeaderLayer, installDestinationLayer])
+        }
+        if sections.contains("version") {
+            layers.append(versionSelectorHeaderLayer)
         }
         if sections.contains("command") {
             layers.append(contentsOf: [commandHeaderLayer, installCommandLayer])
@@ -1784,12 +1922,28 @@ final class DossierView: NSView {
 
     @objc private func handlePrimaryAction() {
         guard let currentDetail, isActionInFlight == false else { return }
-        delegate?.dossierView(self, didRequestPrimaryActionFor: currentDetail)
+        delegate?.dossierView(self, didRequestPrimaryActionFor: selectedActionDetail(from: currentDetail))
     }
 
     @objc private func handleUpdateAction() {
         guard let currentDetail, isActionInFlight == false, currentDetail.isOutdated else { return }
-        delegate?.dossierView(self, didRequestUpdateActionFor: currentDetail)
+        delegate?.dossierView(self, didRequestUpdateActionFor: selectedActionDetail(from: currentDetail))
+    }
+
+    @objc private func handleMakeDefaultAction() {
+        guard let currentDetail, isActionInFlight == false else { return }
+        delegate?.dossierView(self, didRequestDefaultActionFor: selectedActionDetail(from: currentDetail))
+    }
+
+    @objc private func handleVersionSelection() {
+        guard let item = versionSelector.selectedItem,
+              let packageName = item.representedObject as? String else {
+            return
+        }
+        selectedVersionOptionPackageName = packageName
+        if let currentDetail {
+            render(detail: currentDetail, animation: .none)
+        }
     }
 
     @objc private func handleSecurityLearnMore() {

@@ -84,6 +84,7 @@ final class AVPackageSpec: NSObject, NSSecureCoding {
     func install(_ packages: [AVPackageSpec], reply: @escaping ([String: Any]) -> Void)
     func update(_ packages: [AVPackageSpec], reply: @escaping ([String: Any]) -> Void)
     func uninstall(_ packages: [AVPackageSpec], reply: @escaping ([String: Any]) -> Void)
+    func makeDefault(_ packages: [AVPackageSpec], reply: @escaping ([String: Any]) -> Void)
     func updateAll(_ reply: @escaping ([String: Any]) -> Void)
     func installAv(_ sourcePath: String, reply: @escaping ([String: Any]) -> Void)
     func installIsotopeRoot(_ isotopeName: String, reply: @escaping ([String: Any]) -> Void)
@@ -526,6 +527,25 @@ final class NukeHelperBridge {
             do {
                 let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
                 proxy.uninstall(packages) { result in
+                    self.complete(result, completion: completion)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func makeDefault(
+        packages: [AVPackageSpec],
+        progress: @escaping (NukeHelperProgressEvent) -> Void,
+        completion: @escaping (Result<NukeHelperResult, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
+                proxy.makeDefault(packages) { result in
                     self.complete(result, completion: completion)
                 }
             } catch {

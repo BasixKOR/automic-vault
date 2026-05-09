@@ -200,6 +200,11 @@ fn dispatch_request(
                 ops::migrate_isotope(&params.isotope)
             })
         }
+        core::ProtocolMethod::PackagesMakeDefault => {
+            respond(request.id, request.params, |params: PackageInfoParams| {
+                ops::make_package_default(&params.package)
+            })
+        }
         core::ProtocolMethod::SystemInfo => {
             respond(request.id, request.params, |params: EmptyParams| {
                 let _ = params;

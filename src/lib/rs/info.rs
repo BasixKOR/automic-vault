@@ -373,18 +373,7 @@ pub(crate) fn resolve_package_search_results(
     let mut results = formula_index_entries()?
         .iter()
         .filter(|entry| formula_index_entry_matches(entry, &lowered_query))
-        .flat_map(|entry| {
-            let mut results = vec![formula_search_result(entry, &entry.name)];
-            results.extend(
-                entry
-                    .aliases
-                    .iter()
-                    .filter(|alias| formula_versioned_base(alias).is_some())
-                    .filter(|alias| alias.to_ascii_lowercase().contains(&lowered_query))
-                    .map(|alias| formula_search_result(entry, alias)),
-            );
-            results
-        })
+        .map(formula_family_search_result)
         .collect::<Vec<_>>();
     let db = crate::cli::load_db()?;
     crate::cli::ensure_db_schema(&db)?;
@@ -431,7 +420,6 @@ pub(crate) fn resolve_package_search_results(
             .filter(|entry| vendor_entry_matches(entry, &lowered_query))
             .map(vendor_search_result),
     );
-    suppress_unversioned_formulae_with_versioned_search_results(&mut results);
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
     Ok(results)
@@ -658,6 +646,20 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
     }
 }
 
+pub(crate) fn formula_family_search_result(entry: &FormulaIndexEntry) -> PackageSearchResult {
+    let package_name = formula_versioned_base(&entry.name)
+        .map(str::to_string)
+        .or_else(|| {
+            entry
+                .aliases
+                .iter()
+                .find_map(|alias| formula_versioned_base(alias).map(str::to_string))
+        })
+        .unwrap_or_else(|| entry.name.clone());
+    formula_search_result(entry, &package_name)
+}
+
+#[cfg(test)]
 pub(crate) fn suppress_unversioned_formulae_with_versioned_search_results(
     results: &mut Vec<PackageSearchResult>,
 ) {
@@ -689,6 +691,220 @@ pub(crate) fn formula_versioned_base(formula: &str) -> Option<&str> {
     Some(base)
 }
 
+fn formula_family_base(formula: &str) -> String {
+    formula_versioned_base(formula)
+        .unwrap_or(formula)
+        .to_string()
+}
+
+fn formula_version_alias(base: &str, version: &str) -> Option<String> {
+    let major = version.split(['.', '_']).next()?;
+    if major.is_empty() || !major.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!("{base}@{major}"))
+}
+
+fn parsed_stable_version(value: &str) -> Option<(u64, u64, u64)> {
+    let stable = value.split('_').next().unwrap_or(value);
+    let mut parts = stable.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+fn version_is_recommendable(version: &str) -> bool {
+    let Some((_major, minor, patch)) = parsed_stable_version(version) else {
+        return false;
+    };
+    minor > 1 || (minor == 1 && patch >= 1)
+}
+
+fn compare_version_strings(left: &str, right: &str) -> std::cmp::Ordering {
+    parsed_stable_version(left)
+        .cmp(&parsed_stable_version(right))
+        .then_with(|| left.cmp(right))
+}
+
+pub(crate) fn formula_display_alias(
+    entry: &FormulaIndexEntry,
+    base: &str,
+    version: &str,
+) -> Option<String> {
+    if formula_versioned_base(&entry.name) == Some(base) {
+        return Some(entry.name.clone());
+    }
+    entry
+        .aliases
+        .iter()
+        .find(|alias| formula_versioned_base(alias) == Some(base))
+        .cloned()
+        .or_else(|| formula_version_alias(base, version))
+}
+
+pub(crate) fn latest_formula_display_alias(
+    entry: &FormulaIndexEntry,
+    base: &str,
+    version: &str,
+) -> Option<String> {
+    if formula_versioned_base(&entry.name) == Some(base) {
+        return Some(entry.name.clone());
+    }
+    formula_version_alias(base, version).or_else(|| formula_display_alias(entry, base, version))
+}
+
+fn formula_family_entries(root_formula: &str) -> Result<Vec<FormulaIndexEntry>, String> {
+    let base = formula_family_base(root_formula);
+    let entries = formula_index_entries()?
+        .iter()
+        .filter(|entry| {
+            entry.name == base
+                || formula_versioned_base(&entry.name) == Some(base.as_str())
+                || entry
+                    .aliases
+                    .iter()
+                    .chain(entry.oldnames.iter())
+                    .any(|alias| {
+                        alias == &base || formula_versioned_base(alias) == Some(base.as_str())
+                    })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(entries)
+}
+
+fn formula_version_options(root_formula: &str) -> Result<Vec<FormulaVersionOption>, String> {
+    let base = formula_family_base(root_formula);
+    let mut entries = formula_family_entries(root_formula)?;
+    if entries.len() <= 1
+        && entries.first().is_none_or(|entry| {
+            entry
+                .aliases
+                .iter()
+                .all(|alias| formula_versioned_base(alias).is_none())
+        })
+    {
+        return Ok(Vec::new());
+    }
+
+    entries.sort_by(|left, right| left.name.cmp(&right.name));
+    entries.dedup_by(|left, right| left.name == right.name);
+
+    let mut candidates = Vec::new();
+    for entry in entries {
+        if let Ok(info) = fetch_formula_info(&entry.name) {
+            let version = formula_version_string(&info);
+            let alias_name = formula_display_alias(&entry, &base, &version);
+            candidates.push((entry, version, alias_name));
+        }
+    }
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    candidates.sort_by(|left, right| compare_version_strings(&left.1, &right.1));
+    let latest_formula = candidates
+        .last()
+        .map(|(entry, _, _)| entry.name.clone())
+        .unwrap_or_else(|| root_formula.to_string());
+    let recommended_formula = candidates
+        .iter()
+        .rev()
+        .find(|(_, version, _)| version_is_recommendable(version))
+        .map(|(entry, _, _)| entry.name.clone());
+
+    let latest_package_name = if candidates.iter().any(|(entry, _, _)| entry.name == base) {
+        base.clone()
+    } else {
+        latest_formula.clone()
+    };
+    let latest_version = candidates
+        .iter()
+        .find(|(entry, _, _)| entry.name == latest_formula)
+        .map(|(_, version, _)| version.clone());
+    let latest_alias = candidates
+        .iter()
+        .find(|(entry, _, _)| entry.name == latest_formula)
+        .and_then(|(entry, version, _)| latest_formula_display_alias(entry, &base, version));
+
+    let mut options = Vec::new();
+    options.push(build_formula_version_option(
+        "@latest".to_string(),
+        latest_alias,
+        latest_package_name.clone(),
+        latest_formula.clone(),
+        latest_version,
+        true,
+        recommended_formula
+            .as_deref()
+            .is_some_and(|formula| formula == latest_formula),
+    )?);
+
+    for (entry, version, alias_name) in candidates {
+        if entry.name == latest_formula && entry.name == latest_package_name {
+            continue;
+        }
+        let display_name = alias_name.clone().unwrap_or_else(|| entry.name.clone());
+        options.push(build_formula_version_option(
+            display_name,
+            alias_name,
+            entry.name.clone(),
+            entry.name.clone(),
+            Some(version),
+            false,
+            recommended_formula
+                .as_deref()
+                .is_some_and(|formula| formula == entry.name),
+        )?);
+    }
+    Ok(options)
+}
+
+fn build_formula_version_option(
+    display_name: String,
+    alias_name: Option<String>,
+    package_name: String,
+    root_formula: String,
+    version: Option<String>,
+    is_latest: bool,
+    is_recommended: bool,
+) -> Result<FormulaVersionOption, String> {
+    let install_root = package_install_root(&opt_pkg_root(), &package_name)?;
+    let installed = install_root.is_dir();
+    let stub_active = installed && package_stubs_are_active(&install_root, &package_name)?;
+    let install_package_name = format!("{BREW_PACKAGE_PREFIX}{package_name}");
+    let supports_side_by_side_stubs = package_name.starts_with("python@");
+    Ok(FormulaVersionOption {
+        display_name,
+        alias_name,
+        package_name,
+        install_package_name,
+        root_formula,
+        version,
+        install_root,
+        installed,
+        stub_active,
+        is_latest,
+        is_recommended,
+        supports_side_by_side_stubs,
+    })
+}
+
+fn package_stubs_are_active(install_root: &Path, package_name: &str) -> Result<bool, String> {
+    let manifest = load_stub_manifest(&install_root.join(STUB_MANIFEST))?;
+    if manifest.stubs.is_empty() {
+        return Ok(false);
+    }
+    for stub in manifest.stubs {
+        let stub_path = managed_bin_root().join(stub);
+        if stub_belongs_to_package(&stub_path, package_name)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn resolve_installed_package_info(
     config: &Config,
     requested: &RequestedPackage,
@@ -716,6 +932,7 @@ pub(crate) fn resolve_installed_package_info(
         npm_homepage: None,
         npm_package_info_error: None,
         security_state: None,
+        version_options: Vec::new(),
     };
 
     match load_package_receipt(&info.install_root.join(ROOT_RECEIPT)) {
@@ -737,6 +954,7 @@ pub(crate) fn resolve_installed_package_info(
     }
     populate_package_info_identity(&mut info);
     populate_package_info_metadata(config, &mut info);
+    populate_formula_version_options(&mut info);
     info.security_state = package_security_state(&info);
     Ok(info)
 }
@@ -768,6 +986,7 @@ pub(crate) fn resolve_uninstalled_package_info(
         npm_homepage: None,
         npm_package_info_error: None,
         security_state: None,
+        version_options: Vec::new(),
     };
 
     match infer_requested_package_source(requested) {
@@ -782,8 +1001,18 @@ pub(crate) fn resolve_uninstalled_package_info(
     }
     populate_package_info_identity(&mut info);
     populate_package_info_metadata(config, &mut info);
+    populate_formula_version_options(&mut info);
     info.security_state = package_security_state(&info);
     info
+}
+
+fn populate_formula_version_options(info: &mut PackageInfo) {
+    let Some(PackageReceiptSource::Formula { root_formula }) = info.source.as_ref() else {
+        return;
+    };
+    if let Ok(options) = formula_version_options(root_formula) {
+        info.version_options = options;
+    }
 }
 
 pub(crate) fn predicted_homebrew_executables(formula: &str) -> Result<Vec<String>, String> {

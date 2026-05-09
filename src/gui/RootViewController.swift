@@ -1335,6 +1335,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         beginPackageUpdate(for: detail)
     }
 
+    func dossierView(_ view: DossierView, didRequestDefaultActionFor detail: PackageDetail) {
+        beginPackageMakeDefault(for: detail)
+    }
+
     func dossierView(_ view: DossierView, didRequestSecurityActionFor detail: PackageDetail) {
         beginSecurityMutation(for: detail)
     }
@@ -2924,6 +2928,70 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 self.startPackageMutation(kind, detail: detail)
             case .failure(let error):
                 self.presentHelperError(error)
+            }
+        }
+    }
+
+    private func beginPackageMakeDefault(for detail: PackageDetail) {
+        guard detail.installed else { return }
+        helperBridge.authenticateBiometrics(
+            reason: "Authorize privileged default stub switch for \(detail.packageName)."
+        ) { result in
+            switch result {
+            case .success:
+                self.startPackageMakeDefault(detail: detail)
+            case .failure(let error):
+                self.presentHelperError(error)
+            }
+        }
+    }
+
+    private func startPackageMakeDefault(detail: PackageDetail) {
+        let operationID = beginOverlayOperation()
+        isRunningPackageOperation = true
+        let overlay = presentUpdateOverlay()
+        overlay.onRetry = { [weak self] in
+            self?.startPackageMakeDefault(detail: detail)
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.dismissUpdateOverlay()
+        }
+        overlay.configure(
+            title: "DEFAULT VERSION",
+            awaitingClearance: "Preparing stub switch",
+            idleStatus: "Nucleus default channel ready",
+            successOperation: "Default Updated",
+            failureOperation: "Default Switch Halted"
+        )
+        overlay.begin(
+            packages: [detail.helperPackageName],
+            activationLog: "Privilege gate cleared. Switching stubs for \(detail.packageName)."
+        )
+        helperBridge.makeDefault(
+            packages: [AVPackageSpec(name: detail.helperPackageName)],
+            progress: { event in
+                guard self.activeOverlayOperationID == operationID else { return }
+                overlay.handle(event: event)
+            }
+        ) { result in
+            guard self.activeOverlayOperationID == operationID else { return }
+            self.isRunningPackageOperation = false
+            switch result {
+            case .success(let summary):
+                summary.processedPackages.forEach {
+                    self.detailsByPackageName.removeValue(forKey: $0)
+                }
+                self.detailsByPackageName.removeValue(forKey: detail.packageName)
+                overlay.succeed(message: summary.message, packages: summary.processedPackages)
+                self.reloadPackages()
+                self.refreshRecommendations()
+                self.refreshUpdateAvailability()
+                self.refreshMenuBarAfterPrivilegedHelperOperation()
+            case .failure(let error):
+                overlay.fail(message: error.localizedDescription)
+                self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
+                self.refreshRecommendations()
+                self.refreshUpdateAvailability()
             }
         }
     }

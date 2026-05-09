@@ -339,18 +339,14 @@ mod tests {
             None
         );
         assert_eq!(
-            parse_gate_options("av gate", vec![OsString::from("--version")].into_iter())
-                .unwrap(),
+            parse_gate_options("av gate", vec![OsString::from("--version")].into_iter()).unwrap(),
             None
         );
 
         #[cfg(unix)]
         assert_eq!(
-            parse_gate_options(
-                "av gate",
-                vec![OsString::from_vec(vec![0xff])].into_iter()
-            )
-            .unwrap_err(),
+            parse_gate_options("av gate", vec![OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
             "gate message must be valid UTF-8".to_string()
         );
     }

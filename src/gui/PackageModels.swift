@@ -43,6 +43,7 @@ struct PackageRecord: Decodable, Equatable {
     let securityState: PackageSecurityState?
     let installRoot: String?
     let installPackageNames: [String]?
+    let installedVersions: [String]
     let isHomebrewMigrationCandidate: Bool
     let isUnsupportedHomebrewInstall: Bool
 
@@ -55,6 +56,7 @@ struct PackageRecord: Decodable, Equatable {
         case securityState
         case installRoot
         case installPackageNames
+        case installedVersions
         case isHomebrewMigrationCandidate
         case isUnsupportedHomebrewInstall
     }
@@ -68,6 +70,7 @@ struct PackageRecord: Decodable, Equatable {
         securityState: PackageSecurityState?,
         installRoot: String? = nil,
         installPackageNames: [String]? = nil,
+        installedVersions: [String] = [],
         isHomebrewMigrationCandidate: Bool = false,
         isUnsupportedHomebrewInstall: Bool = false
     ) {
@@ -79,6 +82,7 @@ struct PackageRecord: Decodable, Equatable {
         self.securityState = securityState
         self.installRoot = installRoot
         self.installPackageNames = installPackageNames
+        self.installedVersions = installedVersions
         self.isHomebrewMigrationCandidate = isHomebrewMigrationCandidate
         self.isUnsupportedHomebrewInstall = isUnsupportedHomebrewInstall
     }
@@ -96,6 +100,10 @@ struct PackageRecord: Decodable, Equatable {
             [String].self,
             forKey: .installPackageNames
         )
+        installedVersions = try container.decodeIfPresent(
+            [String].self,
+            forKey: .installedVersions
+        ) ?? []
         isHomebrewMigrationCandidate = try container.decodeIfPresent(
             Bool.self,
             forKey: .isHomebrewMigrationCandidate
@@ -123,6 +131,7 @@ struct PackageRecord: Decodable, Equatable {
             securityState: securityState,
             installRoot: installRoot,
             installPackageNames: installPackageNames,
+            installedVersions: installedVersions,
             isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
             isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
         )
@@ -197,6 +206,57 @@ struct PackageDetail: Decodable, Equatable {
     let securityState: PackageSecurityState?
     let installPackageNames: [String]?
     let homebrewMigration: HomebrewMigrationRecommendation?
+    let versionOptions: [PackageVersionOption]
+
+    init(
+        packageName: String,
+        qualifiedName: String,
+        installRoot: String,
+        installed: Bool,
+        source: PackageSource?,
+        sourceError: String?,
+        aliases: [String],
+        aliasesError: String?,
+        installedVersion: String?,
+        latestVersion: String?,
+        latestVersionError: String?,
+        executablePaths: [String],
+        executablePathsError: String?,
+        popularity: PackagePopularity?,
+        lastUpdatedAt: String?,
+        homebrewInfo: HomebrewPackageInfo?,
+        homebrewInfoError: String?,
+        npmHomepage: String?,
+        npmPackageInfoError: String?,
+        securityState: PackageSecurityState?,
+        installPackageNames: [String]?,
+        homebrewMigration: HomebrewMigrationRecommendation?,
+        versionOptions: [PackageVersionOption] = []
+    ) {
+        self.packageName = packageName
+        self.qualifiedName = qualifiedName
+        self.installRoot = installRoot
+        self.installed = installed
+        self.source = source
+        self.sourceError = sourceError
+        self.aliases = aliases
+        self.aliasesError = aliasesError
+        self.installedVersion = installedVersion
+        self.latestVersion = latestVersion
+        self.latestVersionError = latestVersionError
+        self.executablePaths = executablePaths
+        self.executablePathsError = executablePathsError
+        self.popularity = popularity
+        self.lastUpdatedAt = lastUpdatedAt
+        self.homebrewInfo = homebrewInfo
+        self.homebrewInfoError = homebrewInfoError
+        self.npmHomepage = npmHomepage
+        self.npmPackageInfoError = npmPackageInfoError
+        self.securityState = securityState
+        self.installPackageNames = installPackageNames
+        self.homebrewMigration = homebrewMigration
+        self.versionOptions = versionOptions
+    }
 
     var primaryDescription: String {
         if let description = homebrewInfo?.description, !description.isEmpty {
@@ -300,6 +360,34 @@ struct PackageDetail: Decodable, Equatable {
         }
     }
 
+    func selecting(versionOption option: PackageVersionOption) -> PackageDetail {
+        PackageDetail(
+            packageName: option.packageName,
+            qualifiedName: "brew:\(option.rootFormula)",
+            installRoot: option.installRoot,
+            installed: option.installed,
+            source: .formula(rootFormula: option.rootFormula),
+            sourceError: sourceError,
+            aliases: aliases,
+            aliasesError: aliasesError,
+            installedVersion: option.installed ? option.version : nil,
+            latestVersion: option.version ?? latestVersion,
+            latestVersionError: latestVersionError,
+            executablePaths: executablePaths,
+            executablePathsError: executablePathsError,
+            popularity: popularity,
+            lastUpdatedAt: lastUpdatedAt,
+            homebrewInfo: homebrewInfo,
+            homebrewInfoError: homebrewInfoError,
+            npmHomepage: npmHomepage,
+            npmPackageInfoError: npmPackageInfoError,
+            securityState: securityState,
+            installPackageNames: [option.installPackageName],
+            homebrewMigration: homebrewMigration,
+            versionOptions: versionOptions
+        )
+    }
+
     func applying(outdated: OutdatedPackageRecord?) -> PackageDetail {
         guard installed else {
             return self
@@ -338,7 +426,8 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
             installPackageNames: installPackageNames,
-            homebrewMigration: homebrewMigration
+            homebrewMigration: homebrewMigration,
+            versionOptions: versionOptions
         )
     }
 
@@ -370,6 +459,32 @@ struct PackageDetail: Decodable, Equatable {
 
     var securityNotice: PackageSecurityNotice? {
         return SecurityCatalog.shared.notice(for: self)
+    }
+}
+
+struct PackageVersionOption: Decodable, Equatable {
+    let displayName: String
+    let aliasName: String?
+    let packageName: String
+    let installPackageName: String
+    let rootFormula: String
+    let version: String?
+    let installRoot: String
+    let installed: Bool
+    let stubActive: Bool
+    let isLatest: Bool
+    let isRecommended: Bool
+    let supportsSideBySideStubs: Bool
+
+    var menuTitle: String {
+        var title = displayName
+        if displayName == "@latest", let aliasName {
+            title += " (\(aliasName))"
+        }
+        if isRecommended {
+            title += " recommended"
+        }
+        return title
     }
 }
 
@@ -1243,6 +1358,9 @@ struct PackagePresentation: Equatable {
     var versionText: String {
         switch item {
         case .installed(let record):
+            if record.installedVersions.count > 1 {
+                return record.installedVersions.joined(separator: ", ")
+            }
             return "v\(record.version)"
         case .recommendation(let recommendation):
             if let installedVersion = recommendation.installedVersion,

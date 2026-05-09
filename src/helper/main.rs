@@ -66,6 +66,21 @@ pub extern "C" fn nuke_helper_uninstall(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn nuke_helper_make_default(
+    packages_json: *const c_char,
+    context: *mut c_void,
+    progress_callback: Option<ProgressCallback>,
+) -> *mut c_char {
+    execute_command(
+        HelperCommand::MakeDefault {
+            packages: parse_packages(packages_json),
+        },
+        context,
+        progress_callback,
+    )
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn nuke_helper_update_all(
     context: *mut c_void,
     progress_callback: Option<ProgressCallback>,

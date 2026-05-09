@@ -19,6 +19,8 @@
          reply:(void (^)(NSDictionary *result))reply;
 - (void)uninstall:(NSArray<AVPackageSpec *> *)packages
             reply:(void (^)(NSDictionary *result))reply;
+- (void)makeDefault:(NSArray<AVPackageSpec *> *)packages
+              reply:(void (^)(NSDictionary *result))reply;
 - (void)updateAll:(void (^)(NSDictionary *result))reply;
 - (void)installAv:(NSString *)sourcePath
               reply:(void (^)(NSDictionary *result))reply;
@@ -45,6 +47,10 @@ extern char *nuke_helper_update(
     void *context,
     void (*progress_callback)(void *context, const char *event_json));
 extern char *nuke_helper_uninstall(
+    const char *packages_json,
+    void *context,
+    void (*progress_callback)(void *context, const char *event_json));
+extern char *nuke_helper_make_default(
     const char *packages_json,
     void *context,
     void (*progress_callback)(void *context, const char *event_json));
@@ -206,6 +212,10 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
              forSelector:@selector(uninstall:reply:)
            argumentIndex:0
                  ofReply:NO];
+    [exported setClasses:packageClasses
+             forSelector:@selector(makeDefault:reply:)
+           argumentIndex:0
+                 ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
                                                 [NSArray class],
                                                 [NSString class],
@@ -228,6 +238,14 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
                                                 [NSNumber class],
                                                 [NSNull class], nil]
              forSelector:@selector(uninstall:reply:)
+           argumentIndex:0
+                 ofReply:YES];
+    [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
+                                                [NSArray class],
+                                                [NSString class],
+                                                [NSNumber class],
+                                                [NSNull class], nil]
+             forSelector:@selector(makeDefault:reply:)
            argumentIndex:0
                  ofReply:YES];
     [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
@@ -370,6 +388,18 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
         return nuke_helper_uninstall([[self serializePackages:packages] UTF8String],
                                      context,
                                      progress_callback);
+    }];
+}
+
+- (void)makeDefault:(NSArray<AVPackageSpec *> *)packages
+              reply:(void (^)(NSDictionary *result))reply {
+    [self executeWithConnection:NSXPCConnection.currentConnection
+                         reply:reply
+                          body:^char *(void *context, void (*progress_callback)(
+                                                      void *, const char *)) {
+        return nuke_helper_make_default([[self serializePackages:packages] UTF8String],
+                                        context,
+                                        progress_callback);
     }];
 }
 

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.4";
+pub(crate) const PROTOCOL_VERSION: &str = "1.5";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -13,6 +13,7 @@ pub(crate) enum ProtocolMethod {
     PackagesHomebrewMigrationRecommendation,
     PackagesIsotopeMigrationPlan,
     PackagesMigrateIsotope,
+    PackagesMakeDefault,
     SystemInfo,
 }
 
@@ -30,6 +31,7 @@ impl ProtocolMethod {
             }
             "packages.isotopeMigrationPlan" => Some(Self::PackagesIsotopeMigrationPlan),
             "packages.migrateIsotope" => Some(Self::PackagesMigrateIsotope),
+            "packages.makeDefault" => Some(Self::PackagesMakeDefault),
             "system.info" => Some(Self::SystemInfo),
             _ => None,
         }
@@ -67,12 +69,16 @@ pub(crate) struct ListInstalledResponse {
     pub(crate) packages: Vec<InstalledPackageSummary>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct InstalledPackageSummary {
     pub(crate) name: String,
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: String,
     pub(crate) description: Option<String>,
+    #[serde(rename = "installedVersions", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) installed_versions: Vec<String>,
+    #[serde(rename = "installPackageNames", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) install_package_names: Vec<String>,
     #[serde(rename = "securityState")]
     pub(crate) security_state: Option<PackageSecurityState>,
 }

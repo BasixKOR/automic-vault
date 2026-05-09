@@ -22,6 +22,9 @@ pub enum HelperCommand {
     Uninstall {
         packages: Vec<PackageSpec>,
     },
+    MakeDefault {
+        packages: Vec<PackageSpec>,
+    },
     UpdateAll,
     InstallAv {
         source_path: String,
@@ -98,6 +101,9 @@ where
         HelperCommand::Uninstall { packages } => {
             uninstall_packages(packages, progress_callback.clone())
         }
+        HelperCommand::MakeDefault { packages } => {
+            make_default_packages(packages, progress_callback.clone())
+        }
         HelperCommand::UpdateAll => update_all_packages(progress_callback.clone()),
         HelperCommand::InstallAv {
             source_path,
@@ -165,11 +171,69 @@ pub(crate) fn list_installed_packages() -> Result<core::ListInstalledResponse, S
             source: receipt.source,
             version: receipt.version,
             description: receipt.metadata.description,
+            installed_versions: Vec::new(),
+            install_package_names: Vec::new(),
             security_state,
         });
     }
 
-    Ok(core::ListInstalledResponse { packages: results })
+    Ok(core::ListInstalledResponse {
+        packages: group_installed_versioned_formulae(results),
+    })
+}
+
+fn group_installed_versioned_formulae(
+    packages: Vec<core::InstalledPackageSummary>,
+) -> Vec<core::InstalledPackageSummary> {
+    let versioned_bases = packages
+        .iter()
+        .filter_map(|package| match &package.source {
+            PackageReceiptSource::Formula { root_formula } => formula_versioned_base(&package.name)
+                .or_else(|| formula_versioned_base(root_formula))
+                .map(str::to_string),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut grouped: HashMap<String, Vec<core::InstalledPackageSummary>> = HashMap::new();
+    let mut passthrough = Vec::new();
+    for package in packages {
+        let PackageReceiptSource::Formula { root_formula } = &package.source else {
+            passthrough.push(package);
+            continue;
+        };
+        let base = formula_versioned_base(&package.name)
+            .or_else(|| formula_versioned_base(root_formula))
+            .map(str::to_string);
+        if let Some(base) = base {
+            grouped.entry(base).or_default().push(package);
+        } else if versioned_bases.contains(&package.name) {
+            grouped
+                .entry(package.name.clone())
+                .or_default()
+                .push(package);
+        } else {
+            passthrough.push(package);
+        }
+    }
+
+    passthrough.extend(grouped.into_iter().map(|(base, mut versions)| {
+        versions.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut primary = versions
+            .iter()
+            .find(|package| package.name == base)
+            .cloned()
+            .unwrap_or_else(|| versions[0].clone());
+        primary.name = base;
+        primary.installed_versions = versions
+            .iter()
+            .map(|package| package.name.clone())
+            .collect();
+        primary.install_package_names = primary.installed_versions.clone();
+        primary
+    }));
+    passthrough
+        .sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
+    passthrough
 }
 
 pub(crate) fn list_available_packages(
@@ -1647,6 +1711,71 @@ fn validate_uninstall_specs(packages: Vec<PackageSpec>) -> Result<Vec<String>, S
         ))?);
     }
     Ok(package_names)
+}
+
+fn make_default_packages(
+    packages: Vec<PackageSpec>,
+    progress_callback: Arc<Mutex<Box<ProgressCallback>>>,
+) -> HelperCommandResult {
+    require_root()?;
+    let package_names = validate_uninstall_specs(packages)?;
+    let mut processed_packages = Vec::new();
+    for package_name in package_names {
+        make_package_default_root(&package_name, Some(progress_callback.clone()))?;
+        processed_packages.push(package_name);
+    }
+    Ok(HelperCommandSuccess {
+        message: "Package default updated".to_string(),
+        processed_packages,
+    })
+}
+
+pub(crate) fn make_package_default(package: &str) -> Result<HelperCommandSuccess, String> {
+    require_root()?;
+    let package_name = crate::cli::parse_uninstall_package_name(&OsString::from(package))?;
+    make_package_default_root(&package_name, None)?;
+    Ok(HelperCommandSuccess {
+        message: "Package default updated".to_string(),
+        processed_packages: vec![package_name],
+    })
+}
+
+fn make_package_default_root(
+    package_name: &str,
+    progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
+) -> Result<(), String> {
+    let install_root = package_install_root(&opt_pkg_root(), package_name)?;
+    ensure_package_installed(&opt_pkg_root(), package_name)?;
+    let receipt = load_or_resolve_package_receipt(package_name, &install_root)?;
+    let PackageReceiptSource::Formula { root_formula } = receipt.source else {
+        return Err(format!("package {package_name} is not a Homebrew formula"));
+    };
+    if root_formula.starts_with("python@") || package_name.starts_with("python@") {
+        return Err(
+            "Python uses side-by-side stubs and cannot be made default this way".to_string(),
+        );
+    }
+    if let Some(mut callback) = progress_callback
+        .as_ref()
+        .and_then(|callback| callback.lock().ok())
+    {
+        callback(ProgressEvent::Installing {
+            package: package_name.to_string(),
+        });
+    }
+    let config = load_config()?;
+    let graph = resolve_formula_specs(std::slice::from_ref(&root_formula), &config, true)?;
+    let plan = InstallPlan::for_i(package_name.to_string(), root_formula);
+    sync_stubs(&plan, &graph, &[])?;
+    if let Some(mut callback) = progress_callback
+        .as_ref()
+        .and_then(|callback| callback.lock().ok())
+    {
+        callback(ProgressEvent::Completed {
+            package: package_name.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_request_count(packages: &[PackageSpec]) -> Result<(), String> {
