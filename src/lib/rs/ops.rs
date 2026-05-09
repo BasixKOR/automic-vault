@@ -1221,6 +1221,29 @@ fn write_isotope_always_allow_store(
 mod tests {
     use super::*;
 
+    fn write_test_receipt(
+        package_name: &str,
+        version: &str,
+        source: PackageReceiptSource,
+    ) -> PathBuf {
+        let install_root = opt_pkg_root().join(package_name);
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_path(&install_root).unwrap();
+        }
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: package_name.to_string(),
+                version: version.to_string(),
+                source,
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        install_root
+    }
+
     #[test]
     fn homebrew_info_formula_reads_nested_on_request_flag() {
         let report: HomebrewInfoReport = serde_json::from_value(serde_json::json!({
@@ -1494,6 +1517,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn list_installed_packages_groups_versioned_formulae_and_keeps_other_sources() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let roots = [
+            write_test_receipt(
+                "coverage-python@3.13",
+                "3.13.9",
+                PackageReceiptSource::Formula {
+                    root_formula: "coverage-python@3.13".to_string(),
+                },
+            ),
+            write_test_receipt(
+                "coverage-python@3.14",
+                "3.14.1",
+                PackageReceiptSource::Formula {
+                    root_formula: "coverage-python@3.14".to_string(),
+                },
+            ),
+            write_test_receipt(
+                "coverage-cask",
+                "1.0.0",
+                PackageReceiptSource::Cask {
+                    cask_name: "coverage-cask".to_string(),
+                },
+            ),
+        ];
+
+        let packages = list_installed_packages().unwrap().packages;
+        let grouped = packages
+            .iter()
+            .find(|package| package.name == "coverage-python")
+            .unwrap();
+        assert_eq!(grouped.installed_versions, ["3.14.1", "3.13.9"]);
+        assert_eq!(
+            grouped.install_package_names,
+            ["coverage-python@3.14", "coverage-python@3.13"]
+        );
+
+        let cask = packages
+            .iter()
+            .find(|package| package.name == "coverage-cask")
+            .unwrap();
+        assert_eq!(
+            cask.source,
+            PackageReceiptSource::Cask {
+                cask_name: "coverage-cask".to_string()
+            }
+        );
+
+        for root in roots {
+            remove_path(&root).unwrap();
+        }
+    }
+
     fn installed_formula_summary(name: &str, version: &str) -> core::InstalledPackageSummary {
         core::InstalledPackageSummary {
             name: name.to_string(),
@@ -1536,6 +1613,12 @@ mod tests {
                 }],
             },
             HelperCommand::Uninstall {
+                packages: vec![PackageSpec {
+                    name: "rg".to_string(),
+                    version: None,
+                }],
+            },
+            HelperCommand::MakeDefault {
                 packages: vec![PackageSpec {
                     name: "rg".to_string(),
                     version: None,
@@ -1729,6 +1812,65 @@ mod tests {
             validate_isotope_always_allow_script("/bin/echo", None).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn package_info_and_outdated_wrappers_cover_installed_formula_receipts() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let install_root = write_test_receipt(
+            "ripgrep",
+            "0.0.1",
+            PackageReceiptSource::Formula {
+                root_formula: "ripgrep".to_string(),
+            },
+        );
+
+        let info = package_info("ripgrep").unwrap();
+        assert!(info.installed);
+        assert_eq!(info.package_name, "ripgrep");
+        assert_eq!(info.installed_version, Some("0.0.1".to_string()));
+
+        let outdated = list_outdated_packages().unwrap();
+        assert!(outdated.packages.iter().any(|package| {
+            package.name == "ripgrep"
+                && package.current_version == "0.0.1"
+                && package.latest_version != "0.0.1"
+        }));
+
+        remove_path(&install_root).unwrap();
+    }
+
+    #[test]
+    fn make_package_default_root_rejects_non_formula_and_python_receipts() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let cask_root = write_test_receipt(
+            "coverage-default-cask",
+            "1.0.0",
+            PackageReceiptSource::Cask {
+                cask_name: "coverage-default-cask".to_string(),
+            },
+        );
+        assert!(
+            make_package_default_root("coverage-default-cask", None)
+                .unwrap_err()
+                .contains("is not a Homebrew formula")
+        );
+
+        let python_root = write_test_receipt(
+            "python@3.14",
+            "3.14.1",
+            PackageReceiptSource::Formula {
+                root_formula: "python@3.14".to_string(),
+            },
+        );
+        assert!(
+            make_package_default_root("python@3.14", None)
+                .unwrap_err()
+                .contains("Python uses side-by-side stubs")
+        );
+
+        remove_path(&cask_root).unwrap();
+        remove_path(&python_root).unwrap();
     }
 
     #[test]
