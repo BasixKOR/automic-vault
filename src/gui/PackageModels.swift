@@ -458,7 +458,22 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var securityNotice: PackageSecurityNotice? {
+        if isHomebrewInstall, !securityStateNeedsReview {
+            return nil
+        }
         return SecurityCatalog.shared.notice(for: self)
+    }
+
+    private var isHomebrewInstall: Bool {
+        isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
+    }
+
+    private var securityStateNeedsReview: Bool {
+        guard let securityState else {
+            return false
+        }
+        return securityState.installIsInsecure
+            || securityState.error?.isEmpty == false
     }
 }
 
