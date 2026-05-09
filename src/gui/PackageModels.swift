@@ -548,14 +548,21 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var securityNotice: PackageSecurityNotice? {
-        if isHomebrewInstall, !securityStateNeedsReview {
+        let notice = SecurityCatalog.shared.notice(for: self)
+        if installed,
+           !isIsotopeInstall,
+           notice?.source == .isotope,
+           !securityStateNeedsReview {
             return nil
         }
-        return SecurityCatalog.shared.notice(for: self)
+        return notice
     }
 
-    private var isHomebrewInstall: Bool {
-        isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
+    private var isIsotopeInstall: Bool {
+        if case .isotope = source {
+            return true
+        }
+        return false
     }
 
     private var securityStateNeedsReview: Bool {
