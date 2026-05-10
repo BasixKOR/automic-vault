@@ -38,6 +38,7 @@ let package = Package(
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
+                "PostHogTelemetry.swift",
                 "AppMain.swift",
                 "AppDelegate.swift",
                 "AppUpdateCoordinator.swift",

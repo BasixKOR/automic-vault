@@ -120,6 +120,10 @@ else
   HELPER_REQUIREMENT="identifier \"$HELPER_BUNDLE_ID\" and anchor apple generic"
 fi
 
+if [[ "$CONFIGURATION" == "release" ]]; then
+  [[ -n "${POSTHOG_API_KEY:-}" ]] || cli_die "Set POSTHOG_API_KEY in the environment for release GUI builds"
+fi
+
 export APPLE_TEAM_ID
 export NUKE_HELPER_VERSION
 SHARED_SWIFT_SOURCES=(
@@ -460,6 +464,13 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+if [[ "$CONFIGURATION" == "release" ]]; then
+  /usr/bin/plutil \
+    -insert PostHogAPIKey \
+    -string "$POSTHOG_API_KEY" \
+    "$APP_DIR/Contents/Info.plist"
+fi
 
 cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

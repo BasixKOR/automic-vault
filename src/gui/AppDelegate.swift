@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let isotopeApprovalStore = IsotopeApprovalStore()
     private let gateApprovalStore = GateApprovalStore()
     private let helperBridge = NukeHelperBridge()
+    #if !DEBUG
+    private let postHogTelemetry = PostHogTelemetry.shared
+    #endif
     private var openWindowObserver: NSObjectProtocol?
     private var startAtLoginObserver: NSObjectProtocol?
     private var containmentLogObserver: NSObjectProtocol?
@@ -237,9 +240,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMainWindow() {
+        let wasVisible = window?.isVisible ?? false
         let window = makeOrRestoreMainWindow()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        #if !DEBUG
+        if wasVisible == false {
+            postHogTelemetry.captureMainWindowOpened()
+        }
+        #endif
     }
 
     private func installOpenWindowObserverIfNeeded() {
