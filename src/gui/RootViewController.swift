@@ -477,8 +477,17 @@ private final class MastheadButton: NSButton {
 }
 
 private final class MastheadTabButton: NSButton {
+    private enum Divider {
+        static let leadingLayerName = "MastheadTabLeadingDivider"
+        static let trailingLayerName = "MastheadTabTrailingDivider"
+    }
+
     var isActive = false {
         didSet { updateAppearance() }
+    }
+
+    var showsLeadingDivider = false {
+        didSet { updateDividerVisibility() }
     }
 
     private var trackingArea: NSTrackingArea?
@@ -496,6 +505,7 @@ private final class MastheadTabButton: NSButton {
         self.title = title
         self.target = target
         self.action = action
+        updateAppearance()
     }
 
     required init?(coder: NSCoder) {
@@ -529,13 +539,15 @@ private final class MastheadTabButton: NSButton {
 
     override func layout() {
         super.layout()
-        UIStyle.layoutControlChrome(in: layer)
+        layoutDividers()
     }
 
     private func configure() {
         wantsLayer = true
         layer = CALayer()
         isBordered = false
+        alignment = .center
+        cell?.alignment = .center
         focusRingType = .none
         setButtonType(.momentaryChange)
         font = UIStyle.monoFont(size: 10, weight: .medium)
@@ -545,48 +557,81 @@ private final class MastheadTabButton: NSButton {
 
     private func updateAppearance() {
         let contentColor: NSColor
-        let chrome: UIStyle.ControlChrome
+        let backgroundColor: NSColor
 
         if isActive {
             contentColor = UIStyle.text.withAlphaComponent(0.92)
-            chrome = UIStyle.ControlChrome(
-                topBackgroundColor: UIStyle.accent.withAlphaComponent(0.16),
-                bottomBackgroundColor: UIStyle.accent.withAlphaComponent(0.07),
-                borderColor: UIStyle.accent.withAlphaComponent(0.52),
-                contentColor: contentColor,
-                topInnerStrokeColor: NSColor.white.withAlphaComponent(0.12),
-                bottomInnerStrokeColor: NSColor.black.withAlphaComponent(0.16)
-            )
+            backgroundColor = UIStyle.accent.withAlphaComponent(0.16)
         } else if isHovering {
             contentColor = UIStyle.accent.withAlphaComponent(0.94)
-            chrome = UIStyle.ControlChrome(
-                topBackgroundColor: UIStyle.accent.withAlphaComponent(0.06),
-                bottomBackgroundColor: UIStyle.accent.withAlphaComponent(0.025),
-                borderColor: UIStyle.accent.withAlphaComponent(0.25),
-                contentColor: contentColor,
-                topInnerStrokeColor: UIStyle.accent.withAlphaComponent(0.10),
-                bottomInnerStrokeColor: nil
-            )
+            backgroundColor = UIStyle.accent.withAlphaComponent(0.06)
         } else {
             contentColor = UIStyle.text.withAlphaComponent(0.42)
-            chrome = UIStyle.ControlChrome(
-                topBackgroundColor: .clear,
-                bottomBackgroundColor: .clear,
-                borderColor: NSColor(calibratedWhite: 1.0, alpha: 0.09),
-                contentColor: contentColor,
-                topInnerStrokeColor: nil,
-                bottomInnerStrokeColor: nil
-            )
+            backgroundColor = .clear
         }
 
-        UIStyle.applyControlChrome(to: layer, chrome: chrome)
-        attributedTitle = UIStyle.attributedMonoText(
-            title,
-            size: 10,
-            color: contentColor,
-            weight: .medium,
-            tracking: 0.9
+        layer?.cornerRadius = 0
+        layer?.borderWidth = 0
+        layer?.backgroundColor = backgroundColor.cgColor
+        attributedTitle = centeredTitle(color: contentColor)
+        updateDividerVisibility()
+    }
+
+    private func centeredTitle(color: NSColor) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.lineBreakMode = .byTruncatingTail
+        return NSAttributedString(
+            string: title,
+            attributes: [
+                .font: UIStyle.monoFont(size: 10, weight: .medium),
+                .foregroundColor: color,
+                .kern: 0.9,
+                .paragraphStyle: paragraphStyle
+            ]
         )
+    }
+
+    private func updateDividerVisibility() {
+        let dividerColor = UIStyle.accent.withAlphaComponent(isActive ? 0.58 : 0.22).cgColor
+        let leadingDivider = ensureDividerLayer(named: Divider.leadingLayerName)
+        leadingDivider.backgroundColor = dividerColor
+        leadingDivider.isHidden = !showsLeadingDivider
+
+        let trailingDivider = ensureDividerLayer(named: Divider.trailingLayerName)
+        trailingDivider.backgroundColor = dividerColor
+        trailingDivider.isHidden = false
+        layoutDividers()
+    }
+
+    private func layoutDividers() {
+        guard let layer else { return }
+        let dividerWidth: CGFloat = 1
+        layer.sublayers?.forEach { sublayer in
+            switch sublayer.name {
+            case Divider.leadingLayerName:
+                sublayer.frame = CGRect(x: 0, y: 0, width: dividerWidth, height: layer.bounds.height)
+            case Divider.trailingLayerName:
+                sublayer.frame = CGRect(
+                    x: max(layer.bounds.width - dividerWidth, 0),
+                    y: 0,
+                    width: dividerWidth,
+                    height: layer.bounds.height
+                )
+            default:
+                break
+            }
+        }
+    }
+
+    private func ensureDividerLayer(named name: String) -> CALayer {
+        if let existing = layer?.sublayers?.first(where: { $0.name == name }) {
+            return existing
+        }
+        let dividerLayer = CALayer()
+        dividerLayer.name = name
+        layer?.addSublayer(dividerLayer)
+        return dividerLayer
     }
 }
 
@@ -770,7 +815,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     // are adjusted together.
     private static let leftMastheadTitleYOffset: CGFloat = 2
     private static let mastheadTabsLeadingGap: CGFloat = 16
-    private static let mastheadTabGap: CGFloat = 6
+    private static let mastheadTabGap: CGFloat = 0
     private static let mastheadTabHeight: CGFloat = 22
     private static let mastheadTabYOffset: CGFloat = -3
     private static let rightMastheadSearchYOffset: CGFloat = 2
@@ -1369,7 +1414,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             height: topLabelHeight
         )
         var nextTabX = tabRowX
-        for (button, width) in zip(rootView.mastheadTabButtons, mastheadTabWidths) {
+        for (index, pair) in zip(rootView.mastheadTabButtons, mastheadTabWidths).enumerated() {
+            let (button, width) = pair
+            button.showsLeadingDivider = index == 0
             button.frame = CGRect(
                 x: nextTabX,
                 y: headerY + Self.mastheadTabYOffset,
