@@ -1953,6 +1953,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 searchQuery: searchQuery,
                 secondarySectionTitle: packageSecondarySectionTitle,
                 secondarySectionCount: packageSecondarySectionCount,
+                pulseSectionCount: packagePulseSectionCount,
                 panelHeaderTitle: packagePanelHeaderTitle,
                 panelHeaderCount: packagePanelHeaderCount,
                 commandPaletteHelpText: commandPaletteHelpText,
@@ -2189,14 +2190,24 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
-            let count = recommendations.count + max(
+            return recommendations.isEmpty ? nil : recommendations.count
+        case .search:
+            return totalDiscoveryCount
+        case .command, .commandBrowser:
+            return nil
+        }
+    }
+
+    private var packagePulseSectionCount: Int? {
+        switch paletteMode {
+        case .installed:
+            guard areRecommendationsVisibleInInstalledList else { return nil }
+            let count = max(
                 installedPulseTotalCount,
                 installedPulseResults.count
             )
             return count == 0 ? nil : count
-        case .search:
-            return totalDiscoveryCount
-        case .command, .commandBrowser:
+        case .search, .command, .commandBrowser:
             return nil
         }
     }
@@ -2548,6 +2559,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             searchQuery: searchQuery,
             secondarySectionTitle: packageSecondarySectionTitle,
             secondarySectionCount: packageSecondarySectionCount,
+            pulseSectionCount: packagePulseSectionCount,
             panelHeaderTitle: packagePanelHeaderTitle,
             panelHeaderCount: packagePanelHeaderCount,
             commandPaletteHelpText: commandPaletteHelpText,
@@ -2590,6 +2602,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             searchQuery: searchQuery,
             secondarySectionTitle: packageSecondarySectionTitle,
             secondarySectionCount: packageSecondarySectionCount,
+            pulseSectionCount: packagePulseSectionCount,
             panelHeaderTitle: packagePanelHeaderTitle,
             panelHeaderCount: packagePanelHeaderCount,
             commandPaletteHelpText: commandPaletteHelpText,

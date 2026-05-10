@@ -1056,6 +1056,8 @@ final class PackageFieldView: NSView {
     private let hazardSmokeBracketLayer = CornerBracketLayer()
     private let sectionDividerLayer = CALayer()
     private let sectionLabelLayer = CATextLayer()
+    private let pulseSectionDividerLayer = CALayer()
+    private let pulseSectionLabelLayer = CATextLayer()
     private let emptyStateLayer = CATextLayer()
     private let commandPaletteQuoteLayer = CATextLayer()
     private var panelHeaderAnimator: LayerGlitchTextAnimator?
@@ -1074,6 +1076,7 @@ final class PackageFieldView: NSView {
     private var cursorInfluenceStrength: CGFloat = 0
     private var secondarySectionTitle = "DISCOVERY"
     private var secondarySectionCount: Int?
+    private var pulseSectionCount: Int?
     private var commandPaletteHelpText: NSAttributedString?
     private var commandPaletteQuoteText: NSAttributedString?
     private weak var hazardSmokeHostLayer: CALayer?
@@ -1109,14 +1112,22 @@ final class PackageFieldView: NSView {
         contentLayer.addSublayer(latentGridLayer)
         layer?.addSublayer(sectionDividerLayer)
         layer?.addSublayer(sectionLabelLayer)
+        layer?.addSublayer(pulseSectionDividerLayer)
+        layer?.addSublayer(pulseSectionLabelLayer)
         layer?.addSublayer(cornerBracketLayer)
         layer?.addSublayer(emptyStateLayer)
         layer?.addSublayer(commandPaletteQuoteLayer)
         contentLayer.actions = ["sublayers": NSNull()]
         sectionDividerLayer.backgroundColor = UIStyle.separator.cgColor
+        pulseSectionDividerLayer.backgroundColor = UIStyle.separator.cgColor
         sectionLabelLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
         sectionLabelLayer.alignmentMode = .left
         sectionLabelLayer.string = discoverySectionLabel()
+        pulseSectionLabelLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        pulseSectionLabelLayer.alignmentMode = .left
+        pulseSectionLabelLayer.string = sectionLabel(title: "PULSE", count: nil)
+        pulseSectionLabelLayer.isHidden = true
+        pulseSectionDividerLayer.isHidden = true
         emptyStateLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
         emptyStateLayer.alignmentMode = .left
         emptyStateLayer.isWrapped = true
@@ -1190,14 +1201,26 @@ final class PackageFieldView: NSView {
         )
         let layout = makeGridLayout(usableWidth: usableWidth)
         let dividerIndex = orderedPackages.firstIndex(where: { $0.item.isAvailable })
+        let pulseDividerIndex = pulseSectionStartIndex()
         let installedCount = dividerIndex ?? orderedPackages.count
-        let availableCount = max(orderedPackages.count - installedCount, 0)
+        let secondaryEndIndex = pulseDividerIndex ?? orderedPackages.count
+        let secondaryCount = dividerIndex.map {
+            max(secondaryEndIndex - $0, 0)
+        } ?? 0
+        let pulseCount = pulseDividerIndex.map {
+            max(orderedPackages.count - $0, 0)
+        } ?? 0
         let installedRows = installedCount > 0 ? (installedCount + layout.columns - 1) / layout.columns : 0
-        let availableRows = availableCount > 0 ? (availableCount + layout.columns - 1) / layout.columns : 0
+        let secondaryRows = secondaryCount > 0 ? (secondaryCount + layout.columns - 1) / layout.columns : 0
+        let pulseRows = pulseCount > 0 ? (pulseCount + layout.columns - 1) / layout.columns : 0
         let rowStride = Metrics.nodeHeight + Metrics.rowGap
         let dividerGap = shouldShowSecondarySectionLabel(
             dividerIndex: dividerIndex,
             installedCount: installedCount
+        ) ? Metrics.sectionGap : 0
+        let pulseDividerGap = shouldShowSeparatePulseSectionLabel(
+            dividerIndex: dividerIndex,
+            pulseDividerIndex: pulseDividerIndex
         ) ? Metrics.sectionGap : 0
         let helpHeight = commandPaletteHelpText == nil
             ? 0
@@ -1206,7 +1229,7 @@ final class PackageFieldView: NSView {
                 + Metrics.helpBottomGap
                 + Metrics.commandSectionLabelHeight
                 - Metrics.topInset
-        let rowsHeight = CGFloat(max(installedRows + availableRows, 0)) * rowStride
+        let rowsHeight = CGFloat(max(installedRows + secondaryRows + pulseRows, 0)) * rowStride
         let quoteHeight = commandPaletteQuoteText == nil
             ? 0
             : Metrics.quoteTopGap + Metrics.quoteHeight
@@ -1214,6 +1237,7 @@ final class PackageFieldView: NSView {
             + helpHeight
             + rowsHeight
             + dividerGap
+            + pulseDividerGap
             + quoteHeight
             + Metrics.bottomInset
         return max(totalHeight, 160)
@@ -1244,6 +1268,7 @@ final class PackageFieldView: NSView {
         searchQuery: String,
         secondarySectionTitle: String,
         secondarySectionCount: Int?,
+        pulseSectionCount: Int? = nil,
         panelHeaderTitle: String,
         panelHeaderCount: Int?,
         commandPaletteHelpText: NSAttributedString? = nil,
@@ -1279,6 +1304,7 @@ final class PackageFieldView: NSView {
         self.searchQuery = searchQuery
         self.secondarySectionTitle = secondarySectionTitle
         self.secondarySectionCount = secondarySectionCount
+        self.pulseSectionCount = pulseSectionCount
         self.panelHeaderTitle = panelHeaderTitle
         self.panelHeaderCount = panelHeaderCount
         self.commandPaletteHelpText = commandPaletteHelpText
@@ -1288,6 +1314,7 @@ final class PackageFieldView: NSView {
         commandPaletteQuoteLayer.string = commandPaletteQuoteText
         commandPaletteQuoteLayer.isHidden = commandPaletteQuoteText == nil
         sectionLabelLayer.string = discoverySectionLabel()
+        pulseSectionLabelLayer.string = sectionLabel(title: "PULSE", count: pulseSectionCount)
         updatePanelHeader(isLoading: panelHeaderLoading)
 
         for removedName in removedPackageNames {
@@ -1356,19 +1383,23 @@ final class PackageFieldView: NSView {
     }
 
     private func discoverySectionLabel() -> NSAttributedString {
+        sectionLabel(title: secondarySectionTitle, count: secondarySectionCount)
+    }
+
+    private func sectionLabel(title: String, count: Int?) -> NSAttributedString {
         let label = NSMutableAttributedString(
             attributedString: UIStyle.attributedMonoText(
-                secondarySectionTitle,
+                title,
                 size: 10,
                 color: UIStyle.dimText,
                 weight: .medium,
                 tracking: 0.8
             )
         )
-        if let secondarySectionCount {
+        if let count {
             label.append(
                 UIStyle.attributedMonoText(
-                    " \(secondarySectionCount)",
+                    " \(count)",
                     size: 10,
                     color: UIStyle.quietText,
                     weight: .medium,
@@ -1569,12 +1600,24 @@ final class PackageFieldView: NSView {
         let layout = makeGridLayout(usableWidth: usableWidth)
         let columns = layout.columns
         let dividerIndex = orderedPackages.firstIndex(where: { $0.item.isAvailable })
+        let pulseDividerIndex = pulseSectionStartIndex()
         let installedCount = dividerIndex ?? orderedPackages.count
+        let secondaryEndIndex = pulseDividerIndex ?? orderedPackages.count
+        let secondaryCount = dividerIndex.map {
+            max(secondaryEndIndex - $0, 0)
+        } ?? 0
         let dividerVisible = shouldShowSecondarySectionLabel(
             dividerIndex: dividerIndex,
             installedCount: installedCount
         )
+        let pulseDividerVisible = shouldShowSeparatePulseSectionLabel(
+            dividerIndex: dividerIndex,
+            pulseDividerIndex: pulseDividerIndex
+        )
         let installedRows = (installedCount + columns - 1) / columns
+        let secondaryRows = secondaryCount > 0
+            ? (secondaryCount + columns - 1) / columns
+            : 0
         let rowStride = Metrics.nodeHeight + Metrics.rowGap
         let nodeTopInset = commandPaletteHelpText == nil
             ? Metrics.topInset
@@ -1587,7 +1630,15 @@ final class PackageFieldView: NSView {
             guard let layer = nodeLayers[package.selectionID] else { continue }
             let visualIndex: Int
             let sectionOffset: CGFloat
-            if let dividerIndex, index >= dividerIndex, dividerVisible {
+            if let pulseDividerIndex,
+               index >= pulseDividerIndex,
+               pulseDividerVisible {
+                visualIndex = index - pulseDividerIndex
+                sectionOffset = Metrics.sectionGap
+                    + CGFloat(installedRows) * rowStride
+                    + CGFloat(secondaryRows) * rowStride
+                    + Metrics.sectionGap
+            } else if let dividerIndex, index >= dividerIndex, dividerVisible {
                 visualIndex = index - dividerIndex
                 sectionOffset = Metrics.sectionGap
                     + CGFloat(installedRows) * rowStride
@@ -1627,6 +1678,8 @@ final class PackageFieldView: NSView {
             sectionDividerLayer.isHidden = true
             sectionLabelLayer.isHidden = false
             sectionLabelLayer.string = UIStyle.sectionHeaderText("Available Commands")
+            pulseSectionDividerLayer.isHidden = true
+            pulseSectionLabelLayer.isHidden = true
             sectionLabelLayer.frame = CGRect(
                 x: Metrics.leadingInset,
                 y: nodeTopInset - Metrics.commandSectionLabelHeight - 6,
@@ -1636,6 +1689,13 @@ final class PackageFieldView: NSView {
         } else {
             sectionDividerLayer.isHidden = !dividerVisible
             sectionLabelLayer.isHidden = !dividerVisible
+            pulseSectionDividerLayer.isHidden = !pulseDividerVisible
+            pulseSectionLabelLayer.isHidden = !pulseDividerVisible
+            if dividerIndex == pulseDividerIndex, pulseSectionCount != nil {
+                sectionLabelLayer.string = sectionLabel(title: "PULSE", count: pulseSectionCount)
+            } else {
+                sectionLabelLayer.string = discoverySectionLabel()
+            }
         }
         if dividerVisible && commandPaletteHelpText == nil {
             let sectionBreakY = nodeTopInset
@@ -1650,6 +1710,25 @@ final class PackageFieldView: NSView {
             sectionLabelLayer.frame = CGRect(
                 x: Metrics.leadingInset,
                 y: sectionBreakY + Metrics.sectionLabelOffset,
+                width: 140,
+                height: 16
+            )
+        }
+        if pulseDividerVisible && commandPaletteHelpText == nil {
+            let pulseBreakY = nodeTopInset
+                + CGFloat(installedRows) * rowStride
+                + Metrics.sectionGap
+                + CGFloat(secondaryRows) * rowStride
+            let dividerY = pulseBreakY + Metrics.dividerOffset
+            pulseSectionDividerLayer.frame = CGRect(
+                x: Metrics.leadingInset,
+                y: dividerY,
+                width: max(bounds.width - Metrics.leadingInset - Metrics.trailingInset, 0),
+                height: 1
+            )
+            pulseSectionLabelLayer.frame = CGRect(
+                x: Metrics.leadingInset,
+                y: pulseBreakY + Metrics.sectionLabelOffset,
                 width: 140,
                 height: 16
             )
@@ -1700,20 +1779,41 @@ final class PackageFieldView: NSView {
         let layout = makeGridLayout(usableWidth: usableWidth)
         let columns = layout.columns
         let dividerIndex = orderedPackages.firstIndex(where: { $0.item.isAvailable })
+        let pulseDividerIndex = pulseSectionStartIndex()
         let installedCount = dividerIndex ?? orderedPackages.count
+        let secondaryEndIndex = pulseDividerIndex ?? orderedPackages.count
+        let secondaryCount = dividerIndex.map {
+            max(secondaryEndIndex - $0, 0)
+        } ?? 0
         let installedRows = installedCount > 0
             ? (installedCount + columns - 1) / columns
+            : 0
+        let secondaryRows = secondaryCount > 0
+            ? (secondaryCount + columns - 1) / columns
             : 0
         let dividerVisible = shouldShowSecondarySectionLabel(
             dividerIndex: dividerIndex,
             installedCount: installedCount
         )
+        let pulseDividerVisible = shouldShowSeparatePulseSectionLabel(
+            dividerIndex: dividerIndex,
+            pulseDividerIndex: pulseDividerIndex
+        )
         let availableRowOffset = dividerVisible ? installedRows + 1 : 0
+        let pulseRowOffset = installedRows
+            + (dividerVisible ? 1 : 0)
+            + secondaryRows
+            + (pulseDividerVisible ? 1 : 0)
 
         return orderedPackages.enumerated().map { index, package in
             let visualIndex: Int
             let rowOffset: Int
-            if let dividerIndex, index >= dividerIndex, dividerVisible {
+            if let pulseDividerIndex,
+               index >= pulseDividerIndex,
+               pulseDividerVisible {
+                visualIndex = index - pulseDividerIndex
+                rowOffset = pulseRowOffset
+            } else if let dividerIndex, index >= dividerIndex, dividerVisible {
                 visualIndex = index - dividerIndex
                 rowOffset = availableRowOffset
             } else {
@@ -1729,6 +1829,19 @@ final class PackageFieldView: NSView {
         }
     }
 
+    private func pulseSectionStartIndex() -> Int? {
+        guard pulseSectionCount != nil,
+              secondarySectionTitle == "RECOMMENDATIONS" else {
+            return nil
+        }
+        return orderedPackages.firstIndex { package in
+            if case .available = package.item {
+                return true
+            }
+            return false
+        }
+    }
+
     private func shouldShowSecondarySectionLabel(
         dividerIndex: Int?,
         installedCount: Int
@@ -1737,6 +1850,17 @@ final class PackageFieldView: NSView {
             return false
         }
         return installedCount > 0 || secondarySectionTitle == "RECOMMENDATIONS"
+    }
+
+    private func shouldShowSeparatePulseSectionLabel(
+        dividerIndex: Int?,
+        pulseDividerIndex: Int?
+    ) -> Bool {
+        guard let dividerIndex,
+              let pulseDividerIndex else {
+            return false
+        }
+        return pulseDividerIndex > dividerIndex
     }
 
     private func nearestPackageName(
