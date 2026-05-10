@@ -10512,6 +10512,235 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn sync_stubs_writes_root_executables_and_removes_stale_entries() {
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let package_name = "coverage-sync-stubs";
+        let bin_root = managed_bin_root();
+        let stale_stub = bin_root.join("coverage-stale");
+        let foo_stub = bin_root.join("coverage-sync-foo");
+        let bar_stub = bin_root.join("coverage-sync-bar");
+
+        for path in [&stale_stub, &foo_stub, &bar_stub] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: package_name.to_string(),
+            root_formula: package_name.to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join(package_name),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        fs::create_dir_all(plan.install_root.join("sbin")).unwrap();
+        write_executable(&plan.install_root.join("bin/coverage-sync-foo"));
+        write_executable(&plan.install_root.join("sbin/coverage-sync-bar"));
+        write_executable(&stale_stub);
+
+        sync_stubs(&plan, &[], &["coverage-stale".to_string()]).unwrap();
+
+        assert!(is_executable(&foo_stub));
+        assert!(is_executable(&bar_stub));
+        assert!(fs::symlink_metadata(&stale_stub).is_err());
+        assert_eq!(
+            load_stub_manifest(&plan.package_manifest_path())
+                .unwrap()
+                .stubs,
+            vec![
+                "coverage-sync-bar".to_string(),
+                "coverage-sync-foo".to_string(),
+            ]
+        );
+
+        for path in [&foo_stub, &bar_stub] {
+            remove_path(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn sync_stubs_respects_declared_root_executable_manifest() {
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let package_name = "coverage-sync-manifest";
+        let bin_root = managed_bin_root();
+        let kept_stub = bin_root.join("coverage-keep");
+        let skipped_stub = bin_root.join("coverage-skip");
+
+        for path in [&kept_stub, &skipped_stub] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: package_name.to_string(),
+            root_formula: package_name.to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join(package_name),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        write_executable(&plan.install_root.join("bin/coverage-keep"));
+        write_executable(&plan.install_root.join("bin/coverage-skip"));
+        write_root_executable_manifest(
+            &plan.root_executables_manifest_path(),
+            &["coverage-keep".to_string()],
+        )
+        .unwrap();
+
+        sync_stubs(&plan, &[], &[]).unwrap();
+
+        assert!(is_executable(&kept_stub));
+        assert!(fs::symlink_metadata(&skipped_stub).is_err());
+        assert_eq!(
+            load_stub_manifest(&plan.package_manifest_path())
+                .unwrap()
+                .stubs,
+            vec!["coverage-keep".to_string()]
+        );
+
+        remove_path(&kept_stub).unwrap();
+    }
+
+    #[test]
+    fn stub_helpers_cover_missing_and_invalid_manifest_cases() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("stub-manifest.json");
+        fs::write(&manifest_path, b"{not json").unwrap();
+        assert!(
+            load_stub_manifest(&manifest_path)
+                .unwrap_err()
+                .contains("failed to parse")
+        );
+
+        assert!(!stub_belongs_to_package(&temp.path().join("missing-stub"), "coverage").unwrap());
+
+        let empty_bin_dir = temp.path().join("missing-bin");
+        refresh_post_uninstall_stubs(temp.path(), &empty_bin_dir).unwrap();
+
+        let parent = temp.path().join("nested");
+        fs::create_dir_all(&parent).unwrap();
+        fs::write(parent.join("keep"), b"keep").unwrap();
+        remove_empty_parent_dirs(&parent.join("missing/child"), temp.path()).unwrap();
+        assert!(parent.exists());
+    }
+
+    #[test]
+    fn stub_helpers_cover_non_not_found_io_errors() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("root");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("bin"), b"not a directory").unwrap();
+        assert!(
+            collect_root_executables(&root)
+                .unwrap_err()
+                .contains("failed to read")
+        );
+
+        let manifest_dir = temp.path().join("manifest-dir");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        assert!(
+            load_stub_manifest(&manifest_dir)
+                .unwrap_err()
+                .contains("failed to read")
+        );
+        assert!(
+            stub_belongs_to_package(&manifest_dir, "coverage")
+                .unwrap_err()
+                .contains("failed to read")
+        );
+
+        let blocking_file = temp.path().join("blocking-file");
+        fs::write(&blocking_file, b"file").unwrap();
+        assert!(
+            remove_empty_parent_dirs(&blocking_file.join("child"), temp.path())
+                .unwrap_err()
+                .contains("failed to remove")
+        );
+
+        let opt_root = temp.path().join("opt");
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        remove_existing_package_install(&opt_root, "missing", &bin_dir).unwrap();
+    }
+
+    #[test]
+    fn sync_declared_stubs_filters_exclusions_and_removes_stale_entries() {
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let package_name = "coverage-declared-stubs";
+        let bin_root = managed_bin_root();
+        let kept_stub = bin_root.join("coverage-declared-keep");
+        let stale_stub = bin_root.join("coverage-declared-stale");
+        let excluded_stub = bin_root.join("coverage-declared-skip");
+
+        for path in [&kept_stub, &stale_stub, &excluded_stub] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: package_name.to_string(),
+            root_formula: package_name.to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join(package_name),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        write_executable(&plan.install_root.join("bin/coverage-declared-keep"));
+        write_executable(&plan.install_root.join("bin/coverage-declared-skip"));
+        write_executable(&stale_stub);
+
+        let excluded = HashSet::from(["coverage-declared-skip".to_string()]);
+        sync_declared_stubs(
+            &plan,
+            &[],
+            ["coverage-declared-keep", "coverage-declared-skip"],
+            &excluded,
+            &["coverage-declared-stale".to_string()],
+        )
+        .unwrap();
+
+        assert!(is_executable(&kept_stub));
+        assert!(fs::symlink_metadata(&stale_stub).is_err());
+        assert!(fs::symlink_metadata(&excluded_stub).is_err());
+        assert_eq!(
+            load_stub_manifest(&plan.package_manifest_path())
+                .unwrap()
+                .stubs,
+            vec!["coverage-declared-keep".to_string()]
+        );
+
+        remove_path(&kept_stub).unwrap();
+    }
+
+    #[test]
+    fn run_package_post_install_returns_early_without_supported_formulas() {
+        let temp = TempDir::new().unwrap();
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "coverage-no-post-install".to_string(),
+            root_formula: "coverage-no-post-install".to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join("coverage-no-post-install"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        run_package_post_install(&plan, &[], &bin_dir).unwrap();
+
+        assert!(fs::symlink_metadata(plan.package_manifest_path()).is_err());
+    }
+
+    #[test]
     fn run_package_post_install_creates_python_dispatchers_and_openssl_cert_path() {
         let temp = TempDir::new().unwrap();
         let opt_root = temp.path().join("opt");
