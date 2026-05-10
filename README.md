@@ -5,7 +5,7 @@
 Package manager, secrets manager, and execution control plane for autonomous
 agents.
 
-<a href="https://github.com/automic-vault/automic-vault/releases/latest"><img src="./assets/brandkit.png" alt="Download Automic Vault .DMG" width="250"></a>
+<a href="https://github.com/automic-vault/automic-vault/releases/latest"><img src="./assets/download-button.png" alt="Download Automic Vault .DMG" width="250"></a>
 
 
 > [!NOTE]
