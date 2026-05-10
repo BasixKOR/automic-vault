@@ -1894,14 +1894,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var installedPaletteSecondaryPackages: [PackagePresentation] {
-        if shouldShowPulseRecommendationCommand {
-            return recommendations + [pulseRecommendationCommand]
-        }
-        return recommendations
-    }
-
-    private var shouldShowPulseRecommendationCommand: Bool {
-        installedPackages.count < 3
+        recommendations + [pulseRecommendationCommand]
     }
 
     private var pulseRecommendationCommand: PackagePresentation {
