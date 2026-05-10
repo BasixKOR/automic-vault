@@ -1060,6 +1060,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var searchResultsQuery: String?
     private var commandResults: [PackagePresentation] = []
     private var commandResultsCommand: PaletteCommand?
+    private var installedPulseResults: [PackagePresentation] = []
     private var visiblePackages: [PackagePresentation] = []
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var activeMastheadTab: MastheadTab = .clis {
@@ -1070,6 +1071,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var searchRequestID = 0
     private var detailRequestID = 0
     private var homebrewMigrationRequestID = 0
+    private var installedPulseRequestID = 0
     private var loadingDetailItemID: String?
     private var activeOverlayOperationID = 0
     private var snapshotObserver: NSObjectProtocol?
@@ -1081,7 +1083,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var totalDiscoveryCount = 0
     private var searchNextOffset: Int?
     private var commandNextOffset: Int?
+    private var installedPulseNextOffset: Int? = 0
     private var commandTotalCount = 0
+    private var installedPulseTotalCount = 0
     private var isSearching = false {
         didSet {
             updateHeader()
@@ -1101,6 +1105,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
     private var isLoadingMoreCommandResults = false {
+        didSet {
+            updateHeader()
+            updatePaneLoadingIndicators()
+        }
+    }
+    private var isLoadingInstalledPulseResults = false {
         didSet {
             updateHeader()
             updatePaneLoadingIndicators()
@@ -1603,6 +1613,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         homebrewInstalledPackageNames = []
         installedRecords = []
         installedPackages = []
+        resetInstalledPulseResults()
         refreshRecommendations()
         applyStatusSnapshot(statusStore.loadSnapshot())
         reloadVisiblePackagesForSearch()
@@ -1660,7 +1671,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             guard self.isReloadingPackages == false else { return }
             self.areRecommendationsVisibleInInstalledList = true
             self.refreshRecommendations()
+            self.loadNextSearchPageIfNeeded()
         }
+    }
+
+    private func resetInstalledPulseResults() {
+        installedPulseRequestID += 1
+        installedPulseResults = []
+        installedPulseNextOffset = 0
+        installedPulseTotalCount = 0
+        isLoadingInstalledPulseResults = false
     }
 
     private func loadHomebrewMigrationRecommendation(requestID: Int) {
@@ -1894,16 +1914,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var installedPaletteSecondaryPackages: [PackagePresentation] {
-        recommendations + [pulseRecommendationCommand]
-    }
-
-    private var pulseRecommendationCommand: PackagePresentation {
-        let command = PaletteCommand.pulse.paletteItem
-        return PackagePresentation(
-            item: .command(command),
-            detail: nil,
-            freshness: freshness(for: command.selectionID)
-        )
+        recommendations + installedPulseResults
     }
 
     private func installedRecommendationPackageNames() -> Set<String> {
@@ -2178,7 +2189,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
-            let count = installedPaletteSecondaryPackages.count
+            let count = recommendations.count + max(
+                installedPulseTotalCount,
+                installedPulseResults.count
+            )
             return count == 0 ? nil : count
         case .search:
             return totalDiscoveryCount
@@ -2388,11 +2402,64 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
+    private func requestInstalledPulsePage(offset: Int, requestID: Int) {
+        let cachedDetailsByPackageName = detailsByPackageName
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let page = try self.bridge.fetchPulsePackages(
+                    offset: offset,
+                    limit: Self.searchPageSize
+                )
+                let results = page.packages.map { result in
+                    PackagePresentation(
+                        item: .available(result),
+                        detail: cachedDetailsByPackageName[result.name],
+                        freshness: self.freshness(for: result.name)
+                    )
+                }
+
+                DispatchQueue.main.async {
+                    guard self.installedPulseRequestID == requestID else { return }
+                    self.isLoadingInstalledPulseResults = false
+                    self.installedPulseTotalCount = page.totalCount
+                    if offset == 0 {
+                        self.installedPulseResults = results
+                    } else {
+                        self.installedPulseResults.append(contentsOf: results)
+                    }
+                    self.installedPulseNextOffset = page.nextOffset
+                    if self.paletteMode == .installed {
+                        self.applyVisiblePackages(self.installedPalettePackages)
+                        self.loadNextSearchPageIfNeeded()
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard self.installedPulseRequestID == requestID else { return }
+                    self.isLoadingInstalledPulseResults = false
+                    if offset == 0 {
+                        self.installedPulseResults = []
+                        self.installedPulseTotalCount = 0
+                        self.installedPulseNextOffset = nil
+                        if self.paletteMode == .installed {
+                            self.applyVisiblePackages(self.installedPalettePackages)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func loadNextSearchPageIfNeeded() {
         let nextOffset: Int
         switch paletteMode {
         case .installed:
-            return
+            guard areRecommendationsVisibleInInstalledList,
+                  isLoadingInstalledPulseResults == false else {
+                return
+            }
+            guard let offset = installedPulseNextOffset else { return }
+            nextOffset = offset
         case .search(let query):
             guard isSearching == false, isLoadingMoreSearchResults == false else {
                 return
@@ -2423,7 +2490,11 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
         switch paletteMode {
         case .installed:
-            return
+            isLoadingInstalledPulseResults = true
+            requestInstalledPulsePage(
+                offset: nextOffset,
+                requestID: installedPulseRequestID
+            )
         case .search(let query):
             isLoadingMoreSearchResults = true
             requestSearchPage(
@@ -2596,6 +2667,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 || isLoadingMoreSearchResults
                 || isLoadingCommandResults
                 || isLoadingMoreCommandResults
+                || (paletteMode == .installed && isLoadingInstalledPulseResults)
         )
         dossierView.setEyebrowLoading(isLoadingSelectedPackageDetail)
         externalSurfaceView.setEyebrowLoading(isLoadingSelectedPackageDetail)
