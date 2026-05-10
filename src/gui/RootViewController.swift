@@ -816,8 +816,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private static let leftMastheadTitleYOffset: CGFloat = 2
     private static let mastheadTabsLeadingGap: CGFloat = 16
     private static let mastheadTabGap: CGFloat = 0
-    private static let mastheadTabHeight: CGFloat = 22
-    private static let mastheadTabYOffset: CGFloat = -3
+    private static let mastheadTabMeasurementHeight: CGFloat = 22
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
@@ -1375,6 +1374,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let searchRowY = headerY + Self.rightMastheadSearchYOffset
         let statusRowY = headerY + Self.rightMastheadStatusYOffset
         let updateButtonY = headerY + Self.rightMastheadUpdateButtonYOffset
+        let mastheadTabY = separatorY
+        let mastheadTabHeight = max(bounds.height - separatorY, topLabelHeight)
         let usableWidth = max(bounds.width - gutter * 2, 0)
         let leftWidth = floor(usableWidth * 0.46)
         let middleWidth = floor(usableWidth * 0.22)
@@ -1419,9 +1420,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             button.showsLeadingDivider = index == 0
             button.frame = CGRect(
                 x: nextTabX,
-                y: headerY + Self.mastheadTabYOffset,
+                y: mastheadTabY,
                 width: width,
-                height: Self.mastheadTabHeight
+                height: mastheadTabHeight
             )
             nextTabX += width + Self.mastheadTabGap
         }
@@ -2675,7 +2676,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             tracking: 0.9
         )
         let bounds = attributed.boundingRect(
-            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: Self.mastheadTabHeight),
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: Self.mastheadTabMeasurementHeight),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
         return ceil(bounds.width) + 18
