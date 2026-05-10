@@ -496,6 +496,7 @@ struct EmbeddedFormulaMetadata {
     oldnames: Vec<String>,
     popularity: Option<EmbeddedPackagePopularity>,
     last_updated_at: Option<String>,
+    pulse_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -515,6 +516,7 @@ struct EmbeddedCaskMetadata {
     binaries: Vec<EmbeddedCaskBinary>,
     popularity: Option<EmbeddedPackagePopularity>,
     last_updated_at: Option<String>,
+    pulse_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -639,6 +641,7 @@ struct FormulaIndexEntry {
     oldnames: Vec<String>,
     popularity: Option<EmbeddedPackagePopularity>,
     last_updated_at: Option<String>,
+    pulse_kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -961,6 +964,7 @@ struct PackageSearchResult {
     dependencies: Vec<String>,
     rank: Option<u32>,
     last_updated_at: Option<String>,
+    pulse_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4330,6 +4334,7 @@ fn build_formula_index() -> Result<Vec<FormulaIndexEntry>, String> {
             oldnames: metadata.oldnames,
             popularity: metadata.popularity,
             last_updated_at: metadata.last_updated_at,
+            pulse_kind: metadata.pulse_kind,
         })
         .collect::<Vec<_>>();
     entries.sort_by(|left, right| left.name.cmp(&right.name));
@@ -6308,6 +6313,7 @@ mod tests {
             oldnames: oldnames.iter().map(|value| value.to_string()).collect(),
             popularity: None,
             last_updated_at: None,
+            pulse_kind: None,
         }
     }
 
@@ -8019,6 +8025,7 @@ or `npm:clawhub` for the aliased package"
                 dependencies: Vec::new(),
                 rank: None,
                 last_updated_at: None,
+                pulse_kind: None,
             },
             PackageSearchResult {
                 package_name: "openssl@3".to_string(),
@@ -8031,6 +8038,7 @@ or `npm:clawhub` for the aliased package"
                 dependencies: Vec::new(),
                 rank: None,
                 last_updated_at: None,
+                pulse_kind: None,
             },
             PackageSearchResult {
                 package_name: "pip:openssl".to_string(),
@@ -8043,6 +8051,7 @@ or `npm:clawhub` for the aliased package"
                 dependencies: Vec::new(),
                 rank: None,
                 last_updated_at: None,
+                pulse_kind: None,
             },
         ];
         suppress_unversioned_formulae_with_versioned_search_results(&mut results);
@@ -12667,6 +12676,10 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         );
         assert_eq!(first_page.next_offset, Some(1));
         assert_eq!(first_page.packages[0].name, recent[0].1);
+        assert!(matches!(
+            first_page.packages[0].pulse_kind.as_deref(),
+            Some("new" | "updated")
+        ));
 
         let second_page = ops::list_pulse_packages(1, 1).unwrap();
         assert_eq!(second_page.packages.len(), 1);

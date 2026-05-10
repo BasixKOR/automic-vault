@@ -631,6 +631,7 @@ final class PackageFieldView: NSView {
                     value: Metrics.descriptionBaselineOffset,
                     range: NSRange(location: 0, length: text.length)
                 )
+                appendPulseLabelIfNeeded(to: text)
                 return text
             case .command:
                 let text = NSMutableAttributedString(
@@ -661,6 +662,25 @@ final class PackageFieldView: NSView {
                 range: NSRange(location: 0, length: text.length)
             )
             return text
+        }
+
+        private func appendPulseLabelIfNeeded(to text: NSMutableAttributedString) {
+            guard let pulseLabel = package.pulseLabel else { return }
+            let suffix = NSMutableAttributedString(
+                attributedString: UIStyle.attributedMonoText(
+                    "  \(pulseLabel)",
+                    size: 9,
+                    color: UIStyle.accent.withAlphaComponent(0.68),
+                    weight: .medium,
+                    tracking: 0.6
+                )
+            )
+            suffix.addAttribute(
+                .baselineOffset,
+                value: Metrics.descriptionBaselineOffset,
+                range: NSRange(location: 0, length: suffix.length)
+            )
+            text.append(suffix)
         }
 
         func focusBounds() -> CGRect {

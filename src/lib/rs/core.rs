@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.6";
+pub(crate) const PROTOCOL_VERSION: &str = "1.7";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -98,6 +98,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    #[serde(rename = "pulseKind", skip_serializing_if = "Option::is_none")]
+    pub(crate) pulse_kind: Option<String>,
     #[serde(rename = "securityState")]
     pub(crate) security_state: Option<PackageSecurityState>,
 }

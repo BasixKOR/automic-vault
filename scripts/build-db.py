@@ -391,14 +391,14 @@ def _git_default_revision(repo_path):
     raise RuntimeError(f"Unable to resolve a fetched revision for {repo_path}")
 
 
-def _git_last_updated_at(repo, keyed_paths, scope):
+def _git_pulse_events(repo, keyed_paths, scope):
     if not keyed_paths:
         return {}
 
     repo_path = _ensure_git_repo(repo)
     revision = _git_default_revision(repo_path)
     pending = set(keyed_paths.keys())
-    updates = {}
+    events = {}
     current_date = None
     command = [
         "git",
@@ -407,7 +407,7 @@ def _git_last_updated_at(repo, keyed_paths, scope):
         "log",
         revision,
         "--format=__DATE__%cI",
-        "--name-only",
+        "--name-status",
         "--",
         scope,
     ]
@@ -425,13 +425,23 @@ def _git_last_updated_at(repo, keyed_paths, scope):
             if line.startswith("__DATE__"):
                 current_date = line[len("__DATE__") :]
                 continue
-            if current_date is None or line not in pending:
+            if current_date is None:
                 continue
-            updates[keyed_paths[line]] = current_date
-            pending.remove(line)
-            if len(updates) % 100 == 0:
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            status = parts[0]
+            path = parts[-1]
+            if path not in pending:
+                continue
+            events[keyed_paths[path]] = {
+                "last_updated_at": current_date,
+                "pulse_kind": "new" if status.startswith("A") else "updated",
+            }
+            pending.remove(path)
+            if len(events) % 100 == 0:
                 print(
-                    f"Resolved {len(updates)}/{len(keyed_paths)} git update timestamps for {repo}",
+                    f"Resolved {len(events)}/{len(keyed_paths)} git pulse events for {repo}",
                     file=sys.stderr,
                 )
             if not pending:
@@ -442,7 +452,7 @@ def _git_last_updated_at(repo, keyed_paths, scope):
         if process.returncode not in (0, -15):
             message = stderr.strip() or stdout.strip() or f"git log failed for {repo}"
             raise RuntimeError(message)
-    return updates
+    return events
 
 
 def _parse_binary_artifact(artifact):
@@ -518,7 +528,7 @@ def _cask_metadata(cask):
     }
 
 
-def _collect_formula_entries(formulae, popularity_by_formula, manifests, updated_at_by_formula):
+def _collect_formula_entries(formulae, popularity_by_formula, manifests, pulse_events_by_formula):
     entries = {}
     formulas = {}
     missing_manifests = 0
@@ -534,12 +544,13 @@ def _collect_formula_entries(formulae, popularity_by_formula, manifests, updated
             formulas[name] = metadata
 
         popularity = popularity_by_formula.get(name)
-        updated_at = updated_at_by_formula.get(name)
+        pulse_event = pulse_events_by_formula.get(name)
         if name in formulas:
             if popularity is not None:
                 formulas[name]["popularity"] = popularity
-            if updated_at is not None:
-                formulas[name]["last_updated_at"] = updated_at
+            if pulse_event is not None:
+                formulas[name]["last_updated_at"] = pulse_event["last_updated_at"]
+                formulas[name]["pulse_kind"] = pulse_event["pulse_kind"]
 
         if "@" in name:
             continue
@@ -582,7 +593,7 @@ def _collect_formula_entries(formulae, popularity_by_formula, manifests, updated
     return entries, formulas, missing_manifests
 
 
-def _collect_cask_entries(casks, popularity_by_cask, updated_at_by_cask):
+def _collect_cask_entries(casks, popularity_by_cask, pulse_events_by_cask):
     entries = {}
     metadata = {}
     for cask in casks:
@@ -599,9 +610,10 @@ def _collect_cask_entries(casks, popularity_by_cask, updated_at_by_cask):
         popularity = popularity_by_cask.get(token)
         if supported["binaries"] and popularity is not None:
             supported["popularity"] = popularity
-        updated_at = updated_at_by_cask.get(token)
-        if supported["binaries"] and updated_at is not None:
-            supported["last_updated_at"] = updated_at
+        pulse_event = pulse_events_by_cask.get(token)
+        if supported["binaries"] and pulse_event is not None:
+            supported["last_updated_at"] = pulse_event["last_updated_at"]
+            supported["pulse_kind"] = pulse_event["pulse_kind"]
         metadata[token] = supported
         for binary in supported["binaries"]:
             executable = binary.get("target") or os.path.basename(binary["source"])
@@ -1070,14 +1082,6 @@ def main():
                     manifests[key] = payload
                 elif kind == "cask":
                     casks[key] = payload
-                elif kind == "formula_commit":
-                    updated_at = _commit_updated_at(payload)
-                    if updated_at is not None:
-                        formula_updates[key] = updated_at
-                elif kind == "cask_commit":
-                    updated_at = _commit_updated_at(payload)
-                    if updated_at is not None:
-                        cask_updates[key] = updated_at
             completed += 1
             if completed % 20 == 0:
                 print(
@@ -1088,12 +1092,12 @@ def main():
                     file=sys.stderr,
                 )
 
-    formula_updates = _git_last_updated_at(
+    formula_pulse_events = _git_pulse_events(
         HOMEWBREW_CORE_REPO,
         formula_paths,
         "Formula",
     )
-    cask_updates = _git_last_updated_at(
+    cask_pulse_events = _git_pulse_events(
         HOMEWBREW_CASK_REPO,
         cask_paths,
         "Casks",
@@ -1103,12 +1107,12 @@ def main():
         formulae,
         popularity_by_formula,
         manifests,
-        formula_updates,
+        formula_pulse_events,
     )
     cask_entries, cask_metadata = _collect_cask_entries(
         casks.values(),
         popularity_by_cask,
-        cask_updates,
+        cask_pulse_events,
     )
     npm_metadata = _collect_npm_metadata()
     ordered_entries = _sorted_entries(_merge_entries(formula_entries, cask_entries))

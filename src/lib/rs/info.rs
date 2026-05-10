@@ -405,6 +405,7 @@ pub(crate) fn resolve_package_search_results(
                     .as_ref()
                     .map(|popularity| popularity.rank),
                 last_updated_at: metadata.last_updated_at.clone(),
+                pulse_kind: None,
             }),
     );
     results.extend(
@@ -441,6 +442,7 @@ pub(crate) fn resolve_available_package_results(
             dependencies: Vec::new(),
             rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
             last_updated_at: entry.last_updated_at.clone(),
+            pulse_kind: None,
         })
         .collect::<Vec<_>>();
     let db = crate::cli::load_db()?;
@@ -459,6 +461,7 @@ pub(crate) fn resolve_available_package_results(
                 dependencies: metadata.dependencies,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: metadata.last_updated_at,
+                pulse_kind: None,
             }),
     );
     results.extend(
@@ -525,6 +528,7 @@ fn npm_search_result(package_name: &str, metadata: &EmbeddedNpmMetadata) -> Pack
             .as_ref()
             .map(|popularity| popularity.rank),
         last_updated_at: metadata.last_updated_at.clone(),
+        pulse_kind: None,
     }
 }
 
@@ -549,6 +553,7 @@ fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
             .unwrap_or_default(),
         rank: None,
         last_updated_at: None,
+        pulse_kind: None,
     }
 }
 
@@ -572,6 +577,12 @@ pub(crate) fn resolve_pulse_package_results(
                     dependencies: Vec::new(),
                     rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
                     last_updated_at: Some(last_updated_at.clone()),
+                    pulse_kind: Some(
+                        entry
+                            .pulse_kind
+                            .clone()
+                            .unwrap_or_else(|| "updated".to_string()),
+                    ),
                 })
         })
         .collect::<Vec<_>>();
@@ -590,6 +601,7 @@ pub(crate) fn resolve_pulse_package_results(
                 dependencies: metadata.dependencies,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: Some(last_updated_at),
+                pulse_kind: Some(metadata.pulse_kind.unwrap_or_else(|| "updated".to_string())),
             })
     }));
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
@@ -643,6 +655,7 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
         dependencies: Vec::new(),
         rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
         last_updated_at: entry.last_updated_at.clone(),
+        pulse_kind: None,
     }
 }
 

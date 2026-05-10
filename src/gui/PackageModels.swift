@@ -810,6 +810,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let homepage: String?
     let dependencies: [String]
     let securityState: PackageSecurityState?
+    let pulseKind: String?
 
     enum CodingKeys: String, CodingKey {
         case name = "packageName"
@@ -822,6 +823,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case homepage
         case dependencies
         case securityState
+        case pulseKind
     }
 
     init(from decoder: Decoder) throws {
@@ -844,6 +846,7 @@ struct PackageSearchResult: Decodable, Equatable {
             PackageSecurityState.self,
             forKey: .securityState
         )
+        pulseKind = try container.decodeIfPresent(String.self, forKey: .pulseKind)
     }
 
     var fallbackDetail: PackageDetail {
@@ -1532,6 +1535,22 @@ struct PackagePresentation: Equatable {
             return versionText
         case .command(let command):
             return command.description
+        }
+    }
+
+    var pulseLabel: String? {
+        guard case .available(let result) = item,
+              let pulseKind = result.pulseKind?.trimmingCharacters(in: .whitespacesAndNewlines),
+              pulseKind.isEmpty == false else {
+            return nil
+        }
+        switch pulseKind.lowercased() {
+        case "new":
+            return "new"
+        case "updated":
+            return "updated"
+        default:
+            return nil
         }
     }
 
