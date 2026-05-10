@@ -476,6 +476,120 @@ private final class MastheadButton: NSButton {
     }
 }
 
+private final class MastheadTabButton: NSButton {
+    var isActive = false {
+        didSet { updateAppearance() }
+    }
+
+    private var trackingArea: NSTrackingArea?
+    private var isHovering = false {
+        didSet { updateAppearance() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    convenience init(title: String, target: AnyObject?, action: Selector?) {
+        self.init(frame: .zero)
+        self.title = title
+        self.target = target
+        self.action = action
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        self.trackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        super.mouseEntered(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        super.mouseExited(with: event)
+    }
+
+    override func layout() {
+        super.layout()
+        UIStyle.layoutControlChrome(in: layer)
+    }
+
+    private func configure() {
+        wantsLayer = true
+        layer = CALayer()
+        isBordered = false
+        focusRingType = .none
+        setButtonType(.momentaryChange)
+        font = UIStyle.monoFont(size: 10, weight: .medium)
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let contentColor: NSColor
+        let chrome: UIStyle.ControlChrome
+
+        if isActive {
+            contentColor = UIStyle.text.withAlphaComponent(0.92)
+            chrome = UIStyle.ControlChrome(
+                topBackgroundColor: UIStyle.accent.withAlphaComponent(0.16),
+                bottomBackgroundColor: UIStyle.accent.withAlphaComponent(0.07),
+                borderColor: UIStyle.accent.withAlphaComponent(0.52),
+                contentColor: contentColor,
+                topInnerStrokeColor: NSColor.white.withAlphaComponent(0.12),
+                bottomInnerStrokeColor: NSColor.black.withAlphaComponent(0.16)
+            )
+        } else if isHovering {
+            contentColor = UIStyle.accent.withAlphaComponent(0.94)
+            chrome = UIStyle.ControlChrome(
+                topBackgroundColor: UIStyle.accent.withAlphaComponent(0.06),
+                bottomBackgroundColor: UIStyle.accent.withAlphaComponent(0.025),
+                borderColor: UIStyle.accent.withAlphaComponent(0.25),
+                contentColor: contentColor,
+                topInnerStrokeColor: UIStyle.accent.withAlphaComponent(0.10),
+                bottomInnerStrokeColor: nil
+            )
+        } else {
+            contentColor = UIStyle.text.withAlphaComponent(0.42)
+            chrome = UIStyle.ControlChrome(
+                topBackgroundColor: .clear,
+                bottomBackgroundColor: .clear,
+                borderColor: NSColor(calibratedWhite: 1.0, alpha: 0.09),
+                contentColor: contentColor,
+                topInnerStrokeColor: nil,
+                bottomInnerStrokeColor: nil
+            )
+        }
+
+        UIStyle.applyControlChrome(to: layer, chrome: chrome)
+        attributedTitle = UIStyle.attributedMonoText(
+            title,
+            size: 10,
+            color: contentColor,
+            weight: .medium,
+            tracking: 0.9
+        )
+    }
+}
+
 private final class CommandPaletteTextField: NSTextField {
     var onActivate: (() -> Void)?
 
@@ -655,9 +769,30 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     // title cluster can stay fixed while the status/search/button baselines
     // are adjusted together.
     private static let leftMastheadTitleYOffset: CGFloat = 2
+    private static let mastheadTabsLeadingGap: CGFloat = 16
+    private static let mastheadTabGap: CGFloat = 6
+    private static let mastheadTabHeight: CGFloat = 22
+    private static let mastheadTabYOffset: CGFloat = -3
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
+
+    private enum MastheadTab: Int, CaseIterable {
+        case clis
+        case apps
+        case skills
+
+        var title: String {
+            switch self {
+            case .clis:
+                return "CLIS"
+            case .apps:
+                return "APPS"
+            case .skills:
+                return "SKILLS"
+            }
+        }
+    }
 
     private enum PaletteCommand: String, CaseIterable, Equatable {
         case all
@@ -748,6 +883,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private final class RootView: NSView {
         let headerLayer = CATextLayer()
+        let clisTabButton = MastheadTabButton(title: MastheadTab.clis.title, target: nil, action: nil)
+        let appsTabButton = MastheadTabButton(title: MastheadTab.apps.title, target: nil, action: nil)
+        let skillsTabButton = MastheadTabButton(title: MastheadTab.skills.title, target: nil, action: nil)
         let commandPalette = CommandPaletteView(frame: .zero)
         let separatorLayer = CALayer()
         let statusLabel = NSTextField(labelWithString: "")
@@ -770,7 +908,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             separatorLayer.backgroundColor = UIStyle.separator.cgColor
             layer?.addSublayer(separatorLayer)
 
+            clisTabButton.tag = MastheadTab.clis.rawValue
+            appsTabButton.tag = MastheadTab.apps.rawValue
+            skillsTabButton.tag = MastheadTab.skills.rawValue
+
             configureLabel(statusLabel)
+            mastheadTabButtons.forEach(addSubview)
             addSubview(commandPalette)
             addSubview(statusLabel)
 
@@ -834,6 +977,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             label.usesSingleLineMode = true
             label.allowsDefaultTighteningForTruncation = true
         }
+
+        var mastheadTabButtons: [MastheadTabButton] {
+            [clisTabButton, appsTabButton, skillsTabButton]
+        }
+
+        func setActiveMastheadTab(_ activeTab: MastheadTab) {
+            mastheadTabButtons.forEach { button in
+                button.isActive = button.tag == activeTab.rawValue
+            }
+        }
     }
 
     private let bridge = NucleusBridge()
@@ -865,6 +1018,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var commandResultsCommand: PaletteCommand?
     private var visiblePackages: [PackagePresentation] = []
     private var detailsByPackageName: [String: PackageDetail] = [:]
+    private var activeMastheadTab: MastheadTab = .clis {
+        didSet { updateMastheadTabs() }
+    }
     private var selectedItemID: String?
     private var reloadRequestID = 0
     private var searchRequestID = 0
@@ -968,6 +1124,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             self?.setCommandPaletteFocused(true)
         }
         rootView.commandPalette.field.delegate = self
+        rootView.mastheadTabButtons.forEach { button in
+            button.target = self
+            button.action = #selector(handleMastheadTabClick)
+        }
         rootView.updateButton.target = self
         rootView.updateButton.action = #selector(beginUpdateFlow)
         appUpdateCoordinator.onStateChange = { [weak self] in
@@ -1012,6 +1172,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             )
         }
         updatePaneLoadingIndicators()
+        updateMastheadTabs()
         updateHeader()
         refreshRecommendations()
         installSnapshotObserverIfNeeded()
@@ -1116,6 +1277,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let searchPreferredWidth: CGFloat = 340
         let searchMinWidth: CGFloat = 156
         let leftClusterX = titlebarLeadingInset
+        let mastheadTabWidths = rootView.mastheadTabButtons.map { mastheadTabWidth(for: $0.title) }
+        let mastheadTabsWidth = mastheadTabWidths.reduce(0, +)
+            + Self.mastheadTabGap * CGFloat(max(mastheadTabWidths.count - 1, 0))
         let rightClusterWidth = max(
             searchMinWidth,
             searchPreferredWidth
@@ -1132,8 +1296,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             headerPreferredWidth,
             attributedTextWidth(mastheadAttributedText())
         )
-        let resolvedHeaderWidth = min(measuredHeaderWidth, leftClusterAvailableWidth)
-        let leftClusterMaxX = leftClusterX + resolvedHeaderWidth
+        let resolvedHeaderWidth = min(
+            measuredHeaderWidth,
+            max(leftClusterAvailableWidth - Self.mastheadTabsLeadingGap - mastheadTabsWidth, 0)
+        )
+        let tabRowX = leftClusterX + resolvedHeaderWidth + Self.mastheadTabsLeadingGap
+        let leftClusterMaxX = tabRowX + mastheadTabsWidth
         let statusText = activityStatusText()
         let statusMeasuredWidth = statusText.map(statusTextWidth) ?? 0
         let rightControlsWidth = updateButtonWidth
@@ -1200,6 +1368,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             width: resolvedHeaderWidth,
             height: topLabelHeight
         )
+        var nextTabX = tabRowX
+        for (button, width) in zip(rootView.mastheadTabButtons, mastheadTabWidths) {
+            button.frame = CGRect(
+                x: nextTabX,
+                y: headerY + Self.mastheadTabYOffset,
+                width: width,
+                height: Self.mastheadTabHeight
+            )
+            nextTabX += width + Self.mastheadTabGap
+        }
         rootView.commandPalette.frame = CGRect(
             x: searchX,
             y: searchRowY - 5,
@@ -2342,6 +2520,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         packageScrollView.reflectScrolledClipView(packageScrollView.contentView)
     }
 
+    private func updateMastheadTabs() {
+        guard let rootView = view as? RootView else { return }
+        rootView.setActiveMastheadTab(activeMastheadTab)
+    }
+
+    @objc private func handleMastheadTabClick(_ sender: NSButton) {
+        guard let tab = MastheadTab(rawValue: sender.tag) else { return }
+        activeMastheadTab = tab
+    }
+
     private func updateHeader() {
         guard let rootView = view as? RootView else { return }
         rootView.headerLayer.string = mastheadAttributedText()
@@ -2429,6 +2617,21 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
         return ceil(bounds.width)
+    }
+
+    private func mastheadTabWidth(for title: String) -> CGFloat {
+        let attributed = UIStyle.attributedMonoText(
+            title,
+            size: 10,
+            color: UIStyle.text,
+            weight: .medium,
+            tracking: 0.9
+        )
+        let bounds = attributed.boundingRect(
+            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: Self.mastheadTabHeight),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return ceil(bounds.width) + 18
     }
 
     private static func abbreviatedCodeSignatureHash() -> String? {
