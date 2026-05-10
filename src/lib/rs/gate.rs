@@ -77,6 +77,18 @@ where
 }
 
 fn request_gate_approval(options: &GateOptions) -> Result<(), String> {
+    request_gate_approval_with(options, ping_gate_approval_app, wait_for_gate_decision)
+}
+
+fn request_gate_approval_with<P, W>(
+    options: &GateOptions,
+    ping_gate_approval_app: P,
+    wait_for_gate_decision: W,
+) -> Result<(), String>
+where
+    P: FnOnce() -> Result<(), String>,
+    W: FnOnce(&str) -> Result<(), String>,
+{
     let request_id = format!(
         "{}-{}",
         process::id(),
@@ -269,6 +281,7 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+    use std::sync::{Arc, Mutex};
 
     struct EnvGuard {
         key: &'static str,
@@ -534,5 +547,58 @@ mod tests {
                 .unwrap_err()
                 .contains("failed to decode gate approval decision")
         );
+    }
+
+    #[test]
+    fn gate_request_flow_writes_snapshot_and_removes_pending_on_ping_failure() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+
+        let err = request_gate_approval_with(
+            &GateOptions {
+                message: "approve".to_string(),
+            },
+            || Err("ping failed".to_string()),
+            |_| Ok(()),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "ping failed");
+        assert!(!pending_approval_path().unwrap().exists());
+    }
+
+    #[test]
+    fn gate_request_flow_persists_snapshot_and_waits_with_generated_id() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set("HOME", temp.path().to_str().unwrap());
+        let seen_request_id = Arc::new(Mutex::new(None::<String>));
+        let seen_request_id_for_wait = Arc::clone(&seen_request_id);
+
+        request_gate_approval_with(
+            &GateOptions {
+                message: "approve access".to_string(),
+            },
+            || Ok(()),
+            move |request_id| {
+                let pending = pending_approval_path().unwrap();
+                let snapshot: GateApprovalRequestSnapshot =
+                    serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+                assert_eq!(snapshot.message, "approve access");
+                assert_eq!(
+                    snapshot.cwd,
+                    env::current_dir().unwrap().display().to_string()
+                );
+                assert_eq!(snapshot.id, request_id);
+                *seen_request_id_for_wait.lock().unwrap() = Some(request_id.to_string());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        let request_id = seen_request_id.lock().unwrap().clone().unwrap();
+        assert!(request_id.starts_with(&format!("{}-", process::id())));
+        assert!(pending_approval_path().unwrap().exists());
     }
 }
