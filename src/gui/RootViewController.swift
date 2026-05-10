@@ -1846,7 +1846,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         PackagePresentation(
             item: package.item,
             detail: detailsByPackageName[package.selectionID],
-            freshness: package.freshness
+            freshness: package.freshness,
+            presentationID: package.presentationID
         )
     }
 
@@ -2425,7 +2426,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     PackagePresentation(
                         item: .available(result),
                         detail: cachedDetailsByPackageName[result.name],
-                        freshness: self.freshness(for: result.name)
+                        freshness: self.freshness(for: result.name),
+                        presentationID: "pulse:\(result.name)"
                     )
                 }
 

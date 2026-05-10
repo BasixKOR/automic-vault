@@ -1377,6 +1377,19 @@ struct PackagePresentation: Equatable {
     let item: PackageListItem
     let detail: PackageDetail?
     let freshness: CGFloat
+    let presentationID: String?
+
+    init(
+        item: PackageListItem,
+        detail: PackageDetail?,
+        freshness: CGFloat,
+        presentationID: String? = nil
+    ) {
+        self.item = item
+        self.detail = detail
+        self.freshness = freshness
+        self.presentationID = presentationID
+    }
 
     var isInstalledIsotope: Bool {
         switch item {
@@ -1449,6 +1462,9 @@ struct PackagePresentation: Equatable {
     }
 
     var selectionID: String {
+        if let presentationID {
+            return presentationID
+        }
         switch item {
         case .installed(let record):
             return record.name
