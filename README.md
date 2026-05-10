@@ -5,7 +5,7 @@
 Package manager, secrets manager, and execution control plane for autonomous
 agents.
 
-[![Download .DMG](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download .DMG")](https://github.com/automic-vault/automic-vault/releases/latest)
+[![Download Automic Vault .DMG](./assets/brandkit.png "Download .DMG")](https://github.com/automic-vault/automic-vault/releases/latest)
 
 
 > [!NOTE]
