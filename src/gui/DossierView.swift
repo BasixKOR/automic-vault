@@ -1025,6 +1025,7 @@ final class DossierView: NSView {
                 : nil
             applyInstallDestinationStyle()
             updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
+                || actionDetail.isHomebrewInstall
             updateButton.isEnabled = !isActionInFlight
             primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
             if detail.homebrewMigration != nil {
@@ -2016,7 +2017,12 @@ final class DossierView: NSView {
     }
 
     @objc private func handleUpdateAction() {
-        guard let currentDetail, isActionInFlight == false, currentDetail.isOutdated else { return }
+        guard let currentDetail,
+              isActionInFlight == false,
+              currentDetail.isOutdated,
+              currentDetail.isHomebrewInstall == false else {
+            return
+        }
         delegate?.dossierView(self, didRequestUpdateActionFor: selectedActionDetail(from: currentDetail))
     }
 

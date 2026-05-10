@@ -3,6 +3,7 @@ import UserNotifications
 
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
     private let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+    private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
     private let hazardEffect = MenuBarHazardEffect()
     private lazy var vaultDaemon = VaultDaemon(
@@ -156,7 +157,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         statusItem.menu = menu
         updateStartAtLoginState()
         applyButtonAppearance(
-            outdatedCount: snapshot.outdatedPackages.count,
+            outdatedCount: snapshot.flaggedOutdatedPackageCount,
             hazardousCount: snapshot.hazardousPackageCount
         )
     }
@@ -239,7 +240,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             guard let self else { return }
             self.appUpdateSnapshot = self.statusStore.loadAppUpdateSnapshot()
             self.applyButtonAppearance(
-                outdatedCount: self.snapshot.outdatedPackages.count,
+                outdatedCount: self.snapshot.flaggedOutdatedPackageCount,
                 hazardousCount: self.snapshot.hazardousPackageCount
             )
         }
@@ -294,14 +295,29 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 let installedPackages = try self.bridge.fetchPackages()
                 let outdatedPackages = try self.bridge.fetchOutdatedPackages()
                     .sorted(by: { $0.name < $1.name })
+                let homebrewOutdatedPackages: [OutdatedPackageRecord]
+                let lastError: NucleusStatusSnapshot.ErrorSnapshot?
+                do {
+                    homebrewOutdatedPackages = try self.homebrewUpdateChecker
+                        .refreshOutdatedPackagesSync()
+                    lastError = nil
+                } catch {
+                    homebrewOutdatedPackages = previous.homebrewOutdatedPackages
+                    lastError = .init(
+                        message: "Homebrew refresh failed during \(reason): " +
+                            error.localizedDescription,
+                        refreshedAt: Date()
+                    )
+                }
                 nextSnapshot = NucleusStatusSnapshot(
                     installedCount: installedPackages.count,
                     hazardousPackageCount: installedPackages.filter {
                         $0.fallbackDetail.securityNotice != nil
                     }.count,
                     outdatedPackages: outdatedPackages,
+                    homebrewOutdatedPackages: homebrewOutdatedPackages,
                     refreshedAt: Date(),
-                    lastError: nil,
+                    lastError: lastError,
                     remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
                 )
             } catch {
@@ -309,6 +325,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     installedCount: previous.installedCount,
                     hazardousPackageCount: previous.hazardousPackageCount,
                     outdatedPackages: previous.outdatedPackages,
+                    homebrewOutdatedPackages: previous.homebrewOutdatedPackages,
                     refreshedAt: previous.refreshedAt,
                     lastError: .init(
                         message: "Refresh failed during \(reason): \(error.localizedDescription)",
@@ -339,23 +356,30 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         rebuildMenuItems()
         updateStartAtLoginState()
         applyButtonAppearance(
-            outdatedCount: snapshot.outdatedPackages.count,
+            outdatedCount: snapshot.flaggedOutdatedPackageCount,
             hazardousCount: snapshot.hazardousPackageCount
         )
     }
 
     private func packageItems(for snapshot: NucleusStatusSnapshot) -> [NSMenuItem] {
-        guard snapshot.outdatedPackages.isEmpty == false else {
+        guard snapshot.flaggedOutdatedPackageCount > 0 else {
             return [
                 disabledMenuItem(title: "Installed: \(snapshot.installedCount)")
             ]
         }
 
-        return snapshot.outdatedPackages.map { package in
+        let nucleusItems = snapshot.outdatedPackages.map { package in
             disabledMenuItem(
                 title: "\(package.name): \(package.currentVersion) -> \(package.latestVersion)"
             )
         }
+        let homebrewItems = snapshot.homebrewOutdatedPackages.map { package in
+            disabledMenuItem(
+                title: "Homebrew \(package.name): " +
+                    "\(package.currentVersion) -> \(package.latestVersion)"
+            )
+        }
+        return nucleusItems + homebrewItems
     }
 
     private func disabledMenuItem(title: String) -> NSMenuItem {

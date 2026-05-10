@@ -11,6 +11,7 @@ final class AppUpdateCoordinator {
     private static let checkInterval: TimeInterval = 60 * 60
 
     private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
+    private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore: NucleusStatusStore
     private var availableUpdate: Update?
     private var checkTask: Task<Void, Never>?
@@ -60,10 +61,23 @@ final class AppUpdateCoordinator {
 
             do {
                 availableUpdate = try await updater.check()
+                refreshHomebrewOutdatedPackages()
                 publishState(error: nil)
             } catch is CancellationError {
             } catch {
+                refreshHomebrewOutdatedPackages()
                 publishState(error: error.localizedDescription)
+            }
+        }
+    }
+
+    private func refreshHomebrewOutdatedPackages() {
+        Task { [homebrewUpdateChecker, statusStore] in
+            do {
+                let packages = try await homebrewUpdateChecker.refreshOutdatedPackages()
+                try statusStore.saveHomebrewOutdatedPackages(packages)
+            } catch {
+                // Homebrew status is advisory in this release; keep app update checks independent.
             }
         }
     }

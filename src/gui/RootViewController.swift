@@ -853,6 +853,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var statusAnimator: HeaderGlitchTextAnimator?
     private var installedRecords: [PackageRecord] = []
     private var outdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
+    private var homebrewOutdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var installedPackages: [PackagePresentation] = []
     private var recommendations: [PackagePresentation] = []
     private var homebrewMigrationRecommendation: HomebrewMigrationRecommendation?
@@ -1468,7 +1469,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func refreshDockBadge() {
-        let outdatedCount = outdatedPackagesByName.count
+        let outdatedCount = outdatedPackagesByName.count + homebrewOutdatedPackagesByName.count
         NSApp.dockTile.badgeLabel = outdatedCount > 0 ? String(outdatedCount) : nil
         NSApp.dockTile.display()
     }
@@ -1495,6 +1496,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private func applyStatusSnapshot(_ snapshot: NucleusStatusSnapshot) {
         outdatedPackagesByName = snapshot.outdatedPackagesByName
+        homebrewOutdatedPackagesByName = snapshot.homebrewOutdatedPackagesByName
         detailsByPackageName = detailsByPackageName.mapValues { detail in
             normalizedDetail(detail)
         }
@@ -1510,7 +1512,24 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func normalizedDetail(_ detail: PackageDetail) -> PackageDetail {
-        detail.applying(outdated: outdatedPackagesByName[detail.packageName])
+        if detail.isHomebrewInstall {
+            return detail.applying(outdated: homebrewOutdatedPackage(named: detail.packageName))
+        }
+        return detail.applying(outdated: outdatedPackagesByName[detail.packageName])
+    }
+
+    private func homebrewOutdatedPackage(named packageName: String) -> OutdatedPackageRecord? {
+        if let package = homebrewOutdatedPackagesByName[packageName] {
+            return package
+        }
+        guard let formula = packageName.strippingPrefix("brew:"),
+              formula.contains("/") else {
+            return nil
+        }
+        guard let leafName = formula.split(separator: "/").last.map(String.init) else {
+            return nil
+        }
+        return homebrewOutdatedPackagesByName["brew:\(leafName)"]
     }
 
     private func refreshInstalledPackages() {
@@ -1536,6 +1555,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         installedPackages = records.map { record in
             let mergedRecord: PackageRecord
             if let outdated = outdatedPackagesByName[record.name] {
+                mergedRecord = record.applying(outdated: outdated)
+            } else if record.isHomebrewMigrationCandidate || record.isUnsupportedHomebrewInstall,
+                      let outdated = homebrewOutdatedPackage(named: record.name) {
                 mergedRecord = record.applying(outdated: outdated)
             } else {
                 mergedRecord = record
@@ -2910,7 +2932,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func beginPackageUpdate(for detail: PackageDetail) {
-        guard detail.installed, detail.isOutdated else { return }
+        guard detail.installed, detail.isOutdated, detail.isHomebrewInstall == false else {
+            return
+        }
         if detail.isAutomicVaultCLT {
             beginAutomicVaultCLTInstallFlow()
             return

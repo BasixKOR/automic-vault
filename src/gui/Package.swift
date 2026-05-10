@@ -34,6 +34,7 @@ let package = Package(
                 "SecurityCatalog.swift",
                 "NucleusBridge.swift",
                 "NukeHelperBridge.swift",
+                "HomebrewUpdateChecker.swift",
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",

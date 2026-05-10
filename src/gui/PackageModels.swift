@@ -547,6 +547,10 @@ struct PackageDetail: Decodable, Equatable {
             && installed
     }
 
+    var isHomebrewInstall: Bool {
+        isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
+    }
+
     var securityNotice: PackageSecurityNotice? {
         let notice = SecurityCatalog.shared.notice(for: self)
         if installed,
