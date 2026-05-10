@@ -16,13 +16,7 @@ terminate_existing_app() {
     -e 'tell application id "com.automicvault" to quit' \
     >/dev/null 2>&1 || true
   /usr/bin/osascript \
-    -e 'tell application id "com.automicvault.debug" to quit' \
-    >/dev/null 2>&1 || true
-  /usr/bin/osascript \
     -e 'tell application id "com.automicvault.menu-helper" to quit' \
-    >/dev/null 2>&1 || true
-  /usr/bin/osascript \
-    -e 'tell application id "com.automicvault.debug.menu-helper" to quit' \
     >/dev/null 2>&1 || true
 
   local deadline=$((SECONDS + 5))
@@ -42,8 +36,7 @@ terminate_existing_app() {
     'Automic Vault\.app/Contents/Resources/av serve|Automic Vault Menu\.app/Contents/Resources/av serve' \
     >/dev/null 2>&1 || true
   rm -rf \
-    "${HOME}/Library/Saved Application State/com.automicvault.savedState" \
-    "${HOME}/Library/Saved Application State/com.automicvault.debug.savedState"
+    "${HOME}/Library/Saved Application State/com.automicvault.savedState"
   rm -f "${HOME}/Library/Application Support/Automic Vault/nucleus.sock"
 }
 

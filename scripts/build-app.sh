@@ -104,15 +104,9 @@ NUKE_BUILD_ID="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || pri
 APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 
-if [[ "$CONFIGURATION" == "release" ]]; then
-  APP_BUNDLE_ID="com.automicvault"
-  MENU_BUNDLE_ID="com.automicvault.menu-helper"
-  HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
-else
-  APP_BUNDLE_ID="com.automicvault.debug"
-  MENU_BUNDLE_ID="com.automicvault.debug.menu-helper"
-  HELPER_BUNDLE_ID="com.automicvault.debug.nuke-helper"
-fi
+APP_BUNDLE_ID="com.automicvault"
+MENU_BUNDLE_ID="com.automicvault.menu-helper"
+HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
 
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
