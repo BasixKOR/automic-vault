@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stop AI Coding Agents from Reading Your .env Files | Automic Vault</title>
-  <meta name="description" content="Keep AI coding agents from reading .env files by moving secrets into Automic Vault and injecting only approved keys into trusted tools.">
+  <meta name="description" content="Move secrets out of .env files and inject approved credentials into trusted tools so AI coding agents cannot read raw values.">
   <link rel="canonical" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Stop AI Coding Agents from Reading Your .env Files">
-  <meta property="og:description" content="Plaintext dotenv files are convenient for humans and too readable for autonomous agents.">
+  <meta property="og:description" content="Move secrets out of .env files and inject approved credentials into trusted tools so AI coding agents cannot read raw values.">
   <meta property="og:url" content="https://www.automicvault.com/stop-ai-agents-reading-env-files/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -30,55 +30,58 @@
       <nav class="seo-nav" aria-label="Main navigation">
         <a href="../docs/">Docs</a>
         <a href="../secrets-manager-for-ai-agents/">Secrets</a>
-        <a href="../ai-agent-approval-gates/">Approval Gates</a>
+        <a href="../ai-agent-approval-gates/">Approvals</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
     </header>
     <main>
       <section class="seo-hero">
         <div>
-          <p class="kicker">Dotenv protection for agent runs</p>
-          <h1>Stop AI agents from reading your .env files</h1>
-          <p class="lede">A dotenv file is a shortcut for local development, but an AI agent with filesystem access can read it as easily as your app can. Automic Vault moves secrets out of the file and into approved runtime injection.</p>
+          <p class="kicker">Dotenv protection for agent work</p>
+          <h1>Stop AI coding agents from reading your .env files</h1>
+          <p class="lede"><code>.env</code> files are convenient because every local tool can read them. That is exactly why they are risky for agent runs. Automic Vault keeps the developer workflow, but removes the plaintext target.</p>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#shebang-injection">See secret injection <span aria-hidden="true">›</span></a>
             <a class="button" href="../api-key-management-for-ai-agents/">Manage API keys <span aria-hidden="true">›</span></a>
           </div>
         </div>
         <figure class="seo-visual">
-          <img src="../assets/vault-console.webp" alt="Automic Vault secret status" width="820" height="1024">
+          <img src="../assets/vault-console.webp" alt="Automic Vault secret protection console" width="820" height="1024">
         </figure>
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
-          <p class="kicker">The failure mode</p>
-          <h2>Dotenv makes secrets ambient.</h2>
-          <p><code>.env</code> works because every tool in the project can find the same values. That same convenience gives agents, malware, dependency scripts, and accidental shell commands a direct path to credentials.</p>
+          <p class="kicker">The obvious target</p>
+          <h2>A dotenv file turns every key into local reading material.</h2>
+          <p>Agents inspect files to understand projects. If secrets live beside source code, a normal debugging step can become credential exposure.</p>
         </div>
         <div class="proof-list">
-          <article><span>Readable by design</span><h3><code>cat .env</code> should not be a credential path</h3><p>Agents can inspect files while planning, debugging, or satisfying a broad request.</p></article>
-          <article><span>Easy to spread</span><h3>One paste can leak every key</h3><p>Once a model sees a dotenv file, the secret can appear in logs, tool calls, summaries, and patches.</p></article>
-          <article><span>Poor scope</span><h3>All keys arrive together</h3><p>A deploy command usually needs fewer secrets than the full project environment contains.</p></article>
-          <article><span>Better boundary</span><h3>Inject only what runs</h3><p>Automic Vault gives the target executable named keys at runtime instead of leaving them in a repo file.</p></article>
+          <article><span>Readable by design</span><h3>Do not make cat a secret manager</h3><p><code>cat .env</code> should not be enough to reveal production keys, API tokens, or deploy credentials.</p></article>
+          <article><span>Easy to copy</span><h3>One paste can leak every key</h3><p>Once a model sees the file, the values can spread into logs, tool calls, summaries, and patches.</p></article>
+          <article><span>Poor scope</span><h3>Every command gets too much</h3><p>A script usually needs one or two values. A dotenv file often exposes the full project environment.</p></article>
+          <article><span>Better workflow</span><h3>Keep the command simple</h3><p>Use approved injection so the tool still runs without leaving secrets in a project-readable file.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
-          <p class="kicker">Practical migration</p>
-          <h2>Keep developer ergonomics without plaintext.</h2>
+          <p class="kicker">Migration path</p>
+          <h2>Replace ambient secrets with explicit secret use.</h2>
         </div>
         <div class="compare-table">
-          <article><span>Before</span><p><code>dotenv</code>, <code>python-dotenv</code>, and <code>dotenv npm</code> all load values from project-readable files.</p></article>
-          <article><span>After</span><p><code>av save</code> stores the sensitive value once, then <code>av inject</code> supplies it to an approved command.</p></article>
-          <article><span>Agent run</span><p><code>av contain</code> keeps host tool execution visible when a coding agent attempts to use the command.</p></article>
+          <article><span>Remove</span><p>Take sensitive values out of project dotenv files and shell startup files.</p></article>
+          <article><span>Save</span><p>Store each value with <code>av save KEY</code> so it is not part of the repo or the agent context.</p></article>
+          <article><span>Run</span><p>Launch scripts with <code>av inject</code> so only the approved process receives the keys it requested.</p></article>
         </div>
       </section>
       <section class="seo-section">
-        <div class="section-heading"><p class="kicker">Next protections</p><h2>Close the adjacent credential paths.</h2></div>
+        <div class="section-heading">
+          <p class="kicker">Related protections</p>
+          <h2>Close the next credential path.</h2>
+        </div>
         <div class="link-grid">
           <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect tokens outside dotenv files too.</p></a>
-          <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Put human checkpoints where tools actually execute.</p></a>
-          <a href="../secure-aws-cli-credentials-ai-agents/"><span>AWS</span><strong>Secure AWS CLI credentials</strong><p>Stop cloud credentials from sitting in readable config.</p></a>
+          <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Add human checkpoints where tools execute.</p></a>
+          <a href="../secure-aws-cli-credentials-ai-agents/"><span>AWS</span><strong>Secure AWS CLI credentials</strong><p>Stop cloud keys from living in readable config.</p></a>
         </div>
       </section>
     </main>

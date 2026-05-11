@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secrets Manager for AI Agents | Automic Vault</title>
-  <meta name="description" content="Automic Vault is a secrets manager for AI agents that keeps credentials out of files, shells, and model context while tools still get approved access.">
+  <meta name="description" content="Automic Vault keeps AI agents from reading secrets directly while approved tools still get the credentials they need at runtime.">
   <link rel="canonical" href="https://www.automicvault.com/secrets-manager-for-ai-agents/">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Secrets Manager for AI Agents">
-  <meta property="og:description" content="Keep secrets away from agents while approved tools still get the credentials they need.">
+  <meta property="og:description" content="Automic Vault keeps AI agents from reading secrets directly while approved tools still get the credentials they need at runtime.">
   <meta property="og:url" content="https://www.automicvault.com/secrets-manager-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -38,10 +38,10 @@
       <section class="seo-hero">
         <div>
           <p class="kicker">Agent-specific secrets management</p>
-          <h1>Secrets manager for AI agents</h1>
-          <p class="lede">Automic Vault keeps credentials where agents cannot read them directly. Tools can still receive approved secrets at execution time, but the model does not get a copy to leak, paste, log, or misuse.</p>
+          <h1>The secrets manager built for AI agent runs</h1>
+          <p class="lede">Agents need tools. Tools need credentials. The model does not need to see the secret. Automic Vault stores sensitive values locally and injects them only into approved executables.</p>
           <div class="hero-actions">
-            <a class="button primary" href="../docs/#secrets">Read the CLI docs <span aria-hidden="true">›</span></a>
+            <a class="button primary" href="../docs/#secrets">Read the secret docs <span aria-hidden="true">›</span></a>
             <a class="button" href="../stop-ai-agents-reading-env-files/">Protect .env files <span aria-hidden="true">›</span></a>
           </div>
         </div>
@@ -51,37 +51,37 @@
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
-          <p class="kicker">Different threat model</p>
-          <h2>Secrets managers were not built for autonomous tool use.</h2>
-          <p>Classic secrets management assumes a human, service, or CI job asks for a value. AI coding agents add a new risk: the system with filesystem and shell access is also reading context and generating commands.</p>
+          <p class="kicker">The agent gap</p>
+          <h2>Most secrets managers stop before the dangerous moment.</h2>
+          <p>Central vaults can store and issue credentials. The local risk starts when an agent can read files, inspect environment variables, or ask a CLI to print a token.</p>
         </div>
         <div class="proof-list">
-          <article><span>Plaintext files</span><h3>Remove readable credentials</h3><p>Move sensitive values out of project files, shell startup files, and tool config that any local process can inspect.</p></article>
-          <article><span>Approved tools</span><h3>Give tools access, not models</h3><p>Inject named keys only into the executable that actually needs them, after the approval path is clear.</p></article>
-          <article><span>Local boundary</span><h3>Use the Mac keychain</h3><p>Store secrets behind local keychain-backed controls instead of making every agent run a retrieval workflow.</p></article>
-          <article><span>Runtime gate</span><h3>Mediate execution</h3><p>Pair secret injection with command approval so sensitive tools remain visible when agents attempt to act.</p></article>
+          <article><span>No plaintext handoff</span><h3>Keep values out of files</h3><p>Move credentials out of <code>.env</code>, shell profiles, and tool config that an agent can read while it works.</p></article>
+          <article><span>Tool access</span><h3>Give access to the executable</h3><p>The approved command gets the named secret. The model does not receive a copy to paste, log, or summarize.</p></article>
+          <article><span>Local control</span><h3>Use the Mac keychain</h3><p>Secrets stay behind local keychain-backed storage instead of becoming another retrieval step in the chat.</p></article>
+          <article><span>Execution context</span><h3>Approve risky tool use</h3><p>Pair injection with command gates so secret-backed actions stay visible before they run.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
           <p class="kicker">How it works</p>
-          <h2>Automic Vault protects the moment of use.</h2>
+          <h2>Store once. Inject only when a trusted tool runs.</h2>
         </div>
         <div class="compare-table">
-          <article><span>Save</span><p>Use <code>av save KEY</code> to store a secret outside the repo and away from normal file reads.</p></article>
-          <article><span>Inject</span><p>Use <code>av inject +KEY /abs/tool</code> so the selected executable receives the value only for that run.</p></article>
-          <article><span>Contain</span><p>Use <code>av contain</code> to route agent tool execution through a mediated path with approval prompts.</p></article>
+          <article><span>Save</span><p>Use <code>av save KEY</code> to store the value outside the repo and away from normal file reads.</p></article>
+          <article><span>Inject</span><p>Use <code>av inject +KEY /abs/tool</code> so the selected executable receives the value for that run only.</p></article>
+          <article><span>Contain</span><p>Use <code>av contain</code> when an agent session needs mediated access to host tools.</p></article>
         </div>
       </section>
       <section class="seo-section">
         <div class="section-heading">
-          <p class="kicker">Related agent security pages</p>
-          <h2>Keep every secret path agent-aware.</h2>
+          <p class="kicker">Related protections</p>
+          <h2>Close the next credential path.</h2>
         </div>
         <div class="link-grid">
           <a href="../stop-ai-agents-reading-env-files/"><span>Dotenv</span><strong>Stop agents reading .env files</strong><p>Replace convenient plaintext with approved runtime access.</p></a>
           <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect tokens used by CLIs, SDKs, and deploy scripts.</p></a>
-          <a href="../hashicorp-vault-for-ai-agents/"><span>Vault layer</span><strong>HashiCorp Vault for AI agents</strong><p>Use Automic Vault as a local runtime layer beside existing vaults.</p></a>
+          <a href="../hashicorp-vault-for-ai-agents/"><span>Vault layer</span><strong>HashiCorp Vault and Automic Vault</strong><p>Add local agent-runtime control beside central secret stores.</p></a>
         </div>
       </section>
     </main>

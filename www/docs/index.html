@@ -192,10 +192,10 @@
           <section class="doc-section command-map" id="agent-security-guides">
             <div class="section-heading">
               <p class="kicker">Agent security guides</p>
-              <h2>Use the docs with the threat-model pages.</h2>
+              <h2>Turn the CLI primitives into agent security patterns.</h2>
               <p>
-                These pages explain when to use the CLI primitives for agent
-                secrets, API keys, and tool-layer approvals.
+                The reference explains each command. These guides show when to
+                use them for agent secrets, API keys, and tool-layer approval.
               </p>
             </div>
 
@@ -203,17 +203,17 @@
               <a href="../secrets-manager-for-ai-agents/" class="command-tile">
                 <span>Secrets</span>
                 <strong>Secrets Manager for AI Agents</strong>
-                <small>Move credentials out of readable files and inject them only into approved tools.</small>
+                <small>Store secrets locally and inject them only when an approved tool runs.</small>
               </a>
               <a href="../api-key-management-for-ai-agents/" class="command-tile">
                 <span>API keys</span>
                 <strong>API Key Management for AI Agents</strong>
-                <small>Scope developer tokens to the command that actually needs them.</small>
+                <small>Keep tokens out of chat while CLIs, SDKs, and scripts still work.</small>
               </a>
               <a href="../ai-agent-approval-gates/" class="command-tile">
                 <span>Approval gates</span>
                 <strong>AI Agent Approval Gates</strong>
-                <small>Put human checkpoints at the tool layer beneath autonomous agents.</small>
+                <small>Put the human checkpoint beneath the agent, where commands execute.</small>
               </a>
             </div>
           </section>

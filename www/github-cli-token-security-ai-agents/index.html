@@ -9,7 +9,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="GitHub CLI Token Security for AI Agents">
-  <meta property="og:description" content="Let agents use GitHub workflows without exposing raw tokens.">
+  <meta property="og:description" content="Protect GitHub CLI tokens from AI agents with local keychain storage, approved token use, and command gates for source and release workflows.">
   <meta property="og:url" content="https://www.automicvault.com/github-cli-token-security-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -39,27 +39,34 @@
         <div>
           <p class="kicker">Source control credentials</p>
           <h1>GitHub CLI token security for AI agents</h1>
-          <p class="lede">The GitHub CLI can create releases, open pull requests, publish packages, and reveal tokens. Automic Vault keeps token material sealed and gates sensitive <code>gh</code> actions before an agent can use them.</p>
+          <p class="lede">A GitHub token can read private code, trigger CI, create releases, and publish packages. Automic Vault lets agents use GitHub workflows without handing them the raw token.</p>
           <div class="hero-actions">
             <a class="button primary" href="https://github.com/automic-vault/gh-cli">View gh patches <span aria-hidden="true">›</span></a>
             <a class="button" href="../docs/#secrets">Read secret docs <span aria-hidden="true">›</span></a>
           </div>
         </div>
         <figure class="seo-visual">
-          <img src="../assets/vault-console.webp" alt="Automic Vault package security status" width="820" height="1024">
+          <img src="../assets/vault-console.webp" alt="Automic Vault GitHub token protection console" width="820" height="1024">
         </figure>
       </section>
       <section class="seo-section seo-split">
-        <div class="section-heading"><p class="kicker">GitHub risk</p><h2>A GitHub token is source authority.</h2><p>For an agent, a GitHub token can be more than repository read access. It may control release workflows, package publication, issue triage, organization visibility, and CI-triggering changes.</p></div>
+        <div class="section-heading">
+          <p class="kicker">GitHub risk</p>
+          <h2>A GitHub token is source and release authority.</h2>
+          <p>For agent workflows, <code>gh</code> is not just a convenience CLI. It can expose tokens, mutate repositories, publish releases, and start automation.</p>
+        </div>
         <div class="proof-list">
           <article><span>Token reveal</span><h3>Stop direct token printing</h3><p>Commands that reveal stored auth should require explicit approval.</p></article>
           <article><span>Mutation</span><h3>Gate repo-changing commands</h3><p>Release, package, and repository operations deserve a tool-layer checkpoint.</p></article>
           <article><span>Storage</span><h3>Seal the credential</h3><p>Keep auth material in the keychain instead of plaintext locations agents can read.</p></article>
-          <article><span>Package integrity</span><h3>Patch the actual tool</h3><p>Automic Vault can harden high-value CLIs rather than relying only on agent policy.</p></article>
+          <article><span>Tool patches</span><h3>Harden the actual CLI</h3><p>Protect high-value commands in the tool itself, not only in agent configuration.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
-        <div class="section-heading"><p class="kicker">Workflow</p><h2>Let agents collaborate without handing over the token.</h2></div>
+        <div class="section-heading">
+          <p class="kicker">Workflow</p>
+          <h2>Let agents collaborate without surrendering the token.</h2>
+        </div>
         <div class="compare-table">
           <article><span>Read-only work</span><p>Low-risk queries can stay fast when the command and token scope are appropriate.</p></article>
           <article><span>Sensitive work</span><p>Token reveal, release, package publish, and privileged repository changes should prompt.</p></article>
@@ -67,7 +74,10 @@
         </div>
       </section>
       <section class="seo-section">
-        <div class="section-heading"><p class="kicker">Related pages</p><h2>Secure source and release authority.</h2></div>
+        <div class="section-heading">
+          <p class="kicker">Related protections</p>
+          <h2>Close the next credential path.</h2>
+        </div>
         <div class="link-grid">
           <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect tokens across CLIs and SDKs.</p></a>
           <a href="../privileged-access-management-for-ai-agents/"><span>PAM</span><strong>Privileged access management</strong><p>Approve privileged actions at execution time.</p></a>

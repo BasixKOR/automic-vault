@@ -9,7 +9,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Privileged Access Management for AI Agents">
-  <meta property="og:description" content="Translate PAM into practical approval gates for autonomous tool use.">
+  <meta property="og:description" content="Privileged access management for AI agents means approving dangerous commands, secret use, and package execution at the local runtime layer.">
   <meta property="og:url" content="https://www.automicvault.com/privileged-access-management-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -29,7 +29,7 @@
       </a>
       <nav class="seo-nav" aria-label="Main navigation">
         <a href="../docs/">Docs</a>
-        <a href="../ai-agent-approval-gates/">Approval Gates</a>
+        <a href="../ai-agent-approval-gates/">Approvals</a>
         <a href="../secrets-manager-for-ai-agents/">Secrets</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
@@ -38,39 +38,49 @@
       <section class="seo-hero">
         <div>
           <p class="kicker">PAM for autonomous execution</p>
-          <h1>Privileged access management for AI agents</h1>
-          <p class="lede">Traditional PAM controls who can reach privileged systems. AI agents add a local execution problem: commands, packages, and secrets need approval at the exact point an autonomous tool tries to act.</p>
+          <h1>Privileged access management for AI agents starts at the command line</h1>
+          <p class="lede">For agents, privileged access is often a tool invocation: <code>gh</code>, <code>aws</code>, <code>npm publish</code>, or a deploy script. Automic Vault puts approval where that authority is used.</p>
           <div class="hero-actions">
             <a class="button primary" href="../ai-agent-approval-gates/">See approval gates <span aria-hidden="true">›</span></a>
-            <a class="button" href="../docs/#contain">Contain agent commands <span aria-hidden="true">›</span></a>
+            <a class="button" href="../docs/#contain">Read containment docs <span aria-hidden="true">›</span></a>
           </div>
         </div>
         <figure class="seo-visual">
-          <img src="../assets/vault-console.webp" alt="Automic Vault agent containment status" width="820" height="1024">
+          <img src="../assets/vault-console.webp" alt="Automic Vault privileged access console" width="820" height="1024">
         </figure>
       </section>
       <section class="seo-section seo-split">
-        <div class="section-heading"><p class="kicker">Agent PAM</p><h2>The privileged actor is often a command.</h2><p>When an agent runs <code>gh</code>, <code>aws</code>, <code>npm publish</code>, or a deployment script, the privileged access decision is no longer just login policy. It is whether that specific tool invocation should proceed.</p></div>
+        <div class="section-heading">
+          <p class="kicker">Agent PAM</p>
+          <h2>The privileged actor is not always a user account.</h2>
+          <p>An autonomous agent may already be inside a developer session. The control point becomes the command it is about to run and the credentials that command can use.</p>
+        </div>
         <div class="proof-list">
-          <article><span>Command approval</span><h3>Approve before mutation</h3><p>Gate actions that can publish, deploy, delete, or reveal privileged state.</p></article>
-          <article><span>Secret approval</span><h3>Control key use</h3><p>Keep secrets out of the agent transcript and inject them only into approved executables.</p></article>
-          <article><span>Tool integrity</span><h3>Harden the toolchain</h3><p>Install packages under controlled roots so the agent cannot casually rewrite the tool it uses.</p></article>
-          <article><span>Local scope</span><h3>Make decisions visible</h3><p>Approval prompts should describe the command path and capability, not only the agent session.</p></article>
+          <article><span>Command approval</span><h3>Approve before mutation</h3><p>Gate actions that can publish, deploy, delete, reveal, or change privileged state.</p></article>
+          <article><span>Secret approval</span><h3>Control key use</h3><p>Keep secrets out of the transcript and inject them only into approved executables.</p></article>
+          <article><span>Tool integrity</span><h3>Harden the toolchain</h3><p>Controlled package roots make it harder for an agent to rewrite the tool that receives privilege.</p></article>
+          <article><span>Human context</span><h3>Show the actual request</h3><p>The decision should name the executable and action, not just ask whether the agent is trusted.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
-        <div class="section-heading"><p class="kicker">Controls</p><h2>Map PAM concepts to agent runtime controls.</h2></div>
+        <div class="section-heading">
+          <p class="kicker">Translation</p>
+          <h2>Map PAM ideas to agent runtime controls.</h2>
+        </div>
         <div class="compare-table">
-          <article><span>Privilege</span><p>A saved API key, CLI token, package publish token, or cloud credential.</p></article>
+          <article><span>Privilege</span><p>A saved API key, CLI token, registry credential, or cloud credential.</p></article>
           <article><span>Request</span><p>The tool invocation an agent attempts to run with that privilege.</p></article>
           <article><span>Approval</span><p>A human decision tied to executable path, command context, and secret scope.</p></article>
         </div>
       </section>
       <section class="seo-section">
-        <div class="section-heading"><p class="kicker">Related pages</p><h2>Secure the privileged workflows first.</h2></div>
+        <div class="section-heading">
+          <p class="kicker">Related protections</p>
+          <h2>Close the next credential path.</h2>
+        </div>
         <div class="link-grid">
           <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Require a human checkpoint for risky commands.</p></a>
-          <a href="../github-cli-token-security-ai-agents/"><span>GitHub</span><strong>GitHub CLI token security</strong><p>Protect code, release, and package authority.</p></a>
+          <a href="../github-cli-token-security-ai-agents/"><span>GitHub</span><strong>GitHub CLI token security</strong><p>Protect source, release, and package authority.</p></a>
           <a href="../secure-aws-cli-credentials-ai-agents/"><span>AWS</span><strong>Secure AWS CLI credentials</strong><p>Control cloud credentials used by local agents.</p></a>
         </div>
       </section>
