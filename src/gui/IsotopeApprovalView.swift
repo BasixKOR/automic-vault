@@ -40,32 +40,36 @@ final class IsotopeApprovalView: NSView {
     }
 
     private func build() {
-        let root = NSStackView()
-        root.orientation = .vertical
-        root.alignment = .width
-        root.distribution = .fill
-        root.spacing = 9
-        root.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(root)
-
         let secrets = secretsPanel()
         let command = commandPanel()
         let requester = requesterPanel()
         let target = targetPanel()
 
-        root.addArrangedSubview(secrets)
-        root.addArrangedSubview(command)
-        root.addArrangedSubview(requester)
-        root.addArrangedSubview(target)
+        [secrets, command, requester, target].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            addSubview($0)
+        }
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: trailingAnchor),
-            root.topAnchor.constraint(equalTo: topAnchor),
-            root.bottomAnchor.constraint(equalTo: bottomAnchor),
+            secrets.leadingAnchor.constraint(equalTo: leadingAnchor),
+            secrets.trailingAnchor.constraint(equalTo: trailingAnchor),
+            secrets.topAnchor.constraint(equalTo: topAnchor),
             secrets.heightAnchor.constraint(equalToConstant: 62),
+
+            command.leadingAnchor.constraint(equalTo: leadingAnchor),
+            command.trailingAnchor.constraint(equalTo: trailingAnchor),
+            command.topAnchor.constraint(equalTo: secrets.bottomAnchor, constant: 9),
             command.heightAnchor.constraint(equalToConstant: 66),
-            requester.heightAnchor.constraint(equalToConstant: 42)
+
+            requester.leadingAnchor.constraint(equalTo: leadingAnchor),
+            requester.trailingAnchor.constraint(equalTo: trailingAnchor),
+            requester.topAnchor.constraint(equalTo: command.bottomAnchor, constant: 9),
+            requester.heightAnchor.constraint(equalToConstant: 42),
+
+            target.leadingAnchor.constraint(equalTo: leadingAnchor),
+            target.trailingAnchor.constraint(equalTo: trailingAnchor),
+            target.topAnchor.constraint(equalTo: requester.bottomAnchor, constant: 9),
+            target.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
@@ -204,28 +208,36 @@ final class IsotopeApprovalView: NSView {
     private func sectionPanel(title: String, rows: [InfoRow]) -> NSView {
         let view = makePanel()
         let titleLabel = sectionTitle(title)
-        let rowStack = NSStackView()
-        rowStack.orientation = .vertical
-        rowStack.alignment = .width
-        rowStack.distribution = .fillEqually
-        rowStack.spacing = 4
-        rowStack.translatesAutoresizingMaskIntoConstraints = false
-        rows.forEach { rowStack.addArrangedSubview(infoRow($0)) }
+        let rowViews = rows.map(infoRow)
 
-        [titleLabel, rowStack].forEach {
+        ([titleLabel] + rowViews).forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
 
-        NSLayoutConstraint.activate([
+        var constraints = [
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
             titleLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+        ]
 
-            rowStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
-            rowStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
-            rowStack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            rowStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.innerPadding)
-        ])
+        for (index, rowView) in rowViews.enumerated() {
+            constraints.append(contentsOf: [
+                rowView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
+                rowView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
+                rowView.heightAnchor.constraint(equalToConstant: 19)
+            ])
+            if index == 0 {
+                constraints.append(rowView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8))
+            } else {
+                constraints.append(rowView.topAnchor.constraint(equalTo: rowViews[index - 1].bottomAnchor, constant: 4))
+            }
+        }
+
+        if let lastRow = rowViews.last {
+            constraints.append(lastRow.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -Metrics.innerPadding))
+        }
+
+        NSLayoutConstraint.activate(constraints)
 
         return view
     }
