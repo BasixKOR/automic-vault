@@ -525,9 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func isotopeApprovalSummary(for approval: IsotopeApprovalRequestSnapshot) -> String {
-        let requester = isotopeParentProcessSummary(approval.parentProcess)
-        let secretCount = "\(approval.keys.count) secret\(approval.keys.count == 1 ? "" : "s")"
-        return "\(requester) is requesting \(secretCount). Review the command, source, and root-controlled boundaries before allowing injection."
+        ""
     }
 
     private func isotopeApprovalAccessoryView(for approval: IsotopeApprovalRequestSnapshot) -> NSView {

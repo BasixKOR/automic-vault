@@ -3,7 +3,7 @@ import AppKit
 final class IsotopeApprovalView: NSView {
     private enum Metrics {
         static let width: CGFloat = 640
-        static let height: CGFloat = 326
+        static let height: CGFloat = 314
         static let panelRadius: CGFloat = 9
         static let labelWidth: CGFloat = 130
         static let innerPadding: CGFloat = 11
@@ -48,37 +48,36 @@ final class IsotopeApprovalView: NSView {
         root.translatesAutoresizingMaskIntoConstraints = false
         addSubview(root)
 
-        let source = sourceStrip()
-        let target = targetPanel()
         let secrets = secretsPanel()
         let command = commandPanel()
+        let requester = requesterPanel()
+        let target = targetPanel()
 
-        root.addArrangedSubview(source)
-        root.addArrangedSubview(target)
         root.addArrangedSubview(secrets)
         root.addArrangedSubview(command)
+        root.addArrangedSubview(requester)
+        root.addArrangedSubview(target)
 
         NSLayoutConstraint.activate([
             root.leadingAnchor.constraint(equalTo: leadingAnchor),
             root.trailingAnchor.constraint(equalTo: trailingAnchor),
             root.topAnchor.constraint(equalTo: topAnchor),
             root.bottomAnchor.constraint(equalTo: bottomAnchor),
-            source.heightAnchor.constraint(equalToConstant: 42),
             secrets.heightAnchor.constraint(equalToConstant: 62),
-            command.heightAnchor.constraint(equalToConstant: 66)
+            command.heightAnchor.constraint(equalToConstant: 66),
+            requester.heightAnchor.constraint(equalToConstant: 42)
         ])
     }
 
-    private func sourceStrip() -> NSView {
+    private func requesterPanel() -> NSView {
         let view = makePanel()
 
         let title = label("REQUESTED BY", size: 9, weight: .semibold, color: Palette.quietText, monospaced: true, tracking: 0.9)
-        let summary = label(sourceSummary, size: 12, weight: .medium, color: Palette.strongText)
+        let summary = attributedLabel(requesterSummary)
         summary.lineBreakMode = .byTruncatingMiddle
         summary.maximumNumberOfLines = 1
-        let secretPill = pill("\(approval.keys.count) secret\(approval.keys.count == 1 ? "" : "s")", color: Palette.accent)
 
-        [title, summary, secretPill].forEach {
+        [title, summary].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
@@ -90,10 +89,7 @@ final class IsotopeApprovalView: NSView {
 
             summary.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 10),
             summary.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            summary.trailingAnchor.constraint(lessThanOrEqualTo: secretPill.leadingAnchor, constant: -12),
-
-            secretPill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
-            secretPill.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            summary.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding)
         ])
 
         return view
@@ -102,14 +98,14 @@ final class IsotopeApprovalView: NSView {
     private func targetPanel() -> NSView {
         let scriptPath = displayScriptPath
         var rows: [InfoRow] = [
-            InfoRow("Requested executable", requestedExecutablePath, nil),
-            InfoRow("Audited executable", approval.executablePath, rootStatus(approval.executableRootControlled))
+            InfoRow("Requested executable", abbreviatedPath(requestedExecutablePath), nil),
+            InfoRow("Audited executable", abbreviatedPath(approval.executablePath), rootStatus(approval.executableRootControlled))
         ]
 
         if isInterpreter {
             rows.append(InfoRow(
                 "Interpreter script",
-                scriptPath ?? "No script file detected; flags or inline code are in use",
+                scriptPath.map(abbreviatedPath) ?? "No script file detected; flags or inline code are in use",
                 scriptPath.map { _ in rootStatus(scriptRootControlled) }
                     ?? Status(title: "not a script", color: Palette.amber)
             ))
@@ -177,7 +173,7 @@ final class IsotopeApprovalView: NSView {
         let view = makePanel()
         let title = sectionTitle("Command")
         let commandBox = makeCommandBox()
-        let commandText = label(commandLine, size: 10, weight: .regular, color: Palette.text, monospaced: true)
+        let commandText = label(displayCommandLine, size: 10, weight: .regular, color: Palette.text, monospaced: true)
         commandText.maximumNumberOfLines = 2
         commandText.lineBreakMode = .byTruncatingMiddle
 
@@ -328,6 +324,16 @@ final class IsotopeApprovalView: NSView {
         return field
     }
 
+    private func attributedLabel(_ value: NSAttributedString) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: "")
+        field.attributedStringValue = value
+        field.allowsDefaultTighteningForTruncation = false
+        field.maximumNumberOfLines = 1
+        field.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
     private func pill(
         _ text: String,
         color: NSColor,
@@ -355,11 +361,17 @@ final class IsotopeApprovalView: NSView {
         return container
     }
 
-    private var sourceSummary: String {
+    private var requesterSummary: NSAttributedString {
         let parentName = approval.parentProcess.displayName
             ?? approval.parentProcess.executablePath
             ?? "unknown process"
-        return "\(parentName) pid \(approval.parentProcess.pid) from \(approval.cwd)"
+        let result = NSMutableAttributedString()
+        result.append(bold(parentName))
+        result.append(plain("; pid "))
+        result.append(bold("\(approval.parentProcess.pid)"))
+        result.append(plain("; cwd: "))
+        result.append(code(abbreviatedPath(approval.cwd)))
+        return result
     }
 
     private var requestedExecutablePath: String {
@@ -368,6 +380,10 @@ final class IsotopeApprovalView: NSView {
 
     private var commandLine: String {
         ([requestedExecutablePath] + approval.argv).joined(separator: " ")
+    }
+
+    private var displayCommandLine: String {
+        abbreviatedPath(commandLine)
     }
 
     private var isInterpreter: Bool {
@@ -452,6 +468,48 @@ final class IsotopeApprovalView: NSView {
             return value
         }
         return URL(fileURLWithPath: cwd).appendingPathComponent(value).path
+    }
+
+    private func abbreviatedPath(_ value: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if value == home {
+            return "~"
+        }
+        let homePrefix = home + "/"
+        if value.hasPrefix(homePrefix) {
+            return "~/" + String(value.dropFirst(homePrefix.count))
+        }
+        return value.replacingOccurrences(of: homePrefix, with: "~/")
+    }
+
+    private func plain(_ value: String) -> NSAttributedString {
+        NSAttributedString(
+            string: value,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: Palette.text
+            ]
+        )
+    }
+
+    private func bold(_ value: String) -> NSAttributedString {
+        NSAttributedString(
+            string: value,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: Palette.strongText
+            ]
+        )
+    }
+
+    private func code(_ value: String) -> NSAttributedString {
+        NSAttributedString(
+            string: value,
+            attributes: [
+                .font: UIStyle.monoFont(size: 11, weight: .medium),
+                .foregroundColor: Palette.text
+            ]
+        )
     }
 
     private struct InfoRow {
