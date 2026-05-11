@@ -23,7 +23,9 @@
     "dev": "remotion studio",
     "build": "remotion bundle",
     "render": "remotion render AutomicVaultPromo out/automic-vault-promo.mp4 --muted",
+    "render:skill-secrets": "remotion render AutomicVaultSkillSecrets out/automic-vault-skill-secrets.mp4 --muted",
     "still": "remotion still AutomicVaultPromo",
+    "still:skill-secrets": "remotion still AutomicVaultSkillSecrets",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"
   },
