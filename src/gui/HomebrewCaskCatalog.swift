@@ -314,8 +314,8 @@ final class HomebrewCaskCatalog {
     }
 
     private func fetchInstalledPackagesSync() throws -> [PackagePresentation] {
-        let data = try runBrew(arguments: ["info", "--json=v2", "--installed"])
-        let casks = try Self.decodeCasks(from: data)
+        let tokenData = try runBrew(arguments: ["list", "--cask"])
+        let casks = try fetchCasks(tokens: Self.parseListTokens(from: tokenData))
             .filter(\.isGuiAppCask)
             .sorted { $0.token.packageSearchOrderName < $1.token.packageSearchOrderName }
         return casks.map { cask in
@@ -400,6 +400,7 @@ final class HomebrewCaskCatalog {
                 "-C",
                 tapPath.path,
                 "log",
+                "--max-count=1000",
                 "--format=__DATE__%cI",
                 "--name-status",
                 "--",
@@ -481,9 +482,22 @@ final class HomebrewCaskCatalog {
             )
         }
 
+        var output = Data()
+        var errorData = Data()
+        let outputGroup = DispatchGroup()
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            output = stdout.fileHandleForReading.readDataToEndOfFile()
+            outputGroup.leave()
+        }
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+            outputGroup.leave()
+        }
+
         process.waitUntilExit()
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        outputGroup.wait()
         guard process.terminationStatus == 0 else {
             let errorText = String(data: errorData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -572,6 +586,16 @@ final class HomebrewCaskCatalog {
                 return trimmed.split(separator: ":", maxSplits: 1).first.map(String.init)
             }
             .compactMap { $0 }))
+    }
+
+    static func parseListTokens(from data: Data) -> [String] {
+        guard let text = String(data: data, encoding: .utf8) else {
+            return []
+        }
+        return Array(OrderedSet(text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }))
     }
 
     static func parsePulseEvents(fromGitLog data: Data, limit: Int) -> [PulseEvent] {
