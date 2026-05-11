@@ -76,7 +76,7 @@ pub use vault::vault_main_entry;
 pub use vault::{
     ExecutionIntent, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
     VaultContainmentSession, VaultDaemonEvent, VaultExecChunk, VaultExecCompletion,
-    VaultExecutionEnvironment, VaultToolAlias, VaultToolchainManifest,
+    VaultExecutionEnvironment, VaultProcessSnapshot, VaultToolAlias, VaultToolchainManifest,
 };
 
 mod post_install_hooks {

@@ -24,6 +24,14 @@ pub struct ExecutionIntent {
     pub cwd: String,
     pub env: BTreeMap<String, String>,
     pub agent_id: Option<String>,
+    pub requesting_process: VaultProcessSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VaultProcessSnapshot {
+    pub pid: u32,
+    pub executable_path: Option<String>,
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -532,6 +540,7 @@ fn build_execution_intent(tool: String, args: Vec<String>) -> Result<ExecutionIn
         return Err("tool name must not contain path separators".to_string());
     }
     let cwd = env::current_dir().map_err(|err| format!("failed to resolve cwd: {err}"))?;
+    let requesting_process = requesting_process_snapshot(&tool);
     Ok(ExecutionIntent {
         tool,
         args,
@@ -540,7 +549,18 @@ fn build_execution_intent(tool: String, args: Vec<String>) -> Result<ExecutionIn
         agent_id: env::var(VAULT_AGENT_ID_ENV)
             .ok()
             .filter(|value| !value.is_empty()),
+        requesting_process,
     })
+}
+
+fn requesting_process_snapshot(display_name: &str) -> VaultProcessSnapshot {
+    VaultProcessSnapshot {
+        pid: process::id(),
+        executable_path: env::current_exe()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        display_name: Some(display_name.to_string()),
+    }
 }
 
 fn filtered_vault_environment() -> BTreeMap<String, String> {
@@ -997,6 +1017,8 @@ mod tests {
         .unwrap();
         assert_eq!(intent.tool, "git");
         assert_eq!(intent.args, vec!["status"]);
+        assert_eq!(intent.requesting_process.display_name, Some("git".to_string()));
+        assert!(intent.requesting_process.pid > 0);
     }
 
     #[test]

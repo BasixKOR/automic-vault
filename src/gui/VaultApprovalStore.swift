@@ -6,6 +6,7 @@ struct VaultExecutionIntent: Codable, Equatable {
     let cwd: String
     let env: [String: String]
     let agentID: String?
+    let requestingProcess: IsotopeParentProcessSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case tool
@@ -13,6 +14,7 @@ struct VaultExecutionIntent: Codable, Equatable {
         case cwd
         case env
         case agentID = "agent_id"
+        case requestingProcess = "requesting_process"
     }
 }
 

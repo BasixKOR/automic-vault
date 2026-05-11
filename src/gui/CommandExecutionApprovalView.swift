@@ -296,9 +296,15 @@ final class CommandExecutionApprovalView: NSView {
     }
 
     private var requesterSummary: NSAttributedString {
-        let agent = approval.intent.agentID ?? "unknown agent"
+        let process = approval.intent.requestingProcess
+        let processName = process?.displayName
+            ?? process?.executablePath
+            ?? "unknown process"
+        let pid = process.map { "\($0.pid)" } ?? "unknown"
         let result = NSMutableAttributedString()
-        result.append(bold(agent))
+        result.append(bold(processName))
+        result.append(plain("; pid "))
+        result.append(bold(pid))
         result.append(plain("; cwd: "))
         result.append(code(abbreviatedPath(approval.intent.cwd)))
         return result
