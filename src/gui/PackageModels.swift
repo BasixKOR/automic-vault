@@ -37,6 +37,7 @@ extension String {
 enum PackageManagementBackend: String, Decodable, Equatable {
     case nucleus
     case homebrewCask
+    case npmSkills
 }
 
 struct PackageRecord: Decodable, Equatable {
@@ -447,6 +448,12 @@ struct PackageDetail: Decodable, Equatable {
             }
             return "brew install --cask \(caskName)"
         }
+        if isNpmSkillsManaged {
+            guard let skillName else {
+                return "skills add -g"
+            }
+            return installed ? "skills remove -g \(skillName)" : "skills add -g \(skillName)"
+        }
         return "av install \(helperPackageNames.joined(separator: " "))"
     }
 
@@ -568,11 +575,27 @@ struct PackageDetail: Decodable, Equatable {
         managementBackend == .homebrewCask
     }
 
+    var isNpmSkillsManaged: Bool {
+        managementBackend == .npmSkills
+    }
+
     var caskName: String? {
         if case .cask(let caskName) = source {
             return caskName
         }
         return packageName.strippingPrefix("cask:")
+    }
+
+    var skillName: String? {
+        if let skillName = packageName.strippingPrefix("npm:skills:"),
+           skillName.isEmpty == false {
+            return skillName
+        }
+        if let packageName = installPackageNames?.first,
+           packageName.isEmpty == false {
+            return packageName
+        }
+        return nil
     }
 
     var isHomebrewMigrationCandidate: Bool {
@@ -927,10 +950,13 @@ struct PackageSearchResult: Decodable, Equatable {
 
     var fallbackDetail: PackageDetail {
         let fallbackSource = source ?? .formula(rootFormula: name)
+        let fallbackInstallRoot = managementBackend == .npmSkills
+            ? "\(NSHomeDirectory())/.codex/skills"
+            : "/opt"
         return PackageDetail(
             packageName: name,
             qualifiedName: name,
-            installRoot: "/opt",
+            installRoot: fallbackInstallRoot,
             installed: false,
             source: fallbackSource,
             sourceError: nil,
@@ -954,7 +980,7 @@ struct PackageSearchResult: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: nil,
+            installPackageNames: managementBackend == .npmSkills ? [name] : nil,
             homebrewMigration: nil,
             managementBackend: managementBackend
         )
@@ -1509,6 +1535,17 @@ struct PackagePresentation: Equatable {
         }
     }
 
+    var isNpmSkillsManaged: Bool {
+        switch item {
+        case .installed(let record):
+            return record.managementBackend == .npmSkills
+        case .available(let result):
+            return result.managementBackend == .npmSkills
+        case .recommendation, .command:
+            return false
+        }
+    }
+
     var hasPlainTextSecretAlert: Bool {
         plainTextSecretAlertSource != nil
     }
@@ -1581,11 +1618,11 @@ struct PackagePresentation: Equatable {
     var displayName: String {
         switch item {
         case .installed(let record):
-            return record.name
+            return Self.displayName(for: record.name, backend: record.managementBackend)
         case .recommendation(let recommendation):
             return recommendation.detail.packageName
         case .available(let result):
-            return result.name
+            return Self.displayName(for: result.name, backend: result.managementBackend)
         case .command(let command):
             return command.displayName
         }
@@ -1622,6 +1659,18 @@ struct PackagePresentation: Equatable {
 
     private static func versionLabel(_ version: String) -> String {
         version.hasPrefix("v") ? version : "v\(version)"
+    }
+
+    private static func displayName(
+        for packageName: String,
+        backend: PackageManagementBackend
+    ) -> String {
+        guard backend == .npmSkills,
+              let skillName = packageName.strippingPrefix("npm:skills:"),
+              skillName.isEmpty == false else {
+            return packageName
+        }
+        return skillName
     }
 
     var listSecondaryText: String {

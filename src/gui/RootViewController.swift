@@ -1036,6 +1036,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private let bridge = NucleusBridge()
     private let helperBridge = NukeHelperBridge()
     private let homebrewCaskCatalog = HomebrewCaskCatalog()
+    private let skillsCatalog = SkillsCatalog()
     private let statusStore = NucleusStatusStore()
     private lazy var appUpdateCoordinator = AppUpdateCoordinator(statusStore: statusStore)
     private let packageScrollView = NSScrollView()
@@ -1065,6 +1066,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var appInstalledPackages: [PackagePresentation] = []
     private var appPulseResults: [PackagePresentation] = []
     private var appSearchResults: [PackagePresentation] = []
+    private var skillInstalledPackages: [PackagePresentation] = []
+    private var skillSearchResults: [PackagePresentation] = []
     private var visiblePackages: [PackagePresentation] = []
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var activeMastheadTab: MastheadTab = .clis {
@@ -1072,6 +1075,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             updateMastheadTabs()
             reloadVisiblePackagesForSearch()
             loadHomebrewCasksIfNeeded()
+            loadSkillsIfNeeded()
         }
     }
     private var selectedItemID: String?
@@ -1081,6 +1085,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var homebrewMigrationRequestID = 0
     private var installedPulseRequestID = 0
     private var appCaskRequestID = 0
+    private var skillRequestID = 0
     private var loadingDetailItemID: String?
     private var activeOverlayOperationID = 0
     private var snapshotObserver: NSObjectProtocol?
@@ -1102,6 +1107,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var appSearchResultsQuery: String?
     private var isHomebrewCaskCatalogAvailable: Bool?
     private var hasLoadedHomebrewCasks = false
+    private var isSkillsCatalogAvailable: Bool?
+    private var skillsUnavailableMessage: String?
+    private var hasLoadedSkills = false
     private var isSearching = false {
         didSet {
             updateHeader()
@@ -1156,6 +1164,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             updatePaneLoadingIndicators()
         }
     }
+    private var isLoadingSkills = false {
+        didSet {
+            updateHeader()
+            updatePaneLoadingIndicators()
+        }
+    }
     private var isRunningPrivilegedUpdate = false {
         didSet {
             updateHeader()
@@ -1173,14 +1187,21 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         didSet {
             updateHeader()
             updateUpdateButtonVisibility()
-            dossierView.setActionInFlight(isRunningPackageOperation || isRunningHomebrewCaskOperation)
+            updateDossierActionInFlight()
         }
     }
     private var isRunningHomebrewCaskOperation = false {
         didSet {
             updateHeader()
             updateUpdateButtonVisibility()
-            dossierView.setActionInFlight(isRunningPackageOperation || isRunningHomebrewCaskOperation)
+            updateDossierActionInFlight()
+        }
+    }
+    private var isRunningSkillsOperation = false {
+        didSet {
+            updateHeader()
+            updateUpdateButtonVisibility()
+            updateDossierActionInFlight()
         }
     }
     private var isLoadingSelectedPackageDetail = false {
@@ -1636,6 +1657,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         guard !isRunningPackageOperation,
               !isRunningPrivilegedUpdate,
               !isRunningHomebrewCaskOperation,
+              !isRunningSkillsOperation,
               !isInstallingAv else {
             return
         }
@@ -1667,6 +1689,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         refreshRecommendations()
         applyStatusSnapshot(statusStore.loadSnapshot())
         reloadVisiblePackagesForSearch()
+        if isAppsTabActive {
+            reloadHomebrewCasks()
+        }
+        if isSkillsTabActive {
+            reloadSkills()
+        }
         loadHomebrewMigrationRecommendation(requestID: requestID)
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -1892,6 +1920,34 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             }
             return
         }
+        if isSkillsTabActive {
+            skillInstalledPackages = skillInstalledPackages.map(packagePresentationWithCachedDetail)
+            skillSearchResults = skillSearchResults.map(packagePresentationWithCachedDetail)
+            switch paletteMode {
+            case .installed:
+                applyVisiblePackages(skillsPalettePackages)
+            case .search(let query):
+                let results = skillsCatalog.searchInstalledPackages(
+                    query: query,
+                    installedPackages: skillInstalledPackages
+                )
+                let installedPackageNames = Set(skillInstalledPackages.compactMap(\.packageName))
+                matchingInstalledPackages = results.filter {
+                    guard let packageName = $0.packageName else { return false }
+                    return installedPackageNames.contains(packageName)
+                }
+                skillSearchResults = results.filter {
+                    guard let packageName = $0.packageName else { return true }
+                    return installedPackageNames.contains(packageName) == false
+                }
+                applyVisiblePackages(matchingInstalledPackages + skillSearchResults)
+            case .commandBrowser(let filter):
+                applyVisiblePackages(commandPaletteItems(filter: filter))
+            case .command:
+                applyVisiblePackages([])
+            }
+            return
+        }
 
         rebuildInstalledPackages()
         searchResults = searchResults.map(packagePresentationWithCachedDetail)
@@ -1917,7 +1973,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     ) -> PackagePresentation {
         PackagePresentation(
             item: package.item,
-            detail: detailsByPackageName[package.selectionID],
+            detail: detailsByPackageName[package.selectionID] ?? package.detail,
             freshness: package.freshness,
             presentationID: package.presentationID
         )
@@ -1988,6 +2044,27 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private var appPalettePackages: [PackagePresentation] {
         appInstalledPackages + appPulseResults
+    }
+
+    private var skillsPalettePackages: [PackagePresentation] {
+        guard isSkillsCatalogAvailable != false else {
+            return skillsUnavailablePackages
+        }
+        return skillInstalledPackages
+    }
+
+    private var skillsUnavailablePackages: [PackagePresentation] {
+        let message = skillsUnavailableMessage ?? skillsCatalog.unavailableMessage()
+        return [
+            PackagePresentation(
+                item: .command(CommandPaletteItem(
+                    token: "skills unavailable",
+                    description: message
+                )),
+                detail: nil,
+                freshness: freshness(for: "npm:skills")
+            )
+        ]
     }
 
     private var installedPaletteSecondaryPackages: [PackagePresentation] {
@@ -2090,7 +2167,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             loading: !lazyLoadOnly || isAwaitingSelectedDetail
         )
 
-        if fallbackDetail.isHomebrewCaskManaged {
+        if fallbackDetail.isHomebrewCaskManaged || fallbackDetail.isNpmSkillsManaged {
             detailsByPackageName[itemID] = fallbackDetail
             loadingDetailItemID = nil
             isLoadingSelectedPackageDetail = false
@@ -2195,6 +2272,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         activeMastheadTab == .apps
     }
 
+    private var isSkillsTabActive: Bool {
+        activeMastheadTab == .skills
+    }
+
     private var commandPaletteHelpText: NSAttributedString? {
         guard isCommandPaletteFocused,
               searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -2262,6 +2343,21 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 return command.panelHeaderTitle
             }
         }
+        if isSkillsTabActive {
+            if isSkillsCatalogAvailable == false {
+                return "SKILLS UNAVAILABLE"
+            }
+            switch paletteMode {
+            case .installed:
+                return "INSTALLED"
+            case .search:
+                return matchingInstalledPackages.isEmpty ? "INSTALL" : "INSTALLED"
+            case .commandBrowser:
+                return isShowingEmptyCommandPaletteHelp ? "COMMAND PALETTE" : "AVAILABLE COMMANDS"
+            case .command(let command):
+                return command.panelHeaderTitle
+            }
+        }
         switch paletteMode {
         case .installed:
             return "INSTALLED"
@@ -2290,6 +2386,14 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 return commandTotalCount
             }
         }
+        if isSkillsTabActive {
+            switch paletteMode {
+            case .installed, .commandBrowser, .command:
+                return nil
+            case .search:
+                return matchingInstalledPackages.isEmpty ? skillSearchResults.count : nil
+            }
+        }
         switch paletteMode {
         case .installed:
             return nil
@@ -2308,6 +2412,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             case .installed:
                 return "RECOMMENDATIONS"
             case .search, .command, .commandBrowser:
+                return "DISCOVERY"
+            }
+        }
+        if isSkillsTabActive {
+            switch paletteMode {
+            case .installed:
+                return ""
+            case .search:
+                return "INSTALL"
+            case .command, .commandBrowser:
                 return "DISCOVERY"
             }
         }
@@ -2330,6 +2444,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 return nil
             }
         }
+        if isSkillsTabActive {
+            return nil
+        }
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
@@ -2351,6 +2468,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 return nil
             }
         }
+        if isSkillsTabActive {
+            return nil
+        }
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
@@ -2367,6 +2487,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private func reloadVisiblePackagesForSearch() {
         if isAppsTabActive {
             reloadVisibleAppCasksForSearch()
+            return
+        }
+        if isSkillsTabActive {
+            reloadVisibleSkillsForSearch()
             return
         }
 
@@ -2691,6 +2815,122 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
+    private func loadSkillsIfNeeded() {
+        guard isSkillsTabActive,
+              !hasLoadedSkills,
+              !isLoadingSkills else {
+            return
+        }
+        reloadSkills()
+    }
+
+    private func reloadSkills() {
+        let requestID = skillRequestID + 1
+        skillRequestID = requestID
+        hasLoadedSkills = false
+        isSkillsCatalogAvailable = skillsCatalog.isAvailable()
+        skillsUnavailableMessage = isSkillsCatalogAvailable == true
+            ? nil
+            : skillsCatalog.unavailableMessage()
+        skillInstalledPackages = []
+        skillSearchResults = []
+        reloadVisibleSkillsForSearch()
+
+        guard isSkillsCatalogAvailable == true else {
+            hasLoadedSkills = true
+            return
+        }
+
+        isLoadingSkills = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let packages = try await self.skillsCatalog.fetchInstalledPackages()
+                await MainActor.run {
+                    guard self.skillRequestID == requestID else { return }
+                    self.isLoadingSkills = false
+                    self.hasLoadedSkills = true
+                    self.isSkillsCatalogAvailable = true
+                    self.skillsUnavailableMessage = nil
+                    self.skillInstalledPackages = packages
+                    for package in packages {
+                        if let detail = package.detail {
+                            self.detailsByPackageName[package.selectionID] = detail
+                        }
+                    }
+                    if self.isSkillsTabActive {
+                        self.reloadVisibleSkillsForSearch()
+                    }
+                }
+            } catch SkillsCatalogError.unavailable {
+                await MainActor.run {
+                    guard self.skillRequestID == requestID else { return }
+                    self.isLoadingSkills = false
+                    self.hasLoadedSkills = true
+                    self.isSkillsCatalogAvailable = false
+                    self.skillsUnavailableMessage = self.skillsCatalog.unavailableMessage()
+                    self.reloadVisibleSkillsForSearch()
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.skillRequestID == requestID else { return }
+                    self.isLoadingSkills = false
+                    self.hasLoadedSkills = true
+                    self.isSkillsCatalogAvailable = true
+                    self.skillsUnavailableMessage = error.localizedDescription
+                    if self.isSkillsTabActive {
+                        self.reloadVisibleSkillsForSearch()
+                    }
+                }
+            }
+        }
+    }
+
+    private func reloadVisibleSkillsForSearch() {
+        searchRequestID += 1
+        guard isSkillsCatalogAvailable != false else {
+            matchingInstalledPackages = []
+            searchExcludedPackageNames = []
+            skillSearchResults = []
+            applyVisiblePackages(skillsUnavailablePackages)
+            return
+        }
+        switch paletteMode {
+        case .installed:
+            matchingInstalledPackages = []
+            searchExcludedPackageNames = []
+            skillSearchResults = []
+            applyVisiblePackages(skillsPalettePackages)
+        case .search(let query):
+            let results = skillsCatalog.searchInstalledPackages(
+                query: query,
+                installedPackages: skillInstalledPackages
+            )
+            let installedPackageNames = Set(skillInstalledPackages.compactMap(\.packageName))
+            matchingInstalledPackages = results.filter {
+                guard let packageName = $0.packageName else { return false }
+                return installedPackageNames.contains(packageName)
+            }
+            skillSearchResults = results.filter {
+                guard let packageName = $0.packageName else { return true }
+                return installedPackageNames.contains(packageName) == false
+            }
+            scrollPackageListToTop()
+            applyVisiblePackages(matchingInstalledPackages + skillSearchResults)
+        case .commandBrowser(let filter):
+            matchingInstalledPackages = []
+            searchExcludedPackageNames = []
+            skillSearchResults = []
+            scrollPackageListToTop()
+            applyVisiblePackages(commandPaletteItems(filter: filter))
+        case .command:
+            matchingInstalledPackages = []
+            searchExcludedPackageNames = []
+            skillSearchResults = []
+            applyVisiblePackages([])
+        }
+    }
+
     private func requestSearchPage(query: String, offset: Int, requestID: Int) {
         let excludedPackageNames = searchExcludedPackageNames
         let cachedDetailsByPackageName = detailsByPackageName
@@ -2900,6 +3140,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             case .command, .commandBrowser:
                 return
             }
+        }
+        if isSkillsTabActive {
+            return
         }
         switch paletteMode {
         case .installed:
@@ -3123,9 +3366,18 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 || (isAppsTabActive && isLoadingAppPulseResults)
                 || (isAppsTabActive && isSearchingAppCasks)
                 || (isAppsTabActive && isLoadingMoreAppCaskSearchResults)
+                || (isSkillsTabActive && isLoadingSkills)
         )
         dossierView.setEyebrowLoading(isLoadingSelectedPackageDetail)
         externalSurfaceView.setEyebrowLoading(isLoadingSelectedPackageDetail)
+    }
+
+    private func updateDossierActionInFlight() {
+        dossierView.setActionInFlight(
+            isRunningPackageOperation
+                || isRunningHomebrewCaskOperation
+                || isRunningSkillsOperation
+        )
     }
 
     private func statusTextWidth(_ text: String) -> CGFloat {
@@ -3256,6 +3508,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         if isRunningHomebrewCaskOperation {
             return "homebrew cask channel active"
         }
+        if isRunningSkillsOperation {
+            return "npm:skills channel active"
+        }
         if isInstallingAv {
             return "nucleus av install channel active"
         }
@@ -3337,6 +3592,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             || (!isRunningPrivilegedUpdate
                 && !isRunningPackageOperation
                 && !isRunningHomebrewCaskOperation
+                && !isRunningSkillsOperation
                 && !isInstallingAv)
         view.needsLayout = true
     }
@@ -3748,9 +4004,78 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
+    private func startSkillsMutation(for detail: PackageDetail) {
+        guard let skillName = detail.skillName, !skillName.isEmpty else { return }
+        guard isRunningSkillsOperation == false else { return }
+
+        let operationID = beginOverlayOperation()
+        isRunningSkillsOperation = true
+        let overlay = presentUpdateOverlay()
+        overlay.onRetry = { [weak self] in
+            self?.startSkillsMutation(for: detail)
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.dismissUpdateOverlay()
+        }
+
+        let isInstall = !detail.installed
+        overlay.configure(
+            title: isInstall ? "SKILL INSTALL" : "SKILL UNINSTALL",
+            awaitingClearance: isInstall ? "Preparing skill install" : "Preparing skill uninstall",
+            idleStatus: "npm:skills channel ready",
+            successOperation: isInstall ? "Install Complete" : "Uninstall Complete",
+            failureOperation: isInstall ? "Install Halted" : "Uninstall Halted"
+        )
+        overlay.begin(
+            packages: [detail.packageName],
+            activationLog: isInstall
+                ? "Opening npm:skills install for \(skillName)."
+                : "Opening npm:skills uninstall for \(skillName)."
+        )
+
+        let progress: (NukeHelperProgressEvent) -> Void = { [weak self, weak overlay] event in
+            DispatchQueue.main.async {
+                guard let self,
+                      let overlay,
+                      self.activeOverlayOperationID == operationID else {
+                    return
+                }
+                overlay.handle(event: event)
+            }
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let result = isInstall
+                ? await self.skillsCatalog.installSkill(name: skillName, progress: progress)
+                : await self.skillsCatalog.removeSkill(name: skillName, progress: progress)
+            await MainActor.run {
+                guard self.activeOverlayOperationID == operationID else { return }
+                self.isRunningSkillsOperation = false
+                self.detailsByPackageName.removeValue(forKey: detail.packageName)
+                switch result {
+                case .success(let summary):
+                    overlay.succeed(
+                        message: summary.message,
+                        packages: [summary.packageName]
+                    )
+                    self.hasLoadedSkills = false
+                    self.reloadSkills()
+                case .failure(let error):
+                    overlay.fail(message: error.localizedDescription)
+                    self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
+                }
+            }
+        }
+    }
+
     private func beginPackageMutation(for detail: PackageDetail) {
         if detail.isHomebrewCaskManaged {
             startHomebrewCaskMutation(for: detail)
+            return
+        }
+        if detail.isNpmSkillsManaged {
+            startSkillsMutation(for: detail)
             return
         }
         if detail.isHomebrewMigrationCandidate || detail.homebrewMigration != nil {

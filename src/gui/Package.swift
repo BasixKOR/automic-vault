@@ -37,6 +37,7 @@ let package = Package(
                 "NukeHelperBridge.swift",
                 "HomebrewUpdateChecker.swift",
                 "HomebrewCaskCatalog.swift",
+                "SkillsCatalog.swift",
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
@@ -62,6 +63,7 @@ let package = Package(
             path: "Tests",
             sources: [
                 "HomebrewCaskCatalogTests.swift",
+                "SkillsCatalogTests.swift",
             ]
         ),
     ],
