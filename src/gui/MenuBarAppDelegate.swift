@@ -364,27 +364,36 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func packageItems(for snapshot: NucleusStatusSnapshot) -> [NSMenuItem] {
         guard snapshot.flaggedOutdatedPackageCount > 0 else {
             return [
-                disabledMenuItem(title: "Installed: \(snapshot.installedCount)")
+                packageStatusItem(
+                    name: "Installed",
+                    detail: "\(snapshot.installedCount) packages"
+                )
             ]
         }
 
         let nucleusItems = snapshot.outdatedPackages.map { package in
-            disabledMenuItem(
-                title: "\(package.name): \(package.currentVersion) -> \(package.latestVersion)"
+            packageStatusItem(
+                name: package.name,
+                detail: "\(package.currentVersion) -> \(package.latestVersion)"
             )
         }
         let homebrewItems = snapshot.homebrewOutdatedPackages.map { package in
-            disabledMenuItem(
-                title: "Homebrew \(package.name): " +
-                    "\(package.currentVersion) -> \(package.latestVersion)"
+            packageStatusItem(
+                name: package.name,
+                detail: "\(package.currentVersion) -> \(package.latestVersion)",
+                source: "Homebrew"
             )
         }
         return nucleusItems + homebrewItems
     }
 
-    private func disabledMenuItem(title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
+    private func packageStatusItem(
+        name: String,
+        detail: String,
+        source: String? = nil
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.view = PackageStatusMenuItemView(name: name, detail: detail, source: source)
         return item
     }
 
@@ -526,5 +535,111 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             return nil
         }
         return url
+    }
+}
+
+private final class PackageStatusMenuItemView: NSView {
+    private enum Metrics {
+        static let width: CGFloat = 268
+        static let height: CGFloat = 24
+        static let horizontalInset: CGFloat = 14
+        static let gap: CGFloat = 8
+        static let sourceWidth: CGFloat = 68
+    }
+
+    private let sourceLabel = NSTextField(labelWithString: "")
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
+
+    init(name: String, detail: String, source: String?) {
+        super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.height))
+
+        configureLabel(nameLabel)
+        configureLabel(detailLabel)
+
+        if let source {
+            configureLabel(sourceLabel)
+            sourceLabel.stringValue = source
+            sourceLabel.font = .systemFont(ofSize: 10, weight: .medium)
+            sourceLabel.textColor = .secondaryLabelColor
+            sourceLabel.alignment = .right
+            addSubview(sourceLabel)
+        }
+
+        nameLabel.stringValue = name
+        nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        nameLabel.textColor = .disabledControlTextColor
+        nameLabel.lineBreakMode = .byTruncatingMiddle
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        detailLabel.stringValue = detail
+        detailLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.alignment = .right
+        detailLabel.lineBreakMode = .byTruncatingHead
+        detailLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        detailLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+
+        [nameLabel, detailLabel].forEach(addSubview)
+        activateConstraints(hasSource: source != nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: Metrics.width, height: Metrics.height)
+    }
+
+    private func configureLabel(_ label: NSTextField) {
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isBezeled = false
+        label.drawsBackground = false
+        label.isEditable = false
+        label.isSelectable = false
+        label.maximumNumberOfLines = 1
+    }
+
+    private func activateConstraints(hasSource: Bool) {
+        var constraints: [NSLayoutConstraint] = [
+            detailLabel.trailingAnchor.constraint(
+                equalTo: trailingAnchor,
+                constant: -Metrics.horizontalInset
+            ),
+            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 130),
+            detailLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            nameLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: detailLabel.leadingAnchor,
+                constant: -Metrics.gap
+            ),
+        ]
+
+        if hasSource {
+            constraints += [
+                sourceLabel.leadingAnchor.constraint(
+                    equalTo: leadingAnchor,
+                    constant: Metrics.horizontalInset
+                ),
+                sourceLabel.widthAnchor.constraint(equalToConstant: Metrics.sourceWidth),
+                sourceLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+                nameLabel.leadingAnchor.constraint(
+                    equalTo: sourceLabel.trailingAnchor,
+                    constant: Metrics.gap
+                ),
+            ]
+        } else {
+            constraints.append(
+                nameLabel.leadingAnchor.constraint(
+                    equalTo: leadingAnchor,
+                    constant: Metrics.horizontalInset
+                )
+            )
+        }
+
+        NSLayoutConstraint.activate(constraints)
     }
 }
