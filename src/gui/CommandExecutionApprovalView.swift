@@ -2,11 +2,13 @@ import AppKit
 
 final class CommandExecutionApprovalView: NSView {
     private enum Metrics {
-        static let width: CGFloat = 640
-        static let height: CGFloat = 224
+        static let width: CGFloat = 720
+        static let height: CGFloat = 336
         static let panelRadius: CGFloat = 9
         static let labelWidth: CGFloat = 112
         static let innerPadding: CGFloat = 11
+        static let rowHeight: CGFloat = 19
+        static let rowSpacing: CGFloat = 4
     }
 
     private enum Palette {
@@ -24,17 +26,17 @@ final class CommandExecutionApprovalView: NSView {
     private let approval: VaultApprovalRequestSnapshot
 
     override var intrinsicContentSize: NSSize {
-        let extraRows = max(environmentRowCount - 2, 0)
-        return NSSize(
-            width: Metrics.width,
-            height: Metrics.height + CGFloat(extraRows * 23)
-        )
+        NSSize(width: Metrics.width, height: Metrics.height)
     }
 
     init(approval: VaultApprovalRequestSnapshot) {
         self.approval = approval
         super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.height))
         translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: Metrics.width),
+            heightAnchor.constraint(equalToConstant: Metrics.height)
+        ])
         build()
     }
 
@@ -129,14 +131,37 @@ final class CommandExecutionApprovalView: NSView {
 
     private func environmentPanel() -> NSView {
         let rows = environmentRows
-        return sectionPanel(title: "Environment", rows: rows)
+        return sectionPanel(title: "Environment", rows: rows, scrollsRows: true)
     }
 
-    private func sectionPanel(title: String, rows: [InfoRow]) -> NSView {
+    private func sectionPanel(
+        title: String,
+        rows: [InfoRow],
+        scrollsRows: Bool = false
+    ) -> NSView {
         let view = makePanel()
         let titleLabel = sectionTitle(title)
-        let rowViews = rows.map(infoRow)
+        if scrollsRows {
+            let scrollView = rowsScrollView(rows: rows)
+            [titleLabel, scrollView].forEach {
+                $0.translatesAutoresizingMaskIntoConstraints = false
+                view.addSubview($0)
+            }
 
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
+                titleLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+
+                scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
+                scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
+                scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+                scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.innerPadding)
+            ])
+
+            return view
+        }
+
+        let rowViews = rows.map(infoRow)
         ([titleLabel] + rowViews).forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
@@ -151,12 +176,12 @@ final class CommandExecutionApprovalView: NSView {
             constraints.append(contentsOf: [
                 rowView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
                 rowView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
-                rowView.heightAnchor.constraint(equalToConstant: 19)
+                rowView.heightAnchor.constraint(equalToConstant: Metrics.rowHeight)
             ])
             if index == 0 {
                 constraints.append(rowView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8))
             } else {
-                constraints.append(rowView.topAnchor.constraint(equalTo: rowViews[index - 1].bottomAnchor, constant: 4))
+                constraints.append(rowView.topAnchor.constraint(equalTo: rowViews[index - 1].bottomAnchor, constant: Metrics.rowSpacing))
             }
         }
 
@@ -166,6 +191,54 @@ final class CommandExecutionApprovalView: NSView {
 
         NSLayoutConstraint.activate(constraints)
         return view
+    }
+
+    private func rowsScrollView(rows: [InfoRow]) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = rows.count > 5
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let documentView = NSView()
+        documentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = documentView
+
+        let rowViews = rows.map(infoRow)
+        rowViews.forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            documentView.addSubview($0)
+        }
+
+        var constraints = [
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+        ]
+
+        for (index, rowView) in rowViews.enumerated() {
+            constraints.append(contentsOf: [
+                rowView.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+                rowView.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+                rowView.heightAnchor.constraint(equalToConstant: Metrics.rowHeight)
+            ])
+            if index == 0 {
+                constraints.append(rowView.topAnchor.constraint(equalTo: documentView.topAnchor))
+            } else {
+                constraints.append(rowView.topAnchor.constraint(equalTo: rowViews[index - 1].bottomAnchor, constant: Metrics.rowSpacing))
+            }
+        }
+
+        if let lastRow = rowViews.last {
+            constraints.append(lastRow.bottomAnchor.constraint(equalTo: documentView.bottomAnchor))
+        } else {
+            constraints.append(documentView.heightAnchor.constraint(equalToConstant: 1))
+        }
+
+        NSLayoutConstraint.activate(constraints)
+        return scrollView
     }
 
     private func infoRow(_ row: InfoRow) -> NSView {
