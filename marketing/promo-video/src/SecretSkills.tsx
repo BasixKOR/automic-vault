@@ -605,9 +605,9 @@ const IntroScene: React.FC = () => {
     <AbsoluteFill style={{ opacity: out }}>
       <Background />
       <ScreenLabel>Automic Vault / Skill Secrets</ScreenLabel>
-      <BigWords words={["Your agent", "can install skills."]} start={12} size={132} y={-30} />
+      <BigWords words={["The skill asked for", "your GitHub token."]} start={12} size={118} y={-30} />
       <Caption start={78} top={720} size={42} color={inkBright}>
-        That also means a malicious skill can ask for your tool secrets.
+        That five-second request is where Automic Vault steps in.
       </Caption>
     </AbsoluteFill>
   );
@@ -640,7 +640,7 @@ const SkillScene: React.FC = () => {
           textShadow: "0 20px 42px rgba(0,0,0,0.74)",
         }}
       >
-        Skills are just instructions.
+        It looked helpful.
       </div>
       <div
         style={{
@@ -656,7 +656,7 @@ const SkillScene: React.FC = () => {
           opacity: fade(local, 104, 128),
         }}
       >
-        If one says “read my token first,” your agent may try exactly that.
+        But skills are instructions your agent may follow.
       </div>
     </AbsoluteFill>
   );
@@ -685,7 +685,7 @@ const LeakScene: React.FC = () => {
       />
       <TokenRail start={88} />
       <Caption start={124} top={820} size={40} color={red}>
-        The secret is now text in the agent context.
+        Five seconds later: the secret is agent context.
       </Caption>
       {flash ? (
         <div
@@ -840,7 +840,7 @@ const ProofScene: React.FC = () => {
     <AbsoluteFill style={{ opacity: out }}>
       <Background dim={0.08} />
       <ScreenLabel>Why the skill cannot steal it</ScreenLabel>
-      <BigWords words={["Vault gates", "secret egress."]} start={10} size={118} y={-92} />
+      <BigWords words={["Vault stops", "plaintext leaving."]} start={10} size={118} y={-92} />
       <ProofPill
         label="Patched tools"
         detail="Secrets are intercepted where trusted CLIs would print them."
@@ -910,9 +910,9 @@ const CloseScene: React.FC = () => {
       <div
         style={{
           position: "absolute",
-          left: 560,
+          left: 500,
           top: 745,
-          width: 800,
+          width: 920,
           height: 140,
           display: "flex",
           alignItems: "center",
@@ -922,7 +922,7 @@ const CloseScene: React.FC = () => {
           background: "rgba(2,4,5,0.88)",
           color: green,
           fontFamily: display,
-          fontSize: 66,
+          fontSize: 58,
           fontWeight: 800,
           letterSpacing: "0.035em",
           textAlign: "center",
@@ -932,7 +932,7 @@ const CloseScene: React.FC = () => {
           boxShadow: "inset 0 0 0 2px rgba(107,255,176,0.5), 0 22px 48px rgba(0,0,0,0.5)",
         }}
       >
-        Install skills. Keep secrets sealed.
+        Let agents use tools. Keep secrets out of context.
       </div>
     </AbsoluteFill>
   );
