@@ -217,7 +217,15 @@ homebrew_formula_release_json() {
   local formula="$1"
   local formula_json version
 
-  formula_json="$(curl -fsSL "https://formulae.brew.sh/api/formula/${formula}.json")"
+  if [[ "${formula}" == */*/* ]]; then
+    homebrew_tap_formula_release_json "${formula}"
+    return
+  fi
+
+  if ! formula_json="$(curl -fsSL "https://formulae.brew.sh/api/formula/${formula}.json")"; then
+    echo "Failed to fetch Homebrew formula metadata for ${formula}" >&2
+    return 1
+  fi
   version="$(printf '%s\n' "${formula_json}" | jq -r '.versions.stable')"
 
   if [[ -z "${version}" || "${version}" == "null" ]]; then
@@ -235,6 +243,63 @@ homebrew_formula_release_json() {
       published_at: $publishedAt,
       assets: []
     }'
+}
+
+homebrew_tap_formula_release_json() {
+  local formula="$1"
+  local owner tap name repo formula_rb version html_url
+
+  IFS='/' read -r owner tap name <<< "${formula}"
+  if [[ -z "${owner}" || -z "${tap}" || -z "${name}" ]]; then
+    echo "Unsupported Homebrew tap formula name ${formula}" >&2
+    return 1
+  fi
+
+  repo="${owner}/homebrew-${tap}"
+  if ! formula_rb="$(curl -fsSL "https://raw.githubusercontent.com/${repo}/HEAD/Formula/${name}.rb")"; then
+    echo "Failed to fetch Homebrew tap formula ${formula}" >&2
+    return 1
+  fi
+
+  version="$(printf '%s\n' "${formula_rb}" |
+    sed -nE 's/^[[:space:]]*version[[:space:]]+"([^"]+)".*/\1/p' |
+    head -n 1)"
+  if [[ -z "${version}" ]]; then
+    version="$(printf '%s\n' "${formula_rb}" |
+      sed -nE 's#^[[:space:]]*url[[:space:]]+"https://releases\.hashicorp\.com/'"${name}"'/([^/]+)/.*#\1#p' |
+      head -n 1)"
+  fi
+  if [[ -z "${version}" ]]; then
+    echo "Homebrew tap formula ${formula} did not include a stable version" >&2
+    return 1
+  fi
+
+  html_url="https://github.com/${repo}/blob/HEAD/Formula/${name}.rb"
+  jq -n \
+    --arg tag "v${version}" \
+    --arg htmlUrl "${html_url}" \
+    --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{
+      tag_name: $tag,
+      html_url: $htmlUrl,
+      published_at: $publishedAt,
+      assets: []
+    }'
+}
+
+homebrew_formula_repository() {
+  local formula="$1"
+  local owner tap name
+
+  if [[ "${formula}" == */*/* ]]; then
+    IFS='/' read -r owner tap name <<< "${formula}"
+    if [[ -n "${owner}" && -n "${tap}" && -n "${name}" ]]; then
+      printf '%s\n' "${owner}/homebrew-${tap}"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "Homebrew/homebrew-core"
 }
 
 manifest_json() {
@@ -324,7 +389,7 @@ repo_source_json() {
     release_json="$(homebrew_formula_release_json "${formula}")"
     jq -n \
       --arg kind "homebrew" \
-      --arg upstreamRepo "Homebrew/homebrew-core" \
+      --arg upstreamRepo "$(homebrew_formula_repository "${formula}")" \
       --arg upstreamDefault "$(printf '%s\n' "${repo_json}" | jq -r '.default_branch')" \
       --arg upstreamName "${formula}" \
       --arg formula "${formula}" \
@@ -555,7 +620,7 @@ append_radioisotope_version_entries() {
       "${entries_path}" \
       "${repo_name}" \
       "${radioisotopes_repo}" \
-      "Homebrew/homebrew-core" \
+      "$(homebrew_formula_repository "${formula}")" \
       "${release_json}" \
       "${isotope_name}" \
       "" \
