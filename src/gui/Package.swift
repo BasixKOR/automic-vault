@@ -41,6 +41,7 @@ let package = Package(
                 "PostHogTelemetry.swift",
                 "AppMain.swift",
                 "AppDelegate.swift",
+                "CommandExecutionApprovalView.swift",
                 "IsotopeApprovalView.swift",
                 "AppUpdateCoordinator.swift",
                 "PackageNodeHazardEffect.swift",

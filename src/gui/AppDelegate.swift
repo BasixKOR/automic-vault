@@ -373,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Approve Command Execution"
-        alert.informativeText = approvalSummary(for: approval)
+        alert.informativeText = ""
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Approve")
         alert.addButton(withTitle: "Deny")
@@ -580,50 +580,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ].joined(separator: "\n")
     }
 
-    private func approvalSummary(for approval: VaultApprovalRequestSnapshot) -> String {
-        var parts = [
-            "Tool: \(approval.intent.tool)",
-            "Agent: \(approval.intent.agentID ?? "unknown")",
-            "Working Directory: \(approval.intent.cwd)"
-        ]
-        if approval.intent.args.isEmpty == false {
-            parts.append("Arguments: \(approval.intent.args.joined(separator: " "))")
-        }
-        return parts.joined(separator: "\n")
-    }
-
     private func approvalAccessoryView(for approval: VaultApprovalRequestSnapshot) -> NSView {
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 260))
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isRichText = false
-        textView.font = UIStyle.monoFont(size: 11, weight: .regular)
-        textView.string = approvalDetailText(for: approval)
-        scrollView.documentView = textView
-        return scrollView
-    }
-
-    private func approvalDetailText(for approval: VaultApprovalRequestSnapshot) -> String {
-        let environment = approval.intent.env.keys.sorted().map { key in
-            "\(key)=\(approval.intent.env[key] ?? "")"
-        }
-        let command = ([approval.intent.tool] + approval.intent.args).joined(separator: " ")
-        return [
-            "Command",
-            command,
-            "",
-            "Working Directory",
-            approval.intent.cwd,
-            "",
-            "Agent ID",
-            approval.intent.agentID ?? "unknown",
-            "",
-            "Environment",
-            environment.joined(separator: "\n")
-        ].joined(separator: "\n")
+        CommandExecutionApprovalView(approval: approval)
     }
 
     private func launchMenuBarHelperIfNeeded() {
