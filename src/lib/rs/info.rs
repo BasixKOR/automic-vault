@@ -2505,6 +2505,7 @@ mod tests {
             bottle_tag: "all".to_string(),
         };
         let opt_root = opt_pkg_root();
+        fs::create_dir_all(&opt_root).unwrap();
 
         let file_root = opt_root.join("coverage-info-file");
         if fs::symlink_metadata(&file_root).is_ok() {
