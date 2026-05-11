@@ -14,10 +14,19 @@ final class HomebrewCaskCatalogTests: XCTestCase {
         XCTAssertEqual(cask.detail.managementBackend, .homebrewCask)
     }
 
-    func testCaskWithBinaryArtifactIsExcluded() throws {
+    func testGuiAppCaskWithBinaryArtifactIsIncluded() throws {
         let cask = try Self.decodeSingleCask(
             token: "visual-studio-code",
             artifacts: #"[{"app":["Visual Studio Code.app"]},{"binary":["/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"]}]"#
+        )
+
+        XCTAssertTrue(cask.isGuiAppCask)
+    }
+
+    func testCliOnlyCaskWithBinaryArtifactIsExcluded() throws {
+        let cask = try Self.decodeSingleCask(
+            token: "cli-only",
+            artifacts: #"[{"binary":["/Applications/CLI.app/Contents/MacOS/cli"]}]"#
         )
 
         XCTAssertFalse(cask.isGuiAppCask)
@@ -65,6 +74,21 @@ final class HomebrewCaskCatalogTests: XCTestCase {
                 pulseKind: "updated"
             ),
         ])
+    }
+
+    func testAnalyticsOutputParsesPulseFallbackTokens() {
+        let report = """
+        ==> cask-install (30 days)
+        Index | Token                                             |     Count |  Percent
+        -----:|---------------------------------------------------|----------:|--------:
+        0001  | claude-code                                       |   131,761 |    5.52%
+        0002  | visual-studio-code                                |    47,030 |    1.97%
+        """
+
+        XCTAssertEqual(
+            HomebrewCaskCatalog.parseAnalyticsTokens(from: Data(report.utf8)),
+            ["claude-code", "visual-studio-code"]
+        )
     }
 
     func testMissingBrewReportsUnavailable() {

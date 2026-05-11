@@ -106,7 +106,7 @@ final class HomebrewCaskCatalog {
         }
 
         var isGuiAppCask: Bool {
-            !deprecated && !disabled && hasAppArtifact && !hasBinaryArtifact
+            !deprecated && !disabled && hasAppArtifact
         }
 
         var displayTitle: String {
@@ -205,9 +205,6 @@ final class HomebrewCaskCatalog {
             artifacts.contains { $0.kind == "app" }
         }
 
-        private var hasBinaryArtifact: Bool {
-            artifacts.contains { $0.kind == "binary" }
-        }
     }
 
     struct Artifact: Decodable, Equatable {
@@ -331,6 +328,8 @@ final class HomebrewCaskCatalog {
         let eventLimit = Swift.max(Swift.max(offset + limit * 4, limit * 6), 120)
         let tokenLimit = Swift.max(offset + limit * 4, limit)
         let events = try pulseEvents(limit: eventLimit)
+            .nonEmpty
+            ?? analyticsPulseEvents(limit: eventLimit)
         let tokenWindow = Array(events.map(\.token).prefix(tokenLimit))
         let eventByToken = Dictionary(uniqueKeysWithValues: events.map { ($0.token, $0) })
         let casks = try fetchCasks(tokens: tokenWindow)
@@ -409,6 +408,27 @@ final class HomebrewCaskCatalog {
             environment: ProcessInfo.processInfo.environment
         )
         return Self.parsePulseEvents(fromGitLog: data, limit: limit)
+    }
+
+    private func analyticsPulseEvents(limit: Int) -> [PulseEvent] {
+        guard limit > 0,
+              let data = try? runBrew(arguments: [
+                "info",
+                "--analytics",
+                "--category=cask-install",
+                "--days=30"
+              ]) else {
+            return []
+        }
+        return Self.parseAnalyticsTokens(from: data)
+            .prefix(limit)
+            .map {
+                PulseEvent(
+                    token: $0,
+                    lastUpdatedAt: "",
+                    pulseKind: "updated"
+                )
+            }
     }
 
     private func homebrewCaskTapPath() throws -> URL? {
@@ -598,6 +618,25 @@ final class HomebrewCaskCatalog {
             .filter { !$0.isEmpty }))
     }
 
+    static func parseAnalyticsTokens(from data: Data) -> [String] {
+        guard let text = String(data: data, encoding: .utf8) else {
+            return []
+        }
+        let tokens = text
+            .split(whereSeparator: \.isNewline)
+            .compactMap { line -> String? in
+                let columns = line.split(separator: "|").map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard columns.count >= 2,
+                      Int(columns[0]) != nil else {
+                    return nil
+                }
+                return columns[1].nonEmpty
+            }
+        return Array(OrderedSet(tokens))
+    }
+
     static func parsePulseEvents(fromGitLog data: Data, limit: Int) -> [PulseEvent] {
         guard limit > 0,
               let text = String(data: data, encoding: .utf8) else {
@@ -675,6 +714,12 @@ private extension Array {
 
 private extension String {
     var nonEmpty: String? {
+        isEmpty ? nil : self
+    }
+}
+
+private extension Array {
+    var nonEmpty: [Element]? {
         isEmpty ? nil : self
     }
 }
