@@ -1562,9 +1562,9 @@ struct PackagePresentation: Equatable {
         }
         switch pulseKind.lowercased() {
         case "new":
-            return "new"
+            return "c"
         case "updated":
-            return "updated"
+            return "m"
         default:
             return nil
         }
