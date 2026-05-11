@@ -20,8 +20,14 @@ final class HomebrewUpdateChecker {
         let casks: [OutdatedCask]
     }
 
+    private struct InstalledReport: Decodable {
+        let formulae: [InstalledFormula]
+        let casks: [InstalledCask]
+    }
+
     private struct OutdatedFormula: Decodable {
         let name: String
+        let fullName: String?
         let installedVersions: [String]?
         let currentVersion: String?
     }
@@ -30,6 +36,35 @@ final class HomebrewUpdateChecker {
         let name: String
         let installedVersions: [String]?
         let currentVersion: String?
+    }
+
+    private struct InstalledFormula: Decodable {
+        let name: String
+        let fullName: String?
+        let tap: String?
+        let installed: [InstalledFormulaVersion]
+
+        var isInstalledOnRequest: Bool {
+            installed.contains { $0.installedOnRequest }
+        }
+
+        var migrationDisplayName: String {
+            guard tap != nil && tap != "homebrew/core" else {
+                return name
+            }
+            guard let fullName, fullName.contains("/") else {
+                return name
+            }
+            return fullName
+        }
+    }
+
+    private struct InstalledFormulaVersion: Decodable {
+        let installedOnRequest: Bool
+    }
+
+    private struct InstalledCask: Decodable {
+        let token: String?
     }
 
     private static let brewPath = "/opt/homebrew/bin/brew"
@@ -52,8 +87,10 @@ final class HomebrewUpdateChecker {
         }
 
         _ = try runBrew(arguments: ["update"])
+        let installedOutput = try runBrew(arguments: ["info", "--json=v2", "--installed"])
         let output = try runBrew(arguments: ["outdated", "--json=v2"])
-        return try parseOutdatedPackages(from: output)
+        let installedPackages = try parseInstalledPackageNames(from: installedOutput)
+        return try parseOutdatedPackages(from: output, installedPackages: installedPackages)
     }
 
     private func runBrew(arguments: [String]) throws -> Data {
@@ -101,7 +138,40 @@ final class HomebrewUpdateChecker {
         return environment
     }
 
-    private func parseOutdatedPackages(from data: Data) throws -> [OutdatedPackageRecord] {
+    private func parseInstalledPackageNames(from data: Data) throws -> [String: String] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let report: InstalledReport
+        do {
+            report = try decoder.decode(InstalledReport.self, from: data)
+        } catch {
+            throw HomebrewUpdateCheckerError.invalidResponse(
+                "failed to parse Homebrew installed package report: \(error.localizedDescription)"
+            )
+        }
+
+        var packagesByName: [String: String] = [:]
+        for formula in report.formulae where formula.isInstalledOnRequest {
+            let displayName = "brew:\(formula.migrationDisplayName)"
+            packagesByName["brew:\(formula.name)"] = displayName
+            if let fullName = formula.fullName, fullName.isEmpty == false {
+                packagesByName["brew:\(fullName)"] = displayName
+            }
+        }
+        for cask in report.casks {
+            guard let token = cask.token, token.isEmpty == false else {
+                continue
+            }
+            packagesByName["cask:\(token)"] = "cask:\(token)"
+        }
+        return packagesByName
+    }
+
+    private func parseOutdatedPackages(
+        from data: Data,
+        installedPackages: [String: String]
+    ) throws -> [OutdatedPackageRecord] {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
 
@@ -114,16 +184,26 @@ final class HomebrewUpdateChecker {
             )
         }
 
-        let formulae = report.formulae.map { formula in
-            OutdatedPackageRecord(
-                name: "brew:\(formula.name)",
+        let formulae = report.formulae.compactMap { formula -> OutdatedPackageRecord? in
+            guard let displayName = installedDisplayName(
+                for: ["brew:\(formula.name)", formula.fullName.map { "brew:\($0)" }],
+                installedPackages: installedPackages
+            ) else {
+                return nil
+            }
+            return OutdatedPackageRecord(
+                name: displayName,
                 currentVersion: installedVersionText(formula.installedVersions),
                 latestVersion: formula.currentVersion ?? "available"
             )
         }
-        let casks = report.casks.map { cask in
-            OutdatedPackageRecord(
-                name: "cask:\(cask.name)",
+        let casks = report.casks.compactMap { cask -> OutdatedPackageRecord? in
+            let name = "cask:\(cask.name)"
+            guard let displayName = installedPackages[name] else {
+                return nil
+            }
+            return OutdatedPackageRecord(
+                name: displayName,
                 currentVersion: installedVersionText(cask.installedVersions),
                 latestVersion: cask.currentVersion ?? "available"
             )
@@ -137,5 +217,17 @@ final class HomebrewUpdateChecker {
     private func installedVersionText(_ versions: [String]?) -> String {
         let nonEmptyVersions = (versions ?? []).filter { !$0.isEmpty }
         return nonEmptyVersions.isEmpty ? "installed" : nonEmptyVersions.joined(separator: ", ")
+    }
+
+    private func installedDisplayName(
+        for candidates: [String?],
+        installedPackages: [String: String]
+    ) -> String? {
+        for candidate in candidates.compactMap({ $0 }) {
+            if let displayName = installedPackages[candidate] {
+                return displayName
+            }
+        }
+        return nil
     }
 }
