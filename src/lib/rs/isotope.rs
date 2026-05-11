@@ -42,8 +42,13 @@ struct IsotopeApprovalRequestSnapshot {
     id: String,
     keys: Vec<String>,
     executable_path: String,
+    executable_root_controlled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested_script_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_root_controlled: Option<bool>,
     requested_executable_path: String,
     argv: Vec<String>,
     cwd: String,
@@ -387,6 +392,13 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
         .map_err(|err| format!("failed to open {}: {err}", resolved_target.display()))?;
     validate_regular_target(&resolved_target, &file)?;
     validate_parent_directories(&options.target)?;
+    let executable_root_controlled =
+        validate_target_root_installation(&resolved_target, &file).is_ok();
+    let requested_script_path =
+        interpreter_script_path_for_display(&resolved_target, &options.args);
+    let script_root_controlled = requested_script_path
+        .as_deref()
+        .map(|path| validate_root_controlled_path(path).is_ok());
     let always_allow_scope = always_allow_scope(
         &resolved_target_string,
         &resolved_target,
@@ -409,6 +421,9 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
             always_allow_scope.as_ref().ok(),
             options,
             &credential_keys,
+            executable_root_controlled,
+            requested_script_path,
+            script_root_controlled,
             can_always_allow,
         )?;
     }
@@ -484,6 +499,13 @@ fn validate_target_root_installation(path: &Path, file: &File) -> Result<(), Str
     validate_parent_directories(path)
 }
 
+fn validate_root_controlled_path(path: &Path) -> Result<(), String> {
+    let file =
+        File::open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    validate_regular_target(path, &file)?;
+    validate_target_root_installation(path, &file)
+}
+
 fn validate_target_file_metadata(uid: u32, mode: u32) -> Result<(), String> {
     if uid != 0 {
         return Err("target binary must be owned by root".to_string());
@@ -554,6 +576,30 @@ fn interpreter_script_path_for_always_allow(
     validate_regular_target(&script_path, &file)?;
     validate_target_root_installation(&script_path, &file)?;
     Ok(Some(script_path))
+}
+
+fn interpreter_script_path_for_display(
+    executable_path: &Path,
+    args: &[OsString],
+) -> Option<PathBuf> {
+    if !is_script_interpreter(executable_path)
+        || executable_file_name(executable_path) == Some("env")
+    {
+        return None;
+    }
+    let script_path = interpreter_script_operand(args)?;
+    let path = if script_path.is_absolute() {
+        script_path.to_path_buf()
+    } else {
+        env::current_dir().ok()?.join(script_path)
+    };
+    Some(fs::canonicalize(&path).unwrap_or(path))
+}
+
+fn path_to_display_string(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "path must be valid UTF-8".to_string())
 }
 
 fn is_script_interpreter(path: &Path) -> bool {
@@ -646,6 +692,9 @@ fn request_isotope_approval(
     always_allow_scope: Option<&IsotopeAlwaysAllowScope>,
     options: &IsotopeOptions,
     credential_keys: &[String],
+    executable_root_controlled: bool,
+    requested_script_path: Option<PathBuf>,
+    script_root_controlled: Option<bool>,
     can_always_allow: bool,
 ) -> Result<(), String> {
     let request_id = format!(
@@ -660,7 +709,13 @@ fn request_isotope_approval(
         id: request_id.clone(),
         keys: credential_keys.to_vec(),
         executable_path: executable_path.to_string(),
+        executable_root_controlled,
         script_path: always_allow_scope.and_then(|scope| scope.script_path.clone()),
+        requested_script_path: requested_script_path
+            .as_deref()
+            .map(path_to_display_string)
+            .transpose()?,
+        script_root_controlled,
         requested_executable_path: options
             .target
             .to_str()
@@ -1364,7 +1419,10 @@ mod tests {
                 id: "request-1".to_string(),
                 keys: vec!["TOKEN".to_string()],
                 executable_path: "/bin/sh".to_string(),
+                executable_root_controlled: true,
                 script_path: None,
+                requested_script_path: None,
+                script_root_controlled: None,
                 requested_executable_path: "/bin/sh".to_string(),
                 argv: vec!["/bin/sh".to_string()],
                 cwd: "/tmp".to_string(),
@@ -1613,6 +1671,31 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("root-owned script file"));
+    }
+
+    #[test]
+    fn isotopes_detect_display_script_for_interpreter_approvals() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let previous_cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp.path()).unwrap();
+        let script = temp.path().join("deploy.sh");
+        fs::write(&script, b"#!/bin/sh\n").unwrap();
+
+        let detected = interpreter_script_path_for_display(
+            Path::new("/bin/bash"),
+            &[OsString::from("deploy.sh")],
+        )
+        .unwrap();
+        let expected = fs::canonicalize(&script).unwrap();
+        let inline_command = interpreter_script_path_for_display(
+            Path::new("/bin/bash"),
+            &[OsString::from("-c"), OsString::from("echo hi")],
+        );
+        env::set_current_dir(previous_cwd).unwrap();
+
+        assert_eq!(detected, expected);
+        assert_eq!(inline_command, None);
     }
 
     #[test]

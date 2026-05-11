@@ -525,66 +525,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func isotopeApprovalSummary(for approval: IsotopeApprovalRequestSnapshot) -> String {
-        let requestedPath = approval.requestedExecutablePath ?? approval.executablePath
-        return [
-            "Requested Executable: \(requestedPath)",
-            "Audited Executable: \(approval.executablePath)",
-            approval.scriptPath.map { "Script: \($0)" },
-            "Invoked By: \(isotopeParentProcessSummary(approval.parentProcess))",
-            "Keys: \(approval.keys.joined(separator: ", "))",
-            "Working Directory: \(approval.cwd)"
-        ].compactMap { $0 }.joined(separator: "\n")
+        let requester = isotopeParentProcessSummary(approval.parentProcess)
+        let secretCount = "\(approval.keys.count) secret\(approval.keys.count == 1 ? "" : "s")"
+        return "\(requester) is requesting \(secretCount). Review the command, source, and root-controlled boundaries before allowing injection."
     }
 
     private func isotopeApprovalAccessoryView(for approval: IsotopeApprovalRequestSnapshot) -> NSView {
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isRichText = false
-        textView.font = UIStyle.monoFont(size: 11, weight: .regular)
-        textView.string = isotopeApprovalDetailText(for: approval)
-        scrollView.documentView = textView
-        return scrollView
-    }
-
-    private func isotopeApprovalDetailText(for approval: IsotopeApprovalRequestSnapshot) -> String {
-        let requestedPath = approval.requestedExecutablePath ?? approval.executablePath
-        let command = ([requestedPath] + approval.argv).joined(separator: " ")
-        var sections = [
-            "Command",
-            command,
-            "",
-            "Audited Executable",
-            approval.executablePath,
-        ]
-        if let scriptPath = approval.scriptPath {
-            sections.append(contentsOf: [
-                "",
-                "Script",
-                scriptPath
-            ])
-        }
-        let alwaysAllowScope = approval.scriptPath == nil
-            ? "Available for this root-installed target"
-            : "Available for this root-installed target and script"
-        sections.append(contentsOf: [
-            "",
-            "Working Directory",
-            approval.cwd,
-            "",
-            "Invoked By",
-            isotopeParentProcessDetail(approval.parentProcess),
-            "",
-            "Injected Keys",
-            approval.keys.joined(separator: "\n"),
-            "",
-            "Always Allow",
-            approval.canAlwaysAllow ? alwaysAllowScope : "Unavailable"
-        ])
-        return sections.joined(separator: "\n")
+        IsotopeApprovalView(approval: approval)
     }
 
     private func isotopeParentProcessSummary(
