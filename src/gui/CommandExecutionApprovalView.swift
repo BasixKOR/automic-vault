@@ -371,13 +371,14 @@ final class CommandExecutionApprovalView: NSView {
     private var requesterSummary: NSAttributedString {
         let process = approval.intent.requestingProcess
         let processName = process?.displayName
-            ?? process?.executablePath
-            ?? "unknown process"
-        let pid = process.map { "\($0.pid)" } ?? "unknown"
+            ?? process?.executablePath.map { URL(fileURLWithPath: $0).lastPathComponent }
+            ?? approval.intent.tool
         let result = NSMutableAttributedString()
         result.append(bold(processName))
-        result.append(plain("; pid "))
-        result.append(bold(pid))
+        if let process {
+            result.append(plain("; pid "))
+            result.append(bold("\(process.pid)"))
+        }
         result.append(plain("; cwd: "))
         result.append(code(abbreviatedPath(approval.intent.cwd)))
         return result
@@ -395,7 +396,7 @@ final class CommandExecutionApprovalView: NSView {
         return approval.intent.env.keys.sorted().map { key in
             InfoRow(
                 key,
-                abbreviatedPath(approval.intent.env[key] ?? ""),
+                environmentValue(key: key),
                 nil,
                 true
             )
@@ -404,6 +405,14 @@ final class CommandExecutionApprovalView: NSView {
 
     private var environmentRowCount: Int {
         max(approval.intent.env.count, 1)
+    }
+
+    private func environmentValue(key: String) -> String {
+        let value = approval.intent.env[key] ?? ""
+        if key == "HOME" {
+            return value
+        }
+        return abbreviatedPath(value)
     }
 
     private func abbreviatedPath(_ value: String) -> String {
