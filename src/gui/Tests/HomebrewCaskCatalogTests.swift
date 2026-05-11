@@ -82,13 +82,54 @@ final class HomebrewCaskCatalogTests: XCTestCase {
         Index | Token                                             |     Count |  Percent
         -----:|---------------------------------------------------|----------:|--------:
         0001  | claude-code                                       |   131,761 |    5.52%
-        0002  | visual-studio-code                                |    47,030 |    1.97%
+        0002  | microsoft/git/microsoft-git                       |    23,980 |    1.00%
+        0003  | visual-studio-code                                |    47,030 |    1.97%
         """
 
         XCTAssertEqual(
             HomebrewCaskCatalog.parseAnalyticsTokens(from: Data(report.utf8)),
             ["claude-code", "visual-studio-code"]
         )
+    }
+
+    func testPulseMetadataFetchCanDisablePerTokenFallback() throws {
+        var calls: [[String]] = []
+        let catalog = HomebrewCaskCatalog(brewRunner: { arguments in
+            calls.append(arguments)
+            if arguments.count > 4 {
+                throw HomebrewCaskCatalogError.commandFailed("bulk failed")
+            }
+            return Data(#"{"casks":[]}"#.utf8)
+        })
+
+        _ = try catalog.fetchCasks(
+            tokens: ["alpha", "beta"],
+            fallback: .none
+        )
+
+        XCTAssertEqual(calls, [["info", "--json=v2", "--cask", "alpha", "beta"]])
+    }
+
+    func testInstalledAndSearchMetadataFetchCanUsePerTokenFallback() throws {
+        var calls: [[String]] = []
+        let catalog = HomebrewCaskCatalog(brewRunner: { arguments in
+            calls.append(arguments)
+            if arguments.count > 4 {
+                throw HomebrewCaskCatalogError.commandFailed("bulk failed")
+            }
+            return Data(#"{"casks":[]}"#.utf8)
+        })
+
+        _ = try catalog.fetchCasks(
+            tokens: ["alpha", "beta"],
+            fallback: .perToken
+        )
+
+        XCTAssertEqual(calls, [
+            ["info", "--json=v2", "--cask", "alpha", "beta"],
+            ["info", "--json=v2", "--cask", "alpha"],
+            ["info", "--json=v2", "--cask", "beta"],
+        ])
     }
 
     func testMissingBrewReportsUnavailable() {

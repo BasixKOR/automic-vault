@@ -23,8 +23,19 @@ struct HomebrewCaskOperationResult {
 }
 
 final class HomebrewCaskCatalog {
+    enum CaskFetchFallback {
+        case perToken
+        case none
+    }
+
     private struct InfoReport: Decodable {
         let casks: [Cask]
+    }
+
+    private enum Pulse {
+        static let initialCandidateCount = 80
+        static let candidateBatchSize = 80
+        static let maximumCandidateCount = 240
     }
 
     struct PulseEvent: Equatable {
@@ -253,15 +264,18 @@ final class HomebrewCaskCatalog {
     private let fileManager: FileManager
     private let brewPathOverride: String?
     private let allowPathLookup: Bool
+    private let brewRunner: (([String]) throws -> Data)?
 
     init(
         fileManager: FileManager = .default,
         brewPath: String? = nil,
-        allowPathLookup: Bool = true
+        allowPathLookup: Bool = true,
+        brewRunner: (([String]) throws -> Data)? = nil
     ) {
         self.fileManager = fileManager
         brewPathOverride = brewPath
         self.allowPathLookup = allowPathLookup
+        self.brewRunner = brewRunner
     }
 
     func isHomebrewAvailable() -> Bool {
@@ -312,7 +326,10 @@ final class HomebrewCaskCatalog {
 
     private func fetchInstalledPackagesSync() throws -> [PackagePresentation] {
         let tokenData = try runBrew(arguments: ["list", "--cask"])
-        let casks = try fetchCasks(tokens: Self.parseListTokens(from: tokenData))
+        let casks = try fetchCasks(
+            tokens: Self.parseListTokens(from: tokenData),
+            fallback: .perToken
+        )
             .filter(\.isGuiAppCask)
             .sorted { $0.token.packageSearchOrderName < $1.token.packageSearchOrderName }
         return casks.map { cask in
@@ -325,21 +342,15 @@ final class HomebrewCaskCatalog {
     }
 
     private func fetchPulsePackagesSync(offset: Int, limit: Int) throws -> PackageSearchPage {
-        let eventLimit = Swift.max(Swift.max(offset + limit * 4, limit * 6), 120)
-        let tokenLimit = Swift.max(offset + limit * 4, limit)
+        let eventLimit = Swift.max(offset + limit * 4, Pulse.initialCandidateCount)
         let events = try pulseEvents(limit: eventLimit)
             .nonEmpty
-            ?? analyticsPulseEvents(limit: eventLimit)
-        let tokenWindow = Array(events.map(\.token).prefix(tokenLimit))
-        let eventByToken = Dictionary(uniqueKeysWithValues: events.map { ($0.token, $0) })
-        let casks = try fetchCasks(tokens: tokenWindow)
-            .compactMap { cask -> Cask? in
-                guard let eventful = withPulseEvent(cask, event: eventByToken[cask.token]),
-                      eventful.isGuiAppCask else {
-                    return nil
-                }
-                return eventful
-            }
+            ?? analyticsPulseEvents(limit: Pulse.maximumCandidateCount)
+        let casks = try fetchPulseCasks(
+            events: events,
+            offset: offset,
+            limit: limit
+        )
         let pageCasks = Array(casks.dropFirst(offset).prefix(limit))
         return PackageSearchPage(
             packages: pageCasks.map(\.searchResult),
@@ -355,7 +366,7 @@ final class HomebrewCaskCatalog {
         }
         let output = try runBrew(arguments: ["search", "--cask", "--desc", trimmed])
         let tokens = Self.parseSearchTokens(from: output)
-        let casks = try fetchCasks(tokens: tokens)
+        let casks = try fetchCasks(tokens: tokens, fallback: .perToken)
             .filter(\.isGuiAppCask)
         let pageCasks = Array(casks.dropFirst(offset).prefix(limit))
         return PackageSearchPage(
@@ -365,7 +376,45 @@ final class HomebrewCaskCatalog {
         )
     }
 
-    private func fetchCasks(tokens: [String]) throws -> [Cask] {
+    private func fetchPulseCasks(
+        events: [PulseEvent],
+        offset: Int,
+        limit: Int
+    ) throws -> [Cask] {
+        let targetCount = offset + limit
+        let eventByToken = Dictionary(uniqueKeysWithValues: events.map { ($0.token, $0) })
+        var casks: [Cask] = []
+        var scannedCount = 0
+        let maximumScannedCount = Swift.min(
+            events.count,
+            Swift.max(
+                Pulse.initialCandidateCount,
+                Swift.min(Pulse.maximumCandidateCount, targetCount * 3)
+            )
+        )
+
+        while casks.count < targetCount, scannedCount < maximumScannedCount {
+            let nextCount = Swift.min(scannedCount + Pulse.candidateBatchSize, maximumScannedCount)
+            let tokenWindow = Array(events[scannedCount ..< nextCount].map(\.token))
+            let batch = try fetchCasks(tokens: tokenWindow, fallback: .none)
+                .compactMap { cask -> Cask? in
+                    guard let eventful = withPulseEvent(cask, event: eventByToken[cask.token]),
+                          eventful.isGuiAppCask else {
+                        return nil
+                    }
+                    return eventful
+                }
+            casks.append(contentsOf: batch)
+            scannedCount = nextCount
+        }
+
+        return casks
+    }
+
+    func fetchCasks(
+        tokens: [String],
+        fallback: CaskFetchFallback
+    ) throws -> [Cask] {
         let uniqueTokens = Array(OrderedSet(tokens.filter { !$0.isEmpty }))
         guard !uniqueTokens.isEmpty else { return [] }
 
@@ -375,6 +424,9 @@ final class HomebrewCaskCatalog {
                 let data = try runBrew(arguments: ["info", "--json=v2", "--cask"] + chunk)
                 casks.append(contentsOf: try Self.decodeCasks(from: data))
             } catch {
+                guard fallback == .perToken else {
+                    continue
+                }
                 for token in chunk {
                     guard let data = try? runBrew(arguments: ["info", "--json=v2", "--cask", token]),
                           let cask = try? Self.decodeCasks(from: data).first else {
@@ -469,6 +521,9 @@ final class HomebrewCaskCatalog {
     }
 
     private func runBrew(arguments: [String]) throws -> Data {
+        if let brewRunner {
+            return try brewRunner(arguments)
+        }
         guard let brewPath = resolveBrewPath() else {
             throw HomebrewCaskCatalogError.homebrewUnavailable
         }
@@ -632,9 +687,16 @@ final class HomebrewCaskCatalog {
                       Int(columns[0]) != nil else {
                     return nil
                 }
-                return columns[1].nonEmpty
+                return Self.coreCaskToken(columns[1])
             }
         return Array(OrderedSet(tokens))
+    }
+
+    static func coreCaskToken(_ token: String) -> String? {
+        guard !token.contains("/") else {
+            return nil
+        }
+        return token.nonEmpty
     }
 
     static func parsePulseEvents(fromGitLog data: Data, limit: Int) -> [PulseEvent] {
