@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "appkit-autolayout": {
+      "source": "lcandy2/citron-skills",
+      "sourceType": "github",
+      "skillPath": "skills/appkit-autolayout/SKILL.md",
+      "computedHash": "927da4814b9889730cda573e699a72a5816baee3547c8f32a530c4d262200943"
+    },
     "beautiful-cli-design": {
       "source": "curiositech/windags-skills",
       "sourceType": "github",
