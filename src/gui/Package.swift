@@ -62,6 +62,7 @@ let package = Package(
             dependencies: ["AutomicVaultApp"],
             path: "Tests",
             sources: [
+                "HomebrewUpdateCheckerTests.swift",
                 "HomebrewCaskCatalogTests.swift",
                 "SkillsCatalogTests.swift",
             ]

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum HomebrewUpdateCheckerError: Error, LocalizedError {
     case commandFailed(String)
@@ -15,6 +16,9 @@ enum HomebrewUpdateCheckerError: Error, LocalizedError {
 }
 
 final class HomebrewUpdateChecker {
+    private static let defaultBrewPath = "/opt/homebrew/bin/brew"
+    private static let defaultCommandTimeout: TimeInterval = 120
+
     private struct OutdatedReport: Decodable {
         let formulae: [OutdatedFormula]
         let casks: [OutdatedCask]
@@ -67,11 +71,17 @@ final class HomebrewUpdateChecker {
         let token: String?
     }
 
-    private static let brewPath = "/opt/homebrew/bin/brew"
-
+    private let brewPath: String
+    private let commandTimeout: TimeInterval
     private let fileManager: FileManager
 
-    init(fileManager: FileManager = .default) {
+    init(
+        brewPath: String = HomebrewUpdateChecker.defaultBrewPath,
+        commandTimeout: TimeInterval = HomebrewUpdateChecker.defaultCommandTimeout,
+        fileManager: FileManager = .default
+    ) {
+        self.brewPath = brewPath
+        self.commandTimeout = commandTimeout
         self.fileManager = fileManager
     }
 
@@ -82,7 +92,7 @@ final class HomebrewUpdateChecker {
     }
 
     func refreshOutdatedPackagesSync() throws -> [OutdatedPackageRecord] {
-        guard fileManager.isExecutableFile(atPath: Self.brewPath) else {
+        guard fileManager.isExecutableFile(atPath: brewPath) else {
             return []
         }
 
@@ -95,7 +105,7 @@ final class HomebrewUpdateChecker {
 
     private func runBrew(arguments: [String]) throws -> Data {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: Self.brewPath)
+        process.executableURL = URL(fileURLWithPath: brewPath)
         process.arguments = arguments
         process.environment = homebrewEnvironment()
 
@@ -104,23 +114,41 @@ final class HomebrewUpdateChecker {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        let termination = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            termination.signal()
+        }
+
         do {
             try process.run()
         } catch {
             throw HomebrewUpdateCheckerError.commandFailed(
-                "failed to run \(Self.brewPath): \(error.localizedDescription)"
+                "failed to run \(brewPath): \(error.localizedDescription)"
             )
         }
 
-        process.waitUntilExit()
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        let readGroup = DispatchGroup()
+        let stdoutReader = readPipe(stdout, group: readGroup)
+        let stderrReader = readPipe(stderr, group: readGroup)
+
+        if termination.wait(timeout: .now() + timeoutInterval()) == .timedOut {
+            terminate(process: process, termination: termination)
+            readGroup.wait()
+            throw HomebrewUpdateCheckerError.commandFailed(
+                "\(brewPath) \(arguments.joined(separator: " ")) timed out after " +
+                    "\(Int(commandTimeout))s"
+            )
+        }
+
+        readGroup.wait()
+        let output = stdoutReader()
+        let errorData = stderrReader()
 
         guard process.terminationStatus == 0 else {
             let message = String(data: errorData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             throw HomebrewUpdateCheckerError.commandFailed(
-                "\(Self.brewPath) \(arguments.joined(separator: " ")) failed: " +
+                "\(brewPath) \(arguments.joined(separator: " ")) failed: " +
                     (message?.isEmpty == false ? message! : "exit \(process.terminationStatus)")
             )
         }
@@ -136,6 +164,39 @@ final class HomebrewUpdateChecker {
         environment.removeValue(forKey: "VAULT_SOCKET_PATH")
         environment.removeValue(forKey: "VAULT_TOOLCHAIN_ROOT")
         return environment
+    }
+
+    private func readPipe(_ pipe: Pipe, group: DispatchGroup) -> () -> Data {
+        let lock = NSLock()
+        var data = Data()
+        group.enter()
+        DispatchQueue.global(qos: .utility).async {
+            let readData = pipe.fileHandleForReading.readDataToEndOfFile()
+            lock.lock()
+            data = readData
+            lock.unlock()
+            group.leave()
+        }
+        return {
+            lock.lock()
+            defer { lock.unlock() }
+            return data
+        }
+    }
+
+    private func timeoutInterval() -> DispatchTimeInterval {
+        .milliseconds(max(1, Int(commandTimeout * 1000)))
+    }
+
+    private func terminate(process: Process, termination: DispatchSemaphore) {
+        if process.isRunning {
+            process.terminate()
+        }
+        if termination.wait(timeout: .now() + .seconds(2)) == .timedOut,
+           process.isRunning {
+            Darwin.kill(process.processIdentifier, SIGKILL)
+            termination.wait()
+        }
     }
 
     private func parseInstalledPackageNames(from data: Data) throws -> [String: String] {
