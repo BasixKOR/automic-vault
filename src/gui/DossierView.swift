@@ -1026,6 +1026,7 @@ final class DossierView: NSView {
             applyInstallDestinationStyle()
             updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
                 || actionDetail.isHomebrewInstall
+                || actionDetail.isHomebrewCaskManaged
             updateButton.isEnabled = !isActionInFlight
             primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
             if detail.homebrewMigration != nil {

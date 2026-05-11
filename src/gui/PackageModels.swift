@@ -34,6 +34,11 @@ extension String {
     }
 }
 
+enum PackageManagementBackend: String, Decodable, Equatable {
+    case nucleus
+    case homebrewCask
+}
+
 struct PackageRecord: Decodable, Equatable {
     let name: String
     let source: PackageSource?
@@ -46,6 +51,7 @@ struct PackageRecord: Decodable, Equatable {
     let installedVersions: [String]
     let isHomebrewMigrationCandidate: Bool
     let isUnsupportedHomebrewInstall: Bool
+    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -59,6 +65,7 @@ struct PackageRecord: Decodable, Equatable {
         case installedVersions
         case isHomebrewMigrationCandidate
         case isUnsupportedHomebrewInstall
+        case managementBackend
     }
 
     init(
@@ -72,7 +79,8 @@ struct PackageRecord: Decodable, Equatable {
         installPackageNames: [String]? = nil,
         installedVersions: [String] = [],
         isHomebrewMigrationCandidate: Bool = false,
-        isUnsupportedHomebrewInstall: Bool = false
+        isUnsupportedHomebrewInstall: Bool = false,
+        managementBackend: PackageManagementBackend = .nucleus
     ) {
         self.name = name
         self.source = source
@@ -85,6 +93,7 @@ struct PackageRecord: Decodable, Equatable {
         self.installedVersions = installedVersions
         self.isHomebrewMigrationCandidate = isHomebrewMigrationCandidate
         self.isUnsupportedHomebrewInstall = isUnsupportedHomebrewInstall
+        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -112,6 +121,10 @@ struct PackageRecord: Decodable, Equatable {
             Bool.self,
             forKey: .isUnsupportedHomebrewInstall
         ) ?? false
+        managementBackend = try container.decodeIfPresent(
+            PackageManagementBackend.self,
+            forKey: .managementBackend
+        ) ?? .nucleus
     }
 
     var isOutdated: Bool {
@@ -133,7 +146,8 @@ struct PackageRecord: Decodable, Equatable {
             installPackageNames: installPackageNames,
             installedVersions: installedVersions,
             isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
-            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
+            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall,
+            managementBackend: managementBackend
         )
     }
 
@@ -166,7 +180,8 @@ struct PackageRecord: Decodable, Equatable {
             npmPackageInfoError: nil,
             securityState: securityState,
             installPackageNames: installPackageNames,
-            homebrewMigration: nil
+            homebrewMigration: nil,
+            managementBackend: managementBackend
         )
     }
 }
@@ -223,6 +238,7 @@ struct PackageDetail: Decodable, Equatable {
     let installPackageNames: [String]?
     let homebrewMigration: HomebrewMigrationRecommendation?
     let versionOptions: [PackageVersionOption]
+    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case packageName
@@ -248,6 +264,7 @@ struct PackageDetail: Decodable, Equatable {
         case installPackageNames
         case homebrewMigration
         case versionOptions
+        case managementBackend
     }
 
     init(
@@ -273,7 +290,8 @@ struct PackageDetail: Decodable, Equatable {
         securityState: PackageSecurityState?,
         installPackageNames: [String]?,
         homebrewMigration: HomebrewMigrationRecommendation?,
-        versionOptions: [PackageVersionOption] = []
+        versionOptions: [PackageVersionOption] = [],
+        managementBackend: PackageManagementBackend = .nucleus
     ) {
         self.packageName = packageName
         self.qualifiedName = qualifiedName
@@ -298,6 +316,7 @@ struct PackageDetail: Decodable, Equatable {
         self.installPackageNames = installPackageNames
         self.homebrewMigration = homebrewMigration
         self.versionOptions = versionOptions
+        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -346,6 +365,10 @@ struct PackageDetail: Decodable, Equatable {
             [PackageVersionOption].self,
             forKey: .versionOptions
         ) ?? []
+        managementBackend = try container.decodeIfPresent(
+            PackageManagementBackend.self,
+            forKey: .managementBackend
+        ) ?? .nucleus
     }
 
     var primaryDescription: String {
@@ -418,6 +441,12 @@ struct PackageDetail: Decodable, Equatable {
         if isXcodeCLT {
             return "xcode-select --install"
         }
+        if isHomebrewCaskManaged {
+            guard let caskName else {
+                return "brew install --cask"
+            }
+            return "brew install --cask \(caskName)"
+        }
         return "av install \(helperPackageNames.joined(separator: " "))"
     }
 
@@ -474,7 +503,8 @@ struct PackageDetail: Decodable, Equatable {
             securityState: securityState,
             installPackageNames: [option.installPackageName],
             homebrewMigration: homebrewMigration,
-            versionOptions: versionOptions
+            versionOptions: versionOptions,
+            managementBackend: managementBackend
         )
     }
 
@@ -517,7 +547,8 @@ struct PackageDetail: Decodable, Equatable {
             securityState: securityState,
             installPackageNames: installPackageNames,
             homebrewMigration: homebrewMigration,
-            versionOptions: versionOptions
+            versionOptions: versionOptions,
+            managementBackend: managementBackend
         )
     }
 
@@ -533,15 +564,32 @@ struct PackageDetail: Decodable, Equatable {
         packageName == PackageRecommendation.xcodeCLTName
     }
 
+    var isHomebrewCaskManaged: Bool {
+        managementBackend == .homebrewCask
+    }
+
+    var caskName: String? {
+        if case .cask(let caskName) = source {
+            return caskName
+        }
+        return packageName.strippingPrefix("cask:")
+    }
+
     var isHomebrewMigrationCandidate: Bool {
-        installRoot.hasPrefix("/opt/homebrew/")
+        guard managementBackend == .nucleus else {
+            return false
+        }
+        return installRoot.hasPrefix("/opt/homebrew/")
             && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
             && installPackageNames?.isEmpty == false
             && installed
     }
 
     var isUnsupportedHomebrewInstall: Bool {
-        installRoot.hasPrefix("/opt/homebrew/")
+        guard managementBackend == .nucleus else {
+            return false
+        }
+        return installRoot.hasPrefix("/opt/homebrew/")
             && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
             && !isHomebrewMigrationCandidate
             && installed
@@ -811,6 +859,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let dependencies: [String]
     let securityState: PackageSecurityState?
     let pulseKind: String?
+    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case name = "packageName"
@@ -824,6 +873,29 @@ struct PackageSearchResult: Decodable, Equatable {
         case dependencies
         case securityState
         case pulseKind
+        case managementBackend
+    }
+
+    init(
+        name: String,
+        source: PackageSource?,
+        version: String?,
+        description: String?,
+        homepage: String?,
+        dependencies: [String],
+        securityState: PackageSecurityState?,
+        pulseKind: String?,
+        managementBackend: PackageManagementBackend = .nucleus
+    ) {
+        self.name = name
+        self.source = source
+        self.version = version
+        self.description = description
+        self.homepage = homepage
+        self.dependencies = dependencies
+        self.securityState = securityState
+        self.pulseKind = pulseKind
+        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -847,6 +919,10 @@ struct PackageSearchResult: Decodable, Equatable {
             forKey: .securityState
         )
         pulseKind = try container.decodeIfPresent(String.self, forKey: .pulseKind)
+        managementBackend = try container.decodeIfPresent(
+            PackageManagementBackend.self,
+            forKey: .managementBackend
+        ) ?? .nucleus
     }
 
     var fallbackDetail: PackageDetail {
@@ -879,7 +955,8 @@ struct PackageSearchResult: Decodable, Equatable {
             npmPackageInfoError: nil,
             securityState: securityState,
             installPackageNames: nil,
-            homebrewMigration: nil
+            homebrewMigration: nil,
+            managementBackend: managementBackend
         )
     }
 
@@ -1417,6 +1494,17 @@ struct PackagePresentation: Equatable {
         case .installed(let record):
             return record.isHomebrewMigrationCandidate || record.isUnsupportedHomebrewInstall
         case .recommendation, .available, .command:
+            return false
+        }
+    }
+
+    var isHomebrewCaskManaged: Bool {
+        switch item {
+        case .installed(let record):
+            return record.managementBackend == .homebrewCask
+        case .available(let result):
+            return result.managementBackend == .homebrewCask
+        case .recommendation, .command:
             return false
         }
     }

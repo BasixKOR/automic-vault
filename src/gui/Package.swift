@@ -28,6 +28,7 @@ let package = Package(
                 "MenuBarHazardEffect.swift",
                 "MenuBarMain.swift",
                 "VaultDaemon.swift",
+                "Tests",
             ],
             sources: [
                 "PackageModels.swift",
@@ -35,6 +36,7 @@ let package = Package(
                 "NucleusBridge.swift",
                 "NukeHelperBridge.swift",
                 "HomebrewUpdateChecker.swift",
+                "HomebrewCaskCatalog.swift",
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
@@ -52,6 +54,14 @@ let package = Package(
                 "UpdateProgressViewController.swift",
                 "ContainmentLogWindowController.swift",
                 "UIStyle.swift",
+            ]
+        ),
+        .testTarget(
+            name: "AutomicVaultGUITests",
+            dependencies: ["AutomicVaultApp"],
+            path: "Tests",
+            sources: [
+                "HomebrewCaskCatalogTests.swift",
             ]
         ),
     ],
