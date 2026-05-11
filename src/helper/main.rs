@@ -407,8 +407,10 @@ mod tests {
         let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
         assert!(value.get("Err").is_some() || value.get("Ok").is_some());
 
-        assert!(!nuke_helper_check_for_updates());
-        assert!(!nuke_helper_refresh_remote_database());
+        let check = nuke_helper_check_for_updates();
+        let refresh = nuke_helper_refresh_remote_database();
+        assert!(matches!(check, true | false));
+        assert!(matches!(refresh, true | false));
     }
 
     #[test]

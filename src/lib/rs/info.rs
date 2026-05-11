@@ -2061,4 +2061,495 @@ mod tests {
                 .contains("is not a directory")
         );
     }
+
+    #[test]
+    fn package_name_helpers_cover_all_supported_request_shapes() {
+        assert_eq!(
+            compare_package_names_for_search_order("npm:@scope/zeta", "brew:alpha"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_package_names_for_search_order("pip:@scope/alpha", "npm:@other/alpha"),
+            std::cmp::Ordering::Greater
+        );
+
+        assert_eq!(
+            requested_package_name(&RequestedPackage::Auto("ripgrep".to_string())),
+            "ripgrep"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::HomebrewFormula("ripgrep".to_string())),
+            "ripgrep"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::HomebrewCask("cursor".to_string())),
+            "cursor"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::Isotope("gh".to_string())),
+            "isotope:gh"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::Alias {
+                alias: "pg".to_string(),
+                target: PackageAliasTarget::HomebrewFormula("python@3.14".to_string()),
+            }),
+            "brew:python@3.14"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::NpmPackage {
+                package: "@openai/codex".to_string(),
+                version: Some("1.0.0".to_string()),
+            }),
+            "npm:@openai/codex"
+        );
+        assert_eq!(
+            requested_package_name(&RequestedPackage::PipPackage("My_Package.Name".to_string())),
+            "pip:My_Package.Name"
+        );
+    }
+
+    #[test]
+    fn install_name_and_status_helpers_cover_variants_and_deduping() {
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Auto("bun".to_string())).unwrap(),
+            "bun"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Auto("rg".to_string())).unwrap(),
+            "ripgrep"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Alias {
+                alias: "py".to_string(),
+                target: PackageAliasTarget::HomebrewFormula("python@3.14".to_string()),
+            })
+            .unwrap(),
+            "python@3.14"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Alias {
+                alias: "codex".to_string(),
+                target: PackageAliasTarget::HomebrewCask("codex".to_string()),
+            })
+            .unwrap(),
+            "codex"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Alias {
+                alias: "openclaw".to_string(),
+                target: PackageAliasTarget::NpmPackage("@openai/codex".to_string()),
+            })
+            .unwrap(),
+            "npm:@openai/codex"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Alias {
+                alias: "psql".to_string(),
+                target: PackageAliasTarget::PipPackage("My_Package.Name".to_string()),
+            })
+            .unwrap(),
+            "pip:My_Package.Name"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::HomebrewFormula(
+                "python@3.14".to_string()
+            ))
+            .unwrap(),
+            "python@3.14"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::HomebrewCask("codex".to_string()))
+                .unwrap(),
+            "codex"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Isotope("gh".to_string())).unwrap(),
+            "isotope:gh"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::NpmPackage {
+                package: "@openai/codex".to_string(),
+                version: Some("1.0.0".to_string()),
+            })
+            .unwrap(),
+            "npm:@openai/codex"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::PipPackage(
+                "My_Package.Name".to_string()
+            ))
+            .unwrap(),
+            "pip:My_Package.Name"
+        );
+
+        let outdated = filter_outdated_package_statuses(vec![
+            PackageStatus {
+                package_name: "ripgrep".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "ripgrep".to_string(),
+                },
+                installed_version: "14.0.0".to_string(),
+                latest_version: "14.1.0".to_string(),
+            },
+            PackageStatus {
+                package_name: "codex".to_string(),
+                source: PackageReceiptSource::Cask {
+                    cask_name: "codex".to_string(),
+                },
+                installed_version: "1.0.0".to_string(),
+                latest_version: "1.0.0".to_string(),
+            },
+        ]);
+        assert_eq!(outdated.len(), 1);
+        assert_eq!(outdated[0].package_name, "ripgrep");
+
+        let cask = PackageStatus {
+            package_name: "codex".to_string(),
+            source: PackageReceiptSource::Cask {
+                cask_name: "codex".to_string(),
+            },
+            installed_version: "1.0.0".to_string(),
+            latest_version: "1.1.0".to_string(),
+        };
+        let isotope = PackageStatus {
+            package_name: "isotope:gh".to_string(),
+            source: PackageReceiptSource::Isotope {
+                isotope_name: "gh".to_string(),
+            },
+            installed_version: "2.0.0".to_string(),
+            latest_version: "2.1.0".to_string(),
+        };
+        let vendor = PackageStatus {
+            package_name: "bun".to_string(),
+            source: PackageReceiptSource::Vendor {
+                vendor_name: "bun".to_string(),
+            },
+            installed_version: "1.0.0".to_string(),
+            latest_version: "1.1.0".to_string(),
+        };
+        assert_eq!(
+            requested_package_from_status(&cask),
+            RequestedPackage::HomebrewCask("codex".to_string())
+        );
+        assert_eq!(
+            requested_package_from_status(&isotope),
+            RequestedPackage::Isotope("gh".to_string())
+        );
+        assert_eq!(
+            requested_package_from_status(&vendor),
+            RequestedPackage::Auto("bun".to_string())
+        );
+    }
+
+    #[test]
+    fn scanned_record_and_status_helpers_sort_dedupe_and_warn() {
+        let packages = vec![
+            InstalledPackageRef {
+                package_name: "npm:@scope/zeta".to_string(),
+                install_root: PathBuf::from("/tmp/zeta"),
+            },
+            InstalledPackageRef {
+                package_name: "brew:alpha".to_string(),
+                install_root: PathBuf::from("/tmp/alpha-b"),
+            },
+            InstalledPackageRef {
+                package_name: "brew:alpha".to_string(),
+                install_root: PathBuf::from("/tmp/alpha-a"),
+            },
+        ];
+
+        let mut record_warnings = Vec::new();
+        let records = resolve_scanned_package_records(
+            packages.clone(),
+            |package| {
+                if package.package_name == "npm:@scope/zeta" {
+                    return Err("boom".to_string());
+                }
+                Ok(InstalledPackageRecord {
+                    package_name: package.package_name.clone(),
+                    source: PackageReceiptSource::Formula {
+                        root_formula: package.package_name.clone(),
+                    },
+                    installed_version: "1.0.0".to_string(),
+                })
+            },
+            |message| record_warnings.push(message),
+        )
+        .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].package_name, "brew:alpha");
+        assert_eq!(record_warnings.len(), 1);
+        assert!(record_warnings[0].contains("/tmp/zeta"));
+
+        let mut status_warnings = Vec::new();
+        let statuses = resolve_scanned_package_statuses(
+            packages,
+            |package| {
+                if package.install_root == Path::new("/tmp/alpha-a") {
+                    return Err("skip duplicate root".to_string());
+                }
+                Ok(PackageStatus {
+                    package_name: package.package_name.clone(),
+                    source: PackageReceiptSource::Formula {
+                        root_formula: package.package_name.clone(),
+                    },
+                    installed_version: "1.0.0".to_string(),
+                    latest_version: "1.1.0".to_string(),
+                })
+            },
+            |message| status_warnings.push(message),
+        )
+        .unwrap();
+        assert_eq!(statuses.len(), 2);
+        assert_eq!(statuses[0].package_name, "brew:alpha");
+        assert_eq!(statuses[1].package_name, "npm:@scope/zeta");
+        assert_eq!(status_warnings.len(), 0);
+    }
+
+    #[test]
+    fn requested_source_helpers_cover_explicit_and_inferred_variants() {
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::HomebrewFormula(
+                "python@3.14".to_string()
+            )),
+            Some(PackageReceiptSource::Formula {
+                root_formula: "python@3.14".to_string(),
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::HomebrewCask("codex".to_string())),
+            Some(PackageReceiptSource::Cask {
+                cask_name: "codex".to_string(),
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::Isotope("gh".to_string())),
+            Some(PackageReceiptSource::Isotope {
+                isotope_name: "gh".to_string(),
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::Alias {
+                alias: "openclaw".to_string(),
+                target: PackageAliasTarget::NpmPackage("@openai/codex".to_string()),
+            }),
+            Some(PackageReceiptSource::Npm {
+                package_name: "@openai/codex".to_string(),
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::PipPackage(
+                "My_Package.Name".to_string()
+            )),
+            Some(PackageReceiptSource::Pip {
+                package_name: "My_Package.Name".to_string(),
+            })
+        );
+        assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::Auto("bun".to_string())),
+            None
+        );
+
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("bun".to_string())).unwrap(),
+            PackageReceiptSource::Vendor {
+                vendor_name: "bun".to_string(),
+            }
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("ripgrep".to_string()))
+                .unwrap(),
+            PackageReceiptSource::Formula {
+                root_formula: "ripgrep".to_string(),
+            }
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("coverage-npm".to_string()))
+                .unwrap(),
+            PackageReceiptSource::Npm {
+                package_name: "coverage-npm".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn installed_package_ref_helpers_cover_nested_source_roots() {
+        let temp = TempDir::new().unwrap();
+        let opt_root = temp.path();
+        fs::create_dir_all(opt_root.join("ripgrep")).unwrap();
+        fs::create_dir_all(opt_root.join("homebrew")).unwrap();
+        fs::write(opt_root.join("plain-file"), b"ignored").unwrap();
+        fs::create_dir_all(opt_root.join(".hidden")).unwrap();
+
+        let npm_unscoped = opt_root.join("npm/openclaw");
+        fs::create_dir_all(&npm_unscoped).unwrap();
+        write_package_receipt(
+            &npm_unscoped.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "npm:coverage-npm".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "coverage-npm".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let npm_scoped = opt_root.join("npm/@openai/codex");
+        fs::create_dir_all(&npm_scoped).unwrap();
+
+        let pip_package = opt_root.join("pip/My_Package.Name");
+        fs::create_dir_all(&pip_package).unwrap();
+
+        let isotope_package = opt_root.join("isotopes/gh");
+        fs::create_dir_all(&isotope_package).unwrap();
+
+        let mut names = installed_package_names(opt_root).unwrap();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "isotope:gh".to_string(),
+                "npm:@openai/codex".to_string(),
+                "npm:coverage-npm".to_string(),
+                "pip:My_Package.Name".to_string(),
+                "ripgrep".to_string(),
+            ]
+        );
+
+        let npm_refs = installed_npm_package_refs(&opt_root.join("npm")).unwrap();
+        assert_eq!(npm_refs.len(), 2);
+        assert!(npm_refs
+            .iter()
+            .any(|package| package.package_name == "npm:coverage-npm"));
+        assert!(npm_refs
+            .iter()
+            .any(|package| package.package_name == "npm:@openai/codex"));
+
+        let pip_refs = installed_pip_package_refs(&opt_root.join("pip")).unwrap();
+        assert_eq!(pip_refs.len(), 1);
+        assert_eq!(pip_refs[0].package_name, "pip:My_Package.Name");
+
+        let isotope_refs = installed_isotope_package_refs(&opt_root.join("isotopes")).unwrap();
+        assert_eq!(isotope_refs.len(), 1);
+        assert_eq!(isotope_refs[0].package_name, "isotope:gh");
+    }
+
+    #[test]
+    fn search_and_metadata_helpers_cover_embedded_catalog_paths() {
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let db = crate::cli::load_db().unwrap();
+        let npm_metadata = db.npms.get("coverage-npm").unwrap();
+
+        assert_eq!(string_or_none("  "), None);
+        assert_eq!(string_or_none("  hello  "), Some("hello".to_string()));
+        assert!(vendor_entry_matches(&vendor::PACKAGES[0], "bun"));
+        assert!(vendor_entry_matches(&vendor::PACKAGES[0], "av:bun"));
+        assert!(npm_entry_matches("coverage-npm", npm_metadata, "coverage"));
+        assert!(npm_entry_matches("coverage-npm", npm_metadata, "npm:coverage"));
+        assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Vendor {
+                vendor_name: "bun".to_string(),
+            }),
+            "av:bun"
+        );
+        assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Pip {
+                package_name: "My_Package.Name".to_string(),
+            }),
+            "pip:My_Package.Name"
+        );
+
+        let aliases = our_aliases_for_source(&PackageReceiptSource::Formula {
+            root_formula: "node".to_string(),
+        });
+        assert!(aliases.is_empty());
+        assert!(homebrew_aliases_for_formula("ripgrep")
+            .unwrap()
+            .contains(&"rg".to_string()));
+
+        let isotope = isotope_package_data("gh").unwrap();
+        let isotope_info = isotope_homebrew_info("gh", isotope);
+        assert_eq!(isotope_info.formula, "gh");
+        assert!(isotope_info.description.is_some());
+
+        let available = resolve_available_package_results(&config).unwrap();
+        assert!(!available.is_empty());
+        assert!(available
+            .iter()
+            .any(|package| package.package_name == "ripgrep"));
+        assert!(available
+            .iter()
+            .any(|package| package.package_name == "codex"));
+        assert!(available
+            .iter()
+            .any(|package| package.package_name == "npm:coverage-npm"));
+        assert!(available
+            .iter()
+            .any(|package| package.package_name == "av:bun"));
+
+        let pulse = resolve_pulse_package_results(&config).unwrap();
+        assert!(!pulse.is_empty());
+        assert!(pulse.iter().all(|package| package.last_updated_at.is_some()));
+        assert!(pulse.iter().all(|package| package.pulse_kind.is_some()));
+    }
+
+    #[test]
+    fn resolve_package_info_covers_non_directory_and_isotope_modified_roots() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let opt_root = opt_pkg_root();
+        fs::create_dir_all(&opt_root).unwrap();
+
+        let file_root = opt_root.join("coverage-info-file");
+        if fs::symlink_metadata(&file_root).is_ok() {
+            remove_path(&file_root).unwrap();
+        }
+        fs::write(&file_root, b"not a directory").unwrap();
+        assert!(
+            resolve_package_info(&config, &RequestedPackage::Auto("coverage-info-file".to_string()))
+                .unwrap_err()
+                .contains("is not a directory")
+        );
+        remove_path(&file_root).unwrap();
+
+        let modified_root = opt_root.join("awscli");
+        if fs::symlink_metadata(&modified_root).is_ok() {
+            remove_path(&modified_root).unwrap();
+        }
+        fs::create_dir_all(&modified_root).unwrap();
+        write_package_receipt(
+            &modified_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "isotope:aws-cli".to_string(),
+                version: "2.0.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "aws-cli".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let info =
+            resolve_package_info(&config, &RequestedPackage::Isotope("aws-cli".to_string()))
+                .unwrap();
+        assert!(info.installed);
+        assert_eq!(info.install_root, modified_root);
+        assert_eq!(info.installed_version, Some("2.0.0".to_string()));
+        assert_eq!(
+            info.source,
+            Some(PackageReceiptSource::Isotope {
+                isotope_name: "aws-cli".to_string(),
+            })
+        );
+
+        remove_path(&opt_root.join("awscli")).unwrap();
+    }
 }
