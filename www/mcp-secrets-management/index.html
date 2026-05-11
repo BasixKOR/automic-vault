@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Secrets Management for AI Agents | Automic Vault</title>
+  <meta name="description" content="MCP secrets management for AI agents: give tools approved access to credentials without placing secrets in model context or plaintext config.">
+  <link rel="canonical" href="https://www.automicvault.com/mcp-secrets-management/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="MCP Secrets Management for AI Agents">
+  <meta property="og:description" content="Give MCP tools access without giving models secrets.">
+  <meta property="og:url" content="https://www.automicvault.com/mcp-secrets-management/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="../ai-agent-approval-gates/">Approvals</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Model Context Protocol security</p>
+          <h1>MCP secrets management</h1>
+          <p class="lede">MCP servers make tools easier for agents to use. Automic Vault keeps the credential boundary explicit: tools can receive approved access, but the model does not need to see the secret value.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/#secrets">Store and inject secrets <span aria-hidden="true">›</span></a>
+            <a class="button" href="../ai-agent-approval-gates/">Approval gates <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault agent status" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">MCP risk</p><h2>Tool access is not the same as secret access.</h2><p>An MCP server may need credentials to query services, update issues, read cloud state, or publish artifacts. That does not mean the agent should receive raw tokens as prompt context or environment it can inspect.</p></div>
+        <div class="proof-list">
+          <article><span>Server config</span><h3>Avoid plaintext MCP credentials</h3><p>Do not make local JSON, dotenv, or shell profiles the default secret store for agent tools.</p></article>
+          <article><span>Tool execution</span><h3>Approve the action path</h3><p>Route sensitive tool commands through approval gates so humans see what will run.</p></article>
+          <article><span>Scoped values</span><h3>Inject only named secrets</h3><p>Give a server or command the exact values it needs for that invocation.</p></article>
+          <article><span>Audit shape</span><h3>Think in capabilities</h3><p>The useful record is which tool got which capability for which run.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Pattern</p><h2>Keep MCP servers useful and constrained.</h2></div>
+        <div class="compare-table">
+          <article><span>Local secret</span><p>Save API tokens with <code>av save</code> instead of writing them into MCP server config.</p></article>
+          <article><span>Server launch</span><p>Start the sensitive server or helper through <code>av inject</code> so only it receives the required keys.</p></article>
+          <article><span>Agent run</span><p>Use <code>av contain</code> for sessions where the agent can call tools that mutate real systems.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Build an agent-safe secret path.</h2></div>
+        <div class="link-grid">
+          <a href="../secrets-manager-for-ai-agents/"><span>Secrets</span><strong>Secrets manager for AI agents</strong><p>Keep values away from direct model reads.</p></a>
+          <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect tokens that MCP tools use.</p></a>
+          <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Require human control at execution time.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

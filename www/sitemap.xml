@@ -6,4 +6,34 @@
   <url>
     <loc>https://www.automicvault.com/docs/</loc>
   </url>
+  <url>
+    <loc>https://www.automicvault.com/secrets-manager-for-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/stop-ai-agents-reading-env-files/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/api-key-management-for-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/hashicorp-vault-for-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/mcp-secrets-management/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/privileged-access-management-for-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ai-agent-approval-gates/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/github-cli-token-security-ai-agents/</loc>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/</loc>
+  </url>
 </urlset>

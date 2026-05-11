@@ -527,6 +527,10 @@ pre {
   gap: 14px;
 }
 
+.guide-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .command-tile {
   min-height: 188px;
   display: grid;

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure AWS CLI Credentials for AI Agents | Automic Vault</title>
+  <meta name="description" content="Secure AWS CLI credentials from AI agents by removing plaintext credential files and approving cloud tool execution at runtime.">
+  <link rel="canonical" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Secure AWS CLI Credentials for AI Agents">
+  <meta property="og:description" content="Keep AWS keys away from direct agent reads while approved AWS CLI commands still work.">
+  <meta property="og:url" content="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../api-key-management-for-ai-agents/">API Keys</a>
+        <a href="../ai-agent-approval-gates/">Approvals</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Cloud credentials under local control</p>
+          <h1>Secure AWS CLI credentials for AI agents</h1>
+          <p class="lede">AI agents often need the AWS CLI to debug and operate systems. Automic Vault protects the credential material and adds approval around the command path so cloud access is not just another readable file.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/#secrets">Store AWS keys <span aria-hidden="true">›</span></a>
+            <a class="button" href="../api-key-management-for-ai-agents/">API key management <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault sealed secrets status" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">AWS risk</p><h2><code>~/.aws/credentials</code> is too easy to read.</h2><p>The AWS CLI convention puts powerful cloud credentials in predictable local files. That works for human terminals, but it gives agents and any local process a simple target.</p></div>
+        <div class="proof-list">
+          <article><span>Readable path</span><h3>Remove direct file access</h3><p>Secrets should not be available through <code>cat ~/.aws/credentials</code>.</p></article>
+          <article><span>Command scope</span><h3>Approve the AWS action</h3><p>Different AWS commands have very different blast radius and should not be treated as one permission.</p></article>
+          <article><span>Key scope</span><h3>Inject named values</h3><p>Supply only the access key material a trusted invocation needs.</p></article>
+          <article><span>Agent sessions</span><h3>Contain host tool execution</h3><p>Route AWS CLI attempts through a visible approval path during autonomous work.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Pattern</p><h2>Keep AWS useful without ambient credentials.</h2></div>
+        <div class="compare-table">
+          <article><span>Before</span><p>A readable AWS credentials file exposes access keys to any process with user-level file access.</p></article>
+          <article><span>After</span><p>Automic Vault stores values outside plaintext config and injects them into approved AWS CLI execution.</p></article>
+          <article><span>With agents</span><p>Approval gates make sensitive cloud operations visible before the agent changes infrastructure.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Protect cloud credentials as capabilities.</h2></div>
+        <div class="link-grid">
+          <a href="../hashicorp-vault-for-ai-agents/"><span>Vault</span><strong>HashiCorp Vault for AI agents</strong><p>Fit central secret stores with local runtime control.</p></a>
+          <a href="../privileged-access-management-for-ai-agents/"><span>PAM</span><strong>Privileged access management</strong><p>Approve privileged commands, not just sessions.</p></a>
+          <a href="../secret-scanning-vs-agent-secret-protection/"><span>Prevention</span><strong>Secret scanning vs agent protection</strong><p>Prevent exposure before it lands in text.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

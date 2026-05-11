@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent Approval Gates | Automic Vault</title>
+  <meta name="description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs actually execute.">
+  <link rel="canonical" href="https://www.automicvault.com/ai-agent-approval-gates/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="AI Agent Approval Gates">
+  <meta property="og:description" content="Human approval for AI agent commands at the layer beneath the agent.">
+  <meta property="og:url" content="https://www.automicvault.com/ai-agent-approval-gates/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../privileged-access-management-for-ai-agents/">PAM</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Human approval for agent commands</p>
+          <h1>AI agent approval gates</h1>
+          <p class="lede">Automic Vault puts approval gates in the tools and execution paths agents depend on. If an agent tries to reveal a token, publish a package, or run a sensitive CLI action, the decision happens below the agent.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/#contain">Run agents through contain <span aria-hidden="true">›</span></a>
+            <a class="button" href="../privileged-access-management-for-ai-agents/">Agent PAM <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault contained agents status" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Right layer</p><h2>Agent-side controls are not enough.</h2><p>Built-in allowlists and prompts help, but they live inside the agent. If a session is misconfigured, compromised, or too broad, those controls can fail at the same layer that is making the plan.</p></div>
+        <div class="proof-list">
+          <article><span>Tool layer</span><h3>Gate the executable</h3><p>Automic Vault mediates host tool execution rather than trusting every agent policy setting.</p></article>
+          <article><span>Secret layer</span><h3>Gate credential use</h3><p>Secrets are injected only when an approved target path receives named keys.</p></article>
+          <article><span>Package layer</span><h3>Keep tools stable</h3><p>Root-owned package roots reduce accidental or malicious tool rewrites.</p></article>
+          <article><span>Human layer</span><h3>Show a real decision</h3><p>The approval prompt is about the action that will run, not a vague promise from the model.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Examples</p><h2>Use gates where the blast radius changes.</h2></div>
+        <div class="compare-table">
+          <article><span>Publish</span><p>An agent tries <code>npm publish</code>, <code>twine upload</code>, or another package release command.</p></article>
+          <article><span>Reveal</span><p>An agent tries to print tokens with commands such as <code>gh auth token</code>.</p></article>
+          <article><span>Cloud</span><p>An agent tries to run AWS commands that can inspect, mutate, or delete infrastructure.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Pair approvals with secret boundaries.</h2></div>
+        <div class="link-grid">
+          <a href="../secrets-manager-for-ai-agents/"><span>Secrets</span><strong>Secrets manager for AI agents</strong><p>Keep raw values out of agent context.</p></a>
+          <a href="../stop-ai-agents-reading-env-files/"><span>Dotenv</span><strong>Stop agents reading .env files</strong><p>Remove the easiest local secret source.</p></a>
+          <a href="../mcp-secrets-management/"><span>MCP</span><strong>MCP secrets management</strong><p>Keep tool access separate from model access.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

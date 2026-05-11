@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HashiCorp Vault vs Automic Vault for AI Agent Security</title>
+  <meta name="description" content="Compare HashiCorp Vault and Automic Vault for AI agents. Automic Vault is a local runtime layer for approved tool execution, not a replacement for enterprise vaults.">
+  <link rel="canonical" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="HashiCorp Vault vs Automic Vault for AI Agent Security">
+  <meta property="og:description" content="Use Automic Vault as the local agent-runtime layer beside existing vault infrastructure.">
+  <meta property="og:url" content="https://www.automicvault.com/hashicorp-vault-for-ai-agents/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="../ai-agent-approval-gates/">Approvals</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Vault comparison</p>
+          <h1>HashiCorp Vault for AI agent security</h1>
+          <p class="lede">HashiCorp Vault is strong infrastructure for central secrets. Automic Vault solves a narrower local problem: preventing AI agents from reading credentials while still letting approved command-line tools use them.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/#contain">Read containment docs <span aria-hidden="true">›</span></a>
+            <a class="button" href="../secrets-manager-for-ai-agents/">Agent secrets manager <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault runtime console" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Honest positioning</p><h2>Automic Vault is not an enterprise vault replacement.</h2><p>Keep HashiCorp Vault for central policy, leases, audit, and service identity. Add Automic Vault where a local AI agent can read files, run CLIs, and act with developer credentials.</p></div>
+        <div class="compare-table">
+          <article><span>HashiCorp Vault</span><p>Centralizes secrets, access policy, dynamic credentials, and infrastructure-level audit.</p></article>
+          <article><span>Automic Vault</span><p>Controls local runtime exposure: keychain storage, approved injection, package hardening, and agent tool gates.</p></article>
+          <article><span>Together</span><p>Fetch or provision credentials through existing enterprise policy, then keep local agent use scoped to approved commands.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Agent gap</p><h2>The last mile is the dangerous mile.</h2></div>
+        <div class="proof-list">
+          <article><span>Files</span><h3>Agents can read local material</h3><p>A retrieved value often lands in an env var, config file, shell history, or script.</p></article>
+          <article><span>Commands</span><h3>Agents can execute tools</h3><p>The question is not only who retrieved the secret, but which local executable used it.</p></article>
+          <article><span>Approvals</span><h3>Humans need command context</h3><p>Automic Vault prompts at the tool layer where the action is visible.</p></article>
+          <article><span>Packages</span><h3>The toolchain must stay stable</h3><p>Root-owned installs reduce the chance that an agent rewrites the tool that receives a secret.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Layer central vaults with local runtime control.</h2></div>
+        <div class="link-grid">
+          <a href="../mcp-secrets-management/"><span>MCP</span><strong>MCP secrets management</strong><p>Use tool access without exposing secrets to models.</p></a>
+          <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect local developer tokens and service keys.</p></a>
+          <a href="../secret-scanning-vs-agent-secret-protection/"><span>Prevention</span><strong>Secret scanning vs agent protection</strong><p>Move from after-the-fact detection to runtime prevention.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

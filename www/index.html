@@ -62,6 +62,7 @@
       <nav class="nav" aria-label="Main navigation">
         <a href="#secrets">Secrets</a>
         <a href="#approval">Approval Gates</a>
+        <a href="#agent-security">Agent Security</a>
         <a href="#package-manager">Package Manager</a>
         <a href="/docs/">Docs</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
@@ -147,6 +148,45 @@
               <strong>Contained</strong>
             </span>
           </div>
+        </div>
+      </section>
+
+      <section class="section seo-topics feature-section" id="agent-security">
+        <div class="section-copy">
+          <p class="kicker">/// Agent security guides</p>
+          <h2>Start with the places agents touch secrets.</h2>
+          <p>
+            These pages map existing secrets-management demand to Automic Vault's
+            sharper runtime boundary: models should not read credentials, but
+            approved tools still need to work.
+          </p>
+        </div>
+        <div class="topic-grid" aria-label="Agent security topic pages">
+          <a class="topic-card" href="/secrets-manager-for-ai-agents/">
+            <span>P0</span>
+            <strong>Secrets Manager for AI Agents</strong>
+            <p>Keep credentials out of files, shells, and model context.</p>
+          </a>
+          <a class="topic-card" href="/stop-ai-agents-reading-env-files/">
+            <span>P0</span>
+            <strong>Stop AI Agents Reading .env Files</strong>
+            <p>Replace plaintext dotenv exposure with approved injection.</p>
+          </a>
+          <a class="topic-card" href="/api-key-management-for-ai-agents/">
+            <span>P0</span>
+            <strong>API Key Management for AI Agents</strong>
+            <p>Protect developer tokens used by CLIs, SDKs, and scripts.</p>
+          </a>
+          <a class="topic-card" href="/hashicorp-vault-for-ai-agents/">
+            <span>P0</span>
+            <strong>HashiCorp Vault for AI Agents</strong>
+            <p>Layer central vaults with local agent-runtime control.</p>
+          </a>
+          <a class="topic-card" href="/mcp-secrets-management/">
+            <span>P0</span>
+            <strong>MCP Secrets Management</strong>
+            <p>Give tools access without giving models raw secrets.</p>
+          </a>
         </div>
       </section>
 

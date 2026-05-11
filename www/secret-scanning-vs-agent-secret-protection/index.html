@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secret Scanning vs Agent Secret Protection | Automic Vault</title>
+  <meta name="description" content="Secret scanning finds leaked credentials after they appear in text. Agent secret protection prevents AI agents from reading or exposing them at runtime.">
+  <link rel="canonical" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Secret Scanning vs Agent Secret Protection">
+  <meta property="og:description" content="Move from after-the-fact detection to runtime prevention for AI agent secrets.">
+  <meta property="og:url" content="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="../stop-ai-agents-reading-env-files/">Dotenv</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Prevention before detection</p>
+          <h1>Secret scanning vs agent secret protection</h1>
+          <p class="lede">Secret scanners are useful after a credential appears in code, logs, or commits. AI agents need an earlier control: prevent the agent from reading the secret in the first place.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../secrets-manager-for-ai-agents/">Prevent exposure <span aria-hidden="true">›</span></a>
+            <a class="button" href="../docs/#secrets">Read secret docs <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault sealed secret status" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Different controls</p><h2>Scanning catches exposure. Protection blocks access.</h2><p>Tools such as secret scanners reduce damage after credentials land in text. Automic Vault focuses on the runtime boundary before exposure: where the agent might read files, run commands, or ask a tool to reveal a token.</p></div>
+        <div class="compare-table">
+          <article><span>Secret scanning</span><p>Detects likely secrets in repositories, pull requests, logs, and artifacts after text exists.</p></article>
+          <article><span>Agent protection</span><p>Keeps secret values out of readable files and injects them only into approved executables.</p></article>
+          <article><span>Best together</span><p>Scan for mistakes, but remove the easy local paths that let agents create those mistakes.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Agent-specific gap</p><h2>The leak can happen before a commit.</h2></div>
+        <div class="proof-list">
+          <article><span>Prompt context</span><h3>Secrets can enter transcripts</h3><p>A scanner may never see model context, tool logs, or copied debug output.</p></article>
+          <article><span>Local files</span><h3>Readable config is enough</h3><p>Agents can inspect dotenv files, AWS credentials, CLI auth files, and shell profiles.</p></article>
+          <article><span>Tool reveal</span><h3>Commands can print tokens</h3><p>Even sealed storage needs approval gates around commands that reveal auth material.</p></article>
+          <article><span>Runtime fix</span><h3>Move secrets behind execution</h3><p>Approved injection gives tools the value without making it broadly readable.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Prevent the common exposure paths.</h2></div>
+        <div class="link-grid">
+          <a href="../stop-ai-agents-reading-env-files/"><span>Dotenv</span><strong>Stop agents reading .env files</strong><p>Remove the most obvious local secret target.</p></a>
+          <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Control tokens used by local tools.</p></a>
+          <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Gate commands that can reveal or mutate state.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

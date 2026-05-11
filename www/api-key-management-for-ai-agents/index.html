@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Key Management for AI Coding Agents | Automic Vault</title>
+  <meta name="description" content="API key management for AI agents: keep tokens out of model context and inject approved credentials only into trusted command-line tools.">
+  <link rel="canonical" href="https://www.automicvault.com/api-key-management-for-ai-agents/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="API Key Management for AI Coding Agents">
+  <meta property="og:description" content="Protect API keys at the local runtime layer where AI agents execute tools.">
+  <meta property="og:url" content="https://www.automicvault.com/api-key-management-for-ai-agents/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../github-cli-token-security-ai-agents/">GitHub Tokens</a>
+        <a href="../secure-aws-cli-credentials-ai-agents/">AWS</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Runtime API key security</p>
+          <h1>API key management for AI coding agents</h1>
+          <p class="lede">Automic Vault treats API keys as capabilities that should reach the approved tool, not the agent transcript. Store tokens locally, inject only named keys, and gate the commands that can use them.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/#secrets">Manage keys with av <span aria-hidden="true">›</span></a>
+            <a class="button" href="../secrets-manager-for-ai-agents/">Secrets manager <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault command console" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Scope</p><h2>API keys need command-level boundaries.</h2><p>Agents are useful because they can run CLIs, SDKs, package managers, and deploy tools. Those tools often need API keys. The key should be available to the tool invocation without becoming readable context for the model.</p></div>
+        <div class="proof-list">
+          <article><span>Token storage</span><h3>Get keys out of project files</h3><p>Replace pasted exports and checked-in examples with keychain-backed values.</p></article>
+          <article><span>Targeted injection</span><h3>Pass only requested keys</h3><p>A command receives the specific token names it needs, not the entire developer environment.</p></article>
+          <article><span>Executable approval</span><h3>Know which tool used the key</h3><p>Approvals attach to concrete command paths instead of vague agent sessions.</p></article>
+          <article><span>Agent containment</span><h3>Watch tool attempts</h3><p>Run agents through mediated host tool execution when API-backed commands can change real systems.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Common keys</p><h2>Protect developer tokens where they actually live.</h2></div>
+        <div class="compare-table">
+          <article><span>GitHub</span><p>Protect <code>GITHUB_TOKEN</code> and <code>gh</code> auth material from direct reads and accidental disclosure.</p></article>
+          <article><span>AWS</span><p>Keep cloud credentials out of <code>~/.aws/credentials</code> and approve the CLI actions that need them.</p></article>
+          <article><span>Package publishing</span><p>Gate npm, PyPI, and registry tokens before an agent can publish or mutate packages.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Use cases</p><h2>Start with the tokens agents touch most.</h2></div>
+        <div class="link-grid">
+          <a href="../github-cli-token-security-ai-agents/"><span>GitHub CLI</span><strong>GitHub token security for AI agents</strong><p>Protect source and release automation credentials.</p></a>
+          <a href="../secure-aws-cli-credentials-ai-agents/"><span>AWS CLI</span><strong>Secure AWS CLI credentials</strong><p>Reduce blast radius for cloud operations.</p></a>
+          <a href="../mcp-secrets-management/"><span>MCP</span><strong>MCP secrets management</strong><p>Give MCP tools access without handing secrets to models.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>

@@ -488,6 +488,72 @@ h2 {
   margin-top: 10px;
 }
 
+.seo-topics {
+  grid-template-columns: minmax(320px, 0.48fr) minmax(0, 1fr);
+  background:
+    radial-gradient(circle at 78% 46%, rgba(255, 179, 71, 0.11), transparent 26%),
+    linear-gradient(90deg, rgba(216, 58, 47, 0.1), transparent 38%),
+    #080b0d;
+}
+
+.topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.topic-card {
+  min-width: 0;
+  min-height: 212px;
+  display: grid;
+  align-content: end;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid var(--line-faint);
+  border-left: 3px solid var(--red);
+  background:
+    linear-gradient(180deg, rgba(216, 58, 47, 0.1), transparent 58%),
+    rgba(23, 33, 38, 0.32);
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
+}
+
+.topic-card:hover {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(216, 58, 47, 0.14), transparent 58%),
+    rgba(23, 33, 38, 0.5);
+  transform: translateY(-2px);
+}
+
+.topic-card span {
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.topic-card strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 2.4vw, 2.45rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.topic-card p {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
 .case-files {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1335,6 +1401,7 @@ h2 {
 
   body.reveal-ready .status-strip,
   body.reveal-ready .feature-section .section-copy,
+  body.reveal-ready .feature-section .topic-card,
   body.reveal-ready .feature-section .case-files,
   body.reveal-ready .feature-section .app-showcase,
   body.reveal-ready .feature-section .open-source-art,
@@ -1356,6 +1423,7 @@ h2 {
 
   body.reveal-ready .status-strip.is-visible,
   body.reveal-ready .feature-section.is-visible .section-copy,
+  body.reveal-ready .feature-section.is-visible .topic-card,
   body.reveal-ready .feature-section.is-visible .case-files,
   body.reveal-ready .feature-section.is-visible .app-showcase,
   body.reveal-ready .feature-section.is-visible .open-source-art,
@@ -1380,6 +1448,7 @@ h2 {
   }
 
   body.reveal-ready .feature-section .section-copy,
+  body.reveal-ready .feature-section .topic-card:nth-child(1),
   body.reveal-ready .feature-section .comparison > :nth-child(1),
   body.reveal-ready .feature-section .approval-prompts .prompt-card:nth-child(1),
   body.reveal-ready .feature-section .open-source-panel article:nth-child(1),
@@ -1388,6 +1457,8 @@ h2 {
   }
 
   body.reveal-ready .feature-section .case-files,
+  body.reveal-ready .feature-section .topic-card:nth-child(2),
+  body.reveal-ready .feature-section .topic-card:nth-child(3),
   body.reveal-ready .feature-section .app-showcase,
   body.reveal-ready .feature-section .open-source-art,
   body.reveal-ready .feature-section .comparison > :nth-child(2),
@@ -1399,6 +1470,8 @@ h2 {
   }
 
   body.reveal-ready .feature-section .comparison > :nth-child(3),
+  body.reveal-ready .feature-section .topic-card:nth-child(4),
+  body.reveal-ready .feature-section .topic-card:nth-child(5),
   body.reveal-ready .feature-section .open-source-panel article:nth-child(3),
   body.reveal-ready .feature-section .fit-card:nth-child(3),
   body.reveal-ready .friction .friction-close {
@@ -1639,6 +1712,10 @@ h2 {
   }
 
   .case-files {
+    grid-template-columns: 1fr;
+  }
+
+  .topic-grid {
     grid-template-columns: 1fr;
   }
 

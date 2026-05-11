@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privileged Access Management for AI Agents | Automic Vault</title>
+  <meta name="description" content="Privileged access management for AI agents means approving dangerous commands, secret use, and package execution at the local runtime layer.">
+  <link rel="canonical" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Privileged Access Management for AI Agents">
+  <meta property="og:description" content="Translate PAM into practical approval gates for autonomous tool use.">
+  <meta property="og:url" content="https://www.automicvault.com/privileged-access-management-for-ai-agents/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../ai-agent-approval-gates/">Approval Gates</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">PAM for autonomous execution</p>
+          <h1>Privileged access management for AI agents</h1>
+          <p class="lede">Traditional PAM controls who can reach privileged systems. AI agents add a local execution problem: commands, packages, and secrets need approval at the exact point an autonomous tool tries to act.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../ai-agent-approval-gates/">See approval gates <span aria-hidden="true">›</span></a>
+            <a class="button" href="../docs/#contain">Contain agent commands <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault agent containment status" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Agent PAM</p><h2>The privileged actor is often a command.</h2><p>When an agent runs <code>gh</code>, <code>aws</code>, <code>npm publish</code>, or a deployment script, the privileged access decision is no longer just login policy. It is whether that specific tool invocation should proceed.</p></div>
+        <div class="proof-list">
+          <article><span>Command approval</span><h3>Approve before mutation</h3><p>Gate actions that can publish, deploy, delete, or reveal privileged state.</p></article>
+          <article><span>Secret approval</span><h3>Control key use</h3><p>Keep secrets out of the agent transcript and inject them only into approved executables.</p></article>
+          <article><span>Tool integrity</span><h3>Harden the toolchain</h3><p>Install packages under controlled roots so the agent cannot casually rewrite the tool it uses.</p></article>
+          <article><span>Local scope</span><h3>Make decisions visible</h3><p>Approval prompts should describe the command path and capability, not only the agent session.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading"><p class="kicker">Controls</p><h2>Map PAM concepts to agent runtime controls.</h2></div>
+        <div class="compare-table">
+          <article><span>Privilege</span><p>A saved API key, CLI token, package publish token, or cloud credential.</p></article>
+          <article><span>Request</span><p>The tool invocation an agent attempts to run with that privilege.</p></article>
+          <article><span>Approval</span><p>A human decision tied to executable path, command context, and secret scope.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading"><p class="kicker">Related pages</p><h2>Secure the privileged workflows first.</h2></div>
+        <div class="link-grid">
+          <a href="../ai-agent-approval-gates/"><span>Approvals</span><strong>AI agent approval gates</strong><p>Require a human checkpoint for risky commands.</p></a>
+          <a href="../github-cli-token-security-ai-agents/"><span>GitHub</span><strong>GitHub CLI token security</strong><p>Protect code, release, and package authority.</p></a>
+          <a href="../secure-aws-cli-credentials-ai-agents/"><span>AWS</span><strong>Secure AWS CLI credentials</strong><p>Control cloud credentials used by local agents.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>
