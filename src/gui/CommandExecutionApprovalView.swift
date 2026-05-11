@@ -24,7 +24,11 @@ final class CommandExecutionApprovalView: NSView {
     private let approval: VaultApprovalRequestSnapshot
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: Metrics.width, height: Metrics.height)
+        let extraRows = max(environmentRowCount - 2, 0)
+        return NSSize(
+            width: Metrics.width,
+            height: Metrics.height + CGFloat(extraRows * 23)
+        )
     }
 
     init(approval: VaultApprovalRequestSnapshot) {
@@ -309,17 +313,18 @@ final class CommandExecutionApprovalView: NSView {
             return [InfoRow("Overrides", "No explicit environment overrides", nil, false)]
         }
 
-        let values = approval.intent.env.keys.sorted().map { key in
-            "\(key)=\(abbreviatedPath(approval.intent.env[key] ?? ""))"
-        }
-        return [
+        return approval.intent.env.keys.sorted().map { key in
             InfoRow(
-                "Overrides",
-                values.joined(separator: "  "),
-                Status(title: "\(approval.intent.env.count) item\(approval.intent.env.count == 1 ? "" : "s")", color: Palette.amber),
+                key,
+                abbreviatedPath(approval.intent.env[key] ?? ""),
+                nil,
                 true
             )
-        ]
+        }
+    }
+
+    private var environmentRowCount: Int {
+        max(approval.intent.env.count, 1)
     }
 
     private func abbreviatedPath(_ value: String) -> String {
