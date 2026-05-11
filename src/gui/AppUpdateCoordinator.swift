@@ -78,6 +78,7 @@ final class AppUpdateCoordinator {
                 try statusStore.saveHomebrewOutdatedPackages(packages)
             } catch {
                 // Homebrew status is advisory in this release; keep app update checks independent.
+                try? statusStore.saveHomebrewOutdatedPackages([])
             }
         }
     }

@@ -302,7 +302,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         .refreshOutdatedPackagesSync()
                     lastError = nil
                 } catch {
-                    homebrewOutdatedPackages = previous.homebrewOutdatedPackages
+                    homebrewOutdatedPackages = []
                     lastError = .init(
                         message: "Homebrew refresh failed during \(reason): " +
                             error.localizedDescription,
@@ -325,7 +325,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     installedCount: previous.installedCount,
                     hazardousPackageCount: previous.hazardousPackageCount,
                     outdatedPackages: previous.outdatedPackages,
-                    homebrewOutdatedPackages: previous.homebrewOutdatedPackages,
+                    homebrewOutdatedPackages: [],
                     refreshedAt: previous.refreshedAt,
                     lastError: .init(
                         message: "Refresh failed during \(reason): \(error.localizedDescription)",
