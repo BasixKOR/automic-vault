@@ -233,6 +233,15 @@ function handler(event) {
       }
     };
   }
+  if (request.uri !== "/" && request.uri.slice(-1) !== "/" && request.uri.indexOf(".") === -1) {
+    return {
+      statusCode: 301,
+      statusDescription: "Moved Permanently",
+      headers: {
+        location: { value: appendQueryString(request.uri + "/") }
+      }
+    };
+  }
   if (request.uri === "/docs") {
     return {
       statusCode: 301,
@@ -242,8 +251,8 @@ function handler(event) {
       }
     };
   }
-  if (request.uri === "/docs/") {
-    request.uri = "/docs/index.html";
+  if (request.uri !== "/" && request.uri.slice(-1) === "/") {
+    request.uri = request.uri + "index.html";
   }
   return request;
 }
