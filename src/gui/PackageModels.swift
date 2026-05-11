@@ -1670,6 +1670,10 @@ struct PackagePresentation: Equatable {
               skillName.isEmpty == false else {
             return packageName
         }
+        if let remoteSkillName = skillName.split(separator: "@").last.map(String.init),
+           remoteSkillName.isEmpty == false {
+            return remoteSkillName
+        }
         return skillName
     }
 

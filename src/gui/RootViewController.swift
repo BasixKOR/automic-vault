@@ -1067,6 +1067,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var appPulseResults: [PackagePresentation] = []
     private var appSearchResults: [PackagePresentation] = []
     private var skillInstalledPackages: [PackagePresentation] = []
+    private var skillPulseResults: [PackagePresentation] = []
     private var skillSearchResults: [PackagePresentation] = []
     private var visiblePackages: [PackagePresentation] = []
     private var detailsByPackageName: [String: PackageDetail] = [:]
@@ -1100,11 +1101,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var installedPulseNextOffset: Int? = 0
     private var appPulseNextOffset: Int? = 0
     private var appSearchNextOffset: Int?
+    private var skillPulseNextOffset: Int? = 0
+    private var skillSearchNextOffset: Int?
     private var commandTotalCount = 0
     private var installedPulseTotalCount = 0
     private var appPulseTotalCount = 0
     private var appSearchTotalCount = 0
+    private var skillPulseTotalCount = 0
+    private var skillSearchTotalCount = 0
     private var appSearchResultsQuery: String?
+    private var skillSearchResultsQuery: String?
     private var isHomebrewCaskCatalogAvailable: Bool?
     private var hasLoadedHomebrewCasks = false
     private var isSkillsCatalogAvailable: Bool?
@@ -1165,6 +1171,24 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
     private var isLoadingSkills = false {
+        didSet {
+            updateHeader()
+            updatePaneLoadingIndicators()
+        }
+    }
+    private var isLoadingSkillPulseResults = false {
+        didSet {
+            updateHeader()
+            updatePaneLoadingIndicators()
+        }
+    }
+    private var isSearchingSkills = false {
+        didSet {
+            updateHeader()
+            updatePaneLoadingIndicators()
+        }
+    }
+    private var isLoadingMoreSkillSearchResults = false {
         didSet {
             updateHeader()
             updatePaneLoadingIndicators()
@@ -1922,23 +1946,15 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
         if isSkillsTabActive {
             skillInstalledPackages = skillInstalledPackages.map(packagePresentationWithCachedDetail)
+            skillPulseResults = skillPulseResults.map(packagePresentationWithCachedDetail)
             skillSearchResults = skillSearchResults.map(packagePresentationWithCachedDetail)
             switch paletteMode {
             case .installed:
                 applyVisiblePackages(skillsPalettePackages)
             case .search(let query):
-                let results = skillsCatalog.searchInstalledPackages(
-                    query: query,
-                    installedPackages: skillInstalledPackages
-                )
-                let installedPackageNames = Set(skillInstalledPackages.compactMap(\.packageName))
-                matchingInstalledPackages = results.filter {
-                    guard let packageName = $0.packageName else { return false }
-                    return installedPackageNames.contains(packageName)
-                }
-                skillSearchResults = results.filter {
-                    guard let packageName = $0.packageName else { return true }
-                    return installedPackageNames.contains(packageName) == false
+                matchingInstalledPackages = skillInstalledPackages.filter {
+                    $0.displayName.localizedCaseInsensitiveContains(query)
+                        || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
                 }
                 applyVisiblePackages(matchingInstalledPackages + skillSearchResults)
             case .commandBrowser(let filter):
@@ -2050,7 +2066,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         guard isSkillsCatalogAvailable != false else {
             return skillsUnavailablePackages
         }
-        return skillInstalledPackages
+        return skillInstalledPackages + skillPulseResults
     }
 
     private var skillsUnavailablePackages: [PackagePresentation] {
@@ -2091,6 +2107,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             [name, name.strippingPrefix("brew:"), name.strippingPrefix("cask:")]
                 .compactMap { $0 }
         })
+    }
+
+    private func installedSkillDisplayNames() -> Set<String> {
+        Set(skillInstalledPackages.map { $0.displayName.lowercased() })
     }
 
     private func select(
@@ -2391,7 +2411,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             case .installed, .commandBrowser, .command:
                 return nil
             case .search:
-                return matchingInstalledPackages.isEmpty ? skillSearchResults.count : nil
+                return matchingInstalledPackages.isEmpty ? skillSearchTotalCount : nil
             }
         }
         switch paletteMode {
@@ -2418,9 +2438,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         if isSkillsTabActive {
             switch paletteMode {
             case .installed:
-                return ""
+                return "RECOMMENDATIONS"
             case .search:
-                return "INSTALL"
+                return "DISCOVERY"
             case .command, .commandBrowser:
                 return "DISCOVERY"
             }
@@ -2445,7 +2465,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             }
         }
         if isSkillsTabActive {
-            return nil
+            switch paletteMode {
+            case .installed, .command, .commandBrowser:
+                return nil
+            case .search:
+                return skillSearchTotalCount
+            }
         }
         switch paletteMode {
         case .installed:
@@ -2469,7 +2494,13 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             }
         }
         if isSkillsTabActive {
-            return nil
+            switch paletteMode {
+            case .installed:
+                let count = max(skillPulseTotalCount, skillPulseResults.count)
+                return count == 0 ? nil : count
+            case .search, .command, .commandBrowser:
+                return nil
+            }
         }
         switch paletteMode {
         case .installed:
@@ -2833,7 +2864,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             ? nil
             : skillsCatalog.unavailableMessage()
         skillInstalledPackages = []
+        skillPulseResults = []
+        skillPulseNextOffset = 0
+        skillPulseTotalCount = 0
         skillSearchResults = []
+        skillSearchResultsQuery = nil
+        skillSearchNextOffset = nil
+        skillSearchTotalCount = 0
+        isLoadingSkillPulseResults = false
+        isSearchingSkills = false
+        isLoadingMoreSkillSearchResults = false
         reloadVisibleSkillsForSearch()
 
         guard isSkillsCatalogAvailable == true else {
@@ -2860,6 +2900,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     }
                     if self.isSkillsTabActive {
                         self.reloadVisibleSkillsForSearch()
+                        self.loadNextSearchPageIfNeeded()
                     }
                 }
             } catch SkillsCatalogError.unavailable {
@@ -2887,11 +2928,17 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func reloadVisibleSkillsForSearch() {
-        searchRequestID += 1
+        let requestID = searchRequestID + 1
+        searchRequestID = requestID
         guard isSkillsCatalogAvailable != false else {
             matchingInstalledPackages = []
             searchExcludedPackageNames = []
             skillSearchResults = []
+            skillSearchResultsQuery = nil
+            skillSearchNextOffset = nil
+            skillSearchTotalCount = 0
+            isSearchingSkills = false
+            isLoadingMoreSkillSearchResults = false
             applyVisiblePackages(skillsUnavailablePackages)
             return
         }
@@ -2900,34 +2947,122 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             matchingInstalledPackages = []
             searchExcludedPackageNames = []
             skillSearchResults = []
+            skillSearchResultsQuery = nil
+            skillSearchNextOffset = nil
+            skillSearchTotalCount = 0
+            isSearchingSkills = false
+            isLoadingMoreSkillSearchResults = false
             applyVisiblePackages(skillsPalettePackages)
         case .search(let query):
-            let results = skillsCatalog.searchInstalledPackages(
-                query: query,
-                installedPackages: skillInstalledPackages
-            )
-            let installedPackageNames = Set(skillInstalledPackages.compactMap(\.packageName))
-            matchingInstalledPackages = results.filter {
-                guard let packageName = $0.packageName else { return false }
-                return installedPackageNames.contains(packageName)
+            let retainedResults = skillSearchResultsQuery == query ? skillSearchResults : []
+            matchingInstalledPackages = skillInstalledPackages.filter {
+                $0.displayName.localizedCaseInsensitiveContains(query)
+                    || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
             }
-            skillSearchResults = results.filter {
-                guard let packageName = $0.packageName else { return true }
-                return installedPackageNames.contains(packageName) == false
-            }
+            skillSearchResults = retainedResults
+            skillSearchResultsQuery = retainedResults.isEmpty ? nil : query
+            skillSearchNextOffset = nil
+            skillSearchTotalCount = 0
+            isSearchingSkills = true
+            isLoadingMoreSkillSearchResults = false
             scrollPackageListToTop()
-            applyVisiblePackages(matchingInstalledPackages + skillSearchResults)
+            applyVisiblePackages(matchingInstalledPackages + retainedResults)
+            requestSkillSearchPage(query: query, offset: 0, requestID: requestID)
         case .commandBrowser(let filter):
             matchingInstalledPackages = []
             searchExcludedPackageNames = []
             skillSearchResults = []
+            skillSearchResultsQuery = nil
+            skillSearchNextOffset = nil
+            skillSearchTotalCount = 0
+            isSearchingSkills = false
+            isLoadingMoreSkillSearchResults = false
             scrollPackageListToTop()
             applyVisiblePackages(commandPaletteItems(filter: filter))
         case .command:
             matchingInstalledPackages = []
             searchExcludedPackageNames = []
             skillSearchResults = []
+            skillSearchResultsQuery = nil
+            skillSearchNextOffset = nil
+            skillSearchTotalCount = 0
+            isSearchingSkills = false
+            isLoadingMoreSkillSearchResults = false
             applyVisiblePackages([])
+        }
+    }
+
+    private func requestSkillSearchPage(query: String, offset: Int, requestID: Int) {
+        let installedSkillNames = installedSkillDisplayNames()
+        let cachedDetailsByPackageName = detailsByPackageName
+        Task { [weak self] in
+            guard let self else { return }
+            let page = await self.skillsCatalog.searchPackages(
+                query: query,
+                offset: offset,
+                limit: Self.searchPageSize,
+                excludingInstalledSkillNames: installedSkillNames
+            )
+            let results = page.packages.map { result in
+                PackagePresentation(
+                    item: .available(result),
+                    detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
+                    freshness: self.freshness(for: result.name)
+                )
+            }
+            await MainActor.run {
+                guard self.searchRequestID == requestID else { return }
+                guard self.isSkillsTabActive,
+                      self.paletteMode == .search(query: query) else { return }
+                self.isSearchingSkills = false
+                self.isLoadingMoreSkillSearchResults = false
+                self.skillSearchTotalCount = page.totalCount
+                if offset == 0 {
+                    self.skillSearchResults = results
+                    self.skillSearchResultsQuery = query
+                } else {
+                    self.skillSearchResults.append(contentsOf: results)
+                }
+                self.skillSearchNextOffset = page.nextOffset
+                self.applyVisiblePackages(self.matchingInstalledPackages + self.skillSearchResults)
+                self.loadNextSearchPageIfNeeded()
+            }
+        }
+    }
+
+    private func requestSkillPulsePage(offset: Int, requestID: Int) {
+        let installedSkillNames = installedSkillDisplayNames()
+        let cachedDetailsByPackageName = detailsByPackageName
+        Task { [weak self] in
+            guard let self else { return }
+            let page = await self.skillsCatalog.fetchPulsePackages(
+                offset: offset,
+                limit: Self.searchPageSize,
+                excludingInstalledSkillNames: installedSkillNames
+            )
+            let results = page.packages.map { result in
+                PackagePresentation(
+                    item: .available(result),
+                    detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
+                    freshness: self.freshness(for: result.name),
+                    presentationID: "skill-pulse:\(result.name)"
+                )
+            }
+            await MainActor.run {
+                guard self.skillRequestID == requestID else { return }
+                self.isLoadingSkillPulseResults = false
+                self.skillPulseTotalCount = page.totalCount
+                if offset == 0 {
+                    self.skillPulseResults = results
+                } else {
+                    self.skillPulseResults.append(contentsOf: results)
+                }
+                self.skillPulseNextOffset = page.nextOffset
+                if self.isSkillsTabActive, self.paletteMode == .installed {
+                    self.applyVisiblePackages(self.skillsPalettePackages)
+                    self.loadNextSearchPageIfNeeded()
+                }
+            }
         }
     }
 
@@ -3142,7 +3277,42 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             }
         }
         if isSkillsTabActive {
-            return
+            switch paletteMode {
+            case .installed:
+                guard isSkillsCatalogAvailable == true,
+                      isLoadingSkills == false,
+                      isLoadingSkillPulseResults == false else {
+                    return
+                }
+                guard let offset = skillPulseNextOffset else { return }
+                let visibleRect = packageScrollView.contentView.bounds
+                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
+                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
+                isLoadingSkillPulseResults = true
+                requestSkillPulsePage(offset: offset, requestID: skillRequestID)
+                return
+            case .search(let query):
+                guard isSearchingSkills == false,
+                      isLoadingMoreSkillSearchResults == false else {
+                    return
+                }
+                guard let offset = skillSearchNextOffset,
+                      !query.isEmpty else {
+                    return
+                }
+                let visibleRect = packageScrollView.contentView.bounds
+                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
+                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
+                isLoadingMoreSkillSearchResults = true
+                requestSkillSearchPage(
+                    query: query,
+                    offset: offset,
+                    requestID: searchRequestID
+                )
+                return
+            case .command, .commandBrowser:
+                return
+            }
         }
         switch paletteMode {
         case .installed:
@@ -3367,6 +3537,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 || (isAppsTabActive && isSearchingAppCasks)
                 || (isAppsTabActive && isLoadingMoreAppCaskSearchResults)
                 || (isSkillsTabActive && isLoadingSkills)
+                || (isSkillsTabActive && isLoadingSkillPulseResults)
+                || (isSkillsTabActive && isSearchingSkills)
+                || (isSkillsTabActive && isLoadingMoreSkillSearchResults)
         )
         dossierView.setEyebrowLoading(isLoadingSelectedPackageDetail)
         externalSurfaceView.setEyebrowLoading(isLoadingSelectedPackageDetail)
