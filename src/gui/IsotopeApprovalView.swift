@@ -54,12 +54,12 @@ final class IsotopeApprovalView: NSView {
             secrets.leadingAnchor.constraint(equalTo: leadingAnchor),
             secrets.trailingAnchor.constraint(equalTo: trailingAnchor),
             secrets.topAnchor.constraint(equalTo: topAnchor),
-            secrets.heightAnchor.constraint(equalToConstant: 62),
+            secrets.heightAnchor.constraint(equalToConstant: 42),
 
             command.leadingAnchor.constraint(equalTo: leadingAnchor),
             command.trailingAnchor.constraint(equalTo: trailingAnchor),
             command.topAnchor.constraint(equalTo: secrets.bottomAnchor, constant: 9),
-            command.heightAnchor.constraint(equalToConstant: 66),
+            command.heightAnchor.constraint(equalToConstant: 86),
 
             requester.leadingAnchor.constraint(equalTo: leadingAnchor),
             requester.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -76,7 +76,7 @@ final class IsotopeApprovalView: NSView {
     private func requesterPanel() -> NSView {
         let view = makePanel()
 
-        let title = label("REQUESTED BY", size: 9, weight: .semibold, color: Palette.quietText, monospaced: true, tracking: 0.9)
+        let title = label("PARENT PROCESS", size: 9, weight: .semibold, color: Palette.quietText, monospaced: true, tracking: 0.9)
         let summary = attributedLabel(requesterSummary)
         summary.lineBreakMode = .byTruncatingMiddle
         summary.maximumNumberOfLines = 1
@@ -89,7 +89,7 @@ final class IsotopeApprovalView: NSView {
         NSLayoutConstraint.activate([
             title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
             title.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            title.widthAnchor.constraint(equalToConstant: 92),
+            title.widthAnchor.constraint(equalToConstant: 116),
 
             summary.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 10),
             summary.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -132,15 +132,7 @@ final class IsotopeApprovalView: NSView {
 
     private func secretsPanel() -> NSView {
         let view = makePanel()
-        let title = sectionTitle("Secrets")
-        let note = label(
-            "Names only. Values stay in Keychain until this one child process is approved.",
-            size: 10,
-            weight: .regular,
-            color: Palette.quietText
-        )
-        note.maximumNumberOfLines = 1
-        note.lineBreakMode = .byTruncatingTail
+        let title = sectionTitle("Requested secrets")
 
         let keyStack = NSStackView()
         keyStack.orientation = .horizontal
@@ -152,7 +144,7 @@ final class IsotopeApprovalView: NSView {
             keyStack.addArrangedSubview(pill(key, color: Palette.accent, monospaced: true))
         }
 
-        [title, keyStack, note].forEach {
+        [title, keyStack].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
@@ -163,11 +155,7 @@ final class IsotopeApprovalView: NSView {
 
             keyStack.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 16),
             keyStack.centerYAnchor.constraint(equalTo: title.centerYAnchor),
-            keyStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -Metrics.innerPadding),
-
-            note.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
-            note.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
-            note.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8)
+            keyStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -Metrics.innerPadding)
         ])
 
         return view
@@ -180,8 +168,14 @@ final class IsotopeApprovalView: NSView {
         let commandText = label(displayCommandLine, size: 10, weight: .regular, color: Palette.text, monospaced: true)
         commandText.maximumNumberOfLines = 2
         commandText.lineBreakMode = .byTruncatingMiddle
+        let helper = label(
+            "This command will receive the secrets",
+            size: 10,
+            weight: .regular,
+            color: Palette.quietText
+        )
 
-        [title, commandBox].forEach {
+        [title, commandBox, helper].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
@@ -195,7 +189,12 @@ final class IsotopeApprovalView: NSView {
             commandBox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
             commandBox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
             commandBox.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            commandBox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -Metrics.innerPadding),
+            commandBox.heightAnchor.constraint(equalToConstant: 30),
+
+            helper.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
+            helper.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
+            helper.topAnchor.constraint(equalTo: commandBox.bottomAnchor, constant: 6),
+            helper.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -9),
 
             commandText.leadingAnchor.constraint(equalTo: commandBox.leadingAnchor, constant: 9),
             commandText.trailingAnchor.constraint(equalTo: commandBox.trailingAnchor, constant: -9),
