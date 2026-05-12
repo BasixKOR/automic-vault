@@ -876,6 +876,12 @@ struct SecretScannerSummary {
     file_probes: usize,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SecretScanPaths {
+    paths: Vec<PathBuf>,
+    errors: Vec<SecretScannerError>,
+}
+
 #[derive(Debug, Clone)]
 struct InstallPlan {
     mode: Mode,
@@ -2455,10 +2461,11 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
         }
     }
 
-    let paths = secret_scan_paths(request.path.as_deref())?;
-    let file_probes = paths.len();
+    let scan_paths = secret_scan_paths(request.path.as_deref())?;
+    errors.extend(scan_paths.errors);
+    let file_probes = scan_paths.paths.len();
     let mut scanned_files = 0;
-    for path in paths {
+    for path in scan_paths.paths {
         match scan_secret_file(&path) {
             Ok(file_findings) => {
                 if path.is_file() {
@@ -2543,35 +2550,57 @@ fn print_secret_scanner_report(report: &SecretScannerReport) {
     }
 }
 
-fn secret_scan_paths(root: Option<&Path>) -> Result<Vec<PathBuf>, String> {
+fn secret_scan_paths(root: Option<&Path>) -> Result<SecretScanPaths, String> {
     match root {
         Some(path) => secret_scan_paths_under_root(path),
-        None => Ok(default_secret_scan_paths()),
+        None => Ok(SecretScanPaths {
+            paths: default_secret_scan_paths(),
+            errors: Vec::new(),
+        }),
     }
 }
 
-fn secret_scan_paths_under_root(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn secret_scan_paths_under_root(root: &Path) -> Result<SecretScanPaths, String> {
     if !root.exists() {
         return Err(format!("scan path does not exist: {}", root.display()));
     }
     if root.is_file() {
-        return Ok(vec![root.to_path_buf()]);
+        return Ok(SecretScanPaths {
+            paths: vec![root.to_path_buf()],
+            errors: Vec::new(),
+        });
     }
+    if !root.is_dir() {
+        return Err(format!(
+            "scan path is not a file or directory: {}",
+            root.display()
+        ));
+    }
+    fs::read_dir(root)
+        .map_err(|err| format!("failed to read scan path {}: {err}", root.display()))?;
 
     let mut paths = Vec::new();
+    let mut errors = Vec::new();
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| !secret_scan_should_skip_entry(entry))
     {
-        let entry = entry.map_err(|err| format!("failed to walk {}: {err}", root.display()))?;
-        if entry.file_type().is_file() {
-            paths.push(entry.path().to_path_buf());
+        match entry {
+            Ok(entry) if entry.file_type().is_file() => {
+                paths.push(entry.path().to_path_buf());
+            }
+            Ok(_) => {}
+            Err(err) => errors.push(SecretScannerError {
+                source: "file-probe".to_string(),
+                path: err.path().map(|path| path.display().to_string()),
+                message: format!("failed to walk entry: {err}"),
+            }),
         }
     }
     paths.sort();
     paths.dedup();
-    Ok(paths)
+    Ok(SecretScanPaths { paths, errors })
 }
 
 fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
@@ -8801,6 +8830,60 @@ or `npm:clawhub` for the aliased package"
         let findings = scan_secret_file(&temp.path().join(".env")).unwrap();
 
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn secret_scan_paths_warns_for_unreadable_subdirectories() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        let restricted = root.join("restricted");
+        let env_path = root.join(".env");
+        fs::create_dir_all(&restricted).unwrap();
+        fs::write(&env_path, "TOKEN=secret_secret\n").unwrap();
+        let mut permissions = fs::metadata(&restricted).unwrap().permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&restricted, permissions).unwrap();
+
+        let result = secret_scan_paths_under_root(&root).unwrap();
+
+        let mut permissions = fs::metadata(&restricted).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&restricted, permissions).unwrap();
+        assert!(result.paths.contains(&env_path));
+        if unsafe { libc::geteuid() } != 0 {
+            assert!(
+                result.errors.iter().any(|error| error
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.contains("restricted"))),
+                "{:?}",
+                result.errors
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn secret_scan_paths_errors_when_requested_root_is_unreadable() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        fs::create_dir_all(&root).unwrap();
+        let mut permissions = fs::metadata(&root).unwrap().permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&root, permissions).unwrap();
+
+        let result = secret_scan_paths_under_root(&root);
+
+        let mut permissions = fs::metadata(&root).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&root, permissions).unwrap();
+        let err = result.unwrap_err();
+        assert!(err.contains("failed to read scan path"));
     }
 
     #[test]
