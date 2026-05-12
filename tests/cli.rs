@@ -23,6 +23,15 @@ fn run_nuke_with_columns(args: &[&str], columns: &str) -> Output {
         .unwrap()
 }
 
+fn run_nuke_with_env(args: &[&str], envs: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
+    command.args(args);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
 fn run_nuke_with_forced_color(args: &[&str], columns: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .env("CLICOLOR_FORCE", "1")
@@ -146,6 +155,10 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av search"));
 
+    let output = run_nuke(&["help", "secret-scanner"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av secret-scanner"));
+
     let output = run_nuke(&["help", "serve"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av serve"));
@@ -224,6 +237,16 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
             vec!["list", "--version"],
             true,
             format!("av list {version}"),
+        ),
+        (
+            vec!["secret-scanner", "--help"],
+            true,
+            "Usage: av secret-scanner".to_string(),
+        ),
+        (
+            vec!["secret-scanner", "--version"],
+            true,
+            format!("av secret-scanner {version}"),
         ),
         (vec!["info", "--help"], true, "Usage: av info".to_string()),
         (
@@ -323,6 +346,54 @@ fn subs_query_commands_cover_success_and_output_modes() {
             .lines()
             .all(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
     );
+
+    let temp = std::env::temp_dir().join(format!("av-secret-scanner-cli-{}", std::process::id()));
+    if temp.exists() {
+        fs::remove_dir_all(&temp).unwrap();
+    }
+    let home = temp.join("home");
+    let scan = temp.join("scan");
+    let aws_credentials = home.join(".aws/credentials");
+    let kubeconfig = temp.join("kubeconfig");
+    let npm_config = temp.join("empty-npmrc");
+    let uv_credentials_dir = temp.join("uv");
+    let cargo_home = temp.join("cargo");
+    let caroot = temp.join("mkcert");
+    let helm_config_home = temp.join("helm");
+    let helm_repository_config = temp.join("repositories.yaml");
+    fs::create_dir_all(aws_credentials.parent().unwrap()).unwrap();
+    fs::create_dir_all(&scan).unwrap();
+    fs::create_dir_all(&uv_credentials_dir).unwrap();
+    fs::write(&aws_credentials, "").unwrap();
+    fs::write(&kubeconfig, "").unwrap();
+    fs::write(&npm_config, "").unwrap();
+    fs::write(scan.join(".env"), "SERVICE_TOKEN=secret_secret\n").unwrap();
+
+    let output = run_nuke_with_env(
+        &["secret-scanner", "--path", scan.to_str().unwrap(), "--json"],
+        &[
+            ("HOME", home.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["summary"]["findings"], 1);
+    assert_eq!(report["findings"][0]["source"], "file-probe");
+    fs::remove_dir_all(temp).unwrap();
 }
 
 #[test]

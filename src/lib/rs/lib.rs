@@ -821,6 +821,12 @@ struct SearchRequest {
     output: OutputMode,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SecretScannerRequest {
+    path: Option<PathBuf>,
+    output: OutputMode,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputMode {
     Human,
@@ -832,6 +838,42 @@ enum OutputMode {
 enum PackageSelection {
     AllInstalled,
     Requested(Vec<RequestedPackage>),
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SecretScannerReport {
+    findings: Vec<SecretScannerFinding>,
+    errors: Vec<SecretScannerError>,
+    summary: SecretScannerSummary,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SecretScannerFinding {
+    source: String,
+    kind: String,
+    severity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SecretScannerError {
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SecretScannerSummary {
+    scanned_files: usize,
+    findings: usize,
+    errors: usize,
+    isotope_detectors: usize,
+    file_probes: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -2363,6 +2405,402 @@ fn package_security_state_for_isotope(isotope_name: &str) -> Option<PackageSecur
             error: Some(err),
         },
     })
+}
+
+fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport, String> {
+    let mut findings = Vec::new();
+    let mut errors = Vec::new();
+    let mut isotope_detectors = 0;
+
+    for integration in isotope_integrations::INTEGRATIONS {
+        let detector = integration
+            .detect_reasons
+            .map(|detect_reasons| detect_reasons())
+            .or_else(|| {
+                integration.detect.map(|detect| {
+                    detect().map(|install_is_insecure| {
+                        if install_is_insecure {
+                            vec![format!(
+                                "isotope:{} detector found plaintext credential exposure",
+                                integration.name
+                            )]
+                        } else {
+                            Vec::new()
+                        }
+                    })
+                })
+            });
+
+        let Some(result) = detector else {
+            continue;
+        };
+        isotope_detectors += 1;
+
+        match result {
+            Ok(reasons) => {
+                findings.extend(reasons.into_iter().map(|reason| SecretScannerFinding {
+                    source: format!("isotope:{}", integration.name),
+                    kind: "detector".to_string(),
+                    severity: "high".to_string(),
+                    path: None,
+                    line: None,
+                    message: reason,
+                }));
+            }
+            Err(err) => errors.push(SecretScannerError {
+                source: format!("isotope:{}", integration.name),
+                path: None,
+                message: err,
+            }),
+        }
+    }
+
+    let paths = secret_scan_paths(request.path.as_deref())?;
+    let file_probes = paths.len();
+    let mut scanned_files = 0;
+    for path in paths {
+        match scan_secret_file(&path) {
+            Ok(file_findings) => {
+                if path.is_file() {
+                    scanned_files += 1;
+                }
+                findings.extend(file_findings);
+            }
+            Err(err) => errors.push(SecretScannerError {
+                source: "file-probe".to_string(),
+                path: Some(path.display().to_string()),
+                message: err,
+            }),
+        }
+    }
+
+    findings.sort_by(|left, right| {
+        left.source
+            .cmp(&right.source)
+            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| left.line.cmp(&right.line))
+            .then_with(|| left.message.cmp(&right.message))
+    });
+    findings.dedup();
+    errors.sort_by(|left, right| {
+        left.source
+            .cmp(&right.source)
+            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| left.message.cmp(&right.message))
+    });
+    errors.dedup();
+
+    Ok(SecretScannerReport {
+        summary: SecretScannerSummary {
+            scanned_files,
+            findings: findings.len(),
+            errors: errors.len(),
+            isotope_detectors,
+            file_probes,
+        },
+        findings,
+        errors,
+    })
+}
+
+fn print_secret_scanner_report(report: &SecretScannerReport) {
+    if report.findings.is_empty() {
+        println!("No plaintext secret exposure detected.");
+    } else {
+        println!(
+            "Plaintext secret exposure detected: {} finding(s).",
+            report.findings.len()
+        );
+        for finding in &report.findings {
+            match (&finding.path, finding.line) {
+                (Some(path), Some(line)) => {
+                    println!(
+                        "{} {} {}:{} - {}",
+                        finding.severity, finding.source, path, line, finding.message
+                    );
+                }
+                (Some(path), None) => {
+                    println!(
+                        "{} {} {} - {}",
+                        finding.severity, finding.source, path, finding.message
+                    );
+                }
+                (None, _) => {
+                    println!(
+                        "{} {} - {}",
+                        finding.severity, finding.source, finding.message
+                    );
+                }
+            }
+        }
+    }
+
+    for error in &report.errors {
+        match &error.path {
+            Some(path) => eprintln!("warning: {} {} - {}", error.source, path, error.message),
+            None => eprintln!("warning: {} - {}", error.source, error.message),
+        }
+    }
+}
+
+fn secret_scan_paths(root: Option<&Path>) -> Result<Vec<PathBuf>, String> {
+    match root {
+        Some(path) => secret_scan_paths_under_root(path),
+        None => Ok(default_secret_scan_paths()),
+    }
+}
+
+fn secret_scan_paths_under_root(root: &Path) -> Result<Vec<PathBuf>, String> {
+    if !root.exists() {
+        return Err(format!("scan path does not exist: {}", root.display()));
+    }
+    if root.is_file() {
+        return Ok(vec![root.to_path_buf()]);
+    }
+
+    let mut paths = Vec::new();
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !secret_scan_should_skip_entry(entry))
+    {
+        let entry = entry.map_err(|err| format!("failed to walk {}: {err}", root.display()))?;
+        if entry.file_type().is_file() {
+            paths.push(entry.path().to_path_buf());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
+    if !entry.file_type().is_dir() {
+        return false;
+    }
+    matches!(
+        entry.file_name().to_str(),
+        Some(".git" | ".hg" | ".svn" | "target" | "dist" | "node_modules" | ".cache")
+    )
+}
+
+fn default_secret_scan_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(cwd) = env::current_dir() {
+        for relative in DEFAULT_SECRET_SCAN_CWD_FILES {
+            paths.push(cwd.join(relative));
+        }
+    }
+
+    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+        for relative in DEFAULT_SECRET_SCAN_HOME_FILES {
+            paths.push(home.join(relative));
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+const DEFAULT_SECRET_SCAN_CWD_FILES: &[&str] = &[
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+];
+
+const DEFAULT_SECRET_SCAN_HOME_FILES: &[&str] = &[
+    ".env",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    ".git-credentials",
+    ".aws/credentials",
+    ".kube/config",
+    ".config/gh/hosts.yml",
+    ".bashrc",
+    ".zshrc",
+    ".profile",
+];
+
+const SECRET_SCAN_MAX_FILE_BYTES: u64 = 1024 * 1024;
+
+fn scan_secret_file(path: &Path) -> Result<Vec<SecretScannerFinding>, String> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(format!("failed to stat {}: {err}", path.display())),
+    };
+    if !metadata.is_file() || metadata.len() > SECRET_SCAN_MAX_FILE_BYTES {
+        return Ok(Vec::new());
+    }
+
+    let bytes =
+        fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    if bytes.iter().any(|byte| *byte == 0) {
+        return Ok(Vec::new());
+    }
+    let Ok(contents) = String::from_utf8(bytes) else {
+        return Ok(Vec::new());
+    };
+
+    let mut findings = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        if let Some(finding) = scan_secret_line(path, index + 1, line) {
+            findings.push(finding);
+        }
+    }
+    Ok(findings)
+}
+
+fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<SecretScannerFinding> {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with('#')
+        || trimmed.starts_with(';')
+        || trimmed.starts_with("//")
+    {
+        return None;
+    }
+
+    if trimmed.contains("BEGIN ") && trimmed.contains("PRIVATE KEY") {
+        return Some(secret_file_finding(
+            path,
+            line_number,
+            "private-key",
+            "critical",
+            "Private key material appears in a readable file",
+        ));
+    }
+
+    let (key, value) = parse_secret_assignment(trimmed)?;
+    let value = normalized_secret_value(value);
+    if !secret_value_is_real(value) {
+        return None;
+    }
+
+    if secret_key_name_is_sensitive(key) {
+        return Some(secret_file_finding(
+            path,
+            line_number,
+            "secret-assignment",
+            "high",
+            &format!("Plaintext-looking credential assigned to {}", key.trim()),
+        ));
+    }
+
+    if secret_value_has_known_token_shape(value) {
+        return Some(secret_file_finding(
+            path,
+            line_number,
+            "token-literal",
+            "high",
+            "Known token-shaped value appears in a readable file",
+        ));
+    }
+
+    None
+}
+
+fn secret_file_finding(
+    path: &Path,
+    line: usize,
+    kind: &str,
+    severity: &str,
+    message: &str,
+) -> SecretScannerFinding {
+    SecretScannerFinding {
+        source: "file-probe".to_string(),
+        kind: kind.to_string(),
+        severity: severity.to_string(),
+        path: Some(path.display().to_string()),
+        line: Some(line),
+        message: message.to_string(),
+    }
+}
+
+fn parse_secret_assignment(line: &str) -> Option<(&str, &str)> {
+    let line = line.strip_prefix("- ").unwrap_or(line);
+    match (line.find('='), line.find(':')) {
+        (Some(eq), Some(colon)) if eq < colon => Some((&line[..eq], &line[eq + 1..])),
+        (Some(_), Some(colon)) => Some((&line[..colon], &line[colon + 1..])),
+        (Some(eq), None) => Some((&line[..eq], &line[eq + 1..])),
+        (None, Some(colon)) => Some((&line[..colon], &line[colon + 1..])),
+        (None, None) => None,
+    }
+}
+
+fn normalized_secret_value(value: &str) -> &str {
+    value.trim().trim_matches('"').trim_matches('\'').trim()
+}
+
+fn secret_key_name_is_sensitive(key: &str) -> bool {
+    let key = key
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_lowercase()
+        .replace('-', "_");
+    key == "token"
+        || key == "password"
+        || key == "passwd"
+        || key == "authorization"
+        || key.contains("token")
+        || key.contains("api_key")
+        || key.contains("apikey")
+        || key.contains("access_key")
+        || key.contains("secret")
+        || key.contains("auth_token")
+        || key.contains("private_key")
+        || key.contains("refresh_token")
+        || key.contains("id_token")
+        || key.contains("client_secret")
+}
+
+fn secret_value_is_real(value: &str) -> bool {
+    if value.len() < 6 || value.contains("${") {
+        return false;
+    }
+
+    let lower = value.to_ascii_lowercase();
+    !matches!(
+        lower.as_str(),
+        "secret"
+            | "password"
+            | "token"
+            | "example"
+            | "changeme"
+            | "change_me"
+            | "replace_me"
+            | "redacted"
+            | "none"
+            | "null"
+            | "true"
+            | "false"
+    ) && !lower.contains("example")
+        && !lower.contains("placeholder")
+        && !lower.contains("your_")
+        && !lower.chars().all(|ch| ch == 'x' || ch == '*')
+        && !value.starts_with('<')
+}
+
+fn secret_value_has_known_token_shape(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("ghp_")
+        || value.starts_with("gho_")
+        || value.starts_with("ghs_")
+        || value.starts_with("github_pat_")
+        || value.starts_with("glpat-")
+        || value.starts_with("xoxb-")
+        || value.starts_with("xoxp-")
+        || value.starts_with("sk_live_")
+        || (value.starts_with("npm_") && value.len() > 12)
+        || (value.starts_with("sk-") && value.len() > 20)
+        || (value.starts_with("AKIA") && value.len() >= 16)
 }
 
 fn isotope_replaced_package_name(record: &IsotopePackageData) -> Result<Option<String>, String> {
@@ -8294,6 +8732,141 @@ or `npm:clawhub` for the aliased package"
         assert_eq!(
             request,
             Err("cannot combine --json and --jsonl".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_secret_scanner_request_accepts_path_and_output_flags() {
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av secret-scanner".to_string(),
+            mode: None,
+        };
+        let request = parse_secret_scanner_request_from_iter(
+            &invocation,
+            vec![
+                OsString::from("--json"),
+                OsString::from("--path"),
+                OsString::from("/tmp/project"),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            Some(SecretScannerRequest {
+                path: Some(PathBuf::from("/tmp/project")),
+                output: OutputMode::Json,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_secret_scanner_request_rejects_missing_path_value() {
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av secret-scanner".to_string(),
+            mode: None,
+        };
+        let request = parse_secret_scanner_request_from_iter(
+            &invocation,
+            vec![OsString::from("--path")].into_iter(),
+        );
+
+        assert_eq!(request, Err("missing value for --path".to_string()));
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_env_tokens_without_printing_values() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        fs::write(
+            &env_path,
+            "OPENAI_API_KEY=sk-test_1234567890abcdef\nPLACEHOLDER=${TOKEN}\n",
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&env_path).unwrap();
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, "secret-assignment");
+        assert_eq!(findings[0].line, Some(1));
+        assert!(!findings[0].message.contains("sk-test"));
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_missing_default_candidates() {
+        let temp = TempDir::new().unwrap();
+        let findings = scan_secret_file(&temp.path().join(".env")).unwrap();
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn secret_scanner_runs_isotope_detectors_and_file_probes() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let scan_root = temp.path().join("project");
+        let aws_credentials = home.join(".aws/credentials");
+        fs::create_dir_all(aws_credentials.parent().unwrap()).unwrap();
+        fs::create_dir_all(&scan_root).unwrap();
+        fs::write(
+            &aws_credentials,
+            "[default]\naws_secret_access_key = secretsecret\n",
+        )
+        .unwrap();
+        fs::write(scan_root.join(".npmrc"), "_authToken=npm_secret_token\n").unwrap();
+
+        let cargo_home = temp.path().join("cargo");
+        let caroot = temp.path().join("mkcert");
+        let helm_config_home = temp.path().join("helm");
+        let helm_repository_config = temp.path().join("repositories.yaml");
+        let kubeconfig = temp.path().join("kubeconfig");
+        let npm_config = temp.path().join("empty-npmrc");
+        let uv_credentials_dir = temp.path().join("uv");
+        fs::create_dir_all(&uv_credentials_dir).unwrap();
+        fs::write(&npm_config, "").unwrap();
+        fs::write(&kubeconfig, "").unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ]);
+
+        let report = run_secret_scan(&SecretScannerRequest {
+            path: Some(scan_root),
+            output: OutputMode::Human,
+        })
+        .unwrap();
+
+        assert!(report.summary.isotope_detectors > 0);
+        assert!(report.summary.scanned_files >= 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.source == "isotope:aws-cli")
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.source == "file-probe")
         );
     }
 

@@ -58,6 +58,20 @@ misusing the credentials and tools already present on a developer machine.
 &nbsp;
 
 
+## SEO Pages
+
+- [AI agent secret scanner](https://www.automicvault.com/secret-scanner-for-ai-agents/) — use `av secret-scanner` to check isotope detectors and local files for plaintext credentials before an agent run.
+- [Secrets manager for AI agents](https://www.automicvault.com/secrets-manager-for-ai-agents/) — store credentials outside agent-readable files and inject them only into approved tools.
+- [Secret scanning vs agent secret protection](https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/) — explain why scanning and runtime prevention solve different parts of the exposure problem.
+- [API key management for AI agents](https://www.automicvault.com/api-key-management-for-ai-agents/) — protect CLI, SDK, MCP, and automation tokens used by local agent workflows.
+
+Target search language: AI agent secret scanner, secret scanner for AI agents,
+secret scanning for coding agents, secrets manager for AI agents, and agent
+secret protection.
+
+&nbsp;
+
+
 ## Isotope Contributor Docs
 
 - [General Isotope Guidelines](./docs/isotopes.md)

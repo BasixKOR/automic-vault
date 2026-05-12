@@ -63,6 +63,12 @@ pub(crate) fn print_search_usage(program: &str) {
     println!("Searches available packages.");
 }
 
+pub(crate) fn print_secret_scanner_usage(program: &str) {
+    println!("Usage: {program} [--path <path>] [--json | --jsonl]");
+    println!();
+    println!("Scans isotope detectors and likely local secret files for plaintext credentials.");
+}
+
 pub(crate) fn print_serve_usage(program: &str) {
     println!("Usage: {program}");
     println!();
@@ -234,6 +240,11 @@ impl<'a> HelpScreen<'a> {
             command_line("uninstall", Some("rm"), "Remove an installed package."),
             HelpLine::plain(""),
             section_line("ACCESS CONTROL"),
+            command_line(
+                "secret-scanner",
+                None,
+                "Find plaintext credentials visible to agents.",
+            ),
             command_line("inject", None, "Inject approved secrets into a process."),
             command_line(
                 "save",

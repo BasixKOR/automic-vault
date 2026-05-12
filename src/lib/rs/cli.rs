@@ -244,6 +244,46 @@ pub(crate) fn run_search(invocation: &Invocation, mut args: env::ArgsOs) -> Resu
     Ok(())
 }
 
+pub(crate) fn run_secret_scanner(
+    invocation: &Invocation,
+    mut args: env::ArgsOs,
+) -> Result<(), String> {
+    let request = match parse_secret_scanner_request(invocation, &mut args)? {
+        Some(request) => request,
+        None => return Ok(()),
+    };
+
+    let report = run_secret_scan(&request)?;
+    match request.output {
+        OutputMode::Human => print_secret_scanner_report(&report),
+        OutputMode::Json => {
+            println!(
+                "{}",
+                serde_json::to_string(&report)
+                    .map_err(|err| format!("failed to serialize secret scanner report: {err}"))?
+            );
+        }
+        OutputMode::Jsonl => {
+            for finding in &report.findings {
+                println!(
+                    "{}",
+                    serde_json::to_string(finding)
+                        .map_err(|err| format!("failed to serialize secret finding: {err}"))?
+                );
+            }
+            for error in &report.errors {
+                println!(
+                    "{}",
+                    serde_json::to_string(error).map_err(|err| format!(
+                        "failed to serialize secret scanner error: {err}"
+                    ))?
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn run_serve(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let Some(first_arg) = args.next() else {
         return protocol::run_server();
@@ -301,6 +341,12 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                 }
                 Some(subcommand) if is_search_subcommand(subcommand) => {
                     print_search_usage(&format!("{} {}", invocation.binary_name, subcommand));
+                }
+                Some(subcommand) if is_secret_scanner_subcommand(subcommand) => {
+                    print_secret_scanner_usage(&format!(
+                        "{} {}",
+                        invocation.binary_name, subcommand
+                    ));
                 }
                 Some(subcommand) if is_serve_subcommand(subcommand) => {
                     print_serve_usage(&format!("{} {}", invocation.binary_name, subcommand));
@@ -391,6 +437,16 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     }
     if is_search_subcommand(subcommand) {
         return run_search(
+            &Invocation {
+                binary_name: invocation.binary_name.clone(),
+                name: format!("{} {subcommand}", invocation.binary_name),
+                mode: None,
+            },
+            args,
+        );
+    }
+    if is_secret_scanner_subcommand(subcommand) {
+        return run_secret_scanner(
             &Invocation {
                 binary_name: invocation.binary_name.clone(),
                 name: format!("{} {subcommand}", invocation.binary_name),
@@ -631,6 +687,13 @@ pub(crate) fn parse_search_request(
     parse_search_request_from_iter(invocation, args)
 }
 
+pub(crate) fn parse_secret_scanner_request(
+    invocation: &Invocation,
+    args: &mut env::ArgsOs,
+) -> Result<Option<SecretScannerRequest>, String> {
+    parse_secret_scanner_request_from_iter(invocation, args)
+}
+
 pub(crate) fn parse_search_request_from_iter<I>(
     invocation: &Invocation,
     mut args: I,
@@ -675,6 +738,66 @@ where
     }
 
     Ok(Some(SearchRequest { query, output }))
+}
+
+pub(crate) fn parse_secret_scanner_request_from_iter<I>(
+    invocation: &Invocation,
+    args: I,
+) -> Result<Option<SecretScannerRequest>, String>
+where
+    I: Iterator<Item = OsString>,
+{
+    let mut output = OutputMode::Human;
+    let mut path = None;
+    let mut pending_path = false;
+
+    for arg in args {
+        if pending_path {
+            path = Some(PathBuf::from(arg));
+            pending_path = false;
+            continue;
+        }
+
+        if is_help_flag(&arg) {
+            print_secret_scanner_usage(&invocation.name);
+            return Ok(None);
+        }
+
+        if is_version_flag(&arg) {
+            println!("{} {}", invocation.name, env!("CARGO_PKG_VERSION"));
+            return Ok(None);
+        }
+
+        if is_json_flag(&arg) || is_jsonl_flag(&arg) {
+            output = update_output_mode(output, &arg)?;
+            continue;
+        }
+
+        match arg.to_str() {
+            Some("--path") => {
+                if path.is_some() {
+                    return Err("secret scanner path specified more than once".to_string());
+                }
+                pending_path = true;
+            }
+            Some(value) if value.starts_with('-') => {
+                return Err(format!("unknown argument '{value}'"));
+            }
+            Some(_) => {
+                if path.is_some() {
+                    return Err("supports a single scan path".to_string());
+                }
+                path = Some(PathBuf::from(arg));
+            }
+            None => return Err("secret scanner path must be valid UTF-8".to_string()),
+        }
+    }
+
+    if pending_path {
+        return Err("missing value for --path".to_string());
+    }
+
+    Ok(Some(SecretScannerRequest { path, output }))
 }
 
 pub(crate) fn parse_package_status_request_from_iter<I>(
@@ -1293,6 +1416,10 @@ pub(crate) fn is_info_subcommand(value: &str) -> bool {
 
 pub(crate) fn is_search_subcommand(value: &str) -> bool {
     value == "search"
+}
+
+pub(crate) fn is_secret_scanner_subcommand(value: &str) -> bool {
+    value == "secret-scanner"
 }
 
 pub(crate) fn is_serve_subcommand(value: &str) -> bool {
