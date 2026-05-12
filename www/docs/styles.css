@@ -473,6 +473,11 @@ h2 {
   margin-bottom: 24px;
 }
 
+.quick-start-action {
+  display: flex;
+  align-items: center;
+}
+
 .terminal-frame {
   min-width: 0;
   overflow: hidden;

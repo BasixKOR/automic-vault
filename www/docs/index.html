@@ -134,21 +134,11 @@
               </p>
             </div>
 
-            <div class="terminal-frame" data-copy-scope>
-              <div class="terminal-bar">
-                <span>bootstrap</span>
-                <button class="copy-button" type="button" data-copy>
-                  Copy
-                </button>
-              </div>
-              <pre><code>tmp="$(mktemp)" \
-  &amp;&amp; /usr/bin/curl -sSfL https://automicvault.com/av.pkg -o "$tmp" \
-  &amp;&amp; exec 3&lt;"$tmp" \
-  &amp;&amp; /usr/sbin/spctl -a -vv --type install /dev/fd/3 \
-  &amp;&amp; /usr/sbin/pkgutil --check-signature /dev/fd/3 \
-    | grep -q 'Team Identifier: ZU76A67LGU' \
-  &amp;&amp; /usr/bin/sudo /usr/sbin/installer -pkg /dev/fd/3 -target / \
-  &amp;&amp; exec 3&lt;&amp;-</code></pre>
+            <div class="quick-start-action">
+              <a class="button primary" href="/Automic Vault.dmg">
+                Download .dmg
+                <span aria-hidden="true">›</span>
+              </a>
             </div>
           </section>
 
