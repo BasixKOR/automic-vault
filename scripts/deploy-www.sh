@@ -226,6 +226,15 @@ function handler(event) {
   if (request.uri === "/install.sh") {
     return request;
   }
+  if (request.uri === "/av.dmg") {
+    return {
+      statusCode: 301,
+      statusDescription: "Moved Permanently",
+      headers: {
+        location: { value: appendQueryString("/Automic%20Vault.dmg") }
+      }
+    };
+  }
   if (host === "${WWW_DOMAIN}") {
     var location = appendQueryString("https://${WWW_CANONICAL_HOST}" + request.uri);
     return {
