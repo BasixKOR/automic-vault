@@ -223,6 +223,9 @@ function handler(event) {
     return location;
   }
 
+  if (request.uri === "/install.sh") {
+    return request;
+  }
   if (host === "${WWW_DOMAIN}") {
     var location = appendQueryString("https://${WWW_CANONICAL_HOST}" + request.uri);
     return {
