@@ -58,51 +58,7 @@ misusing the credentials and tools already present on a developer machine.
 &nbsp;
 
 
-## Isotopes
+## Isotope Contributor Docs
 
-Isotope contributor docs now live in [docs/isotopes.md](./docs/isotopes.md).
-
-## Radioisotopes
-
-Radioisotope docs now live in
-[data/radioisotopes/README.md](./data/radioisotopes/README.md).
-
-## Next Topes
-
-Keep this list current as new isotopes and radioisotopes land. It should only
-include targets that are not already secured.
-
-This list intentionally excludes agent CLIs that are secured by the tools they
-run, and excludes dedicated secrets managers that should provide their own
-security boundary.
-
-1. `ssh`, `ssh-agent`, and `SSH_AUTH_SOCK`
-   - Gate ambient use of unlocked SSH keys by agents and other processes in
-     the user's session.
-   - Do not replace or delete Apple's `/usr/bin/ssh`; prefer an Automic Vault
-     broker, wrappers, and unmanaged-state detection.
-2. `brew:kubernetes-cli`
-   - Gate production cluster mutation, secret reads, deletes, rollouts, and
-     remote execution.
-3. `brew:docker`
-   - Gate registry credential use, image pushes, privileged containers, and
-     host mounts.
-4. `git` credential helper and Homebrew `git` integration
-   - Gate source-control writes, force pushes, tag mutation, and credential
-     use.
-   - Do not replace or delete Apple's CLT `git`; control the authentication
-     boundary where possible.
-5. `brew:azure-cli`
-   - Gate cloud resource mutation and Azure identity/token use.
-6. `brew:uv`
-   - Gate Python package publishing and PyPI token handling.
-7. `brew:helm`
-   - Gate Kubernetes chart installs, upgrades, deletes, and release mutation.
-8. `brew:glab`
-   - Gate GitLab source, CI, release, token, and organization administration.
-9. `brew:opentofu`
-   - Gate infrastructure apply and destroy operations.
-10. `brew:ansible`
-    - Gate remote fleet mutation and credential use.
-
-&nbsp;
+- [General Isotope Guidelines](./docs/isotopes.md).
+- [Radioisotope Considerations](https://github.com/automic-vault/radioisotopes/#readme)
