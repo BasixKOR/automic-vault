@@ -108,6 +108,8 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(stdout(&output).contains("▪ PACKAGE SYSTEM"));
     assert!(stdout(&output).contains("install (i)"));
     assert!(stdout(&output).contains("list (ls)"));
+    assert!(stdout(&output).contains("scan"));
+    assert!(!stdout(&output).contains("secret-scanner"));
     assert!(stdout(&output).contains("─"));
     assert!(stdout(&output).contains("LEGEND"));
 
@@ -155,9 +157,13 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av search"));
 
+    let output = run_nuke(&["help", "scan"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av scan"));
+
     let output = run_nuke(&["help", "secret-scanner"]);
     assert!(output.status.success());
-    assert!(stdout(&output).contains("Usage: av secret-scanner"));
+    assert!(stdout(&output).contains("Usage: av scan"));
 
     let output = run_nuke(&["help", "serve"]);
     assert!(output.status.success());
@@ -239,14 +245,19 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
             format!("av list {version}"),
         ),
         (
-            vec!["secret-scanner", "--help"],
+            vec!["scan", "--help"],
             true,
-            "Usage: av secret-scanner".to_string(),
+            "Usage: av scan".to_string(),
+        ),
+        (
+            vec!["scan", "--version"],
+            true,
+            format!("av scan {version}"),
         ),
         (
             vec!["secret-scanner", "--version"],
             true,
-            format!("av secret-scanner {version}"),
+            format!("av scan {version}"),
         ),
         (vec!["info", "--help"], true, "Usage: av info".to_string()),
         (
@@ -370,7 +381,7 @@ fn subs_query_commands_cover_success_and_output_modes() {
     fs::write(scan.join(".env"), "SERVICE_TOKEN=secret_secret\n").unwrap();
 
     let output = run_nuke_with_env(
-        &["secret-scanner", "--path", scan.to_str().unwrap(), "--json"],
+        &["scan", "--path", scan.to_str().unwrap(), "--json"],
         &[
             ("HOME", home.to_str().unwrap()),
             (
@@ -393,6 +404,32 @@ fn subs_query_commands_cover_success_and_output_modes() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["summary"]["findings"], 1);
     assert_eq!(report["findings"][0]["source"], "file-probe");
+
+    let output = run_nuke_with_env(
+        &[
+            "secret-scanner",
+            "--path",
+            scan.to_str().unwrap(),
+            "--jsonl",
+        ],
+        &[
+            ("HOME", home.to_str().unwrap()),
+            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output)
+            .lines()
+            .all(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
+    );
     fs::remove_dir_all(temp).unwrap();
 }
 

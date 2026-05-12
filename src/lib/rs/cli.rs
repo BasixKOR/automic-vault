@@ -343,10 +343,7 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                     print_search_usage(&format!("{} {}", invocation.binary_name, subcommand));
                 }
                 Some(subcommand) if is_secret_scanner_subcommand(subcommand) => {
-                    print_secret_scanner_usage(&format!(
-                        "{} {}",
-                        invocation.binary_name, subcommand
-                    ));
+                    print_secret_scanner_usage(&format!("{} scan", invocation.binary_name));
                 }
                 Some(subcommand) if is_serve_subcommand(subcommand) => {
                     print_serve_usage(&format!("{} {}", invocation.binary_name, subcommand));
@@ -449,7 +446,7 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
         return run_secret_scanner(
             &Invocation {
                 binary_name: invocation.binary_name.clone(),
-                name: format!("{} {subcommand}", invocation.binary_name),
+                name: format!("{} scan", invocation.binary_name),
                 mode: None,
             },
             args,
@@ -1419,7 +1416,7 @@ pub(crate) fn is_search_subcommand(value: &str) -> bool {
 }
 
 pub(crate) fn is_secret_scanner_subcommand(value: &str) -> bool {
-    value == "secret-scanner"
+    matches!(value, "scan" | "secret-scanner")
 }
 
 pub(crate) fn is_serve_subcommand(value: &str) -> bool {

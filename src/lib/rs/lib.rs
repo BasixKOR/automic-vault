@@ -8768,7 +8768,7 @@ or `npm:clawhub` for the aliased package"
     fn parse_secret_scanner_request_accepts_path_and_output_flags() {
         let invocation = Invocation {
             binary_name: "av".to_string(),
-            name: "av secret-scanner".to_string(),
+            name: "av scan".to_string(),
             mode: None,
         };
         let request = parse_secret_scanner_request_from_iter(
@@ -8795,7 +8795,7 @@ or `npm:clawhub` for the aliased package"
     fn parse_secret_scanner_request_rejects_missing_path_value() {
         let invocation = Invocation {
             binary_name: "av".to_string(),
-            name: "av secret-scanner".to_string(),
+            name: "av scan".to_string(),
             mode: None,
         };
         let request = parse_secret_scanner_request_from_iter(

@@ -241,7 +241,7 @@ impl<'a> HelpScreen<'a> {
             HelpLine::plain(""),
             section_line("ACCESS CONTROL"),
             command_line(
-                "secret-scanner",
+                "scan",
                 None,
                 "Find plaintext credentials visible to agents.",
             ),
