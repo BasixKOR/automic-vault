@@ -2511,43 +2511,264 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
 }
 
 fn print_secret_scanner_report(report: &SecretScannerReport) {
+    if !scan_stdout_is_rich() {
+        print_plain_secret_scanner_report(report);
+        return;
+    }
+
+    print_rich_secret_scanner_report(report);
+}
+
+fn print_plain_secret_scanner_report(report: &SecretScannerReport) {
+    println!("Automic Vault scan");
     if report.findings.is_empty() {
         println!("No plaintext secret exposure detected.");
     } else {
         println!(
-            "Plaintext secret exposure detected: {} finding(s).",
-            report.findings.len()
+            "Plaintext secret exposure detected: {}.",
+            pluralize(report.findings.len(), "finding", "findings")
         );
-        for finding in &report.findings {
-            match (&finding.path, finding.line) {
-                (Some(path), Some(line)) => {
-                    println!(
-                        "{} {} {}:{} - {}",
-                        finding.severity, finding.source, path, line, finding.message
-                    );
-                }
-                (Some(path), None) => {
-                    println!(
-                        "{} {} {} - {}",
-                        finding.severity, finding.source, path, finding.message
-                    );
-                }
-                (None, _) => {
-                    println!(
-                        "{} {} - {}",
-                        finding.severity, finding.source, finding.message
-                    );
-                }
+        println!();
+        println!("Findings:");
+        for (index, finding) in report.findings.iter().enumerate() {
+            println!(
+                "{}. {} {} - {}",
+                index + 1,
+                finding.severity,
+                finding.source,
+                finding.message
+            );
+            if let Some(location) = secret_scanner_finding_location(finding) {
+                println!("   {location}");
             }
         }
     }
+    println!(
+        "Summary: {}, {}, {}, {}.",
+        pluralize(report.summary.findings, "finding", "findings"),
+        pluralize(report.summary.errors, "warning", "warnings"),
+        pluralize(report.summary.scanned_files, "file scanned", "files scanned"),
+        pluralize(
+            report.summary.isotope_detectors,
+            "isotope detector",
+            "isotope detectors"
+        )
+    );
 
-    for error in &report.errors {
-        match &error.path {
-            Some(path) => eprintln!("warning: {} {} - {}", error.source, path, error.message),
-            None => eprintln!("warning: {} - {}", error.source, error.message),
+    print_secret_scanner_warnings(report, false);
+}
+
+fn print_rich_secret_scanner_report(report: &SecretScannerReport) {
+    let color = scan_stdout_supports_ansi();
+    let status = if report.findings.is_empty() {
+        scan_paint("✓", ScanStyle::Success, color)
+    } else {
+        scan_paint("✗", ScanStyle::Error, color)
+    };
+    let headline = if report.findings.is_empty() {
+        "No plaintext secret exposure detected".to_string()
+    } else {
+        format!(
+            "{} plaintext credential {}",
+            report.findings.len(),
+            if report.findings.len() == 1 {
+                "finding"
+            } else {
+                "findings"
+            }
+        )
+    };
+    let summary = format!(
+        "{} · {} · {}",
+        pluralize(
+            report.summary.isotope_detectors,
+            "detector",
+            "detectors"
+        ),
+        pluralize(report.summary.scanned_files, "file scanned", "files scanned"),
+        pluralize(report.summary.errors, "warning", "warnings")
+    );
+
+    print_scan_box("Automic Vault Scan", &[format!("{status} {headline}"), summary], color);
+
+    if !report.findings.is_empty() {
+        println!();
+        println!(
+            "{}",
+            scan_paint("Findings", ScanStyle::Heading, color)
+        );
+        for (index, finding) in report.findings.iter().enumerate() {
+            let severity = scan_paint(&finding.severity, scan_severity_style(finding), color);
+            println!(
+                "  {}. {} {}",
+                index + 1,
+                severity,
+                scan_paint(&finding.source, ScanStyle::Dim, color)
+            );
+            if let Some(location) = secret_scanner_finding_location(finding) {
+                println!("     {}", scan_paint(&location, ScanStyle::Path, color));
+            }
+            println!("     {}", finding.message);
         }
     }
+
+    print_secret_scanner_warnings(report, scan_stderr_supports_ansi());
+}
+
+fn print_secret_scanner_warnings(report: &SecretScannerReport, color: bool) {
+    if report.errors.is_empty() {
+        return;
+    }
+
+    eprintln!();
+    eprintln!("{}", scan_paint("Warnings", ScanStyle::Warning, color));
+    for error in &report.errors {
+        let source = scan_paint(&error.source, ScanStyle::Dim, color);
+        match &error.path {
+            Some(path) => eprintln!(
+                "  {} {source} {} - {}",
+                scan_paint("⚠", ScanStyle::Warning, color),
+                scan_paint(path, ScanStyle::Path, color),
+                error.message
+            ),
+            None => eprintln!(
+                "  {} {source} - {}",
+                scan_paint("⚠", ScanStyle::Warning, color),
+                error.message
+            ),
+        }
+    }
+}
+
+fn print_scan_box(title: &str, lines: &[String], color: bool) {
+    let width = scan_box_width(lines);
+    println!(
+        "{}",
+        scan_paint(
+            &format!(
+                "╭─ {title} {}╮",
+                "─".repeat(width.saturating_sub(title.len() + 4))
+            ),
+            ScanStyle::Accent,
+            color
+        )
+    );
+    for line in lines {
+        println!("│  {}", pad_scan_line(line, width));
+    }
+    println!(
+        "{}",
+        scan_paint(&format!("╰{}╯", "─".repeat(width + 2)), ScanStyle::Accent, color)
+    );
+}
+
+fn scan_box_width(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .map(|line| strip_ansi_width(line))
+        .max()
+        .unwrap_or(42)
+        .clamp(42, 76)
+}
+
+fn pad_scan_line(line: &str, width: usize) -> String {
+    let visible = strip_ansi_width(line);
+    format!("{line}{} │", " ".repeat(width.saturating_sub(visible)))
+}
+
+fn strip_ansi_width(line: &str) -> usize {
+    let mut width = 0;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next == 'm' {
+                    break;
+                }
+            }
+            continue;
+        }
+        width += 1;
+    }
+    width
+}
+
+fn secret_scanner_finding_location(finding: &SecretScannerFinding) -> Option<String> {
+    match (&finding.path, finding.line) {
+        (Some(path), Some(line)) => Some(format!("{path}:{line}")),
+        (Some(path), None) => Some(path.clone()),
+        (None, _) => None,
+    }
+}
+
+fn pluralize(count: usize, singular: &str, plural: &str) -> String {
+    if count == 1 {
+        format!("1 {singular}")
+    } else {
+        format!("{count} {plural}")
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ScanStyle {
+    Accent,
+    Dim,
+    Error,
+    Heading,
+    Path,
+    Success,
+    Warning,
+}
+
+fn scan_severity_style(finding: &SecretScannerFinding) -> ScanStyle {
+    match finding.severity.as_str() {
+        "critical" | "high" => ScanStyle::Error,
+        _ => ScanStyle::Warning,
+    }
+}
+
+fn scan_paint(text: &str, style: ScanStyle, color: bool) -> String {
+    if !color {
+        return text.to_string();
+    }
+
+    let code = match style {
+        ScanStyle::Accent => "38;2;224;90;71",
+        ScanStyle::Dim => "2",
+        ScanStyle::Error => "31;1",
+        ScanStyle::Heading => "1",
+        ScanStyle::Path => "36",
+        ScanStyle::Success => "32;1",
+        ScanStyle::Warning => "33;1",
+    };
+    format!("\x1b[{code}m{text}\x1b[0m")
+}
+
+fn scan_stdout_is_rich() -> bool {
+    env::var("CLICOLOR_FORCE").is_ok_and(|value| value != "0")
+        || (std::io::stdout().is_terminal()
+            && env::var("TERM").map_or(true, |term| term != "dumb"))
+}
+
+fn scan_stdout_supports_ansi() -> bool {
+    output_supports_ansi(std::io::stdout().is_terminal())
+}
+
+fn scan_stderr_supports_ansi() -> bool {
+    output_supports_ansi(std::io::stderr().is_terminal())
+}
+
+fn output_supports_ansi(is_terminal: bool) -> bool {
+    if env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+
+    if env::var("CLICOLOR_FORCE").is_ok_and(|value| value != "0") {
+        return true;
+    }
+
+    is_terminal && env::var("TERM").map_or(true, |term| term != "dumb")
 }
 
 fn secret_scan_paths(root: Option<&Path>) -> Result<SecretScanPaths, String> {

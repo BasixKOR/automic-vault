@@ -26,6 +26,7 @@ fn run_nuke_with_columns(args: &[&str], columns: &str) -> Output {
 fn run_nuke_with_env(args: &[&str], envs: &[(&str, &str)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
     command.args(args);
+    command.env_remove("NO_COLOR");
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -430,6 +431,47 @@ fn subs_query_commands_cover_success_and_output_modes() {
             .lines()
             .all(|line| serde_json::from_str::<serde_json::Value>(line).is_ok())
     );
+
+    let output = run_nuke_with_env(
+        &["scan", "--path", scan.to_str().unwrap()],
+        &[
+            ("HOME", home.to_str().unwrap()),
+            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    let plain_stdout = stdout(&output);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(plain_stdout.contains("Automic Vault scan"));
+    assert!(plain_stdout.contains("Findings:"));
+    assert!(!plain_stdout.contains("\x1b["));
+    assert!(!plain_stdout.contains("╭"));
+
+    let output = run_nuke_with_env(
+        &["scan", "--path", scan.to_str().unwrap()],
+        &[
+            ("CLICOLOR_FORCE", "1"),
+            ("HOME", home.to_str().unwrap()),
+            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    let rich_stdout = stdout(&output);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(rich_stdout.contains("╭─ Automic Vault Scan"));
+    assert!(rich_stdout.contains("\x1b["));
     fs::remove_dir_all(temp).unwrap();
 }
 
