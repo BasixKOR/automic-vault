@@ -60,5 +60,5 @@ misusing the credentials and tools already present on a developer machine.
 
 ## Isotope Contributor Docs
 
-- [General Isotope Guidelines](./docs/isotopes.md).
+- [General Isotope Guidelines](./docs/isotopes.md)
 - [Radioisotope Considerations](https://github.com/automic-vault/radioisotopes/#readme)
