@@ -176,6 +176,10 @@ final class SkillsCatalogTests: XCTestCase {
         XCTAssertEqual(result.name, "npm:skills:vercel-labs/agent-browser@agent-browser")
         XCTAssertEqual(result.managementBackend, .npmSkills)
         XCTAssertEqual(detail.skillName, "vercel-labs/agent-browser@agent-browser")
+        XCTAssertEqual(
+            detail.homepageURL?.absoluteString,
+            "https://skills.sh/vercel-labs/agent-browser/agent-browser"
+        )
     }
 
     func testRemoteSearchFallsBackToPublicAPI() async throws {
@@ -281,6 +285,10 @@ final class SkillsCatalogTests: XCTestCase {
         XCTAssertEqual(page.packages.map(\.name), [
             "npm:skills:vercel-labs/skills@find-skills",
         ])
+        XCTAssertEqual(
+            page.packages.first?.fallbackDetail.homepageURL?.absoluteString,
+            "https://skills.sh/vercel-labs/skills/find-skills"
+        )
     }
 
     func testRemoteSearchFiltersInstalledSkillNames() async throws {

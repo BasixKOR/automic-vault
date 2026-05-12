@@ -131,7 +131,7 @@ final class SkillsCatalog {
                 source: .npm(packageName: "skills"),
                 version: nil,
                 description: summary,
-                homepage: url,
+                homepage: skillsHomepage,
                 dependencies: [],
                 securityState: nil,
                 pulseKind: nil,
@@ -145,7 +145,7 @@ final class SkillsCatalog {
                 source: .npm(packageName: "skills"),
                 version: nil,
                 description: summary,
-                homepage: url,
+                homepage: skillsHomepage,
                 dependencies: [],
                 securityState: nil,
                 pulseKind: "updated",
@@ -177,7 +177,7 @@ final class SkillsCatalog {
                 homebrewInfo: HomebrewPackageInfo(
                     formula: name,
                     description: summary,
-                    homepage: url,
+                    homepage: skillsHomepage,
                     license: nil,
                     dependencies: []
                 ),
@@ -202,6 +202,45 @@ final class SkillsCatalog {
                 return "\(count) installs"
             }
             return "\(installs) install\(installs == 1 ? "" : "s")"
+        }
+
+        private var skillsHomepage: String? {
+            if let url = Self.nonEmptyString(url) {
+                return url
+            }
+
+            let sourceSkillPath = [source, slug]
+                .compactMap(Self.nonEmptyString)
+                .joined(separator: "/")
+            return Self.skillsHomepageURLString(
+                for: Self.nonEmptyString(id) ?? sourceSkillPath
+            ) ?? Self.skillsHomepageURLString(for: sourceSkillPath)
+        }
+
+        private static func skillsHomepageURLString(for path: String) -> String? {
+            let normalized = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard normalized.isEmpty == false else {
+                return nil
+            }
+            if normalized.hasPrefix("http://") || normalized.hasPrefix("https://") {
+                return normalized
+            }
+
+            var components = URLComponents()
+            components.scheme = API.baseURL.scheme
+            components.host = API.baseURL.host
+            components.path = "/" + normalized
+                .split(separator: "/", omittingEmptySubsequences: true)
+                .joined(separator: "/")
+            return components.url?.absoluteString
+        }
+
+        private static func nonEmptyString(_ value: String?) -> String? {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  value.isEmpty == false else {
+                return nil
+            }
+            return value
         }
     }
 
