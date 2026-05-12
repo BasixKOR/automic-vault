@@ -1049,6 +1049,37 @@ mod tests {
     }
 
     #[test]
+    fn subs_proxy_and_internal_exec_cover_runtime_paths() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let ok_tool = bin.join("ok-tool");
+        fs::write(&ok_tool, "#!/bin/sh\nexit 0\n").unwrap();
+        let bad_tool = bin.join("bad-tool");
+        fs::write(&bad_tool, "#!/bin/sh\nexit 7\n").unwrap();
+        fs::set_permissions(&ok_tool, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&bad_tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let missing_socket = temp.path().join("missing.sock");
+        let _env = EnvGuard::set(&[
+            ("PATH", bin.to_str().unwrap()),
+            (VAULT_TRUSTED_INTERNAL_ENV, VAULT_TRUSTED_INTERNAL_VALUE),
+            (VAULT_SOCKET_PATH_ENV, missing_socket.to_str().unwrap()),
+        ]);
+
+        assert!(run_internal_exec("vault", vec![OsString::from("ok-tool")].into_iter()).is_ok());
+        assert_eq!(
+            run_internal_exec("vault", vec![OsString::from("bad-tool")].into_iter()).unwrap_err(),
+            "command exited with status 7"
+        );
+        assert!(
+            run_proxy(vec![ok_tool.as_os_str().to_os_string()].into_iter())
+                .unwrap_err()
+                .contains("vaultd unavailable")
+        );
+    }
+
+    #[test]
     fn subs_vault_resolution_helpers_cover_paths_and_env() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
@@ -1097,6 +1128,123 @@ mod tests {
                 .unwrap_err()
                 .contains("path separators")
         );
+    }
+
+    #[test]
+    fn subs_request_vault_execution_covers_blank_close_and_mismatch_errors() {
+        fn serve_once<F>(socket: &Path, respond: F) -> thread::JoinHandle<()>
+        where
+            F: FnOnce(VaultClientRequest, &mut UnixStream) + Send + 'static,
+        {
+            let listener = UnixListener::bind(socket).unwrap();
+            thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request = serde_json::from_str::<VaultClientRequest>(&line).unwrap();
+                respond(request, &mut stream);
+            })
+        }
+
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+
+        let approved_socket = temp.path().join("approved-close.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, approved_socket.to_str().unwrap())]);
+        let approved = serve_once(&approved_socket, |request, stream| {
+            let VaultClientRequest::ApprovalRequest { id, .. } = request else {
+                panic!("unexpected request")
+            };
+            writeln!(stream).unwrap();
+            writeln!(
+                stream,
+                "{}",
+                serde_json::to_string(&VaultDaemonEvent::ApprovalResponse {
+                    id,
+                    approved: true,
+                    reason: None,
+                })
+                .unwrap()
+            )
+            .unwrap();
+        });
+        request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+            .unwrap();
+        approved.join().unwrap();
+
+        let mismatch_socket = temp.path().join("mismatch.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, mismatch_socket.to_str().unwrap())]);
+        let mismatch = serve_once(&mismatch_socket, |_request, stream| {
+            writeln!(
+                stream,
+                "{}",
+                serde_json::to_string(&VaultDaemonEvent::ApprovalResponse {
+                    id: "other-id".to_string(),
+                    approved: true,
+                    reason: None,
+                })
+                .unwrap()
+            )
+            .unwrap();
+        });
+        assert_eq!(
+            request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+                .unwrap_err(),
+            "vaultd returned a mismatched approval response"
+        );
+        mismatch.join().unwrap();
+
+        let stream_socket = temp.path().join("unknown-stream.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, stream_socket.to_str().unwrap())]);
+        let unknown_stream = serve_once(&stream_socket, |request, stream| {
+            let VaultClientRequest::ApprovalRequest { id, .. } = request else {
+                panic!("unexpected request")
+            };
+            for event in [
+                VaultDaemonEvent::ApprovalResponse {
+                    id: id.clone(),
+                    approved: true,
+                    reason: None,
+                },
+                VaultDaemonEvent::ExecChunk {
+                    id,
+                    stream: "side-channel".to_string(),
+                    data: "nope".to_string(),
+                },
+            ] {
+                writeln!(stream, "{}", serde_json::to_string(&event).unwrap()).unwrap();
+            }
+        });
+        assert_eq!(
+            request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+                .unwrap_err(),
+            "vaultd returned unknown stream 'side-channel'"
+        );
+        unknown_stream.join().unwrap();
+
+        let error_socket = temp.path().join("mismatched-error.sock");
+        let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, error_socket.to_str().unwrap())]);
+        let mismatched_error = serve_once(&error_socket, |_request, stream| {
+            writeln!(
+                stream,
+                "{}",
+                serde_json::to_string(&VaultDaemonEvent::Error {
+                    id: Some("other-id".to_string()),
+                    code: 500,
+                    message: "boom".to_string(),
+                })
+                .unwrap()
+            )
+            .unwrap();
+        });
+        assert_eq!(
+            request_vault_execution(build_execution_intent("git".to_string(), Vec::new()).unwrap())
+                .unwrap_err(),
+            "vaultd returned a mismatched error"
+        );
+        mismatched_error.join().unwrap();
     }
 
     #[test]
@@ -1265,5 +1413,35 @@ mod tests {
             .into_iter(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn subs_toolchain_and_sandbox_commands_cover_default_output_paths() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set(&[("HOME", temp.path().to_str().unwrap())]);
+
+        run_toolchain_command("vault", vec![OsString::from("--json")].into_iter()).unwrap();
+        run_sandbox_profile_command("vault", Vec::<OsString>::new().into_iter()).unwrap();
+    }
+
+    #[test]
+    fn subs_resolve_initial_executable_covers_absolute_and_missing_path_env() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let absolute = temp.path().join("absolute-tool");
+        write_executable(&absolute);
+
+        assert_eq!(
+            resolve_initial_executable(absolute.to_str().unwrap()).unwrap(),
+            absolute
+        );
+
+        let _env = EnvGuard::set(&[("PATH", "")]);
+        unsafe { env::remove_var("PATH") };
+        assert_eq!(
+            resolve_initial_executable("absolute-tool").unwrap_err(),
+            "PATH is not set"
+        );
     }
 }

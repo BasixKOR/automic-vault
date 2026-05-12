@@ -567,6 +567,8 @@ mod tests {
                 }
             })
             .expect("protocol server should create a socket");
+        writeln!(stream).unwrap();
+        writeln!(stream, "{{not json").unwrap();
         writeln!(
             stream,
             "{}",
@@ -585,13 +587,95 @@ mod tests {
         );
         drop(stream);
 
-        SERVER_RUNNING.store(false, Ordering::SeqCst);
+        handle_shutdown_signal(0);
         handle.join().unwrap().unwrap();
         assert!(!socket_path.exists());
+        let log = fs::read_to_string(paths.log_path).unwrap();
+        assert!(log.contains("ignored invalid JSON request"));
+        assert!(log.contains("protocol server shutting down"));
+    }
+
+    #[test]
+    fn run_server_replaces_stale_socket_and_rejects_running_daemon() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+
+        let stale_temp = TempDir::new_in("/tmp").unwrap();
+        let _env = EnvGuard::set("HOME", stale_temp.path().to_str().unwrap());
+        let stale_paths = ProtocolPaths::resolve().unwrap();
+        fs::create_dir_all(&stale_paths.socket_dir).unwrap();
+        fs::write(&stale_paths.socket_path, b"stale").unwrap();
+        let handle = thread::spawn(run_server);
+        let mut stream = (0..50)
+            .find_map(|_| match UnixStream::connect(&stale_paths.socket_path) {
+                Ok(stream) => Some(stream),
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(20));
+                    None
+                }
+            })
+            .expect("protocol server should replace the stale socket");
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({"id": 10, "method": "system.info", "params": {}})
+        )
+        .unwrap();
+        stream.flush().unwrap();
+        drop(stream);
+        handle_shutdown_signal(0);
+        handle.join().unwrap().unwrap();
+
+        let running_temp = TempDir::new_in("/tmp").unwrap();
+        let _env = EnvGuard::set("HOME", running_temp.path().to_str().unwrap());
+        let running_paths = ProtocolPaths::resolve().unwrap();
+        fs::create_dir_all(&running_paths.socket_dir).unwrap();
+        let listener = UnixListener::bind(&running_paths.socket_path).unwrap();
         assert!(
-            fs::read_to_string(paths.log_path)
-                .unwrap()
-                .contains("protocol server shutting down")
+            run_server()
+                .unwrap_err()
+                .contains("already running; client mode is not yet implemented")
         );
+        drop(listener);
+    }
+
+    #[test]
+    fn dispatch_request_covers_installed_outdated_package_info_and_migration_methods() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+
+        let installed = dispatch_request(core::ProtocolRequest {
+            id: 12,
+            method: "packages.listInstalled".to_string(),
+            params: serde_json::json!({}),
+        })
+        .unwrap();
+        assert_eq!(installed["id"], 12);
+        assert!(installed["result"]["packages"].is_array());
+
+        let info = dispatch_request(core::ProtocolRequest {
+            id: 13,
+            method: "packages.info".to_string(),
+            params: serde_json::json!({"package": "ripgrep"}),
+        })
+        .unwrap();
+        assert_eq!(info["id"], 13);
+        assert!(info["result"].is_object());
+
+        let outdated = dispatch_request(core::ProtocolRequest {
+            id: 14,
+            method: "packages.listOutdated".to_string(),
+            params: serde_json::json!({}),
+        })
+        .unwrap();
+        assert_eq!(outdated["id"], 14);
+        assert!(outdated["result"]["packages"].is_array());
+
+        let migration = dispatch_request(core::ProtocolRequest {
+            id: 15,
+            method: "packages.homebrewMigrationRecommendation".to_string(),
+            params: serde_json::json!({}),
+        })
+        .unwrap();
+        assert_eq!(migration["id"], 15);
+        assert!(migration["result"]["packages"].is_array());
     }
 }
