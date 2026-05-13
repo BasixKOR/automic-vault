@@ -128,21 +128,16 @@ cleanup() {
 
 trap cleanup EXIT
 
-count_secured_packages() {
+count_scan_log_entries() {
   if [[ ! -f "${scan_log_source}" ]]; then
     die "Missing scan log: ${scan_log_source}"
   fi
 
   local count
-  count="$(
-    { grep -Eho 'isotope:[[:alnum:]._-]+' "${scan_log_source}" || true; } \
-      | sort -u \
-      | wc -l \
-      | tr -d '[:space:]'
-  )"
+  count="$(awk 'NF { count++ } END { print count + 0 }' "${scan_log_source}")"
 
   if [[ -z "${count}" || "${count}" == "0" ]]; then
-    die "Could not find isotope packages in ${scan_log_source}"
+    die "Could not find scan log entries in ${scan_log_source}"
   fi
 
   printf '%s\n' "${count}"
@@ -151,7 +146,7 @@ count_secured_packages() {
 prepare_site_for_upload() {
   local secured_package_count index_path
   log_step "Preparing deploy-time site content"
-  secured_package_count="$(count_secured_packages)"
+  secured_package_count="$(count_scan_log_entries)"
   prepared_site_dir="$(mktemp -d)"
   cp -R "${site_dir}/." "${prepared_site_dir}/"
 
