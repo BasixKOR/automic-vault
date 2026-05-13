@@ -543,7 +543,8 @@ private final class PackageStatusMenuItemView: NSView {
         static let minimumWidth: CGFloat = 268
         static let maximumWidth: CGFloat = 360
         static let height: CGFloat = 24
-        static let horizontalInset: CGFloat = 14
+        static let leadingInset: CGFloat = 24
+        static let trailingInset: CGFloat = 16
         static let gap: CGFloat = 8
         static let minimumSourceWidth: CGFloat = 68
         static let maximumDetailWidth: CGFloat = 130
@@ -566,7 +567,7 @@ private final class PackageStatusMenuItemView: NSView {
             sourceLabel.stringValue = source
             sourceLabel.font = .systemFont(ofSize: 10, weight: .medium)
             sourceLabel.textColor = .secondaryLabelColor
-            sourceLabel.alignment = .right
+            sourceLabel.alignment = .left
             addSubview(sourceLabel)
         }
 
@@ -610,7 +611,7 @@ private final class PackageStatusMenuItemView: NSView {
         var constraints: [NSLayoutConstraint] = [
             detailLabel.trailingAnchor.constraint(
                 equalTo: trailingAnchor,
-                constant: -Metrics.horizontalInset
+                constant: -Metrics.trailingInset
             ),
             detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Metrics.maximumDetailWidth),
             detailLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -626,7 +627,7 @@ private final class PackageStatusMenuItemView: NSView {
             constraints += [
                 sourceLabel.leadingAnchor.constraint(
                     equalTo: leadingAnchor,
-                    constant: Metrics.horizontalInset
+                    constant: Metrics.leadingInset
                 ),
                 sourceLabel.widthAnchor.constraint(
                     equalToConstant: Self.sourceWidth(source)
@@ -641,7 +642,7 @@ private final class PackageStatusMenuItemView: NSView {
             constraints.append(
                 nameLabel.leadingAnchor.constraint(
                     equalTo: leadingAnchor,
-                    constant: Metrics.horizontalInset
+                    constant: Metrics.leadingInset
                 )
             )
         }
@@ -654,7 +655,8 @@ private final class PackageStatusMenuItemView: NSView {
             measuredWidth(detail, font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular)),
             Metrics.maximumDetailWidth
         )
-        var width = Metrics.horizontalInset * 2
+        var width = Metrics.leadingInset
+            + Metrics.trailingInset
             + measuredWidth(name, font: .systemFont(ofSize: 12, weight: .semibold))
             + Metrics.gap
             + detailWidth
