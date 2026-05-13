@@ -104,6 +104,8 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
+scan_log_source="${repo_root}/SCAN_LOG.txt"
+prepared_site_dir=""
 
 if [[ ! -d "${site_dir}" ]]; then
   die "Missing site directory: ${site_dir}"
@@ -117,6 +119,61 @@ origin_domain="${WWW_BUCKET}.s3.${AWS_REGION}.amazonaws.com"
 distribution_comment="${WWW_DOMAIN} static site"
 oac_name="${WWW_DOMAIN}-s3-oac"
 redirect_function_name="${WWW_DOMAIN//./-}-redirect-to-canonical"
+
+cleanup() {
+  if [[ -n "${prepared_site_dir}" && -d "${prepared_site_dir}" ]]; then
+    rm -rf "${prepared_site_dir}"
+  fi
+}
+
+trap cleanup EXIT
+
+count_secured_packages() {
+  if [[ ! -f "${scan_log_source}" ]]; then
+    die "Missing scan log: ${scan_log_source}"
+  fi
+
+  local count
+  count="$(
+    { grep -Eho 'isotope:[[:alnum:]._-]+' "${scan_log_source}" || true; } \
+      | sort -u \
+      | wc -l \
+      | tr -d '[:space:]'
+  )"
+
+  if [[ -z "${count}" || "${count}" == "0" ]]; then
+    die "Could not find isotope packages in ${scan_log_source}"
+  fi
+
+  printf '%s\n' "${count}"
+}
+
+prepare_site_for_upload() {
+  local secured_package_count index_path
+  log_step "Preparing deploy-time site content"
+  secured_package_count="$(count_secured_packages)"
+  prepared_site_dir="$(mktemp -d)"
+  cp -R "${site_dir}/." "${prepared_site_dir}/"
+
+  index_path="${prepared_site_dir}/index.html"
+  if [[ ! -f "${index_path}" ]]; then
+    die "Missing prepared index: ${index_path}"
+  fi
+
+  SECURED_PACKAGE_LABEL="${secured_package_count} Packages" perl -0pi -e '
+    BEGIN {
+      $label = $ENV{"SECURED_PACKAGE_LABEL"};
+      $matches = 0;
+    }
+    $matches += s{<small>Packages</small>}{<small>$label</small>}g;
+    END {
+      die "Expected exactly one Packages status label replacement, got $matches\n"
+        unless $matches == 1;
+    }
+  ' "${index_path}"
+
+  log_ok "Stamped ${secured_package_count} secured packages"
+}
 
 ensure_bucket() {
   log_step "Preparing S3 bucket"
@@ -550,8 +607,10 @@ put_bucket_policy() {
 }
 
 sync_site() {
+  local upload_site_dir="${prepared_site_dir:-${site_dir}}"
+
   log_step "Syncing static assets"
-  aws s3 sync "${site_dir}/" "s3://${WWW_BUCKET}/" \
+  aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --delete \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
@@ -562,7 +621,7 @@ sync_site() {
     --cache-control "${WWW_ASSET_CACHE_CONTROL}"
 
   log_step "Syncing HTML and XML"
-  aws s3 sync "${site_dir}/" "s3://${WWW_BUCKET}/" \
+  aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
@@ -591,6 +650,7 @@ ensure_certificate_issued() {
 }
 
 log_header
+prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"
 ensure_redirect_function
