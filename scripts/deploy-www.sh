@@ -104,7 +104,7 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
-scan_log_source="${repo_root}/SCAN_LOG.txt"
+scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
 prepared_site_dir=""
 
 if [[ ! -d "${site_dir}" ]]; then
@@ -134,7 +134,7 @@ count_scan_log_entries() {
   fi
 
   local count
-  count="$(awk 'NF { count++ } END { print count + 0 }' "${scan_log_source}")"
+  count="$(awk '/^\|[[:space:]]*[0-9]+[[:space:]]*\|/ { count++ } END { print count + 0 }' "${scan_log_source}")"
 
   if [[ -z "${count}" || "${count}" == "0" ]]; then
     die "Could not find scan log entries in ${scan_log_source}"
