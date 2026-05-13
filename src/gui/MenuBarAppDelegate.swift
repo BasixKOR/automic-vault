@@ -540,19 +540,23 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
 private final class PackageStatusMenuItemView: NSView {
     private enum Metrics {
-        static let width: CGFloat = 268
+        static let minimumWidth: CGFloat = 268
+        static let maximumWidth: CGFloat = 360
         static let height: CGFloat = 24
         static let horizontalInset: CGFloat = 14
         static let gap: CGFloat = 8
-        static let sourceWidth: CGFloat = 68
+        static let minimumSourceWidth: CGFloat = 68
+        static let maximumDetailWidth: CGFloat = 130
     }
 
     private let sourceLabel = NSTextField(labelWithString: "")
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
+    private let rowWidth: CGFloat
 
     init(name: String, detail: String, source: String?) {
-        super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.height))
+        rowWidth = Self.preferredWidth(name: name, detail: detail, source: source)
+        super.init(frame: NSRect(x: 0, y: 0, width: rowWidth, height: Metrics.height))
 
         configureLabel(nameLabel)
         configureLabel(detailLabel)
@@ -581,7 +585,7 @@ private final class PackageStatusMenuItemView: NSView {
         detailLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
         [nameLabel, detailLabel].forEach(addSubview)
-        activateConstraints(hasSource: source != nil)
+        activateConstraints(source: source)
     }
 
     @available(*, unavailable)
@@ -590,7 +594,7 @@ private final class PackageStatusMenuItemView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: Metrics.width, height: Metrics.height)
+        NSSize(width: rowWidth, height: Metrics.height)
     }
 
     private func configureLabel(_ label: NSTextField) {
@@ -602,13 +606,13 @@ private final class PackageStatusMenuItemView: NSView {
         label.maximumNumberOfLines = 1
     }
 
-    private func activateConstraints(hasSource: Bool) {
+    private func activateConstraints(source: String?) {
         var constraints: [NSLayoutConstraint] = [
             detailLabel.trailingAnchor.constraint(
                 equalTo: trailingAnchor,
                 constant: -Metrics.horizontalInset
             ),
-            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 130),
+            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Metrics.maximumDetailWidth),
             detailLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -618,13 +622,15 @@ private final class PackageStatusMenuItemView: NSView {
             ),
         ]
 
-        if hasSource {
+        if source != nil {
             constraints += [
                 sourceLabel.leadingAnchor.constraint(
                     equalTo: leadingAnchor,
                     constant: Metrics.horizontalInset
                 ),
-                sourceLabel.widthAnchor.constraint(equalToConstant: Metrics.sourceWidth),
+                sourceLabel.widthAnchor.constraint(
+                    equalToConstant: Self.sourceWidth(source)
+                ),
                 sourceLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
                 nameLabel.leadingAnchor.constraint(
                     equalTo: sourceLabel.trailingAnchor,
@@ -641,5 +647,34 @@ private final class PackageStatusMenuItemView: NSView {
         }
 
         NSLayoutConstraint.activate(constraints)
+    }
+
+    private static func preferredWidth(name: String, detail: String, source: String?) -> CGFloat {
+        let detailWidth = min(
+            measuredWidth(detail, font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular)),
+            Metrics.maximumDetailWidth
+        )
+        var width = Metrics.horizontalInset * 2
+            + measuredWidth(name, font: .systemFont(ofSize: 12, weight: .semibold))
+            + Metrics.gap
+            + detailWidth
+
+        if let source {
+            width += sourceWidth(source) + Metrics.gap
+        }
+
+        return min(max(ceil(width), Metrics.minimumWidth), Metrics.maximumWidth)
+    }
+
+    private static func sourceWidth(_ source: String?) -> CGFloat {
+        guard let source else { return 0 }
+        return max(
+            Metrics.minimumSourceWidth,
+            ceil(measuredWidth(source, font: .systemFont(ofSize: 10, weight: .medium)))
+        )
+    }
+
+    private static func measuredWidth(_ string: String, font: NSFont) -> CGFloat {
+        (string as NSString).size(withAttributes: [.font: font]).width
     }
 }
