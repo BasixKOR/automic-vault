@@ -1597,12 +1597,19 @@ mod tests {
 
     #[test]
     fn sandboxed_trace_command_bypasses_sandbox_under_codex_ci() {
+        let _env_lock = crate::global_test_env_lock();
+        let previous_codex_ci = env::var_os("CODEX_CI");
+
         unsafe { env::set_var("CODEX_CI", "1") };
         let command =
             sandboxed_trace_command(Path::new("/tmp/trace-runtime"), "codex", TraceAgent::Codex)
                 .unwrap();
         assert_eq!(command.get_program(), OsStr::new("codex"));
-        unsafe { env::remove_var("CODEX_CI") };
+
+        match previous_codex_ci {
+            Some(value) => unsafe { env::set_var("CODEX_CI", value) },
+            None => unsafe { env::remove_var("CODEX_CI") },
+        }
     }
 
     #[test]
