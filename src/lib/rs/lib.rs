@@ -13567,22 +13567,43 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         let _env_lock = test_env_lock().lock().unwrap();
         let db = crate::cli::load_db().unwrap();
         crate::cli::ensure_db_schema(&db).unwrap();
+        let pulse_reference_time = OffsetDateTime::parse(&db.generated_at, &Rfc3339).unwrap();
 
         let mut recent = db
             .formulas
             .into_iter()
             .filter_map(|(name, metadata)| {
                 metadata.last_updated_at.and_then(|last_updated_at| {
-                    OffsetDateTime::parse(&last_updated_at, &Rfc3339)
-                        .ok()
-                        .map(|parsed| (metadata.pulse_kind, parsed, name))
+                    OffsetDateTime::parse(&last_updated_at, &Rfc3339).ok().map(|parsed| {
+                        let pulse_kind = metadata.pulse_kind.and_then(|kind| {
+                            if kind.eq_ignore_ascii_case("new")
+                                && pulse_reference_time.unix_timestamp() - parsed.unix_timestamp()
+                                    > 7 * 24 * 60 * 60
+                            {
+                                None
+                            } else {
+                                Some(kind)
+                            }
+                        });
+                        (pulse_kind, parsed, name)
+                    })
                 })
             })
             .chain(db.casks.into_iter().filter_map(|(name, metadata)| {
                 metadata.last_updated_at.and_then(|last_updated_at| {
-                    OffsetDateTime::parse(&last_updated_at, &Rfc3339)
-                        .ok()
-                        .map(|parsed| (metadata.pulse_kind, parsed, name))
+                    OffsetDateTime::parse(&last_updated_at, &Rfc3339).ok().map(|parsed| {
+                        let pulse_kind = metadata.pulse_kind.and_then(|kind| {
+                            if kind.eq_ignore_ascii_case("new")
+                                && pulse_reference_time.unix_timestamp() - parsed.unix_timestamp()
+                                    > 7 * 24 * 60 * 60
+                            {
+                                None
+                            } else {
+                                Some(kind)
+                            }
+                        });
+                        (pulse_kind, parsed, name)
+                    })
                 })
             }))
             .collect::<Vec<_>>();
@@ -13624,6 +13645,14 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert_eq!(second_page.packages.len(), 1);
         assert_eq!(second_page.total_count, first_page.total_count);
         assert_eq!(second_page.packages[0].name, recent[1].2);
+
+        let stale_new = ops::list_pulse_packages(0, 10)
+            .unwrap()
+            .packages
+            .into_iter()
+            .find(|package| package.name == "portable-libffi")
+            .expect("coverage fixture should include a stale new formula");
+        assert_eq!(stale_new.pulse_kind.as_deref(), Some("updated"));
     }
 
     #[test]

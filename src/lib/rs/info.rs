@@ -3,6 +3,7 @@ use super::*;
 pub(crate) const INFO_WIDTH: usize = 64;
 pub(crate) const INFO_INNER_WIDTH: usize = INFO_WIDTH - 2;
 pub(crate) const INFO_LABEL_WIDTH: usize = 14;
+const PULSE_NEW_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 pub(crate) fn load_config() -> Result<Config, String> {
     let bottle_tag = current_bottle_tag()?;
@@ -560,6 +561,9 @@ fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
 pub(crate) fn resolve_pulse_package_results(
     _config: &Config,
 ) -> Result<Vec<PackageSearchResult>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    let pulse_reference_time = parse_embedded_package_timestamp(&db.generated_at);
     let mut results = formula_index_entries()?
         .iter()
         .filter_map(|entry| {
@@ -577,22 +581,22 @@ pub(crate) fn resolve_pulse_package_results(
                     dependencies: Vec::new(),
                     rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
                     last_updated_at: Some(last_updated_at.clone()),
-                    pulse_kind: Some(
-                        entry
-                            .pulse_kind
-                            .clone()
-                            .unwrap_or_else(|| "updated".to_string()),
-                    ),
+                    pulse_kind: Some(pulse_kind_for_timestamp(
+                        entry.pulse_kind.clone(),
+                        last_updated_at,
+                        pulse_reference_time,
+                    )),
                 })
         })
         .collect::<Vec<_>>();
-    let db = crate::cli::load_db()?;
-    crate::cli::ensure_db_schema(&db)?;
     results.extend(db.casks.into_iter().filter_map(|(name, metadata)| {
-        metadata
-            .last_updated_at
-            .clone()
-            .map(|last_updated_at| PackageSearchResult {
+        metadata.last_updated_at.clone().map(|last_updated_at| {
+            let pulse_kind = pulse_kind_for_timestamp(
+                metadata.pulse_kind,
+                &last_updated_at,
+                pulse_reference_time,
+            );
+            PackageSearchResult {
                 package_name: name.clone(),
                 source: PackageReceiptSource::Cask { cask_name: name },
                 summary: string_or_none(&metadata.summary),
@@ -601,13 +605,38 @@ pub(crate) fn resolve_pulse_package_results(
                 dependencies: metadata.dependencies,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: Some(last_updated_at),
-                pulse_kind: Some(metadata.pulse_kind.unwrap_or_else(|| "updated".to_string())),
-            })
+                pulse_kind: Some(pulse_kind),
+            }
+        })
     }));
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
     results.sort_by(compare_pulse_package_results);
     Ok(results)
+}
+
+fn pulse_kind_for_timestamp(
+    pulse_kind: Option<String>,
+    last_updated_at: &str,
+    reference_time: Option<OffsetDateTime>,
+) -> String {
+    let pulse_kind = pulse_kind.unwrap_or_else(|| "updated".to_string());
+    if !pulse_kind.eq_ignore_ascii_case("new") {
+        return pulse_kind;
+    }
+
+    let is_recent = reference_time
+        .zip(parse_embedded_package_timestamp(last_updated_at))
+        .map(|(reference_time, last_updated_at)| {
+            let age_seconds = reference_time.unix_timestamp() - last_updated_at.unix_timestamp();
+            (0..=PULSE_NEW_WINDOW_SECONDS).contains(&age_seconds)
+        })
+        .unwrap_or(false);
+    if is_recent {
+        pulse_kind
+    } else {
+        "updated".to_string()
+    }
 }
 
 fn compare_pulse_package_results(
