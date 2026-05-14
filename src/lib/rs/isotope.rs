@@ -1,9 +1,9 @@
 use super::*;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::CString;
 #[cfg(target_os = "macos")]
 use std::ffi::c_char;
+use std::ffi::CString;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
@@ -137,7 +137,7 @@ pub(crate) fn run_save_entry(program_name: &str, args: env::ArgsOs) -> Result<()
 
 fn dispatch_isotope(
     program_name: &str,
-    mut args: env::ArgsOs,
+    mut args: impl Iterator<Item = OsString>,
     store: &dyn CredentialStore,
 ) -> Result<(), String> {
     let Some(first_arg) = args.next() else {
@@ -164,7 +164,7 @@ fn dispatch_isotope(
 
 fn dispatch_save(
     program_name: &str,
-    args: env::ArgsOs,
+    args: impl Iterator<Item = OsString>,
     store: &dyn CredentialStore,
 ) -> Result<(), String> {
     let Some(options) = parse_save_options(program_name, args)? else {
@@ -773,7 +773,11 @@ fn parent_process_path(pid: i32) -> Option<String> {
         return None;
     }
     let path = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if path.is_empty() { None } else { Some(path) }
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1194,10 +1198,12 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStringExt;
+    use std::sync::Mutex;
 
     #[derive(Default)]
     struct StubCredentialStore {
         secrets: BTreeMap<String, Result<String, String>>,
+        saved: Mutex<Vec<(String, String)>>,
     }
 
     impl CredentialStore for StubCredentialStore {
@@ -1208,9 +1214,39 @@ mod tests {
                 .unwrap_or_else(|| Err("missing stub credential".to_string()))
         }
 
-        fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+        fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+            self.saved
+                .lock()
+                .unwrap()
+                .push((key.to_string(), value.to_string()));
             Ok(())
         }
+    }
+
+    fn with_fake_stdin<R>(input: &[u8], f: impl FnOnce() -> R) -> R {
+        let mut pipe_fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(pipe_fds.as_mut_ptr()) }, 0);
+        let read_fd = pipe_fds[0];
+        let write_fd = pipe_fds[1];
+        let stdin_fd = io::stdin().as_raw_fd();
+        let saved_stdin = unsafe { libc::dup(stdin_fd) };
+        assert!(saved_stdin >= 0);
+
+        let write_result = unsafe { libc::write(write_fd, input.as_ptr().cast(), input.len()) };
+        assert_eq!(write_result, input.len() as isize);
+        unsafe {
+            libc::close(write_fd);
+            assert_eq!(libc::dup2(read_fd, stdin_fd), stdin_fd);
+            libc::close(read_fd);
+        }
+
+        let result = f();
+
+        unsafe {
+            assert_eq!(libc::dup2(saved_stdin, stdin_fd), stdin_fd);
+            libc::close(saved_stdin);
+        }
+        result
     }
 
     #[test]
@@ -1306,6 +1342,25 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_parse_options_rejects_duplicate_keys_and_missing_target() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("+TOKEN"),
+            vec![OsString::from("+TOKEN"), OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("duplicate key requested"));
+
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from("+TOKEN"),
+            Vec::<OsString>::new().into_iter(),
+        )
+        .unwrap_err();
+        assert!(err.contains("missing target binary"));
+    }
+
+    #[test]
     fn isotopes_parse_save_options_accepts_key_only() {
         let options = parse_save_options("av save", vec![OsString::from("FOO")].into_iter())
             .unwrap()
@@ -1367,6 +1422,64 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("removed"));
+    }
+
+    #[test]
+    fn isotopes_dispatch_cli_paths_cover_help_version_and_save_stdin() {
+        let save_store = StubCredentialStore::default();
+
+        assert!(dispatch_isotope(
+            "av inject",
+            vec![OsString::from("--help")].into_iter(),
+            &save_store,
+        )
+        .is_ok());
+        assert!(dispatch_isotope(
+            "av inject",
+            vec![OsString::from("--version")].into_iter(),
+            &save_store,
+        )
+        .is_ok());
+        assert_eq!(
+            dispatch_isotope("av inject", Vec::<OsString>::new().into_iter(), &save_store)
+                .unwrap_err(),
+            "missing key and target binary"
+        );
+
+        assert!(dispatch_save(
+            "av save",
+            vec![OsString::from("--help")].into_iter(),
+            &save_store,
+        )
+        .is_ok());
+        assert!(dispatch_save(
+            "av save",
+            vec![OsString::from("--version")].into_iter(),
+            &save_store,
+        )
+        .is_ok());
+
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        with_fake_stdin(b"  secret-value  \n", || {
+            dispatch_save(
+                "av save",
+                vec![OsString::from("TOKEN")].into_iter(),
+                &save_store,
+            )
+        })
+        .unwrap();
+
+        assert_eq!(
+            save_store.saved.lock().unwrap().as_slice(),
+            &[("TOKEN".to_string(), "secret-value".to_string())]
+        );
+    }
+
+    #[test]
+    fn isotopes_read_save_secret_rejects_empty_piped_value() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let err = with_fake_stdin(b" \n\t", read_save_secret).unwrap_err();
+        assert_eq!(err, "empty isotope secret value");
     }
 
     #[test]
@@ -1492,11 +1605,9 @@ mod tests {
     #[test]
     fn isotopes_exec_environment_and_zeroize_helpers_cover_errors() {
         assert!(build_exec_cstrings(&[OsString::from("ok")]).is_ok());
-        assert!(
-            build_exec_cstrings(&[OsString::from("bad\0arg")])
-                .unwrap_err()
-                .contains("interior NUL")
-        );
+        assert!(build_exec_cstrings(&[OsString::from("bad\0arg")])
+            .unwrap_err()
+            .contains("interior NUL"));
 
         let mut env_map = BTreeMap::new();
         env_map.insert(OsString::from("GOOD"), OsString::from("value"));
@@ -1508,18 +1619,14 @@ mod tests {
             OsString::from_vec(b"/tmp/v\xffrp/script".to_vec()),
         );
         let built = build_exec_environment(&env_map).unwrap();
-        assert!(
-            built
-                .iter()
-                .any(|entry| entry.as_bytes() == b"RAW=/tmp/v\xffrp/script")
-        );
+        assert!(built
+            .iter()
+            .any(|entry| entry.as_bytes() == b"RAW=/tmp/v\xffrp/script"));
 
         env_map.insert(OsString::from("BAD"), OsString::from("bad\0value"));
-        assert!(
-            build_exec_environment(&env_map)
-                .unwrap_err()
-                .contains("environment entry")
-        );
+        assert!(build_exec_environment(&env_map)
+            .unwrap_err()
+            .contains("environment entry"));
 
         let mut credentials = BTreeMap::new();
         credentials.insert("TOKEN".to_string(), "secret".to_string());
@@ -1528,6 +1635,37 @@ mod tests {
         assert!(disable_core_dumps().is_ok());
         let snapshot = parent_process_snapshot();
         assert!(snapshot.pid > 0);
+    }
+
+    #[test]
+    fn isotopes_exec_helpers_cover_prepare_and_exec_failures() {
+        let temp = tempfile::tempdir().unwrap();
+        let invalid_target = PathBuf::from(OsString::from_vec(b"/tmp/isotope-\xff".to_vec()));
+        let file = File::open("/bin/sh").unwrap();
+        let err = prepare_execution(
+            &file,
+            &IsotopeOptions {
+                replace_existing_env: false,
+                keys: Vec::new(),
+                target: invalid_target,
+                args: Vec::new(),
+            },
+            BTreeMap::new(),
+        )
+        .unwrap_err();
+        assert!(err.contains("target path must be valid UTF-8"));
+
+        let script = temp.path().join("not-executable");
+        fs::write(&script, b"plain text\n").unwrap();
+        let file = File::open(&script).unwrap();
+        let err = exec_prepared(IsotopePreparedExecution {
+            exec_fd: file.as_raw_fd(),
+            exec_path: script.to_string_lossy().into_owned(),
+            argv: vec![OsString::from(script.to_string_lossy().as_ref())],
+            env: BTreeMap::new(),
+        })
+        .unwrap_err();
+        assert!(err.contains("failed to execute"));
     }
 
     #[test]
@@ -1559,11 +1697,9 @@ mod tests {
             parse_save_key("av save", &[OsString::from(" TOKEN ")]).unwrap(),
             "TOKEN"
         );
-        assert!(
-            parse_save_key("av save", &[])
-                .unwrap_err()
-                .contains("missing")
-        );
+        assert!(parse_save_key("av save", &[])
+            .unwrap_err()
+            .contains("missing"));
     }
 
     #[test]
@@ -1715,6 +1851,94 @@ mod tests {
         )));
         assert!(is_script_interpreter(Path::new("/bin/python3")));
         assert!(!is_script_interpreter(Path::new("/bin/python-config")));
+    }
+
+    #[test]
+    fn isotopes_interpreter_helpers_cover_option_and_path_branches() {
+        assert!(interpreter_option_takes_value("-c"));
+        assert!(interpreter_option_takes_value("-M"));
+        assert!(!interpreter_option_takes_value("--"));
+
+        let args = vec![
+            OsString::from("-c"),
+            OsString::from("print('hi')"),
+            OsString::from("--"),
+            OsString::from("script.py"),
+        ];
+        assert_eq!(
+            interpreter_script_operand(&args),
+            Some(Path::new("script.py"))
+        );
+
+        let args = vec![
+            OsString::from("-m"),
+            OsString::from("pkg"),
+            OsString::from("tool.py"),
+        ];
+        assert_eq!(
+            interpreter_script_operand(&args),
+            Some(Path::new("tool.py"))
+        );
+
+        assert_eq!(
+            interpreter_script_path_for_display(Path::new("/usr/bin/env"), &args),
+            None
+        );
+
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let previous_cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp.path()).unwrap();
+        let missing = resolve_script_operand(Path::new("missing.sh")).unwrap_err();
+        env::set_current_dir(previous_cwd).unwrap();
+        assert!(missing.contains("failed to resolve"));
+    }
+
+    #[test]
+    fn isotopes_validation_helpers_cover_directory_and_non_file_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir");
+        fs::create_dir(&dir).unwrap();
+        let dir_file = File::open(&dir).unwrap();
+        let err = validate_regular_target(&dir, &dir_file).unwrap_err();
+        assert!(err.contains("regular file"));
+
+        assert!(validate_directory_mode(Path::new("/tmp"), 0o755).is_ok());
+        let err = validate_directory_mode(Path::new("/tmp/open"), 0o777).unwrap_err();
+        assert!(err.contains("must not be writable"));
+
+        let err = validate_root_controlled_path(&temp.path().join("missing")).unwrap_err();
+        assert!(err.contains("failed to open"));
+    }
+
+    #[test]
+    fn isotopes_request_and_bridge_helpers_reject_invalid_utf8_inputs() {
+        let options = IsotopeOptions {
+            replace_existing_env: false,
+            keys: vec!["TOKEN".to_string()],
+            target: PathBuf::from("/bin/sh"),
+            args: vec![OsString::from_vec(b"bad-\xff".to_vec())],
+        };
+        let err = request_isotope_approval(
+            "/bin/sh",
+            None,
+            &options,
+            &["TOKEN".to_string()],
+            true,
+            None,
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("arguments must be valid UTF-8"));
+
+        #[cfg(target_os = "macos")]
+        {
+            assert!(keychain_read_secret("svc\0bad", "account").is_err());
+            assert!(keychain_write_secret("svc", "account\0bad", "value").is_err());
+            assert!(keychain_write_secret("svc", "account", "value\0bad").is_err());
+            assert!(post_distributed_notification("bad\0notice").is_err());
+        }
     }
 
     #[test]
