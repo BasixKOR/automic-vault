@@ -401,16 +401,12 @@ def _git_pulse_events(repo, keyed_paths, scope):
     new_cutoff = datetime.datetime.now(
         datetime.timezone.utc
     ) - datetime.timedelta(days=PULSE_NEW_WINDOW_DAYS)
-    recent_additions = _git_recent_additions(
-        repo_path,
-        revision,
-        keyed_paths,
-        scope,
-        new_cutoff,
-    )
-    pending = set(keyed_paths.keys())
+    pending_latest = set(keyed_paths.keys())
+    pending_additions = set(keyed_paths.keys())
     events = {}
     current_date = None
+    current_datetime = None
+    recent_additions = set()
     command = [
         "git",
         "-C",
@@ -435,27 +431,46 @@ def _git_pulse_events(repo, keyed_paths, scope):
                 continue
             if line.startswith("__DATE__"):
                 current_date = line[len("__DATE__") :]
+                current_datetime = _parse_git_timestamp(current_date)
                 continue
             if current_date is None:
                 continue
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
+            status = parts[0]
             path = parts[-1]
-            if path not in pending:
+            if path not in keyed_paths:
                 continue
             key = keyed_paths[path]
-            events[key] = {
-                "last_updated_at": current_date,
-                "pulse_kind": "new" if key in recent_additions else "updated",
-            }
-            pending.remove(path)
-            if len(events) % 100 == 0:
+            added_latest = False
+            if path in pending_latest:
+                events[key] = {
+                    "last_updated_at": current_date,
+                    "pulse_kind": "updated",
+                }
+                pending_latest.remove(path)
+                added_latest = True
+            if path in pending_additions:
+                if status.startswith("A") and _is_recent_datetime(
+                    current_datetime,
+                    new_cutoff,
+                ):
+                    recent_additions.add(key)
+                if status.startswith("A") or not _is_recent_datetime(
+                    current_datetime,
+                    new_cutoff,
+                ):
+                    pending_additions.remove(path)
+            if added_latest and len(events) % 100 == 0:
                 print(
                     f"Resolved {len(events)}/{len(keyed_paths)} git pulse events for {repo}",
                     file=sys.stderr,
                 )
-            if not pending:
+            if not pending_latest and not _is_recent_datetime(
+                current_datetime,
+                new_cutoff,
+            ):
                 process.terminate()
                 break
     finally:
@@ -463,53 +478,22 @@ def _git_pulse_events(repo, keyed_paths, scope):
         if process.returncode not in (0, -15):
             message = stderr.strip() or stdout.strip() or f"git log failed for {repo}"
             raise RuntimeError(message)
+
+    for key in recent_additions:
+        if key in events:
+            events[key]["pulse_kind"] = "new"
     return events
 
 
-def _git_recent_additions(repo_path, revision, keyed_paths, scope, cutoff):
-    pending = set(keyed_paths.keys())
-    additions = set()
-    command = [
-        "git",
-        "-C",
-        repo_path,
-        "log",
-        revision,
-        f"--since={cutoff.isoformat()}",
-        "--format=__DATE__%cI",
-        "--name-status",
-        "--diff-filter=A",
-        "--",
-        scope,
-    ]
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+def _parse_git_timestamp(value):
     try:
-        for raw_line in process.stdout:
-            line = raw_line.rstrip("\n")
-            if not line or line.startswith("__DATE__"):
-                continue
-            parts = line.split("\t")
-            if len(parts) < 2:
-                continue
-            path = parts[-1]
-            if path not in pending:
-                continue
-            additions.add(keyed_paths[path])
-            pending.remove(path)
-            if not pending:
-                process.terminate()
-                break
-    finally:
-        stdout, stderr = process.communicate()
-        if process.returncode not in (0, -15):
-            message = stderr.strip() or stdout.strip() or f"git log failed for {repo_path}"
-            raise RuntimeError(message)
-    return additions
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _is_recent_datetime(value, cutoff):
+    return value is not None and value >= cutoff
 
 
 def _parse_binary_artifact(artifact):
