@@ -1,6 +1,21 @@
 use super::*;
 
 const TRACE_SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
+const MAX_TRACE_SCRIPT_BYTES: u64 = 256 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraceCurlPipe {
+    url: String,
+    interpreter: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraceFetchedScript {
+    url: String,
+    interpreter: String,
+    body: String,
+    truncated: bool,
+}
 
 pub(crate) fn run_trace(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let request = match parse_trace_request(invocation, &mut args)? {
@@ -110,7 +125,8 @@ fn parse_trace_agent(arg: &OsString) -> Result<TraceAgent, String> {
 
 fn run_trace_request(request: &TraceRequest) -> Result<TraceReport, String> {
     let resolved = resolve_trace_agent(request.agent)?;
-    let output = invoke_trace_agent(resolved, &request.command)?;
+    let fetched_script = fetch_trace_script_for_command(&request.command)?;
+    let output = invoke_trace_agent(resolved, &request.command, fetched_script.as_ref())?;
     let parsed = parse_trace_agent_output(&output)?;
     Ok(TraceReport {
         command: request.command.clone(),
@@ -160,15 +176,165 @@ fn executable_on_path(tool: &str) -> Option<PathBuf> {
     None
 }
 
+fn fetch_trace_script_for_command(command: &str) -> Result<Option<TraceFetchedScript>, String> {
+    let Some(pipe) = parse_simple_curl_shell_pipe(command) else {
+        return Ok(None);
+    };
+    let (body, truncated) = download_trace_script(&pipe.url)?;
+    Ok(Some(TraceFetchedScript {
+        url: pipe.url,
+        interpreter: pipe.interpreter,
+        body,
+        truncated,
+    }))
+}
+
+fn parse_simple_curl_shell_pipe(command: &str) -> Option<TraceCurlPipe> {
+    let tokens = shell_words_for_trace(command)?;
+    let pipe_index = tokens.iter().position(|token| token == "|")?;
+    if tokens[pipe_index + 1..].iter().any(|token| token == "|") {
+        return None;
+    }
+    let left = &tokens[..pipe_index];
+    let right = &tokens[pipe_index + 1..];
+    if left.first().map(String::as_str) != Some("curl") || right.is_empty() {
+        return None;
+    }
+
+    let interpreter = shell_interpreter_name(&right[0])?;
+    let mut urls = Vec::new();
+    for token in left.iter().skip(1) {
+        if token.starts_with("https://") || token.starts_with("http://") {
+            urls.push(token);
+        } else if !is_trace_curl_stdout_flag(token) {
+            return None;
+        }
+    }
+    if urls.len() != 1 {
+        return None;
+    }
+
+    Some(TraceCurlPipe {
+        url: urls[0].to_string(),
+        interpreter: interpreter.to_string(),
+    })
+}
+
+fn is_trace_curl_stdout_flag(value: &str) -> bool {
+    match value {
+        "--fail" | "--fail-with-body" | "--silent" | "--show-error" | "--location" => true,
+        _ => {
+            value.starts_with('-')
+                && value
+                    .chars()
+                    .skip(1)
+                    .all(|ch| matches!(ch, 'f' | 's' | 'S' | 'L'))
+        }
+    }
+}
+
+fn shell_interpreter_name(value: &str) -> Option<&'static str> {
+    match value {
+        "sh" | "/bin/sh" | "/usr/bin/sh" => Some("sh"),
+        "bash" | "/bin/bash" | "/usr/bin/bash" => Some("bash"),
+        _ => None,
+    }
+}
+
+fn shell_words_for_trace(command: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut chars = command.chars().peekable();
+    let mut quote = None;
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some('\'') => {
+                if ch == '\'' {
+                    quote = None;
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some('"') => match ch {
+                '"' => quote = None,
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                }
+                _ => current.push(ch),
+            },
+            Some(_) => unreachable!("trace tokenizer only tracks shell quote characters"),
+            None => match ch {
+                '\'' | '"' => quote = Some(ch),
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                }
+                '|' => {
+                    if !current.is_empty() {
+                        words.push(std::mem::take(&mut current));
+                    }
+                    words.push("|".to_string());
+                }
+                ch if ch.is_whitespace() => {
+                    if !current.is_empty() {
+                        words.push(std::mem::take(&mut current));
+                    }
+                }
+                _ => current.push(ch),
+            },
+        }
+    }
+
+    if quote.is_some() {
+        return None;
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    Some(words)
+}
+
+fn download_trace_script(url: &str) -> Result<(String, bool), String> {
+    let response = ureq::get(url)
+        .set("User-Agent", USER_AGENT)
+        .call()
+        .map_err(|err| match err {
+            UreqError::Status(code, _) => {
+                format!("failed to download trace script {url}: HTTP {code}")
+            }
+            UreqError::Transport(err) => format!("failed to download trace script {url}: {err}"),
+        })?;
+
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_TRACE_SCRIPT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|err| format!("failed to read trace script {url}: {err}"))?;
+    let truncated = bytes.len() as u64 > MAX_TRACE_SCRIPT_BYTES;
+    if truncated {
+        bytes.truncate(MAX_TRACE_SCRIPT_BYTES as usize);
+    }
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), truncated))
+}
+
 fn is_trace_agent_executable_file(path: &Path) -> bool {
     fs::metadata(path)
         .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
 }
 
-fn invoke_trace_agent(agent: TraceAgent, command: &str) -> Result<String, String> {
+fn invoke_trace_agent(
+    agent: TraceAgent,
+    command: &str,
+    fetched_script: Option<&TraceFetchedScript>,
+) -> Result<String, String> {
     let schema = trace_output_schema();
-    let prompt = trace_prompt(command);
+    let prompt = trace_prompt(command, fetched_script);
     match agent {
         TraceAgent::Codex => invoke_codex_trace(&prompt, &schema),
         TraceAgent::Claude => invoke_claude_trace(&prompt, &schema),
@@ -304,7 +470,10 @@ fn collect_trace_agent_output(agent: &str, child: process::Child) -> Result<Stri
         .map_err(|err| format!("{agent} trace agent returned non-UTF-8 output: {err}"))
 }
 
-fn trace_prompt(command: &str) -> String {
+fn trace_prompt(command: &str, fetched_script: Option<&TraceFetchedScript>) -> String {
+    let fetched_script_section = fetched_script
+        .map(format_fetched_script_section)
+        .unwrap_or_default();
     format!(
         "\
 You are tracing a shell one-liner for Automic Vault.
@@ -332,15 +501,34 @@ low confidence.
 
 If the one-liner downloads code from a URL and pipes it directly into an
 interpreter such as sh, bash, zsh, python, ruby, node, or perl, report that as
-one network-backed installer execution step even when the exact changed paths
-are not visible from the one-liner alone. Use a null path in that case.
+one network-backed installer execution step. When a fetched script body is
+provided below, continue tracing into that script body and report the concrete
+file-changing steps that the script would perform. Use the script body instead
+of guessing from the URL alone.
 
 Use concise human descriptions. Prefer concrete paths when the one-liner
 reveals them; otherwise use a clear path phrase such as \"installer-selected
-destination\".
+destination\". Use a null path in that case.
 
 Shell one-liner:
-{command}"
+{command}
+{fetched_script_section}"
+    )
+}
+
+fn format_fetched_script_section(script: &TraceFetchedScript) -> String {
+    let truncation = if script.truncated {
+        format!(
+            "\nThe fetched script was truncated to the first {} bytes for analysis.",
+            MAX_TRACE_SCRIPT_BYTES
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "\n\nThe CLI already downloaded the script that the one-liner would pipe into `{}`. Do not download it again. Analyze this fetched script body as the input that `{}` would receive.\n\nFetched URL: {}\n{}\
+----- BEGIN FETCHED SCRIPT -----\n{}\n----- END FETCHED SCRIPT -----",
+        script.interpreter, script.interpreter, script.url, truncation, script.body
     )
 }
 
@@ -534,7 +722,7 @@ mod tests {
 
     #[test]
     fn trace_prompt_reports_remote_script_execution_as_step() {
-        let prompt = trace_prompt("curl https://example.test/install.sh | sh");
+        let prompt = trace_prompt("curl https://example.test/install.sh | sh", None);
 
         assert!(prompt.contains("Descriptions must be diagnostic"));
         assert!(prompt.contains("Do not claim the command was"));
@@ -543,6 +731,104 @@ mod tests {
         assert!(prompt.contains("pipes it directly into an"));
         assert!(prompt.contains("one network-backed installer execution step"));
         assert!(prompt.contains("Use a null path"));
+    }
+
+    #[test]
+    fn trace_prompt_includes_fetched_script_body() {
+        let script = TraceFetchedScript {
+            url: "https://example.test/install.sh".to_string(),
+            interpreter: "sh".to_string(),
+            body: "install -m 0755 av /usr/local/bin/av\n".to_string(),
+            truncated: false,
+        };
+        let prompt = trace_prompt("curl https://example.test/install.sh | sh", Some(&script));
+
+        assert!(prompt.contains("The CLI already downloaded the script"));
+        assert!(prompt.contains("Fetched URL: https://example.test/install.sh"));
+        assert!(prompt.contains("----- BEGIN FETCHED SCRIPT -----"));
+        assert!(prompt.contains("install -m 0755 av /usr/local/bin/av"));
+        assert!(prompt.contains("----- END FETCHED SCRIPT -----"));
+    }
+
+    #[test]
+    fn trace_prompt_mentions_truncated_fetched_script() {
+        let script = TraceFetchedScript {
+            url: "https://example.test/install.sh".to_string(),
+            interpreter: "bash".to_string(),
+            body: "echo hi\n".to_string(),
+            truncated: true,
+        };
+        let prompt = trace_prompt("curl https://example.test/install.sh | bash", Some(&script));
+
+        assert!(prompt.contains("truncated to the first"));
+        assert!(prompt.contains(&MAX_TRACE_SCRIPT_BYTES.to_string()));
+    }
+
+    #[test]
+    fn parse_simple_curl_shell_pipe_accepts_url_piped_to_shell() {
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl -fsSL 'https://example.test/install.sh' | sh"),
+            Some(TraceCurlPipe {
+                url: "https://example.test/install.sh".to_string(),
+                interpreter: "sh".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl https://example.test/install.sh|/bin/bash -s --"),
+            Some(TraceCurlPipe {
+                url: "https://example.test/install.sh".to_string(),
+                interpreter: "bash".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe(
+                "curl --fail --silent --show-error --location https://example.test/install.sh | bash"
+            ),
+            Some(TraceCurlPipe {
+                url: "https://example.test/install.sh".to_string(),
+                interpreter: "bash".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_simple_curl_shell_pipe_rejects_non_simple_commands() {
+        assert_eq!(
+            parse_simple_curl_shell_pipe("wget https://example.test/install.sh -O- | sh"),
+            None
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe(
+                "curl https://example.test/a.sh https://example.test/b.sh | sh"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl https://example.test/install.sh | tee x | sh"),
+            None
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl https://example.test/install.sh > install.sh"),
+            None
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl -o install.sh https://example.test/install.sh | sh"),
+            None
+        );
+    }
+
+    #[test]
+    fn shell_words_for_trace_handles_quotes_and_pipe_boundaries() {
+        assert_eq!(
+            shell_words_for_trace("curl 'https://example.test/a b.sh'|\"bash\""),
+            Some(vec![
+                "curl".to_string(),
+                "https://example.test/a b.sh".to_string(),
+                "|".to_string(),
+                "bash".to_string(),
+            ])
+        );
+        assert_eq!(shell_words_for_trace("curl 'unterminated"), None);
     }
 
     #[test]
