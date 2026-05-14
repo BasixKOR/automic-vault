@@ -269,6 +269,11 @@ a file-changing step, such as downloading an install script before it writes
 files. Do not report unrelated reads, stdout-only output, or speculation with
 low confidence.
 
+If the one-liner downloads code from a URL and pipes it directly into an
+interpreter such as sh, bash, zsh, python, ruby, node, or perl, report that as
+one network-backed installer execution step even when the exact changed paths
+are not visible from the one-liner alone. Use a null path in that case.
+
 Use concise human descriptions. Prefer concrete paths when the one-liner
 reveals them; otherwise use a clear path phrase such as \"installer-selected
 destination\".
@@ -289,7 +294,7 @@ fn trace_output_schema() -> String {
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["description", "operation"],
+                    "required": ["description", "operation", "path", "network"],
                     "properties": {
                         "description": {
                             "type": "string",
@@ -394,4 +399,43 @@ fn print_trace_report(report: &TraceReport) {
 
 pub(crate) fn is_trace_subcommand(value: &str) -> bool {
     value == "trace"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trace_output_schema_requires_all_step_properties() {
+        let schema: serde_json::Value = serde_json::from_str(&trace_output_schema()).unwrap();
+        let required = schema["properties"]["steps"]["items"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            required,
+            vec!["description", "operation", "path", "network"]
+        );
+        assert_eq!(
+            schema["properties"]["steps"]["items"]["properties"]["path"]["type"],
+            serde_json::json!(["string", "null"])
+        );
+        assert_eq!(
+            schema["properties"]["steps"]["items"]["properties"]["network"]["type"],
+            serde_json::json!(["string", "null"])
+        );
+    }
+
+    #[test]
+    fn trace_prompt_reports_remote_script_execution_as_step() {
+        let prompt = trace_prompt("curl https://example.test/install.sh | sh");
+
+        assert!(prompt.contains("downloads code from a URL"));
+        assert!(prompt.contains("pipes it directly into an"));
+        assert!(prompt.contains("one network-backed installer execution step"));
+        assert!(prompt.contains("Use a null path"));
+    }
 }
