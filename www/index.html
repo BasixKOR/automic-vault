@@ -22,6 +22,50 @@
   <meta name="twitter:title" content="Automic Vault | Run agents autonomously without losing secrets, control, or your mind.">
   <meta name="twitter:description" content="Our agents were autonomous. They deleted prod. Never again.">
   <meta property="twitter:image" content="https://www.automicvault.com/preview.jpg">
+  <link rel="canonical" href="https://www.automicvault.com/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.automicvault.com/#organization",
+        "name": "Automic Vault",
+        "url": "https://www.automicvault.com/",
+        "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+        "sameAs": [
+          "https://github.com/automic-vault/",
+          "https://x.com/AutomicVault"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://www.automicvault.com/#software",
+        "name": "Automic Vault",
+        "applicationCategory": "SecurityApplication",
+        "operatingSystem": "macOS",
+        "url": "https://www.automicvault.com/",
+        "description": "Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
+        "publisher": {
+          "@id": "https://www.automicvault.com/#organization"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.automicvault.com/#webpage",
+        "url": "https://www.automicvault.com/",
+        "name": "Automic Vault | Run agents autonomously without losing secrets, control, or your mind.",
+        "description": "Automic Vault gives AI agents scoped execution without exposing keys, tools, or launch authority.",
+        "isPartOf": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "publisher": {
+          "@id": "https://www.automicvault.com/#organization"
+        }
+      }
+    ]
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -39,10 +83,9 @@
         <img
           class="brand-mark"
           src="./assets/icon@2x.webp"
-          alt=""
+          alt="Automic Vault icon"
           width="54"
           height="54"
-          aria-hidden="true"
         >
         <img
           class="brand-wordmark"
@@ -72,8 +115,8 @@
     <main>
       <section class="hero" aria-labelledby="hero-title">
         <div class="scanlines" aria-hidden="true"></div>
-        <div class="horizon" aria-hidden="true">
-          <img src="./assets/rocket-grid.jpg" alt="">
+        <div class="horizon">
+          <img src="./assets/rocket-grid.jpg" alt="Retro rocket grid behind the Automic Vault hero">
         </div>
 
         <div class="hero-copy">
@@ -110,10 +153,9 @@
             <img
               class="status-image"
               src="./assets/status-packages.webp"
-              alt=""
+              alt="Secured package status"
               width="72"
               height="72"
-              aria-hidden="true"
             >
             <span>
               <small>Packages</small>
@@ -124,10 +166,9 @@
             <img
               class="status-image"
               src="./assets/status-secrets.webp"
-              alt=""
+              alt="Sealed secrets status"
               width="72"
               height="72"
-              aria-hidden="true"
             >
             <span>
               <small>Secrets</small>
@@ -138,10 +179,9 @@
             <img
               class="status-image"
               src="./assets/status-agents.webp"
-              alt=""
+              alt="Contained agents status"
               width="72"
               height="72"
-              aria-hidden="true"
             >
             <span>
               <small>Agents</small>
@@ -490,10 +530,10 @@
             follow the decisions, and run it without licensing friction.
           </p>
         </div>
-        <figure class="open-source-art" aria-hidden="true">
+        <figure class="open-source-art">
           <img
             src="./assets/open-source-line-art.webp"
-            alt=""
+            alt="Open source maintainer line art"
             width="1516"
             height="1038"
           >
