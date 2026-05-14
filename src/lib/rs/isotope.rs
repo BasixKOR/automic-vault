@@ -1223,29 +1223,74 @@ mod tests {
         }
     }
 
+    struct FdGuard {
+        fd: i32,
+    }
+
+    impl FdGuard {
+        fn new(fd: i32) -> Self {
+            Self { fd }
+        }
+
+        fn raw(&self) -> i32 {
+            self.fd
+        }
+
+        fn close(&mut self) {
+            if self.fd >= 0 {
+                unsafe {
+                    libc::close(self.fd);
+                }
+                self.fd = -1;
+            }
+        }
+    }
+
+    impl Drop for FdGuard {
+        fn drop(&mut self) {
+            self.close();
+        }
+    }
+
+    struct StdinRestoreGuard {
+        stdin_fd: i32,
+        saved_stdin: i32,
+    }
+
+    impl Drop for StdinRestoreGuard {
+        fn drop(&mut self) {
+            if self.saved_stdin >= 0 {
+                unsafe {
+                    libc::dup2(self.saved_stdin, self.stdin_fd);
+                    libc::close(self.saved_stdin);
+                }
+                self.saved_stdin = -1;
+            }
+        }
+    }
+
     fn with_fake_stdin<R>(input: &[u8], f: impl FnOnce() -> R) -> R {
         let mut pipe_fds = [0; 2];
         assert_eq!(unsafe { libc::pipe(pipe_fds.as_mut_ptr()) }, 0);
-        let read_fd = pipe_fds[0];
-        let write_fd = pipe_fds[1];
+        let mut read_fd = FdGuard::new(pipe_fds[0]);
+        let mut write_fd = FdGuard::new(pipe_fds[1]);
         let stdin_fd = io::stdin().as_raw_fd();
         let saved_stdin = unsafe { libc::dup(stdin_fd) };
         assert!(saved_stdin >= 0);
+        let restore_stdin = StdinRestoreGuard {
+            stdin_fd,
+            saved_stdin,
+        };
 
-        let write_result = unsafe { libc::write(write_fd, input.as_ptr().cast(), input.len()) };
+        let write_result = unsafe { libc::write(write_fd.raw(), input.as_ptr().cast(), input.len()) };
         assert_eq!(write_result, input.len() as isize);
-        unsafe {
-            libc::close(write_fd);
-            assert_eq!(libc::dup2(read_fd, stdin_fd), stdin_fd);
-            libc::close(read_fd);
-        }
+        write_fd.close();
+        assert_eq!(unsafe { libc::dup2(read_fd.raw(), stdin_fd) }, stdin_fd);
+        read_fd.close();
 
         let result = f();
 
-        unsafe {
-            assert_eq!(libc::dup2(saved_stdin, stdin_fd), stdin_fd);
-            libc::close(saved_stdin);
-        }
+        drop(restore_stdin);
         result
     }
 
