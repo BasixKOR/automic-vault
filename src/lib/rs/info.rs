@@ -2050,7 +2050,8 @@ mod tests {
             bottle_tag: "all".to_string(),
         };
 
-        let all_statuses = resolve_package_statuses(&config, &PackageSelection::AllInstalled).unwrap();
+        let all_statuses =
+            resolve_package_statuses(&config, &PackageSelection::AllInstalled).unwrap();
         assert!(all_statuses.iter().any(|status| {
             status.package_name == "coverage-all-status"
                 && status.installed_version == "0.0.1"
@@ -2067,15 +2068,17 @@ mod tests {
         assert_eq!(requested_statuses.len(), 1);
         assert_eq!(requested_statuses[0].package_name, "coverage-all-status");
 
-        let all_records = resolve_installed_package_records(&PackageSelection::AllInstalled).unwrap();
+        let all_records =
+            resolve_installed_package_records(&PackageSelection::AllInstalled).unwrap();
         assert!(all_records.iter().any(|record| {
             record.package_name == "coverage-all-record" && record.installed_version == "1.0.0"
         }));
 
-        let requested_records = resolve_installed_package_records(&PackageSelection::Requested(vec![
-            RequestedPackage::Auto("coverage-all-record".to_string()),
-        ]))
-        .unwrap();
+        let requested_records =
+            resolve_installed_package_records(&PackageSelection::Requested(vec![
+                RequestedPackage::Auto("coverage-all-record".to_string()),
+            ]))
+            .unwrap();
         assert_eq!(requested_records.len(), 1);
         assert_eq!(requested_records[0].package_name, "coverage-all-record");
 
@@ -2402,8 +2405,7 @@ mod tests {
             }
         );
         assert_eq!(
-            infer_requested_package_source(&RequestedPackage::Auto("ripgrep".to_string()))
-                .unwrap(),
+            infer_requested_package_source(&RequestedPackage::Auto("ripgrep".to_string())).unwrap(),
             PackageReceiptSource::Formula {
                 root_formula: "ripgrep".to_string(),
             }
@@ -2465,12 +2467,16 @@ mod tests {
 
         let npm_refs = installed_npm_package_refs(&opt_root.join("npm")).unwrap();
         assert_eq!(npm_refs.len(), 2);
-        assert!(npm_refs
-            .iter()
-            .any(|package| package.package_name == "npm:coverage-npm"));
-        assert!(npm_refs
-            .iter()
-            .any(|package| package.package_name == "npm:@openai/codex"));
+        assert!(
+            npm_refs
+                .iter()
+                .any(|package| package.package_name == "npm:coverage-npm")
+        );
+        assert!(
+            npm_refs
+                .iter()
+                .any(|package| package.package_name == "npm:@openai/codex")
+        );
 
         let pip_refs = installed_pip_package_refs(&opt_root.join("pip")).unwrap();
         assert_eq!(pip_refs.len(), 1);
@@ -2494,7 +2500,11 @@ mod tests {
         assert!(vendor_entry_matches(&vendor::PACKAGES[0], "bun"));
         assert!(vendor_entry_matches(&vendor::PACKAGES[0], "av:bun"));
         assert!(npm_entry_matches("coverage-npm", npm_metadata, "coverage"));
-        assert!(npm_entry_matches("coverage-npm", npm_metadata, "npm:coverage"));
+        assert!(npm_entry_matches(
+            "coverage-npm",
+            npm_metadata,
+            "npm:coverage"
+        ));
         assert_eq!(
             package_source_qualified_name(&PackageReceiptSource::Vendor {
                 vendor_name: "bun".to_string(),
@@ -2512,9 +2522,11 @@ mod tests {
             root_formula: "node".to_string(),
         });
         assert!(aliases.is_empty());
-        assert!(homebrew_aliases_for_formula("ripgrep")
-            .unwrap()
-            .contains(&"rg".to_string()));
+        assert!(
+            homebrew_aliases_for_formula("ripgrep")
+                .unwrap()
+                .contains(&"rg".to_string())
+        );
 
         let isotope = isotope_package_data("gh").unwrap();
         let isotope_info = isotope_homebrew_info("gh", isotope);
@@ -2523,22 +2535,34 @@ mod tests {
 
         let available = resolve_available_package_results(&config).unwrap();
         assert!(!available.is_empty());
-        assert!(available
-            .iter()
-            .any(|package| package.package_name == "ripgrep"));
-        assert!(available
-            .iter()
-            .any(|package| package.package_name == "codex"));
-        assert!(available
-            .iter()
-            .any(|package| package.package_name == "npm:coverage-npm"));
-        assert!(available
-            .iter()
-            .any(|package| package.package_name == "av:bun"));
+        assert!(
+            available
+                .iter()
+                .any(|package| package.package_name == "ripgrep")
+        );
+        assert!(
+            available
+                .iter()
+                .any(|package| package.package_name == "codex")
+        );
+        assert!(
+            available
+                .iter()
+                .any(|package| package.package_name == "npm:coverage-npm")
+        );
+        assert!(
+            available
+                .iter()
+                .any(|package| package.package_name == "av:bun")
+        );
 
         let pulse = resolve_pulse_package_results(&config).unwrap();
         assert!(!pulse.is_empty());
-        assert!(pulse.iter().all(|package| package.last_updated_at.is_some()));
+        assert!(
+            pulse
+                .iter()
+                .all(|package| package.last_updated_at.is_some())
+        );
         assert!(pulse.iter().all(|package| package.pulse_kind.is_some()));
     }
 
@@ -2557,9 +2581,12 @@ mod tests {
         }
         fs::write(&file_root, b"not a directory").unwrap();
         assert!(
-            resolve_package_info(&config, &RequestedPackage::Auto("coverage-info-file".to_string()))
-                .unwrap_err()
-                .contains("is not a directory")
+            resolve_package_info(
+                &config,
+                &RequestedPackage::Auto("coverage-info-file".to_string())
+            )
+            .unwrap_err()
+            .contains("is not a directory")
         );
         remove_path(&file_root).unwrap();
 
@@ -2581,9 +2608,8 @@ mod tests {
         )
         .unwrap();
 
-        let info =
-            resolve_package_info(&config, &RequestedPackage::Isotope("aws-cli".to_string()))
-                .unwrap();
+        let info = resolve_package_info(&config, &RequestedPackage::Isotope("aws-cli".to_string()))
+            .unwrap();
         assert!(info.installed);
         assert_eq!(info.install_root, modified_root);
         assert_eq!(info.installed_version, Some("2.0.0".to_string()));

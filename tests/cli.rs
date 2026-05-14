@@ -265,11 +265,7 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
             true,
             format!("av list {version}"),
         ),
-        (
-            vec!["scan", "--help"],
-            true,
-            "Usage: av scan".to_string(),
-        ),
+        (vec!["scan", "--help"], true, "Usage: av scan".to_string()),
         (
             vec!["scan", "--version"],
             true,
@@ -441,11 +437,17 @@ fn subs_query_commands_cover_success_and_output_modes() {
         ],
         &[
             ("HOME", home.to_str().unwrap()),
-            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
             ("CARGO_HOME", cargo_home.to_str().unwrap()),
             ("CAROOT", caroot.to_str().unwrap()),
             ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
-            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
             ("KUBECONFIG", kubeconfig.to_str().unwrap()),
             ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
             ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
@@ -462,11 +464,17 @@ fn subs_query_commands_cover_success_and_output_modes() {
         &["scan", "--path", scan.to_str().unwrap()],
         &[
             ("HOME", home.to_str().unwrap()),
-            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
             ("CARGO_HOME", cargo_home.to_str().unwrap()),
             ("CAROOT", caroot.to_str().unwrap()),
             ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
-            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
             ("KUBECONFIG", kubeconfig.to_str().unwrap()),
             ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
             ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
@@ -484,11 +492,17 @@ fn subs_query_commands_cover_success_and_output_modes() {
         &[
             ("CLICOLOR_FORCE", "1"),
             ("HOME", home.to_str().unwrap()),
-            ("AWS_SHARED_CREDENTIALS_FILE", aws_credentials.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
             ("CARGO_HOME", cargo_home.to_str().unwrap()),
             ("CAROOT", caroot.to_str().unwrap()),
             ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
-            ("HELM_REPOSITORY_CONFIG", helm_repository_config.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
             ("KUBECONFIG", kubeconfig.to_str().unwrap()),
             ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
             ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),

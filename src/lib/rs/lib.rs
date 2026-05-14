@@ -2585,7 +2585,11 @@ fn print_plain_secret_scanner_report(report: &SecretScannerReport) {
         "Summary: {}, {}, {}, {}.",
         pluralize(report.summary.findings, "finding", "findings"),
         pluralize(report.summary.errors, "warning", "warnings"),
-        pluralize(report.summary.scanned_files, "file scanned", "files scanned"),
+        pluralize(
+            report.summary.scanned_files,
+            "file scanned",
+            "files scanned"
+        ),
         pluralize(
             report.summary.isotope_detectors,
             "isotope detector",
@@ -2618,23 +2622,24 @@ fn print_rich_secret_scanner_report(report: &SecretScannerReport) {
     };
     let summary = format!(
         "{} · {} · {}",
+        pluralize(report.summary.isotope_detectors, "detector", "detectors"),
         pluralize(
-            report.summary.isotope_detectors,
-            "detector",
-            "detectors"
+            report.summary.scanned_files,
+            "file scanned",
+            "files scanned"
         ),
-        pluralize(report.summary.scanned_files, "file scanned", "files scanned"),
         pluralize(report.summary.errors, "warning", "warnings")
     );
 
-    print_scan_box("Automic Vault Scan", &[format!("{status} {headline}"), summary], color);
+    print_scan_box(
+        "Automic Vault Scan",
+        &[format!("{status} {headline}"), summary],
+        color,
+    );
 
     if !report.findings.is_empty() {
         println!();
-        println!(
-            "{}",
-            scan_paint("Findings", ScanStyle::Heading, color)
-        );
+        println!("{}", scan_paint("Findings", ScanStyle::Heading, color));
         for (index, finding) in report.findings.iter().enumerate() {
             let severity = scan_paint(&finding.severity, scan_severity_style(finding), color);
             println!(
@@ -2696,7 +2701,11 @@ fn print_scan_box(title: &str, lines: &[String], color: bool) {
     }
     println!(
         "{}",
-        scan_paint(&format!("╰{}╯", "─".repeat(width + 2)), ScanStyle::Accent, color)
+        scan_paint(
+            &format!("╰{}╯", "─".repeat(width + 2)),
+            ScanStyle::Accent,
+            color
+        )
     );
 }
 
@@ -2785,8 +2794,7 @@ fn scan_paint(text: &str, style: ScanStyle, color: bool) -> String {
 
 fn scan_stdout_is_rich() -> bool {
     env::var("CLICOLOR_FORCE").is_ok_and(|value| value != "0")
-        || (std::io::stdout().is_terminal()
-            && env::var("TERM").map_or(true, |term| term != "dumb"))
+        || (std::io::stdout().is_terminal() && env::var("TERM").map_or(true, |term| term != "dumb"))
 }
 
 fn scan_stdout_supports_ansi() -> bool {
@@ -13574,36 +13582,42 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             .into_iter()
             .filter_map(|(name, metadata)| {
                 metadata.last_updated_at.and_then(|last_updated_at| {
-                    OffsetDateTime::parse(&last_updated_at, &Rfc3339).ok().map(|parsed| {
-                        let pulse_kind = metadata.pulse_kind.and_then(|kind| {
-                            if kind.eq_ignore_ascii_case("new")
-                                && pulse_reference_time.unix_timestamp() - parsed.unix_timestamp()
-                                    > 7 * 24 * 60 * 60
-                            {
-                                None
-                            } else {
-                                Some(kind)
-                            }
-                        });
-                        (pulse_kind, parsed, name)
-                    })
+                    OffsetDateTime::parse(&last_updated_at, &Rfc3339)
+                        .ok()
+                        .map(|parsed| {
+                            let pulse_kind = metadata.pulse_kind.and_then(|kind| {
+                                if kind.eq_ignore_ascii_case("new")
+                                    && pulse_reference_time.unix_timestamp()
+                                        - parsed.unix_timestamp()
+                                        > 7 * 24 * 60 * 60
+                                {
+                                    None
+                                } else {
+                                    Some(kind)
+                                }
+                            });
+                            (pulse_kind, parsed, name)
+                        })
                 })
             })
             .chain(db.casks.into_iter().filter_map(|(name, metadata)| {
                 metadata.last_updated_at.and_then(|last_updated_at| {
-                    OffsetDateTime::parse(&last_updated_at, &Rfc3339).ok().map(|parsed| {
-                        let pulse_kind = metadata.pulse_kind.and_then(|kind| {
-                            if kind.eq_ignore_ascii_case("new")
-                                && pulse_reference_time.unix_timestamp() - parsed.unix_timestamp()
-                                    > 7 * 24 * 60 * 60
-                            {
-                                None
-                            } else {
-                                Some(kind)
-                            }
-                        });
-                        (pulse_kind, parsed, name)
-                    })
+                    OffsetDateTime::parse(&last_updated_at, &Rfc3339)
+                        .ok()
+                        .map(|parsed| {
+                            let pulse_kind = metadata.pulse_kind.and_then(|kind| {
+                                if kind.eq_ignore_ascii_case("new")
+                                    && pulse_reference_time.unix_timestamp()
+                                        - parsed.unix_timestamp()
+                                        > 7 * 24 * 60 * 60
+                                {
+                                    None
+                                } else {
+                                    Some(kind)
+                                }
+                            });
+                            (pulse_kind, parsed, name)
+                        })
                 })
             }))
             .collect::<Vec<_>>();

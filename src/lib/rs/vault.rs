@@ -1017,7 +1017,10 @@ mod tests {
         .unwrap();
         assert_eq!(intent.tool, "git");
         assert_eq!(intent.args, vec!["status"]);
-        assert_eq!(intent.requesting_process.display_name, Some("git".to_string()));
+        assert_eq!(
+            intent.requesting_process.display_name,
+            Some("git".to_string())
+        );
         assert!(intent.requesting_process.pid > 0);
     }
 
