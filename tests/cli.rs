@@ -518,7 +518,7 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     let plain_stdout = stdout(&output);
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(plain_stdout.contains(
-        "1. Would download the installer from https://foo.com and write /usr/local/bin/foo with executable permissions."
+        "1. Downloads the installer from https://foo.com and writes /usr/local/bin/foo with executable permissions."
     ));
     assert!(!plain_stdout.contains("2."));
 

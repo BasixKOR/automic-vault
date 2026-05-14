@@ -128,10 +128,11 @@ fn run_trace_request(request: &TraceRequest) -> Result<TraceReport, String> {
     let fetched_script = fetch_trace_script_for_command(&request.command)?;
     let output = invoke_trace_agent(resolved, &request.command, fetched_script.as_ref())?;
     let parsed = parse_trace_agent_output(&output)?;
+    let fetched_script_was_provided = fetched_script.is_some();
     Ok(TraceReport {
         command: request.command.clone(),
         agent: resolved.name().to_string(),
-        steps: normalize_trace_steps(parsed.steps),
+        steps: normalize_trace_steps(parsed.steps, fetched_script_was_provided),
     })
 }
 
@@ -482,10 +483,11 @@ Do not execute the one-liner. Interpret it statically.
 
 Return JSON only, matching the provided schema.
 
-Descriptions must be diagnostic, not historical. Do not claim the command was
-actually executed. Use conditional wording such as \"Would download...\",
-\"Would write...\", or \"May modify...\" rather than past tense such as
-\"Downloaded...\", \"Executed...\", \"Created...\", or \"Wrote...\".
+Descriptions must be diagnostic, not historical. Use concise present-tense
+action summaries such as \"Downloads...\", \"Installs...\", \"Adds...\", or
+\"May modify...\". Do not use conditional wording such as \"Would download...\"
+and do not use past tense such as \"Downloaded...\", \"Executed...\",
+\"Created...\", or \"Wrote...\".
 
 Only report consequential steps that write files or change files. Include file
 creation, content writes, appends, overwrites, deletions, moves, chmod/chown,
@@ -493,6 +495,12 @@ install/service writes, and generated executable changes. Group consecutive
 events that are part of the same file-changing action into one step. For
 example, creating a file, setting permissions, and filling it with data should
 be one step, not three.
+
+Summarize installer behavior at the level a user needs to understand before
+running it. Do not report incidental temporary directory creation, staged
+filenames, mount-point filenames, or cleanup of temporary staging artifacts as
+separate steps. If an installer downloads a DMG and mounts it before copying an
+app, group that as one step such as \"Downloads the DMG and mounts it.\".
 
 Do include network fetches or network calls when they are part of, or explain,
 a file-changing step, such as downloading an install script before it writes
@@ -504,7 +512,9 @@ interpreter such as sh, bash, zsh, python, ruby, node, or perl, report that as
 one network-backed installer execution step. When a fetched script body is
 provided below, continue tracing into that script body and report the concrete
 file-changing steps that the script would perform. Use the script body instead
-of guessing from the URL alone.
+of guessing from the URL alone. When a fetched script body is provided, do not
+report the outer curl-to-interpreter pipe as its own step unless it writes a
+file; the fetched URL is context for analyzing the script body.
 
 Use concise human descriptions. Prefer concrete paths when the one-liner
 reveals them; otherwise use a clear path phrase such as \"installer-selected
@@ -547,7 +557,7 @@ fn trace_output_schema() -> String {
                     "properties": {
                         "description": {
                             "type": "string",
-                            "description": "A concise user-facing step. Related file creation, permissions, and content writes must be grouped."
+                            "description": "A concise present-tense user-facing step. Related file creation, permissions, and content writes must be grouped; incidental temporary staging and cleanup should be omitted."
                         },
                         "operation": {
                             "type": "string",
@@ -617,10 +627,18 @@ fn parse_trace_agent_embedded_json(value: &str) -> Result<TraceAgentOutput, serd
     serde_json::from_str::<TraceAgentOutput>(value)
 }
 
-fn normalize_trace_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
+fn normalize_trace_steps(
+    steps: Vec<TraceStep>,
+    fetched_script_was_provided: bool,
+) -> Vec<TraceStep> {
     steps
         .into_iter()
         .filter_map(|mut step| {
+            if is_incidental_trace_step(&step)
+                || (fetched_script_was_provided && is_outer_fetched_script_step(&step))
+            {
+                return None;
+            }
             step.description = normalize_trace_description(&step.description);
             step.operation = step.operation.trim().to_string();
             step.path = step
@@ -639,28 +657,42 @@ fn normalize_trace_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
 fn normalize_trace_description(description: &str) -> String {
     let description = description.trim();
     for (prefix, replacement) in [
-        ("Downloaded ", "Would download "),
-        ("Downloads ", "Would download "),
-        ("Executed ", "Would execute "),
-        ("Executes ", "Would execute "),
-        ("Created ", "Would create "),
-        ("Creates ", "Would create "),
-        ("Wrote ", "Would write "),
-        ("Writes ", "Would write "),
-        ("Appended ", "Would append "),
-        ("Appends ", "Would append "),
-        ("Installed ", "Would install "),
-        ("Installs ", "Would install "),
-        ("Modified ", "Would modify "),
-        ("Modifies ", "Would modify "),
-        ("Changed ", "Would change "),
-        ("Changes ", "Would change "),
-        ("Deleted ", "Would delete "),
-        ("Deletes ", "Would delete "),
-        ("Moved ", "Would move "),
-        ("Moves ", "Would move "),
-        ("Set ", "Would set "),
-        ("Sets ", "Would set "),
+        ("Would download ", "Downloads "),
+        ("Would execute ", "Executes "),
+        ("Would create ", "Creates "),
+        ("Would write ", "Writes "),
+        ("Would append ", "Appends "),
+        ("Would install ", "Installs "),
+        ("Would modify ", "Modifies "),
+        ("Would change ", "Changes "),
+        ("Would delete ", "Deletes "),
+        ("Would remove ", "Removes "),
+        ("Would move ", "Moves "),
+        ("Would set ", "Sets "),
+        ("Downloaded ", "Downloads "),
+        ("Downloads ", "Downloads "),
+        ("Executed ", "Executes "),
+        ("Executes ", "Executes "),
+        ("Created ", "Creates "),
+        ("Creates ", "Creates "),
+        ("Wrote ", "Writes "),
+        ("Writes ", "Writes "),
+        ("Appended ", "Appends "),
+        ("Appends ", "Appends "),
+        ("Installed ", "Installs "),
+        ("Installs ", "Installs "),
+        ("Modified ", "Modifies "),
+        ("Modifies ", "Modifies "),
+        ("Changed ", "Changes "),
+        ("Changes ", "Changes "),
+        ("Deleted ", "Deletes "),
+        ("Deletes ", "Deletes "),
+        ("Removed ", "Removes "),
+        ("Removes ", "Removes "),
+        ("Moved ", "Moves "),
+        ("Moves ", "Moves "),
+        ("Set ", "Sets "),
+        ("Sets ", "Sets "),
     ] {
         if let Some(rest) = description.strip_prefix(prefix) {
             return clean_trace_action_tense(&format!("{replacement}{rest}"));
@@ -669,13 +701,101 @@ fn normalize_trace_description(description: &str) -> String {
     clean_trace_action_tense(description)
 }
 
+fn is_incidental_trace_step(step: &TraceStep) -> bool {
+    let operation = step.operation.trim().to_ascii_lowercase();
+    let description = step.description.trim().to_ascii_lowercase();
+    let path = step
+        .path
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let mentions_temp = description.contains("temporary")
+        || description.contains("temp ")
+        || description.contains("tempdir")
+        || description.contains("tmp")
+        || description.contains("staging")
+        || description.contains("staged")
+        || path.starts_with("/tmp/")
+        || path.contains("/tmp/");
+
+    if matches!(operation.as_str(), "delete" | "remove" | "cleanup")
+        && (mentions_temp || description.contains("cleanup"))
+    {
+        return true;
+    }
+
+    matches!(operation.as_str(), "create" | "mkdir")
+        && mentions_temp
+        && step
+            .network
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+}
+
+fn is_outer_fetched_script_step(step: &TraceStep) -> bool {
+    if step
+        .path
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        let description = step.description.trim().to_ascii_lowercase();
+        return description.contains("installer script")
+            && (description.contains("runs")
+                || description.contains("run ")
+                || description.contains("executes")
+                || description.contains("execute ")
+                || description.contains("with sh")
+                || description.contains("with bash"));
+    }
+    false
+}
+
 fn clean_trace_action_tense(description: &str) -> String {
+    let description = description
+        .replace(" and executed ", " and executes ")
+        .replace(" and execute ", " and executes ")
+        .replace(" and write ", " and writes ")
+        .replace(" and writes ", " and writes ")
+        .replace(" and wrote ", " and writes ")
+        .replace(" and mount ", " and mounts ")
+        .replace(" and mounted ", " and mounts ")
+        .replace(" and copy ", " and copies ")
+        .replace(" and copied ", " and copies ")
+        .replace(" and remove ", " and removes ")
+        .replace(" and removed ", " and removes ")
+        .replace(" for installation.", ".")
+        .replace(" using the app name found in the DMG.", ".")
+        .replace(" using the app bundle name found in the DMG.", ".")
+        .replace(" using the app bundle's existing basename.", ".")
+        .replace("; executed ", "; executes ")
+        .replace("; would execute ", "; executes ")
+        .replace(" then executed ", " then executes ")
+        .replace(" then would execute ", " then executes ");
+    remove_incidental_file_choices(&description)
+}
+
+fn remove_incidental_file_choices(description: &str) -> String {
+    let mut description = description.to_string();
+    for marker in [
+        " into an installer-selected temporary directory as ",
+        " into a temporary directory as ",
+        " into the temporary directory as ",
+        " into the temporary working directory as ",
+    ] {
+        while let Some(start) = description.find(marker) {
+            let end = description[start..]
+                .rfind('.')
+                .map(|offset| start + offset)
+                .unwrap_or(description.len());
+            description.replace_range(start..end, "");
+        }
+    }
     description
-        .replace(" and executed ", " and execute ")
-        .replace(" and writes ", " and write ")
-        .replace(" and wrote ", " and write ")
-        .replace("; executed ", "; would execute ")
-        .replace(" then executed ", " then would execute ")
 }
 
 fn print_trace_report(report: &TraceReport) {
@@ -725,8 +845,11 @@ mod tests {
         let prompt = trace_prompt("curl https://example.test/install.sh | sh", None);
 
         assert!(prompt.contains("Descriptions must be diagnostic"));
-        assert!(prompt.contains("Do not claim the command was"));
-        assert!(prompt.contains("Would download"));
+        assert!(prompt.contains("present-tense"));
+        assert!(prompt.contains("action summaries"));
+        assert!(prompt.contains("Downloads"));
+        assert!(prompt.contains("Do not use conditional wording"));
+        assert!(prompt.contains("Do not report incidental temporary directory creation"));
         assert!(prompt.contains("downloads code from a URL"));
         assert!(prompt.contains("pipes it directly into an"));
         assert!(prompt.contains("one network-backed installer execution step"));
@@ -846,19 +969,85 @@ mod tests {
     fn normalize_trace_description_avoids_completed_action_wording() {
         assert_eq!(
             normalize_trace_description("Downloaded install script and executed it with sh."),
-            "Would download install script and execute it with sh."
+            "Downloads install script and executes it with sh."
         );
         assert_eq!(
             normalize_trace_description("Downloads a script and writes /usr/local/bin/av."),
-            "Would download a script and write /usr/local/bin/av."
+            "Downloads a script and writes /usr/local/bin/av."
         );
         assert_eq!(
             normalize_trace_description("Writes /usr/local/bin/av."),
-            "Would write /usr/local/bin/av."
+            "Writes /usr/local/bin/av."
+        );
+        assert_eq!(
+            normalize_trace_description("Would download the DMG and mount it."),
+            "Downloads the DMG and mounts it."
+        );
+        assert_eq!(
+            normalize_trace_description(
+                "Installs the signed app bundle into /Applications using the app name found in the DMG."
+            ),
+            "Installs the signed app bundle into /Applications."
         );
         assert_eq!(
             normalize_trace_description("May modify installer-selected files."),
             "May modify installer-selected files."
         );
+    }
+
+    #[test]
+    fn normalize_trace_steps_omits_incidental_temp_staging_and_cleanup() {
+        let steps = normalize_trace_steps(
+            vec![
+                TraceStep {
+                    description: "Would create an installer-selected temporary directory."
+                        .to_string(),
+                    operation: "create".to_string(),
+                    path: None,
+                    network: None,
+                },
+                TraceStep {
+                    description: "Would download the DMG into a temporary directory as av.dmg."
+                        .to_string(),
+                    operation: "create".to_string(),
+                    path: Some("/tmp/av.dmg".to_string()),
+                    network: Some("https://example.test/av.dmg".to_string()),
+                },
+                TraceStep {
+                    description: "Would remove the temporary directory during cleanup.".to_string(),
+                    operation: "delete".to_string(),
+                    path: None,
+                    network: None,
+                },
+            ],
+            false,
+        );
+
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].description, "Downloads the DMG.");
+    }
+
+    #[test]
+    fn normalize_trace_steps_omits_outer_pipe_step_when_script_was_fetched() {
+        let steps = normalize_trace_steps(
+            vec![
+                TraceStep {
+                    description: "Downloads the installer script and runs it with sh.".to_string(),
+                    operation: "install".to_string(),
+                    path: None,
+                    network: Some("https://example.test/install.sh".to_string()),
+                },
+                TraceStep {
+                    description: "Downloads the DMG and mounts it.".to_string(),
+                    operation: "install".to_string(),
+                    path: None,
+                    network: Some("https://example.test/app.dmg".to_string()),
+                },
+            ],
+            true,
+        );
+
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].description, "Downloads the DMG and mounts it.");
     }
 }
