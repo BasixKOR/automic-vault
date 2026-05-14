@@ -1,5 +1,7 @@
 use super::*;
 
+const TRACE_SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
+
 pub(crate) fn run_trace(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let request = match parse_trace_request(invocation, &mut args)? {
         Some(request) => request,
@@ -175,22 +177,19 @@ fn invoke_trace_agent(agent: TraceAgent, command: &str) -> Result<String, String
 }
 
 fn invoke_codex_trace(prompt: &str, schema: &str) -> Result<String, String> {
-    let mut schema_file = tempfile::NamedTempFile::new()
-        .map_err(|err| format!("failed to create trace schema file: {err}"))?;
-    schema_file
-        .write_all(schema.as_bytes())
+    let runtime = trace_runtime_dir()?;
+    let schema_path = runtime.path().join("schema.json");
+    fs::write(&schema_path, schema)
         .map_err(|err| format!("failed to write trace schema file: {err}"))?;
-    schema_file
-        .flush()
-        .map_err(|err| format!("failed to flush trace schema file: {err}"))?;
 
-    let mut child = Command::new("codex")
+    let mut command = sandboxed_trace_command(runtime.path(), "codex", TraceAgent::Codex)?;
+    let mut child = command
         .arg("exec")
         .arg("--ephemeral")
         .arg("--sandbox")
         .arg("read-only")
         .arg("--output-schema")
-        .arg(schema_file.path())
+        .arg(&schema_path)
         .arg("--color")
         .arg("never")
         .arg("-")
@@ -204,7 +203,9 @@ fn invoke_codex_trace(prompt: &str, schema: &str) -> Result<String, String> {
 }
 
 fn invoke_claude_trace(prompt: &str, schema: &str) -> Result<String, String> {
-    let mut child = Command::new("claude")
+    let runtime = trace_runtime_dir()?;
+    let mut command = sandboxed_trace_command(runtime.path(), "claude", TraceAgent::Claude)?;
+    let mut child = command
         .arg("-p")
         .arg("--no-session-persistence")
         .arg("--permission-mode")
@@ -218,6 +219,61 @@ fn invoke_claude_trace(prompt: &str, schema: &str) -> Result<String, String> {
         .map_err(|err| format!("failed to start claude trace agent: {err}"))?;
     write_child_stdin(&mut child, prompt)?;
     collect_trace_agent_output("claude", child)
+}
+
+fn trace_runtime_dir() -> Result<tempfile::TempDir, String> {
+    tempfile::Builder::new()
+        .prefix("automic-vault.trace.")
+        .tempdir_in("/tmp")
+        .map_err(|err| format!("failed to create trace runtime directory: {err}"))
+}
+
+fn sandboxed_trace_command(
+    runtime_root: &Path,
+    program: &str,
+    agent: TraceAgent,
+) -> Result<Command, String> {
+    if !is_trace_agent_executable_file(Path::new(TRACE_SANDBOX_EXEC_PATH)) {
+        return Err("sandbox-exec is required for trace agent isolation".to_string());
+    }
+
+    let profile_path = runtime_root.join("trace-agent.sb");
+    fs::write(&profile_path, trace_sandbox_profile(runtime_root, agent))
+        .map_err(|err| format!("failed to write trace sandbox profile: {err}"))?;
+
+    let mut command = Command::new(TRACE_SANDBOX_EXEC_PATH);
+    command.arg("-f").arg(profile_path).arg(program);
+    Ok(command)
+}
+
+fn trace_sandbox_profile(runtime_root: &Path, agent: TraceAgent) -> String {
+    let mut profile = format!(
+        "(version 1)\n(allow default)\n(deny file-write*)\n(allow file-write* (literal \"/dev/null\"))\n(allow file-write* (subpath \"{}\"))",
+        escape_trace_sandbox_path(runtime_root)
+    );
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        let state_dir = match agent {
+            TraceAgent::Auto => None,
+            TraceAgent::Codex => Some(home.join(".codex")),
+            TraceAgent::Claude => Some(home.join(".claude")),
+        };
+        if let Some(state_dir) = state_dir {
+            profile.push_str(&format!(
+                "\n(allow file-write* (subpath \"{}\"))",
+                escape_trace_sandbox_path(&state_dir)
+            ));
+        }
+    }
+
+    profile
+}
+
+fn escape_trace_sandbox_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 fn write_child_stdin(child: &mut process::Child, prompt: &str) -> Result<(), String> {
@@ -256,6 +312,11 @@ You are tracing a shell one-liner for Automic Vault.
 Do not execute the one-liner. Interpret it statically.
 
 Return JSON only, matching the provided schema.
+
+Descriptions must be diagnostic, not historical. Do not claim the command was
+actually executed. Use conditional wording such as \"Would download...\",
+\"Would write...\", or \"May modify...\" rather than past tense such as
+\"Downloaded...\", \"Executed...\", \"Created...\", or \"Wrote...\".
 
 Only report consequential steps that write files or change files. Include file
 creation, content writes, appends, overwrites, deletions, moves, chmod/chown,
@@ -372,7 +433,7 @@ fn normalize_trace_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
     steps
         .into_iter()
         .filter_map(|mut step| {
-            step.description = step.description.trim().to_string();
+            step.description = normalize_trace_description(&step.description);
             step.operation = step.operation.trim().to_string();
             step.path = step
                 .path
@@ -385,6 +446,48 @@ fn normalize_trace_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
             (!step.description.is_empty() && !step.operation.is_empty()).then_some(step)
         })
         .collect()
+}
+
+fn normalize_trace_description(description: &str) -> String {
+    let description = description.trim();
+    for (prefix, replacement) in [
+        ("Downloaded ", "Would download "),
+        ("Downloads ", "Would download "),
+        ("Executed ", "Would execute "),
+        ("Executes ", "Would execute "),
+        ("Created ", "Would create "),
+        ("Creates ", "Would create "),
+        ("Wrote ", "Would write "),
+        ("Writes ", "Would write "),
+        ("Appended ", "Would append "),
+        ("Appends ", "Would append "),
+        ("Installed ", "Would install "),
+        ("Installs ", "Would install "),
+        ("Modified ", "Would modify "),
+        ("Modifies ", "Would modify "),
+        ("Changed ", "Would change "),
+        ("Changes ", "Would change "),
+        ("Deleted ", "Would delete "),
+        ("Deletes ", "Would delete "),
+        ("Moved ", "Would move "),
+        ("Moves ", "Would move "),
+        ("Set ", "Would set "),
+        ("Sets ", "Would set "),
+    ] {
+        if let Some(rest) = description.strip_prefix(prefix) {
+            return clean_trace_action_tense(&format!("{replacement}{rest}"));
+        }
+    }
+    clean_trace_action_tense(description)
+}
+
+fn clean_trace_action_tense(description: &str) -> String {
+    description
+        .replace(" and executed ", " and execute ")
+        .replace(" and writes ", " and write ")
+        .replace(" and wrote ", " and write ")
+        .replace("; executed ", "; would execute ")
+        .replace(" then executed ", " then would execute ")
 }
 
 fn print_trace_report(report: &TraceReport) {
@@ -433,9 +536,43 @@ mod tests {
     fn trace_prompt_reports_remote_script_execution_as_step() {
         let prompt = trace_prompt("curl https://example.test/install.sh | sh");
 
+        assert!(prompt.contains("Descriptions must be diagnostic"));
+        assert!(prompt.contains("Do not claim the command was"));
+        assert!(prompt.contains("Would download"));
         assert!(prompt.contains("downloads code from a URL"));
         assert!(prompt.contains("pipes it directly into an"));
         assert!(prompt.contains("one network-backed installer execution step"));
         assert!(prompt.contains("Use a null path"));
+    }
+
+    #[test]
+    fn trace_sandbox_profile_denies_writes_except_runtime_and_agent_state() {
+        let profile = trace_sandbox_profile(Path::new("/tmp/trace-runtime"), TraceAgent::Codex);
+
+        assert!(profile.contains("(deny file-write*)"));
+        assert!(profile.contains(r#"(allow file-write* (literal "/dev/null"))"#));
+        assert!(profile.contains(r#"(allow file-write* (subpath "/tmp/trace-runtime"))"#));
+        assert!(profile.contains(".codex"));
+        assert!(!profile.contains(".claude"));
+    }
+
+    #[test]
+    fn normalize_trace_description_avoids_completed_action_wording() {
+        assert_eq!(
+            normalize_trace_description("Downloaded install script and executed it with sh."),
+            "Would download install script and execute it with sh."
+        );
+        assert_eq!(
+            normalize_trace_description("Downloads a script and writes /usr/local/bin/av."),
+            "Would download a script and write /usr/local/bin/av."
+        );
+        assert_eq!(
+            normalize_trace_description("Writes /usr/local/bin/av."),
+            "Would write /usr/local/bin/av."
+        );
+        assert_eq!(
+            normalize_trace_description("May modify installer-selected files."),
+            "May modify installer-selected files."
+        );
     }
 }
