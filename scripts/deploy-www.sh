@@ -613,15 +613,19 @@ sync_site() {
     --exclude "db.json" \
     --exclude "*.html" \
     --exclude "*.xml" \
+    --exclude "*.txt" \
+    --exclude "*.md" \
     --cache-control "${WWW_ASSET_CACHE_CONTROL}"
 
-  log_step "Syncing HTML and XML"
+  log_step "Syncing crawlable text content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.html" \
     --include "*.xml" \
+    --include "*.txt" \
+    --include "*.md" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_ok "S3 content synced"
