@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "ai-seo": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "skillPath": "skills/ai-seo/SKILL.md",
+      "computedHash": "a10d405f47756007af00d3c36c514271d0521cf483f467673abc0062980ead6e"
+    },
     "appkit-autolayout": {
       "source": "lcandy2/citron-skills",
       "sourceType": "github",
@@ -26,6 +32,12 @@
       "source": "remotion-dev/skills",
       "sourceType": "github",
       "computedHash": "7de3f832b216e9c12e77d81ee802432b97884ba67be7602de9f0b6621f5bc8e1"
+    },
+    "seo-audit": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "skillPath": "skills/seo-audit/SKILL.md",
+      "computedHash": "f2dc52130189068981f21e1c0bdc4471ac7cd9b08d8a1320604411aa0f950385"
     }
   }
 }
