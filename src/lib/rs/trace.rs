@@ -500,7 +500,8 @@ Summarize installer behavior at the level a user needs to understand before
 running it. Do not report incidental temporary directory creation, staged
 filenames, mount-point filenames, or cleanup of temporary staging artifacts as
 separate steps. If an installer downloads a DMG and mounts it before copying an
-app, group that as one step such as \"Downloads the DMG and mounts it.\".
+app into /Applications, keep that as two steps: \"Downloads and mounts the
+DMG.\" and \"Installs the app into /Applications.\".
 
 Do include network fetches or network calls when they are part of, or explain,
 a file-changing step, such as downloading an install script before it writes
@@ -651,6 +652,7 @@ fn normalize_trace_steps(
                 .filter(|network| !network.is_empty());
             (!step.description.is_empty() && !step.operation.is_empty()).then_some(step)
         })
+        .flat_map(split_combined_dmg_install_step)
         .collect()
 }
 
@@ -755,6 +757,38 @@ fn is_outer_fetched_script_step(step: &TraceStep) -> bool {
     false
 }
 
+fn split_combined_dmg_install_step(step: TraceStep) -> Vec<TraceStep> {
+    let description = step.description.to_ascii_lowercase();
+    if !(description.contains("dmg")
+        && description.contains("mount")
+        && description.contains("install")
+        && description.contains("/applications"))
+    {
+        return vec![step];
+    }
+
+    let dmg_description = if description.contains("automic vault") {
+        "Downloads and mounts the Automic Vault DMG."
+    } else {
+        "Downloads and mounts the DMG."
+    };
+
+    vec![
+        TraceStep {
+            description: dmg_description.to_string(),
+            operation: "download".to_string(),
+            path: None,
+            network: step.network.clone(),
+        },
+        TraceStep {
+            description: "Installs the app into /Applications.".to_string(),
+            operation: "install".to_string(),
+            path: Some("/Applications".to_string()),
+            network: None,
+        },
+    ]
+}
+
 fn clean_trace_action_tense(description: &str) -> String {
     let description = description
         .replace(" and executed ", " and executes ")
@@ -769,6 +803,18 @@ fn clean_trace_action_tense(description: &str) -> String {
         .replace(" and remove ", " and removes ")
         .replace(" and removed ", " and removes ")
         .replace(" for installation.", ".")
+        .replace(
+            "Installs the mounted app into /Applications.",
+            "Installs the app into /Applications.",
+        )
+        .replace(
+            "Installs the contained app into /Applications.",
+            "Installs the app into /Applications.",
+        )
+        .replace(
+            "Installs the verified app into /Applications.",
+            "Installs the app into /Applications.",
+        )
         .replace(" using the app name found in the DMG.", ".")
         .replace(" using the app bundle name found in the DMG.", ".")
         .replace(" using the app bundle's existing basename.", ".")
@@ -850,6 +896,7 @@ mod tests {
         assert!(prompt.contains("Downloads"));
         assert!(prompt.contains("Do not use conditional wording"));
         assert!(prompt.contains("Do not report incidental temporary directory creation"));
+        assert!(prompt.contains("keep that as two steps"));
         assert!(prompt.contains("downloads code from a URL"));
         assert!(prompt.contains("pipes it directly into an"));
         assert!(prompt.contains("one network-backed installer execution step"));
@@ -990,6 +1037,14 @@ mod tests {
             "Installs the signed app bundle into /Applications."
         );
         assert_eq!(
+            normalize_trace_description("Installs the mounted app into /Applications."),
+            "Installs the app into /Applications."
+        );
+        assert_eq!(
+            normalize_trace_description("Installs the verified app into /Applications."),
+            "Installs the app into /Applications."
+        );
+        assert_eq!(
             normalize_trace_description("May modify installer-selected files."),
             "May modify installer-selected files."
         );
@@ -1049,5 +1104,35 @@ mod tests {
 
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].description, "Downloads the DMG and mounts it.");
+    }
+
+    #[test]
+    fn normalize_trace_steps_splits_combined_dmg_install_summary() {
+        let steps = normalize_trace_steps(
+            vec![TraceStep {
+                description:
+                    "Downloads the Automic Vault DMG, mounts it, and installs the contained app into /Applications."
+                        .to_string(),
+                operation: "install".to_string(),
+                path: Some("/Applications".to_string()),
+                network: Some("https://example.test/AutomicVault.dmg".to_string()),
+            }],
+            true,
+        );
+
+        assert_eq!(steps.len(), 2);
+        assert_eq!(
+            steps[0].description,
+            "Downloads and mounts the Automic Vault DMG."
+        );
+        assert_eq!(steps[0].operation, "download");
+        assert_eq!(
+            steps[0].network,
+            Some("https://example.test/AutomicVault.dmg".to_string())
+        );
+        assert_eq!(steps[1].description, "Installs the app into /Applications.");
+        assert_eq!(steps[1].operation, "install");
+        assert_eq!(steps[1].path, Some("/Applications".to_string()));
+        assert_eq!(steps[1].network, None);
     }
 }
