@@ -516,14 +516,18 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
 
     let output = run_nuke_with_env(&["trace", "curl foo.com | sh"], &[("PATH", path)]);
     let plain_stdout = stdout(&output);
+    let plain_stderr = stderr(&output);
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(plain_stdout.contains(
         "1. Downloads the installer from https://foo.com and writes /usr/local/bin/foo with executable permissions."
     ));
+    assert!(plain_stderr.contains("trace: Resolving trace agent"));
+    assert!(plain_stderr.contains("trace: Asking codex to trace file-changing actions"));
     assert!(!plain_stdout.contains("2."));
 
     let output = run_nuke_with_env(&["trace", "--json", "curl foo.com | sh"], &[("PATH", path)]);
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(!stderr(&output).contains("trace:"));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["command"], "curl foo.com | sh");
     assert_eq!(report["agent"], "codex");

@@ -17,6 +17,57 @@ struct TraceFetchedScript {
     truncated: bool,
 }
 
+struct TraceProgress {
+    enabled: bool,
+    bar: Option<ProgressBar>,
+}
+
+impl TraceProgress {
+    fn new(enabled: bool) -> Self {
+        if !enabled {
+            return Self {
+                enabled: false,
+                bar: None,
+            };
+        }
+        if std::io::stderr().is_terminal() {
+            let bar = ProgressBar::new_spinner();
+            bar.set_style(trace_progress_style());
+            bar.enable_steady_tick(Duration::from_millis(120));
+            return Self {
+                enabled: true,
+                bar: Some(bar),
+            };
+        }
+        Self {
+            enabled: true,
+            bar: None,
+        }
+    }
+
+    fn set_status<S: Into<String>>(&self, message: S) {
+        if !self.enabled {
+            return;
+        }
+        let message = message.into();
+        if let Some(bar) = &self.bar {
+            bar.set_message(message);
+        } else {
+            eprintln!("trace: {message}");
+        }
+    }
+
+    fn clear(&self) {
+        if let Some(bar) = &self.bar {
+            bar.finish_and_clear();
+        }
+    }
+}
+
+fn trace_progress_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} trace {msg}").unwrap()
+}
+
 pub(crate) fn run_trace(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let request = match parse_trace_request(invocation, &mut args)? {
         Some(request) => request,
@@ -124,9 +175,26 @@ fn parse_trace_agent(arg: &OsString) -> Result<TraceAgent, String> {
 }
 
 fn run_trace_request(request: &TraceRequest) -> Result<TraceReport, String> {
+    let progress = TraceProgress::new(request.output == OutputMode::Human);
+    let result = run_trace_request_with_progress(request, &progress);
+    progress.clear();
+    result
+}
+
+fn run_trace_request_with_progress(
+    request: &TraceRequest,
+    progress: &TraceProgress,
+) -> Result<TraceReport, String> {
+    progress.set_status("Resolving trace agent");
     let resolved = resolve_trace_agent(request.agent)?;
-    let fetched_script = fetch_trace_script_for_command(&request.command)?;
+    progress.set_status(format!("Using {} trace agent", resolved.name()));
+    let fetched_script = fetch_trace_script_for_command(&request.command, progress)?;
+    progress.set_status(format!(
+        "Asking {} to trace file-changing actions",
+        resolved.name()
+    ));
     let output = invoke_trace_agent(resolved, &request.command, fetched_script.as_ref())?;
+    progress.set_status("Summarizing trace output");
     let parsed = parse_trace_agent_output(&output)?;
     let fetched_script_was_provided = fetched_script.is_some();
     Ok(TraceReport {
@@ -177,17 +245,33 @@ fn executable_on_path(tool: &str) -> Option<PathBuf> {
     None
 }
 
-fn fetch_trace_script_for_command(command: &str) -> Result<Option<TraceFetchedScript>, String> {
+fn fetch_trace_script_for_command(
+    command: &str,
+    progress: &TraceProgress,
+) -> Result<Option<TraceFetchedScript>, String> {
     let Some(pipe) = parse_simple_curl_shell_pipe(command) else {
         return Ok(None);
     };
+    progress.set_status(format!(
+        "Downloading script from {}",
+        trace_url_label(&pipe.url)
+    ));
     let (body, truncated) = download_trace_script(&pipe.url)?;
+    progress.set_status("Fetched script; preparing static analysis");
     Ok(Some(TraceFetchedScript {
         url: pipe.url,
         interpreter: pipe.interpreter,
         body,
         truncated,
     }))
+}
+
+fn trace_url_label(url: &str) -> &str {
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .and_then(|rest| rest.split('/').next())
+        .filter(|host| !host.is_empty())
+        .unwrap_or(url)
 }
 
 fn parse_simple_curl_shell_pipe(command: &str) -> Option<TraceCurlPipe> {
