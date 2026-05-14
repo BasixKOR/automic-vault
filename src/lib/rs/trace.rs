@@ -941,7 +941,8 @@ fn coalesce_complex_installer_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
         }
     }
 
-    if is_complex_hermes_installer && buckets.repository && buckets.python && buckets.config {
+    if is_complex_hermes_installer && buckets.repository && buckets.python {
+        buckets.config = true;
         buckets.launcher = true;
         buckets.setup = true;
     }
@@ -1181,13 +1182,42 @@ fn print_trace_report(report: &TraceReport) {
         return;
     }
     let color = trace_stdout_supports_markdown_rendering();
+    let columns = trace_terminal_columns();
     for (index, step) in report.steps.iter().enumerate() {
-        println!(
-            "{}. {}",
+        print_trace_step(
             index + 1,
-            render_trace_markdown(&format_trace_step_for_human(step), color)
+            &format_trace_step_for_human(step),
+            color,
+            columns,
         );
     }
+}
+
+fn print_trace_step(index: usize, markdown: &str, color: bool, columns: usize) {
+    for line in format_trace_step_lines(index, markdown, color, columns) {
+        println!("{line}");
+    }
+}
+
+fn format_trace_step_lines(
+    index: usize,
+    markdown: &str,
+    color: bool,
+    columns: usize,
+) -> Vec<String> {
+    let prefix = format!("{index}. ");
+    let rendered = render_trace_markdown(markdown, color);
+    let lines = wrap_ansi_text(&rendered, columns.saturating_sub(prefix.len()).max(20));
+    if lines.is_empty() {
+        return vec![prefix];
+    }
+    let mut formatted = Vec::with_capacity(lines.len());
+    formatted.push(format!("{prefix}{}", lines[0]));
+    let indent = " ".repeat(prefix.len());
+    for line in lines.iter().skip(1) {
+        formatted.push(format!("{indent}{line}"));
+    }
+    formatted
 }
 
 fn format_trace_step_for_human(step: &TraceStep) -> String {
@@ -1217,6 +1247,29 @@ fn trace_description_mentions_path(description: &str, path: &str) -> bool {
 
 fn trace_stdout_supports_markdown_rendering() -> bool {
     output_supports_ansi(std::io::stdout().is_terminal())
+}
+
+fn trace_terminal_columns() -> usize {
+    if let Ok(columns) = env::var("COLUMNS") {
+        if let Ok(columns) = columns.parse::<usize>() {
+            if columns > 0 {
+                return columns;
+            }
+        }
+    }
+
+    let mut size = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let rc = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut size) };
+    if rc == 0 && size.ws_col > 0 {
+        usize::from(size.ws_col)
+    } else {
+        100
+    }
 }
 
 fn render_trace_markdown(markdown: &str, color: bool) -> String {
@@ -1267,6 +1320,85 @@ fn render_trace_markdown(markdown: &str, color: bool) -> String {
         index += ch.len_utf8();
     }
     rendered
+}
+
+fn wrap_ansi_text(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(10);
+    let words = ansi_words(text);
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut line_width = 0;
+
+    for word in words {
+        let word_width = ansi_visible_width(&word);
+        if line.is_empty() {
+            line_width = word_width;
+            line = word;
+            continue;
+        }
+        if line_width + 1 + word_width > width {
+            lines.push(std::mem::take(&mut line));
+            line_width = word_width;
+            line = word;
+        } else {
+            line.push(' ');
+            line.push_str(&word);
+            line_width += 1 + word_width;
+        }
+    }
+
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+fn ansi_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            word.push(ch);
+            word.push(chars.next().unwrap());
+            for next in chars.by_ref() {
+                word.push(next);
+                if next == 'm' {
+                    break;
+                }
+            }
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+            continue;
+        }
+        word.push(ch);
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
+}
+
+fn ansi_visible_width(text: &str) -> usize {
+    let mut width = 0;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next == 'm' {
+                    break;
+                }
+            }
+            continue;
+        }
+        width += 1;
+    }
+    width
 }
 
 fn markdown_span<'a>(value: &'a str, open: &str, close: &str) -> Option<&'a str> {
@@ -1751,6 +1883,30 @@ mod tests {
     }
 
     #[test]
+    fn normalize_trace_steps_infers_hermes_config_and_setup_categories() {
+        let steps = normalize_trace_steps(
+            vec![
+                trace_step("Installs missing installer/runtime tooling, including uv, Python, Git, and build tools."),
+                trace_step("Clones or updates the Hermes Agent repository in the selected install directory."),
+                trace_step("Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies."),
+                trace_step("Installs Node.js project dependencies and Playwright browser tooling."),
+                trace_step("Creates the hermes command launcher and may add it to shell PATH configuration files."),
+                trace_step("May install or start the Hermes gateway service."),
+                trace_step("May install ripgrep and ffmpeg through the platform package manager."),
+                trace_step("May install Termux build dependencies through pkg."),
+            ],
+            true,
+        );
+
+        assert!(steps.iter().any(|step| step
+            .description
+            .contains("Creates Hermes home at `~/.hermes`")));
+        assert!(steps
+            .iter()
+            .any(|step| step.description.contains("interactive setup wizard")));
+    }
+
+    #[test]
     fn normalize_trace_steps_coalesces_eight_step_hermes_trace() {
         let steps = normalize_trace_steps(
             vec![
@@ -1836,6 +1992,40 @@ mod tests {
         assert_eq!(
             render_trace_markdown("Writes `~/.local/bin/hermes`.", false),
             "Writes `~/.local/bin/hermes`."
+        );
+    }
+
+    #[test]
+    fn wrap_ansi_text_wraps_on_visible_width() {
+        assert_eq!(
+            wrap_ansi_text(
+                "Creates \u{1b}[36m~/.hermes/config.yaml\u{1b}[0m and related files.",
+                28
+            ),
+            vec![
+                "Creates".to_string(),
+                "\u{1b}[36m~/.hermes/config.yaml\u{1b}[0m and".to_string(),
+                "related files.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn format_trace_step_lines_use_hanging_indent() {
+        let step = TraceStep {
+            description: "Creates Hermes home at `~/.hermes` by default, including `.env`, `config.yaml`, and `SOUL.md`.".to_string(),
+            operation: "create".to_string(),
+            path: None,
+            network: None,
+        };
+
+        assert_eq!(
+            format_trace_step_lines(12, &format_trace_step_for_human(&step), false, 48),
+            vec![
+                "12. Creates Hermes home at `~/.hermes` by".to_string(),
+                "    default, including `.env`, `config.yaml`,".to_string(),
+                "    and `SOUL.md`.".to_string(),
+            ]
         );
     }
 

@@ -532,9 +532,8 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     let plain_stdout = stdout(&output);
     let plain_stderr = stderr(&output);
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(plain_stdout.contains(
-        "1. Downloads the installer from https://foo.com and writes /usr/local/bin/foo with executable permissions."
-    ));
+    assert!(plain_stdout.contains("1. Downloads the installer from https://foo.com"));
+    assert!(plain_stdout.contains("with executable\n   permissions."));
     assert!(plain_stderr.contains("trace: Resolving trace agent"));
     assert!(plain_stderr.contains("trace: Asking codex to trace file-changing actions"));
     assert!(!plain_stdout.contains("2."));
