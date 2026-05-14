@@ -247,7 +247,7 @@ homebrew_formula_release_json() {
 
 homebrew_tap_formula_release_json() {
   local formula="$1"
-  local owner tap name repo formula_rb version html_url
+  local owner tap name repo formula_rb formula_path version html_url
 
   IFS='/' read -r owner tap name <<< "${formula}"
   if [[ -z "${owner}" || -z "${tap}" || -z "${name}" ]]; then
@@ -256,13 +256,36 @@ homebrew_tap_formula_release_json() {
   fi
 
   repo="${owner}/homebrew-${tap}"
-  if ! formula_rb="$(curl -fsSL "https://raw.githubusercontent.com/${repo}/HEAD/Formula/${name}.rb")"; then
+  for formula_path in "Formula/${name}.rb" "${name}.rb"; do
+    if formula_rb="$(curl -fsSL "https://raw.githubusercontent.com/${repo}/HEAD/${formula_path}" 2>/dev/null)"; then
+      break
+    fi
+  done
+  if [[ -z "${formula_rb}" ]]; then
     echo "Failed to fetch Homebrew tap formula ${formula}" >&2
     return 1
   fi
 
   version="$(printf '%s\n' "${formula_rb}" |
-    sed -nE 's/^[[:space:]]*version[[:space:]]+"([^"]+)".*/\1/p' |
+    ruby -e '
+      content = STDIN.read
+      vars = {}
+      content.each_line do |line|
+        if line =~ /^\s*([A-Za-z_]\w*)\s*=\s*"([^"]+)"/
+          vars[$1] = $2
+        end
+      end
+      content.each_line do |line|
+        if line =~ /^\s*version\s+"([^"]+)"/
+          puts $1
+          exit
+        end
+        if line =~ /^\s*version\s+([A-Za-z_]\w*)/ && vars[$1]
+          puts vars[$1]
+          exit
+        end
+      end
+    ' |
     head -n 1)"
   if [[ -z "${version}" ]]; then
     version="$(printf '%s\n' "${formula_rb}" |
@@ -274,7 +297,7 @@ homebrew_tap_formula_release_json() {
     return 1
   fi
 
-  html_url="https://github.com/${repo}/blob/HEAD/Formula/${name}.rb"
+  html_url="https://github.com/${repo}/blob/HEAD/${formula_path}"
   jq -n \
     --arg tag "v${version}" \
     --arg htmlUrl "${html_url}" \
@@ -614,7 +637,10 @@ append_radioisotope_version_entries() {
         ;;
     esac
 
-    release_json="$(homebrew_formula_release_json "${formula}")"
+    if ! release_json="$(homebrew_formula_release_json "${formula}")"; then
+      echo "Skipping radioisotope ${isotope_name}: failed to resolve Homebrew formula ${formula}" >&2
+      continue
+    fi
     repo_name="${isotope_name#isotope:}"
     append_isotope_version_entry \
       "${entries_path}" \
