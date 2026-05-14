@@ -573,6 +573,11 @@ action summaries such as \"Downloads...\", \"Installs...\", \"Adds...\", or
 and do not use past tense such as \"Downloaded...\", \"Executed...\",
 \"Created...\", or \"Wrote...\".
 
+Descriptions may use simple inline Markdown. Wrap concrete paths, commands,
+environment variables, package names, and tool names in backticks, such as
+`/usr/local/bin`, `PATH`, `uv`, or `npm install`. Do not use Markdown lists,
+tables, headings, or fenced code blocks inside a step description.
+
 Only report consequential steps that write files or change files. Include file
 creation, content writes, appends, overwrites, deletions, moves, chmod/chown,
 install/service writes, and generated executable changes. Group consecutive
@@ -653,7 +658,7 @@ fn trace_output_schema() -> String {
                     "properties": {
                         "description": {
                             "type": "string",
-                            "description": "A concise present-tense user-facing step. Related file creation, permissions, and content writes must be grouped; incidental temporary staging and cleanup should be omitted."
+                            "description": "A concise present-tense user-facing step using simple inline Markdown for paths, commands, environment variables, package names, and tool names. Related file creation, permissions, and content writes must be grouped; incidental temporary staging and cleanup should be omitted."
                         },
                         "operation": {
                             "type": "string",
@@ -877,7 +882,7 @@ fn split_combined_dmg_install_step(step: TraceStep) -> Vec<TraceStep> {
             network: step.network.clone(),
         },
         TraceStep {
-            description: "Installs the app into /Applications.".to_string(),
+            description: "Installs the app into `/Applications`.".to_string(),
             operation: "install".to_string(),
             path: Some("/Applications".to_string()),
             network: None,
@@ -948,56 +953,56 @@ fn coalesce_complex_installer_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
     let mut summarized = Vec::new();
     if buckets.tooling {
         summarized.push(summary_trace_step(
-            "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
+            "May install missing tooling and system dependencies: `uv` in `~/.local/bin` or `~/.cargo/bin`, Python through `uv`, `Git`/`ripgrep`/`ffmpeg`/build tools through the platform package manager, and Termux packages through `pkg`.",
             "install",
             None,
         ));
     }
     if buckets.repository {
         summarized.push(summary_trace_step(
-            "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
+            "Clones or updates the Hermes Agent repository at `~/.hermes/hermes-agent` by default, preserves an existing legacy checkout there, or uses `/usr/local/lib/hermes-agent` for new root Linux installs; `--dir` or `HERMES_INSTALL_DIR` overrides it.",
             "install",
             Some("~/.hermes/hermes-agent"),
         ));
     }
     if buckets.python {
         summarized.push(summary_trace_step(
-            "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
+            "Creates or recreates the Python environment at the checkout's `venv` directory, usually `~/.hermes/hermes-agent/venv`, and installs Hermes Agent dependencies into it.",
             "install",
             Some("~/.hermes/hermes-agent/venv"),
         ));
     }
     if buckets.node_browser {
         summarized.push(summary_trace_step(
-            "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
+            "Installs `Node.js` into `~/.hermes/node` when no system Node exists, links `node`/`npm`/`npx` into `~/.local/bin`, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
             "install",
             Some("~/.hermes/node"),
         ));
     }
     if buckets.launcher {
         summarized.push(summary_trace_step(
-            "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
+            "Writes the `hermes` launcher to `~/.local/bin/hermes` by default, `/usr/local/bin/hermes` for new root Linux installs, or `$PREFIX/bin/hermes` on Termux, and may update shell startup files for `PATH`.",
             "install",
             Some("~/.local/bin/hermes"),
         ));
     }
     if buckets.config {
         summarized.push(summary_trace_step(
-            "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
+            "Creates Hermes home at `~/.hermes` by default, including `.env`, `config.yaml`, `SOUL.md`, `cron`, `sessions`, `logs`, `pairing`, `hooks`, image/audio caches, memories, and skills.",
             "create",
             Some("~/.hermes"),
         ));
     }
     if buckets.setup {
         summarized.push(summary_trace_step(
-            "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
+            "May run the interactive setup wizard and configure browser or messaging settings in `~/.hermes/.env`, `~/.hermes/config.yaml`, and related Hermes home files.",
             "modify",
             Some("~/.hermes"),
         ));
     }
     if buckets.gateway {
         summarized.push(summary_trace_step(
-            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
+            "May install or start the Hermes gateway service, or run it in the background with logs at `~/.hermes/logs/gateway.log`.",
             "install",
             Some("~/.hermes/logs/gateway.log"),
         ));
@@ -1131,15 +1136,15 @@ fn clean_trace_action_tense(description: &str) -> String {
         .replace(" for installation.", ".")
         .replace(
             "Installs the mounted app into /Applications.",
-            "Installs the app into /Applications.",
+            "Installs the app into `/Applications`.",
         )
         .replace(
             "Installs the contained app into /Applications.",
-            "Installs the app into /Applications.",
+            "Installs the app into `/Applications`.",
         )
         .replace(
             "Installs the verified app into /Applications.",
-            "Installs the app into /Applications.",
+            "Installs the app into `/Applications`.",
         )
         .replace(" using the app name found in the DMG.", ".")
         .replace(" using the app bundle name found in the DMG.", ".")
@@ -1175,8 +1180,13 @@ fn print_trace_report(report: &TraceReport) {
         println!("No file-changing steps identified.");
         return;
     }
+    let color = trace_stdout_supports_markdown_rendering();
     for (index, step) in report.steps.iter().enumerate() {
-        println!("{}. {}", index + 1, format_trace_step_for_human(step));
+        println!(
+            "{}. {}",
+            index + 1,
+            render_trace_markdown(&format_trace_step_for_human(step), color)
+        );
     }
 }
 
@@ -1196,13 +1206,89 @@ fn format_trace_step_for_human(step: &TraceStep) -> String {
     if description.ends_with('.') {
         description.pop();
     }
-    format!("{description}. Path: {path}.")
+    format!("{description}. Path: `{path}`.")
 }
 
 fn trace_description_mentions_path(description: &str, path: &str) -> bool {
     let description = description.to_ascii_lowercase();
     let path = path.to_ascii_lowercase();
     description.contains(&path)
+}
+
+fn trace_stdout_supports_markdown_rendering() -> bool {
+    output_supports_ansi(std::io::stdout().is_terminal())
+}
+
+fn render_trace_markdown(markdown: &str, color: bool) -> String {
+    if !color {
+        return markdown.to_string();
+    }
+
+    let mut rendered = String::new();
+    let mut index = 0;
+    while index < markdown.len() {
+        let rest = &markdown[index..];
+        if let Some(content) = markdown_span(rest, "`", "`") {
+            rendered.push_str("\x1b[36m");
+            rendered.push_str(content);
+            rendered.push_str("\x1b[0m");
+            index += content.len() + 2;
+            continue;
+        }
+        if let Some(content) = markdown_span(rest, "**", "**") {
+            rendered.push_str("\x1b[1m");
+            rendered.push_str(content);
+            rendered.push_str("\x1b[0m");
+            index += content.len() + 4;
+            continue;
+        }
+        if let Some(content) = markdown_span(rest, "__", "__") {
+            rendered.push_str("\x1b[1m");
+            rendered.push_str(content);
+            rendered.push_str("\x1b[0m");
+            index += content.len() + 4;
+            continue;
+        }
+        if let Some((label, url, consumed)) = markdown_link(rest) {
+            rendered.push_str("\x1b[4;36m");
+            rendered.push_str(label);
+            rendered.push_str("\x1b[0m");
+            rendered.push_str(" \x1b[2m(");
+            rendered.push_str(url);
+            rendered.push_str(")\x1b[0m");
+            index += consumed;
+            continue;
+        }
+
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
+        rendered.push(ch);
+        index += ch.len_utf8();
+    }
+    rendered
+}
+
+fn markdown_span<'a>(value: &'a str, open: &str, close: &str) -> Option<&'a str> {
+    let rest = value.strip_prefix(open)?;
+    let end = rest.find(close)?;
+    (end > 0).then_some(&rest[..end])
+}
+
+fn markdown_link(value: &str) -> Option<(&str, &str, usize)> {
+    let rest = value.strip_prefix('[')?;
+    let label_end = rest.find("](")?;
+    let label = &rest[..label_end];
+    if label.is_empty() {
+        return None;
+    }
+    let url_start = label_end + 2;
+    let url_end = rest[url_start..].find(')')? + url_start;
+    let url = &rest[url_start..url_end];
+    if url.is_empty() {
+        return None;
+    }
+    Some((label, url, url_end + 2))
 }
 
 pub(crate) fn is_trace_subcommand(value: &str) -> bool {
@@ -1391,11 +1477,11 @@ mod tests {
         );
         assert_eq!(
             normalize_trace_description("Installs the mounted app into /Applications."),
-            "Installs the app into /Applications."
+            "Installs the app into `/Applications`."
         );
         assert_eq!(
             normalize_trace_description("Installs the verified app into /Applications."),
-            "Installs the app into /Applications."
+            "Installs the app into `/Applications`."
         );
         assert_eq!(
             normalize_trace_description("May modify installer-selected files."),
@@ -1483,7 +1569,10 @@ mod tests {
             steps[0].network,
             Some("https://example.test/AutomicVault.dmg".to_string())
         );
-        assert_eq!(steps[1].description, "Installs the app into /Applications.");
+        assert_eq!(
+            steps[1].description,
+            "Installs the app into `/Applications`."
+        );
         assert_eq!(steps[1].operation, "install");
         assert_eq!(steps[1].path, Some("/Applications".to_string()));
         assert_eq!(steps[1].network, None);
@@ -1552,14 +1641,14 @@ mod tests {
                 .map(|step| step.description.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
-                "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
-                "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
-                "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
-                "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
-                "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
-                "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
-                "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
+                "May install missing tooling and system dependencies: `uv` in `~/.local/bin` or `~/.cargo/bin`, Python through `uv`, `Git`/`ripgrep`/`ffmpeg`/build tools through the platform package manager, and Termux packages through `pkg`.",
+                "Clones or updates the Hermes Agent repository at `~/.hermes/hermes-agent` by default, preserves an existing legacy checkout there, or uses `/usr/local/lib/hermes-agent` for new root Linux installs; `--dir` or `HERMES_INSTALL_DIR` overrides it.",
+                "Creates or recreates the Python environment at the checkout's `venv` directory, usually `~/.hermes/hermes-agent/venv`, and installs Hermes Agent dependencies into it.",
+                "Installs `Node.js` into `~/.hermes/node` when no system Node exists, links `node`/`npm`/`npx` into `~/.local/bin`, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
+                "Writes the `hermes` launcher to `~/.local/bin/hermes` by default, `/usr/local/bin/hermes` for new root Linux installs, or `$PREFIX/bin/hermes` on Termux, and may update shell startup files for `PATH`.",
+                "Creates Hermes home at `~/.hermes` by default, including `.env`, `config.yaml`, `SOUL.md`, `cron`, `sessions`, `logs`, `pairing`, `hooks`, image/audio caches, memories, and skills.",
+                "May run the interactive setup wizard and configure browser or messaging settings in `~/.hermes/.env`, `~/.hermes/config.yaml`, and related Hermes home files.",
+                "May install or start the Hermes gateway service, or run it in the background with logs at `~/.hermes/logs/gateway.log`.",
             ]
         );
     }
@@ -1604,11 +1693,11 @@ mod tests {
         assert_eq!(steps.len(), 8);
         assert_eq!(
             steps[0].description,
-            "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg."
+            "May install missing tooling and system dependencies: `uv` in `~/.local/bin` or `~/.cargo/bin`, Python through `uv`, `Git`/`ripgrep`/`ffmpeg`/build tools through the platform package manager, and Termux packages through `pkg`."
         );
         assert_eq!(
             steps[7].description,
-            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log."
+            "May install or start the Hermes gateway service, or run it in the background with logs at `~/.hermes/logs/gateway.log`."
         );
     }
 
@@ -1649,14 +1738,14 @@ mod tests {
                 .map(|step| step.description.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
-                "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
-                "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
-                "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
-                "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
-                "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
-                "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
-                "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
+                "May install missing tooling and system dependencies: `uv` in `~/.local/bin` or `~/.cargo/bin`, Python through `uv`, `Git`/`ripgrep`/`ffmpeg`/build tools through the platform package manager, and Termux packages through `pkg`.",
+                "Clones or updates the Hermes Agent repository at `~/.hermes/hermes-agent` by default, preserves an existing legacy checkout there, or uses `/usr/local/lib/hermes-agent` for new root Linux installs; `--dir` or `HERMES_INSTALL_DIR` overrides it.",
+                "Creates or recreates the Python environment at the checkout's `venv` directory, usually `~/.hermes/hermes-agent/venv`, and installs Hermes Agent dependencies into it.",
+                "Installs `Node.js` into `~/.hermes/node` when no system Node exists, links `node`/`npm`/`npx` into `~/.local/bin`, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
+                "Writes the `hermes` launcher to `~/.local/bin/hermes` by default, `/usr/local/bin/hermes` for new root Linux installs, or `$PREFIX/bin/hermes` on Termux, and may update shell startup files for `PATH`.",
+                "Creates Hermes home at `~/.hermes` by default, including `.env`, `config.yaml`, `SOUL.md`, `cron`, `sessions`, `logs`, `pairing`, `hooks`, image/audio caches, memories, and skills.",
+                "May run the interactive setup wizard and configure browser or messaging settings in `~/.hermes/.env`, `~/.hermes/config.yaml`, and related Hermes home files.",
+                "May install or start the Hermes gateway service, or run it in the background with logs at `~/.hermes/logs/gateway.log`.",
             ]
         );
     }
@@ -1696,11 +1785,11 @@ mod tests {
         assert_eq!(steps.len(), 8);
         assert_eq!(
             steps[6].description,
-            "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files."
+            "May run the interactive setup wizard and configure browser or messaging settings in `~/.hermes/.env`, `~/.hermes/config.yaml`, and related Hermes home files."
         );
         assert_eq!(
             steps[7].description,
-            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log."
+            "May install or start the Hermes gateway service, or run it in the background with logs at `~/.hermes/logs/gateway.log`."
         );
     }
 
@@ -1715,7 +1804,7 @@ mod tests {
 
         assert_eq!(
             format_trace_step_for_human(&step),
-            "Creates a command shim. Path: ~/.local/bin/hermes."
+            "Creates a command shim. Path: `~/.local/bin/hermes`."
         );
 
         let step = TraceStep {
@@ -1728,6 +1817,25 @@ mod tests {
         assert_eq!(
             format_trace_step_for_human(&step),
             "Creates a command shim at ~/.local/bin/hermes."
+        );
+    }
+
+    #[test]
+    fn render_trace_markdown_styles_inline_markdown_when_color_is_enabled() {
+        assert_eq!(
+            render_trace_markdown(
+                "Writes the **hermes** launcher to `~/.local/bin/hermes` from [GitHub](https://example.test).",
+                true
+            ),
+            "Writes the \u{1b}[1mhermes\u{1b}[0m launcher to \u{1b}[36m~/.local/bin/hermes\u{1b}[0m from \u{1b}[4;36mGitHub\u{1b}[0m \u{1b}[2m(https://example.test)\u{1b}[0m."
+        );
+    }
+
+    #[test]
+    fn render_trace_markdown_leaves_markdown_when_color_is_disabled() {
+        assert_eq!(
+            render_trace_markdown("Writes `~/.local/bin/hermes`.", false),
+            "Writes `~/.local/bin/hermes`."
         );
     }
 
