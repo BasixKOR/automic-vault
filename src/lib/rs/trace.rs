@@ -592,6 +592,11 @@ into user-level categories instead of listing every OS-specific command. Prefer
 around 5-8 steps that cover missing tooling/system dependencies, repository
 checkout or update, language environments and dependencies, command launcher
 setup, configuration files, interactive setup, and background services.
+Preserve the concrete path defaults, environment-variable overrides, and
+command-line directory options that explain where each category writes files.
+For example, keep the repository checkout path, virtual environment path,
+language runtime path, command shim path, config/data home, shell startup files,
+and service/log paths visible in either the step description or path field.
 
 Do include network fetches or network calls when they are part of, or explain,
 a file-changing step, such as downloading an install script before it writes
@@ -943,58 +948,58 @@ fn coalesce_complex_installer_steps(steps: Vec<TraceStep>) -> Vec<TraceStep> {
     let mut summarized = Vec::new();
     if buckets.tooling {
         summarized.push(summary_trace_step(
-            "May install missing tooling and system dependencies such as uv, Python, Git, Node.js, ripgrep, ffmpeg, and build tools.",
+            "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
             "install",
             None,
         ));
     }
     if buckets.repository {
         summarized.push(summary_trace_step(
-            "Clones or updates the Hermes Agent repository in the selected install directory.",
+            "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
             "install",
-            Some("selected install directory"),
+            Some("~/.hermes/hermes-agent"),
         ));
     }
     if buckets.python {
         summarized.push(summary_trace_step(
-            "Creates or recreates the Python environment and installs Hermes Agent dependencies.",
+            "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
             "install",
-            Some("Hermes Agent checkout"),
+            Some("~/.hermes/hermes-agent/venv"),
         ));
     }
     if buckets.node_browser {
         summarized.push(summary_trace_step(
-            "Installs Node, browser, and TUI dependencies when supported.",
+            "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
             "install",
-            Some("Hermes Agent checkout"),
+            Some("~/.hermes/node"),
         ));
     }
     if buckets.launcher {
         summarized.push(summary_trace_step(
-            "Writes the hermes launcher and may update shell startup files for PATH.",
+            "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
             "install",
-            Some("command link directory"),
+            Some("~/.local/bin/hermes"),
         ));
     }
     if buckets.config {
         summarized.push(summary_trace_step(
-            "Creates Hermes home directories, config files, environment files, persona, and bundled skills.",
+            "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
             "create",
-            Some("Hermes home"),
+            Some("~/.hermes"),
         ));
     }
     if buckets.setup {
         summarized.push(summary_trace_step(
-            "May run the interactive setup wizard and configure browser or messaging settings.",
+            "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
             "modify",
-            Some("Hermes home"),
+            Some("~/.hermes"),
         ));
     }
     if buckets.gateway {
         summarized.push(summary_trace_step(
-            "May install or start the Hermes gateway service or background process.",
+            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
             "install",
-            Some("Hermes gateway"),
+            Some("~/.hermes/logs/gateway.log"),
         ));
     }
 
@@ -1171,8 +1176,33 @@ fn print_trace_report(report: &TraceReport) {
         return;
     }
     for (index, step) in report.steps.iter().enumerate() {
-        println!("{}. {}", index + 1, step.description);
+        println!("{}. {}", index + 1, format_trace_step_for_human(step));
     }
+}
+
+fn format_trace_step_for_human(step: &TraceStep) -> String {
+    let mut description = step.description.clone();
+    let Some(path) = step
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    else {
+        return description;
+    };
+    if trace_description_mentions_path(&description, path) {
+        return description;
+    }
+    if description.ends_with('.') {
+        description.pop();
+    }
+    format!("{description}. Path: {path}.")
+}
+
+fn trace_description_mentions_path(description: &str, path: &str) -> bool {
+    let description = description.to_ascii_lowercase();
+    let path = path.to_ascii_lowercase();
+    description.contains(&path)
 }
 
 pub(crate) fn is_trace_subcommand(value: &str) -> bool {
@@ -1218,6 +1248,8 @@ mod tests {
         assert!(prompt.contains("Do not use conditional wording"));
         assert!(prompt.contains("Do not report incidental temporary directory creation"));
         assert!(prompt.contains("keep that as two steps"));
+        assert!(prompt.contains("Preserve the concrete path defaults"));
+        assert!(prompt.contains("virtual environment path"));
         assert!(prompt.contains("downloads code from a URL"));
         assert!(prompt.contains("pipes it directly into an"));
         assert!(prompt.contains("one network-backed installer execution step"));
@@ -1464,28 +1496,52 @@ mod tests {
                 trace_step("May install uv into the user-local executable directory."),
                 trace_step("May install Python 3.11 through uv's managed Python installation."),
                 trace_step("May install Git through Termux pkg."),
-                trace_step("May install Node.js under Hermes home and add node, npm, and npx shims to the user-local bin directory."),
-                trace_step("May install ripgrep, ffmpeg, and build dependencies through the platform package manager."),
-                trace_step("Clones or updates the Hermes Agent repository at the installer-selected destination."),
-                trace_step("May stash and restore local changes in an existing Hermes Agent git checkout before updating it."),
-                trace_step("Creates or recreates the Python virtual environment inside the Hermes Agent checkout."),
-                trace_step("Installs Hermes Agent Python dependencies into the selected Python environment."),
+                trace_step(
+                    "May install Node.js under Hermes home and add node, npm, and npx shims to the user-local bin directory.",
+                ),
+                trace_step(
+                    "May install ripgrep, ffmpeg, and build dependencies through the platform package manager.",
+                ),
+                trace_step(
+                    "Clones or updates the Hermes Agent repository at the installer-selected destination.",
+                ),
+                trace_step(
+                    "May stash and restore local changes in an existing Hermes Agent git checkout before updating it.",
+                ),
+                trace_step(
+                    "Creates or recreates the Python virtual environment inside the Hermes Agent checkout.",
+                ),
+                trace_step(
+                    "Installs Hermes Agent Python dependencies into the selected Python environment.",
+                ),
                 trace_step("May patch and prebuild psutil for Android Python installs."),
-                trace_step("Installs Node.js dependencies for browser tooling in the Hermes Agent checkout."),
+                trace_step(
+                    "Installs Node.js dependencies for browser tooling in the Hermes Agent checkout.",
+                ),
                 trace_step("May install Playwright Chromium and browser system dependencies."),
                 trace_step("Installs TUI Node.js dependencies when the TUI package is present."),
-                trace_step("Adds the hermes launcher script to the command link directory and marks it executable."),
+                trace_step(
+                    "Adds the hermes launcher script to the command link directory and marks it executable.",
+                ),
                 trace_step("May append the user-local bin directory to shell startup files."),
-                trace_step("Creates the Hermes home directory structure for config, sessions, logs, caches, memories, hooks, pairing, cron, and skills."),
-                trace_step("Creates the Hermes environment file from the repository template or as an empty file."),
-                trace_step("May append the detected Chrome or Chromium executable path to the Hermes environment file."),
+                trace_step(
+                    "Creates the Hermes home directory structure for config, sessions, logs, caches, memories, hooks, pairing, cron, and skills.",
+                ),
+                trace_step(
+                    "Creates the Hermes environment file from the repository template or as an empty file.",
+                ),
+                trace_step(
+                    "May append the detected Chrome or Chromium executable path to the Hermes environment file.",
+                ),
                 trace_step("Creates the Hermes config file from the repository template."),
                 trace_step("Creates the Hermes persona file."),
                 trace_step("Syncs or copies bundled skills into Hermes home."),
                 trace_step("May modify Hermes configuration through the interactive setup wizard."),
                 trace_step("May create WhatsApp session files during interactive pairing."),
                 trace_step("May install and start the Hermes gateway as a background service."),
-                trace_step("May start the Hermes gateway in the background and writes its log file."),
+                trace_step(
+                    "May start the Hermes gateway in the background and writes its log file.",
+                ),
             ],
             true,
         );
@@ -1496,14 +1552,14 @@ mod tests {
                 .map(|step| step.description.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "May install missing tooling and system dependencies such as uv, Python, Git, Node.js, ripgrep, ffmpeg, and build tools.",
-                "Clones or updates the Hermes Agent repository in the selected install directory.",
-                "Creates or recreates the Python environment and installs Hermes Agent dependencies.",
-                "Installs Node, browser, and TUI dependencies when supported.",
-                "Writes the hermes launcher and may update shell startup files for PATH.",
-                "Creates Hermes home directories, config files, environment files, persona, and bundled skills.",
-                "May run the interactive setup wizard and configure browser or messaging settings.",
-                "May install or start the Hermes gateway service or background process.",
+                "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
+                "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
+                "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
+                "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
+                "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
+                "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
+                "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
+                "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
             ]
         );
     }
@@ -1514,15 +1570,33 @@ mod tests {
             vec![
                 trace_step("Installs uv when missing into the user-level uv install location."),
                 trace_step("Installs Python 3.11 through uv when no suitable Python is available."),
-                trace_step("Installs missing platform packages for Git, Node.js, ripgrep, ffmpeg, Termux build tools, Playwright browser libraries, or Debian/Ubuntu Python build dependencies."),
-                trace_step("Installs a Hermes-managed Node.js runtime and command symlinks when Node.js is missing on desktop platforms."),
-                trace_step("Clones or updates the Hermes Agent repository, including stashing and restoring local changes during updates."),
-                trace_step("Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies into it."),
-                trace_step("Installs Node.js project dependencies, Playwright Chromium when no system browser is found, and TUI dependencies when package manifests exist."),
-                trace_step("Installs the hermes launcher shim and updates shell startup files so the command path is available."),
-                trace_step("Creates Hermes data/config directories and seeds .env, config.yaml, SOUL.md, browser environment settings, and bundled skills."),
-                trace_step("Runs the interactive setup wizard, which may write API keys and settings into Hermes configuration files."),
-                trace_step("Installs and starts the messaging gateway as a systemd service, or starts it in background mode with logs when messaging tokens are configured."),
+                trace_step(
+                    "Installs missing platform packages for Git, Node.js, ripgrep, ffmpeg, Termux build tools, Playwright browser libraries, or Debian/Ubuntu Python build dependencies.",
+                ),
+                trace_step(
+                    "Installs a Hermes-managed Node.js runtime and command symlinks when Node.js is missing on desktop platforms.",
+                ),
+                trace_step(
+                    "Clones or updates the Hermes Agent repository, including stashing and restoring local changes during updates.",
+                ),
+                trace_step(
+                    "Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies into it.",
+                ),
+                trace_step(
+                    "Installs Node.js project dependencies, Playwright Chromium when no system browser is found, and TUI dependencies when package manifests exist.",
+                ),
+                trace_step(
+                    "Installs the hermes launcher shim and updates shell startup files so the command path is available.",
+                ),
+                trace_step(
+                    "Creates Hermes data/config directories and seeds .env, config.yaml, SOUL.md, browser environment settings, and bundled skills.",
+                ),
+                trace_step(
+                    "Runs the interactive setup wizard, which may write API keys and settings into Hermes configuration files.",
+                ),
+                trace_step(
+                    "Installs and starts the messaging gateway as a systemd service, or starts it in background mode with logs when messaging tokens are configured.",
+                ),
             ],
             true,
         );
@@ -1530,11 +1604,11 @@ mod tests {
         assert_eq!(steps.len(), 8);
         assert_eq!(
             steps[0].description,
-            "May install missing tooling and system dependencies such as uv, Python, Git, Node.js, ripgrep, ffmpeg, and build tools."
+            "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg."
         );
         assert_eq!(
             steps[7].description,
-            "May install or start the Hermes gateway service or background process."
+            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log."
         );
     }
 
@@ -1543,13 +1617,27 @@ mod tests {
         let steps = normalize_trace_steps(
             vec![
                 trace_step("Installs uv when missing into the user-level uv install location."),
-                trace_step("Installs missing platform packages for Git, Node.js, ripgrep, ffmpeg, Termux build tools, Playwright browser libraries, or Debian/Ubuntu Python build dependencies."),
-                trace_step("Clones or updates the Hermes Agent repository, including stashing and restoring local changes during updates."),
-                trace_step("Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies into it."),
-                trace_step("Installs Node.js project dependencies, Playwright Chromium when no system browser is found, and TUI dependencies when package manifests exist."),
-                trace_step("Creates Hermes data/config directories and seeds .env, config.yaml, SOUL.md, browser environment settings, and bundled skills."),
-                trace_step("Installs and starts the messaging gateway as a systemd service, or starts it in background mode with logs when messaging tokens are configured."),
-                trace_step("May install ripgrep, ffmpeg, and build dependencies through the platform package manager."),
+                trace_step(
+                    "Installs missing platform packages for Git, Node.js, ripgrep, ffmpeg, Termux build tools, Playwright browser libraries, or Debian/Ubuntu Python build dependencies.",
+                ),
+                trace_step(
+                    "Clones or updates the Hermes Agent repository, including stashing and restoring local changes during updates.",
+                ),
+                trace_step(
+                    "Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies into it.",
+                ),
+                trace_step(
+                    "Installs Node.js project dependencies, Playwright Chromium when no system browser is found, and TUI dependencies when package manifests exist.",
+                ),
+                trace_step(
+                    "Creates Hermes data/config directories and seeds .env, config.yaml, SOUL.md, browser environment settings, and bundled skills.",
+                ),
+                trace_step(
+                    "Installs and starts the messaging gateway as a systemd service, or starts it in background mode with logs when messaging tokens are configured.",
+                ),
+                trace_step(
+                    "May install ripgrep, ffmpeg, and build dependencies through the platform package manager.",
+                ),
                 trace_step("May install Python 3.11 through uv's managed Python installation."),
             ],
             true,
@@ -1561,14 +1649,14 @@ mod tests {
                 .map(|step| step.description.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "May install missing tooling and system dependencies such as uv, Python, Git, Node.js, ripgrep, ffmpeg, and build tools.",
-                "Clones or updates the Hermes Agent repository in the selected install directory.",
-                "Creates or recreates the Python environment and installs Hermes Agent dependencies.",
-                "Installs Node, browser, and TUI dependencies when supported.",
-                "Writes the hermes launcher and may update shell startup files for PATH.",
-                "Creates Hermes home directories, config files, environment files, persona, and bundled skills.",
-                "May run the interactive setup wizard and configure browser or messaging settings.",
-                "May install or start the Hermes gateway service or background process.",
+                "May install missing tooling and system dependencies: uv in ~/.local/bin or ~/.cargo/bin, Python through uv, Git/ripgrep/ffmpeg/build tools through the platform package manager, and Termux packages through pkg.",
+                "Clones or updates the Hermes Agent repository at ~/.hermes/hermes-agent by default, preserves an existing legacy checkout there, or uses /usr/local/lib/hermes-agent for new root Linux installs; --dir or HERMES_INSTALL_DIR overrides it.",
+                "Creates or recreates the Python environment at the checkout's venv directory, usually ~/.hermes/hermes-agent/venv, and installs Hermes Agent dependencies into it.",
+                "Installs Node.js into ~/.hermes/node when no system Node exists, links node/npm/npx into ~/.local/bin, and installs browser/TUI dependencies inside the Hermes Agent checkout.",
+                "Writes the hermes launcher to ~/.local/bin/hermes by default, /usr/local/bin/hermes for new root Linux installs, or $PREFIX/bin/hermes on Termux, and may update shell startup files for PATH.",
+                "Creates Hermes home at ~/.hermes by default, including .env, config.yaml, SOUL.md, cron, sessions, logs, pairing, hooks, image/audio caches, memories, and skills.",
+                "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files.",
+                "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log.",
             ]
         );
     }
@@ -1577,14 +1665,30 @@ mod tests {
     fn normalize_trace_steps_coalesces_eight_step_hermes_trace() {
         let steps = normalize_trace_steps(
             vec![
-                trace_step("Installs missing installer/runtime tooling, including uv, Python 3.11, Git, and optional package-manager dependencies such as ripgrep, ffmpeg, and build tools."),
-                trace_step("Installs Node.js for browser tools and creates node, npm, and npx launcher symlinks."),
-                trace_step("Checks out or updates the Hermes Agent repository, stashing and optionally restoring local changes during updates."),
-                trace_step("Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies in editable mode."),
-                trace_step("Installs JavaScript dependencies for browser and TUI tooling, and installs Playwright Chromium or related browser system libraries when no system Chrome/Chromium is found."),
-                trace_step("Creates the hermes command launcher, makes it executable, and may add its directory to shell PATH configuration files."),
-                trace_step("Creates Hermes data/config directories, writes .env/config/persona files from templates or defaults, and syncs bundled skills."),
-                trace_step("May write messaging gateway service files or start a background gateway with logs when messaging tokens are configured and setup is accepted."),
+                trace_step(
+                    "Installs missing installer/runtime tooling, including uv, Python 3.11, Git, and optional package-manager dependencies such as ripgrep, ffmpeg, and build tools.",
+                ),
+                trace_step(
+                    "Installs Node.js for browser tools and creates node, npm, and npx launcher symlinks.",
+                ),
+                trace_step(
+                    "Checks out or updates the Hermes Agent repository, stashing and optionally restoring local changes during updates.",
+                ),
+                trace_step(
+                    "Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies in editable mode.",
+                ),
+                trace_step(
+                    "Installs JavaScript dependencies for browser and TUI tooling, and installs Playwright Chromium or related browser system libraries when no system Chrome/Chromium is found.",
+                ),
+                trace_step(
+                    "Creates the hermes command launcher, makes it executable, and may add its directory to shell PATH configuration files.",
+                ),
+                trace_step(
+                    "Creates Hermes data/config directories, writes .env/config/persona files from templates or defaults, and syncs bundled skills.",
+                ),
+                trace_step(
+                    "May write messaging gateway service files or start a background gateway with logs when messaging tokens are configured and setup is accepted.",
+                ),
             ],
             true,
         );
@@ -1592,11 +1696,38 @@ mod tests {
         assert_eq!(steps.len(), 8);
         assert_eq!(
             steps[6].description,
-            "May run the interactive setup wizard and configure browser or messaging settings."
+            "May run the interactive setup wizard and configure browser or messaging settings in ~/.hermes/.env, ~/.hermes/config.yaml, and related Hermes home files."
         );
         assert_eq!(
             steps[7].description,
-            "May install or start the Hermes gateway service or background process."
+            "May install or start the Hermes gateway service, or run it in the background with logs at ~/.hermes/logs/gateway.log."
+        );
+    }
+
+    #[test]
+    fn format_trace_step_for_human_appends_path_when_missing() {
+        let step = TraceStep {
+            description: "Creates a command shim.".to_string(),
+            operation: "install".to_string(),
+            path: Some("~/.local/bin/hermes".to_string()),
+            network: None,
+        };
+
+        assert_eq!(
+            format_trace_step_for_human(&step),
+            "Creates a command shim. Path: ~/.local/bin/hermes."
+        );
+
+        let step = TraceStep {
+            description: "Creates a command shim at ~/.local/bin/hermes.".to_string(),
+            operation: "install".to_string(),
+            path: Some("~/.local/bin/hermes".to_string()),
+            network: None,
+        };
+
+        assert_eq!(
+            format_trace_step_for_human(&step),
+            "Creates a command shim at ~/.local/bin/hermes."
         );
     }
 
