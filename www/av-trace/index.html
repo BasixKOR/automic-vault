@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>av trace | Trace Shell Installers Before AI Agents Run Them</title>
+  <meta name="description" content="Use av trace to statically inspect curl pipe shell installers and summarize the file-changing steps before an AI agent or developer runs them.">
+  <link rel="canonical" href="https://www.automicvault.com/av-trace/">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="av trace">
+  <meta property="og:description" content="Trace curl pipe shell installers before they touch disk. av trace summarizes downloads, writes, chmods, installs, and service changes.">
+  <meta property="og:url" content="https://www.automicvault.com/av-trace/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../seo.css?v=1">
+</head>
+<body>
+  <div class="seo-shell">
+    <header class="seo-masthead">
+      <a class="brand" href="../" aria-label="Automic Vault home">
+        <img class="brand-mark" src="../assets/icon@2x.webp" alt="" width="54" height="54" aria-hidden="true">
+        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+      </a>
+      <nav class="seo-nav" aria-label="Main navigation">
+        <a href="../docs/">Docs</a>
+        <a href="../secret-scanner-for-ai-agents/">Scan</a>
+        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="seo-hero">
+        <div>
+          <p class="kicker">Installer trace</p>
+          <h1>Trace shell installers before they touch disk</h1>
+          <p class="lede">Run <code>av trace</code> on a curl pipe shell one-liner to see the file-changing actions it is likely to perform: downloads, writes, chmods, installs, service changes, and generated executables.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
+            <a class="button" href="../secret-scanner-for-ai-agents/">Run the scanner <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <figure class="seo-visual">
+          <img src="../assets/vault-console.webp" alt="Automic Vault terminal showing installer trace output" width="820" height="1024">
+        </figure>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Curl pipe shell</p>
+          <h2>Explain the installer, not just the one-liner.</h2>
+          <p><code>curl URL | sh</code> hides the part that matters. <code>av trace</code> recognizes simple curl-to-shell commands, fetches the script for analysis, and asks a local Codex or Claude agent to summarize the consequential file changes.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Static analysis</span><h3>Do not run it</h3><p>The installer command is interpreted for trace output. The script is downloaded for inspection, not executed as an install.</p></article>
+          <article><span>File changes</span><h3>Keep the signal</h3><p>Trace output focuses on writes, deletes, moves, permissions, installs, service files, and generated executables.</p></article>
+          <article><span>Network context</span><h3>Show the fetch</h3><p>Network calls stay in the summary when they explain a file-changing step, such as downloading a DMG, script, archive, or package payload.</p></article>
+          <article><span>Agent isolation</span><h3>Constrain the tracer</h3><p>The local trace agent runs through a sandboxed path so analysis has runtime scratch space without installer write access.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Readable output</p>
+          <h2>Turn install scripts into reviewable steps.</h2>
+        </div>
+        <div class="compare-table">
+          <article><span>Input</span><p><code>av trace 'curl https://example.com/install.sh | sh'</code></p></article>
+          <article><span>Output</span><p>Concise numbered steps such as downloading and mounting a DMG, installing into <code>/Applications</code>, or writing a launcher under <code>~/.local/bin</code>.</p></article>
+          <article><span>Automation</span><p>Use <code>--json</code> when another tool needs the traced command, selected agent, operation type, path, and related network URL.</p></article>
+        </div>
+      </section>
+      <section class="seo-section">
+        <div class="section-heading">
+          <p class="kicker">Related protections</p>
+          <h2>Trace first. Then control execution.</h2>
+        </div>
+        <div class="link-grid">
+          <a href="../secret-scanner-for-ai-agents/"><span>Scan</span><strong>AI agent secret scanner</strong><p>Find plaintext credentials before an agent run starts.</p></a>
+          <a href="../ai-agent-approval-gates/"><span>Approve</span><strong>AI agent approval gates</strong><p>Put a human checkpoint where commands actually execute.</p></a>
+          <a href="../secrets-manager-for-ai-agents/"><span>Secrets</span><strong>Secrets manager for AI agents</strong><p>Keep values out of files and inject them only at execution time.</p></a>
+        </div>
+      </section>
+    </main>
+    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+  </div>
+</body>
+</html>
