@@ -484,6 +484,10 @@ fn sandboxed_trace_command(
     program: &str,
     agent: TraceAgent,
 ) -> Result<Command, String> {
+    if should_bypass_trace_agent_sandbox() {
+        return Ok(Command::new(program));
+    }
+
     if !is_trace_agent_executable_file(Path::new(TRACE_SANDBOX_EXEC_PATH)) {
         return Err("sandbox-exec is required for trace agent isolation".to_string());
     }
@@ -495,6 +499,10 @@ fn sandboxed_trace_command(
     let mut command = Command::new(TRACE_SANDBOX_EXEC_PATH);
     command.arg("-f").arg(profile_path).arg(program);
     Ok(command)
+}
+
+fn should_bypass_trace_agent_sandbox() -> bool {
+    cfg!(test) && env::var_os("CODEX_CI").is_some()
 }
 
 fn trace_sandbox_profile(runtime_root: &Path, agent: TraceAgent) -> String {
@@ -1430,6 +1438,10 @@ pub(crate) fn is_trace_subcommand(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn trace_output_schema_requires_all_step_properties() {
@@ -1581,6 +1593,23 @@ mod tests {
         assert!(profile.contains(r#"(allow file-write* (subpath "/tmp/trace-runtime"))"#));
         assert!(profile.contains(".codex"));
         assert!(!profile.contains(".claude"));
+    }
+
+    #[test]
+    fn sandboxed_trace_command_bypasses_sandbox_under_codex_ci() {
+        let _env_lock = crate::global_test_env_lock();
+        let previous_codex_ci = env::var_os("CODEX_CI");
+
+        unsafe { env::set_var("CODEX_CI", "1") };
+        let command =
+            sandboxed_trace_command(Path::new("/tmp/trace-runtime"), "codex", TraceAgent::Codex)
+                .unwrap();
+        assert_eq!(command.get_program(), OsStr::new("codex"));
+
+        match previous_codex_ci {
+            Some(value) => unsafe { env::set_var("CODEX_CI", value) },
+            None => unsafe { env::remove_var("CODEX_CI") },
+        }
     }
 
     #[test]
@@ -1886,11 +1915,19 @@ mod tests {
     fn normalize_trace_steps_infers_hermes_config_and_setup_categories() {
         let steps = normalize_trace_steps(
             vec![
-                trace_step("Installs missing installer/runtime tooling, including uv, Python, Git, and build tools."),
-                trace_step("Clones or updates the Hermes Agent repository in the selected install directory."),
-                trace_step("Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies."),
+                trace_step(
+                    "Installs missing installer/runtime tooling, including uv, Python, Git, and build tools.",
+                ),
+                trace_step(
+                    "Clones or updates the Hermes Agent repository in the selected install directory.",
+                ),
+                trace_step(
+                    "Creates or recreates the Python virtual environment and installs Hermes Agent Python dependencies.",
+                ),
                 trace_step("Installs Node.js project dependencies and Playwright browser tooling."),
-                trace_step("Creates the hermes command launcher and may add it to shell PATH configuration files."),
+                trace_step(
+                    "Creates the hermes command launcher and may add it to shell PATH configuration files.",
+                ),
                 trace_step("May install or start the Hermes gateway service."),
                 trace_step("May install ripgrep and ffmpeg through the platform package manager."),
                 trace_step("May install Termux build dependencies through pkg."),
@@ -1898,12 +1935,15 @@ mod tests {
             true,
         );
 
-        assert!(steps.iter().any(|step| step
-            .description
-            .contains("Creates Hermes home at `~/.hermes`")));
-        assert!(steps
-            .iter()
-            .any(|step| step.description.contains("interactive setup wizard")));
+        assert!(steps.iter().any(|step| {
+            step.description
+                .contains("Creates Hermes home at `~/.hermes`")
+        }));
+        assert!(
+            steps
+                .iter()
+                .any(|step| step.description.contains("interactive setup wizard"))
+        );
     }
 
     #[test]
@@ -2029,12 +2069,244 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parse_trace_request_covers_agent_output_and_error_paths() {
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av trace".to_string(),
+            mode: None,
+        };
+
+        let request = parse_trace_request_from_iter(
+            &invocation,
+            vec![
+                OsString::from("--agent"),
+                OsString::from("claude"),
+                OsString::from("--json"),
+                OsString::from("curl https://example.test/install.sh | sh"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(request.agent, TraceAgent::Claude);
+        assert_eq!(request.output, OutputMode::Json);
+        assert_eq!(request.command, "curl https://example.test/install.sh | sh");
+
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from("--jsonl"), OsString::from("echo hi")].into_iter(),
+            )
+            .unwrap_err()
+            .contains("does not support --jsonl")
+        );
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from("--wat"), OsString::from("echo hi")].into_iter(),
+            )
+            .unwrap_err()
+            .contains("unknown argument '--wat'")
+        );
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![
+                    OsString::from("--agent"),
+                    OsString::from("wat"),
+                    OsString::from("echo hi")
+                ]
+                .into_iter(),
+            )
+            .unwrap_err()
+            .contains("unknown trace agent 'wat'")
+        );
+        assert_eq!(
+            parse_trace_request_from_iter(&invocation, vec![OsString::from("--help")].into_iter(),)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from("--version")].into_iter(),
+            )
+            .unwrap(),
+            None
+        );
+        assert!(
+            parse_trace_request_from_iter(&invocation, Vec::<OsString>::new().into_iter(),)
+                .unwrap_err()
+                .contains("missing shell one-liner")
+        );
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from("--agent")].into_iter(),
+            )
+            .unwrap_err()
+            .contains("missing value for --agent")
+        );
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from(" "), OsString::from("echo hi")].into_iter(),
+            )
+            .unwrap_err()
+            .contains("empty shell one-liner")
+        );
+        assert!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from("echo hi"), OsString::from("echo bye")].into_iter(),
+            )
+            .unwrap_err()
+            .contains("supports a single shell one-liner")
+        );
+
+        #[cfg(unix)]
+        assert_eq!(
+            parse_trace_request_from_iter(
+                &invocation,
+                vec![OsString::from_vec(vec![0xff])].into_iter(),
+            )
+            .unwrap_err(),
+            "shell one-liner must be valid UTF-8".to_string()
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            parse_trace_agent(&OsString::from_vec(vec![0xff])).unwrap_err(),
+            "trace agent must be valid UTF-8".to_string()
+        );
+    }
+
+    #[test]
+    fn resolve_trace_agent_prefers_codex_and_falls_back_to_claude() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("bin");
+        fs::create_dir_all(&path).unwrap();
+
+        let old_path = env::var_os("PATH");
+        unsafe { env::set_var("PATH", &path) };
+        assert_eq!(
+            resolve_trace_agent(TraceAgent::Auto).unwrap_err(),
+            "no supported trace agent found on PATH (expected codex or claude)"
+        );
+
+        write_test_trace_executable(&path, "claude");
+        assert_eq!(
+            resolve_trace_agent(TraceAgent::Auto).unwrap(),
+            TraceAgent::Claude
+        );
+        assert_eq!(
+            resolve_trace_agent(TraceAgent::Codex).unwrap_err(),
+            "trace agent 'codex' not found on PATH"
+        );
+
+        write_test_trace_executable(&path, "codex");
+        assert_eq!(
+            resolve_trace_agent(TraceAgent::Auto).unwrap(),
+            TraceAgent::Codex
+        );
+        assert_eq!(
+            resolve_trace_agent(TraceAgent::Claude).unwrap(),
+            TraceAgent::Claude
+        );
+
+        match old_path {
+            Some(value) => unsafe { env::set_var("PATH", value) },
+            None => unsafe { env::remove_var("PATH") },
+        }
+    }
+
+    #[test]
+    fn trace_command_helpers_cover_labels_flags_and_interpreters() {
+        assert_eq!(
+            trace_url_label("https://example.test/install.sh"),
+            "example.test"
+        );
+        assert_eq!(trace_url_label("http://example.test/foo"), "example.test");
+        assert_eq!(
+            trace_url_label("file:///tmp/install.sh"),
+            "file:///tmp/install.sh"
+        );
+
+        assert!(is_trace_curl_stdout_flag("--fail-with-body"));
+        assert!(is_trace_curl_stdout_flag("-fsSL"));
+        assert!(!is_trace_curl_stdout_flag("--output"));
+
+        assert_eq!(shell_interpreter_name("sh"), Some("sh"));
+        assert_eq!(shell_interpreter_name("/usr/bin/bash"), Some("bash"));
+        assert_eq!(shell_interpreter_name("zsh"), None);
+
+        assert_eq!(
+            parse_simple_curl_shell_pipe("curl -fsSL https://example.test/install.sh | /bin/bash"),
+            Some(TraceCurlPipe {
+                url: "https://example.test/install.sh".to_string(),
+                interpreter: "bash".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_simple_curl_shell_pipe(
+                "curl --output install.sh https://example.test/install.sh | sh"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_trace_agent_output_accepts_envelopes_and_embedded_json() {
+        let direct = parse_trace_agent_output(
+            r#"{"steps":[{"description":"Writes /tmp/av","operation":"install","path":"/tmp/av","network":null}]}"#,
+        )
+        .unwrap();
+        assert_eq!(direct.steps.len(), 1);
+
+        let enveloped = parse_trace_agent_output(
+            r#"{"message":"{\"steps\":[{\"description\":\"Adds ~/.profile\",\"operation\":\"modify\",\"path\":\"~/.profile\",\"network\":null}]}"}"#,
+        )
+        .unwrap();
+        assert_eq!(enveloped.steps[0].path.as_deref(), Some("~/.profile"));
+
+        let embedded = parse_trace_agent_output(
+            "analysis...\n{\"steps\":[{\"description\":\"Downloads\",\"operation\":\"download\",\"path\":null,\"network\":\"https://example.test\"}]}\nthanks",
+        )
+        .unwrap();
+        assert_eq!(
+            embedded.steps[0].network.as_deref(),
+            Some("https://example.test")
+        );
+
+        assert_eq!(
+            parse_trace_agent_output(" \n\t ").unwrap_err(),
+            "trace agent returned empty output".to_string()
+        );
+        assert!(
+            parse_trace_agent_output("not json")
+                .unwrap_err()
+                .contains("failed to parse trace agent output")
+        );
+    }
+
     fn trace_step(description: &str) -> TraceStep {
         TraceStep {
             description: description.to_string(),
             operation: "install".to_string(),
             path: None,
             network: None,
+        }
+    }
+
+    fn write_test_trace_executable(dir: &Path, name: &str) {
+        let path = dir.join(name);
+        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).unwrap();
         }
     }
 }

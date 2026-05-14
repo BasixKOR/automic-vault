@@ -1782,6 +1782,109 @@ mod tests {
     }
 
     #[test]
+    fn compare_version_suffixes_covers_numeric_and_text_paths() {
+        assert_eq!(
+            compare_version_suffixes("3.14.1", "3.14.1"),
+            std::cmp::Ordering::Equal
+        );
+        assert_eq!(
+            compare_version_suffixes("3.14", "3.14.1"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_version_suffixes("3.14.1", "3.14"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_version_suffixes("3.14_a", "3.14_b"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_version_suffixes("3.14.beta", "3.14.1"),
+            "3.14.beta".cmp("3.14.1")
+        );
+    }
+
+    #[test]
+    fn homebrew_package_root_checks_cover_missing_hidden_and_present_dirs() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("missing");
+        assert!(!homebrew_package_root_has_packages(&missing).unwrap());
+
+        let hidden_only = temp.path().join("hidden-only");
+        fs::create_dir_all(hidden_only.join(".cache")).unwrap();
+        fs::write(hidden_only.join("README.txt"), "note").unwrap();
+        assert!(!homebrew_package_root_has_packages(&hidden_only).unwrap());
+
+        let visible = temp.path().join("visible");
+        fs::create_dir_all(visible.join("rg")).unwrap();
+        assert!(homebrew_package_root_has_packages(&visible).unwrap());
+    }
+
+    #[test]
+    fn homebrew_migration_packages_skip_empty_tokens_and_unsupported_casks() {
+        let report: HomebrewInfoReport = serde_json::from_value(serde_json::json!({
+            "formulae": [
+                {
+                    "name": "dependency-only",
+                    "desc": "",
+                    "installed": [
+                        {
+                            "version": "1.0.0",
+                            "installed_on_request": false
+                        }
+                    ]
+                },
+                {
+                    "name": "uv",
+                    "full_name": "uv",
+                    "tap": "",
+                    "desc": "",
+                    "installed": [
+                        {
+                            "version": "",
+                            "installed_on_request": true
+                        }
+                    ]
+                }
+            ],
+            "casks": [
+                {
+                    "token": "",
+                    "desc": "Skipped empty token",
+                    "version": "1.0.0"
+                },
+                {
+                    "token": "unsupported-cask",
+                    "desc": "Unsupported cask",
+                    "version": "2.0.0"
+                },
+                {
+                    "token": "codex",
+                    "desc": "",
+                    "version": ""
+                }
+            ]
+        }))
+        .unwrap();
+
+        let packages = homebrew_migration_packages_from_report(report);
+        assert_eq!(packages.len(), 2);
+        assert!(packages.iter().any(|package| {
+            package.name == "brew:uv"
+                && package.version.is_none()
+                && package.description.is_none()
+                && package.tap.is_none()
+        }));
+        assert!(packages.iter().any(|package| {
+            package.name == "cask:codex"
+                && package.version.is_none()
+                && package.description.is_none()
+                && package.is_migratable
+        }));
+    }
+
+    #[test]
     fn isotope_always_allow_validation_rejects_bad_inputs() {
         assert!(
             validate_isotope_keys(&[])

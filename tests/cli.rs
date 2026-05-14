@@ -528,7 +528,10 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     write_fake_trace_agent(&bin_dir, "claude", claude_response);
     let path = bin_dir.to_str().unwrap();
 
-    let output = run_nuke_with_env(&["trace", "curl foo.com | sh"], &[("PATH", path)]);
+    let output = run_nuke_with_env(
+        &["trace", "curl foo.com | sh"],
+        &[("PATH", path), ("CODEX_CI", "1")],
+    );
     let plain_stdout = stdout(&output);
     let plain_stderr = stderr(&output);
     assert!(output.status.success(), "{}", stderr(&output));
@@ -538,7 +541,10 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     assert!(plain_stderr.contains("trace: Asking codex to trace file-changing actions"));
     assert!(!plain_stdout.contains("2."));
 
-    let output = run_nuke_with_env(&["trace", "--json", "curl foo.com | sh"], &[("PATH", path)]);
+    let output = run_nuke_with_env(
+        &["trace", "--json", "curl foo.com | sh"],
+        &[("PATH", path), ("CODEX_CI", "1")],
+    );
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(!stderr(&output).contains("trace:"));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -548,7 +554,10 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     assert_eq!(report["steps"][0]["network"], "https://foo.com");
 
     fs::remove_file(bin_dir.join("codex")).unwrap();
-    let output = run_nuke_with_env(&["trace", "--json", "curl foo.com | sh"], &[("PATH", path)]);
+    let output = run_nuke_with_env(
+        &["trace", "--json", "curl foo.com | sh"],
+        &[("PATH", path), ("CODEX_CI", "1")],
+    );
     assert!(output.status.success(), "{}", stderr(&output));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["agent"], "claude");

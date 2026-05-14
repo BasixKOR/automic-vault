@@ -29,16 +29,30 @@ def _npm_popularity(rank):
     }
 
 
-def _formula(summary, aliases=None, popularity_rank=None, last_updated_at=None):
+def _formula(
+    summary,
+    aliases=None,
+    popularity_rank=None,
+    popularity_installs=None,
+    last_updated_at=None,
+    pulse_kind=None,
+):
     formula = {
         "summary": summary,
         "aliases": aliases or [],
         "oldnames": [],
     }
-    if popularity_rank is not None:
+    if popularity_rank is not None and popularity_installs is not None:
+        formula["popularity"] = {
+            "installs_per_365_days": popularity_installs,
+            "rank": popularity_rank,
+        }
+    elif popularity_rank is not None:
         formula["popularity"] = _popularity(popularity_rank)
     if last_updated_at is not None:
         formula["last_updated_at"] = last_updated_at
+    if pulse_kind is not None:
+        formula["pulse_kind"] = pulse_kind
     return formula
 
 
@@ -104,6 +118,13 @@ def main():
                         popularity_rank=3,
                         last_updated_at="2026-05-03T00:00:00Z",
                     ),
+                    "portable-libffi": _formula(
+                        "Portable Foreign Function Interface library",
+                        popularity_rank=26875,
+                        popularity_installs=2,
+                        last_updated_at="2025-09-30T16:01:57+01:00",
+                        pulse_kind="new",
+                    ),
                     "ripgrep": _formula(
                         "Search tool",
                         aliases=["rg"],
@@ -119,6 +140,7 @@ def main():
                         "SQLite utility collection",
                         popularity_rank=5,
                         last_updated_at="2026-05-01T00:00:00Z",
+                        pulse_kind="new",
                     ),
                 },
                 "casks": {
