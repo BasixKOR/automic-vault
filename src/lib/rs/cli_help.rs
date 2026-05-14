@@ -69,6 +69,12 @@ pub(crate) fn print_secret_scanner_usage(program: &str) {
     println!("Scans isotope detectors and likely local secret files for plaintext credentials.");
 }
 
+pub(crate) fn print_trace_usage(program: &str) {
+    println!("Usage: {program} [--agent codex|claude] [--json] <shell-one-liner>");
+    println!();
+    println!("Asks a local agent to statically trace likely file-changing steps.");
+}
+
 pub(crate) fn print_serve_usage(program: &str) {
     println!("Usage: {program}");
     println!();
@@ -257,6 +263,11 @@ impl<'a> HelpScreen<'a> {
                 "contain",
                 None,
                 "Run agents with approval gates for all commands.",
+            ),
+            command_line(
+                "trace",
+                None,
+                "Explain likely file-changing steps without running a command.",
             ),
             command_line("gate", None, "Block until a manual approval is decided."),
             HelpLine::plain(""),

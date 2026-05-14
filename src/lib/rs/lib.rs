@@ -47,6 +47,7 @@ mod cli;
 mod info;
 mod install;
 mod isotope;
+mod trace;
 mod isotope_integrations {
     include!(concat!(env!("OUT_DIR"), "/isotope_integrations.rs"));
 }
@@ -72,6 +73,7 @@ pub use ops::{
     check_for_updates, execute_helper_command, verify_helper_codesign_identity,
 };
 pub(crate) use stubs::*;
+pub(crate) use trace::*;
 pub use vault::vault_main_entry;
 pub use vault::{
     ExecutionIntent, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
@@ -825,6 +827,42 @@ struct SearchRequest {
 struct SecretScannerRequest {
     path: Option<PathBuf>,
     output: OutputMode,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TraceRequest {
+    command: String,
+    agent: TraceAgent,
+    output: OutputMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TraceAgent {
+    Auto,
+    Codex,
+    Claude,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct TraceReport {
+    command: String,
+    agent: String,
+    steps: Vec<TraceStep>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+struct TraceStep {
+    description: String,
+    operation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    network: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TraceAgentOutput {
+    steps: Vec<TraceStep>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

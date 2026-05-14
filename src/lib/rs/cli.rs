@@ -345,6 +345,9 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                 Some(subcommand) if is_secret_scanner_subcommand(subcommand) => {
                     print_secret_scanner_usage(&format!("{} scan", invocation.binary_name));
                 }
+                Some(subcommand) if is_trace_subcommand(subcommand) => {
+                    print_trace_usage(&format!("{} trace", invocation.binary_name));
+                }
                 Some(subcommand) if is_serve_subcommand(subcommand) => {
                     print_serve_usage(&format!("{} {}", invocation.binary_name, subcommand));
                 }
@@ -447,6 +450,16 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
             &Invocation {
                 binary_name: invocation.binary_name.clone(),
                 name: format!("{} scan", invocation.binary_name),
+                mode: None,
+            },
+            args,
+        );
+    }
+    if is_trace_subcommand(subcommand) {
+        return run_trace(
+            &Invocation {
+                binary_name: invocation.binary_name.clone(),
+                name: format!("{} trace", invocation.binary_name),
                 mode: None,
             },
             args,

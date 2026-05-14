@@ -3,6 +3,8 @@ use std::{fs, path::PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStringExt;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 fn pkg_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -41,6 +43,19 @@ fn run_nuke_with_forced_color(args: &[&str], columns: &str) -> Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn write_fake_trace_agent(bin_dir: &std::path::Path, name: &str, response: &str) {
+    fs::create_dir_all(bin_dir).unwrap();
+    let path = bin_dir.join(name);
+    fs::write(
+        &path,
+        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).unwrap();
 }
 
 fn stdout(output: &Output) -> String {
@@ -110,6 +125,7 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(stdout(&output).contains("install (i)"));
     assert!(stdout(&output).contains("list (ls)"));
     assert!(stdout(&output).contains("scan"));
+    assert!(stdout(&output).contains("trace"));
     assert!(!stdout(&output).contains("secret-scanner"));
     assert!(stdout(&output).contains("─"));
     assert!(stdout(&output).contains("LEGEND"));
@@ -161,6 +177,10 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     let output = run_nuke(&["help", "scan"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av scan"));
+
+    let output = run_nuke(&["help", "trace"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av trace"));
 
     let output = run_nuke(&["help", "secret-scanner"]);
     assert!(output.status.success());
@@ -259,6 +279,12 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
             vec!["secret-scanner", "--version"],
             true,
             format!("av scan {version}"),
+        ),
+        (vec!["trace", "--help"], true, "Usage: av trace".to_string()),
+        (
+            vec!["trace", "--version"],
+            true,
+            format!("av trace {version}"),
         ),
         (vec!["info", "--help"], true, "Usage: av info".to_string()),
         (
@@ -472,6 +498,57 @@ fn subs_query_commands_cover_success_and_output_modes() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(rich_stdout.contains("╭─ Automic Vault Scan"));
     assert!(rich_stdout.contains("\x1b["));
+    fs::remove_dir_all(temp).unwrap();
+}
+
+#[test]
+fn subs_trace_command_covers_agent_selection_and_outputs() {
+    let temp = std::env::temp_dir().join(format!("av-trace-cli-{}", std::process::id()));
+    if temp.exists() {
+        fs::remove_dir_all(&temp).unwrap();
+    }
+    let bin_dir = temp.join("bin");
+    let codex_response = r#"{"steps":[{"description":"Downloads the installer from https://foo.com and writes /usr/local/bin/foo with executable permissions.","operation":"install","path":"/usr/local/bin/foo","network":"https://foo.com"}]}"#;
+    let claude_response = r#"{"steps":[{"description":"Appends downloaded shell output to ~/.profile.","operation":"append","path":"~/.profile","network":"https://foo.com"}]}"#;
+    write_fake_trace_agent(&bin_dir, "codex", codex_response);
+    write_fake_trace_agent(&bin_dir, "claude", claude_response);
+    let path = bin_dir.to_str().unwrap();
+
+    let output = run_nuke_with_env(&["trace", "curl foo.com | sh"], &[("PATH", path)]);
+    let plain_stdout = stdout(&output);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(plain_stdout.contains(
+        "1. Downloads the installer from https://foo.com and writes /usr/local/bin/foo with executable permissions."
+    ));
+    assert!(!plain_stdout.contains("2."));
+
+    let output = run_nuke_with_env(&["trace", "--json", "curl foo.com | sh"], &[("PATH", path)]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["command"], "curl foo.com | sh");
+    assert_eq!(report["agent"], "codex");
+    assert_eq!(report["steps"][0]["operation"], "install");
+    assert_eq!(report["steps"][0]["network"], "https://foo.com");
+
+    fs::remove_file(bin_dir.join("codex")).unwrap();
+    let output = run_nuke_with_env(&["trace", "--json", "curl foo.com | sh"], &[("PATH", path)]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["agent"], "claude");
+    assert_eq!(report["steps"][0]["path"], "~/.profile");
+
+    let output = run_nuke_with_env(
+        &["trace", "--agent", "wat", "curl foo.com | sh"],
+        &[("PATH", path)],
+    );
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown trace agent 'wat'"));
+
+    let output = run_nuke_with_env(&["trace"], &[("PATH", path)]);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("Usage: av trace"));
+    assert!(stderr(&output).contains("missing shell one-liner"));
+
     fs::remove_dir_all(temp).unwrap();
 }
 
