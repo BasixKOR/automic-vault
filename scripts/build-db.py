@@ -38,6 +38,7 @@ NPM_DOWNLOADS_POINT_ROOT = "https://api.npmjs.org/downloads/point/last-month"
 NPM_MIN_MONTHLY_DOWNLOADS = 50_000
 NPM_SEARCH_PAGE_SIZE = 250
 NPM_SEARCH_MAX_PAGES = 4
+PULSE_NEW_WINDOW_DAYS = 7
 NPM_CHANGES_LIMIT = 5000
 NPM_INDEX_STATE_PATH = os.path.join(CACHE_DIR, NPM_ECOSYSTEM, "index.json")
 NPM_SEARCH_QUERIES = (
@@ -397,6 +398,16 @@ def _git_pulse_events(repo, keyed_paths, scope):
 
     repo_path = _ensure_git_repo(repo)
     revision = _git_default_revision(repo_path)
+    new_cutoff = datetime.datetime.now(
+        datetime.timezone.utc
+    ) - datetime.timedelta(days=PULSE_NEW_WINDOW_DAYS)
+    recent_additions = _git_recent_additions(
+        repo_path,
+        revision,
+        keyed_paths,
+        scope,
+        new_cutoff,
+    )
     pending = set(keyed_paths.keys())
     events = {}
     current_date = None
@@ -430,13 +441,13 @@ def _git_pulse_events(repo, keyed_paths, scope):
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
-            status = parts[0]
             path = parts[-1]
             if path not in pending:
                 continue
-            events[keyed_paths[path]] = {
+            key = keyed_paths[path]
+            events[key] = {
                 "last_updated_at": current_date,
-                "pulse_kind": "new" if status.startswith("A") else "updated",
+                "pulse_kind": "new" if key in recent_additions else "updated",
             }
             pending.remove(path)
             if len(events) % 100 == 0:
@@ -453,6 +464,52 @@ def _git_pulse_events(repo, keyed_paths, scope):
             message = stderr.strip() or stdout.strip() or f"git log failed for {repo}"
             raise RuntimeError(message)
     return events
+
+
+def _git_recent_additions(repo_path, revision, keyed_paths, scope, cutoff):
+    pending = set(keyed_paths.keys())
+    additions = set()
+    command = [
+        "git",
+        "-C",
+        repo_path,
+        "log",
+        revision,
+        f"--since={cutoff.isoformat()}",
+        "--format=__DATE__%cI",
+        "--name-status",
+        "--diff-filter=A",
+        "--",
+        scope,
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        for raw_line in process.stdout:
+            line = raw_line.rstrip("\n")
+            if not line or line.startswith("__DATE__"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            path = parts[-1]
+            if path not in pending:
+                continue
+            additions.add(keyed_paths[path])
+            pending.remove(path)
+            if not pending:
+                process.terminate()
+                break
+    finally:
+        stdout, stderr = process.communicate()
+        if process.returncode not in (0, -15):
+            message = stderr.strip() or stdout.strip() or f"git log failed for {repo_path}"
+            raise RuntimeError(message)
+    return additions
 
 
 def _parse_binary_artifact(artifact):

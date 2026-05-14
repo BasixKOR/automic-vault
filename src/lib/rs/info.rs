@@ -606,25 +606,40 @@ pub(crate) fn resolve_pulse_package_results(
     }));
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
-    results.sort_by(|left, right| {
-        match (
-            left.last_updated_at
-                .as_deref()
-                .and_then(parse_embedded_package_timestamp),
-            right
-                .last_updated_at
-                .as_deref()
-                .and_then(parse_embedded_package_timestamp),
-        ) {
-            (Some(left_time), Some(right_time)) => right_time
-                .cmp(&left_time)
-                .then_with(|| left.package_name.cmp(&right.package_name)),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => left.package_name.cmp(&right.package_name),
-        }
-    });
+    results.sort_by(compare_pulse_package_results);
     Ok(results)
+}
+
+fn compare_pulse_package_results(
+    left: &PackageSearchResult,
+    right: &PackageSearchResult,
+) -> std::cmp::Ordering {
+    pulse_kind_sort_key(left)
+        .cmp(&pulse_kind_sort_key(right))
+        .then_with(|| {
+            match (
+                left.last_updated_at
+                    .as_deref()
+                    .and_then(parse_embedded_package_timestamp),
+                right
+                    .last_updated_at
+                    .as_deref()
+                    .and_then(parse_embedded_package_timestamp),
+            ) {
+                (Some(left_time), Some(right_time)) => right_time.cmp(&left_time),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        })
+        .then_with(|| left.package_name.cmp(&right.package_name))
+}
+
+fn pulse_kind_sort_key(package: &PackageSearchResult) -> u8 {
+    match package.pulse_kind.as_deref() {
+        Some(kind) if kind.eq_ignore_ascii_case("new") => 0,
+        _ => 1,
+    }
 }
 
 fn parse_embedded_package_timestamp(value: &str) -> Option<OffsetDateTime> {

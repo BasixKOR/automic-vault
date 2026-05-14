@@ -13575,20 +13575,33 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 metadata.last_updated_at.and_then(|last_updated_at| {
                     OffsetDateTime::parse(&last_updated_at, &Rfc3339)
                         .ok()
-                        .map(|parsed| (parsed, name))
+                        .map(|parsed| (metadata.pulse_kind, parsed, name))
                 })
             })
             .chain(db.casks.into_iter().filter_map(|(name, metadata)| {
                 metadata.last_updated_at.and_then(|last_updated_at| {
                     OffsetDateTime::parse(&last_updated_at, &Rfc3339)
                         .ok()
-                        .map(|parsed| (parsed, name))
+                        .map(|parsed| (metadata.pulse_kind, parsed, name))
                 })
             }))
             .collect::<Vec<_>>();
-        recent.sort_by(|left, right| left.1.cmp(&right.1));
-        recent.dedup_by(|left, right| left.1 == right.1);
-        recent.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        recent.sort_by(|left, right| left.2.cmp(&right.2));
+        recent.dedup_by(|left, right| left.2 == right.2);
+        recent.sort_by(|left, right| {
+            let left_pulse_key = match left.0.as_deref() {
+                Some(kind) if kind.eq_ignore_ascii_case("new") => 0,
+                _ => 1,
+            };
+            let right_pulse_key = match right.0.as_deref() {
+                Some(kind) if kind.eq_ignore_ascii_case("new") => 0,
+                _ => 1,
+            };
+            left_pulse_key
+                .cmp(&right_pulse_key)
+                .then_with(|| right.1.cmp(&left.1))
+                .then_with(|| left.2.cmp(&right.2))
+        });
         assert!(
             recent.len() >= 2,
             "embedded db should carry recent packages"
@@ -13601,7 +13614,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             ops::list_pulse_packages(0, 0).unwrap().total_count
         );
         assert_eq!(first_page.next_offset, Some(1));
-        assert_eq!(first_page.packages[0].name, recent[0].1);
+        assert_eq!(first_page.packages[0].name, recent[0].2);
         assert!(matches!(
             first_page.packages[0].pulse_kind.as_deref(),
             Some("new" | "updated")
@@ -13610,7 +13623,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         let second_page = ops::list_pulse_packages(1, 1).unwrap();
         assert_eq!(second_page.packages.len(), 1);
         assert_eq!(second_page.total_count, first_page.total_count);
-        assert_eq!(second_page.packages[0].name, recent[1].1);
+        assert_eq!(second_page.packages[0].name, recent[1].2);
     }
 
     #[test]

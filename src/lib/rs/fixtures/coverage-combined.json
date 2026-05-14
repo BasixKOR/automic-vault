@@ -114,6 +114,7 @@
             "installs_per_365_days": 995,
             "rank": 5
           },
+          "pulse_kind": "new",
           "summary": "SQLite utility collection"
         }
       },
