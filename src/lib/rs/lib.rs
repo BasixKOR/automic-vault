@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{self, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -1097,7 +1097,8 @@ struct InstallProgress {
     package_name: String,
     bytes_downloaded: Arc<Mutex<u64>>,
     total_bytes: Arc<Mutex<Option<u64>>>,
-    download_started_at: Arc<Mutex<Option<std::time::Instant>>>,
+    download_started_at: Arc<Mutex<Option<Instant>>>,
+    package_downloads: Arc<Mutex<HashMap<String, PackageDownloadProgress>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1109,6 +1110,23 @@ enum InstallProgressPhase {
 #[derive(Debug)]
 struct InstallProgressState {
     phase: InstallProgressPhase,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PackageDownloadProgress {
+    bytes_downloaded: u64,
+    total_bytes: Option<u64>,
+    started_at: Option<Instant>,
+}
+
+impl PackageDownloadProgress {
+    fn started() -> Self {
+        Self {
+            bytes_downloaded: 0,
+            total_bytes: None,
+            started_at: Some(Instant::now()),
+        }
+    }
 }
 
 struct LoggedCommandOutput {
@@ -1387,6 +1405,7 @@ impl InstallProgress {
                 bytes_downloaded: Arc::new(Mutex::new(0)),
                 total_bytes: Arc::new(Mutex::new(None)),
                 download_started_at: Arc::new(Mutex::new(None)),
+                package_downloads: Arc::new(Mutex::new(HashMap::new())),
             };
         }
 
@@ -1401,6 +1420,7 @@ impl InstallProgress {
             bytes_downloaded: Arc::new(Mutex::new(0)),
             total_bytes: Arc::new(Mutex::new(None)),
             download_started_at: Arc::new(Mutex::new(None)),
+            package_downloads: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -1410,7 +1430,8 @@ impl InstallProgress {
         drop(state);
         *self.bytes_downloaded.lock().unwrap() = 0;
         *self.total_bytes.lock().unwrap() = None;
-        *self.download_started_at.lock().unwrap() = Some(std::time::Instant::now());
+        *self.download_started_at.lock().unwrap() = Some(Instant::now());
+        self.package_downloads.lock().unwrap().clear();
         if let Some(bar) = &self.bar {
             bar.set_style(download_progress_style());
             bar.set_position(0);
@@ -1421,20 +1442,47 @@ impl InstallProgress {
     }
 
     fn add_download_total(&self, total: Option<u64>) {
+        self.add_download_total_for(&self.package_name, total);
+    }
+
+    fn add_download_total_for(&self, package: &str, total: Option<u64>) {
         let Some(total) = total else {
             return;
         };
         if total == 0 {
             return;
         }
-        *self.total_bytes.lock().unwrap() = Some(total);
+        {
+            let mut total_bytes = self.total_bytes.lock().unwrap();
+            *total_bytes = Some(total_bytes.unwrap_or(0) + total);
+        }
+        {
+            let mut package_downloads = self.package_downloads.lock().unwrap();
+            let state = package_downloads
+                .entry(package.to_string())
+                .or_insert_with(PackageDownloadProgress::started);
+            state.total_bytes = Some(state.total_bytes.unwrap_or(0) + total);
+        }
         if let Some(bar) = &self.bar {
             bar.inc_length(total);
         }
-        self.emit_downloading();
+        self.emit_downloading_for(package);
     }
 
     fn advance_download(&self, amount: u64) {
+        self.advance_download_for(&self.package_name, amount);
+    }
+
+    fn begin_download_for(&self, package: &str) {
+        let mut package_downloads = self.package_downloads.lock().unwrap();
+        package_downloads
+            .entry(package.to_string())
+            .or_insert_with(PackageDownloadProgress::started);
+        drop(package_downloads);
+        self.emit_downloading_for(package);
+    }
+
+    fn advance_download_for(&self, package: &str, amount: u64) {
         if amount == 0 {
             return;
         }
@@ -1442,7 +1490,14 @@ impl InstallProgress {
             let mut bytes_downloaded = self.bytes_downloaded.lock().unwrap();
             *bytes_downloaded += amount;
         }
-        self.emit_downloading();
+        {
+            let mut package_downloads = self.package_downloads.lock().unwrap();
+            let state = package_downloads
+                .entry(package.to_string())
+                .or_insert_with(PackageDownloadProgress::started);
+            state.bytes_downloaded += amount;
+        }
+        self.emit_downloading_for(package);
         if !self.enabled {
             return;
         }
@@ -1452,18 +1507,25 @@ impl InstallProgress {
     }
 
     fn begin_install_phase(&self) {
+        self.begin_install_phase_for(&self.package_name);
+    }
+
+    fn begin_install_phase_for(&self, package: &str) {
         let mut state = self.state.lock().unwrap();
-        if state.phase == InstallProgressPhase::Install {
+        let already_installing = state.phase == InstallProgressPhase::Install;
+        if !already_installing {
+            state.phase = InstallProgressPhase::Install;
+        }
+        drop(state);
+        if already_installing && package == self.package_name {
             return;
         }
-        state.phase = InstallProgressPhase::Install;
-        drop(state);
         if let Some(bar) = &self.bar {
             bar.set_style(install_progress_style());
             bar.set_message("staging files".to_string());
         }
         self.emit(ProgressEvent::Installing {
-            package: self.package_name.clone(),
+            package: package.to_string(),
         });
     }
 
@@ -1501,7 +1563,30 @@ impl InstallProgress {
         }
     }
 
-    fn emit_downloading(&self) {
+    fn emit_downloading_for(&self, package: &str) {
+        if let Some(package_state) = self.package_downloads.lock().unwrap().get(package).copied() {
+            let progress = package_state
+                .total_bytes
+                .filter(|total| *total > 0)
+                .map(|total| package_state.bytes_downloaded as f32 / total as f32)
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
+            let bytes_per_sec = package_state
+                .started_at
+                .map(|started| started.elapsed())
+                .filter(|elapsed| elapsed.as_secs_f32() > 0.0)
+                .map(|elapsed| {
+                    (package_state.bytes_downloaded as f32 / elapsed.as_secs_f32()) as u64
+                })
+                .unwrap_or(0);
+            self.emit(ProgressEvent::Downloading {
+                package: package.to_string(),
+                bytes_per_sec,
+                progress,
+            });
+            return;
+        }
+
         let bytes_downloaded = *self.bytes_downloaded.lock().unwrap();
         let total_bytes = *self.total_bytes.lock().unwrap();
         let started_at = *self.download_started_at.lock().unwrap();
@@ -1516,7 +1601,7 @@ impl InstallProgress {
             .map(|elapsed| (bytes_downloaded as f32 / elapsed.as_secs_f32()) as u64)
             .unwrap_or(0);
         self.emit(ProgressEvent::Downloading {
-            package: self.package_name.clone(),
+            package: package.to_string(),
             bytes_per_sec,
             progress,
         });
@@ -5206,6 +5291,9 @@ fn download_bottle(
     destination: &Path,
     progress: Option<&InstallProgress>,
 ) -> Result<(), String> {
+    if let Some(progress) = progress {
+        progress.begin_download_for(&spec.name);
+    }
     let mut request = ureq::get(&spec.bottle_url).set("User-Agent", USER_AGENT);
     if let Some(repo) = ghcr_repo_from_blob_url(&spec.bottle_url) {
         let token = ghcr_bearer_token(repo)?;
@@ -5220,7 +5308,8 @@ fn download_bottle(
         }
     })?;
     if let Some(progress) = progress {
-        progress.add_download_total(
+        progress.add_download_total_for(
+            &spec.name,
             response
                 .header("Content-Length")
                 .and_then(|value| value.parse::<u64>().ok()),
@@ -5242,7 +5331,7 @@ fn download_bottle(
         file.write_all(&buffer[..count])
             .map_err(|err| format!("failed to write {}: {err}", destination.display()))?;
         if let Some(progress) = progress {
-            progress.advance_download(count as u64);
+            progress.advance_download_for(&spec.name, count as u64);
         }
         hasher.update(&buffer[..count]);
     }
@@ -5519,7 +5608,7 @@ fn install_formula(
     progress: Option<&InstallProgress>,
 ) -> Result<(), String> {
     if let Some(progress) = progress {
-        progress.begin_install_phase();
+        progress.begin_install_phase_for(&install.spec.name);
     }
     let tmp_root = TempDir::new_in(&plan.tmp_root)
         .map_err(|err| format!("failed to create tmp dir for {}: {err}", install.spec.name))?;
@@ -9534,6 +9623,52 @@ or `npm:clawhub` for the aliased package"
                 .iter()
                 .any(|progress| (*progress - 0.50).abs() < f32::EPSILON),
             "expected 50% download progress, got {download_progress:?}"
+        );
+    }
+
+    #[test]
+    fn install_progress_tracks_transitive_downloads_individually() {
+        let events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+        let progress = InstallProgress::with_callback("brew:yt-dlp", Some(callback));
+
+        progress.begin_download_phase();
+        progress.begin_download_for("yt-dlp");
+        progress.add_download_total_for("yt-dlp", Some(100));
+        progress.advance_download_for("yt-dlp", 100);
+        progress.begin_download_for("python@3.14");
+        progress.add_download_total_for("python@3.14", Some(300));
+        progress.advance_download_for("python@3.14", 150);
+
+        let download_events = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match event {
+                ProgressEvent::Downloading {
+                    package, progress, ..
+                } => Some((package.clone(), *progress)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            download_events
+                .iter()
+                .any(|(package, progress)| package == "yt-dlp"
+                    && (*progress - 1.0).abs() < f32::EPSILON),
+            "expected yt-dlp to reach 100%, got {download_events:?}"
+        );
+        assert!(
+            download_events
+                .iter()
+                .any(|(package, progress)| package == "python@3.14"
+                    && (*progress - 0.50).abs() < f32::EPSILON),
+            "expected python@3.14 to report 50%, got {download_events:?}"
         );
     }
 

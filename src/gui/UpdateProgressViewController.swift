@@ -572,7 +572,10 @@ final class UpdateProgressViewController: NSViewController {
                 )
             }
         case .downloading(let package, let bytesPerSecond, let progress):
-            let visiblePackage = visiblePackageName(forProgressPackage: package)
+            let visiblePackage = visiblePackageName(
+                forProgressPackage: package,
+                allowsNewProgressPackage: true
+            )
             let isVisiblePackage = visiblePackage != nil
             let rowPackage = visiblePackage ?? package
             let speedText = Self.format(speed: bytesPerSecond)
@@ -591,7 +594,10 @@ final class UpdateProgressViewController: NSViewController {
                 speed: speedText
             )
         case .installing(let package):
-            let visiblePackage = visiblePackageName(forProgressPackage: package)
+            let visiblePackage = visiblePackageName(
+                forProgressPackage: package,
+                allowsNewProgressPackage: true
+            )
             let isVisiblePackage = visiblePackage != nil
             let rowPackage = visiblePackage ?? package
             let state = packageStates[rowPackage] ?? packageStates[package] ?? PackageRuntimeState()
@@ -617,7 +623,10 @@ final class UpdateProgressViewController: NSViewController {
                 )
             }
         case .log(let package, let message):
-            _ = track(package)
+            _ = visiblePackageName(
+                forProgressPackage: package,
+                allowsNewProgressPackage: true
+            ).map(track)
             setOperation(Self.sentenceCase(message))
             appendLog("\(package): \(message)")
         case .completed(let package):
@@ -635,7 +644,7 @@ final class UpdateProgressViewController: NSViewController {
 
     func succeed(message: String, packages: [String]) {
         packages
-            .compactMap(visiblePackageName(forProgressPackage:))
+            .compactMap { visiblePackageName(forProgressPackage: $0) }
             .forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
         isTerminalState = true
         operationAnimator?.stop()
@@ -674,7 +683,10 @@ final class UpdateProgressViewController: NSViewController {
         return true
     }
 
-    private func visiblePackageName(forProgressPackage package: String) -> String? {
+    private func visiblePackageName(
+        forProgressPackage package: String,
+        allowsNewProgressPackage: Bool = false
+    ) -> String? {
         if acceptsNewVisiblePackages {
             visiblePackages.insert(package)
         }
@@ -686,6 +698,11 @@ final class UpdateProgressViewController: NSViewController {
             "cask:\(package)"
         ].filter { visiblePackages.contains($0) }
         guard qualifiedCandidates.count == 1 else {
+            if allowsNewProgressPackage {
+                visiblePackages.insert(package)
+                packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+                return package
+            }
             packageStates[package] = packageStates[package] ?? PackageRuntimeState()
             return nil
         }
