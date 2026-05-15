@@ -676,8 +676,20 @@ fn always_allows_usage(scope: &IsotopeAlwaysAllowScope, keys: &[String]) -> Resu
     Ok(store.always_allows_keys(scope, keys))
 }
 
+fn always_allows_usage_at_path(
+    path: &Path,
+    scope: &IsotopeAlwaysAllowScope,
+    keys: &[String],
+) -> Result<bool, String> {
+    let store = load_always_allow_store_at_path(path)?;
+    Ok(store.always_allows_keys(scope, keys))
+}
+
 fn load_always_allow_store() -> Result<IsotopeAlwaysAllowStore, String> {
-    let path = Path::new(ALWAYS_ALLOW_PATH);
+    load_always_allow_store_at_path(Path::new(ALWAYS_ALLOW_PATH))
+}
+
+fn load_always_allow_store_at_path(path: &Path) -> Result<IsotopeAlwaysAllowStore, String> {
     if !path.exists() {
         return Ok(IsotopeAlwaysAllowStore::default());
     }
@@ -1960,7 +1972,34 @@ mod tests {
                 .unwrap()
                 .ends_with("etc/profile")
         );
-        assert!(always_allows_usage(&scope, &["TOKEN".to_string()]).unwrap_or(false) == false);
+
+        let temp = tempfile::tempdir().unwrap();
+        let store_path = temp.path().join("always-allow.json");
+        fs::write(
+            &store_path,
+            serde_json::to_vec(&IsotopeAlwaysAllowStore {
+                entries: vec![IsotopeAlwaysAllowEntry {
+                    executable_path: "/bin/sh".to_string(),
+                    script_path: Some("/bin/sh".to_string()),
+                    keys: vec!["TOKEN".to_string()],
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(always_allows_usage_at_path(
+            &store_path,
+            &scope,
+            &["TOKEN".to_string()]
+        )
+        .unwrap());
+        assert!(
+            !always_allows_usage_at_path(&store_path, &scope, &["OTHER".to_string()]).unwrap()
+        );
+        assert_eq!(
+            load_always_allow_store_at_path(&temp.path().join("missing.json")).unwrap(),
+            IsotopeAlwaysAllowStore::default()
+        );
     }
 
     #[test]
