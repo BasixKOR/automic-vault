@@ -539,6 +539,9 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     let plain_stdout = stdout(&output);
     let plain_stderr = stderr(&output);
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(plain_stdout.contains("Safety: danger - "));
+    assert!(plain_stdout.contains("writes privileged paths"));
+    assert!(plain_stdout.contains("installs network-backed executables"));
     assert!(plain_stdout.contains("1. Downloads the installer from https://foo.com"));
     assert!(plain_stdout.contains("with executable\n   permissions."));
     assert!(plain_stderr.contains("trace: Resolving trace agent"));
@@ -558,6 +561,16 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["command"], "curl foo.com | sh");
     assert_eq!(report["agent"], "codex");
+    assert_eq!(report["safetyRating"]["level"], "danger");
+    assert_eq!(
+        report["safetyRating"]["reasons"],
+        serde_json::json!([
+            "writes privileged paths",
+            "installs network-backed executables",
+            "uses network-backed writes",
+            "changes permissions"
+        ])
+    );
     assert_eq!(report["steps"][0]["operation"], "install");
     assert_eq!(report["steps"][0]["network"], "https://foo.com");
 
@@ -573,6 +586,7 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     assert!(output.status.success(), "{}", stderr(&output));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["agent"], "claude");
+    assert_eq!(report["safetyRating"]["level"], "danger");
     assert_eq!(report["steps"][0]["path"], "~/.profile");
 
     let output = run_nuke_with_env(

@@ -847,7 +847,15 @@ enum TraceAgent {
 struct TraceReport {
     command: String,
     agent: String,
+    #[serde(rename = "safetyRating")]
+    safety_rating: TraceSafetyRating,
     steps: Vec<TraceStep>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TraceSafetyRating {
+    level: String,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

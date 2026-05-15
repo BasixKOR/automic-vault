@@ -197,10 +197,13 @@ fn run_trace_request_with_progress(
     progress.set_status("Summarizing trace output");
     let parsed = parse_trace_agent_output(&output)?;
     let fetched_script_was_provided = fetched_script.is_some();
+    let steps = normalize_trace_steps(parsed.steps, fetched_script_was_provided);
+    let safety_rating = trace_safety_rating(&steps);
     Ok(TraceReport {
         command: request.command.clone(),
         agent: resolved.name().to_string(),
-        steps: normalize_trace_steps(parsed.steps, fetched_script_was_provided),
+        safety_rating,
+        steps,
     })
 }
 
@@ -770,6 +773,232 @@ fn normalize_trace_steps(
     coalesce_complex_installer_steps(steps)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TraceSafetyLevel {
+    Safe,
+    Caution,
+    Danger,
+}
+
+impl TraceSafetyLevel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Safe => "safe",
+            Self::Caution => "caution",
+            Self::Danger => "danger",
+        }
+    }
+}
+
+fn trace_safety_rating(steps: &[TraceStep]) -> TraceSafetyRating {
+    if steps.is_empty() {
+        return TraceSafetyRating {
+            level: TraceSafetyLevel::Safe.as_str().to_string(),
+            reasons: vec!["no file-changing steps identified".to_string()],
+        };
+    }
+
+    let mut level = TraceSafetyLevel::Safe;
+    let mut reasons = Vec::new();
+    for step in steps {
+        trace_safety_signals(step, &mut level, &mut reasons);
+    }
+
+    if reasons.is_empty() {
+        level = TraceSafetyLevel::Caution;
+        push_trace_safety_reason(&mut reasons, "changes files");
+    }
+
+    TraceSafetyRating {
+        level: level.as_str().to_string(),
+        reasons,
+    }
+}
+
+fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons: &mut Vec<String>) {
+    let operation = step.operation.trim().to_ascii_lowercase();
+    let description = step.description.trim().to_ascii_lowercase();
+    let path = step
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let privileged_path = path.is_some_and(is_privileged_trace_path);
+
+    if privileged_path {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Danger,
+            "writes privileged paths",
+        );
+    }
+    if trace_step_changes_service_or_agent(path, &description) {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Danger,
+            "changes services or background agents",
+        );
+    }
+    if trace_step_modifies_shell_startup(path, &description) {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Danger,
+            "modifies shell startup files",
+        );
+    }
+    if matches!(operation.as_str(), "delete" | "remove" | "move") {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Danger,
+            "performs destructive file operations",
+        );
+    }
+    if step.network.is_some() && path.is_some_and(is_trace_command_path) {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Danger,
+            "installs network-backed executables",
+        );
+    }
+
+    if path.is_none() {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Caution,
+            "changes unknown paths",
+        );
+    }
+    if step.network.is_some() {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Caution,
+            "uses network-backed writes",
+        );
+    }
+    if matches!(operation.as_str(), "chmod" | "chown")
+        || description.contains("chmod")
+        || description.contains("chown")
+        || description.contains("permission")
+        || description.contains("executable")
+    {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Caution,
+            "changes permissions",
+        );
+    }
+    let user_scope_operation = matches!(
+        operation.as_str(),
+        "install" | "append" | "create" | "modify" | "write"
+    );
+    if user_scope_operation && path.is_some() && !privileged_path {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Caution,
+            "changes user files",
+        );
+    }
+}
+
+fn push_trace_safety_signal(
+    level: &mut TraceSafetyLevel,
+    reasons: &mut Vec<String>,
+    signal_level: TraceSafetyLevel,
+    reason: &str,
+) {
+    if *level < signal_level {
+        *level = signal_level;
+    }
+    push_trace_safety_reason(reasons, reason);
+}
+
+fn push_trace_safety_reason(reasons: &mut Vec<String>, reason: &str) {
+    if !reasons.iter().any(|existing| existing == reason) {
+        reasons.push(reason.to_string());
+    }
+}
+
+fn is_privileged_trace_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    [
+        "/applications",
+        "/library",
+        "/system",
+        "/usr/local",
+        "/opt",
+        "/etc",
+    ]
+    .iter()
+    .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
+}
+
+fn is_trace_command_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    [
+        "/bin/",
+        "/sbin/",
+        "/usr/bin/",
+        "/usr/local/bin/",
+        "/opt/",
+        "~/.local/bin/",
+        "$home/.local/bin/",
+        "$prefix/bin/",
+    ]
+    .iter()
+    .any(|prefix| path.starts_with(prefix))
+        || path.ends_with("/bin")
+        || path.contains("/bin/")
+}
+
+fn trace_step_changes_service_or_agent(path: Option<&str>, description: &str) -> bool {
+    path.map(|path| path.to_ascii_lowercase())
+        .is_some_and(|path| {
+            path.contains("launchagents")
+                || path.contains("launchdaemons")
+                || path.contains("systemd")
+                || path.ends_with(".service")
+                || path.contains("/services/")
+        })
+        || description.contains("launchd")
+        || description.contains("systemd")
+        || description.contains(" service")
+        || description.contains("background agent")
+        || description.contains("background service")
+        || description.contains("daemon")
+}
+
+fn trace_step_modifies_shell_startup(path: Option<&str>, description: &str) -> bool {
+    path.is_some_and(is_shell_startup_trace_path)
+        || description.contains("shell startup")
+        || description.contains("shell profile")
+        || description.contains("shell rc")
+        || description.contains(" for `path`")
+        || description.contains(" for path")
+}
+
+fn is_shell_startup_trace_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    [
+        ".bash_profile",
+        ".bashrc",
+        ".zprofile",
+        ".zshrc",
+        ".profile",
+        ".config/fish/config.fish",
+    ]
+    .iter()
+    .any(|name| path == *name || path.ends_with(&format!("/{name}")))
+}
+
 fn normalize_trace_description(description: &str) -> String {
     let description = description.trim();
     for (prefix, replacement) in [
@@ -1190,6 +1419,7 @@ fn remove_incidental_file_choices(description: &str) -> String {
 }
 
 fn print_trace_report(report: &TraceReport) {
+    println!("{}", format_trace_safety_line(&report.safety_rating));
     if report.steps.is_empty() {
         println!("No file-changing steps identified.");
         return;
@@ -1204,6 +1434,15 @@ fn print_trace_report(report: &TraceReport) {
             columns,
         );
     }
+}
+
+fn format_trace_safety_line(rating: &TraceSafetyRating) -> String {
+    let reasons = if rating.reasons.is_empty() {
+        "no specific reasons".to_string()
+    } else {
+        rating.reasons.join("; ")
+    };
+    format!("Safety: {} - {reasons}", rating.level)
 }
 
 fn print_trace_step(index: usize, markdown: &str, color: bool, columns: usize) {
@@ -2148,6 +2387,117 @@ mod tests {
     }
 
     #[test]
+    fn trace_safety_rating_covers_safe_caution_and_danger_rules() {
+        let rating = trace_safety_rating(&[]);
+        assert_eq!(rating.level, "safe");
+        assert_eq!(rating.reasons, vec!["no file-changing steps identified"]);
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Writes package configuration.",
+            "modify",
+            Some("~/.config/example/config.toml"),
+            None,
+        )]);
+        assert_eq!(rating.level, "caution");
+        assert_trace_safety_reason(&rating, "changes user files");
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Downloads package data and writes it to an installer-selected destination.",
+            "create",
+            None,
+            Some("https://example.test/package.tgz"),
+        )]);
+        assert_eq!(rating.level, "caution");
+        assert_trace_safety_reason(&rating, "changes unknown paths");
+        assert_trace_safety_reason(&rating, "uses network-backed writes");
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Downloads and installs an executable command.",
+            "install",
+            Some("/usr/local/bin/example"),
+            Some("https://example.test/install.sh"),
+        )]);
+        assert_eq!(rating.level, "danger");
+        assert_trace_safety_reason(&rating, "writes privileged paths");
+        assert_trace_safety_reason(&rating, "installs network-backed executables");
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Installs the app into `/Applications`.",
+            "install",
+            Some("/Applications"),
+            None,
+        )]);
+        assert_eq!(rating.level, "danger");
+        assert_trace_safety_reason(&rating, "writes privileged paths");
+
+        let rating = trace_safety_rating(&[
+            trace_step_with(
+                "Appends the command directory to shell startup files for `PATH`.",
+                "append",
+                Some("~/.zshrc"),
+                None,
+            ),
+            trace_step_with(
+                "Installs and starts a background service.",
+                "install",
+                Some("~/.config/systemd/user/example.service"),
+                None,
+            ),
+            trace_step_with(
+                "Deletes the previous launcher.",
+                "delete",
+                Some("~/.local/bin/example"),
+                None,
+            ),
+        ]);
+        assert_eq!(rating.level, "danger");
+        assert_trace_safety_reason(&rating, "modifies shell startup files");
+        assert_trace_safety_reason(&rating, "changes services or background agents");
+        assert_trace_safety_reason(&rating, "performs destructive file operations");
+    }
+
+    #[test]
+    fn trace_report_json_includes_safety_rating() {
+        let report = TraceReport {
+            command: "curl https://example.test/install.sh | sh".to_string(),
+            agent: "codex".to_string(),
+            safety_rating: TraceSafetyRating {
+                level: "danger".to_string(),
+                reasons: vec!["writes privileged paths".to_string()],
+            },
+            steps: vec![trace_step_with(
+                "Installs an executable.",
+                "install",
+                Some("/usr/local/bin/example"),
+                Some("https://example.test/install.sh"),
+            )],
+        };
+
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(json["safetyRating"]["level"], "danger");
+        assert_eq!(
+            json["safetyRating"]["reasons"],
+            serde_json::json!(["writes privileged paths"])
+        );
+    }
+
+    #[test]
+    fn format_trace_safety_line_includes_level_and_reasons() {
+        let rating = TraceSafetyRating {
+            level: "danger".to_string(),
+            reasons: vec![
+                "writes privileged paths".to_string(),
+                "installs network-backed executables".to_string(),
+            ],
+        };
+
+        assert_eq!(
+            format_trace_safety_line(&rating),
+            "Safety: danger - writes privileged paths; installs network-backed executables"
+        );
+    }
+
+    #[test]
     fn format_trace_step_for_human_appends_path_when_missing() {
         let step = TraceStep {
             description: "Creates a command shim.".to_string(),
@@ -2455,6 +2805,28 @@ mod tests {
             path: None,
             network: None,
         }
+    }
+
+    fn trace_step_with(
+        description: &str,
+        operation: &str,
+        path: Option<&str>,
+        network: Option<&str>,
+    ) -> TraceStep {
+        TraceStep {
+            description: description.to_string(),
+            operation: operation.to_string(),
+            path: path.map(str::to_string),
+            network: network.map(str::to_string),
+        }
+    }
+
+    fn assert_trace_safety_reason(rating: &TraceSafetyRating, reason: &str) {
+        assert!(
+            rating.reasons.iter().any(|existing| existing == reason),
+            "missing reason {reason:?} in {:?}",
+            rating.reasons
+        );
     }
 
     fn write_test_trace_executable(dir: &Path, name: &str) {
