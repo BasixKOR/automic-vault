@@ -1231,6 +1231,36 @@ fn write_isotope_always_allow_store(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    struct TestEnvGuard {
+        previous: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl TestEnvGuard {
+        fn set(values: &[(&'static str, &Path)]) -> Self {
+            let previous = values
+                .iter()
+                .map(|(key, value)| {
+                    let previous = env::var_os(key);
+                    unsafe { env::set_var(key, value) };
+                    (*key, previous)
+                })
+                .collect();
+            Self { previous }
+        }
+    }
+
+    impl Drop for TestEnvGuard {
+        fn drop(&mut self) {
+            for (key, previous) in self.previous.drain(..).rev() {
+                match previous {
+                    Some(value) => unsafe { env::set_var(key, value) },
+                    None => unsafe { env::remove_var(key) },
+                }
+            }
+        }
+    }
 
     fn write_test_receipt(
         package_name: &str,
@@ -1925,6 +1955,20 @@ mod tests {
 
     #[test]
     fn homebrew_migration_helper_metadata_and_security_paths_are_stable() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let gh_config = temp.path().join("gh-config");
+        let xdg_config = temp.path().join("xdg-config");
+        let home = temp.path().join("home");
+        fs::create_dir_all(&gh_config).unwrap();
+        fs::create_dir_all(&xdg_config).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("GH_CONFIG_DIR", &gh_config),
+            ("XDG_CONFIG_HOME", &xdg_config),
+            ("HOME", &home),
+        ]);
+
         let tapped = HomebrewInfoFormula {
             name: "mise".to_string(),
             full_name: "jdx/mise/mise".to_string(),
