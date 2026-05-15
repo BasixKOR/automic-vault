@@ -1940,6 +1940,30 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_always_allow_scope_and_store_loading_cover_success_and_error_paths() {
+        let executable = Path::new("/bin/sh");
+        let file = File::open(executable).unwrap();
+        let scope = always_allow_scope(
+            "/bin/sh",
+            executable,
+            &file,
+            &[OsString::from("/bin/sh")],
+        )
+        .unwrap();
+        assert_eq!(scope.executable_path, "/bin/sh");
+        assert_eq!(scope.script_path.as_deref(), Some("/bin/sh"));
+
+        let display = path_to_display_string(Path::new("/etc/profile")).unwrap();
+        assert_eq!(display, "/etc/profile");
+        assert!(
+            resolve_script_operand(Path::new("/etc/profile"))
+                .unwrap()
+                .ends_with("etc/profile")
+        );
+        assert!(always_allows_usage(&scope, &["TOKEN".to_string()]).unwrap_or(false) == false);
+    }
+
+    #[test]
     fn isotopes_validation_helpers_cover_directory_and_non_file_targets() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("dir");

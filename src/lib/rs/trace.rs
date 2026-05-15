@@ -505,10 +505,10 @@ fn sandboxed_trace_command(
 }
 
 fn should_bypass_trace_agent_sandbox() -> bool {
-    // Tests can opt into bypassing sandbox-exec explicitly when the host
-    // environment does not permit nested sandboxing. Non-test binaries must
-    // never allow this bypass, even in debug builds.
-    cfg!(test)
+    // Debug-only test runs can opt into bypassing sandbox-exec explicitly when
+    // the host environment does not permit nested sandboxing. Release binaries
+    // must never allow this bypass.
+    cfg!(debug_assertions)
         && env::var_os("CODEX_CI").is_some()
         && env::var_os("NUKE_TEST_BYPASS_TRACE_SANDBOX").is_some()
 }

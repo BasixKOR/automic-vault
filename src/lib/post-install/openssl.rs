@@ -116,4 +116,16 @@ mod tests {
         assert!(err.contains("failed to read"));
         assert!(!path_exists(&temp.path().join("does-not-exist")));
     }
+
+    #[test]
+    fn openssl_post_install_tolerates_missing_source_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        post_install(temp.path()).unwrap();
+        assert!(!path_exists(
+            &temp
+                .path()
+                .join(super::super::OPENSSL_CERT_PEM_DESTINATION_DIR)
+                .join("cert.pem")
+        ));
+    }
 }
