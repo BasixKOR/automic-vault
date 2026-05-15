@@ -13,6 +13,9 @@
   <meta property="og:url" content="https://www.automicvault.com/stop-ai-agents-reading-env-files/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:description" content="Move secrets out of .env files and inject approved credentials into trusted tools so AI coding agents cannot read raw values.">
+  <meta name="twitter:title" content="Stop AI Agents Reading .env Files | Automic Vault">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -23,18 +26,75 @@
         "name": "Automic Vault",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+        "description": "Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
+        "founder": {
+          "@id": "https://www.automicvault.com/about/#max-howell"
+        },
+        "knowsAbout": [
+          "AI agent security",
+          "macOS package management",
+          "developer tooling",
+          "local secrets management",
+          "command approval gates"
+        ],
         "sameAs": [
           "https://github.com/automic-vault/",
-          "https://x.com/AutomicVault"
+          "https://github.com/automic-vault/automic-vault",
+          "https://x.com/AutomicVault",
+          "https://mxcl.dev/",
+          "https://brew.sh/"
         ]
+      },
+      {
+        "@type": "Person",
+        "@id": "https://www.automicvault.com/about/#max-howell",
+        "name": "Max Howell",
+        "url": "https://mxcl.dev/",
+        "description": "Max Howell created Homebrew in 2009 and builds developer tooling for macOS.",
+        "sameAs": [
+          "https://mxcl.dev/",
+          "https://brew.sh/",
+          "https://en.wikipedia.org/wiki/Homebrew_(package_manager)"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.automicvault.com/#website",
+        "name": "Automic Vault",
+        "url": "https://www.automicvault.com/",
+        "publisher": {
+          "@id": "https://www.automicvault.com/#organization"
+        }
       },
       {
         "@type": "SoftwareApplication",
         "@id": "https://www.automicvault.com/#software",
         "name": "Automic Vault",
         "applicationCategory": "SecurityApplication",
+        "applicationSubCategory": "AI agent security",
         "operatingSystem": "macOS",
+        "softwareVersion": "1.6.0",
         "url": "https://www.automicvault.com/",
+        "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
+        "codeRepository": "https://github.com/automic-vault/automic-vault",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "screenshot": "https://www.automicvault.com/preview.jpg",
+        "featureList": [
+          "Local AI agent secrets manager",
+          "Keychain-backed secret storage",
+          "Approved secret injection into command-line tools",
+          "Command approval gates",
+          "AI agent secret scanner",
+          "Shell installer tracing",
+          "Hardened package installation roots"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock",
+          "url": "https://www.automicvault.com/pricing.md"
+        },
         "description": "Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
@@ -44,14 +104,45 @@
         "@type": "Article",
         "@id": "https://www.automicvault.com/stop-ai-agents-reading-env-files/#webpage",
         "url": "https://www.automicvault.com/stop-ai-agents-reading-env-files/",
-        "name": "Stop AI Coding Agents from Reading Your .env Files | Automic Vault",
+        "name": "Stop AI Agents Reading .env Files | Automic Vault",
+        "headline": "Stop AI Agents Reading .env Files",
         "description": "Move secrets out of .env files and inject approved credentials into trusted tools so AI coding agents cannot read raw values.",
-        "isPartOf": {
-          "@id": "https://www.automicvault.com/#software"
+        "datePublished": "2026-05-15",
+        "dateModified": "2026-05-15",
+        "image": "https://www.automicvault.com/preview.jpg",
+        "author": {
+          "@id": "https://www.automicvault.com/about/#max-howell"
         },
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
+        },
+        "isPartOf": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "about": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "breadcrumb": {
+          "@id": "https://www.automicvault.com/stop-ai-agents-reading-env-files/#breadcrumb"
         }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://www.automicvault.com/stop-ai-agents-reading-env-files/#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Automic Vault",
+            "item": "https://www.automicvault.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Stop AI Agents Reading .env Files",
+            "item": "https://www.automicvault.com/stop-ai-agents-reading-env-files/"
+          }
+        ]
       }
     ]
   }
@@ -61,7 +152,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
-  <link rel="stylesheet" href="../seo.css?v=1">
+  <link rel="stylesheet" href="../seo.css?v=2">
 </head>
 <body>
   <div class="seo-shell">
@@ -83,6 +174,8 @@
           <p class="kicker">Dotenv protection for agent work</p>
           <h1>Stop AI coding agents from reading your .env files</h1>
           <p class="lede"><code>.env</code> files are convenient because every local tool can read them. That is exactly why they are risky for agent runs. Automic Vault keeps the developer workflow, but removes the plaintext target.</p>
+          <p class="updated">Last updated: May 15, 2026</p>
+          <div class="answer-box"><p>To stop AI agents reading .env files, remove secrets from project files and inject them at runtime into the specific tool that needs them. Automic Vault stores values locally and gives approved commands access without exposing raw credentials to the agent transcript.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#shebang-injection">See secret injection <span aria-hidden="true">›</span></a>
             <a class="button" href="../api-key-management-for-ai-agents/">Manage API keys <span aria-hidden="true">›</span></a>
@@ -119,7 +212,7 @@
       <section class="seo-section">
         <div class="section-heading">
           <p class="kicker">Related protections</p>
-          <h2>Close the next credential path.</h2>
+          <h2>Replace readable files with explicit access.</h2>
         </div>
         <div class="link-grid">
           <a href="../api-key-management-for-ai-agents/"><span>API keys</span><strong>API key management for AI agents</strong><p>Protect tokens outside dotenv files too.</p></a>
@@ -128,7 +221,16 @@
         </div>
       </section>
     </main>
-    <footer class="seo-footer"><p>&copy; 2026 Automic Vault.</p><a href="../">Automic Vault home</a></footer>
+    <footer class="seo-footer">
+      <p>&copy; 2026 Automic Vault.</p>
+      <div class="footer-links">
+        <a href="../">Home</a>
+        <a href="../about/">About</a>
+        <a href="../security/">Security</a>
+        <a href="../privacy/">Privacy</a>
+        <a href="../terms/">Terms</a>
+      </div>
+    </footer>
   </div>
 </body>
 </html>

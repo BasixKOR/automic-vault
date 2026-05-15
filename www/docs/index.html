@@ -20,6 +20,9 @@
   <meta property="og:url" content="https://www.automicvault.com/docs/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:description" content="CLI documentation for Automic Vault package installs, approved secret injection, and vaulted command execution.">
+  <meta name="twitter:title" content="Automic Vault CLI Docs">
   <link rel="canonical" href="https://www.automicvault.com/docs/">
   <script type="application/ld+json">
   {
@@ -31,18 +34,75 @@
         "name": "Automic Vault",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+        "description": "Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
+        "founder": {
+          "@id": "https://www.automicvault.com/about/#max-howell"
+        },
+        "knowsAbout": [
+          "AI agent security",
+          "macOS package management",
+          "developer tooling",
+          "local secrets management",
+          "command approval gates"
+        ],
         "sameAs": [
           "https://github.com/automic-vault/",
-          "https://x.com/AutomicVault"
+          "https://github.com/automic-vault/automic-vault",
+          "https://x.com/AutomicVault",
+          "https://mxcl.dev/",
+          "https://brew.sh/"
         ]
+      },
+      {
+        "@type": "Person",
+        "@id": "https://www.automicvault.com/about/#max-howell",
+        "name": "Max Howell",
+        "url": "https://mxcl.dev/",
+        "description": "Max Howell created Homebrew in 2009 and builds developer tooling for macOS.",
+        "sameAs": [
+          "https://mxcl.dev/",
+          "https://brew.sh/",
+          "https://en.wikipedia.org/wiki/Homebrew_(package_manager)"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.automicvault.com/#website",
+        "name": "Automic Vault",
+        "url": "https://www.automicvault.com/",
+        "publisher": {
+          "@id": "https://www.automicvault.com/#organization"
+        }
       },
       {
         "@type": "SoftwareApplication",
         "@id": "https://www.automicvault.com/#software",
         "name": "Automic Vault",
         "applicationCategory": "SecurityApplication",
+        "applicationSubCategory": "AI agent security",
         "operatingSystem": "macOS",
+        "softwareVersion": "1.6.0",
         "url": "https://www.automicvault.com/",
+        "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
+        "codeRepository": "https://github.com/automic-vault/automic-vault",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "screenshot": "https://www.automicvault.com/preview.jpg",
+        "featureList": [
+          "Local AI agent secrets manager",
+          "Keychain-backed secret storage",
+          "Approved secret injection into command-line tools",
+          "Command approval gates",
+          "AI agent secret scanner",
+          "Shell installer tracing",
+          "Hardened package installation roots"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock",
+          "url": "https://www.automicvault.com/pricing.md"
+        },
         "description": "Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
@@ -53,13 +113,122 @@
         "@id": "https://www.automicvault.com/docs/#webpage",
         "url": "https://www.automicvault.com/docs/",
         "name": "Automic Vault CLI Docs",
+        "headline": "Automic Vault CLI Docs",
         "description": "CLI documentation for Automic Vault package installs, approved secret injection, and vaulted command execution.",
-        "isPartOf": {
-          "@id": "https://www.automicvault.com/#software"
+        "datePublished": "2026-05-15",
+        "dateModified": "2026-05-15",
+        "image": "https://www.automicvault.com/preview.jpg",
+        "author": {
+          "@id": "https://www.automicvault.com/about/#max-howell"
         },
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
+        },
+        "isPartOf": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "about": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "breadcrumb": {
+          "@id": "https://www.automicvault.com/docs/#breadcrumb"
         }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://www.automicvault.com/docs/#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Automic Vault",
+            "item": "https://www.automicvault.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Automic Vault CLI Docs",
+            "item": "https://www.automicvault.com/docs/"
+          }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://www.automicvault.com/docs/#faq-schema",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Why does Codex.app not need to be installed as root?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Codex.app is code-signed. A future Automic Vault release will check code-signing identities for critical GUI apps that are not installed as root. Reinstalling Codex as root would make the app less conventional: macOS apps do not generally expect that layout, and some can break when forced into it."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does Automic Vault.app not need to be installed as root?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Automic Vault does not need the app bundle itself to be root-owned. It needs a safe installation path. A future .pkg release will install through the macOS installer system, which verifies code signing end to end. If malware or an agent resigned Automic Vault, including with an ad hoc signature, the installation system would stop working because of the way Automic Vault verifies itself internally."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why are isotope credentials unavailable over SSH?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The macOS login keychain may not be unlocked or trusted inside a fresh SSH session. Unlock the login keychain in that session before running commands that need injected secrets: security unlock-keychain ~/Library/Keychains/login.keychain-db . macOS will ask for your login password when it unlocks the keychain."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Should Automic Vault manage SSH passphrases?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Use the macOS keychain support that SSH already provides for passphrases. Automic Vault focuses on package tools, approved environment injection, and command execution gates rather than replacing SSH's keychain integration."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is this iCloud Keychain?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Automic Vault uses local keychain-backed storage for CLI secrets. Syncing agent-facing credentials through iCloud would be convenient in some cases, but it expands where those credentials can appear."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can a tool still use a secret after approval?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Automic Vault keeps agents from reading the stored secret directly, but an approved tool receives the requested values for that execution. Treat approvals as capability grants: approve the specific executable and command path you intend to trust."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can approvals last for a terminal session?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The design allows narrow always-allow records for root-owned, non-writable executables and root-owned interpreter scripts. Session-style approval is a natural fit for tools such as aws or gh , but the scope still needs to stay tied to the executable or script that receives the injected keys."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can this replace dotenv files for scripts?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "That is the intended direction for sensitive scripts: keep secrets out of project files, approve the root-owned interpreter or script path, then inject only the keys the script needs. For agent runs, av contain can add a second execution gate around the tool invocation itself."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What about prod?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Automic Vault will support Linux at 20,000 GitHub stars. Star the project at github.com/automic-vault/automic-vault ."
+            }
+          }
+        ]
       }
     ]
   }
@@ -112,6 +281,7 @@
             approved secret injection, and sandboxed command execution. These
             docs cover the CLI only: no app workflows, no GUI setup screens.
           </p>
+          <p class="updated">Last updated: May 15, 2026</p>
           <div class="hero-actions" aria-label="Primary documentation links">
             <a class="button primary" href="#quick-start">
               Start with <code>av</code>

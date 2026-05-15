@@ -273,6 +273,14 @@ h2 {
   margin-top: 28px;
 }
 
+.updated {
+  margin-top: 18px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;

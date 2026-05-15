@@ -119,6 +119,7 @@ origin_domain="${WWW_BUCKET}.s3.${AWS_REGION}.amazonaws.com"
 distribution_comment="${WWW_DOMAIN} static site"
 oac_name="${WWW_DOMAIN}-s3-oac"
 redirect_function_name="${WWW_DOMAIN//./-}-redirect-to-canonical"
+response_headers_policy_name="${WWW_DOMAIN//./-}-security-headers"
 
 cleanup() {
   if [[ -n "${prepared_site_dir}" && -d "${prepared_site_dir}" ]]; then
@@ -320,7 +321,9 @@ function handler(event) {
   }
   return request;
 }
+
 EOF
+
 
   if aws cloudfront describe-function --name "${redirect_function_name}" >/dev/null 2>&1; then
     log "  Updating ${redirect_function_name}"
@@ -366,6 +369,95 @@ EOF
   log_ok "Redirect function ready"
 }
 
+ensure_response_headers_policy() {
+  local policy_file policy_id etag response_file
+  log_step "Preparing CloudFront security headers policy"
+  policy_file="$(mktemp)"
+  response_file="$(mktemp)"
+
+  jq -n \
+    --arg name "${response_headers_policy_name}" \
+    '{
+      Name: $name,
+      Comment: "Security headers for Automic Vault static site",
+      SecurityHeadersConfig: {
+        StrictTransportSecurity: {
+          Override: true,
+          AccessControlMaxAgeSec: 63072000,
+          IncludeSubdomains: true,
+          Preload: true
+        },
+        ContentTypeOptions: {
+          Override: true
+        },
+        FrameOptions: {
+          Override: true,
+          FrameOption: "DENY"
+        },
+        ReferrerPolicy: {
+          Override: true,
+          ReferrerPolicy: "strict-origin-when-cross-origin"
+        },
+        XSSProtection: {
+          Override: true,
+          Protection: true,
+          ModeBlock: true
+        }
+      },
+      CustomHeadersConfig: {
+        Quantity: 2,
+        Items: [
+          {
+            Header: "Content-Security-Policy",
+            Value: "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\''; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com; font-src '\''self'\'' https://fonts.gstatic.com; img-src '\''self'\'' data: https://www.automicvault.com; connect-src '\''self'\''; frame-ancestors '\''none'\''; base-uri '\''self'\''; form-action '\''none'\''",
+            Override: true
+          },
+          {
+            Header: "Permissions-Policy",
+            Value: "camera=(), microphone=(), geolocation=(), payment=()",
+            Override: true
+          }
+        ]
+      },
+      ServerTimingHeadersConfig: {
+        Enabled: false
+      },
+      RemoveHeadersConfig: {
+        Quantity: 0
+      }
+    }' >"${policy_file}"
+
+  policy_id="$(
+    aws cloudfront list-response-headers-policies \
+      --type custom \
+      --query "ResponseHeadersPolicyList.Items[?ResponseHeadersPolicy.ResponseHeadersPolicyConfig.Name == '${response_headers_policy_name}'].ResponseHeadersPolicy.Id | [0]" \
+      --output text
+  )"
+
+  if [[ "${policy_id}" == "None" ]]; then
+    policy_id="$(
+      aws cloudfront create-response-headers-policy \
+        --response-headers-policy-config "file://${policy_file}" \
+        --query 'ResponseHeadersPolicy.Id' \
+        --output text
+    )"
+    log_ok "Created response headers policy ${policy_id}"
+    printf '%s\n' "${policy_id}"
+    return 0
+  fi
+
+  aws cloudfront get-response-headers-policy-config \
+    --id "${policy_id}" >"${response_file}"
+  etag="$(jq -r '.ETag' "${response_file}")"
+  aws cloudfront update-response-headers-policy \
+    --id "${policy_id}" \
+    --if-match "${etag}" \
+    --response-headers-policy-config "file://${policy_file}" >/dev/null
+  log_ok "Response headers policy ready"
+  printf '%s\n' "${policy_id}"
+}
+
+
 distribution_id_for_alias() {
   local alias_csv
   alias_csv="$(
@@ -384,7 +476,8 @@ distribution_id_for_alias() {
 build_distribution_config() {
   local oac_id="$1"
   local function_arn="$2"
-  local output_file="$3"
+  local response_headers_policy_id="$3"
+  local output_file="$4"
 
   jq -n \
     --arg caller_reference "${WWW_DOMAIN}-$(date +%s)" \
@@ -393,6 +486,7 @@ build_distribution_config() {
     --arg domain_name "${origin_domain}" \
     --arg oac_id "${oac_id}" \
     --arg function_arn "${function_arn}" \
+    --arg response_headers_policy_id "${response_headers_policy_id}" \
     --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
     --arg domain_a "${WWW_DOMAIN}" \
     --arg domain_b "${WWW_WWW_DOMAIN}" \
@@ -429,6 +523,7 @@ build_distribution_config() {
           }
         },
         Compress: true,
+        ResponseHeadersPolicyId: $response_headers_policy_id,
         FunctionAssociations: {
           Quantity: 1,
           Items: [{
@@ -477,6 +572,7 @@ build_distribution_config() {
 upsert_distribution() {
   local oac_id="$1"
   local function_arn="$2"
+  local response_headers_policy_id="$3"
   local distribution_id etag config_file response_file
   log_step "Preparing CloudFront distribution"
   config_file="$(mktemp)"
@@ -493,6 +589,7 @@ upsert_distribution() {
       --arg domain_name "${origin_domain}" \
       --arg oac_id "${oac_id}" \
       --arg function_arn "${function_arn}" \
+      --arg response_headers_policy_id "${response_headers_policy_id}" \
       --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
       --arg domain_a "${WWW_DOMAIN}" \
       --arg domain_b "${WWW_WWW_DOMAIN}" \
@@ -525,6 +622,7 @@ upsert_distribution() {
           }
         }
       | .DistributionConfig.DefaultCacheBehavior.Compress = true
+      | .DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId = $response_headers_policy_id
       | .DistributionConfig.DefaultCacheBehavior.FunctionAssociations = {
           Quantity: 1,
           Items: [{
@@ -560,7 +658,7 @@ upsert_distribution() {
   fi
 
   log "  Creating distribution for ${WWW_DOMAIN}, ${WWW_WWW_DOMAIN}"
-  build_distribution_config "${oac_id}" "${function_arn}" "${config_file}"
+  build_distribution_config "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${config_file}"
   aws cloudfront create-distribution \
     --distribution-config "file://${config_file}" \
     --query 'Distribution.Id' \
@@ -653,6 +751,7 @@ prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"
 ensure_redirect_function
+response_headers_policy_id="$(ensure_response_headers_policy)"
 log_step "Reading CloudFront function ARN"
 function_arn="$(
   aws cloudfront describe-function \
@@ -663,7 +762,7 @@ function_arn="$(
 )"
 log_ok "Function ARN resolved"
 ensure_certificate_issued
-distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}")"
+distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}" "${response_headers_policy_id}")"
 put_bucket_policy "${distribution_id}"
 log_step "Waiting for CloudFront deployment"
 aws cloudfront wait distribution-deployed --id "${distribution_id}"

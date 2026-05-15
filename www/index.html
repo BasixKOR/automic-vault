@@ -18,8 +18,9 @@
     approval gates, secret scanning, and hardened package installs for macOS."
   >
   <meta property="og:url" content="https://www.automicvault.com/">
-  <meta property="og:image" content="/preview.jpg">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:title" content="Automic Vault | AI Agent Security for macOS">
   <meta name="twitter:description" content="Automic Vault protects AI agent runs with local secret storage, approval gates, secret scanning, and hardened package installs for macOS.">
   <meta property="twitter:image" content="https://www.automicvault.com/preview.jpg">
@@ -34,18 +35,75 @@
         "name": "Automic Vault",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+        "description": "Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
+        "founder": {
+          "@id": "https://www.automicvault.com/about/#max-howell"
+        },
+        "knowsAbout": [
+          "AI agent security",
+          "macOS package management",
+          "developer tooling",
+          "local secrets management",
+          "command approval gates"
+        ],
         "sameAs": [
           "https://github.com/automic-vault/",
-          "https://x.com/AutomicVault"
+          "https://github.com/automic-vault/automic-vault",
+          "https://x.com/AutomicVault",
+          "https://mxcl.dev/",
+          "https://brew.sh/"
         ]
+      },
+      {
+        "@type": "Person",
+        "@id": "https://www.automicvault.com/about/#max-howell",
+        "name": "Max Howell",
+        "url": "https://mxcl.dev/",
+        "description": "Max Howell created Homebrew in 2009 and builds developer tooling for macOS.",
+        "sameAs": [
+          "https://mxcl.dev/",
+          "https://brew.sh/",
+          "https://en.wikipedia.org/wiki/Homebrew_(package_manager)"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.automicvault.com/#website",
+        "name": "Automic Vault",
+        "url": "https://www.automicvault.com/",
+        "publisher": {
+          "@id": "https://www.automicvault.com/#organization"
+        }
       },
       {
         "@type": "SoftwareApplication",
         "@id": "https://www.automicvault.com/#software",
         "name": "Automic Vault",
         "applicationCategory": "SecurityApplication",
+        "applicationSubCategory": "AI agent security",
         "operatingSystem": "macOS",
+        "softwareVersion": "1.6.0",
         "url": "https://www.automicvault.com/",
+        "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
+        "codeRepository": "https://github.com/automic-vault/automic-vault",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "screenshot": "https://www.automicvault.com/preview.jpg",
+        "featureList": [
+          "Local AI agent secrets manager",
+          "Keychain-backed secret storage",
+          "Approved secret injection into command-line tools",
+          "Command approval gates",
+          "AI agent secret scanner",
+          "Shell installer tracing",
+          "Hardened package installation roots"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock",
+          "url": "https://www.automicvault.com/pricing.md"
+        },
         "description": "Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
@@ -56,13 +114,35 @@
         "@id": "https://www.automicvault.com/#webpage",
         "url": "https://www.automicvault.com/",
         "name": "Automic Vault | AI Agent Security for macOS",
+        "headline": "Automic Vault | AI Agent Security for macOS",
         "description": "Automic Vault protects AI agent runs with local secret storage, approval gates, secret scanning, and hardened package installs for macOS.",
-        "isPartOf": {
-          "@id": "https://www.automicvault.com/#software"
-        },
+        "datePublished": "2026-05-15",
+        "dateModified": "2026-05-15",
+        "image": "https://www.automicvault.com/preview.jpg",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
+        },
+        "isPartOf": {
+          "@id": "https://www.automicvault.com/#website"
+        },
+        "about": {
+          "@id": "https://www.automicvault.com/#software"
+        },
+        "breadcrumb": {
+          "@id": "https://www.automicvault.com/#breadcrumb"
         }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://www.automicvault.com/#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Automic Vault",
+            "item": "https://www.automicvault.com/"
+          }
+        ]
       }
     ]
   }
@@ -109,6 +189,8 @@
         <a href="#approval">Approval Gates</a>
         <a href="#package-manager">Package Manager</a>
         <a href="/docs/">Docs</a>
+        <a href="/about/">About</a>
+        <a href="/security/">Security</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
     </header>
@@ -117,7 +199,12 @@
       <section class="hero" aria-labelledby="hero-title">
         <div class="scanlines" aria-hidden="true"></div>
         <div class="horizon">
-          <img src="./assets/rocket-grid.jpg" alt="Retro rocket grid behind the Automic Vault hero">
+          <img
+            src="./assets/rocket-grid.jpg"
+            alt="Retro rocket grid behind the Automic Vault hero"
+            width="1672"
+            height="941"
+          >
         </div>
 
         <div class="hero-copy">
@@ -128,6 +215,7 @@
           <p class="lede">
             Run agents autonomously without losing secrets, control, or your mind.
           </p>
+          <p class="updated">Last updated: May 15, 2026</p>
           <div class="hero-actions">
             <a class="button primary" href="/Automic Vault.dmg">
               Download .dmg
@@ -205,7 +293,7 @@
             Automic Vault patches packages so the only thing getting those secrets is the tool itself.
           </p>
           <p>
-            Agents and malware can suck it.
+            Agents and malware cannot read what never lands in plaintext.
           </p>
           <p>
             Use <a href="/secret-scanner-for-ai-agents/">av secret-scanner</a> to find the plaintext
@@ -234,7 +322,7 @@
           <h2>We patch approval gates into the tools themselves</h2>
           <p>
             Agents come with increasingly comprehensive execution controls.
-            But it's the wrong layer.
+            The local tool layer still needs its own boundary.
           </p>
           <ul>
             <li>Configuration is painful and error-prone.</li>
@@ -245,12 +333,12 @@
             Automic Vault patches the tools themselves.
           </p>
           <ul>
-            <li>The gates cannot be bypassed.</li>
+            <li>The gates live where the sensitive tool action executes.</li>
             <li>They are applied as needed, not before the commands run.</li>
             <li>
-              Security that is tedious gets turned off. We don’t want you to turn it off.
-              We're intimiately familiar with the corpus of Open Source.
-              We put the gates in *tastefully*.
+              Security that is tedious gets turned off. We do not want you to turn it off.
+              We are intimately familiar with the corpus of Open Source.
+              We put the gates where the risk changes.
             </li>
           </ul>
         </div>
@@ -457,8 +545,9 @@
           </h2>
           <p>
             Automic Vault is a package manager, secrets manager and execution
-            control manager combined. This unlocks new levels of security and
-            control never before seen.
+            control manager combined. That lets it coordinate package roots,
+            secret injection, and approval prompts at the same local runtime
+            boundary.
           </p>
         </div>
         <div class="fit-grid" aria-label="Competitor comparison">
@@ -615,6 +704,10 @@
     <footer class="site-footer">
       <p>&copy; 2026 Automic Vault. All rights reserved.</p>
       <div class="footer-links">
+        <a href="/about/">About</a>
+        <a href="/security/">Security</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
         <a href="https://x.com/AutomicVault" aria-label="Automic Vault on X">𝕏</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </div>
