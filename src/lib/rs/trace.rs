@@ -776,7 +776,7 @@ fn normalize_trace_steps(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum TraceSafetyLevel {
     Safe,
-    Caution,
+    Moderate,
     Danger,
 }
 
@@ -784,7 +784,7 @@ impl TraceSafetyLevel {
     fn as_str(self) -> &'static str {
         match self {
             Self::Safe => "safe",
-            Self::Caution => "caution",
+            Self::Moderate => "moderate",
             Self::Danger => "danger",
         }
     }
@@ -805,7 +805,7 @@ fn trace_safety_rating(steps: &[TraceStep]) -> TraceSafetyRating {
     }
 
     if reasons.is_empty() {
-        level = TraceSafetyLevel::Caution;
+        level = TraceSafetyLevel::Moderate;
         push_trace_safety_reason(&mut reasons, "changes files");
     }
 
@@ -824,13 +824,14 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
         .map(str::trim)
         .filter(|path| !path.is_empty());
     let privileged_path = path.is_some_and(is_privileged_trace_path);
+    let expected_install = trace_step_is_expected_install(path, &operation, &description);
 
-    if privileged_path {
+    if privileged_path && !expected_install {
         push_trace_safety_signal(
             level,
             reasons,
             TraceSafetyLevel::Danger,
-            "writes privileged paths",
+            "writes privileged configuration",
         );
     }
     if trace_step_changes_service_or_agent(path, &description) {
@@ -849,7 +850,9 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
             "modifies shell startup files",
         );
     }
-    if matches!(operation.as_str(), "delete" | "remove" | "move") {
+    if matches!(operation.as_str(), "delete" | "remove" | "move")
+        && !trace_step_is_staging_cleanup(path, &description)
+    {
         push_trace_safety_signal(
             level,
             reasons,
@@ -857,29 +860,59 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
             "performs destructive file operations",
         );
     }
-    if step.network.is_some() && path.is_some_and(is_trace_command_path) {
+    if trace_step_writes_credentials_or_secrets(path, &description) {
         push_trace_safety_signal(
             level,
             reasons,
             TraceSafetyLevel::Danger,
-            "installs network-backed executables",
+            "writes credentials or secrets",
         );
     }
 
-    if path.is_none() {
+    if trace_step_downloads_installer_payload(path, &description, step.network.is_some()) {
         push_trace_safety_signal(
             level,
             reasons,
-            TraceSafetyLevel::Caution,
-            "changes unknown paths",
+            TraceSafetyLevel::Moderate,
+            "downloads installer payload",
         );
     }
-    if step.network.is_some() {
+    if trace_step_installs_application(path, &description) {
         push_trace_safety_signal(
             level,
             reasons,
-            TraceSafetyLevel::Caution,
+            TraceSafetyLevel::Moderate,
+            "installs application",
+        );
+    } else if path.is_some_and(is_trace_command_path) && expected_install {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Moderate,
+            "installs command",
+        );
+    } else if expected_install {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Moderate,
+            "installs package payload",
+        );
+    }
+    if step.network.is_some() && !trace_step_downloads_installer_payload(path, &description, true) {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Moderate,
             "uses network-backed writes",
+        );
+    }
+    if path.is_none() && !trace_step_describes_installer_staging(&description) {
+        push_trace_safety_signal(
+            level,
+            reasons,
+            TraceSafetyLevel::Moderate,
+            "uses installer-selected paths",
         );
     }
     if matches!(operation.as_str(), "chmod" | "chown")
@@ -891,7 +924,7 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
         push_trace_safety_signal(
             level,
             reasons,
-            TraceSafetyLevel::Caution,
+            TraceSafetyLevel::Moderate,
             "changes permissions",
         );
     }
@@ -903,7 +936,7 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
         push_trace_safety_signal(
             level,
             reasons,
-            TraceSafetyLevel::Caution,
+            TraceSafetyLevel::Moderate,
             "changes user files",
         );
     }
@@ -957,6 +990,134 @@ fn is_trace_command_path(path: &str) -> bool {
     .any(|prefix| path.starts_with(prefix))
         || path.ends_with("/bin")
         || path.contains("/bin/")
+}
+
+fn trace_step_is_expected_install(
+    path: Option<&str>,
+    operation: &str,
+    description: &str,
+) -> bool {
+    if path.is_some_and(is_privileged_configuration_trace_path) {
+        return false;
+    }
+
+    if trace_step_installs_application(path, description)
+        || path.is_some_and(is_trace_command_path)
+        || path.is_some_and(is_product_payload_trace_path)
+    {
+        return true;
+    }
+
+    matches!(
+        operation,
+        "install" | "download" | "mount" | "copy" | "create" | "write" | "modify"
+    ) && (description.contains("install")
+        || description.contains("installer")
+        || description.contains("package")
+        || description.contains("payload")
+        || description.contains("archive")
+        || description.contains("dmg"))
+}
+
+fn trace_step_downloads_installer_payload(
+    path: Option<&str>,
+    description: &str,
+    has_network: bool,
+) -> bool {
+    has_network
+        && (description.contains("download")
+            || description.contains("fetch")
+            || description.contains("dmg")
+            || description.contains("archive")
+            || description.contains("installer")
+            || path.is_some_and(is_installer_staging_trace_path)
+            || trace_step_describes_installer_staging(description))
+}
+
+fn trace_step_installs_application(path: Option<&str>, description: &str) -> bool {
+    path.is_some_and(|path| {
+        let path = path.to_ascii_lowercase();
+        path == "/applications" || path.starts_with("/applications/")
+    }) || description.contains(".app")
+        || description.contains("app bundle")
+        || description.contains("application bundle")
+}
+
+fn is_product_payload_trace_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.starts_with("/opt/")
+        || path.starts_with("/usr/local/lib/")
+        || path.starts_with("/usr/local/share/")
+        || path.starts_with("~/applications/")
+        || path.starts_with("$home/applications/")
+}
+
+fn is_privileged_configuration_trace_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.starts_with("/etc/")
+        || path == "/etc"
+        || path.starts_with("/usr/local/etc/")
+        || path == "/usr/local/etc"
+        || path.starts_with("/library/preferences/")
+        || path == "/library/preferences"
+}
+
+fn is_installer_staging_trace_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.starts_with("/tmp/")
+        || path.contains("/tmp/")
+        || path.contains("/temporary")
+        || path.contains("/staging")
+        || path.contains("/cache/")
+        || path.ends_with(".dmg")
+        || path.ends_with(".pkg")
+        || path.ends_with(".tar.gz")
+        || path.ends_with(".tgz")
+        || path.ends_with(".zip")
+}
+
+fn trace_step_describes_installer_staging(description: &str) -> bool {
+    (description.contains("temporary")
+        || description.contains("temp ")
+        || description.contains("staging")
+        || description.contains("staged")
+        || description.contains("installer-selected")
+        || description.contains("mount"))
+        && (description.contains("installer")
+            || description.contains("dmg")
+            || description.contains("archive")
+            || description.contains("payload")
+            || description.contains("download"))
+}
+
+fn trace_step_writes_credentials_or_secrets(path: Option<&str>, description: &str) -> bool {
+    let mentions_secret = description.contains("credential")
+        || description.contains("secret")
+        || description.contains("api key")
+        || description.contains("token");
+    let writes_secret = mentions_secret
+        && (description.contains("write")
+            || description.contains("writes")
+            || description.contains("store")
+            || description.contains("stores")
+            || description.contains("save")
+            || description.contains("saves")
+            || description.contains("configure")
+            || description.contains("configures"));
+    let secret_path = path
+        .map(|path| path.to_ascii_lowercase())
+        .is_some_and(|path| {
+            path.contains(".env")
+                || path.contains("credential")
+                || path.contains("secret")
+                || path.contains("token")
+        });
+    writes_secret || secret_path
+}
+
+fn trace_step_is_staging_cleanup(path: Option<&str>, description: &str) -> bool {
+    path.is_some_and(is_installer_staging_trace_path)
+        || (description.contains("cleanup") && trace_step_describes_installer_staging(description))
 }
 
 fn trace_step_changes_service_or_agent(path: Option<&str>, description: &str) -> bool {
@@ -2387,7 +2548,7 @@ mod tests {
     }
 
     #[test]
-    fn trace_safety_rating_covers_safe_caution_and_danger_rules() {
+    fn trace_safety_rating_covers_safe_moderate_and_danger_rules() {
         let rating = trace_safety_rating(&[]);
         assert_eq!(rating.level, "safe");
         assert_eq!(rating.reasons, vec!["no file-changing steps identified"]);
@@ -2398,7 +2559,7 @@ mod tests {
             Some("~/.config/example/config.toml"),
             None,
         )]);
-        assert_eq!(rating.level, "caution");
+        assert_eq!(rating.level, "moderate");
         assert_trace_safety_reason(&rating, "changes user files");
 
         let rating = trace_safety_rating(&[trace_step_with(
@@ -2407,9 +2568,28 @@ mod tests {
             None,
             Some("https://example.test/package.tgz"),
         )]);
-        assert_eq!(rating.level, "caution");
-        assert_trace_safety_reason(&rating, "changes unknown paths");
-        assert_trace_safety_reason(&rating, "uses network-backed writes");
+        assert_eq!(rating.level, "moderate");
+        assert_trace_safety_reason(&rating, "downloads installer payload");
+        assert_no_trace_safety_reason(&rating, "changes unknown paths");
+
+        let rating = trace_safety_rating(&[
+            trace_step_with(
+                "Downloads AutomicVault.dmg into temporary installer storage and mounts it.",
+                "download",
+                None,
+                Some("https://example.test/AutomicVault.dmg"),
+            ),
+            trace_step_with(
+                "Installs the verified .app bundle into /Applications/$(basename \"$app\").",
+                "install",
+                Some("/Applications/$(basename \"$app\")"),
+                None,
+            ),
+        ]);
+        assert_eq!(rating.level, "moderate");
+        assert_trace_safety_reason(&rating, "downloads installer payload");
+        assert_trace_safety_reason(&rating, "installs application");
+        assert_no_trace_safety_reason(&rating, "writes privileged paths");
 
         let rating = trace_safety_rating(&[trace_step_with(
             "Downloads and installs an executable command.",
@@ -2417,9 +2597,9 @@ mod tests {
             Some("/usr/local/bin/example"),
             Some("https://example.test/install.sh"),
         )]);
-        assert_eq!(rating.level, "danger");
-        assert_trace_safety_reason(&rating, "writes privileged paths");
-        assert_trace_safety_reason(&rating, "installs network-backed executables");
+        assert_eq!(rating.level, "moderate");
+        assert_trace_safety_reason(&rating, "downloads installer payload");
+        assert_trace_safety_reason(&rating, "installs command");
 
         let rating = trace_safety_rating(&[trace_step_with(
             "Installs the app into `/Applications`.",
@@ -2427,8 +2607,8 @@ mod tests {
             Some("/Applications"),
             None,
         )]);
-        assert_eq!(rating.level, "danger");
-        assert_trace_safety_reason(&rating, "writes privileged paths");
+        assert_eq!(rating.level, "moderate");
+        assert_trace_safety_reason(&rating, "installs application");
 
         let rating = trace_safety_rating(&[
             trace_step_with(
@@ -2454,6 +2634,24 @@ mod tests {
         assert_trace_safety_reason(&rating, "modifies shell startup files");
         assert_trace_safety_reason(&rating, "changes services or background agents");
         assert_trace_safety_reason(&rating, "performs destructive file operations");
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Writes global package manager configuration.",
+            "modify",
+            Some("/etc/example/config.toml"),
+            None,
+        )]);
+        assert_eq!(rating.level, "danger");
+        assert_trace_safety_reason(&rating, "writes privileged configuration");
+
+        let rating = trace_safety_rating(&[trace_step_with(
+            "Removes temporary installer staging during cleanup.",
+            "delete",
+            Some("/tmp/automic-vault/install.dmg"),
+            None,
+        )]);
+        assert_eq!(rating.level, "moderate");
+        assert_no_trace_safety_reason(&rating, "performs destructive file operations");
     }
 
     #[test]
@@ -2462,8 +2660,8 @@ mod tests {
             command: "curl https://example.test/install.sh | sh".to_string(),
             agent: "codex".to_string(),
             safety_rating: TraceSafetyRating {
-                level: "danger".to_string(),
-                reasons: vec!["writes privileged paths".to_string()],
+                level: "moderate".to_string(),
+                reasons: vec!["installs command".to_string()],
             },
             steps: vec![trace_step_with(
                 "Installs an executable.",
@@ -2474,26 +2672,26 @@ mod tests {
         };
 
         let json = serde_json::to_value(report).unwrap();
-        assert_eq!(json["safetyRating"]["level"], "danger");
+        assert_eq!(json["safetyRating"]["level"], "moderate");
         assert_eq!(
             json["safetyRating"]["reasons"],
-            serde_json::json!(["writes privileged paths"])
+            serde_json::json!(["installs command"])
         );
     }
 
     #[test]
     fn format_trace_safety_line_includes_level_and_reasons() {
         let rating = TraceSafetyRating {
-            level: "danger".to_string(),
+            level: "moderate".to_string(),
             reasons: vec![
-                "writes privileged paths".to_string(),
-                "installs network-backed executables".to_string(),
+                "downloads installer payload".to_string(),
+                "installs application".to_string(),
             ],
         };
 
         assert_eq!(
             format_trace_safety_line(&rating),
-            "Safety: danger - writes privileged paths; installs network-backed executables"
+            "Safety: moderate - downloads installer payload; installs application"
         );
     }
 
@@ -2825,6 +3023,14 @@ mod tests {
         assert!(
             rating.reasons.iter().any(|existing| existing == reason),
             "missing reason {reason:?} in {:?}",
+            rating.reasons
+        );
+    }
+
+    fn assert_no_trace_safety_reason(rating: &TraceSafetyRating, reason: &str) {
+        assert!(
+            !rating.reasons.iter().any(|existing| existing == reason),
+            "unexpected reason {reason:?} in {:?}",
             rating.reasons
         );
     }
