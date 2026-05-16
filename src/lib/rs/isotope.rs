@@ -1952,7 +1952,7 @@ mod tests {
     }
 
     #[test]
-    fn isotopes_always_allow_scope_and_store_loading_cover_success_and_error_paths() {
+    fn isotopes_always_allow_scope_and_path_helpers_cover_expected_paths() {
         let executable = Path::new("/bin/sh");
         let file = File::open(executable).unwrap();
         let scope = always_allow_scope(
