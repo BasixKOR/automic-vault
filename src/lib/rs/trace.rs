@@ -505,10 +505,12 @@ fn sandboxed_trace_command(
 }
 
 fn should_bypass_trace_agent_sandbox() -> bool {
-    // Tests can opt into bypassing sandbox-exec explicitly when the host
-    // environment does not permit nested sandboxing. Non-test binaries must
-    // never allow this bypass, even in debug builds.
-    cfg!(test)
+    // Integration tests in tests/cli.rs spawn the real debug `av` binary rather
+    // than calling into a cfg(test) build of this crate, so cfg!(test) would
+    // not cover the CODEX_CI + NUKE_TEST_BYPASS_TRACE_SANDBOX path they rely
+    // on. Keep this bypass limited to debug builds plus the explicit CI/test
+    // env vars; release binaries must never allow it.
+    cfg!(debug_assertions)
         && env::var_os("CODEX_CI").is_some()
         && env::var_os("NUKE_TEST_BYPASS_TRACE_SANDBOX").is_some()
 }

@@ -827,29 +827,7 @@ fn install_cli_tools(
             .collect::<Vec<_>>(),
         Path::new(caller_path),
     )?;
-    let mut processed_packages = Vec::with_capacity(installs.len());
-
-    for (tool_name, source_path, target_path) in installs {
-        if let Ok(mut callback) = progress_callback.lock() {
-            callback(ProgressEvent::Installing {
-                package: tool_name.to_string(),
-            });
-        }
-
-        install_binary_at(&source_path, &target_path, tool_name)?;
-        processed_packages.push(tool_name.to_string());
-
-        if let Ok(mut callback) = progress_callback.lock() {
-            callback(ProgressEvent::Completed {
-                package: tool_name.to_string(),
-            });
-        }
-    }
-
-    Ok(HelperCommandSuccess {
-        message: "Automic Vault command line tools installed to /usr/local/bin".to_string(),
-        processed_packages,
-    })
+    install_cli_tool_records(installs, progress_callback)
 }
 
 fn cli_tool_installs_for_source(source_path: &Path) -> Vec<(&'static str, PathBuf, PathBuf)> {
@@ -1079,8 +1057,49 @@ fn remember_isotope_always_allow(
     validate_isotope_keys(&keys)?;
     keys.sort();
     keys.dedup();
+    remember_isotope_always_allow_at_path(
+        Path::new(ISOTOPE_ALWAYS_ALLOW_PATH),
+        executable_path,
+        script_path,
+        keys,
+    )
+}
 
-    let path = Path::new(ISOTOPE_ALWAYS_ALLOW_PATH);
+fn install_cli_tool_records(
+    installs: Vec<(&'static str, PathBuf, PathBuf)>,
+    progress_callback: Arc<Mutex<Box<ProgressCallback>>>,
+) -> HelperCommandResult {
+    let mut processed_packages = Vec::with_capacity(installs.len());
+
+    for (tool_name, source_path, target_path) in installs {
+        if let Ok(mut callback) = progress_callback.lock() {
+            callback(ProgressEvent::Installing {
+                package: tool_name.to_string(),
+            });
+        }
+
+        install_binary_at(&source_path, &target_path, tool_name)?;
+        processed_packages.push(tool_name.to_string());
+
+        if let Ok(mut callback) = progress_callback.lock() {
+            callback(ProgressEvent::Completed {
+                package: tool_name.to_string(),
+            });
+        }
+    }
+
+    Ok(HelperCommandSuccess {
+        message: "Automic Vault command line tools installed to /usr/local/bin".to_string(),
+        processed_packages,
+    })
+}
+
+fn remember_isotope_always_allow_at_path(
+    path: &Path,
+    executable_path: String,
+    script_path: Option<String>,
+    keys: Vec<String>,
+) -> HelperCommandResult {
     let mut store = load_isotope_always_allow_store(path)?;
     if !store.entries.iter().any(|entry| {
         entry.executable_path == executable_path
@@ -1088,8 +1107,8 @@ fn remember_isotope_always_allow(
             && entry.keys == keys
     }) {
         store.entries.push(IsotopeAlwaysAllowEntry {
-            executable_path: executable_path.clone(),
-            script_path: script_path.clone(),
+            executable_path,
+            script_path,
             keys,
         });
         store.entries.sort_by(|left, right| {
@@ -1468,6 +1487,88 @@ mod tests {
             install_binary_at(&missing, &temp.path().join("av"), "av")
                 .unwrap_err()
                 .contains("failed to stat")
+        );
+
+        let source_file = temp.path().join("staged-av");
+        fs::write(&source_file, "av").unwrap();
+        assert!(
+            install_binary_at(&source_file, Path::new(""), "av")
+                .unwrap_err()
+                .contains("invalid av install target")
+        );
+    }
+
+    #[test]
+    fn install_cli_tool_records_emits_progress_and_copies_all_targets() {
+        let temp = TempDir::new().unwrap();
+        let first_source = temp.path().join("staged-av");
+        let second_source = temp.path().join("staged-helper");
+        let first_target = temp.path().join("usr/local/bin/av");
+        let second_target = temp.path().join("usr/local/bin/helper");
+        fs::write(&first_source, "#!/bin/sh\necho av\n").unwrap();
+        fs::write(&second_source, "#!/bin/sh\necho helper\n").unwrap();
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+
+        let result = install_cli_tool_records(
+            vec![
+                ("av", first_source.clone(), first_target.clone()),
+                ("helper", second_source.clone(), second_target.clone()),
+            ],
+            callback,
+        )
+        .unwrap();
+
+        assert_eq!(result.processed_packages, ["av", "helper"]);
+        assert_eq!(fs::read_to_string(&first_target).unwrap(), "#!/bin/sh\necho av\n");
+        assert_eq!(
+            fs::read_to_string(&second_target).unwrap(),
+            "#!/bin/sh\necho helper\n"
+        );
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            &[
+                ProgressEvent::Installing {
+                    package: "av".to_string(),
+                },
+                ProgressEvent::Completed {
+                    package: "av".to_string(),
+                },
+                ProgressEvent::Installing {
+                    package: "helper".to_string(),
+                },
+                ProgressEvent::Completed {
+                    package: "helper".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn install_cli_tool_records_stops_after_first_install_error() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("missing-av");
+        let target = temp.path().join("usr/local/bin/av");
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+
+        let err = install_cli_tool_records(vec![("av", source, target)], callback).unwrap_err();
+        assert!(err.contains("failed to stat"));
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            &[ProgressEvent::Installing {
+                package: "av".to_string(),
+            }]
         );
     }
 
@@ -2097,6 +2198,52 @@ mod tests {
         assert_eq!(
             validate_isotope_always_allow_script("/bin/echo", None).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn isotope_always_allow_target_and_store_helpers_cover_success_paths() {
+        let validated_executable = validate_isotope_always_allow_target("/bin/sh").unwrap();
+        let validated_script = validate_isotope_always_allow_script("/bin/sh", Some("/etc/profile"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(validated_executable, "/bin/sh");
+        assert!(validated_script.ends_with("/etc/profile"));
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("always-allow.json");
+
+        let first = remember_isotope_always_allow_at_path(
+            &path,
+            validated_executable.clone(),
+            Some(validated_script.clone()),
+            vec!["AAA_TOKEN".to_string(), "ZZZ_TOKEN".to_string()],
+        )
+        .unwrap();
+        assert!(first.processed_packages.is_empty());
+
+        remember_isotope_always_allow_at_path(
+            &path,
+            "/bin/echo".to_string(),
+            None,
+            vec!["ONLY_TOKEN".to_string()],
+        )
+        .unwrap();
+        remember_isotope_always_allow_at_path(
+            &path,
+            validated_executable,
+            Some(validated_script),
+            vec!["AAA_TOKEN".to_string(), "ZZZ_TOKEN".to_string()],
+        )
+        .unwrap();
+
+        let store = load_isotope_always_allow_store(&path).unwrap();
+        assert_eq!(store.entries.len(), 2);
+        assert_eq!(store.entries[0].executable_path, "/bin/echo");
+        assert_eq!(store.entries[1].executable_path, "/bin/sh");
+        assert_eq!(
+            store.entries[1].keys,
+            vec!["AAA_TOKEN".to_string(), "ZZZ_TOKEN".to_string()]
         );
     }
 

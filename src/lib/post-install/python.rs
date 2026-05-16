@@ -185,4 +185,23 @@ mod tests {
         let err = write_symlink(&bin_dir.join("broken"), Path::new("/")).unwrap_err();
         assert!(err.contains("failed to compute relative target"));
     }
+
+    #[test]
+    fn python_helpers_cover_non_python_entries_and_missing_symlink_parents() {
+        let temp = tempfile::tempdir().unwrap();
+        let install_root = temp.path().join("opt/python");
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(install_root.join("openssl@3")).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        let installed = discover_installed_pythons(&install_root, &bin_dir).unwrap();
+        assert!(installed.is_empty());
+
+        let err = write_symlink(
+            &temp.path().join("missing/bin/python3"),
+            Path::new("python3.14"),
+        )
+        .unwrap_err();
+        assert!(err.contains("failed to symlink"));
+    }
 }
