@@ -1,8 +1,9 @@
 const toggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector(".nav");
 const revealTargets = document.querySelectorAll(
-  ".status-strip, .feature-section, .friction"
+  ".feature-section, .highlight-card, .final-cta"
 );
+const scrollMeter = document.querySelector(".scroll-meter span");
 
 if (toggle && nav) {
   toggle.addEventListener("click", () => {
@@ -17,6 +18,18 @@ if (toggle && nav) {
       nav.classList.remove("is-open");
     }
   });
+}
+
+if (scrollMeter) {
+  const updateScrollMeter = () => {
+    const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = scrollable > 0 ? window.scrollY / scrollable : 0;
+    scrollMeter.style.width = `${Math.min(1, Math.max(0, progress)) * 100}%`;
+  };
+
+  updateScrollMeter();
+  window.addEventListener("scroll", updateScrollMeter, { passive: true });
+  window.addEventListener("resize", updateScrollMeter);
 }
 
 if (revealTargets.length > 0) {
@@ -35,8 +48,8 @@ if (revealTargets.length > 0) {
         }
       },
       {
-        rootMargin: "0px 0px -16% 0px",
-        threshold: 0.18,
+        rootMargin: "0px 0px -14% 0px",
+        threshold: 0.14,
       }
     );
 
