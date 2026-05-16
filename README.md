@@ -79,6 +79,6 @@ secret protection.
 
 Current radioisotope inventory as of 2026-05-16:
 
-- 95 radioisotope manifests
-- Homebrew popularity scan coverage reached rank 11282
-- 91 radioisotopes added from the Homebrew scan log
+- 97 radioisotope manifests
+- Homebrew popularity scan coverage reached rank 15950
+- 93 radioisotopes added from the Homebrew scan log
