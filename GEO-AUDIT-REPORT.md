@@ -1,295 +1,298 @@
 # GEO Audit Report: Automic Vault
 
-**Audit Date:** 2026-05-15  
-**URL:** https://www.automicvault.com/  
+**Audit Date:** 2026-05-16  
+**URL:** `www/index.html` local rewrite, canonical `https://www.automicvault.com/`  
 **Business Type:** Hybrid - open-source developer security software with SaaS-style product, docs, and topic pages  
-**Pages Analyzed:** 17 sitemap entries: 14 HTML pages plus `llms.txt`, `pricing.md`, and `robots.txt`
+**Pages Analyzed:** 18 HTML pages plus `llms.txt`, `robots.txt`, `sitemap.xml`, and `pricing.md`
 
 ---
 
 ## Executive Summary
 
-**Overall GEO Score: 62/100 (Fair)**
+**Overall GEO Score: 70/100 (Fair)**
 
-Automic Vault has a strong technical GEO foundation: static HTML rendering, crawlable pages, explicit AI crawler access, a useful `llms.txt`, canonical URLs, and consistent JSON-LD across the site. The strongest underused asset is founder authority: Max Howell's public association with creating Homebrew in 2009 is sourceable and highly relevant to package-manager and developer-tooling credibility, but the Automic Vault site does not yet expose that authority through an about page, `Person` schema, citations, or expanded `sameAs` links. The remaining gaps are content depth, visible freshness, citations, and richer software/article/FAQ structured data.
+The rewritten homepage is a real improvement over the prior version: it has cleaner positioning, valid JSON-LD for the product/entity graph, absolute social images, crawlable static HTML, explicit AI crawler access, and a strong `llms.txt`. The biggest remaining GEO constraint is not technical accessibility; it is extractability and authority depth. AI systems can understand what Automic Vault is, but the homepage and most topic pages still need fuller direct-answer blocks, more evidence, stronger security trust details, and more third-party platform signals before they are likely to be cited over larger security and secrets-management vendors.
 
 ### Score Breakdown
 
 | Category | Score | Weight | Weighted Score |
 |---|---:|---:|---:|
-| AI Citability | 67/100 | 25% | 16.75 |
-| Brand Authority | 46/100 | 20% | 9.20 |
-| Content E-E-A-T | 62/100 | 20% | 12.40 |
-| Technical GEO | 84/100 | 15% | 12.60 |
-| Schema & Structured Data | 61/100 | 10% | 6.10 |
-| Platform Optimization | 48/100 | 10% | 4.80 |
-| **Overall GEO Score** | | | **62/100** |
+| AI Citability | 74/100 | 25% | 18.50 |
+| Brand Authority | 58/100 | 20% | 11.60 |
+| Content E-E-A-T | 68/100 | 20% | 13.60 |
+| Technical GEO | 86/100 | 15% | 12.90 |
+| Schema & Structured Data | 82/100 | 10% | 8.20 |
+| Platform Optimization | 56/100 | 10% | 5.60 |
+| **Overall GEO Score** | | | **70/100** |
 
 ---
 
 ## Audit Scope and Boundaries
 
-- **User-facing surface changed:** none. This is an additive audit report only.
-- **Runtime boundary audited:** static website under `www/`, served publicly at `https://www.automicvault.com/` via S3/CloudFront.
-- **Persistence boundary audited:** none. The site is static; no datastore or app persistence is involved.
-- **Change type:** additive documentation.
+- **User-facing surface changed:** the static website homepage at `www/index.html`, with support signals from docs, topic pages, sitemap, robots, and `llms.txt`.
+- **Runtime boundary audited:** static HTML/CSS/JS under `www/`, publicly served at `https://www.automicvault.com/` through S3/CloudFront.
+- **Persistence boundary audited:** none. The site has no datastore; this audit covers static content and deploy-facing files.
+- **Change type:** additive documentation. This report replaces the previous audit artifact.
+- **Deployment note:** as of 2026-05-16, the public homepage still served older copy from CloudFront/S3 while the local `www/index.html` contained the rewrite. Crawlers will not see the rewritten homepage until it is deployed and cache freshness aligns.
 
 ## Critical Issues (Fix Immediately)
 
-No critical issues were found.
+No critical issues were found in the local rewrite.
 
-AI crawlers are not blocked, the homepage and key pages return indexable HTML, no domain-level `noindex` directive was found, key pages do not return 5xx errors, and structured data is present on all HTML pages.
+The audited local homepage is indexable static HTML, has canonical metadata, includes structured data, and is not blocked by `robots.txt`. Key AI crawlers are explicitly allowed.
 
 ## High Priority Issues
 
-1. **Founder authority is strong but under-modeled on the site.**  
-   Public sources verify that Max Howell created Homebrew in 2009, which is highly relevant authority for a macOS package-manager and developer-security product. Automic Vault mentions this on the homepage, but the site lacks an `/about/` page, `Person` schema, founder links, source citations, and expanded `sameAs` connections that would make this signal easier for AI systems to resolve.
+1. **The rewritten homepage is not yet the live crawler-visible homepage.**  
+   Local `www/index.html` has the new content and `dateModified: 2026-05-16`, but the live homepage response still served the older page with `Last-Modified: Fri, 15 May 2026 19:15:13 GMT`. Deploy and invalidate/refresh CloudFront before treating the rewrite as public GEO progress.
 
-2. **Article and docs pages lack author and freshness metadata.**  
-   SEO pages declare `Article`, and docs declare `TechArticle`, but the JSON-LD lacks `author`, `headline`, `datePublished`, `dateModified`, and `image`. Visible "Last updated" text is only present in `www/pricing.md`.
+2. **Homepage citability is still lighter than the technical foundation.**  
+   The homepage is clear and visually structured, but its passages are mostly short marketing/product blocks. Add one 80-140 word direct-answer section near the top that defines Automic Vault, who it is for, what it protects, how secrets/approval/package roots work, and why it differs from normal agent guardrails.
 
-3. **No dedicated trust or entity pages exist.**  
-   The site has no `/about/`, `/security/`, `/privacy/`, `/terms/`, contact page, disclosure policy, founder bio page, or team/maintainer page. The homepage contains useful Max Howell/founder authority, but it is not formalized or linked as a durable entity signal.
+3. **Brand authority depends heavily on founder authority.**  
+   Max Howell/Homebrew context is valuable and now modeled better through `/about/` and `Person` schema, but Automic Vault itself has limited third-party proof: GitHub is discoverable, but broader Reddit, YouTube, LinkedIn, press, Product Hunt/HN, Wikidata, and independent review signals are sparse or absent.
 
-4. **High-intent topic pages are thin for AI citation.**  
-   Most SEO topic pages are clear but short. They define a problem and product angle, then stop before deeper threat models, implementation examples, limitations, citations, FAQs, or source-backed comparisons. This makes them less likely to be cited by answer engines when competing with deeper vendor and documentation pages.
+4. **Most topic pages are still thin for competitive AI answers.**  
+   The docs page is strong at roughly 1,500 words, but most topic/security/about pages are roughly 175-375 words. That is enough for crawlability, not enough to win citation against established pages for AI agent security, secrets management, HashiCorp Vault comparisons, AWS credentials, or GitHub token safety.
 
 ## Medium Priority Issues
 
-1. **`SoftwareApplication` schema is valid but incomplete.**  
-   Current schema includes `name`, `applicationCategory`, `operatingSystem`, `url`, `description`, and `publisher`. It should also include fields already known to the site: `softwareVersion`, `downloadUrl`, `codeRepository`, `license`, `offers`, `featureList`, and `screenshot`.
+1. **Entity schema uses loose `sameAs` relationships.**  
+   `brew.sh` and Homebrew references support Max Howell's founder authority, but they are not the same entity as Automic Vault. Keep Automic Vault `sameAs` to Automic Vault-owned profiles and move Homebrew/founder references into `Person.sameAs`, `knowsAbout`, `mentions`, or `subjectOf`.
 
-2. **Docs FAQ is visible but not represented as `FAQPage` schema.**  
-   `www/docs/index.html` has a real FAQ section, but no corresponding structured data. This is a clean extraction win for ChatGPT, Perplexity, Gemini, and Copilot even if FAQ rich-result display is platform-dependent.
+2. **Homepage freshness signals are inconsistent.**  
+   The homepage JSON-LD says `dateModified: 2026-05-16`, while `www/sitemap.xml` still lists the homepage `<lastmod>` as `2026-05-15`. Align local metadata, sitemap, and deployment timestamps.
 
-3. **Sitemap lacks `<lastmod>` and includes low-value URLs.**  
-   `www/sitemap.xml` lists key pages, but has no freshness metadata. It also includes `robots.txt`, which is low-value in an XML sitemap. `llms.txt` can remain if intentional for AI discovery; `pricing.md` would be stronger as an HTML page.
+3. **Live security headers are weak.**  
+   Public CloudFront/S3 responses lacked HSTS, CSP, `X-Content-Type-Options`, `Referrer-Policy`, frame control, and `Permissions-Policy`. This is not a direct citation blocker, but it weakens technical trust for a security product.
 
-4. **Evidence density is low.**  
-   Several claims are strong but unsupported by citations, benchmarks, source links, or external references. Comparison pages should cite primary sources such as vendor docs, platform docs, relevant standards, and Automic Vault source files.
+4. **Security disclosure is too informal.**  
+   `/security/` gives useful threat-model notes, but needs a stronger disclosure path, supported versions, signing/notarization notes, release verification, and explicit guidance for reporting sensitive issues without public secrets.
 
-5. **Platform-specific indexing hooks are incomplete.**  
-   The site has good crawler access, but no IndexNow key/workflow was found for Bing/Copilot freshness. Search Console/Bing Webmaster submission cannot be verified from the repo.
+5. **`pricing.md` is not ideal for AI/search extraction.**  
+   It is crawlable and listed in the sitemap, but a `/pricing/` HTML page would be a stronger target for schema `Offer.url`, search snippets, and AI extractability.
 
-6. **Live security headers are missing.**  
-   Public responses confirm HTTPS and CloudFront delivery, but do not include HSTS, CSP, `X-Content-Type-Options`, `Referrer-Policy`, or frame-control headers. This is not a direct AI citation blocker, but it affects technical trust and browser security posture.
+6. **Comparisons are visually present but not always machine-friendly.**  
+   Where pages compare Automic Vault with Homebrew, 1Password, HashiCorp Vault, secret scanning, or built-in agent controls, semantic `<table>` elements would improve extraction.
 
 ## Low Priority Issues
 
-1. **Homepage `og:image` is relative.**  
-   The homepage uses `/preview.jpg`; use an absolute URL for Open Graph consistency.
+1. **Homepage lacks visible "Last updated" text.**  
+   JSON-LD has dates, but every support page exposes a visible update date while the homepage does not.
 
-2. **Twitter card metadata is inconsistent.**  
-   The homepage has title, description, and image tags. Most topic pages only declare `twitter:card`.
+2. **`Organization.logo` can be richer.**  
+   Use an `ImageObject` with `url`, `width`, and `height` instead of a plain URL.
 
-3. **Some copy reduces professional citability.**  
-   Phrases such as "Agents and malware can suck it", "not vibes", and unsupported absolutes like "cannot be bypassed" are memorable, but less likely to be quoted in enterprise/security answers. There is also a typo: "intimiately".
+3. **`Person` schema can carry more authority.**  
+   Add `jobTitle`, `image`, `knowsAbout`, and exact profile URLs for Max Howell where they are stable.
 
-4. **Some image and mobile polish remains.**  
-   The homepage hero grid image lacks explicit dimensions, below-fold images could use `loading="lazy"`, and docs copy buttons appear below standard mobile tap-target guidance.
+4. **Some support pages should be `TechArticle`.**  
+   Several technical pages currently use generic `Article`; docs-like or implementation-specific pages would be stronger as `TechArticle`.
+
+5. **The downloadable DMG is not present in `www/`.**  
+   Live `/Automic Vault.dmg` returns `200`, so this appears to be a deploy artifact. Document or automate that artifact so local validation understands it.
 
 ---
 
 ## Category Deep Dives
 
-### AI Citability (67/100)
+### AI Citability (74/100)
 
 **Strengths**
 
-- `www/llms.txt` is unusually useful: it states product category, current version, license, source repository, pricing, use cases, non-goals, and recommended descriptions in an extractable format.
-- The site has clear topical pages for high-intent queries: AI agent secrets, `.env` exposure, API keys, MCP secrets, privileged access, approval gates, AWS CLI credentials, GitHub CLI tokens, secret scanning, and shell installer tracing.
-- Pages are server-rendered static HTML. Titles, meta descriptions, H1s, links, and body copy are visible without JavaScript.
-- Most pages use direct explanatory copy and clear H2/H3 structures.
+- The local homepage has a clean H1, descriptive title, canonical URL, meta description, Open Graph/Twitter metadata, and crawlable static content.
+- `www/llms.txt` is strong: it gives product facts, category, version, license, source, pricing, founder context, use cases, non-goals, citeable URLs, and recommended descriptions.
+- The site has a focused topical cluster around AI agent secrets, `.env` exposure, API keys, MCP, privileged access, approval gates, AWS CLI, GitHub CLI, secret scanning, installer tracing, and HashiCorp Vault comparisons.
+- The docs page is the most citation-ready owned page because it has concrete commands, operational trust notes, and `FAQPage` schema.
 
 **Gaps**
 
-- Topic pages need more direct answer blocks that can stand alone in AI responses.
-- Claims need citations and examples. AI systems prefer passages that state what, why, limitation, and source basis in one compact block.
-- The docs FAQ should be exposed as structured data.
-- Content repeats some phrases across pages, especially "Close the next credential path", which makes the cluster feel templated.
+- Homepage sections such as "Highlights," "Fit," and "Guides" scan well for humans but do not directly match common AI-answer query shapes.
+- Many homepage statements are short and product-forward rather than self-contained explanatory passages.
+- Topic pages repeat the same structure and are often under 400 words.
+- Most pages lack source citations, measured examples, screenshots tied to claims, or worked before/after workflows.
 
-**Rewrite Pattern**
+**Rewrite Suggestions**
 
-Add a short "Direct answer" block near the top of each topic page:
+Add a direct-answer block near the homepage hero:
 
-> Automic Vault is a local macOS security layer for AI coding agents. It keeps secrets out of files and model context, then injects approved credentials only into trusted command-line tools at runtime. This differs from central vaults such as HashiCorp Vault because it controls the final local execution step where an agent can read files, call CLIs, or expose tokens.
+> Automic Vault is a local macOS security layer for AI coding agents. It keeps developer secrets out of plaintext files and model context, injects approved credentials only into trusted command-line tools, and places human approval gates at the execution layer where tools actually run. Its Nucleus package manager installs Homebrew, npm, and PyPI packages under controlled roots so agent-used tools are harder to rewrite in place. Automic Vault is free Apache 2.0 software for developers who want local runtime control without moving every workflow into a hosted secrets platform.
 
-### Brand Authority (46/100)
+Add query-matching subheads where they fit naturally: "What is Automic Vault?", "How does Automic Vault protect AI agent secrets?", "How do command approval gates work?", and "What is Nucleus?"
+
+### Brand Authority (58/100)
 
 **Strengths**
 
-- The brand is coherent on owned surfaces: homepage, docs, `llms.txt`, GitHub, and X.
-- `mxcl.dev`, Homebrew, Wikipedia, and other indexed references provide sourceable founder authority: Max Howell is publicly associated with creating Homebrew in 2009.
-- This authority is directly relevant to Automic Vault's positioning around package management, macOS developer tooling, installer tracing, and agent-era execution boundaries.
-- The public GitHub repo is discoverable and linked from the site.
+- The site now has an `/about/` page that explicitly connects Automic Vault to Max Howell and Homebrew.
+- `Person` schema exists for Max Howell, and the homepage/product schema links Automic Vault to the founder.
+- Public corroboration exists: [mxcl.dev](https://mxcl.dev/) describes Max Howell as creator of Homebrew and links Automic Vault, [Homebrew](https://brew.sh/) states Homebrew was created by Max Howell, and the [GitHub repository](https://github.com/automic-vault/automic-vault) is public.
+- The product entity is coherent across homepage, docs, `llms.txt`, GitHub, and X.
 
 **Gaps**
 
-- No LinkedIn company page, Wikipedia/Wikidata entity, YouTube demo, Product Hunt/HN launch thread, Reddit discussion, or third-party reviews were found during the audit.
-- `sameAs` only lists GitHub and X; it does not include `mxcl.dev`, a founder profile, Homebrew references, LinkedIn, or other stable entity anchors.
-- The homepage founder section is not connected to structured data with `founder`, `Person`, `knowsAbout`, or authoritative profile links.
-- Search results collide with Broadcom Automic Automation and generic Vault/Nucleus entities.
+- Automic Vault itself does not yet have strong third-party entity reinforcement beyond GitHub and founder-owned/related references.
+- Search results can collide with Broadcom Automic Automation and generic "vault" or "AI vault" products.
+- GitHub currently provides source and release proof, but limited social proof.
+- No durable external launch, demo, community, or review pages were found during spot checks.
 
 **Priority Direction**
 
-Convert the existing founder authority into a durable entity graph: add a founder/about page, cite Homebrew and independent references, add `Person` schema for Max Howell, add `Organization.founder`, add `knowsAbout` terms for package management and AI agent security, then reflect stable URLs in `sameAs` and `llms.txt`.
+Use founder authority as a bridge, but build product-specific authority: publish a demo video, create maintained company/profile pages only where they will be kept current, launch or discuss the project in developer/security communities, and add stable third-party links to `llms.txt` once they exist.
 
-### Content E-E-A-T (62/100)
-
-**Strengths**
-
-- Docs are the strongest expertise asset. They explain runtime boundaries, secret injection, containment, package installs, and operational trust notes.
-- The homepage communicates a specific point of view and connects the product to package-manager expertise.
-- Public founder credentials are strong and relevant: Homebrew's creation by Max Howell in 2009 is externally verifiable.
-- Pricing is transparent and current in `pricing.md`.
-
-**Gaps**
-
-- No formal author, maintainer, reviewer, or founder metadata appears on HTML content pages.
-- No visible update dates on HTML pages.
-- No citations to source code, security docs, platform docs, or third-party references.
-- No trust pages: privacy, terms, security, contact, disclosure, or about.
-- Most high-intent topic pages need more first-hand implementation details, screenshots tied to claims, limitations, and examples.
-
-### Technical GEO (84/100)
+### Content E-E-A-T (68/100)
 
 **Strengths**
 
-- `robots.txt` explicitly allows GPTBot, ChatGPT-User, PerplexityBot, ClaudeBot, anthropic-ai, Google-Extended, and Bingbot.
-- Sitemap exists and is declared from `robots.txt`.
-- Canonicals are present on every HTML page.
-- Raw HTML contains the primary content and metadata.
-- Live responses confirm HTTPS, S3/CloudFront delivery, compression-capable static serving, and long-lived immutable asset caching.
-- URL structure is clean and stable.
+- The docs page demonstrates actual product expertise with commands, patterns, and operational notes.
+- `/about/`, `/security/`, `/privacy/`, and `/terms/` now exist, which fixes a major trust gap from the prior audit.
+- Visible "Last updated" dates exist on support pages.
+- Article JSON-LD includes author, publisher, dates, image, and breadcrumbs.
+- The product is open source, Apache 2.0, and backed by a public repository.
 
 **Gaps**
 
-- No security response headers were observed on the live homepage response.
-- Sitemap has no `<lastmod>`.
-- Sitemap includes `robots.txt`.
-- Some page-speed polish remains: explicit dimensions/aspect-ratio for the hero grid image and lazy loading for below-fold images.
+- Most pages need more first-hand experience evidence: real scanner output, command transcripts, approval prompt examples, release verification notes, limitations, and failure modes.
+- `/security/` should be expanded for a security product: disclosure process, supported versions, notarization/signing, and concrete threat-model boundaries.
+- Topic pages should include visible byline/author blocks, not only JSON-LD author references.
+- Several claims would be stronger with primary-source citations to Apple Keychain docs, GitHub CLI auth docs, AWS credential docs, MCP docs, HashiCorp Vault docs, and Automic Vault source paths.
 
-### Schema & Structured Data (61/100)
+### Technical GEO (86/100)
 
 **Strengths**
 
-- All HTML pages include parseable JSON-LD.
-- The schema graph consistently uses `Organization`, `SoftwareApplication`, and either `WebPage`, `Article`, or `TechArticle`.
-- `Organization.sameAs` includes GitHub and X.
+- Static HTML exposes primary content without requiring JavaScript execution.
+- `robots.txt` allows major AI crawlers: GPTBot, ChatGPT-User, PerplexityBot, ClaudeBot, anthropic-ai, Google-Extended, and Bingbot.
+- `sitemap.xml` is present, valid, and now includes `<lastmod>` values.
+- `llms.txt` is present and crawler-accessible.
+- Canonical URLs exist across sampled HTML pages.
+- Live HTTPS responses are available from S3/CloudFront.
 
 **Gaps**
 
-- `SoftwareApplication` lacks rich software fields: `offers`, `softwareVersion`, `downloadUrl`, `codeRepository`, `license`, `featureList`, and `screenshot`.
-- Article pages lack `headline`, `author`, `datePublished`, `dateModified`, and `image`.
-- Docs FAQ lacks `FAQPage`.
-- Topic pages lack `BreadcrumbList`.
-- Homepage lacks a `WebSite` node.
-- Organization lacks `description`, `founder`, `foundingDate`, `knowsAbout`, and `contactPoint` if a real support channel exists.
+- The local rewrite was not yet visible on the live homepage during the audit.
+- Live responses lack important security headers.
+- Bare HTTP/domain redirect behavior should be reduced to a single canonical hop.
+- Homepage `dateModified`, sitemap `<lastmod>`, and deployment `Last-Modified` should align.
 
-### Platform Optimization (48/100)
+### Schema & Structured Data (82/100)
 
-**Google AI Overviews**
+**Strengths**
 
-Good crawlability and static HTML help. Missing visible dates, deeper citations, stronger author/entity schema, and FAQ/table structures limit eligibility for concise AI Overview extraction.
+- Every sampled HTML page has parseable JSON-LD.
+- Homepage schema includes `Organization`, `Person`, `WebSite`, `SoftwareApplication`, `WebPage`, and `BreadcrumbList`.
+- `SoftwareApplication` now includes strong fields: version, download URL, repository, license, screenshot, feature list, and offer.
+- Docs include `TechArticle` and `FAQPage`.
+- Article pages include author, publisher, image, `datePublished`, `dateModified`, and breadcrumbs.
+
+**Gaps**
+
+- `sameAs` should be exact identity, not broad relevance.
+- `Organization.logo` should be an `ImageObject`.
+- `Person` schema should be richer and use exact profile URLs.
+- Several implementation-heavy support pages should use `TechArticle`.
+- `Offer.url` should point at an HTML pricing URL once one exists.
+
+### Platform Optimization (56/100)
+
+**Google AI Overviews / Gemini**
+
+Strong crawlability, schema, and topical coverage help. The site still needs more direct-answer blocks, deeper pages, visible author blocks, semantic tables, and source citations to compete for answer extraction.
 
 **ChatGPT**
 
-`llms.txt`, GitHub, docs, static pages, and founder authority are strong. Brand/entity confidence is still limited because the site does not yet connect Automic Vault, Max Howell, Homebrew, and third-party references in structured data.
+`llms.txt`, static docs, open-source repository, and founder/entity context are strong. Product-specific authority is still early, and the live homepage must be deployed before ChatGPT-class crawlers can see the rewrite.
 
 **Perplexity**
 
-Perplexity heavily rewards sourceable, citation-friendly pages. Current pages need more primary-source links, dated updates, external references, and comparison tables.
-
-**Gemini**
-
-The site has good Google-crawl fundamentals, but needs stronger E-E-A-T, schema richness, and helpful-content depth.
+Perplexity tends to reward sourceable passages. Add citations, tables, primary-source links, and explicit "what this does/does not do" sections on high-intent pages.
 
 **Bing Copilot**
 
-Bingbot is allowed. Add IndexNow and Bing Webmaster submission workflow for freshness, especially because the site is new and changes often.
+Bingbot is allowed, but no IndexNow key/workflow was found. Add IndexNow and Bing Webmaster submission for freshness once the site is changing regularly.
 
 ---
 
 ## Quick Wins (Implement This Week)
 
-1. Add visible "Last updated" dates and JSON-LD `dateModified` to the homepage, docs, and all topic pages.
-2. Enrich `SoftwareApplication` JSON-LD with `softwareVersion`, `downloadUrl`, `codeRepository`, `license`, `offers.price: 0`, `featureList`, and `screenshot`.
-3. Add `FAQPage` schema to `www/docs/index.html` using the existing visible FAQ.
-4. Add `<lastmod>` to `www/sitemap.xml` and remove `robots.txt` from it.
-5. Create an `/about/` page with Max Howell founder credentials, Homebrew creation context, GitHub/profile links, product rationale, and structured `Person`/`Organization` links.
-6. Add one 120-160 word direct-answer block and 4-6 FAQs to the highest-value topic pages.
-7. Add citations to primary sources on comparison and credential pages: HashiCorp Vault docs, AWS credential docs, GitHub CLI auth docs, MCP docs, macOS Keychain docs, and Automic Vault source files.
-8. Configure security response headers in the CloudFront deployment path.
-9. Replace relative homepage `og:image` with `https://www.automicvault.com/preview.jpg`.
-10. Fix the typo "intimiately" and soften unsupported absolutes unless they are backed by source-level evidence.
+1. Deploy the rewritten `www/index.html`, verify the live page matches local source, and invalidate/refresh CloudFront.
+2. Align homepage `dateModified`, sitemap `<lastmod>`, visible update text, and deployment `Last-Modified`.
+3. Add a 80-140 word direct-answer block near the homepage hero.
+4. Tighten schema identity: remove non-identical Automic Vault `sameAs` values and move Homebrew/founder references into founder context.
+5. Expand `/security/` with disclosure process, supported versions, release signing/notarization, and no-secrets-in-public-issues guidance.
+6. Add CloudFront response headers: HSTS, CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, frame control, and `Permissions-Policy`.
+7. Convert `/pricing.md` into a durable `/pricing/` HTML page or add an HTML companion and update `Offer.url`.
+8. Add semantic comparison tables to HashiCorp Vault, secret scanning, approval gate, and homepage "Fit" content.
+9. Add visible author/byline blocks to docs and topic pages.
+10. Add 1-2 evidence assets: scanner output, approval prompt screenshot, trace output, or before/after `.env` workflow.
 
 ## 30-Day Action Plan
 
-### Week 1: Metadata and Crawl Signals
+### Week 1: Deploy and Align Signals
 
-- [ ] Add `lastmod` values to every sitemap URL.
-- [ ] Remove `robots.txt` from the sitemap.
-- [ ] Add visible "Last updated" dates to HTML pages.
-- [ ] Add `dateModified`, `datePublished`, `headline`, `author`, and `image` to Article/TechArticle JSON-LD.
-- [ ] Add richer `SoftwareApplication` schema fields.
-- [ ] Add `FAQPage` schema for the docs FAQ.
-- [ ] Make homepage `og:image` absolute.
+- [ ] Deploy the rewritten homepage and confirm the live rendered text matches local `www/index.html`.
+- [ ] Invalidate CloudFront or reduce stale cache exposure for the homepage.
+- [ ] Update homepage sitemap `<lastmod>` to `2026-05-16`.
+- [ ] Add visible homepage "Last updated" text if it fits the design.
+- [ ] Add the homepage direct-answer block.
+- [ ] Tighten Automic Vault and Max Howell schema identity relationships.
 
-### Week 2: Authority and Trust
+### Week 2: Trust and Technical Infrastructure
 
-- [ ] Add `/about/` with Max Howell founder, Homebrew, maintainer, and product authority signals.
-- [ ] Add `/security/` with responsible disclosure, threat model summary, and source links.
-- [ ] Add `/privacy/` and `/terms/` if downloads, analytics, or support flows collect user data.
-- [ ] Add a contact/support path.
-- [ ] Add `founder`, `Person`, `knowsAbout`, and expanded `sameAs` schema for real profiles and stable public references.
+- [ ] Add CloudFront security response headers.
+- [ ] Reduce canonical redirects to one hop.
+- [ ] Expand `/security/` with disclosure, supported versions, and release verification.
+- [ ] Create `/pricing/` HTML and update sitemap plus `SoftwareApplication.offers.url`.
+- [ ] Document the DMG deploy artifact or include it in the publish workflow.
 
-### Week 3: Content Depth
+### Week 3: Citation Depth
 
-- [ ] Expand `/secrets-manager-for-ai-agents/` to 800-1,200 words with direct answer, threat model, examples, limitations, and citations.
-- [ ] Expand `/stop-ai-agents-reading-env-files/` with concrete before/after dotenv workflows.
-- [ ] Expand `/github-cli-token-security-ai-agents/` with GitHub CLI auth source links and safe workflow examples.
-- [ ] Expand `/hashicorp-vault-for-ai-agents/` with a sourced comparison table and clear "use both" guidance.
-- [ ] Add page-specific conclusions instead of repeated generic endings.
+- [ ] Expand `/secrets-manager-for-ai-agents/` to 700-1,200 words with examples, limitations, and citations.
+- [ ] Expand `/stop-ai-agents-reading-env-files/` with a concrete dotenv before/after workflow.
+- [ ] Expand `/github-cli-token-security-ai-agents/` with GitHub CLI auth source links.
+- [ ] Expand `/secure-aws-cli-credentials-ai-agents/` with AWS credential source links and safe workflow examples.
+- [ ] Convert major comparisons into semantic tables.
 
-### Week 4: External Entity Building
+### Week 4: Product Entity Building
 
-- [ ] Polish the GitHub org profile and repo topics.
-- [ ] Publish a short demo video and link it from the site.
-- [ ] Create or complete LinkedIn company/profile references if appropriate.
-- [ ] Launch a discussion/post on a relevant developer/security venue and link it from `llms.txt` when stable.
-- [ ] Add IndexNow key and submission workflow for updated URLs.
-- [ ] Submit the sitemap in Google Search Console and Bing Webmaster Tools.
+- [ ] Publish a short demo video and link it from the site and `llms.txt`.
+- [ ] Add maintained external profiles only where they will stay current.
+- [ ] Start a developer/security community discussion and link it once stable.
+- [ ] Add IndexNow support for updated URLs.
+- [ ] Add original evidence assets: scanner sample, approval screenshots, trace output, or signed release verification walkthrough.
 
 ---
 
 ## Appendix: Pages Analyzed
 
-| URL | Title | GEO Issues |
+| URL / File | Title | GEO Issues |
 |---|---|---:|
-| https://www.automicvault.com/ | Automic Vault \| AI Agent Security for macOS | 8 |
-| https://www.automicvault.com/docs/ | Automic Vault CLI Docs | 6 |
-| https://www.automicvault.com/secrets-manager-for-ai-agents/ | Secrets Manager for AI Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/stop-ai-agents-reading-env-files/ | Stop AI Agents Reading .env Files \| Automic Vault | 6 |
-| https://www.automicvault.com/api-key-management-for-ai-agents/ | API Key Management for AI Coding Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/hashicorp-vault-for-ai-agents/ | HashiCorp Vault vs Automic Vault for AI Agent Security | 7 |
-| https://www.automicvault.com/mcp-secrets-management/ | MCP Secrets Management for AI Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/privileged-access-management-for-ai-agents/ | Privileged Access Management for AI Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/ai-agent-approval-gates/ | AI Agent Approval Gates \| Automic Vault | 6 |
-| https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/ | Secure AWS CLI Credentials for AI Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/github-cli-token-security-ai-agents/ | GitHub CLI Token Security for AI Agents \| Automic Vault | 6 |
-| https://www.automicvault.com/secret-scanner-for-ai-agents/ | AI Agent Secret Scanner \| Automic Vault | 6 |
-| https://www.automicvault.com/av-trace/ | av trace \| Trace Shell Installers Before AI Agents Run Them | 6 |
-| https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/ | Secret Scanning vs Agent Secret Protection \| Automic Vault | 6 |
-| https://www.automicvault.com/llms.txt | AI summary file | 1 |
-| https://www.automicvault.com/pricing.md | Markdown pricing page | 3 |
-| https://www.automicvault.com/robots.txt | Robots policy | 0 |
+| `www/index.html` | Automic Vault \| AI Agent Security for macOS | 5 |
+| `www/docs/index.html` | Automic Vault CLI Docs | 2 |
+| `www/about/index.html` | About Automic Vault \| Max Howell and Agent Security | 2 |
+| `www/security/index.html` | Security \| Automic Vault | 4 |
+| `www/privacy/index.html` | Privacy \| Automic Vault | 2 |
+| `www/terms/index.html` | Terms \| Automic Vault | 2 |
+| `www/secrets-manager-for-ai-agents/index.html` | Secrets Manager for AI Agents \| Automic Vault | 3 |
+| `www/stop-ai-agents-reading-env-files/index.html` | Stop AI Agents Reading .env Files \| Automic Vault | 3 |
+| `www/api-key-management-for-ai-agents/index.html` | API Key Management for AI Coding Agents \| Automic Vault | 3 |
+| `www/hashicorp-vault-for-ai-agents/index.html` | HashiCorp Vault vs Automic Vault for AI Agent Security | 3 |
+| `www/mcp-secrets-management/index.html` | MCP Secrets Management for AI Agents \| Automic Vault | 3 |
+| `www/privileged-access-management-for-ai-agents/index.html` | Privileged Access Management for AI Agents \| Automic Vault | 3 |
+| `www/ai-agent-approval-gates/index.html` | AI Agent Approval Gates \| Automic Vault | 3 |
+| `www/secure-aws-cli-credentials-ai-agents/index.html` | Secure AWS CLI Credentials for AI Agents \| Automic Vault | 3 |
+| `www/github-cli-token-security-ai-agents/index.html` | GitHub CLI Token Security for AI Agents \| Automic Vault | 3 |
+| `www/secret-scanner-for-ai-agents/index.html` | AI Agent Secret Scanner \| Automic Vault | 3 |
+| `www/av-trace/index.html` | av trace \| Trace Shell Installers Before AI Agents Run Them | 3 |
+| `www/secret-scanning-vs-agent-secret-protection/index.html` | Secret Scanning vs Agent Secret Protection \| Automic Vault | 3 |
+| `www/llms.txt` | AI-readable site summary | 1 |
+| `www/robots.txt` | Crawler policy | 0 |
+| `www/sitemap.xml` | Sitemap | 1 |
+| `www/pricing.md` | Pricing markdown | 2 |
 
-## Sources Consulted
+## Verification Notes
 
-- Local source files under `www/`, especially `index.html`, `docs/index.html`, `robots.txt`, `sitemap.xml`, `llms.txt`, and `pricing.md`.
-- Live response headers from `https://www.automicvault.com/` and `https://www.automicvault.com/assets/icon@2x.webp`.
-- GitHub repository metadata for `https://github.com/automic-vault/automic-vault`.
-- Search result evidence for `https://mxcl.dev/` and exact brand/domain queries.
-- Public references for Max Howell and Homebrew: `https://brew.sh/`, `https://en.wikipedia.org/wiki/Homebrew_(package_manager)`, and `https://workbrew.com/homebrew-turns-15`.
-- Google Search Central: `SoftwareApplication`, `Article`, `Organization`, and `robots.txt` documentation.
-- IndexNow documentation for URL update submission and key verification.
+- Parsed JSON-LD across all local `www/**/*.html` pages successfully.
+- Verified `robots.txt`, `llms.txt`, `sitemap.xml`, and local homepage metadata.
+- Spot-checked public sources: [mxcl.dev](https://mxcl.dev/), [brew.sh](https://brew.sh/), [GitHub repository](https://github.com/automic-vault/automic-vault), and live `https://www.automicvault.com/`.
+- Live homepage and `llms.txt` returned HTTP 200 through CloudFront/S3, but live homepage content lagged the local rewrite during this audit.
