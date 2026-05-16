@@ -144,10 +144,21 @@ count_scan_log_entries() {
   printf '%s\n' "${count}"
 }
 
+format_count_for_display() {
+  local count="$1"
+  perl -e '
+    my $count = shift;
+    die "Invalid count: $count\n" unless defined $count && $count =~ /\A[0-9]+\z/;
+    1 while $count =~ s/^([0-9]+)([0-9]{3})/$1,$2/;
+    print "$count\n";
+  ' "${count}"
+}
+
 prepare_site_for_upload() {
-  local secured_package_count index_path
+  local secured_package_count secured_package_display_count index_path
   log_step "Preparing deploy-time site content"
   secured_package_count="$(count_scan_log_entries)"
+  secured_package_display_count="$(format_count_for_display "${secured_package_count}")"
   prepared_site_dir="$(mktemp -d)"
   cp -R "${site_dir}/." "${prepared_site_dir}/"
 
@@ -156,19 +167,19 @@ prepare_site_for_upload() {
     die "Missing prepared index: ${index_path}"
   fi
 
-  SECURED_PACKAGE_LABEL="${secured_package_count} Packages" perl -0pi -e '
+  SECURED_PACKAGE_COUNT="${secured_package_display_count}" perl -0pi -e '
     BEGIN {
-      $label = $ENV{"SECURED_PACKAGE_LABEL"};
+      $count = $ENV{"SECURED_PACKAGE_COUNT"};
       $matches = 0;
     }
-    $matches += s{<small>Packages</small>}{<small>$label</small>}g;
+    $matches += s{(<small\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</small>)}{$1$count$2}g;
     END {
-      die "Expected exactly one Packages status label replacement, got $matches\n"
+      die "Expected exactly one secured package count replacement, got $matches\n"
         unless $matches == 1;
     }
   ' "${index_path}"
 
-  log_ok "Stamped ${secured_package_count} secured packages"
+  log_ok "Stamped ${secured_package_display_count} secured packages"
 }
 
 ensure_bucket() {
