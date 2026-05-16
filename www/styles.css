@@ -408,7 +408,6 @@ h1 {
 }
 
 .highlight-card {
-  position: relative;
   min-height: 164px;
   display: grid;
   align-content: space-between;
@@ -419,28 +418,6 @@ h1 {
   transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
 }
 
-.highlight-icon {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 42px;
-  height: 42px;
-  color: var(--muted);
-  opacity: 0.72;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.highlight-icon path,
-.highlight-icon rect,
-.highlight-icon circle {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .highlight-card:hover {
   transform: translateY(-2px);
   border-color: var(--muted);
@@ -448,42 +425,18 @@ h1 {
 }
 
 .highlight-card strong {
-  position: relative;
-  z-index: 1;
   max-width: 18rem;
   color: var(--ink);
   font-size: 1.14rem;
   line-height: 1.22;
 }
 
-.highlight-card > span {
-  position: relative;
-  z-index: 1;
-  justify-self: start;
-}
-
 .highlight-card.accent-hot span {
-  color: var(--hot);
-}
-
-.highlight-card.accent-hot .highlight-icon {
   color: var(--hot);
 }
 
 .highlight-card.accent-blue span {
   color: var(--blue);
-}
-
-.highlight-card.accent-blue .highlight-icon {
-  color: var(--blue);
-}
-
-.highlight-card.accent-green .highlight-icon {
-  color: var(--green);
-}
-
-.highlight-card.accent-gold .highlight-icon {
-  color: var(--gold);
 }
 
 .highlight-card.accent-green span {
