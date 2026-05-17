@@ -263,78 +263,91 @@ pub(crate) fn run_i_pip(
     let result = (|| {
         let plan = InstallPlan::for_i_pip(package_name.clone(), package_name.clone(), &pip_package);
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
-        let version = resolve_pip_latest_version(&pip_package)?;
-        let mut dependency_names = vec![pip_package_python_formula(&pip_package)];
-        append_pip_package_homebrew_dependencies(&mut dependency_names, &pip_package);
-        let formula_graph = resolve_formula_specs(&dependency_names, config, true)?;
-        let dependency_state =
-            resolve_dependency_install_state(&formula_graph, &plan.tmp_root, Some(&progress))?;
-        ensure_plan_parent_dirs(&plan)?;
-
-        let dependency_current =
-            dependencies_are_current(&plan, &dependency_state.installs, &[], config)?;
-        let mut dependencies_reinstalled = false;
-        if !dependency_current {
-            progress.begin_install_phase();
-            install_dependency_formulas(
-                config,
-                &plan,
-                &dependency_state.installs,
+        let (staged_plan, staging_workspace) = prepare_i_install_plan(&plan)?;
+        let install_result = (|| {
+            let version = resolve_pip_latest_version(&pip_package)?;
+            let mut dependency_names = vec![pip_package_python_formula(&pip_package)];
+            append_pip_package_homebrew_dependencies(&mut dependency_names, &pip_package);
+            let formula_graph = resolve_formula_specs(&dependency_names, config, true)?;
+            let dependency_state = resolve_dependency_install_state(
+                &formula_graph,
+                &staged_plan.tmp_root,
                 Some(&progress),
             )?;
-            dependencies_reinstalled = true;
-        }
+            ensure_plan_parent_dirs(&staged_plan)?;
 
-        if !pip_root_is_current(
-            &plan,
-            &version,
-            &dependency_state.installs,
-            &config.bottle_tag,
-        )? {
-            if !dependencies_reinstalled {
-                reinstall_vendor_dependency_tree(
+            let dependency_current =
+                dependencies_are_current(&staged_plan, &dependency_state.installs, &[], config)?;
+            let mut dependencies_reinstalled = false;
+            if !dependency_current {
+                progress.begin_install_phase();
+                install_dependency_formulas(
                     config,
-                    &plan,
+                    &staged_plan,
                     &dependency_state.installs,
-                    &[],
-                    &[],
                     Some(&progress),
                 )?;
+                dependencies_reinstalled = true;
             }
-            let entrypoints = install_pip_root(
+
+            if !pip_root_is_current(
+                &staged_plan,
+                &version,
+                &dependency_state.installs,
+                &config.bottle_tag,
+            )? {
+                if !dependencies_reinstalled {
+                    reinstall_vendor_dependency_tree(
+                        config,
+                        &staged_plan,
+                        &dependency_state.installs,
+                        &[],
+                        &[],
+                        Some(&progress),
+                    )?;
+                }
+                let entrypoints = install_pip_root(
+                    &staged_plan,
+                    &formula_graph,
+                    &package_name,
+                    &pip_package,
+                    &version,
+                    Some(&progress),
+                )?;
+                write_root_executable_manifest(
+                    &staged_plan.root_executables_manifest_path(),
+                    &entrypoints,
+                )?;
+            }
+
+            activate_install(&staged_plan)?;
+            let metadata = resolve_pip_package_metadata(&pip_package)?;
+            write_package_receipt(
+                &plan.root_receipt_path(),
+                &PackageReceipt {
+                    package_name: package_name.clone(),
+                    version: version.to_string(),
+                    source: PackageReceiptSource::Pip {
+                        package_name: pip_package.clone(),
+                    },
+                    metadata,
+                },
+            )?;
+            let root_executables =
+                load_root_executable_manifest(&plan.root_executables_manifest_path())?.stubs;
+            sync_declared_stubs(
                 &plan,
                 &formula_graph,
-                &package_name,
-                &pip_package,
-                &version,
-                Some(&progress),
+                &root_executables,
+                &package_stub_exclusions(&plan.package_name),
+                &previous_stubs,
             )?;
-            write_root_executable_manifest(&plan.root_executables_manifest_path(), &entrypoints)?;
+            installed_stub_paths(&plan)
+        })();
+        if install_result.is_err() {
+            preserve_optional_temp_dir_on_failure(staging_workspace);
         }
-
-        activate_install(&plan)?;
-        let metadata = resolve_pip_package_metadata(&pip_package)?;
-        write_package_receipt(
-            &plan.root_receipt_path(),
-            &PackageReceipt {
-                package_name: package_name.clone(),
-                version: version.to_string(),
-                source: PackageReceiptSource::Pip {
-                    package_name: pip_package.clone(),
-                },
-                metadata,
-            },
-        )?;
-        let root_executables =
-            load_root_executable_manifest(&plan.root_executables_manifest_path())?.stubs;
-        sync_declared_stubs(
-            &plan,
-            &formula_graph,
-            &root_executables,
-            &package_stub_exclusions(&plan.package_name),
-            &previous_stubs,
-        )?;
-        installed_stub_paths(&plan)
+        install_result
     })();
 
     match result {
