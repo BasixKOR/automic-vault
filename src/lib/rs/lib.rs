@@ -8960,7 +8960,7 @@ or `npm:clawhub` for the aliased package"
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(base.clone()),
             npm_registry_root: Some(base.clone()),
-            pypi_root: Some(base),
+            pypi_root: Some(base.clone()),
             ..Default::default()
         });
         let config = Config {
@@ -14051,7 +14051,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             github_api_root: Some(base.clone()),
             npm_registry_root: Some(base.clone()),
-            pypi_root: Some(base),
+            pypi_root: Some(base.clone()),
             ..Default::default()
         });
 
@@ -14216,8 +14216,8 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &[("pkg/bin/coverage-vendor", b"#!/bin/sh\nprintf coverage\n")],
         );
         let vendor_bytes = fs::read(&vendor_archive).unwrap();
-        let (vendor_base, vendor_server) =
-            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 1);
+        let (vendor_base, _vendor_server) =
+            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 2);
         let version = Version::parse("0.0.0").unwrap();
         register_test_download_url(&version, format!("{vendor_base}/vendor.tar.gz"));
 
@@ -14244,7 +14244,6 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             Some(callback),
         )
         .unwrap();
-        vendor_server.join().unwrap();
 
         let receipt = load_package_receipt(&install_root.join(ROOT_RECEIPT))
             .unwrap()
@@ -14269,6 +14268,34 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
         ));
 
+        fs::remove_file(install_root.join("bin/coverage-vendor")).unwrap();
+        let reinstall_events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let reinstall_callback_events = Arc::clone(&reinstall_events);
+        let reinstall_callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                reinstall_callback_events.lock().unwrap().push(event);
+            })));
+
+        run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            vendor::VendorPackage {
+                name: package_name,
+                dependencies: &[],
+                executables: &["coverage-vendor"],
+                version: fake_vendor_version,
+                download_url: Some(test_download_url),
+                install: coverage_vendor_install_strategy,
+            },
+            Some(reinstall_callback),
+        )
+        .unwrap();
+        assert!(is_executable(&install_root.join("bin/coverage-vendor")));
+        assert!(reinstall_events.lock().unwrap().iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
+        ));
         remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
     }
 
@@ -14355,7 +14382,7 @@ fi
                 ("/node.tar.gz".to_string(), node_bytes),
                 ("/python.tar.gz".to_string(), python_bytes),
             ],
-            2,
+            10,
         );
         let node_json = serde_json::to_vec(&serde_json::json!({
             "versions": { "stable": "1.0.0" },
@@ -14420,12 +14447,12 @@ fi
                     .to_vec(),
                 ),
             ],
-            6,
+            20,
         );
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(base.clone()),
             npm_registry_root: Some(base.clone()),
-            pypi_root: Some(base),
+            pypi_root: Some(base.clone()),
             ..Default::default()
         });
 
@@ -14451,8 +14478,6 @@ fi
             None,
         )
         .unwrap();
-        server.join().unwrap();
-        bottle_server.join().unwrap();
 
         let npm_root = opt_root.join("npm/coverage-npm");
         let pip_root = opt_root.join("pip/coverage-pip");
@@ -14475,6 +14500,57 @@ fi
             "2.3.4"
         );
 
+        fs::remove_file(npm_root.join("bin/coverage-npm")).unwrap();
+        fs::remove_file(pip_root.join("bin/coverage-pip")).unwrap();
+
+        let reinstall_events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let npm_reinstall_events = Arc::clone(&reinstall_events);
+        let npm_callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                npm_reinstall_events.lock().unwrap().push(event);
+            })));
+        run_i_npm(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "npm:coverage-npm".to_string(),
+            "coverage-npm".to_string(),
+            None,
+            InstallOptions {
+                allow_reinstall: false,
+            },
+            Some(npm_callback),
+        )
+        .unwrap();
+
+        let pip_reinstall_events = Arc::clone(&reinstall_events);
+        let pip_callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                pip_reinstall_events.lock().unwrap().push(event);
+            })));
+        run_i_pip(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "pip:coverage-pip".to_string(),
+            "coverage-pip".to_string(),
+            Some(pip_callback),
+        )
+        .unwrap();
+
+        assert!(is_executable(&npm_root.join("bin/coverage-npm")));
+        assert!(is_executable(&pip_root.join("bin/coverage-pip")));
+        let reinstall_events = reinstall_events.lock().unwrap();
+        assert!(reinstall_events.iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == "npm:coverage-npm")
+        ));
+        assert!(reinstall_events.iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == "pip:coverage-pip")
+        ));
+        drain_test_server(&base, "/coverage-npm", 20);
+        drain_test_server(&bottle_base, "/node.tar.gz", 10);
+        server.join().unwrap();
+        bottle_server.join().unwrap();
         remove_existing_package_install(&opt_root, "npm:coverage-npm", &bin_root).unwrap();
         remove_existing_package_install(&opt_root, "pip:coverage-pip", &bin_root).unwrap();
     }
@@ -14730,6 +14806,13 @@ fi
     impl Drop for TestEndpointGuard {
         fn drop(&mut self) {
             config::clear_test_endpoint_overrides();
+        }
+    }
+
+    fn drain_test_server(base: &str, path: &str, attempts: usize) {
+        let url = format!("{base}{path}");
+        for _ in 0..attempts {
+            let _ = ureq::get(&url).call();
         }
     }
 
