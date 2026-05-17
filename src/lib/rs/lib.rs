@@ -268,10 +268,12 @@ fn embedded_combined_data() -> &'static CombinedData {
     COMBINED_DATA.get_or_init(|| {
         #[cfg(all(not(test), feature = "packaged-db"))]
         {
-            load_trusted_remote_combined_data().unwrap_or_else(|| {
-                serde_json::from_slice(EMBEDDED_COMBINED_DATA)
-                    .expect("failed to parse embedded combined package data JSON")
-            })
+            let embedded = serde_json::from_slice(EMBEDDED_COMBINED_DATA)
+                .expect("failed to parse embedded combined package data JSON");
+            match load_trusted_remote_combined_data() {
+                Some(remote) if combined_data_is_at_least_as_new(&remote, &embedded) => remote,
+                _ => embedded,
+            }
         }
         #[cfg(any(test, not(feature = "packaged-db")))]
         {
@@ -279,6 +281,17 @@ fn embedded_combined_data() -> &'static CombinedData {
                 .expect("failed to parse embedded combined package data JSON")
         }
     })
+}
+
+#[cfg(any(test, feature = "packaged-db"))]
+fn combined_data_is_at_least_as_new(candidate: &CombinedData, baseline: &CombinedData) -> bool {
+    let Ok(candidate_time) = OffsetDateTime::parse(&candidate.generated_at, &Rfc3339) else {
+        return false;
+    };
+    let Ok(baseline_time) = OffsetDateTime::parse(&baseline.generated_at, &Rfc3339) else {
+        return true;
+    };
+    candidate_time >= baseline_time
 }
 
 #[cfg(all(not(test), feature = "packaged-db"))]
@@ -12998,6 +13011,18 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn combined_data_freshness_rejects_older_remote_cache() {
+        let embedded = test_combined_data_with_generated_at("2026-05-17T13:12:55Z");
+        let older_remote = test_combined_data_with_generated_at("2026-05-17T12:42:37Z");
+        let same_remote = test_combined_data_with_generated_at("2026-05-17T13:12:55Z");
+        let newer_remote = test_combined_data_with_generated_at("2026-05-17T13:12:56Z");
+
+        assert!(!combined_data_is_at_least_as_new(&older_remote, &embedded));
+        assert!(combined_data_is_at_least_as_new(&same_remote, &embedded));
+        assert!(combined_data_is_at_least_as_new(&newer_remote, &embedded));
+    }
+
+    #[test]
     fn trusted_remote_combined_data_rejects_world_writable_cache_file() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("db.json");
@@ -14985,6 +15010,27 @@ fi
 
     fn test_combined_data_json() -> Vec<u8> {
         test_combined_data_json_with_db_schema(DB_SCHEMA_VERSION)
+    }
+
+    fn test_combined_data_with_generated_at(generated_at: &str) -> CombinedData {
+        serde_json::from_value(serde_json::json!({
+            "schema": 1,
+            "generated_at": generated_at,
+            "sources": {
+                "aliases": {},
+                "db": {
+                    "schema": DB_SCHEMA_VERSION,
+                    "generated_at": generated_at,
+                    "entries": {},
+                    "npms": {}
+                },
+                "isotopes": {},
+                "npm": {},
+                "pip": {},
+                "stub_exclusions": {}
+            }
+        }))
+        .unwrap()
     }
 
     fn test_combined_data_json_with_db_schema(db_schema: u32) -> Vec<u8> {

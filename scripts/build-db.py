@@ -527,7 +527,11 @@ def _supported_cask_artifacts(artifacts):
         if parsed is not None:
             binaries.append(parsed)
             continue
-        if isinstance(artifact, dict) and set(artifact.keys()) <= {"zap", "uninstall"}:
+        if (
+            isinstance(artifact, dict)
+            and set(artifact.keys())
+            <= {"generate_completions_from_executable", "zap", "uninstall"}
+        ):
             continue
         return None
     return binaries if binaries else None
