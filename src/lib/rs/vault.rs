@@ -900,6 +900,8 @@ fn is_executable_file(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
 
     struct EnvGuard {
         previous: Vec<(&'static str, Option<OsString>)>,
@@ -1052,6 +1054,15 @@ mod tests {
     }
 
     #[test]
+    fn subs_vault_dispatch_reports_help_and_missing_command() {
+        assert!(dispatch_vault("vault", vec![OsString::from("--help")].into_iter()).is_ok());
+        assert_eq!(
+            dispatch_vault("vault", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing command"
+        );
+    }
+
+    #[test]
     fn subs_proxy_and_internal_exec_cover_runtime_paths() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
@@ -1079,6 +1090,23 @@ mod tests {
             run_proxy(vec![ok_tool.as_os_str().to_os_string()].into_iter())
                 .unwrap_err()
                 .contains("vaultd unavailable")
+        );
+    }
+
+    #[test]
+    fn subs_internal_exec_rejects_missing_and_non_utf8_tool_names() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let _env = EnvGuard::set(&[(VAULT_TRUSTED_INTERNAL_ENV, VAULT_TRUSTED_INTERNAL_VALUE)]);
+
+        assert_eq!(
+            run_internal_exec("vault", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing tool name"
+        );
+
+        #[cfg(unix)]
+        assert_eq!(
+            run_internal_exec("vault", vec![OsString::from_vec(vec![0xff])].into_iter()).unwrap_err(),
+            "internal-exec arguments must be valid UTF-8"
         );
     }
 
@@ -1130,6 +1158,29 @@ mod tests {
             build_execution_intent("bad/tool".to_string(), Vec::new())
                 .unwrap_err()
                 .contains("path separators")
+        );
+    }
+
+    #[test]
+    fn subs_vault_resolution_helpers_cover_default_socket_and_missing_home() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = EnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            (VAULT_SOCKET_PATH_ENV, ""),
+        ]);
+
+        assert_eq!(
+            resolve_vault_socket_path().unwrap(),
+            temp.path()
+                .join("Library/Application Support/Automic Vault")
+                .join(DEFAULT_VAULT_SOCKET_NAME)
+        );
+
+        unsafe { env::remove_var("HOME") };
+        assert_eq!(
+            resolve_vault_socket_path().unwrap_err(),
+            "HOME is not set"
         );
     }
 
@@ -1384,6 +1435,37 @@ mod tests {
     }
 
     #[test]
+    fn subs_toolchain_and_profile_commands_reject_non_utf8_and_missing_values() {
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                run_toolchain_command("vault", vec![OsString::from_vec(vec![0xff])].into_iter())
+                    .unwrap_err(),
+                "toolchain arguments must be valid UTF-8"
+            );
+            assert_eq!(
+                run_sandbox_profile_command(
+                    "vault",
+                    vec![OsString::from_vec(vec![0xff])].into_iter()
+                )
+                .unwrap_err(),
+                "sandbox-profile arguments must be valid UTF-8"
+            );
+        }
+
+        assert_eq!(
+            run_toolchain_command("vault", vec![OsString::from("--socket")].into_iter())
+                .unwrap_err(),
+            "missing value for --socket"
+        );
+        assert_eq!(
+            run_toolchain_command("vault", vec![OsString::from("--vault-bin")].into_iter())
+                .unwrap_err(),
+            "missing value for --vault-bin"
+        );
+    }
+
+    #[test]
     fn subs_toolchain_and_sandbox_commands_cover_success_paths() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
@@ -1426,6 +1508,81 @@ mod tests {
 
         run_toolchain_command("vault", vec![OsString::from("--json")].into_iter()).unwrap();
         run_sandbox_profile_command("vault", Vec::<OsString>::new().into_iter()).unwrap();
+    }
+
+    #[test]
+    fn subs_build_toolchain_helpers_cover_stub_and_alias_generation() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        let demo_tool = bin.join("demo-tool");
+        let hidden_tool = bin.join(".hidden-tool");
+        let vault_tool = bin.join("vault");
+        let non_exec = bin.join("README.txt");
+        write_executable(&demo_tool);
+        write_executable(&hidden_tool);
+        write_executable(&vault_tool);
+        fs::write(&non_exec, "note").unwrap();
+
+        let _env = EnvGuard::set(&[("PATH", bin.to_str().unwrap())]);
+        let aliases = collect_vault_aliases();
+        assert!(aliases.iter().any(|(name, path)| name == "demo-tool" && path == &demo_tool));
+        assert!(!aliases.iter().any(|(name, _)| name == ".hidden-tool" || name == "vault"));
+
+        let staged_vault = temp.path().join("staged-vault");
+        write_executable(&staged_vault);
+        let stub_path = temp.path().join("proxy-stub");
+        write_vault_proxy_stub(&stub_path, &staged_vault).unwrap();
+        assert!(is_executable_file(&stub_path));
+        assert_eq!(
+            fs::read_to_string(&stub_path).unwrap(),
+            format!("#!{} --proxy\n", staged_vault.display())
+        );
+    }
+
+    #[test]
+    fn subs_sandbox_helper_paths_cover_variants_and_initial_shell_alias() {
+        let temp = TempDir::new().unwrap();
+        let tmp_path = temp.path().join("nested/tool");
+        fs::create_dir_all(tmp_path.parent().unwrap()).unwrap();
+        fs::write(&tmp_path, "tool").unwrap();
+
+        let variants = sandbox_path_variants(&tmp_path);
+        assert!(variants.contains(&tmp_path));
+        if tmp_path.starts_with("/tmp") {
+            assert!(variants.iter().any(|path| path.starts_with("/private/tmp")));
+        }
+
+        assert_eq!(initial_executable_paths(None), Vec::<PathBuf>::new());
+        assert_eq!(
+            initial_executable_paths(Some(Path::new("/bin/sh"))),
+            vec![PathBuf::from("/bin/sh"), PathBuf::from("/bin/bash")]
+        );
+    }
+
+    #[test]
+    fn subs_build_toolchain_for_launch_tracks_initial_executable() {
+        let temp = TempDir::new().unwrap();
+        let vault_binary = temp.path().join("vault");
+        write_executable(&vault_binary);
+        let socket = temp.path().join("vault.sock");
+
+        let manifest = build_vault_toolchain_for_launch(
+            &vault_binary,
+            &socket,
+            Some(Path::new("/bin/sh")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            manifest.environment.initial_executable_path.as_deref(),
+            Some("/bin/sh")
+        );
+        let profile = fs::read_to_string(&manifest.environment.sandbox_profile_path).unwrap();
+        assert!(profile.contains("/bin/sh"));
+        assert!(profile.contains("/bin/bash"));
     }
 
     #[test]

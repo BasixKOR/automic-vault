@@ -244,6 +244,103 @@ fn subs_gate_cli_covers_help_version_and_parse_errors() {
 }
 
 #[test]
+fn subs_contain_cli_covers_help_version_and_vault_subcommands() {
+    let output = run_nuke(&["contain", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av contain <command>"));
+
+    let output = run_nuke(&["contain", "--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("av contain {}", pkg_version())));
+
+    let output = run_nuke(&["contain"]);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("Usage: av contain <command>"));
+    assert!(stderr(&output).contains("av contain: missing command"));
+
+    let output = run_nuke(&["contain", "--proxy"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("av contain: missing proxy stub path"));
+
+    let output = run_nuke(&["contain", "internal-exec"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("restricted to trusted callers"));
+
+    let output = run_nuke(&["contain", "toolchain", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av contain toolchain"));
+
+    let output = run_nuke(&["contain", "toolchain", "--socket"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing value for --socket"));
+
+    let output = run_nuke(&["contain", "toolchain", "--vault-bin"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing value for --vault-bin"));
+
+    let output = run_nuke(&["contain", "toolchain", "--bad"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown toolchain argument '--bad'"));
+
+    let output = run_nuke(&["contain", "sandbox-profile", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av contain sandbox-profile"));
+
+    let output = run_nuke(&["contain", "sandbox-profile", "--allow"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing value for --allow"));
+
+    let output = run_nuke(&["contain", "sandbox-profile", "--bad"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown sandbox-profile argument '--bad'"));
+}
+
+#[test]
+fn subs_contain_toolchain_and_profile_emit_expected_outputs() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("vault.sock");
+
+    let output = run_nuke_with_env(
+        &["contain", "toolchain", "--json"],
+        &[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("VAULT_SOCKET_PATH", socket.to_str().unwrap()),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let manifest: serde_json::Value = serde_json::from_str(stdout(&output).trim()).unwrap();
+    assert_eq!(
+        manifest["environment"]["socket_path"].as_str(),
+        Some(socket.to_str().unwrap())
+    );
+    assert_eq!(
+        manifest["environment"]["initial_executable_path"].as_str(),
+        None
+    );
+
+    let output = run_nuke_with_env(
+        &["contain", "sandbox-profile"],
+        &[("HOME", temp.path().to_str().unwrap())],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let profile = stdout(&output);
+    assert!(profile.contains("(allow default)"));
+    assert!(profile.contains("(deny process-exec)"));
+}
+
+#[test]
+fn subs_contain_sandboxed_command_exercises_launch_path() {
+    let output = run_nuke(&["contain", "/usr/bin/true"]);
+    let stderr = stderr(&output);
+    assert!(
+        output.status.success()
+            || stderr.contains("sandbox-exec:")
+            || stderr.contains("failed to enter sandbox:"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
 fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
     let version = pkg_version();
     let cases = [
