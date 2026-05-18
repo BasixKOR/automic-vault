@@ -365,6 +365,18 @@ mod tests {
     }
 
     #[test]
+    fn gate_dispatch_reports_help_and_missing_message() {
+        assert_eq!(
+            parse_gate_options("av gate", vec![OsString::from("--help")].into_iter()).unwrap(),
+            None
+        );
+        assert_eq!(
+            parse_gate_options("av gate", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing gate message"
+        );
+    }
+
+    #[test]
     fn gate_parent_snapshot_covers_display_name_derivation() {
         let snapshot = parent_process_snapshot();
         assert!(snapshot.pid > 0);
