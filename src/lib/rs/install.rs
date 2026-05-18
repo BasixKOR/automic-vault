@@ -4,13 +4,16 @@ pub(crate) fn run_i_vendor(
     config: &Config,
     package_name: String,
     package: vendor::VendorPackage,
+    intent: InstallIntent,
     progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
 ) -> Result<(), String> {
     let progress = InstallProgress::with_callback(&package_name, progress_callback);
     let result = (|| {
         let plan = InstallPlan::for_i(package_name.clone(), package.name.to_string());
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
-        let (staged_plan, staging_workspace) = prepare_i_install_plan(&plan)?;
+        let prepared = prepare_i_install_plan(&plan, intent)?;
+        let staged_plan = prepared.plan;
+        let staging_workspace = prepared.workspace;
         let install_result = (|| {
             let version = (package.version)()?;
             let vendor_install = VendorInstall { package, version };
@@ -21,6 +24,8 @@ pub(crate) fn run_i_vendor(
             )?;
             let dependency_state = resolve_dependency_install_state(
                 &dependencies.formula_graph,
+                &staged_plan,
+                &config.bottle_tag,
                 &staged_plan.tmp_root,
                 Some(&progress),
             )?;
@@ -39,6 +44,7 @@ pub(crate) fn run_i_vendor(
                     config,
                     &staged_plan,
                     &dependency_state.installs,
+                    &dependency_state.changed_installs,
                     Some(&progress),
                 )?;
                 install_vendor_dependencies(
@@ -72,12 +78,14 @@ pub(crate) fn run_i_vendor(
                         )?;
                     }
                 }
+                let root_payload_before = prepare_root_payload_install(&staged_plan)?;
                 install_vendor_root(
                     &staged_plan,
                     &dependencies.formula_graph,
                     &vendor_install,
                     Some(&progress),
                 )?;
+                finish_root_payload_install(&staged_plan, root_payload_before)?;
             }
 
             activate_install(&staged_plan)?;
@@ -124,13 +132,16 @@ pub(crate) fn run_i_npm(
     npm_package: String,
     requested_version: Option<String>,
     _options: InstallOptions,
+    intent: InstallIntent,
     progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
 ) -> Result<(), String> {
     let progress = InstallProgress::with_callback(&package_name, progress_callback);
     let result = (|| {
         let plan = InstallPlan::for_i_npm(package_name.clone(), package_name.clone(), &npm_package);
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
-        let (staged_plan, staging_workspace) = prepare_i_install_plan(&plan)?;
+        let prepared = prepare_i_install_plan(&plan, intent)?;
+        let staged_plan = prepared.plan;
+        let staging_workspace = prepared.workspace;
         let install_result = (|| {
             let executable = npm_package_executable_name(&npm_package);
             let mut dependency_names = vec!["node".to_string()];
@@ -142,6 +153,8 @@ pub(crate) fn run_i_npm(
             let dependencies = resolve_vendor_dependency_specs(&dependency_names, config, false)?;
             let dependency_state = resolve_dependency_install_state(
                 &dependencies.formula_graph,
+                &staged_plan,
+                &config.bottle_tag,
                 &staged_plan.tmp_root,
                 Some(&progress),
             )?;
@@ -160,6 +173,7 @@ pub(crate) fn run_i_npm(
                     config,
                     &staged_plan,
                     &dependency_state.installs,
+                    &dependency_state.changed_installs,
                     Some(&progress),
                 )?;
                 install_vendor_dependencies(
@@ -203,6 +217,7 @@ pub(crate) fn run_i_npm(
                         )?;
                     }
                 }
+                let root_payload_before = prepare_root_payload_install(&staged_plan)?;
                 install_npm_root(
                     &staged_plan,
                     &dependencies.formula_graph,
@@ -211,6 +226,7 @@ pub(crate) fn run_i_npm(
                     &version,
                     Some(&progress),
                 )?;
+                finish_root_payload_install(&staged_plan, root_payload_before)?;
             }
 
             activate_install(&staged_plan)?;
@@ -257,13 +273,16 @@ pub(crate) fn run_i_pip(
     config: &Config,
     package_name: String,
     pip_package: String,
+    intent: InstallIntent,
     progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
 ) -> Result<(), String> {
     let progress = InstallProgress::with_callback(&package_name, progress_callback);
     let result = (|| {
         let plan = InstallPlan::for_i_pip(package_name.clone(), package_name.clone(), &pip_package);
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
-        let (staged_plan, staging_workspace) = prepare_i_install_plan(&plan)?;
+        let prepared = prepare_i_install_plan(&plan, intent)?;
+        let staged_plan = prepared.plan;
+        let staging_workspace = prepared.workspace;
         let install_result = (|| {
             let version = resolve_pip_latest_version(&pip_package)?;
             let mut dependency_names = vec![pip_package_python_formula(&pip_package)];
@@ -271,6 +290,8 @@ pub(crate) fn run_i_pip(
             let formula_graph = resolve_formula_specs(&dependency_names, config, true)?;
             let dependency_state = resolve_dependency_install_state(
                 &formula_graph,
+                &staged_plan,
+                &config.bottle_tag,
                 &staged_plan.tmp_root,
                 Some(&progress),
             )?;
@@ -285,6 +306,7 @@ pub(crate) fn run_i_pip(
                     config,
                     &staged_plan,
                     &dependency_state.installs,
+                    &dependency_state.changed_installs,
                     Some(&progress),
                 )?;
                 dependencies_reinstalled = true;
@@ -306,6 +328,7 @@ pub(crate) fn run_i_pip(
                         Some(&progress),
                     )?;
                 }
+                let root_payload_before = prepare_root_payload_install(&staged_plan)?;
                 let entrypoints = install_pip_root(
                     &staged_plan,
                     &formula_graph,
@@ -314,6 +337,7 @@ pub(crate) fn run_i_pip(
                     &version,
                     Some(&progress),
                 )?;
+                finish_root_payload_install(&staged_plan, root_payload_before)?;
                 write_root_executable_manifest(
                     &staged_plan.root_executables_manifest_path(),
                     &entrypoints,

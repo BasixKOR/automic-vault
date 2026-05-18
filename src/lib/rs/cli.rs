@@ -149,7 +149,7 @@ pub(crate) fn run_update(invocation: &Invocation, mut args: env::ArgsOs) -> Resu
             &config,
             requested_package_from_status(&package),
             InstallOptions {
-                allow_reinstall: true,
+                intent: InstallIntent::Update,
             },
         )?;
     }

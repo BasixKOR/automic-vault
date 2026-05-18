@@ -651,7 +651,7 @@ fn install_packages(
             &config,
             package,
             InstallOptions {
-                allow_reinstall: false,
+                intent: InstallIntent::Install,
             },
             Some(progress_callback.clone()),
         )?;
@@ -709,7 +709,7 @@ fn update_packages(
             &config,
             package,
             InstallOptions {
-                allow_reinstall: true,
+                intent: InstallIntent::Update,
             },
             Some(progress_callback.clone()),
         )?;
@@ -738,7 +738,7 @@ fn update_all_packages(
             &config,
             requested_package_from_status(&package),
             InstallOptions {
-                allow_reinstall: true,
+                intent: InstallIntent::Update,
             },
             Some(progress_callback.clone()),
         )?;
@@ -1525,7 +1525,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.processed_packages, ["av", "helper"]);
-        assert_eq!(fs::read_to_string(&first_target).unwrap(), "#!/bin/sh\necho av\n");
+        assert_eq!(
+            fs::read_to_string(&first_target).unwrap(),
+            "#!/bin/sh\necho av\n"
+        );
         assert_eq!(
             fs::read_to_string(&second_target).unwrap(),
             "#!/bin/sh\necho helper\n"
@@ -1736,7 +1739,10 @@ mod tests {
         assert_eq!(grouped[0].name, "codex");
         assert_eq!(grouped[1].name, "python");
         assert_eq!(grouped[1].version, "3.14.2");
-        assert_eq!(grouped[1].installed_versions, ["3.14.2", "3.12.11", "3.14.2"]);
+        assert_eq!(
+            grouped[1].installed_versions,
+            ["3.14.2", "3.12.11", "3.14.2"]
+        );
         assert_eq!(
             grouped[1].install_package_names,
             ["python@3.14", "python@3.12", "python"]
@@ -2204,9 +2210,10 @@ mod tests {
     #[test]
     fn isotope_always_allow_target_and_store_helpers_cover_success_paths() {
         let validated_executable = validate_isotope_always_allow_target("/bin/sh").unwrap();
-        let validated_script = validate_isotope_always_allow_script("/bin/sh", Some("/etc/profile"))
-            .unwrap()
-            .unwrap();
+        let validated_script =
+            validate_isotope_always_allow_script("/bin/sh", Some("/etc/profile"))
+                .unwrap()
+                .unwrap();
         assert_eq!(validated_executable, "/bin/sh");
         assert!(validated_script.ends_with("/etc/profile"));
 
