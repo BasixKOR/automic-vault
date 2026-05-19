@@ -189,36 +189,6 @@
 
     <main>
       <section class="hero" aria-labelledby="hero-title">
-        <div class="secured-radar" aria-label="Secured package catalog">
-          <div class="radar-copy">
-            <span>64 secured packages</span>
-            <strong>Known toolchains, locked at the credential edge.</strong>
-          </div>
-
-          <div class="radar-feed" data-secured-feed>
-            <article class="feed-row accent-hot">
-              <span>gh</span>
-              <p>gated token reveal and Keychain reads</p>
-            </article>
-            <article class="feed-row accent-green">
-              <span>aws-cli</span>
-              <p>AWS credentials moved out of plaintext files</p>
-            </article>
-            <article class="feed-row accent-blue">
-              <span>terraform</span>
-              <p>cloud tokens exposed only through a temporary config</p>
-            </article>
-            <article class="feed-row accent-gold">
-              <span>pnpm</span>
-              <p>npm auth token injected only while pnpm runs</p>
-            </article>
-            <article class="feed-row accent-hot">
-              <span>vault</span>
-              <p>Vault token held in Keychain and injected at runtime</p>
-            </article>
-          </div>
-        </div>
-
         <div class="hero-meta">
           <span>macOS</span>
           <span>local-first</span>
@@ -457,6 +427,38 @@
             <strong>MCP Secrets Management</strong>
             <p>Give MCP tools access without giving models raw secrets.</p>
           </a>
+        </div>
+      </section>
+
+      <section class="secured-radar-section feature-section" aria-labelledby="secured-title">
+        <div class="secured-radar" aria-label="Secured package catalog">
+          <div class="radar-copy">
+            <span>64 secured packages</span>
+            <strong id="secured-title">Known toolchains, locked at the credential edge.</strong>
+          </div>
+
+          <div class="radar-feed" data-secured-feed>
+            <article class="feed-row accent-hot">
+              <span>gh</span>
+              <p>gated token reveal and Keychain reads</p>
+            </article>
+            <article class="feed-row accent-green">
+              <span>aws-cli</span>
+              <p>AWS credentials moved out of plaintext files</p>
+            </article>
+            <article class="feed-row accent-blue">
+              <span>terraform</span>
+              <p>cloud tokens exposed only through a temporary config</p>
+            </article>
+            <article class="feed-row accent-gold">
+              <span>pnpm</span>
+              <p>npm auth token injected only while pnpm runs</p>
+            </article>
+            <article class="feed-row accent-hot">
+              <span>vault</span>
+              <p>Vault token held in Keychain and injected at runtime</p>
+            </article>
+          </div>
         </div>
       </section>
 

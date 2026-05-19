@@ -63,10 +63,13 @@ if (scrollMeter) {
 if (securedFeed) {
   const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
   const rows = Array.from(securedFeed.querySelectorAll(".feed-row"));
+  const swapDuration = 720;
+  const litDuration = 2080;
+  const swapInterval = 3280;
   let cursor = rows.length;
 
   rows.forEach((row, index) => {
-    row.style.transitionDelay = `${index * 40}ms`;
+    row.style.transitionDelay = `${index * 160}ms`;
   });
 
   if (motionAllowed.matches && rows.length > 0) {
@@ -95,9 +98,9 @@ if (securedFeed) {
 
         window.setTimeout(() => {
           row.classList.remove("is-lit");
-        }, 520);
-      }, 180);
-    }, 820);
+        }, litDuration);
+      }, swapDuration);
+    }, swapInterval);
   }
 }
 
