@@ -7048,7 +7048,7 @@ fn macho_binary_rewrite_destination(
     let future_parent = future_path.parent()?;
     let relative = relative_path_from(future_parent, rewritten_path);
     let loader_path = format!("@loader_path/{}", relative.to_string_lossy());
-    if loader_path.len() < rewritten.len() && loader_path.len() <= max_len {
+    if loader_path.len() <= max_len {
         return Some(loader_path);
     }
     if rewritten.len() <= max_len {
@@ -11082,6 +11082,37 @@ or `npm:clawhub` for the aliased package"
         assert!(changed);
         assert!(find_subslice(&bytes, b"@loader_path/../lib/libllhttp.9.3.dylib\0").is_some());
         assert!(find_subslice(&bytes, b"/tmp/opt/npm/flood/lib/libllhttp").is_none());
+        assert!(find_subslice(&bytes, b"/opt/homebrew/opt/node").is_none());
+    }
+
+    #[test]
+    fn rewrite_binary_prefers_loader_path_for_short_production_macho_paths() {
+        let root = PathBuf::from("/opt/npm/.tmp/stage/install");
+        let future_root = PathBuf::from("/opt/npm/flood");
+        let path = root.join("bin/node");
+        let rule = RewriteRule {
+            source: "/opt/homebrew/opt/node".to_string(),
+            destination: future_root.to_string_lossy().to_string(),
+        };
+        let rules = vec![rule];
+        let mut bytes = b"cmd\0/opt/homebrew/opt/node/lib/libllhttp.9.4.dylib\0".to_vec();
+
+        let changed = rewrite_binary(
+            &mut bytes,
+            &path,
+            "node",
+            &rules,
+            BinaryRewriteMode::Macho {
+                path: &path,
+                root: &root,
+                future_root: &future_root,
+            },
+        )
+        .unwrap();
+
+        assert!(changed);
+        assert!(find_subslice(&bytes, b"@loader_path/../lib/libllhttp.9.4.dylib\0").is_some());
+        assert!(find_subslice(&bytes, b"/opt/npm/flood/lib/libllhttp").is_none());
         assert!(find_subslice(&bytes, b"/opt/homebrew/opt/node").is_none());
     }
 
