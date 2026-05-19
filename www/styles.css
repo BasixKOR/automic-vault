@@ -280,7 +280,11 @@ code {
   backface-visibility: hidden;
   transform: rotateX(0deg);
   transform-origin: center bottom;
-  transition: opacity 360ms ease, transform 360ms ease, filter 360ms ease;
+  transition:
+    color 360ms ease,
+    opacity 360ms ease,
+    transform 360ms ease,
+    filter 360ms ease;
   transform-style: preserve-3d;
 }
 
@@ -289,8 +293,9 @@ code {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: currentColor;
+  background-color: currentColor;
   box-shadow: 0 0 20px currentColor;
+  transition: background-color 360ms ease, box-shadow 360ms ease;
 }
 
 .feed-row span {
