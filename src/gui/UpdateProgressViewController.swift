@@ -54,8 +54,34 @@ private final class ProgressStripView: NSView {
     }
 }
 
-private final class PackageProgressStackView: NSStackView {
+private enum PackageProgressListMetrics {
+    static let rowHeight: CGFloat = 34
+    static let rowSpacing: CGFloat = 6
+
+    static func contentHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return rowHeight }
+        return CGFloat(rowCount) * rowHeight
+            + CGFloat(max(rowCount - 1, 0)) * rowSpacing
+    }
+}
+
+private final class PackageProgressListView: NSView {
     override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        var y: CGFloat = 0
+        for subview in subviews {
+            subview.frame = CGRect(
+                x: 0,
+                y: y,
+                width: bounds.width,
+                height: PackageProgressListMetrics.rowHeight
+            )
+            y += PackageProgressListMetrics.rowHeight
+                + PackageProgressListMetrics.rowSpacing
+        }
+    }
 }
 
 private final class PackageProgressRowView: NSView {
@@ -341,7 +367,7 @@ final class UpdateProgressViewController: NSViewController {
         let operationField = NSTextField(labelWithString: "")
         let statusField = NSTextField(labelWithString: "")
         let packageScrollView = NSScrollView(frame: .zero)
-        let packageStack = PackageProgressStackView()
+        let packageListView = PackageProgressListView()
         let logScrollView = NSScrollView(frame: .zero)
         let logView = NSTextView(frame: .zero)
         let primaryButton = NSButton(title: "Abort", target: nil, action: nil)
@@ -383,14 +409,13 @@ final class UpdateProgressViewController: NSViewController {
             statusField.font = UIStyle.monoFont(size: 10, weight: .regular)
             statusField.textColor = UIStyle.quietText
 
-            packageStack.orientation = .vertical
-            packageStack.alignment = .width
-            packageStack.spacing = 8
             packageScrollView.drawsBackground = false
             packageScrollView.borderType = .noBorder
+            packageScrollView.hasHorizontalScroller = false
             packageScrollView.hasVerticalScroller = true
+            packageScrollView.autohidesScrollers = true
             packageScrollView.contentView.postsBoundsChangedNotifications = true
-            packageScrollView.documentView = packageStack
+            packageScrollView.documentView = packageListView
             panel.addSubview(packageScrollView)
 
             logView.isEditable = false
@@ -458,22 +483,73 @@ final class UpdateProgressViewController: NSViewController {
                 height: panelHeight
             )
 
-            titleField.frame = CGRect(x: 24, y: panelHeight - 42, width: panelWidth - 48, height: 20)
-            operationField.frame = CGRect(x: 24, y: panelHeight - 68, width: panelWidth - 48, height: 18)
-            statusField.frame = CGRect(x: 24, y: panelHeight - 90, width: panelWidth - 48, height: 16)
-            packageScrollView.frame = CGRect(x: 24, y: 220, width: panelWidth - 48, height: 164)
-            packageStack.frame = CGRect(
+            let inset: CGFloat = 24
+            titleField.frame = CGRect(
+                x: inset,
+                y: panelHeight - 42,
+                width: panelWidth - inset * 2,
+                height: 20
+            )
+            operationField.frame = CGRect(
+                x: inset,
+                y: panelHeight - 68,
+                width: panelWidth - inset * 2,
+                height: 18
+            )
+            statusField.frame = CGRect(
+                x: inset,
+                y: panelHeight - 90,
+                width: panelWidth - inset * 2,
+                height: 16
+            )
+
+            let rowContentHeight = PackageProgressListMetrics.contentHeight(
+                rowCount: packageListView.subviews.count
+            )
+            let buttonY: CGFloat = 24
+            let buttonHeight: CGFloat = 30
+            let logBottom = buttonY + buttonHeight + 16
+            let contentTop = panelHeight - 112
+            let packageLogGap: CGFloat = 14
+            let availableContentHeight = contentTop - logBottom - packageLogGap
+            let maxPackageHeight = min(320, max(120, availableContentHeight * 0.70))
+            let packageHeight = min(rowContentHeight, maxPackageHeight)
+            let packageY = contentTop - packageHeight
+            let logHeight = max(104, packageY - packageLogGap - logBottom)
+
+            packageScrollView.frame = CGRect(
+                x: inset,
+                y: packageY,
+                width: panelWidth - inset * 2,
+                height: packageHeight
+            )
+            packageScrollView.hasVerticalScroller = rowContentHeight > packageHeight + 0.5
+            packageListView.frame = CGRect(
                 x: 0,
                 y: 0,
                 width: packageScrollView.contentSize.width,
-                height: max(CGFloat(packageStack.arrangedSubviews.count) * 42, packageScrollView.contentSize.height)
+                height: max(rowContentHeight, packageScrollView.contentSize.height)
             )
-            for view in packageStack.arrangedSubviews {
-                view.frame.size = CGSize(width: packageStack.frame.width, height: 38)
-            }
-            logScrollView.frame = CGRect(x: 24, y: 70, width: panelWidth - 48, height: 132)
-            primaryButton.frame = CGRect(x: panelWidth - 128, y: 24, width: 104, height: 30)
-            secondaryButton.frame = CGRect(x: panelWidth - 240, y: 24, width: 104, height: 30)
+            packageListView.needsLayout = true
+
+            logScrollView.frame = CGRect(
+                x: inset,
+                y: logBottom,
+                width: panelWidth - inset * 2,
+                height: logHeight
+            )
+            primaryButton.frame = CGRect(
+                x: panelWidth - 128,
+                y: buttonY,
+                width: 104,
+                height: buttonHeight
+            )
+            secondaryButton.frame = CGRect(
+                x: panelWidth - 240,
+                y: buttonY,
+                width: 104,
+                height: buttonHeight
+            )
             UIStyle.layoutControlChrome(in: primaryButton.layer)
             UIStyle.layoutControlChrome(in: secondaryButton.layer)
         }
@@ -717,8 +793,7 @@ final class UpdateProgressViewController: NSViewController {
         guard let rootView = view as? RootView else { return }
         let existingRows = rows
         rows.removeAll(keepingCapacity: true)
-        rootView.packageStack.arrangedSubviews.forEach { subview in
-            rootView.packageStack.removeArrangedSubview(subview)
+        rootView.packageListView.subviews.forEach { subview in
             subview.removeFromSuperview()
         }
         for package in orderedPackages {
@@ -732,9 +807,7 @@ final class UpdateProgressViewController: NSViewController {
                 speed: state.lastSpeed,
                 animated: false
             )
-            rootView.packageStack.addArrangedSubview(row)
-            row.translatesAutoresizingMaskIntoConstraints = false
-            row.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            rootView.packageListView.addSubview(row)
         }
         rootView.needsLayout = true
         resetPackageScrollPosition()
