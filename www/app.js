@@ -67,15 +67,19 @@ if (securedFeed) {
   const litDuration = 2080;
   const swapInterval = 3280;
   let cursor = rows.length;
-
-  rows.forEach((row, index) => {
-    row.style.transitionDelay = `${index * 160}ms`;
-  });
+  let rowCursor = 0;
 
   if (motionAllowed.matches && rows.length > 0) {
     window.setInterval(() => {
-      const row = rows[Math.floor(Math.random() * rows.length)];
+      const visibleRows = rows.filter((row) => getComputedStyle(row).display !== "none");
+
+      if (visibleRows.length === 0) {
+        return;
+      }
+
+      const row = visibleRows[rowCursor % visibleRows.length];
       const next = securedPackages[cursor % securedPackages.length];
+      rowCursor += 1;
       cursor += 1;
 
       row.classList.add("is-swapping");
