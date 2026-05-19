@@ -155,7 +155,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=21">
+  <link rel="stylesheet" href="./styles.css?v=22">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -189,6 +189,36 @@
 
     <main>
       <section class="hero" aria-labelledby="hero-title">
+        <div class="secured-radar" aria-label="Secured package catalog">
+          <div class="radar-copy">
+            <span>64 secured packages</span>
+            <strong>Known toolchains, locked at the credential edge.</strong>
+          </div>
+
+          <div class="radar-feed" data-secured-feed>
+            <article class="feed-row accent-hot">
+              <span>gh</span>
+              <p>gated token reveal and Keychain reads</p>
+            </article>
+            <article class="feed-row accent-green">
+              <span>aws-cli</span>
+              <p>AWS credentials moved out of plaintext files</p>
+            </article>
+            <article class="feed-row accent-blue">
+              <span>terraform</span>
+              <p>cloud tokens exposed only through a temporary config</p>
+            </article>
+            <article class="feed-row accent-gold">
+              <span>pnpm</span>
+              <p>npm auth token injected only while pnpm runs</p>
+            </article>
+            <article class="feed-row accent-hot">
+              <span>vault</span>
+              <p>Vault token held in Keychain and injected at runtime</p>
+            </article>
+          </div>
+        </div>
+
         <div class="hero-meta">
           <span>macOS</span>
           <span>local-first</span>
@@ -453,6 +483,6 @@
     </footer>
   </div>
 
-  <script src="./app.js?v=13"></script>
+  <script src="./app.js?v=14"></script>
 </body>
 </html>
