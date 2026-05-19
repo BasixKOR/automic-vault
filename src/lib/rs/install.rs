@@ -167,7 +167,25 @@ pub(crate) fn run_i_npm(
                 config,
             )?;
             let mut dependencies_reinstalled = false;
-            if !dependency_current {
+            if dependency_current
+                && !install_time_commands_are_usable(
+                    &staged_plan,
+                    &dependencies.formula_graph,
+                    ["node", "npm"],
+                    Some(&progress),
+                )?
+            {
+                progress.log("reinstalling npm runtime");
+                reinstall_vendor_dependency_tree(
+                    config,
+                    &staged_plan,
+                    &dependency_state.installs,
+                    &dependencies.formula_graph,
+                    &dependencies.vendor_installs,
+                    Some(&progress),
+                )?;
+                dependencies_reinstalled = true;
+            } else if !dependency_current {
                 progress.begin_install_phase();
                 install_dependency_formulas(
                     config,

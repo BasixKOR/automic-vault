@@ -4196,9 +4196,52 @@ fn reinstall_vendor_dependency_tree(
     vendor_installs: &[VendorInstall],
     progress: Option<&InstallProgress>,
 ) -> Result<(), String> {
+    let installs = if graph.is_empty() {
+        installs.to_vec()
+    } else {
+        let downloads = download_bottles(graph, &plan.tmp_root, progress)?;
+        inspect_keg_dirs(graph, &downloads)?
+    };
     prepare_vendor_root_area(plan)?;
-    install_dependency_formulas(config, plan, installs, installs, progress)?;
+    install_dependency_formulas(config, plan, &installs, &installs, progress)?;
     install_vendor_dependencies(plan, graph, vendor_installs, progress)
+}
+
+fn install_time_commands_are_usable<const N: usize>(
+    plan: &InstallPlan,
+    graph: &[FormulaSpec],
+    executables: [&str; N],
+    progress: Option<&InstallProgress>,
+) -> Result<bool, String> {
+    for executable in executables {
+        if install_time_command_is_usable(plan, graph, executable)? {
+            continue;
+        }
+        if let Some(progress) = progress {
+            progress.log(&format!("{executable} runtime probe failed"));
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn install_time_command_is_usable(
+    plan: &InstallPlan,
+    graph: &[FormulaSpec],
+    executable: &str,
+) -> Result<bool, String> {
+    let Some(path) = resolve_install_time_command(plan, graph, executable) else {
+        return Ok(false);
+    };
+    let status = Command::new(&path)
+        .arg("--version")
+        .env("PATH", build_install_path(plan, graph))
+        .env("TMPDIR", &plan.tmp_root)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|err| format!("failed to probe {}: {err}", path.display()))?;
+    Ok(status.success())
 }
 
 fn resolve_dependency_install_state(
@@ -15365,6 +15408,205 @@ fi
         bottle_server.join().unwrap();
         remove_existing_package_install(&opt_root, "npm:coverage-npm", &bin_root).unwrap();
         remove_existing_package_install(&opt_root, "pip:coverage-pip", &bin_root).unwrap();
+    }
+
+    #[test]
+    fn run_i_npm_repairs_current_but_unlaunchable_node_runtime() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        let package_name = "npm:runtime-probe";
+        let npm_package = "runtime-probe";
+        let install_root = package_install_root(&opt_root, package_name).unwrap();
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+        }
+        let stub = bin_root.join(npm_package);
+        if fs::symlink_metadata(&stub).is_ok() {
+            remove_path(&stub).unwrap();
+        }
+
+        fs::create_dir_all(install_root.join("bin")).unwrap();
+        fs::write(
+            install_root.join("bin/node"),
+            b"#!/bin/sh\n# broken-node\nexit 78\n",
+        )
+        .unwrap();
+        fs::write(
+            install_root.join("bin/npm"),
+            b"#!/usr/bin/env node\n# broken-npm\nexit 78\n",
+        )
+        .unwrap();
+        fs::write(
+            install_root.join("bin/runtime-probe"),
+            b"#!/bin/sh\nprintf 'runtime-probe\\n'\n",
+        )
+        .unwrap();
+        for path in [
+            install_root.join("bin/node"),
+            install_root.join("bin/npm"),
+            install_root.join("bin/runtime-probe"),
+        ] {
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).unwrap();
+        }
+
+        let temp = TempDir::new().unwrap();
+        let node_archive = temp.path().join("node.tar.gz");
+        let fake_node = br#"#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf 'repaired-node\n'
+  exit 0
+fi
+script="${1:-}"
+if [ -z "$script" ]; then
+  exit 0
+fi
+shift
+exec /bin/sh "$script" "$@"
+"#;
+        let fake_npm = br#"#!/usr/bin/env node
+set -eu
+if [ "${1:-}" = "--version" ]; then
+  printf 'repaired-npm\n'
+  exit 0
+fi
+prefix=
+dry_run=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --prefix)
+      prefix="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ "$dry_run" = 1 ]; then
+  exit 0
+fi
+/bin/mkdir -p "$prefix/bin" "$prefix/lib/node_modules/runtime-probe"
+/bin/cat > "$prefix/bin/runtime-probe" <<'EOF'
+#!/bin/sh
+printf 'runtime-probe\n'
+EOF
+/bin/chmod +x "$prefix/bin/runtime-probe"
+"#;
+        write_test_bottle_archive(
+            &node_archive,
+            "node",
+            "1.0.0",
+            &[("bin/node", fake_node), ("bin/npm", fake_npm)],
+        );
+        let node_bytes = fs::read(&node_archive).unwrap();
+        let node_sha = format!("{:x}", Sha256::digest(&node_bytes));
+        let node_spec = InstalledFormula {
+            spec: FormulaSpec {
+                name: "node".to_string(),
+                bottle_sha256: node_sha.clone(),
+                bottle_url: "https://example.invalid/node.tar.gz".to_string(),
+            },
+            keg_dir_name: "1.0.0".to_string(),
+            archive_path: PathBuf::new(),
+        };
+        write_receipt_with_owned_paths(
+            &install_root.join(RECEIPTS_DIR).join("node.json"),
+            &node_spec,
+            "all",
+            vec!["bin/node".to_string(), "bin/npm".to_string()],
+        )
+        .unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: package_name.to_string(),
+                version: "1.2.3".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: npm_package.to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let (bottle_base, bottle_server) =
+            start_test_http_server(vec![("/node.tar.gz".to_string(), node_bytes)], 5);
+        let node_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": node_sha,
+                            "url": format!("{bottle_base}/node.tar.gz"),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let package_json = br#"{
+            "description":"Runtime probe npm package",
+            "homepage":"https://example.test/runtime-probe",
+            "dist-tags":{"latest":"1.2.3"},
+            "versions":{
+                "1.2.3":{
+                    "dist":{"tarball":"https://example.test/runtime-probe.tgz"}
+                }
+            }
+        }"#
+        .to_vec();
+        let (base, server) = start_test_http_server(
+            vec![
+                ("/node.json".to_string(), node_json),
+                ("/runtime-probe".to_string(), package_json),
+            ],
+            10,
+        );
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(base.clone()),
+            npm_registry_root: Some(base.clone()),
+            ..Default::default()
+        });
+
+        run_i_npm(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            npm_package.to_string(),
+            None,
+            InstallOptions {
+                intent: InstallIntent::Update,
+            },
+            InstallIntent::Update,
+            None,
+        )
+        .unwrap();
+
+        assert!(
+            String::from_utf8(fs::read(install_root.join("bin/node")).unwrap())
+                .unwrap()
+                .contains("repaired-node")
+        );
+        assert!(is_executable(&install_root.join("bin/runtime-probe")));
+        assert!(is_executable(&bin_root.join("runtime-probe")));
+
+        drain_test_server(&base, "/runtime-probe", 10);
+        drain_test_server(&bottle_base, "/node.tar.gz", 5);
+        server.join().unwrap();
+        bottle_server.join().unwrap();
+        remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
     }
 
     #[test]
