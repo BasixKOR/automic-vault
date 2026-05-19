@@ -331,26 +331,18 @@ code {
 }
 
 .feed-row.is-lit {
-  animation: feed-flip-in 360ms ease both;
   opacity: 1;
   filter: brightness(1.12);
+}
+
+.feed-row.is-entering {
+  opacity: 0.28;
+  transform: rotateX(92deg);
 }
 
 .feed-row.is-swapping {
   opacity: 0.28;
   transform: rotateX(-92deg);
-}
-
-@keyframes feed-flip-in {
-  from {
-    opacity: 0.28;
-    transform: rotateX(92deg);
-  }
-
-  to {
-    opacity: 1;
-    transform: rotateX(0deg);
-  }
 }
 
 .hero-meta {

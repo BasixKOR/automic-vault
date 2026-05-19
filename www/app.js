@@ -94,7 +94,10 @@ if (securedFeed) {
           text.textContent = detail;
         }
 
-        row.className = `feed-row ${accent} is-lit`;
+        row.className = `feed-row ${accent} is-entering`;
+        void row.offsetWidth;
+        row.classList.remove("is-entering");
+        row.classList.add("is-lit");
 
         window.setTimeout(() => {
           row.classList.remove("is-lit");
