@@ -2152,6 +2152,21 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_resolve_script_operand_uses_current_directory_for_relative_paths() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let previous_cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp.path()).unwrap();
+        let script = temp.path().join("tool.sh");
+        fs::write(&script, b"#!/bin/sh\n").unwrap();
+
+        let resolved = resolve_script_operand(Path::new("tool.sh")).unwrap();
+
+        env::set_current_dir(previous_cwd).unwrap();
+        assert_eq!(resolved, fs::canonicalize(&script).unwrap());
+    }
+
+    #[test]
     fn isotopes_request_and_bridge_helpers_reject_invalid_utf8_inputs() {
         let options = IsotopeOptions {
             replace_existing_env: false,
