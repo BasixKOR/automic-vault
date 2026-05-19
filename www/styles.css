@@ -280,7 +280,7 @@ code {
   backface-visibility: hidden;
   transform: rotateX(0deg);
   transform-origin: center bottom;
-  transition: opacity 720ms ease, transform 720ms ease, filter 720ms ease;
+  transition: opacity 360ms ease, transform 360ms ease, filter 360ms ease;
   transform-style: preserve-3d;
 }
 
@@ -326,7 +326,7 @@ code {
 }
 
 .feed-row.is-lit {
-  animation: feed-flip-in 720ms ease both;
+  animation: feed-flip-in 360ms ease both;
   opacity: 1;
   filter: brightness(1.12);
 }

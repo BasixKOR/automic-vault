@@ -63,7 +63,7 @@ if (scrollMeter) {
 if (securedFeed) {
   const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
   const rows = Array.from(securedFeed.querySelectorAll(".feed-row"));
-  const swapDuration = 720;
+  const swapDuration = 360;
   const litDuration = 2080;
   const swapInterval = 3280;
   let cursor = rows.length;
