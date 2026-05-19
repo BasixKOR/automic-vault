@@ -2007,7 +2007,7 @@ fn run_i_package_with_progress(
                     config,
                     package_name,
                     isotope,
-                    options.intent == InstallIntent::Reinstall,
+                    options.intent,
                     progress_callback.clone(),
                 )
             } else {
@@ -2400,7 +2400,7 @@ fn run_i_radioisotope(
     config: &Config,
     package_name: String,
     isotope_name: String,
-    allow_reinstall: bool,
+    intent: InstallIntent,
     progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
 ) -> Result<(), String> {
     let progress = InstallProgress::with_callback(&package_name, progress_callback.clone());
@@ -2413,22 +2413,33 @@ fn run_i_radioisotope(
             .ok_or_else(|| format!("radioisotope:{} does not declare modifies", isotope_name))?;
         let plan = InstallPlan::for_i_radioisotope(package_name.clone(), modified_package.clone());
 
-        if allow_reinstall {
-            prepare_install_target(
-                &opt_pkg_root(),
-                &modified_package,
-                InstallIntent::Reinstall,
-                &managed_bin_root(),
-            )?;
-            run_i_formula(
-                config,
-                modified_package.clone(),
-                modified_package.clone(),
-                InstallIntent::Reinstall,
-                progress_callback.clone(),
-            )?;
-        } else {
-            ensure_package_installed(&opt_pkg_root(), &modified_package)?;
+        match radioisotope_modified_formula_intent(intent) {
+            Some(InstallIntent::Reinstall) => {
+                prepare_install_target(
+                    &opt_pkg_root(),
+                    &modified_package,
+                    InstallIntent::Reinstall,
+                    &managed_bin_root(),
+                )?;
+                run_i_formula(
+                    config,
+                    modified_package.clone(),
+                    modified_package.clone(),
+                    InstallIntent::Reinstall,
+                    progress_callback.clone(),
+                )?;
+            }
+            Some(InstallIntent::Update) => {
+                run_i_formula(
+                    config,
+                    modified_package.clone(),
+                    modified_package.clone(),
+                    InstallIntent::Update,
+                    progress_callback.clone(),
+                )?;
+            }
+            Some(InstallIntent::Install) => unreachable!("install intent is handled as None"),
+            None => ensure_package_installed(&opt_pkg_root(), &modified_package)?,
         }
 
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
@@ -2469,6 +2480,14 @@ fn run_i_radioisotope(
             progress.clear();
             Err(err)
         }
+    }
+}
+
+fn radioisotope_modified_formula_intent(intent: InstallIntent) -> Option<InstallIntent> {
+    match intent {
+        InstallIntent::Install => None,
+        InstallIntent::Reinstall => Some(InstallIntent::Reinstall),
+        InstallIntent::Update => Some(InstallIntent::Update),
     }
 }
 
@@ -10141,6 +10160,22 @@ or `npm:clawhub` for the aliased package"
         );
         assert!(plan.has_migration);
         assert!(!isotope_has_post_install("isotope:gh"));
+    }
+
+    #[test]
+    fn radioisotope_update_refreshes_modified_formula() {
+        assert_eq!(
+            radioisotope_modified_formula_intent(InstallIntent::Install),
+            None
+        );
+        assert_eq!(
+            radioisotope_modified_formula_intent(InstallIntent::Update),
+            Some(InstallIntent::Update)
+        );
+        assert_eq!(
+            radioisotope_modified_formula_intent(InstallIntent::Reinstall),
+            Some(InstallIntent::Reinstall)
+        );
     }
 
     #[test]

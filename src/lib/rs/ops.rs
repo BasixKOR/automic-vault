@@ -803,7 +803,7 @@ fn convert_radioisotope_with_helper(
         &config,
         package_name.clone(),
         isotope_name,
-        false,
+        InstallIntent::Install,
         Some(progress_callback),
     )?;
     Ok(HelperCommandSuccess {
