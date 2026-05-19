@@ -1306,6 +1306,50 @@ mod tests {
         result
     }
 
+    fn with_fake_tty_stdin<R>(input: &[u8], f: impl FnOnce() -> R) -> R {
+        let mut master_fd = -1;
+        let mut slave_fd = -1;
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master_fd,
+                    &mut slave_fd,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let mut master = FdGuard::new(master_fd);
+        let mut slave = FdGuard::new(slave_fd);
+        let stdin_fd = io::stdin().as_raw_fd();
+        let saved_stdin = unsafe { libc::dup(stdin_fd) };
+        assert!(saved_stdin >= 0);
+        let restore_stdin = StdinRestoreGuard {
+            stdin_fd,
+            saved_stdin,
+        };
+
+        assert_eq!(unsafe { libc::dup2(slave.raw(), stdin_fd) }, stdin_fd);
+        slave.close();
+        let writer_fd = unsafe { libc::dup(master.raw()) };
+        assert!(writer_fd >= 0);
+        let input = input.to_vec();
+        let writer = std::thread::spawn(move || {
+            let write_result = unsafe { libc::write(writer_fd, input.as_ptr().cast(), input.len()) };
+            assert_eq!(write_result, input.len() as isize);
+            unsafe { libc::close(writer_fd) };
+        });
+
+        let result = f();
+
+        writer.join().unwrap();
+        drop(restore_stdin);
+        master.close();
+        result
+    }
+
     #[test]
     fn isotopes_parse_options_accepts_explicit_keys() {
         let options = parse_isotope_options(
@@ -1533,10 +1577,69 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_dispatch_cli_runs_injection_path_until_exec_failure() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"plain text\n").unwrap();
+        let mut permissions = fs::metadata(&tool).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&tool, permissions).unwrap();
+        unsafe { env::set_var("TOKEN", "already-set") };
+
+        let err = dispatch_isotope(
+            "av inject",
+            vec![
+                OsString::from("+TOKEN"),
+                tool.as_os_str().to_os_string(),
+                OsString::from("--flag"),
+            ]
+            .into_iter(),
+            &StubCredentialStore::default(),
+        )
+        .unwrap_err();
+
+        unsafe { env::remove_var("TOKEN") };
+        assert!(err.contains("failed to execute"));
+    }
+
+    #[test]
     fn isotopes_read_save_secret_rejects_empty_piped_value() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let err = with_fake_stdin(b" \n\t", read_save_secret).unwrap_err();
         assert_eq!(err, "empty isotope secret value");
+    }
+
+    #[test]
+    fn isotopes_read_save_secret_accepts_interactive_tty_input() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let value = with_fake_tty_stdin(b"  secret-value  \n", read_save_secret).unwrap();
+        assert_eq!(value, "secret-value");
+    }
+
+    #[test]
+    fn isotopes_parse_helpers_reject_non_utf8_inputs() {
+        let err = parse_isotope_options(
+            "av inject",
+            OsString::from_vec(vec![0xff]),
+            Vec::<OsString>::new().into_iter(),
+        )
+        .unwrap_err();
+        assert_eq!(err, "isotope arguments must be valid UTF-8");
+
+        let err = parse_save_key("av save", &[OsString::from_vec(vec![0xff])]).unwrap_err();
+        assert_eq!(err, "secret key must be valid UTF-8");
+    }
+
+    #[test]
+    fn isotopes_read_secret_line_no_echo_rejects_non_tty_stdin() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let err = with_fake_stdin(b"secret\n", || {
+            let mut value = String::new();
+            read_secret_line_no_echo(&mut io::stdin(), &mut value)
+        })
+        .unwrap_err();
+        assert!(err.contains("failed to read terminal settings"));
     }
 
     #[test]
@@ -2003,6 +2106,19 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_always_allow_global_wrappers_match_global_store_contents() {
+        let scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/sh".to_string(),
+            script_path: Some("/bin/sh".to_string()),
+        };
+        assert!(!always_allows_usage(&scope, &["TOKEN".to_string()]).unwrap());
+        assert_eq!(
+            load_always_allow_store().unwrap(),
+            load_always_allow_store_at_path(Path::new(ALWAYS_ALLOW_PATH)).unwrap()
+        );
+    }
+
+    #[test]
     fn isotopes_validation_helpers_cover_directory_and_non_file_targets() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("dir");
@@ -2017,6 +2133,22 @@ mod tests {
 
         let err = validate_root_controlled_path(&temp.path().join("missing")).unwrap_err();
         assert!(err.contains("failed to open"));
+    }
+
+    #[test]
+    fn isotopes_root_controlled_validation_accepts_system_shell_paths() {
+        let file = File::open("/bin/sh").unwrap();
+        assert!(validate_regular_target(Path::new("/bin/sh"), &file).is_ok());
+        assert!(validate_target_root_installation(Path::new("/bin/sh"), &file).is_ok());
+        assert!(validate_root_controlled_path(Path::new("/bin/sh")).is_ok());
+        assert_eq!(
+            interpreter_script_path_for_always_allow(
+                Path::new("/bin/bash"),
+                &[OsString::from("/bin/sh")]
+            )
+            .unwrap(),
+            Some(PathBuf::from("/bin/sh"))
+        );
     }
 
     #[test]
@@ -2050,6 +2182,48 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_request_helpers_reject_non_utf8_requested_paths() {
+        let bad_path = PathBuf::from(OsString::from_vec(b"/tmp/isotope-\xff".to_vec()));
+        let options = IsotopeOptions {
+            replace_existing_env: false,
+            keys: vec!["TOKEN".to_string()],
+            target: bad_path.clone(),
+            args: vec![OsString::from("--version")],
+        };
+        let err = request_isotope_approval(
+            "/bin/sh",
+            None,
+            &options,
+            &["TOKEN".to_string()],
+            true,
+            None,
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("target path must be valid UTF-8"));
+
+        let options = IsotopeOptions {
+            replace_existing_env: false,
+            keys: vec!["TOKEN".to_string()],
+            target: PathBuf::from("/bin/sh"),
+            args: vec![OsString::from("--version")],
+        };
+        let err = request_isotope_approval(
+            "/bin/sh",
+            None,
+            &options,
+            &["TOKEN".to_string()],
+            true,
+            Some(bad_path),
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.contains("path must be valid UTF-8"));
+    }
+
+    #[test]
     fn isotopes_validate_parent_directories_rejects_group_writable_directory() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("safe");
@@ -2064,6 +2238,55 @@ mod tests {
 
         let err = validate_parent_directories(&target).unwrap_err();
         assert!(err.contains("directory must not be writable"));
+    }
+
+    #[test]
+    fn isotopes_run_skips_missing_store_when_existing_env_already_satisfies_keys() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"plain text\n").unwrap();
+        let mut permissions = fs::metadata(&tool).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&tool, permissions).unwrap();
+        unsafe { env::set_var("TOKEN", "already-set") };
+
+        let result = run_isotope(
+            &IsotopeOptions {
+                replace_existing_env: false,
+                keys: vec!["TOKEN".to_string()],
+                target: tool.clone(),
+                args: vec![OsString::from("--flag")],
+            },
+            &StubCredentialStore::default(),
+        );
+
+        unsafe { env::remove_var("TOKEN") };
+        let err = result.unwrap_err();
+        assert!(err.contains("failed to execute"));
+    }
+
+    #[test]
+    fn isotopes_run_without_credentials_reaches_exec_failure_after_validation() {
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"plain text\n").unwrap();
+        let mut permissions = fs::metadata(&tool).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&tool, permissions).unwrap();
+
+        let err = run_isotope(
+            &IsotopeOptions {
+                replace_existing_env: false,
+                keys: Vec::new(),
+                target: tool,
+                args: vec![OsString::from("--verbose"), OsString::from("value")],
+            },
+            &StubCredentialStore::default(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("failed to execute"));
     }
 
     #[test]

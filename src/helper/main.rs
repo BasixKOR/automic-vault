@@ -334,6 +334,11 @@ mod tests {
                 "AWS_SECRET_ACCESS_KEY".to_string()
             ]
         );
+
+        let invalid_utf8 = [0xff_u8, 0x00_u8];
+        let invalid_ptr = invalid_utf8.as_ptr().cast();
+        assert!(parse_packages(invalid_ptr).is_empty());
+        assert!(parse_string_array(invalid_ptr).is_empty());
     }
 
     #[test]
@@ -411,6 +416,18 @@ mod tests {
         let refresh = nuke_helper_refresh_remote_database();
         assert!(matches!(check, true | false));
         assert!(matches!(refresh, true | false));
+    }
+
+    #[test]
+    fn helper_wrappers_allow_missing_progress_callback() {
+        let packages = CString::new("[]").unwrap();
+        let response = raw_to_string(nuke_helper_install(
+            packages.as_ptr(),
+            ptr::null_mut(),
+            None,
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
     }
 
     #[test]
