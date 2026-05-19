@@ -264,26 +264,7 @@ code {
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px);
   background-size: 20% 100%, 100% 36px;
-}
-
-.radar-feed::before,
-.radar-feed::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  z-index: 2;
-  width: 6%;
-  pointer-events: none;
-}
-
-.radar-feed::before {
-  left: 0;
-  background: linear-gradient(90deg, var(--surface), transparent);
-}
-
-.radar-feed::after {
-  right: 0;
-  background: linear-gradient(270deg, var(--surface), transparent);
+  perspective: 960px;
 }
 
 .feed-row {
@@ -296,8 +277,11 @@ code {
   padding: 16px 18px;
   border-right: 1px solid var(--line);
   opacity: 0.74;
-  transform: translateY(0);
+  backface-visibility: hidden;
+  transform: rotateX(0deg);
+  transform-origin: center bottom;
   transition: opacity 720ms ease, transform 720ms ease, filter 720ms ease;
+  transform-style: preserve-3d;
 }
 
 .feed-row::before {
@@ -342,13 +326,26 @@ code {
 }
 
 .feed-row.is-lit {
+  animation: feed-flip-in 720ms ease both;
   opacity: 1;
   filter: brightness(1.12);
 }
 
 .feed-row.is-swapping {
   opacity: 0.28;
-  transform: translateY(-6px);
+  transform: rotateX(-92deg);
+}
+
+@keyframes feed-flip-in {
+  from {
+    opacity: 0.28;
+    transform: rotateX(92deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotateX(0deg);
+  }
 }
 
 .hero-meta {
@@ -1045,11 +1042,6 @@ h1 {
     display: none;
   }
 
-  .radar-feed::before,
-  .radar-feed::after {
-    display: none;
-  }
-
   .feed-row p {
     font-size: 0.84rem;
   }
@@ -1127,6 +1119,7 @@ h1 {
   .story-layout,
   .compare,
   .guides,
+  .secured-radar-section,
   .final-cta {
     padding-inline: 18px;
   }
@@ -1149,6 +1142,7 @@ h1 {
   *,
   *::before,
   *::after {
+    animation: none !important;
     scroll-behavior: auto !important;
     transition: none !important;
   }
