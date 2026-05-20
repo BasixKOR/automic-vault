@@ -59,7 +59,7 @@ private enum PackageProgressListMetrics {
     static let rowSpacing: CGFloat = 6
 
     static func contentHeight(rowCount: Int) -> CGFloat {
-        guard rowCount > 0 else { return rowHeight }
+        guard rowCount > 0 else { return 0 }
         return CGFloat(rowCount) * rowHeight
             + CGFloat(max(rowCount - 1, 0)) * rowSpacing
     }
