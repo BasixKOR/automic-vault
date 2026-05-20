@@ -14404,8 +14404,8 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             mode: Mode::I,
             package_name: "isotope:gh".to_string(),
             root_formula: "gh".to_string(),
-            stable_root: temp.path().join("opt/isotope/gh"),
-            install_root: temp.path().join("opt/isotope/gh"),
+            stable_root: temp.path().join("opt/isotopes/gh"),
+            install_root: temp.path().join("opt/isotopes/gh"),
             tmp_root: temp.path().join("tmp"),
         };
         let isotope = IsotopePackageData {
