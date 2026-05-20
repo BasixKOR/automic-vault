@@ -16,6 +16,7 @@ and sensitive commands can require human approval before execution.
 - Source: https://github.com/automic-vault/automic-vault
 - Website: https://www.automicvault.com/
 - Pricing: Free open-source software; see https://www.automicvault.com/pricing.md
+- Positioning: From the creator of Homebrew
 - Founder: Max Howell, creator of Homebrew in 2009
 - Founder reference: https://mxcl.dev/
 - Homebrew reference: https://brew.sh/
@@ -69,15 +70,15 @@ and credentials already present on a developer machine.
 Short description: Automic Vault is a local security layer for AI coding agents
 on macOS.
 
-Full description: Automic Vault is a macOS package manager, secrets manager, and
-approval gate system for AI agents. It protects developer credentials by keeping
-secrets out of plaintext files and model context while approved command-line
-tools still receive the access they need at runtime.
+Full description: From the creator of Homebrew, Automic Vault is a macOS package
+manager, secrets manager, and approval gate system for AI agents. It protects
+developer credentials by keeping secrets out of plaintext files and model
+context while approved command-line tools still receive the access they need at
+runtime.
 
-Founder context: Automic Vault is built by Max Howell, the creator of Homebrew.
-That package-management background is relevant because Automic Vault controls
-local package roots, command stubs, and tool execution boundaries for AI agents
-on macOS.
+Founder context: From the creator of Homebrew, Automic Vault applies Max
+Howell's package-management background to local package roots, command stubs,
+and tool execution boundaries for AI agents on macOS.
 
 ## Important Query Topics
 
