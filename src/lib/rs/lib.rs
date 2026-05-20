@@ -14273,6 +14273,178 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn dependency_current_checks_cover_npm_pip_cask_and_isotope_roots() {
+        let temp = TempDir::new().unwrap();
+        let config = Config {
+            bottle_tag: "arm64_tahoe".to_string(),
+        };
+
+        let npm_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "npm:coverage-npm".to_string(),
+            root_formula: "coverage-npm".to_string(),
+            stable_root: temp.path().join("opt/npm/coverage-npm"),
+            install_root: temp.path().join("opt/npm/coverage-npm"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        assert!(
+            !npm_root_is_current(
+                &npm_plan,
+                "coverage-npm",
+                &Version::parse("1.2.3").unwrap(),
+                &[],
+                &config.bottle_tag
+            )
+            .unwrap()
+        );
+        fs::create_dir_all(npm_plan.install_root.join("bin")).unwrap();
+        write_executable(&npm_plan.install_root.join("bin/coverage-npm"));
+        write_package_receipt(
+            &npm_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "npm:coverage-npm".to_string(),
+                version: "1.2.3".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "coverage-npm".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        assert!(
+            npm_root_is_current(
+                &npm_plan,
+                "coverage-npm",
+                &Version::parse("1.2.3").unwrap(),
+                &[],
+                &config.bottle_tag,
+            )
+            .unwrap()
+        );
+        remove_path(&npm_plan.install_root.join("bin/coverage-npm")).unwrap();
+        assert!(
+            !npm_root_is_current(
+                &npm_plan,
+                "coverage-npm",
+                &Version::parse("1.2.3").unwrap(),
+                &[],
+                &config.bottle_tag,
+            )
+            .unwrap()
+        );
+
+        let pip_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "pip:coverage-pip".to_string(),
+            root_formula: "coverage-pip".to_string(),
+            stable_root: temp.path().join("opt/pip/coverage-pip"),
+            install_root: temp.path().join("opt/pip/coverage-pip"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(pip_plan.install_root.join("bin")).unwrap();
+        fs::create_dir_all(pip_plan.install_root.join("venv")).unwrap();
+        fs::write(pip_plan.install_root.join("venv/pyvenv.cfg"), b"").unwrap();
+        write_executable(&pip_plan.install_root.join("bin/coverage-pip"));
+        write_root_executable_manifest(
+            &pip_plan.root_executables_manifest_path(),
+            &["coverage-pip".to_string()],
+        )
+        .unwrap();
+        write_package_receipt(
+            &pip_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "pip:coverage-pip".to_string(),
+                version: "2.3.4".to_string(),
+                source: PackageReceiptSource::Pip {
+                    package_name: "coverage-pip".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        assert!(pip_root_is_current(&pip_plan, "2.3.4", &[], &config.bottle_tag).unwrap());
+        remove_path(&pip_plan.install_root.join("venv/pyvenv.cfg")).unwrap();
+        assert!(!pip_root_is_current(&pip_plan, "2.3.4", &[], &config.bottle_tag).unwrap());
+
+        let cask_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "cask:codex".to_string(),
+            root_formula: "codex".to_string(),
+            stable_root: temp.path().join("opt/cask/codex"),
+            install_root: temp.path().join("opt/cask/codex"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        let cask = EmbeddedCaskMetadata {
+            version: "1.0.0".to_string(),
+            binaries: vec![EmbeddedCaskBinary {
+                source: "Codex.app/Contents/MacOS/codex".to_string(),
+                target: Some("codex".to_string()),
+            }],
+            ..Default::default()
+        };
+        fs::create_dir_all(cask_plan.install_root.join("bin")).unwrap();
+        write_executable(&cask_plan.install_root.join("bin/codex"));
+        write_package_receipt(
+            &cask_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "cask:codex".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Cask {
+                    cask_name: "codex".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        assert!(cask_root_is_current(&cask_plan, &cask, &[], &config.bottle_tag).unwrap());
+        remove_path(&cask_plan.install_root.join("bin/codex")).unwrap();
+        assert!(!cask_root_is_current(&cask_plan, &cask, &[], &config.bottle_tag).unwrap());
+
+        let isotope_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "isotope:gh".to_string(),
+            root_formula: "gh".to_string(),
+            stable_root: temp.path().join("opt/isotope/gh"),
+            install_root: temp.path().join("opt/isotope/gh"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        let isotope = IsotopePackageData {
+            name: "isotope:gh".to_string(),
+            replaces: Some("brew:gh".to_string()),
+            modifies: None,
+            migrate: None,
+            _repository: None,
+            _upstream_repository: None,
+            version: "2.80.0".to_string(),
+            release_url: Some("https://example.test/isotopes/gh".to_string()),
+            archive_url: Some("https://example.test/isotopes/gh.tar.gz".to_string()),
+            published_at: None,
+        };
+        fs::create_dir_all(isotope_plan.install_root.join("bin")).unwrap();
+        write_executable(&isotope_plan.install_root.join("bin/gh"));
+        write_root_executable_manifest(
+            &isotope_plan.root_executables_manifest_path(),
+            &["gh".to_string()],
+        )
+        .unwrap();
+        write_package_receipt(
+            &isotope_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "isotope:gh".to_string(),
+                version: "2.80.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        assert!(isotope_root_is_current(&isotope_plan, &isotope).unwrap());
+        remove_path(&isotope_plan.install_root.join("bin/gh")).unwrap();
+        assert!(!isotope_root_is_current(&isotope_plan, &isotope).unwrap());
+    }
+
+    #[test]
     fn find_supported_post_install_prefixes_filters_supported_formula_receipts() {
         let temp = TempDir::new().unwrap();
         let opt_root = temp.path().join("opt");
@@ -15732,6 +15904,193 @@ EOF
             fs::read_to_string(&installed).unwrap(),
             "#!/bin/sh\necho claude\n"
         );
+    }
+
+    #[test]
+    fn cask_install_helpers_cover_tar_payload_current_receipts_and_sha_mismatch() {
+        let temp = TempDir::new().unwrap();
+        let tmp_root = temp.path().join("tmp");
+        fs::create_dir_all(&tmp_root).unwrap();
+        let archive = temp.path().join("codex.tar.gz");
+        write_test_archive(
+            &archive,
+            &[
+                ("Codex.app/Contents/MacOS/codex", b"#!/bin/sh\necho codex\n"),
+                ("Codex.app/Contents/MacOS/cdx", b"#!/bin/sh\necho cdx\n"),
+            ],
+        );
+        let archive_bytes = fs::read(&archive).unwrap();
+        let archive_sha = format!("{:x}", Sha256::digest(&archive_bytes));
+        let (base, server) = start_test_http_server(
+            vec![("/codex.tar.gz".to_string(), archive_bytes.clone())],
+            2,
+        );
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "cask:codex".to_string(),
+            root_formula: "codex".to_string(),
+            stable_root: temp.path().join("opt/cask/codex"),
+            install_root: temp.path().join("opt/cask/codex"),
+            tmp_root: tmp_root.clone(),
+        };
+        let cask = EmbeddedCaskMetadata {
+            summary: "OpenAI Codex".to_string(),
+            homepage: "https://example.test/codex".to_string(),
+            url: format!("{base}/codex.tar.gz"),
+            sha256: archive_sha,
+            version: "1.0.0".to_string(),
+            binaries: vec![
+                EmbeddedCaskBinary {
+                    source: "Codex.app/Contents/MacOS/codex".to_string(),
+                    target: None,
+                },
+                EmbeddedCaskBinary {
+                    source: "Codex.app/Contents/MacOS/cdx".to_string(),
+                    target: Some("codex-chat".to_string()),
+                },
+            ],
+            ..Default::default()
+        };
+
+        install_cask_root(&plan, "codex", &cask, None).unwrap();
+        assert!(is_executable(&plan.install_root.join("bin/codex")));
+        assert!(is_executable(&plan.install_root.join("bin/codex-chat")));
+        write_package_receipt(
+            &plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "cask:codex".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Cask {
+                    cask_name: "codex".to_string(),
+                },
+                metadata: PackageMetadata {
+                    description: Some("OpenAI Codex".to_string()),
+                    homepage: Some("https://example.test/codex".to_string()),
+                },
+            },
+        )
+        .unwrap();
+        assert!(cask_root_is_current(&plan, &cask, &[], "all").unwrap());
+
+        let bad_archive = temp.path().join("bad-codex.tar.gz");
+        let bad_cask = EmbeddedCaskMetadata {
+            sha256: "deadbeef".repeat(8),
+            url: format!("{base}/codex.tar.gz"),
+            version: "1.0.0".to_string(),
+            binaries: vec![EmbeddedCaskBinary {
+                source: "bad-codex.tar.gz".to_string(),
+                target: None,
+            }],
+            ..Default::default()
+        };
+        let err = download_cask_archive("codex", &bad_cask, &bad_archive, None).unwrap_err();
+        assert!(err.contains("sha256 mismatch for cask codex"));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn isotope_install_helpers_cover_nested_and_flat_archives() {
+        let temp = TempDir::new().unwrap();
+        let tmp_root = temp.path().join("tmp");
+        fs::create_dir_all(&tmp_root).unwrap();
+
+        let nested_archive = temp.path().join("gh.tar.gz");
+        write_test_archive(
+            &nested_archive,
+            &[
+                ("gh-2.80.0/bin/gh", b"#!/bin/sh\nprintf gh\\n\n"),
+                ("gh-2.80.0/share/man/man1/gh.1", b"GH manual\n"),
+            ],
+        );
+        let flat_archive = temp.path().join("aws-cli.tgz");
+        write_test_archive(
+            &flat_archive,
+            &[
+                ("bin/aws", b"#!/bin/sh\nprintf aws\\n\n"),
+                ("share/doc/aws.txt", b"aws docs\n"),
+            ],
+        );
+        let (base, server) = start_test_http_server(
+            vec![
+                ("/gh.tar.gz".to_string(), fs::read(&nested_archive).unwrap()),
+                ("/aws-cli.tgz".to_string(), fs::read(&flat_archive).unwrap()),
+            ],
+            2,
+        );
+
+        let isotope = IsotopePackageData {
+            name: "isotope:gh".to_string(),
+            replaces: Some("brew:gh".to_string()),
+            modifies: None,
+            migrate: None,
+            _repository: None,
+            _upstream_repository: None,
+            version: "2.80.0".to_string(),
+            release_url: Some("https://example.test/isotopes/gh".to_string()),
+            archive_url: Some(format!("{base}/gh.tar.gz")),
+            published_at: None,
+        };
+        let gh_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "isotope:gh".to_string(),
+            root_formula: "gh".to_string(),
+            stable_root: temp.path().join("opt/isotopes/gh"),
+            install_root: temp.path().join("opt/isotopes/gh"),
+            tmp_root: tmp_root.clone(),
+        };
+        install_isotope_root(&gh_plan, &isotope, &[], None).unwrap();
+        assert!(is_executable(&gh_plan.install_root.join("bin/gh")));
+        assert!(gh_plan.install_root.join("share/man/man1/gh.1").is_file());
+        write_root_executable_manifest(
+            &gh_plan.root_executables_manifest_path(),
+            &["gh".to_string()],
+        )
+        .unwrap();
+        write_package_receipt(
+            &gh_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "isotope:gh".to_string(),
+                version: "2.80.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        assert!(isotope_root_is_current(&gh_plan, &isotope).unwrap());
+
+        let radioisotope = IsotopePackageData {
+            name: "isotope:aws-cli".to_string(),
+            replaces: None,
+            modifies: Some("brew:awscli".to_string()),
+            migrate: Some("aws configure import --csv file://$1".to_string()),
+            _repository: None,
+            _upstream_repository: None,
+            version: "1.0.0".to_string(),
+            release_url: Some("https://example.test/isotopes/aws-cli".to_string()),
+            archive_url: Some(format!("{base}/aws-cli.tgz")),
+            published_at: None,
+        };
+        let aws_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "isotope:aws-cli".to_string(),
+            root_formula: "awscli".to_string(),
+            stable_root: temp.path().join("opt/isotopes/aws-cli"),
+            install_root: temp.path().join("opt/isotopes/aws-cli"),
+            tmp_root: tmp_root.clone(),
+        };
+        install_isotope_root(&aws_plan, &radioisotope, &[], None).unwrap();
+        assert!(is_executable(&aws_plan.install_root.join("bin/aws")));
+        assert!(aws_plan.install_root.join("share/doc/aws.txt").is_file());
+
+        let missing_archive = IsotopePackageData {
+            archive_url: None,
+            ..radioisotope
+        };
+        let err = install_isotope_root(&aws_plan, &missing_archive, &[], None).unwrap_err();
+        assert!(err.contains("isotope isotope:aws-cli has no archive URL"));
+        server.join().unwrap();
     }
 
     #[test]
