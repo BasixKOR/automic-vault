@@ -430,11 +430,14 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var installCommand: String {
-        if isUnsupportedHomebrewInstall {
-            return "Tapped Homebrew formulae are detected but cannot be migrated to Automic Vault."
+        if isHomebrewInstall, installed {
+            return homebrewUninstallCommand
         }
         if isHomebrewMigrationCandidate {
             return "av install \(helperPackageNames.joined(separator: " "))"
+        }
+        if isUnsupportedHomebrewInstall {
+            return "Homebrew install is not supported."
         }
         if isAutomicVaultCLT {
             return "Install bundled av"
@@ -455,6 +458,23 @@ struct PackageDetail: Decodable, Equatable {
             return installed ? "skills remove -g \(skillName)" : "skills add -g \(skillName)"
         }
         return "av install \(helperPackageNames.joined(separator: " "))"
+    }
+
+    var homebrewUninstallCommand: String {
+        let packageName = helperPackageName
+        if let formula = packageName.strippingPrefix("brew:"), formula.isEmpty == false {
+            return "brew uninstall \(formula)"
+        }
+        if let cask = packageName.strippingPrefix("cask:"), cask.isEmpty == false {
+            return "brew uninstall --cask \(cask)"
+        }
+        if let formula = self.packageName.strippingPrefix("brew:"), formula.isEmpty == false {
+            return "brew uninstall \(formula)"
+        }
+        if let cask = self.packageName.strippingPrefix("cask:"), cask.isEmpty == false {
+            return "brew uninstall --cask \(cask)"
+        }
+        return "brew uninstall \(packageName)"
     }
 
     var helperPackageNames: [String] {

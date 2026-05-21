@@ -1025,22 +1025,21 @@ final class DossierView: NSView {
                 : nil
             applyInstallDestinationStyle()
             updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
-                || actionDetail.isHomebrewInstall
                 || actionDetail.isHomebrewCaskManaged
                 || actionDetail.isNpmSkillsManaged
             updateButton.isEnabled = !isActionInFlight
             primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
             if detail.homebrewMigration != nil {
                 primaryActionButton.title = "MIGRATE"
-            } else if detail.isHomebrewMigrationCandidate {
+            } else if detail.isHomebrewMigrationCandidate && !actionDetail.installed {
                 primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
-            } else if detail.isUnsupportedHomebrewInstall {
+            } else if detail.isUnsupportedHomebrewInstall && !actionDetail.installed {
                 primaryActionButton.title = "UNSUPPORTED TAP"
             }
             makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
             makeDefaultButton.isEnabled = !isActionInFlight
             primaryActionButton.isHidden = false
-            primaryActionButton.isEnabled = !isActionInFlight && !detail.isUnsupportedHomebrewInstall
+            primaryActionButton.isEnabled = !isActionInFlight
             renderDependencies(
                 detail.dependencies,
                 installedDependencies: installedPackDependencies(for: detail)
@@ -1113,7 +1112,6 @@ final class DossierView: NSView {
         let isEnabled = active == false && currentDetail != nil
         updateButton.isEnabled = isEnabled
         primaryActionButton.isEnabled = isEnabled
-            && currentDetail?.isUnsupportedHomebrewInstall != true
         makeDefaultButton.isEnabled = isEnabled
         if let notice = currentSecurityNotice {
             securityApplyButton.isEnabled = isEnabled && securityApplyButtonIsEnabled(notice: notice)
@@ -2021,8 +2019,7 @@ final class DossierView: NSView {
     @objc private func handleUpdateAction() {
         guard let currentDetail,
               isActionInFlight == false,
-              currentDetail.isOutdated,
-              currentDetail.isHomebrewInstall == false else {
+              currentDetail.isOutdated else {
             return
         }
         delegate?.dossierView(self, didRequestUpdateActionFor: selectedActionDetail(from: currentDetail))

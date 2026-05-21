@@ -1221,6 +1221,13 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             updateDossierActionInFlight()
         }
     }
+    private var isRunningHomebrewPackageOperation = false {
+        didSet {
+            updateHeader()
+            updateUpdateButtonVisibility()
+            updateDossierActionInFlight()
+        }
+    }
     private var isRunningSkillsOperation = false {
         didSet {
             updateHeader()
@@ -1681,6 +1688,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         guard !isRunningPackageOperation,
               !isRunningPrivilegedUpdate,
               !isRunningHomebrewCaskOperation,
+              !isRunningHomebrewPackageOperation,
               !isRunningSkillsOperation,
               !isInstallingAv else {
             return
@@ -3549,6 +3557,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         dossierView.setActionInFlight(
             isRunningPackageOperation
                 || isRunningHomebrewCaskOperation
+                || isRunningHomebrewPackageOperation
                 || isRunningSkillsOperation
         )
     }
@@ -3681,6 +3690,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         if isRunningHomebrewCaskOperation {
             return "homebrew cask channel active"
         }
+        if isRunningHomebrewPackageOperation {
+            return "homebrew package channel active"
+        }
         if isRunningSkillsOperation {
             return "npm:skills channel active"
         }
@@ -3765,6 +3777,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             || (!isRunningPrivilegedUpdate
                 && !isRunningPackageOperation
                 && !isRunningHomebrewCaskOperation
+                && !isRunningHomebrewPackageOperation
                 && !isRunningSkillsOperation
                 && !isInstallingAv)
         view.needsLayout = true
@@ -3812,6 +3825,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 if self.isRunningPackageOperation
                     || self.isRunningPrivilegedUpdate
                     || self.isRunningHomebrewCaskOperation
+                    || self.isRunningHomebrewPackageOperation
                     || self.isInstallingAv {
                     return .busy("Wait for active operations to finish before updating Automic Vault.")
                 }
@@ -4112,9 +4126,152 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
+    private enum HomebrewPackageMutationKind {
+        case upgrade
+        case uninstall
+
+        var overlayTitle: String {
+            switch self {
+            case .upgrade:
+                return "HOMEBREW UPGRADE"
+            case .uninstall:
+                return "HOMEBREW UNINSTALL"
+            }
+        }
+
+        var awaitingClearance: String {
+            switch self {
+            case .upgrade:
+                return "Preparing Homebrew upgrade"
+            case .uninstall:
+                return "Preparing Homebrew uninstall"
+            }
+        }
+
+        var successOperation: String {
+            switch self {
+            case .upgrade:
+                return "Upgrade Complete"
+            case .uninstall:
+                return "Uninstall Complete"
+            }
+        }
+
+        var failureOperation: String {
+            switch self {
+            case .upgrade:
+                return "Upgrade Halted"
+            case .uninstall:
+                return "Uninstall Halted"
+            }
+        }
+
+        func activationLog(packageName: String) -> String {
+            switch self {
+            case .upgrade:
+                return "Opening Homebrew upgrade for \(packageName)."
+            case .uninstall:
+                return "Opening Homebrew uninstall for \(packageName)."
+            }
+        }
+
+        func arguments(packageName: String) throws -> [String] {
+            let formulaPrefix = "brew:"
+            let caskPrefix = "cask:"
+            if let formula = packageName.strippingPrefix(formulaPrefix), formula.isEmpty == false {
+                switch self {
+                case .upgrade:
+                    return ["upgrade", formula]
+                case .uninstall:
+                    return ["uninstall", formula]
+                }
+            }
+            if let cask = packageName.strippingPrefix(caskPrefix), cask.isEmpty == false {
+                switch self {
+                case .upgrade:
+                    return ["upgrade", "--cask", cask]
+                case .uninstall:
+                    return ["uninstall", "--cask", cask]
+                }
+            }
+            throw NSError(
+                domain: "AutomicVault.HomebrewPackage",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "unsupported Homebrew package \(packageName)"]
+            )
+        }
+    }
+
+    private func startHomebrewPackageMutation(
+        _ kind: HomebrewPackageMutationKind,
+        for detail: PackageDetail
+    ) {
+        guard isRunningPackageOperation == false,
+              isRunningPrivilegedUpdate == false,
+              isRunningHomebrewCaskOperation == false,
+              isRunningHomebrewPackageOperation == false,
+              isRunningSkillsOperation == false,
+              isInstallingAv == false else {
+            return
+        }
+
+        let packageName = detail.helperPackageName
+        let operationID = beginOverlayOperation()
+        isRunningHomebrewPackageOperation = true
+        let overlay = presentUpdateOverlay()
+        overlay.onRetry = { [weak self] in
+            self?.startHomebrewPackageMutation(kind, for: detail)
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.dismissUpdateOverlay()
+        }
+        overlay.configure(
+            title: kind.overlayTitle,
+            awaitingClearance: kind.awaitingClearance,
+            idleStatus: "Homebrew package channel ready",
+            successOperation: kind.successOperation,
+            failureOperation: kind.failureOperation
+        )
+        overlay.begin(
+            packages: [packageName],
+            activationLog: kind.activationLog(packageName: packageName)
+        )
+        overlay.handle(event: .installing(package: packageName))
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.runHomebrewPackageMutation(kind, packageName: packageName)
+            DispatchQueue.main.async {
+                guard self.activeOverlayOperationID == operationID else { return }
+                self.isRunningHomebrewPackageOperation = false
+                switch result {
+                case .success:
+                    self.detailsByPackageName.removeValue(forKey: detail.packageName)
+                    self.detailsByPackageName.removeValue(forKey: packageName)
+                    overlay.handle(event: .completed(package: packageName))
+                    overlay.succeed(
+                        message: kind.successOperation,
+                        packages: [packageName]
+                    )
+                    self.reloadPackages()
+                    self.refreshRecommendations()
+                    self.refreshUpdateAvailability()
+                    self.refreshMenuBarAfterPrivilegedHelperOperation()
+                case .failure(let error):
+                    overlay.fail(message: error.localizedDescription)
+                    self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
+                    self.refreshRecommendations()
+                    self.refreshUpdateAvailability()
+                }
+            }
+        }
+    }
+
     private func startHomebrewCaskMutation(for detail: PackageDetail) {
         guard let token = detail.caskName, !token.isEmpty else { return }
-        guard isRunningHomebrewCaskOperation == false else { return }
+        guard isRunningHomebrewCaskOperation == false,
+              isRunningHomebrewPackageOperation == false else {
+            return
+        }
 
         let operationID = beginOverlayOperation()
         isRunningHomebrewCaskOperation = true
@@ -4179,7 +4336,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private func startSkillsMutation(for detail: PackageDetail) {
         guard let skillName = detail.skillName, !skillName.isEmpty else { return }
-        guard isRunningSkillsOperation == false else { return }
+        guard isRunningSkillsOperation == false,
+              isRunningHomebrewPackageOperation == false else {
+            return
+        }
 
         let operationID = beginOverlayOperation()
         isRunningSkillsOperation = true
@@ -4251,6 +4411,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             startSkillsMutation(for: detail)
             return
         }
+        if detail.isHomebrewInstall, detail.installed {
+            startHomebrewPackageMutation(.uninstall, for: detail)
+            return
+        }
         if detail.isHomebrewMigrationCandidate || detail.homebrewMigration != nil {
             beginHomebrewMigration(for: detail)
             return
@@ -4277,7 +4441,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func beginPackageUpdate(for detail: PackageDetail) {
-        guard detail.installed, detail.isOutdated, detail.isHomebrewInstall == false else {
+        guard detail.installed, detail.isOutdated else {
             return
         }
         if detail.isAutomicVaultCLT {
@@ -4286,6 +4450,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
         if detail.isXcodeCLT {
             startXcodeCLTInstallOperation()
+            return
+        }
+        if detail.isHomebrewInstall {
+            startHomebrewPackageMutation(.upgrade, for: detail)
             return
         }
         let kind: PackageMutationKind = .update
@@ -4825,7 +4993,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private static func uninstallHomebrewPackages(packageNames: [String]) -> Result<Void, Error> {
         for packageName in packageNames {
-            let result = uninstallHomebrewPackage(packageName: packageName)
+            let result = runHomebrewPackageMutation(.uninstall, packageName: packageName)
             if case .failure = result {
                 return result
             }
@@ -4833,25 +5001,24 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         return .success(())
     }
 
-    private static func uninstallHomebrewPackage(packageName: String) -> Result<Void, Error> {
-        let formulaPrefix = "brew:"
-        let caskPrefix = "cask:"
+    private static func runHomebrewPackageMutation(
+        _ kind: HomebrewPackageMutationKind,
+        packageName: String
+    ) -> Result<Void, Error> {
         let arguments: [String]
-        if let formula = packageName.strippingPrefix(formulaPrefix), formula.isEmpty == false {
-            arguments = ["uninstall", formula]
-        } else if let cask = packageName.strippingPrefix(caskPrefix), cask.isEmpty == false {
-            arguments = ["uninstall", "--cask", cask]
-        } else {
-            return .failure(NSError(
-                domain: "AutomicVault.HomebrewMigration",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "unsupported Homebrew package \(packageName)"]
-            ))
+        do {
+            arguments = try kind.arguments(packageName: packageName)
+        } catch {
+            return .failure(error)
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/brew")
         process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "VAULT_SOCKET_PATH")
+        environment.removeValue(forKey: "VAULT_TOOLCHAIN_ROOT")
+        process.environment = environment
         let errorPipe = Pipe()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errorPipe
@@ -4866,11 +5033,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     ? errorText!
                     : "brew exited with status \(process.terminationStatus)"
                 return .failure(NSError(
-                    domain: "AutomicVault.HomebrewMigration",
+                    domain: "AutomicVault.HomebrewPackage",
                     code: Int(process.terminationStatus),
                     userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Installed with Automic Vault, but Homebrew uninstall failed: \(message)"
+                        NSLocalizedDescriptionKey: "Homebrew \(arguments.joined(separator: " ")) failed: \(message)"
                     ]
                 ))
             }
@@ -5150,6 +5316,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         isInstallingAv = false
         isRunningPrivilegedUpdate = false
         isRunningPackageOperation = false
+        isRunningHomebrewPackageOperation = false
         guard let updateOverlayController else { return }
         updateOverlayController.view.removeFromSuperview()
         updateOverlayController.removeFromParent()
