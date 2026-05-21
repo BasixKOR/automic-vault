@@ -15,12 +15,7 @@ const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-c
 const USER_APPROVAL_SUBDIR: &str = "isotope";
 const ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
-const AWS_CREDENTIAL_PROCESS_TOKEN_ENV: &str = "AUTOMIC_VAULT_AWS_CREDENTIAL_PROCESS_TOKEN";
-const AWS_ACCESS_KEY_ID_ENV_KEY: &str = "AWS_ACCESS_KEY_ID";
-const AWS_SECRET_ACCESS_KEY_ENV_KEY: &str = "AWS_SECRET_ACCESS_KEY";
-const AWS_CLI_LAUNCHER_PATH: &str = "/opt/awscli/bin/aws";
-const AWS_CLI_PYTHON_PATH: &str = "/opt/awscli/libexec/bin/python";
-const MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN: usize = 32;
+pub(crate) const CREDENTIAL_HELPER_TOKEN_ENV: &str = "AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN";
 
 #[derive(Debug)]
 struct IsotopeOptions {
@@ -36,10 +31,16 @@ struct SaveSecretOptions {
 }
 
 #[derive(Debug)]
-struct AwsCredentialProcessContext {
-    token: Option<String>,
-    parent_executable_path: Option<String>,
-    parent_command: Option<String>,
+pub(crate) struct CredentialHelperCallerContext {
+    pub(crate) token: Option<String>,
+    pub(crate) parent_executable_path: Option<String>,
+    pub(crate) parent_command: Option<String>,
+}
+
+pub(crate) struct CredentialHelperInvocation<'a> {
+    pub(crate) args: Vec<OsString>,
+    pub(crate) caller: CredentialHelperCallerContext,
+    pub(crate) store: &'a dyn CredentialHelperSecretStore,
 }
 
 #[derive(Debug)]
@@ -118,8 +119,11 @@ impl IsotopeAlwaysAllowStore {
     }
 }
 
-trait CredentialStore {
+pub(crate) trait CredentialHelperSecretStore {
     fn load_secret(&self, key: &str) -> Result<String, String>;
+}
+
+trait CredentialStore: CredentialHelperSecretStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
 }
 
@@ -197,7 +201,7 @@ fn dispatch_save(
 fn dispatch_credential_helper(
     program_name: &str,
     mut args: impl Iterator<Item = OsString>,
-    store: &dyn CredentialStore,
+    store: &dyn CredentialHelperSecretStore,
 ) -> Result<(), String> {
     let Some(protocol) = args.next() else {
         print_credential_helper_usage(program_name);
@@ -213,32 +217,21 @@ fn dispatch_credential_helper(
         return Ok(());
     }
 
-    match protocol.to_str() {
-        Some("aws") => dispatch_aws_credential_process(&format!("{program_name} aws"), args, store),
-        Some(value) => Err(format!("unknown credential helper protocol '{value}'")),
-        None => Err("credential helper protocol must be valid UTF-8".to_string()),
-    }
-}
-
-fn dispatch_aws_credential_process(
-    program_name: &str,
-    args: impl Iterator<Item = OsString>,
-    store: &dyn CredentialStore,
-) -> Result<(), String> {
-    for arg in args {
-        if is_help_flag(&arg) {
-            print_aws_credential_process_usage(program_name);
-            return Ok(());
-        }
-        if is_version_flag(&arg) {
-            println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
-            return Ok(());
-        }
-        return Err("aws credential_process does not accept arguments".to_string());
-    }
-
+    let protocol = protocol
+        .to_str()
+        .ok_or_else(|| "credential helper protocol must be valid UTF-8".to_string())?;
+    let Some(integration) = credential_helper_integration(protocol) else {
+        return Err(format!("unknown credential helper protocol '{protocol}'"));
+    };
+    let credential_helper = integration
+        .credential_helper
+        .ok_or_else(|| format!("credential helper protocol '{protocol}' is not callable"))?;
     disable_core_dumps()?;
-    run_aws_credential_process(store, current_aws_credential_process_context())
+    credential_helper(CredentialHelperInvocation {
+        args: args.collect(),
+        caller: current_credential_helper_caller_context(),
+        store,
+    })
 }
 
 fn parse_isotope_options(
@@ -537,8 +530,8 @@ fn credential_keys_to_load(
         .collect()
 }
 
-fn load_credentials(
-    store: &dyn CredentialStore,
+pub(crate) fn load_credentials(
+    store: &dyn CredentialHelperSecretStore,
     keys: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
     let mut credentials = BTreeMap::new();
@@ -548,85 +541,24 @@ fn load_credentials(
     Ok(credentials)
 }
 
-fn run_aws_credential_process(
-    store: &dyn CredentialStore,
-    context: AwsCredentialProcessContext,
-) -> Result<(), String> {
-    validate_aws_credential_process_context_with(&context, validate_root_controlled_path)?;
-    let keys = vec![
-        AWS_ACCESS_KEY_ID_ENV_KEY.to_string(),
-        AWS_SECRET_ACCESS_KEY_ENV_KEY.to_string(),
-    ];
-    let mut credentials = load_credentials(store, &keys)?;
-    let response = aws_credential_process_response(&credentials)?;
-    println!("{response}");
-    zeroize_credentials(&mut credentials);
-    Ok(())
+fn credential_helper_integration(
+    name: &str,
+) -> Option<&'static isotope_integrations::IsotopeIntegration> {
+    isotope_integrations::INTEGRATIONS
+        .iter()
+        .find(|integration| integration.credential_helper_name == Some(name))
 }
 
-fn aws_credential_process_response(
-    credentials: &BTreeMap<String, String>,
-) -> Result<String, String> {
-    let access_key_id = credentials
-        .get(AWS_ACCESS_KEY_ID_ENV_KEY)
-        .ok_or_else(|| format!("missing isotope key {AWS_ACCESS_KEY_ID_ENV_KEY}"))?;
-    let secret_access_key = credentials
-        .get(AWS_SECRET_ACCESS_KEY_ENV_KEY)
-        .ok_or_else(|| format!("missing isotope key {AWS_SECRET_ACCESS_KEY_ENV_KEY}"))?;
-    serde_json::to_string(&serde_json::json!({
-        "Version": 1,
-        "AccessKeyId": access_key_id,
-        "SecretAccessKey": secret_access_key,
-    }))
-    .map_err(|err| format!("failed to encode AWS credential_process response: {err}"))
-}
-
-fn current_aws_credential_process_context() -> AwsCredentialProcessContext {
+fn current_credential_helper_caller_context() -> CredentialHelperCallerContext {
     let parent_pid = unsafe { libc::getppid() };
-    AwsCredentialProcessContext {
-        token: env::var(AWS_CREDENTIAL_PROCESS_TOKEN_ENV).ok(),
+    CredentialHelperCallerContext {
+        token: env::var(CREDENTIAL_HELPER_TOKEN_ENV).ok(),
         parent_executable_path: parent_process_path(parent_pid),
         parent_command: parent_process_command(parent_pid),
     }
 }
 
-fn validate_aws_credential_process_context_with(
-    context: &AwsCredentialProcessContext,
-    validate_path: impl Fn(&Path) -> Result<(), String>,
-) -> Result<(), String> {
-    let token = context
-        .token
-        .as_deref()
-        .ok_or_else(|| "missing AWS credential_process approval token".to_string())?;
-    if token.len() < MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN {
-        return Err("invalid AWS credential_process approval token".to_string());
-    }
-
-    let parent_executable_path = context
-        .parent_executable_path
-        .as_deref()
-        .ok_or_else(|| "failed to resolve AWS credential_process parent".to_string())?;
-    if parent_executable_path != AWS_CLI_PYTHON_PATH
-        && parent_executable_path != AWS_CLI_LAUNCHER_PATH
-    {
-        return Err(
-            "AWS credential_process helper must be invoked by the aws launcher".to_string(),
-        );
-    }
-
-    let parent_command = context
-        .parent_command
-        .as_deref()
-        .ok_or_else(|| "failed to resolve AWS credential_process parent command".to_string())?;
-    if !command_mentions_path(parent_command, AWS_CLI_LAUNCHER_PATH) {
-        return Err("AWS credential_process parent command is not the aws launcher".to_string());
-    }
-
-    validate_path(Path::new(parent_executable_path))?;
-    validate_path(Path::new(AWS_CLI_LAUNCHER_PATH))
-}
-
-fn command_mentions_path(command: &str, path: &str) -> bool {
+pub(crate) fn credential_helper_command_mentions_path(command: &str, path: &str) -> bool {
     command.split_whitespace().any(|part| part == path)
 }
 
@@ -648,7 +580,7 @@ fn validate_target_root_installation(path: &Path, file: &File) -> Result<(), Str
     validate_parent_directories(path)
 }
 
-fn validate_root_controlled_path(path: &Path) -> Result<(), String> {
+pub(crate) fn validate_root_controlled_path(path: &Path) -> Result<(), String> {
     let file =
         File::open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
     validate_regular_target(path, &file)?;
@@ -1227,7 +1159,7 @@ fn disable_core_dumps() -> Result<(), String> {
     ))
 }
 
-fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
+pub(crate) fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
     for value in credentials.values_mut() {
         unsafe {
             value.as_mut_vec().fill(0);
@@ -1237,11 +1169,13 @@ fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
     credentials.clear();
 }
 
-impl CredentialStore for KeychainCredentialStore {
+impl CredentialHelperSecretStore for KeychainCredentialStore {
     fn load_secret(&self, key: &str) -> Result<String, String> {
         keychain_read_secret(KEYCHAIN_SERVICE, key)
     }
+}
 
+impl CredentialStore for KeychainCredentialStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
         keychain_write_secret(KEYCHAIN_SERVICE, key, value)
     }
@@ -1377,6 +1311,16 @@ keys or values are rejected."
 }
 
 pub fn print_credential_helper_usage(program_name: &str) {
+    let helpers = credential_helper_names();
+    let protocol_lines = if helpers.is_empty() {
+        "  none".to_string()
+    } else {
+        helpers
+            .into_iter()
+            .map(|helper| format!("  {helper}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     println!(
         "\
 Usage: {program_name} <protocol>
@@ -1384,18 +1328,18 @@ Usage: {program_name} <protocol>
 Runs a credential helper protocol adapter.
 
 Protocols:
-  aws    Print AWS credential_process JSON for the aws-cli isotope."
+{protocol_lines}"
     );
 }
 
-fn print_aws_credential_process_usage(program_name: &str) {
-    println!(
-        "\
-Usage: {program_name}
-
-Prints AWS credential_process JSON for the Automic Vault aws-cli isotope.
-This helper is only valid when invoked by the installed aws launcher."
-    );
+fn credential_helper_names() -> Vec<&'static str> {
+    let mut names = isotope_integrations::INTEGRATIONS
+        .iter()
+        .filter_map(|integration| integration.credential_helper_name)
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 #[cfg(test)]
@@ -1411,14 +1355,16 @@ mod tests {
         saved: Mutex<Vec<(String, String)>>,
     }
 
-    impl CredentialStore for StubCredentialStore {
+    impl CredentialHelperSecretStore for StubCredentialStore {
         fn load_secret(&self, key: &str) -> Result<String, String> {
             self.secrets
                 .get(key)
                 .cloned()
                 .unwrap_or_else(|| Err("missing stub credential".to_string()))
         }
+    }
 
+    impl CredentialStore for StubCredentialStore {
         fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
             self.saved
                 .lock()
@@ -1770,63 +1716,9 @@ mod tests {
     }
 
     #[test]
-    fn isotopes_aws_credential_process_formats_static_credentials() {
-        let credentials = BTreeMap::from([
-            (
-                AWS_ACCESS_KEY_ID_ENV_KEY.to_string(),
-                "AKIAEXAMPLE".to_string(),
-            ),
-            (
-                AWS_SECRET_ACCESS_KEY_ENV_KEY.to_string(),
-                "secret-value".to_string(),
-            ),
-        ]);
-
-        assert_eq!(
-            aws_credential_process_response(&credentials).unwrap(),
-            r#"{"AccessKeyId":"AKIAEXAMPLE","SecretAccessKey":"secret-value","Version":1}"#
-        );
-    }
-
-    #[test]
-    fn isotopes_aws_credential_process_requires_launcher_context() {
-        let valid_context = AwsCredentialProcessContext {
-            token: Some("x".repeat(MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN)),
-            parent_executable_path: Some(AWS_CLI_PYTHON_PATH.to_string()),
-            parent_command: Some(format!(
-                "{AWS_CLI_PYTHON_PATH} {AWS_CLI_LAUNCHER_PATH} s3 ls"
-            )),
-        };
-        validate_aws_credential_process_context_with(&valid_context, |_| Ok(())).unwrap();
-
-        let missing_token = AwsCredentialProcessContext {
-            token: None,
-            parent_executable_path: Some(AWS_CLI_PYTHON_PATH.to_string()),
-            parent_command: Some(format!(
-                "{AWS_CLI_PYTHON_PATH} {AWS_CLI_LAUNCHER_PATH} s3 ls"
-            )),
-        };
-        assert!(
-            validate_aws_credential_process_context_with(&missing_token, |_| Ok(()))
-                .unwrap_err()
-                .contains("approval token")
-        );
-
-        let wrong_parent = AwsCredentialProcessContext {
-            token: Some("x".repeat(MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN)),
-            parent_executable_path: Some("/bin/sh".to_string()),
-            parent_command: Some("/bin/sh -c aws".to_string()),
-        };
-        assert!(
-            validate_aws_credential_process_context_with(&wrong_parent, |_| Ok(()))
-                .unwrap_err()
-                .contains("aws launcher")
-        );
-    }
-
-    #[test]
     fn isotopes_credential_helper_dispatch_accepts_aws_protocol() {
         let store = StubCredentialStore::default();
+        assert!(credential_helper_names().contains(&"aws"));
 
         assert!(dispatch_credential_helper(
             "av credential-helper",

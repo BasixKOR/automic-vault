@@ -113,6 +113,8 @@ fn generate_isotope_integrations() {
         "  pub(crate) detect_reasons: Option<fn() -> Result<Vec<String>, String>>,\n",
         "  pub(crate) migrate: Option<fn() -> Result<(), String>>,\n",
         "  pub(crate) post_install: Option<fn() -> Result<(), String>>,\n",
+        "  pub(crate) credential_helper_name: Option<&'static str>,\n",
+        "  pub(crate) credential_helper: Option<for<'a> fn(crate::isotope::CredentialHelperInvocation<'a>) -> Result<(), String>>,\n",
         "}\n\n",
     ));
 
@@ -133,6 +135,12 @@ fn generate_isotope_integrations() {
         if let Some(path) = &entry.post_install_path {
             output.push_str(&format!(
                 "  #[allow(dead_code)] pub(crate) mod post_install {{ include!(r#\"{}\"#); }}\n",
+                path.display()
+            ));
+        }
+        if let Some(path) = &entry.credential_helper_path {
+            output.push_str(&format!(
+                "  #[allow(dead_code)] pub(crate) mod credential_helper {{ include!(r#\"{}\"#); }}\n",
                 path.display()
             ));
         }
@@ -164,12 +172,32 @@ fn generate_isotope_integrations() {
         } else {
             "None".to_string()
         };
+        let credential_helper_name = if entry.credential_helper_path.is_some() {
+            format!("Some({}::credential_helper::NAME)", entry.module_name)
+        } else {
+            "None".to_string()
+        };
+        let credential_helper = if entry.credential_helper_path.is_some() {
+            format!(
+                "Some({}::credential_helper::credential_helper)",
+                entry.module_name
+            )
+        } else {
+            "None".to_string()
+        };
         output.push_str(&format!(
             concat!(
                 "  IsotopeIntegration {{ name: {:?}, detect: {}, detect_reasons: {}, ",
-                "migrate: {}, post_install: {} }},\n"
+                "migrate: {}, post_install: {}, credential_helper_name: {}, ",
+                "credential_helper: {} }},\n"
             ),
-            entry.isotope_name, detect, detect_reasons, migrate, post_install
+            entry.isotope_name,
+            detect,
+            detect_reasons,
+            migrate,
+            post_install,
+            credential_helper_name,
+            credential_helper
         ));
     }
     output.push_str("];\n");
@@ -209,7 +237,12 @@ fn collect_isotope_integrations(
         let detect_path = repo_dir.join("detect.rs");
         let migrate_path = repo_dir.join("migrate.rs");
         let post_install_path = repo_dir.join("post-install.rs");
-        if !detect_path.exists() && !migrate_path.exists() && !post_install_path.exists() {
+        let credential_helper_path = repo_dir.join("credential-helper.rs");
+        if !detect_path.exists()
+            && !migrate_path.exists()
+            && !post_install_path.exists()
+            && !credential_helper_path.exists()
+        {
             continue;
         }
 
@@ -221,6 +254,12 @@ fn collect_isotope_integrations(
         }
         if post_install_path.exists() {
             println!("cargo:rerun-if-changed={}", post_install_path.display());
+        }
+        if credential_helper_path.exists() {
+            println!(
+                "cargo:rerun-if-changed={}",
+                credential_helper_path.display()
+            );
         }
         let has_detect_reasons = detect_path
             .exists()
@@ -234,6 +273,9 @@ fn collect_isotope_integrations(
             has_detect_reasons,
             migrate_path: migrate_path.exists().then_some(migrate_path),
             post_install_path: post_install_path.exists().then_some(post_install_path),
+            credential_helper_path: credential_helper_path
+                .exists()
+                .then_some(credential_helper_path),
         });
     }
 }
@@ -245,6 +287,7 @@ struct IsotopeIntegrationInput {
     has_detect_reasons: bool,
     migrate_path: Option<std::path::PathBuf>,
     post_install_path: Option<std::path::PathBuf>,
+    credential_helper_path: Option<std::path::PathBuf>,
 }
 
 fn isotope_name_from_manifest(manifest: &str) -> Option<String> {
