@@ -15376,8 +15376,9 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &[("pkg/bin/coverage-vendor", b"#!/bin/sh\nprintf coverage\n")],
         );
         let vendor_bytes = fs::read(&vendor_archive).unwrap();
-        let (vendor_base, _vendor_server) =
-            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 2);
+        let mut vendor_server =
+            start_counting_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)]);
+        let vendor_base = vendor_server.base_url.clone();
         let version = Version::parse("0.0.0").unwrap();
         register_test_download_url(&version, format!("{vendor_base}/vendor.tar.gz"));
 
@@ -15458,6 +15459,37 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert!(reinstall_events.lock().unwrap().iter().any(
             |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
         ));
+
+        let current_events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let current_callback_events = Arc::clone(&current_events);
+        let current_callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                current_callback_events.lock().unwrap().push(event);
+            })));
+        run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            vendor::VendorPackage {
+                name: package_name,
+                dependencies: &[],
+                executables: &["coverage-vendor"],
+                version: fake_vendor_version,
+                download_url: Some(test_download_url),
+                install: coverage_vendor_install_strategy,
+            },
+            InstallIntent::Install,
+            Some(current_callback),
+        )
+        .unwrap();
+        let current_events = current_events.lock().unwrap();
+        assert!(current_events.iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
+        ));
+        vendor_server.stop().unwrap();
+        let vendor_requests = vendor_server.request_count();
+        assert_eq!(vendor_requests, 3);
         remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
     }
 
@@ -16718,28 +16750,97 @@ EOF
         let routes = Arc::new(routes.into_iter().collect::<HashMap<_, _>>());
         let handle = thread::spawn(move || {
             for _ in 0..requests {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut buffer = [0u8; 4096];
-                let count = stream.read(&mut buffer).unwrap();
-                let request = String::from_utf8_lossy(&buffer[..count]);
-                let path = request
-                    .lines()
-                    .next()
-                    .and_then(|line| line.split_whitespace().nth(1))
-                    .unwrap();
-                let (status, body) = match routes.get(path) {
-                    Some(body) => ("200 OK", body.clone()),
-                    None => ("404 Not Found", Vec::new()),
-                };
-                let response = format!(
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).unwrap();
-                stream.write_all(&body).unwrap();
+                let (stream, _) = listener.accept().unwrap();
+                respond_to_test_http_request(stream, routes.as_ref());
             }
         });
         (format!("http://{address}"), handle)
+    }
+
+    struct CountingTestHttpServer {
+        base_url: String,
+        requests: Arc<Mutex<usize>>,
+        shutdown: std::sync::mpsc::Sender<()>,
+        handle: Option<thread::JoinHandle<()>>,
+    }
+
+    impl CountingTestHttpServer {
+        fn request_count(&self) -> usize {
+            *self.requests.lock().unwrap()
+        }
+
+        fn stop(&mut self) -> thread::Result<()> {
+            let Some(handle) = self.handle.take() else {
+                return Ok(());
+            };
+            let _ = self.shutdown.send(());
+            handle.join()
+        }
+    }
+
+    impl Drop for CountingTestHttpServer {
+        fn drop(&mut self) {
+            let _ = self.stop();
+        }
+    }
+
+    fn start_counting_test_http_server(routes: Vec<(String, Vec<u8>)>) -> CountingTestHttpServer {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let routes = Arc::new(routes.into_iter().collect::<HashMap<_, _>>());
+        let requests = Arc::new(Mutex::new(0));
+        let thread_requests = Arc::clone(&requests);
+        let (shutdown, shutdown_rx) = std::sync::mpsc::channel();
+        let handle = thread::spawn(move || {
+            loop {
+                if shutdown_rx.try_recv().is_ok() {
+                    break;
+                }
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        *thread_requests.lock().unwrap() += 1;
+                        respond_to_test_http_request(stream, routes.as_ref());
+                    }
+                    Err(err)
+                        if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(err) => panic!("failed to accept test HTTP request: {err}"),
+                }
+            }
+        });
+        CountingTestHttpServer {
+            base_url: format!("http://{address}"),
+            requests,
+            shutdown,
+            handle: Some(handle),
+        }
+    }
+
+    fn respond_to_test_http_request(
+        mut stream: std::net::TcpStream,
+        routes: &HashMap<String, Vec<u8>>,
+    ) {
+        let mut buffer = [0u8; 4096];
+        let count = stream.read(&mut buffer).unwrap();
+        let request = String::from_utf8_lossy(&buffer[..count]);
+        let path = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap();
+        let (status, body) = match routes.get(path) {
+            Some(body) => ("200 OK", body.clone()),
+            None => ("404 Not Found", Vec::new()),
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.write_all(&body).unwrap();
     }
 
     fn start_test_etag_server(
