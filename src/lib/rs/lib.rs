@@ -15303,7 +15303,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &[("pkg/bin/coverage-vendor", b"#!/bin/sh\nprintf coverage\n")],
         );
         let vendor_bytes = fs::read(&vendor_archive).unwrap();
-        let (vendor_base, _vendor_server) =
+        let (vendor_base, vendor_server) =
             start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 3);
         let version = Version::parse("0.0.0").unwrap();
         register_test_download_url(&version, format!("{vendor_base}/vendor.tar.gz"));
@@ -15413,6 +15413,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert!(current_events.iter().any(
             |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
         ));
+        vendor_server.join().unwrap();
         remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
     }
 
