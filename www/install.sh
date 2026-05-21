@@ -29,4 +29,13 @@ app="$(find "$tmp/mnt" -maxdepth 1 -name '*.app' -print -quit)"
 /usr/bin/codesign -dv --verbose=4 "$app" 2>&1 \
   | /usr/bin/grep -q '^TeamIdentifier=ZU76A67LGU$'
 
-/usr/bin/ditto "$app" "/Applications/$(basename "$app")"
+installed_app="/Applications/$(basename "$app")"
+
+/usr/bin/ditto "$app" "$installed_app"
+
+av="$installed_app/Contents/Resources/av"
+
+[[ -x "$av" ]]
+
+/usr/bin/sudo /bin/mkdir -p /usr/local/bin
+/usr/bin/sudo /usr/bin/install -m 755 "$av" /usr/local/bin/av
