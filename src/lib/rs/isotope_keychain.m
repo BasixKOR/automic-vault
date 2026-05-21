@@ -3,6 +3,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+static NSMutableDictionary *isotope_generic_password_query(NSString *service,
+                                                           NSString *account) {
+  NSMutableDictionary *query = [@{
+    (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+    (__bridge id)kSecAttrService: service,
+    (__bridge id)kSecAttrAccount: account,
+  } mutableCopy];
+
+  SecKeychainRef defaultKeychain = NULL;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  OSStatus status = SecKeychainCopyDefault(&defaultKeychain);
+#pragma clang diagnostic pop
+  if (status == errSecSuccess && defaultKeychain != NULL) {
+    query[(__bridge id)kSecUseKeychain] = CFBridgingRelease(defaultKeychain);
+  }
+
+  return query;
+}
+
 char *isotope_copy_generic_password_json(const char *service_cstr,
                                          const char *account_cstr,
                                          char **error_cstr) {
@@ -27,13 +47,9 @@ char *isotope_copy_generic_password_json(const char *service_cstr,
       return NULL;
     }
 
-    NSDictionary *query = @{
-      (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-      (__bridge id)kSecAttrService: service,
-      (__bridge id)kSecAttrAccount: account,
-      (__bridge id)kSecReturnData: @YES,
-      (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
-    };
+    NSMutableDictionary *query = isotope_generic_password_query(service, account);
+    query[(__bridge id)kSecReturnData] = @YES;
+    query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
 
     CFTypeRef result = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
@@ -135,11 +151,7 @@ bool isotope_store_generic_password_json(const char *service_cstr,
     }
 
     NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
-    NSDictionary *query = @{
-      (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-      (__bridge id)kSecAttrService: service,
-      (__bridge id)kSecAttrAccount: account,
-    };
+    NSMutableDictionary *query = isotope_generic_password_query(service, account);
 
     NSDictionary *attributes = @{(__bridge id)kSecValueData: data};
     OSStatus status =
