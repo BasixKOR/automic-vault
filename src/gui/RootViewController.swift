@@ -1675,6 +1675,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         beginPackageMakeDefault(for: detail)
     }
 
+    func dossierView(_ view: DossierView, didRequestMigrationActionFor detail: PackageDetail) {
+        beginHomebrewMigration(for: detail)
+    }
+
     func dossierView(_ view: DossierView, didRequestSecurityActionFor detail: PackageDetail) {
         beginSecurityMutation(for: detail)
     }

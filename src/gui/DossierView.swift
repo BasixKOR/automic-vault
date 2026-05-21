@@ -5,6 +5,7 @@ protocol DossierViewDelegate: AnyObject {
     func dossierView(_ view: DossierView, didRequestPrimaryActionFor detail: PackageDetail)
     func dossierView(_ view: DossierView, didRequestUpdateActionFor detail: PackageDetail)
     func dossierView(_ view: DossierView, didRequestDefaultActionFor detail: PackageDetail)
+    func dossierView(_ view: DossierView, didRequestMigrationActionFor detail: PackageDetail)
     func dossierView(_ view: DossierView, didRequestSecurityActionFor detail: PackageDetail)
 }
 
@@ -1036,7 +1037,13 @@ final class DossierView: NSView {
             } else if detail.isUnsupportedHomebrewInstall && !actionDetail.installed {
                 primaryActionButton.title = "UNSUPPORTED TAP"
             }
-            makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
+            if showsHomebrewMigrationButton(for: actionDetail) {
+                makeDefaultButton.title = "MIGRATE"
+                makeDefaultButton.isHidden = false
+            } else {
+                makeDefaultButton.title = "MAKE DEFAULT"
+                makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
+            }
             makeDefaultButton.isEnabled = !isActionInFlight
             primaryActionButton.isHidden = false
             primaryActionButton.isEnabled = !isActionInFlight
@@ -1793,6 +1800,10 @@ final class DossierView: NSView {
             && option.supportsSideBySideStubs == false
     }
 
+    private func showsHomebrewMigrationButton(for detail: PackageDetail) -> Bool {
+        detail.installed && detail.isHomebrewMigrationCandidate
+    }
+
     private func primaryActionButtonWidth(maximum: CGFloat) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: primaryActionButton.font ?? UIStyle.monoFont(size: 11, weight: .medium),
@@ -2027,7 +2038,12 @@ final class DossierView: NSView {
 
     @objc private func handleMakeDefaultAction() {
         guard let currentDetail, isActionInFlight == false else { return }
-        delegate?.dossierView(self, didRequestDefaultActionFor: selectedActionDetail(from: currentDetail))
+        let actionDetail = selectedActionDetail(from: currentDetail)
+        if showsHomebrewMigrationButton(for: actionDetail) {
+            delegate?.dossierView(self, didRequestMigrationActionFor: actionDetail)
+            return
+        }
+        delegate?.dossierView(self, didRequestDefaultActionFor: actionDetail)
     }
 
     @objc private func handleVersionSelection() {
