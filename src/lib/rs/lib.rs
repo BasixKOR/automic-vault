@@ -15414,8 +15414,8 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert!(current_events.iter().any(
             |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
         ));
+        vendor_server.stop().unwrap();
         let vendor_requests = vendor_server.request_count();
-        vendor_server.stop();
         assert_eq!(vendor_requests, 3);
         remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
     }
@@ -16696,18 +16696,18 @@ EOF
             *self.requests.lock().unwrap()
         }
 
-        fn stop(&mut self) {
+        fn stop(&mut self) -> thread::Result<()> {
             let Some(handle) = self.handle.take() else {
-                return;
+                return Ok(());
             };
             let _ = self.shutdown.send(());
-            handle.join().unwrap();
+            handle.join()
         }
     }
 
     impl Drop for CountingTestHttpServer {
         fn drop(&mut self) {
-            self.stop();
+            let _ = self.stop();
         }
     }
 
@@ -16729,7 +16729,9 @@ EOF
                         *thread_requests.lock().unwrap() += 1;
                         respond_to_test_http_request(stream, routes.as_ref());
                     }
-                    Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    Err(err)
+                        if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                    {
                         thread::sleep(Duration::from_millis(10));
                     }
                     Err(err) => panic!("failed to accept test HTTP request: {err}"),
