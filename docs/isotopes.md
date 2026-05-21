@@ -25,6 +25,10 @@ Approval gates should be applied at points where a command crosses a
 meaningful risk boundary. The goal is to intercept *evaluated actions*, not
 just commands.
 
+For metadata-only package risk descriptions that can be maintained by forks
+before an isotope exists, see
+[Package Approval Metadata](./package-approval-metadata.md).
+
 ### Gate when an action:
 
 #### 1. Is destructive
