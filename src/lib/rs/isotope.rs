@@ -558,10 +558,6 @@ fn current_credential_helper_caller_context() -> CredentialHelperCallerContext {
     }
 }
 
-pub(crate) fn credential_helper_command_mentions_path(command: &str, path: &str) -> bool {
-    command.split_whitespace().any(|part| part == path)
-}
-
 fn validate_regular_target(path: &Path, file: &File) -> Result<(), String> {
     let metadata = file
         .metadata()
