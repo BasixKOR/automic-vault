@@ -15304,7 +15304,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         );
         let vendor_bytes = fs::read(&vendor_archive).unwrap();
         let (vendor_base, _vendor_server) =
-            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 2);
+            start_test_http_server(vec![("/vendor.tar.gz".to_string(), vendor_bytes)], 3);
         let version = Version::parse("0.0.0").unwrap();
         register_test_download_url(&version, format!("{vendor_base}/vendor.tar.gz"));
 
@@ -15383,6 +15383,34 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         .unwrap();
         assert!(is_executable(&install_root.join("bin/coverage-vendor")));
         assert!(reinstall_events.lock().unwrap().iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
+        ));
+
+        let current_events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let current_callback_events = Arc::clone(&current_events);
+        let current_callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                current_callback_events.lock().unwrap().push(event);
+            })));
+        run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            vendor::VendorPackage {
+                name: package_name,
+                dependencies: &[],
+                executables: &["coverage-vendor"],
+                version: fake_vendor_version,
+                download_url: Some(test_download_url),
+                install: coverage_vendor_install_strategy,
+            },
+            InstallIntent::Install,
+            Some(current_callback),
+        )
+        .unwrap();
+        let current_events = current_events.lock().unwrap();
+        assert!(current_events.iter().any(
             |event| matches!(event, ProgressEvent::Completed { package } if package == package_name)
         ));
         remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
