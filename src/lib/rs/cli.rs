@@ -357,6 +357,12 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                 Some("save") => {
                     isotope::print_save_usage(&format!("{} save", invocation.binary_name));
                 }
+                Some("aws-credential-process") => {
+                    isotope::print_aws_credential_process_usage(&format!(
+                        "{} aws-credential-process",
+                        invocation.binary_name
+                    ));
+                }
                 Some("gate") => {
                     gate::print_gate_usage(&format!("{} gate", invocation.binary_name));
                 }
@@ -483,6 +489,11 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     if subcommand == "save" {
         let program_name = format!("{} save", invocation.binary_name);
         return isotope::run_save_entry(&program_name, args)
+            .map_err(|err| format!("{RENDERED_ERROR_PREFIX}{program_name}: {err}"));
+    }
+    if subcommand == "aws-credential-process" {
+        let program_name = format!("{} aws-credential-process", invocation.binary_name);
+        return isotope::run_aws_credential_process_entry(&program_name, args)
             .map_err(|err| format!("{RENDERED_ERROR_PREFIX}{program_name}: {err}"));
     }
     if subcommand == "gate" {

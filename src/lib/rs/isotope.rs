@@ -15,6 +15,12 @@ const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-c
 const USER_APPROVAL_SUBDIR: &str = "isotope";
 const ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
+const AWS_CREDENTIAL_PROCESS_TOKEN_ENV: &str = "AUTOMIC_VAULT_AWS_CREDENTIAL_PROCESS_TOKEN";
+const AWS_ACCESS_KEY_ID_ENV_KEY: &str = "AWS_ACCESS_KEY_ID";
+const AWS_SECRET_ACCESS_KEY_ENV_KEY: &str = "AWS_SECRET_ACCESS_KEY";
+const AWS_CLI_LAUNCHER_PATH: &str = "/opt/awscli/bin/aws";
+const AWS_CLI_PYTHON_PATH: &str = "/opt/awscli/libexec/bin/python";
+const MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN: usize = 32;
 
 #[derive(Debug)]
 struct IsotopeOptions {
@@ -27,6 +33,13 @@ struct IsotopeOptions {
 #[derive(Debug)]
 struct SaveSecretOptions {
     key: String,
+}
+
+#[derive(Debug)]
+struct AwsCredentialProcessContext {
+    token: Option<String>,
+    parent_executable_path: Option<String>,
+    parent_command: Option<String>,
 }
 
 #[derive(Debug)]
@@ -135,6 +148,13 @@ pub(crate) fn run_save_entry(program_name: &str, args: env::ArgsOs) -> Result<()
     dispatch_save(program_name, args, &KeychainCredentialStore)
 }
 
+pub(crate) fn run_aws_credential_process_entry(
+    program_name: &str,
+    args: env::ArgsOs,
+) -> Result<(), String> {
+    dispatch_aws_credential_process(program_name, args, &KeychainCredentialStore)
+}
+
 fn dispatch_isotope(
     program_name: &str,
     mut args: impl Iterator<Item = OsString>,
@@ -172,6 +192,27 @@ fn dispatch_save(
     };
     let value = read_save_secret()?;
     run_save(&options, &value, store)
+}
+
+fn dispatch_aws_credential_process(
+    program_name: &str,
+    args: impl Iterator<Item = OsString>,
+    store: &dyn CredentialStore,
+) -> Result<(), String> {
+    for arg in args {
+        if is_help_flag(&arg) {
+            print_aws_credential_process_usage(program_name);
+            return Ok(());
+        }
+        if is_version_flag(&arg) {
+            println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        return Err("aws credential_process does not accept arguments".to_string());
+    }
+
+    disable_core_dumps()?;
+    run_aws_credential_process(store, current_aws_credential_process_context())
 }
 
 fn parse_isotope_options(
@@ -479,6 +520,88 @@ fn load_credentials(
         credentials.insert(key.clone(), store.load_secret(key)?);
     }
     Ok(credentials)
+}
+
+fn run_aws_credential_process(
+    store: &dyn CredentialStore,
+    context: AwsCredentialProcessContext,
+) -> Result<(), String> {
+    validate_aws_credential_process_context_with(&context, validate_root_controlled_path)?;
+    let keys = vec![
+        AWS_ACCESS_KEY_ID_ENV_KEY.to_string(),
+        AWS_SECRET_ACCESS_KEY_ENV_KEY.to_string(),
+    ];
+    let mut credentials = load_credentials(store, &keys)?;
+    let response = aws_credential_process_response(&credentials)?;
+    println!("{response}");
+    zeroize_credentials(&mut credentials);
+    Ok(())
+}
+
+fn aws_credential_process_response(
+    credentials: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let access_key_id = credentials
+        .get(AWS_ACCESS_KEY_ID_ENV_KEY)
+        .ok_or_else(|| format!("missing isotope key {AWS_ACCESS_KEY_ID_ENV_KEY}"))?;
+    let secret_access_key = credentials
+        .get(AWS_SECRET_ACCESS_KEY_ENV_KEY)
+        .ok_or_else(|| format!("missing isotope key {AWS_SECRET_ACCESS_KEY_ENV_KEY}"))?;
+    serde_json::to_string(&serde_json::json!({
+        "Version": 1,
+        "AccessKeyId": access_key_id,
+        "SecretAccessKey": secret_access_key,
+    }))
+    .map_err(|err| format!("failed to encode AWS credential_process response: {err}"))
+}
+
+fn current_aws_credential_process_context() -> AwsCredentialProcessContext {
+    let parent_pid = unsafe { libc::getppid() };
+    AwsCredentialProcessContext {
+        token: env::var(AWS_CREDENTIAL_PROCESS_TOKEN_ENV).ok(),
+        parent_executable_path: parent_process_path(parent_pid),
+        parent_command: parent_process_command(parent_pid),
+    }
+}
+
+fn validate_aws_credential_process_context_with(
+    context: &AwsCredentialProcessContext,
+    validate_path: impl Fn(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let token = context
+        .token
+        .as_deref()
+        .ok_or_else(|| "missing AWS credential_process approval token".to_string())?;
+    if token.len() < MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN {
+        return Err("invalid AWS credential_process approval token".to_string());
+    }
+
+    let parent_executable_path = context
+        .parent_executable_path
+        .as_deref()
+        .ok_or_else(|| "failed to resolve AWS credential_process parent".to_string())?;
+    if parent_executable_path != AWS_CLI_PYTHON_PATH
+        && parent_executable_path != AWS_CLI_LAUNCHER_PATH
+    {
+        return Err(
+            "AWS credential_process helper must be invoked by the aws launcher".to_string(),
+        );
+    }
+
+    let parent_command = context
+        .parent_command
+        .as_deref()
+        .ok_or_else(|| "failed to resolve AWS credential_process parent command".to_string())?;
+    if !command_mentions_path(parent_command, AWS_CLI_LAUNCHER_PATH) {
+        return Err("AWS credential_process parent command is not the aws launcher".to_string());
+    }
+
+    validate_path(Path::new(parent_executable_path))?;
+    validate_path(Path::new(AWS_CLI_LAUNCHER_PATH))
+}
+
+fn command_mentions_path(command: &str, path: &str) -> bool {
+    command.split_whitespace().any(|part| part == path)
 }
 
 fn validate_regular_target(path: &Path, file: &File) -> Result<(), String> {
@@ -794,6 +917,28 @@ fn parent_process_path(pid: i32) -> Option<String> {
 
 #[cfg(not(target_os = "macos"))]
 fn parent_process_path(_pid: i32) -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn parent_process_command(pid: i32) -> Option<String> {
+    let output = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let command = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if command.is_empty() {
+        None
+    } else {
+        Some(command)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn parent_process_command(_pid: i32) -> Option<String> {
     None
 }
 
@@ -1205,6 +1350,16 @@ keys or values are rejected."
     );
 }
 
+pub fn print_aws_credential_process_usage(program_name: &str) {
+    println!(
+        "\
+Usage: {program_name}
+
+Prints AWS credential_process JSON for the Automic Vault aws-cli isotope.
+This helper is only valid when invoked by the installed aws launcher."
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1573,6 +1728,61 @@ mod tests {
         assert_eq!(
             save_store.saved.lock().unwrap().as_slice(),
             &[("TOKEN".to_string(), "secret-value".to_string())]
+        );
+    }
+
+    #[test]
+    fn isotopes_aws_credential_process_formats_static_credentials() {
+        let credentials = BTreeMap::from([
+            (
+                AWS_ACCESS_KEY_ID_ENV_KEY.to_string(),
+                "AKIAEXAMPLE".to_string(),
+            ),
+            (
+                AWS_SECRET_ACCESS_KEY_ENV_KEY.to_string(),
+                "secret-value".to_string(),
+            ),
+        ]);
+
+        assert_eq!(
+            aws_credential_process_response(&credentials).unwrap(),
+            r#"{"AccessKeyId":"AKIAEXAMPLE","SecretAccessKey":"secret-value","Version":1}"#
+        );
+    }
+
+    #[test]
+    fn isotopes_aws_credential_process_requires_launcher_context() {
+        let valid_context = AwsCredentialProcessContext {
+            token: Some("x".repeat(MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN)),
+            parent_executable_path: Some(AWS_CLI_PYTHON_PATH.to_string()),
+            parent_command: Some(format!(
+                "{AWS_CLI_PYTHON_PATH} {AWS_CLI_LAUNCHER_PATH} s3 ls"
+            )),
+        };
+        validate_aws_credential_process_context_with(&valid_context, |_| Ok(())).unwrap();
+
+        let missing_token = AwsCredentialProcessContext {
+            token: None,
+            parent_executable_path: Some(AWS_CLI_PYTHON_PATH.to_string()),
+            parent_command: Some(format!(
+                "{AWS_CLI_PYTHON_PATH} {AWS_CLI_LAUNCHER_PATH} s3 ls"
+            )),
+        };
+        assert!(
+            validate_aws_credential_process_context_with(&missing_token, |_| Ok(()))
+                .unwrap_err()
+                .contains("approval token")
+        );
+
+        let wrong_parent = AwsCredentialProcessContext {
+            token: Some("x".repeat(MIN_AWS_CREDENTIAL_PROCESS_TOKEN_LEN)),
+            parent_executable_path: Some("/bin/sh".to_string()),
+            parent_command: Some("/bin/sh -c aws".to_string()),
+        };
+        assert!(
+            validate_aws_credential_process_context_with(&wrong_parent, |_| Ok(()))
+                .unwrap_err()
+                .contains("aws launcher")
         );
     }
 
