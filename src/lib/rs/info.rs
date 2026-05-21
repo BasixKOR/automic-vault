@@ -30,7 +30,7 @@ fn package_search_order_name(package_name: &str) -> &str {
         BREW_PACKAGE_PREFIX,
         CASK_PACKAGE_PREFIX,
         ISOTOPE_PACKAGE_PREFIX,
-        "av:",
+        VENDOR_PACKAGE_PREFIX,
         "npm:",
         "pip:",
     ] {
@@ -274,6 +274,7 @@ pub(crate) fn requested_install_package_name(package: &RequestedPackage) -> Resu
         RequestedPackage::Alias { target, .. } => match target {
             PackageAliasTarget::HomebrewFormula(formula) => formula_install_package_name(formula),
             PackageAliasTarget::HomebrewCask(cask) => Ok(cask.clone()),
+            PackageAliasTarget::VendorPackage(package_name) => Ok(package_name.clone()),
             PackageAliasTarget::NpmPackage(package_name) => {
                 Ok(npm_package_display_name(package_name))
             }
@@ -1128,36 +1129,46 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
             match isotope_package_data(isotope_name) {
                 Ok(isotope) => {
                     info.last_updated_at = isotope.published_at.clone();
-                    match isotope_modified_package_name(isotope) {
-                        Ok(Some(formula)) => match fetch_formula_info(&formula) {
-                            Ok(formula_info) => {
-                                info.homebrew_info = Some(homebrew_package_info_from_formula_info(
-                                    &formula,
-                                    &formula_info,
-                                ));
-                                match ensure_formula_has_bottle(
-                                    &formula,
-                                    &formula_info,
-                                    &config.bottle_tag,
-                                ) {
-                                    Ok(()) => {
-                                        info.latest_version =
-                                            Some(formula_version_string(&formula_info))
-                                    }
-                                    Err(err) => {
-                                        info.latest_version = Some(isotope.version.clone());
-                                        info.latest_version_error = Some(err);
+                    match isotope_modified_package_target(isotope) {
+                        Ok(Some(PackageAliasTarget::HomebrewFormula(formula))) => {
+                            match fetch_formula_info(&formula) {
+                                Ok(formula_info) => {
+                                    info.homebrew_info =
+                                        Some(homebrew_package_info_from_formula_info(
+                                            &formula,
+                                            &formula_info,
+                                        ));
+                                    match ensure_formula_has_bottle(
+                                        &formula,
+                                        &formula_info,
+                                        &config.bottle_tag,
+                                    ) {
+                                        Ok(()) => {
+                                            info.latest_version =
+                                                Some(formula_version_string(&formula_info))
+                                        }
+                                        Err(err) => {
+                                            info.latest_version = Some(isotope.version.clone());
+                                            info.latest_version_error = Some(err);
+                                        }
                                     }
                                 }
+                                Err(err) => {
+                                    info.latest_version = Some(isotope.version.clone());
+                                    info.latest_version_error = Some(err.clone());
+                                    info.homebrew_info_error = Some(err);
+                                    info.homebrew_info =
+                                        Some(isotope_homebrew_info(isotope_name, isotope));
+                                }
                             }
-                            Err(err) => {
-                                info.latest_version = Some(isotope.version.clone());
-                                info.latest_version_error = Some(err.clone());
-                                info.homebrew_info_error = Some(err);
-                                info.homebrew_info =
-                                    Some(isotope_homebrew_info(isotope_name, isotope));
+                        }
+                        Ok(Some(PackageAliasTarget::VendorPackage(vendor_name))) => {
+                            match resolve_vendor_latest_version(&vendor_name) {
+                                Ok(version) => info.latest_version = Some(version),
+                                Err(err) => info.latest_version_error = Some(err),
                             }
-                        },
+                            info.homebrew_info = Some(isotope_homebrew_info(isotope_name, isotope));
+                        }
                         _ => {
                             info.latest_version = Some(isotope.version.clone());
                             info.homebrew_info = Some(isotope_homebrew_info(isotope_name, isotope));
@@ -1238,6 +1249,9 @@ pub(crate) fn explicit_requested_package_source(
             PackageAliasTarget::HomebrewCask(cask) => Some(PackageReceiptSource::Cask {
                 cask_name: cask.clone(),
             }),
+            PackageAliasTarget::VendorPackage(package_name) => Some(PackageReceiptSource::Vendor {
+                vendor_name: package_name.clone(),
+            }),
             PackageAliasTarget::NpmPackage(package_name) => Some(PackageReceiptSource::Npm {
                 package_name: package_name.clone(),
             }),
@@ -1289,8 +1303,16 @@ pub(crate) fn resolve_latest_version_for_source(
         PackageReceiptSource::Cask { cask_name } => resolve_cask_latest_version(cask_name),
         PackageReceiptSource::Isotope { isotope_name } => {
             let isotope = isotope_package_data(isotope_name)?;
-            if let Some(formula) = isotope_modified_package_name(isotope)? {
-                return resolve_formula_latest_version(config, &formula);
+            if let Some(target) = isotope_modified_package_target(isotope)? {
+                return match target {
+                    PackageAliasTarget::HomebrewFormula(formula) => {
+                        resolve_formula_latest_version(config, &formula)
+                    }
+                    PackageAliasTarget::VendorPackage(vendor_name) => {
+                        resolve_vendor_latest_version(&vendor_name)
+                    }
+                    _ => Ok(isotope.version.clone()),
+                };
             }
             Ok(isotope.version.clone())
         }

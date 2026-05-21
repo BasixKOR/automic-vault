@@ -138,6 +138,7 @@ const REMOTE_COMBINED_DATA_CHECK_INTERVAL_SECONDS: u64 = 60 * 60;
 const BREW_PACKAGE_PREFIX: &str = "brew:";
 const CASK_PACKAGE_PREFIX: &str = "cask:";
 const ISOTOPE_PACKAGE_PREFIX: &str = "isotope:";
+const VENDOR_PACKAGE_PREFIX: &str = "av:";
 const ISOTOPE_INSTALL_ROOT_DIR: &str = "isotopes";
 const PKG_DISPLAY_NAME: &str = "av";
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
@@ -781,6 +782,7 @@ enum EmbeddedPackage {
 enum PackageAliasTarget {
     HomebrewFormula(String),
     HomebrewCask(String),
+    VendorPackage(String),
     NpmPackage(String),
     PipPackage(String),
 }
@@ -2409,8 +2411,9 @@ fn run_i_radioisotope(
         if !isotope_has_post_install(&record.name) {
             return Err(format!("isotope:{} is not a radioisotope", isotope_name));
         }
-        let modified_package = isotope_modified_package_name(&record)?
+        let modified_target = isotope_modified_package_target(&record)?
             .ok_or_else(|| format!("radioisotope:{} does not declare modifies", isotope_name))?;
+        let modified_package = radioisotope_modified_install_name(&modified_target)?;
         let plan = InstallPlan::for_i_radioisotope(package_name.clone(), modified_package.clone());
 
         match radioisotope_modified_formula_intent(intent) {
@@ -2421,19 +2424,19 @@ fn run_i_radioisotope(
                     InstallIntent::Reinstall,
                     &managed_bin_root(),
                 )?;
-                run_i_formula(
+                run_i_modified_package(
                     config,
                     modified_package.clone(),
-                    modified_package.clone(),
+                    &modified_target,
                     InstallIntent::Reinstall,
                     progress_callback.clone(),
                 )?;
             }
             Some(InstallIntent::Update) => {
-                run_i_formula(
+                run_i_modified_package(
                     config,
                     modified_package.clone(),
-                    modified_package.clone(),
+                    &modified_target,
                     InstallIntent::Update,
                     progress_callback.clone(),
                 )?;
@@ -2480,6 +2483,33 @@ fn run_i_radioisotope(
             progress.clear();
             Err(err)
         }
+    }
+}
+
+fn run_i_modified_package(
+    config: &Config,
+    package_name: String,
+    target: &PackageAliasTarget,
+    intent: InstallIntent,
+    progress_callback: Option<Arc<Mutex<Box<ProgressCallback>>>>,
+) -> Result<(), String> {
+    match target {
+        PackageAliasTarget::HomebrewFormula(formula) => run_i_formula(
+            config,
+            package_name,
+            formula.clone(),
+            intent,
+            progress_callback,
+        ),
+        PackageAliasTarget::VendorPackage(vendor_name) => {
+            let package = vendor::get(vendor_name)
+                .ok_or_else(|| format!("vendor package {vendor_name} is not registered"))?;
+            run_i_vendor(config, package_name, package, intent, progress_callback)
+        }
+        _ => Err(format!(
+            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae or vendor packages",
+            target.display_name()
+        )),
     }
 }
 
@@ -3481,7 +3511,9 @@ fn isotope_replaced_package_name(record: &IsotopePackageData) -> Result<Option<S
         .map_err(|err| format!("invalid isotope replacement {}: {err}", replaces))
 }
 
-fn isotope_modified_package_name(record: &IsotopePackageData) -> Result<Option<String>, String> {
+fn isotope_modified_package_target(
+    record: &IsotopePackageData,
+) -> Result<Option<PackageAliasTarget>, String> {
     let modifies = record.modifies.as_ref().or_else(|| {
         isotope_has_post_install(&record.name)
             .then_some(record.replaces.as_ref())
@@ -3493,10 +3525,31 @@ fn isotope_modified_package_name(record: &IsotopePackageData) -> Result<Option<S
     match parse_package_alias_target(modifies)
         .map_err(|err| format!("invalid isotope modification {}: {err}", modifies))?
     {
-        PackageAliasTarget::HomebrewFormula(formula) => Ok(Some(formula)),
+        target
+        @ (PackageAliasTarget::HomebrewFormula(_) | PackageAliasTarget::VendorPackage(_)) => {
+            Ok(Some(target))
+        }
         _ => Err(format!(
-            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae",
+            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae or vendor packages",
             modifies
+        )),
+    }
+}
+
+fn isotope_modified_package_name(record: &IsotopePackageData) -> Result<Option<String>, String> {
+    isotope_modified_package_target(record)?
+        .as_ref()
+        .map(radioisotope_modified_install_name)
+        .transpose()
+}
+
+fn radioisotope_modified_install_name(target: &PackageAliasTarget) -> Result<String, String> {
+    match target {
+        PackageAliasTarget::HomebrewFormula(formula)
+        | PackageAliasTarget::VendorPackage(formula) => Ok(formula.clone()),
+        _ => Err(format!(
+            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae or vendor packages",
+            target.display_name()
         )),
     }
 }
@@ -10163,6 +10216,22 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
+    fn terraform_radioisotope_plan_reports_modified_vendor_package() {
+        let isotope = isotope_package_data("terraform").unwrap();
+        let plan = ops::isotope_migration_plan("terraform").unwrap();
+
+        assert_eq!(isotope.modifies.as_deref(), Some("av:terraform"));
+        assert_eq!(
+            isotope_modified_package_name(isotope).unwrap(),
+            Some("terraform".to_string())
+        );
+        assert_eq!(plan.isotope_name, "terraform");
+        assert_eq!(plan.replaces_package, None);
+        assert_eq!(plan.modifies_package, Some("terraform".to_string()));
+        assert!(plan.is_radioisotope);
+    }
+
+    #[test]
     fn radioisotope_update_refreshes_modified_formula() {
         assert_eq!(
             radioisotope_modified_formula_intent(InstallIntent::Install),
@@ -13395,6 +13464,10 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         assert_eq!(
             parse_package_alias_target("cask:").unwrap_err(),
             "package qualifier 'cask:' is missing a cask name".to_string()
+        );
+        assert_eq!(
+            parse_package_alias_target("av:terraform").unwrap(),
+            PackageAliasTarget::VendorPackage("terraform".to_string())
         );
         assert_eq!(
             parse_package_alias_target("npm:@scope/tool").unwrap(),

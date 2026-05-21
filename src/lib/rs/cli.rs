@@ -929,6 +929,21 @@ pub(crate) fn parse_package_name(value: &OsString) -> Result<RequestedPackage, S
         }
         return Ok(RequestedPackage::Isotope(isotope.to_string()));
     }
+    if let Some(vendor_package) = package.strip_prefix(VENDOR_PACKAGE_PREFIX) {
+        if vendor_package.is_empty() {
+            return Err(format!(
+                "package qualifier '{VENDOR_PACKAGE_PREFIX}' is missing a package name"
+            ));
+        }
+        if vendor_package.contains('/') {
+            return Err(
+                "qualified package name must not contain additional path separators".to_string(),
+            );
+        }
+        vendor::get(vendor_package)
+            .ok_or_else(|| format!("vendor package {vendor_package} is not registered"))?;
+        return Ok(RequestedPackage::Auto(vendor_package.to_string()));
+    }
     if let Some(npm_package) = package.strip_prefix("npm:") {
         let (package, version) = parse_npm_package_request(npm_package)?;
         return Ok(RequestedPackage::NpmPackage { package, version });
@@ -995,6 +1010,21 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
             );
         }
         return Ok(format!("{ISOTOPE_PACKAGE_PREFIX}{isotope}"));
+    }
+    if let Some(vendor_package) = package.strip_prefix(VENDOR_PACKAGE_PREFIX) {
+        if vendor_package.is_empty() {
+            return Err(format!(
+                "package qualifier '{VENDOR_PACKAGE_PREFIX}' is missing a package name"
+            ));
+        }
+        if vendor_package.contains('/') {
+            return Err(
+                "qualified package name must not contain additional path separators".to_string(),
+            );
+        }
+        vendor::get(vendor_package)
+            .ok_or_else(|| format!("vendor package {vendor_package} is not registered"))?;
+        return Ok(vendor_package.to_string());
     }
     if let Some(npm_package) = package.strip_prefix("npm:") {
         validate_npm_package_name(npm_package)?;
@@ -1144,6 +1174,7 @@ impl PackageAliasTarget {
         match self {
             Self::HomebrewFormula(formula) => format!("{BREW_PACKAGE_PREFIX}{formula}"),
             Self::HomebrewCask(cask) => crate::cask::qualified_name(cask),
+            Self::VendorPackage(package) => format!("{VENDOR_PACKAGE_PREFIX}{package}"),
             Self::NpmPackage(package) => npm_package_display_name(package),
             Self::PipPackage(package) => pip_package_display_name(package),
         }
@@ -1153,6 +1184,7 @@ impl PackageAliasTarget {
         match self {
             Self::HomebrewFormula(formula) => RequestedPackage::HomebrewFormula(formula),
             Self::HomebrewCask(cask) => RequestedPackage::HomebrewCask(cask),
+            Self::VendorPackage(package) => RequestedPackage::Auto(package),
             Self::NpmPackage(package) => RequestedPackage::NpmPackage {
                 package,
                 version: None,
@@ -1208,6 +1240,21 @@ pub(crate) fn parse_package_alias_target(value: &str) -> Result<PackageAliasTarg
             );
         }
         return Ok(PackageAliasTarget::HomebrewCask(cask.to_string()));
+    }
+    if let Some(vendor_package) = value.strip_prefix(VENDOR_PACKAGE_PREFIX) {
+        if vendor_package.is_empty() {
+            return Err(format!(
+                "package qualifier '{VENDOR_PACKAGE_PREFIX}' is missing a package name"
+            ));
+        }
+        if vendor_package.contains('/') {
+            return Err(
+                "qualified package name must not contain additional path separators".to_string(),
+            );
+        }
+        vendor::get(vendor_package)
+            .ok_or_else(|| format!("vendor package {vendor_package} is not registered"))?;
+        return Ok(PackageAliasTarget::VendorPackage(vendor_package.to_string()));
     }
     if let Some(npm_package) = value.strip_prefix("npm:") {
         validate_npm_package_name(npm_package)?;
@@ -1523,6 +1570,14 @@ mod tests {
         assert_eq!(
             parse_package_name(&OsString::from("isotope:gh/tools")).unwrap_err(),
             "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_package_name(&OsString::from("av:terraform")).unwrap(),
+            RequestedPackage::Auto("terraform".to_string())
+        );
+        assert_eq!(
+            parse_package_name(&OsString::from("av:")).unwrap_err(),
+            "package qualifier 'av:' is missing a package name"
         );
 
         assert_eq!(

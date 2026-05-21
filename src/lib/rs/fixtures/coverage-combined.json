@@ -168,6 +168,11 @@
         "name": "isotope:gh",
         "replaces": "brew:gh",
         "version": "2.80.0"
+      },
+      "terraform": {
+        "modifies": "av:terraform",
+        "name": "isotope:terraform",
+        "version": "1.0.0"
       }
     },
     "npm": {

@@ -180,8 +180,10 @@ where
 
 #[path = "packages/bun.rs"]
 pub mod bun;
+#[path = "packages/terraform.rs"]
+pub mod terraform;
 
-pub static PACKAGES: &[&VendorEntry] = &[&bun::ENTRY];
+pub static PACKAGES: &[&VendorEntry] = &[&bun::ENTRY, &terraform::ENTRY];
 
 pub fn get(name: &str) -> Option<VendorPackage> {
     PACKAGES
@@ -258,12 +260,13 @@ mod tests {
     fn vendor_registry_contains_all_packages() {
         let mut names = PACKAGES.iter().map(|entry| entry.name).collect::<Vec<_>>();
         names.sort_unstable();
-        assert_eq!(names, vec!["bun"]);
+        assert_eq!(names, vec!["bun", "terraform"]);
     }
 
     #[test]
     fn vendor_packages_expose_executables() {
         assert_eq!(get("bun").unwrap().executables, ["bun"]);
+        assert_eq!(get("terraform").unwrap().executables, ["terraform"]);
     }
 
     #[test]
@@ -272,16 +275,26 @@ mod tests {
             bun::parse_version("bun-v1.2.3").unwrap(),
             Version::parse("1.2.3").unwrap()
         );
+        assert_eq!(
+            terraform::parse_version("v1.2.3").unwrap(),
+            Version::parse("1.2.3").unwrap()
+        );
     }
 
     #[test]
     fn vendor_packages_compute_download_urls_in_code() {
         let bun = get("bun").unwrap();
         let bun_version = Version::parse("1.2.3").unwrap();
+        let terraform = get("terraform").unwrap();
+        let terraform_version = Version::parse("1.2.3").unwrap();
 
         assert_eq!(
             bun.download_url.unwrap()(&bun_version),
             "https://github.com/oven-sh/bun/releases/download/bun-v1.2.3/bun-darwin-aarch64.zip"
+        );
+        assert_eq!(
+            terraform.download_url.unwrap()(&terraform_version),
+            "https://releases.hashicorp.com/terraform/1.2.3/terraform_1.2.3_darwin_arm64.zip"
         );
     }
 
@@ -304,6 +317,28 @@ mod tests {
                 assert_eq!(create_dirs, vec!["bin".to_string()]);
             }
             _ => panic!("bun should install from the extracted archive directory"),
+        }
+    }
+
+    #[test]
+    fn terraform_installs_platform_binary_from_archive_root() {
+        let version = Version::parse("1.2.3").unwrap();
+        let strategy = terraform::install(&version);
+        match strategy {
+            InstallStrategy::CopyFile {
+                source,
+                destination_dir,
+                destination_name,
+                mode,
+                create_dirs,
+            } => {
+                assert_eq!(source, "terraform");
+                assert_eq!(destination_dir, "bin");
+                assert_eq!(destination_name, None);
+                assert_eq!(mode, 0o755);
+                assert_eq!(create_dirs, vec!["bin".to_string()]);
+            }
+            _ => panic!("terraform should install from the extracted archive root"),
         }
     }
 
