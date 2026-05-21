@@ -258,9 +258,9 @@ impl<'a> HelpScreen<'a> {
                 "Store a secret in the Automic Vault keychain.",
             ),
             command_line(
-                "aws-credential-process",
+                "credential-helper",
                 None,
-                "Print approved AWS credential_process JSON.",
+                "Run an approved credential helper adapter.",
             ),
             HelpLine::plain(""),
             section_line("EXECUTION CONTROL"),

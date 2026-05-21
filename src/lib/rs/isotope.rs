@@ -148,11 +148,11 @@ pub(crate) fn run_save_entry(program_name: &str, args: env::ArgsOs) -> Result<()
     dispatch_save(program_name, args, &KeychainCredentialStore)
 }
 
-pub(crate) fn run_aws_credential_process_entry(
+pub(crate) fn run_credential_helper_entry(
     program_name: &str,
     args: env::ArgsOs,
 ) -> Result<(), String> {
-    dispatch_aws_credential_process(program_name, args, &KeychainCredentialStore)
+    dispatch_credential_helper(program_name, args, &KeychainCredentialStore)
 }
 
 fn dispatch_isotope(
@@ -192,6 +192,32 @@ fn dispatch_save(
     };
     let value = read_save_secret()?;
     run_save(&options, &value, store)
+}
+
+fn dispatch_credential_helper(
+    program_name: &str,
+    mut args: impl Iterator<Item = OsString>,
+    store: &dyn CredentialStore,
+) -> Result<(), String> {
+    let Some(protocol) = args.next() else {
+        print_credential_helper_usage(program_name);
+        return Err("missing credential helper protocol".to_string());
+    };
+
+    if is_help_flag(&protocol) {
+        print_credential_helper_usage(program_name);
+        return Ok(());
+    }
+    if is_version_flag(&protocol) {
+        println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    match protocol.to_str() {
+        Some("aws") => dispatch_aws_credential_process(&format!("{program_name} aws"), args, store),
+        Some(value) => Err(format!("unknown credential helper protocol '{value}'")),
+        None => Err("credential helper protocol must be valid UTF-8".to_string()),
+    }
 }
 
 fn dispatch_aws_credential_process(
@@ -1350,7 +1376,19 @@ keys or values are rejected."
     );
 }
 
-pub fn print_aws_credential_process_usage(program_name: &str) {
+pub fn print_credential_helper_usage(program_name: &str) {
+    println!(
+        "\
+Usage: {program_name} <protocol>
+
+Runs a credential helper protocol adapter.
+
+Protocols:
+  aws    Print AWS credential_process JSON for the aws-cli isotope."
+    );
+}
+
+fn print_aws_credential_process_usage(program_name: &str) {
     println!(
         "\
 Usage: {program_name}
@@ -1784,6 +1822,42 @@ mod tests {
                 .unwrap_err()
                 .contains("aws launcher")
         );
+    }
+
+    #[test]
+    fn isotopes_credential_helper_dispatch_accepts_aws_protocol() {
+        let store = StubCredentialStore::default();
+
+        assert!(dispatch_credential_helper(
+            "av credential-helper",
+            vec![OsString::from("--help")].into_iter(),
+            &store,
+        )
+        .is_ok());
+        assert_eq!(
+            dispatch_credential_helper(
+                "av credential-helper",
+                Vec::<OsString>::new().into_iter(),
+                &store,
+            )
+            .unwrap_err(),
+            "missing credential helper protocol"
+        );
+        assert_eq!(
+            dispatch_credential_helper(
+                "av credential-helper",
+                vec![OsString::from("git")].into_iter(),
+                &store,
+            )
+            .unwrap_err(),
+            "unknown credential helper protocol 'git'"
+        );
+        assert!(dispatch_credential_helper(
+            "av credential-helper",
+            vec![OsString::from("aws"), OsString::from("--help")].into_iter(),
+            &store,
+        )
+        .is_ok());
     }
 
     #[test]
