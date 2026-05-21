@@ -497,9 +497,9 @@ def _is_recent_datetime(value, cutoff):
 
 
 def _parse_binary_artifact(artifact):
-    if not isinstance(artifact, dict) or len(artifact) != 1:
+    if not isinstance(artifact, dict):
         return None
-    if "binary" not in artifact:
+    if "binary" not in artifact or not set(artifact.keys()) <= {"binary", "target"}:
         return None
 
     value = artifact["binary"]
@@ -512,6 +512,11 @@ def _parse_binary_artifact(artifact):
             target = value[1].get("target")
     else:
         return None
+
+    if target is None:
+        artifact_target = artifact.get("target")
+        if isinstance(artifact_target, str) and artifact_target:
+            target = os.path.basename(artifact_target)
 
     if not isinstance(source, str) or not source:
         return None
@@ -1159,6 +1164,13 @@ def main():
         popularity_by_cask,
         cask_pulse_events,
     )
+    if cask_urls and not cask_metadata:
+        print(
+            "No supported cask metadata was collected; refusing to write a "
+            "database without casks.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     npm_metadata = _collect_npm_metadata()
     ordered_entries = _sorted_entries(_merge_entries(formula_entries, cask_entries))
     ordered_entries = _apply_npm_entries(ordered_entries, npm_metadata)

@@ -59,7 +59,25 @@ def _load_sources():
         if not os.path.exists(path):
             raise FileNotFoundError(path)
         sources[_source_key(path)] = _prune(_read_json(path))
+    _validate_sources(sources)
     return sources
+
+
+def _validate_sources(sources):
+    db = sources.get("db")
+    if not isinstance(db, dict):
+        raise ValueError("data/db.json must contain an object")
+    casks = db.get("casks")
+    if not isinstance(casks, dict) or not casks:
+        raise ValueError("data/db.json must contain supported cask metadata")
+    for executable, provider in (db.get("entries") or {}).items():
+        if not isinstance(provider, str) or not provider.startswith("cask:"):
+            continue
+        cask = provider[len("cask:") :]
+        if cask not in casks:
+            raise ValueError(
+                f"data/db.json entry {executable!r} points at missing cask {cask!r}"
+            )
 
 
 def main():
@@ -72,7 +90,7 @@ def main():
             ).isoformat(),
             "sources": _load_sources(),
         }
-    except (FileNotFoundError, json.JSONDecodeError) as err:
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as err:
         print(f"Failed to build {OUTPUT_PATH}: {err}", file=sys.stderr)
         return 1
 
