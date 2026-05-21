@@ -8588,6 +8588,11 @@ or `npm:clawhub` for the aliased package"
 
     #[test]
     fn parse_uninstall_request_uses_homebrew_provider_names_for_executables() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let legacy_root = opt_pkg_root().join("rg");
+        if fs::symlink_metadata(&legacy_root).is_ok() {
+            remove_path(&legacy_root).unwrap();
+        }
         let invocation = Invocation {
             binary_name: "av".to_string(),
             name: "av rm".to_string(),
@@ -8644,6 +8649,109 @@ or `npm:clawhub` for the aliased package"
         );
 
         remove_path(&install_root).unwrap();
+    }
+
+    #[test]
+    fn parse_uninstall_request_resolves_unique_installed_isotope_from_stub_name() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let install_root = opt_root.join("awscli");
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_path(&install_root).unwrap();
+        }
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "isotope:aws-cli".to_string(),
+                version: "2.0.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "aws-cli".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_stub_manifest(
+            &install_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["aws".to_string()],
+            },
+        )
+        .unwrap();
+
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av rm".to_string(),
+            mode: None,
+        };
+        let request =
+            parse_uninstall_request_from_iter(&invocation, vec![OsString::from("aws")].into_iter())
+                .unwrap();
+
+        assert_eq!(
+            request,
+            Some(UninstallRequest {
+                packages: vec!["isotope:aws-cli".to_string()],
+            })
+        );
+
+        remove_path(&install_root).unwrap();
+    }
+
+    #[test]
+    fn parse_uninstall_request_rejects_ambiguous_installed_names() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let aws_root = opt_root.join("aws");
+        let awscli_root = opt_root.join("awscli");
+        for install_root in [&aws_root, &awscli_root] {
+            if fs::symlink_metadata(install_root).is_ok() {
+                remove_path(install_root).unwrap();
+            }
+        }
+        fs::create_dir_all(&aws_root).unwrap();
+        fs::create_dir_all(&awscli_root).unwrap();
+        write_package_receipt(
+            &aws_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "aws".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "aws".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_package_receipt(
+            &awscli_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "isotope:aws-cli".to_string(),
+                version: "2.0.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "aws-cli".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_stub_manifest(
+            &awscli_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["aws".to_string()],
+            },
+        )
+        .unwrap();
+
+        let err = parse_uninstall_package_name(&OsString::from("aws")).unwrap_err();
+
+        assert!(err.contains("package name aws is ambiguous"));
+        assert!(err.contains("aws"));
+        assert!(err.contains("isotope:aws-cli"));
+
+        remove_path(&aws_root).unwrap();
+        remove_path(&awscli_root).unwrap();
     }
 
     #[test]

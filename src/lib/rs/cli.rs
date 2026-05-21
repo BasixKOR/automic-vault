@@ -1050,14 +1050,12 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
     if package.contains('/') {
         return Err("package name must not contain path separators".to_string());
     }
+    if let Some(installed_package) = resolve_installed_uninstall_package_name(package)? {
+        return Ok(installed_package);
+    }
     if vendor::get(package).is_none() {
         if let Some(target) = package_alias_target(package) {
             return Ok(target.display_name());
-        }
-        if let Ok(install_root) = package_install_root(&opt_pkg_root(), package)
-            && install_root_has_valid_receipt(package, &install_root).unwrap_or(false)
-        {
-            return Ok(package.to_string());
         }
         if let Some(provider_name) = embedded_provider_install_package_name(package)? {
             return Ok(provider_name);
@@ -1068,6 +1066,108 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
         }
     }
     Ok(package.to_string())
+}
+
+fn resolve_installed_uninstall_package_name(package: &str) -> Result<Option<String>, String> {
+    let provider_install_name = embedded_provider_install_package_name(package)?;
+    let mut candidates = Vec::new();
+
+    for installed in installed_package_refs(&opt_pkg_root())? {
+        let receipt = match load_or_resolve_package_receipt(
+            &installed.package_name,
+            &installed.install_root,
+        ) {
+            Ok(receipt) => receipt,
+            Err(_) if installed.package_name == package => {
+                push_unique_string(&mut candidates, installed.package_name);
+                continue;
+            }
+            Err(_) => continue,
+        };
+        if installed_package_matches_uninstall_name(
+            package,
+            provider_install_name.as_deref(),
+            &installed,
+            &receipt,
+        )? {
+            push_unique_string(&mut candidates, receipt.package_name);
+        }
+    }
+
+    if candidates.len() > 1 {
+        candidates.sort();
+        return Err(format!(
+            "package name {package} is ambiguous; use one of: {}",
+            candidates.join(", ")
+        ));
+    }
+
+    Ok(candidates.pop())
+}
+
+fn installed_package_matches_uninstall_name(
+    package: &str,
+    provider_install_name: Option<&str>,
+    installed: &InstalledPackageRef,
+    receipt: &PackageReceipt,
+) -> Result<bool, String> {
+    if package == installed.package_name
+        || package == receipt.package_name
+        || package == package_source_qualified_name(&receipt.source)
+    {
+        return Ok(true);
+    }
+
+    if Some(installed.package_name.as_str()) == provider_install_name
+        || Some(receipt.package_name.as_str()) == provider_install_name
+    {
+        return Ok(true);
+    }
+
+    if load_stub_manifest(&installed.install_root.join(STUB_MANIFEST))?
+        .stubs
+        .iter()
+        .any(|stub| stub == package)
+    {
+        return Ok(true);
+    }
+
+    let (aliases, alias_error) = resolve_aliases_for_source(&receipt.source);
+    if aliases.iter().any(|alias| alias == package) {
+        return Ok(true);
+    }
+    if let Some(err) = alias_error {
+        return Err(err);
+    }
+
+    match &receipt.source {
+        PackageReceiptSource::Formula { root_formula } => {
+            Ok(package == root_formula || Some(root_formula.as_str()) == provider_install_name)
+        }
+        PackageReceiptSource::Cask { cask_name } => {
+            Ok(package == cask_name || Some(cask_name.as_str()) == provider_install_name)
+        }
+        PackageReceiptSource::Isotope { isotope_name } => {
+            if package == isotope_name || Some(isotope_name.as_str()) == provider_install_name {
+                return Ok(true);
+            }
+            let record = isotope_package_data(isotope_name)?;
+            Ok(isotope_modified_package_name(record)?
+                .as_deref()
+                .is_some_and(|modified_package| {
+                    package == modified_package || Some(modified_package) == provider_install_name
+                }))
+        }
+        PackageReceiptSource::Vendor { vendor_name } => {
+            Ok(package == vendor_name || Some(vendor_name.as_str()) == provider_install_name)
+        }
+        PackageReceiptSource::Npm { package_name } => {
+            Ok(package == package_name || Some(package_name.as_str()) == provider_install_name)
+        }
+        PackageReceiptSource::Pip { package_name } => {
+            Ok(package == package_name || Some(package_name.as_str()) == provider_install_name)
+        }
+    }
 }
 
 pub(crate) fn validate_npm_package_name(package: &str) -> Result<(), String> {
