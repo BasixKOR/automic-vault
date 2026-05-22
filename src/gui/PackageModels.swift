@@ -5,7 +5,7 @@ private let packageSearchOrderPrefixes = [
     "brew:",
     "cask:",
     "isotope:",
-    "unmanaged:",
+    "sys:",
     "av:",
     "npm:",
     "pip:"
@@ -695,8 +695,8 @@ struct PackageDetail: Decodable, Equatable {
         isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
     }
 
-    var isUnmanagedDetectorOnlyHazard: Bool {
-        packageName.hasPrefix("unmanaged:")
+    var isSystemDetectorOnlyHazard: Bool {
+        packageName.hasPrefix("sys:")
             && securityState?.installIsInsecure == true
             && securityState?.remediationAvailable == false
     }

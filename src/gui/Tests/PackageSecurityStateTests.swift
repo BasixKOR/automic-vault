@@ -97,11 +97,11 @@ final class PackageSecurityStateTests: XCTestCase {
             """
         )
         let detail = lookupDetail.withPackageIdentity(
-            packageName: "unmanaged:curl",
+            packageName: "sys:curl",
             installPackageNames: ["brew:curl"]
         )
         let record = PackageRecord(
-            name: "unmanaged:curl",
+            name: "sys:curl",
             source: .formula(rootFormula: "curl"),
             version: "8.20.0",
             description: "Get a file from an HTTP, HTTPS or FTP server",
@@ -116,35 +116,35 @@ final class PackageSecurityStateTests: XCTestCase {
         )
 
         XCTAssertFalse(detail.installed)
-        XCTAssertEqual(record.name, "unmanaged:curl")
-        XCTAssertEqual(detail.packageName, "unmanaged:curl")
-        XCTAssertEqual(detail.qualifiedName, "unmanaged:curl")
+        XCTAssertEqual(record.name, "sys:curl")
+        XCTAssertEqual(detail.packageName, "sys:curl")
+        XCTAssertEqual(detail.qualifiedName, "sys:curl")
         XCTAssertEqual(detail.installPackageNames, ["brew:curl"])
         XCTAssertEqual(detail.source, .formula(rootFormula: "curl"))
-        XCTAssertEqual("unmanaged:curl".packageSearchOrderName, "curl")
-        XCTAssertTrue(detail.isUnmanagedDetectorOnlyHazard)
+        XCTAssertEqual("sys:curl".packageSearchOrderName, "curl")
+        XCTAssertTrue(detail.isSystemDetectorOnlyHazard)
         XCTAssertEqual(presentation.plainTextSecretAlertSource, .isotope)
         XCTAssertNotNil(detail.securityNotice)
         XCTAssertTrue(presentation.hasActivePlainTextSecretAlert)
         XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
     }
 
-    func testUnmanagedDetectorHazardsSortWithInstalledPackagesByToolName() {
+    func testSystemDetectorHazardsSortWithInstalledPackagesByToolName() {
         let presentations = [
-            installedPresentation(named: "unmanaged:curl"),
+            installedPresentation(named: "sys:curl"),
             installedPresentation(named: "brew:bat"),
             installedPresentation(named: "ack"),
-            installedPresentation(named: "unmanaged:git"),
+            installedPresentation(named: "sys:git"),
         ].sorted(by: PackagePresentation.sortsByPackageSearchOrder)
 
         XCTAssertEqual(
             presentations.map(\.selectionID),
-            ["ack", "brew:bat", "unmanaged:curl", "unmanaged:git"]
+            ["ack", "brew:bat", "sys:curl", "sys:git"]
         )
     }
 
     @MainActor
-    func testUnmanagedDetectorOnlyDossierHidesPackageActions() throws {
+    func testSystemDetectorOnlyDossierHidesPackageActions() throws {
         let lookupDetail = try decodePackageDetail(
             packageName: "brew:curl",
             formula: "curl",
@@ -159,7 +159,7 @@ final class PackageSecurityStateTests: XCTestCase {
             """
         )
         let detail = lookupDetail.withPackageIdentity(
-            packageName: "unmanaged:curl",
+            packageName: "sys:curl",
             installPackageNames: ["brew:curl"]
         )
 

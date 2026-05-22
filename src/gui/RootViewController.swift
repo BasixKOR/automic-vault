@@ -826,13 +826,13 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private static let detectorOnlyHazardTargets = [
-        DetectorOnlyHazardTarget(lookupName: "brew:git", displayName: "unmanaged:git"),
-        DetectorOnlyHazardTarget(lookupName: "brew:openssh", displayName: "unmanaged:openssh"),
-        DetectorOnlyHazardTarget(lookupName: "brew:curl", displayName: "unmanaged:curl"),
-        DetectorOnlyHazardTarget(lookupName: "brew:rsync", displayName: "unmanaged:rsync"),
-        DetectorOnlyHazardTarget(lookupName: "brew:ruby", displayName: "unmanaged:ruby"),
-        DetectorOnlyHazardTarget(lookupName: "brew:perl", displayName: "unmanaged:perl"),
-        DetectorOnlyHazardTarget(lookupName: "brew:openssl@3", displayName: "unmanaged:openssl@3"),
+        DetectorOnlyHazardTarget(lookupName: "brew:git", displayName: "sys:git"),
+        DetectorOnlyHazardTarget(lookupName: "brew:openssh", displayName: "sys:openssh"),
+        DetectorOnlyHazardTarget(lookupName: "brew:curl", displayName: "sys:curl"),
+        DetectorOnlyHazardTarget(lookupName: "brew:rsync", displayName: "sys:rsync"),
+        DetectorOnlyHazardTarget(lookupName: "brew:ruby", displayName: "sys:ruby"),
+        DetectorOnlyHazardTarget(lookupName: "brew:perl", displayName: "sys:perl"),
+        DetectorOnlyHazardTarget(lookupName: "brew:openssl@3", displayName: "sys:openssl@3"),
     ]
 
     private enum MastheadTab: Int, CaseIterable {

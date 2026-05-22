@@ -1084,7 +1084,7 @@ final class DossierView: NSView {
             applyLastUpdatedStyle()
             configureVersionSelector(for: detail)
             let actionDetail = selectedActionDetail(from: detail)
-            if detail.isUnmanagedDetectorOnlyHazard {
+            if detail.isSystemDetectorOnlyHazard {
                 installCommandLayer.string = nil
                 installDestinationURL = nil
                 installDestinationLayer.string = nil
@@ -1236,7 +1236,7 @@ final class DossierView: NSView {
         versionSelectorHintLayer.string = detail.versionOptions.isEmpty
             ? nil
             : versionSelectorHintText(for: detail)
-        commandHeaderLayer.string = detail.isUnmanagedDetectorOnlyHazard
+        commandHeaderLayer.string = detail.isSystemDetectorOnlyHazard
             ? nil
             : UIStyle.sectionHeaderText("Install Vector")
     }
