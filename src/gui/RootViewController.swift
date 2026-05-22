@@ -820,19 +820,20 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
-    private struct DetectorOnlyHazardTarget {
+    private struct LocalHazardTarget {
         let lookupName: String
         let displayName: String
     }
 
-    private static let detectorOnlyHazardTargets = [
-        DetectorOnlyHazardTarget(lookupName: "brew:git", displayName: "sys:git"),
-        DetectorOnlyHazardTarget(lookupName: "brew:openssh", displayName: "sys:openssh"),
-        DetectorOnlyHazardTarget(lookupName: "brew:curl", displayName: "sys:curl"),
-        DetectorOnlyHazardTarget(lookupName: "brew:rsync", displayName: "sys:rsync"),
-        DetectorOnlyHazardTarget(lookupName: "brew:ruby", displayName: "sys:ruby"),
-        DetectorOnlyHazardTarget(lookupName: "brew:perl", displayName: "sys:perl"),
-        DetectorOnlyHazardTarget(lookupName: "brew:openssl@3", displayName: "sys:openssl@3"),
+    private static let localHazardTargets = [
+        LocalHazardTarget(lookupName: "brew:git", displayName: "sys:git"),
+        LocalHazardTarget(lookupName: "brew:openssh", displayName: "sys:openssh"),
+        LocalHazardTarget(lookupName: "brew:curl", displayName: "sys:curl"),
+        LocalHazardTarget(lookupName: "brew:rsync", displayName: "sys:rsync"),
+        LocalHazardTarget(lookupName: "brew:ruby", displayName: "sys:ruby"),
+        LocalHazardTarget(lookupName: "brew:perl", displayName: "sys:perl"),
+        LocalHazardTarget(lookupName: "brew:openssl@3", displayName: "sys:openssl@3"),
+        LocalHazardTarget(lookupName: "brew:hf", displayName: "gone:hf"),
     ]
 
     private enum MastheadTab: Int, CaseIterable {
@@ -1065,7 +1066,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var updateOverlayController: UpdateProgressViewController?
     private var statusAnimator: HeaderGlitchTextAnimator?
     private var installedRecords: [PackageRecord] = []
-    private var localDetectorHazardPackages: [PackagePresentation] = []
+    private var localHazardPackages: [PackagePresentation] = []
     private var outdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var homebrewOutdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var installedPackages: [PackagePresentation] = []
@@ -1735,7 +1736,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         homebrewMigrationRecommendation = nil
         homebrewInstalledPackageNames = []
         installedRecords = []
-        localDetectorHazardPackages = []
+        localHazardPackages = []
         installedPackages = []
         resetInstalledPulseResults()
         refreshRecommendations()
@@ -1777,7 +1778,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 DispatchQueue.main.async {
                     guard self.reloadRequestID == requestID else { return }
                     self.installedRecords = []
-                    self.localDetectorHazardPackages = []
+                    self.localHazardPackages = []
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
                     self.statusStore.requestRefresh()
@@ -1854,13 +1855,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         excluding installedPackageNames: Set<String>
     ) {
         DispatchQueue.global(qos: .utility).async {
-            let hazards = Self.detectorOnlyHazardTargets.compactMap { target -> (
+            let hazards = Self.localHazardTargets.compactMap { target -> (
                 detail: PackageDetail,
                 presentation: PackagePresentation
             )? in
                 guard let detail = try? self.bridge.fetchDetail(packageName: target.lookupName),
                       detail.securityState?.installIsInsecure == true,
-                      detail.securityState?.remediationAvailable == false,
                       installedPackageNames.contains(detail.packageName) == false,
                       installedPackageNames.contains(detail.qualifiedName) == false,
                       installedPackageNames.contains(target.lookupName) == false,
@@ -1894,11 +1894,11 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
             DispatchQueue.main.async {
                 guard self.reloadRequestID == requestID else { return }
-                for target in Self.detectorOnlyHazardTargets {
+                for target in Self.localHazardTargets {
                     self.detailsByPackageName.removeValue(forKey: target.lookupName)
                     self.detailsByPackageName.removeValue(forKey: target.displayName)
                 }
-                self.localDetectorHazardPackages = hazards.map(\.presentation)
+                self.localHazardPackages = hazards.map(\.presentation)
                 for hazard in hazards {
                     self.detailsByPackageName[hazard.presentation.selectionID] = hazard.detail
                 }
@@ -2151,8 +2151,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var sortedInstalledPalettePrimaryPackages: [PackagePresentation] {
-        (localDetectorHazardPackages + installedPackages)
-            .sorted(by: PackagePresentation.sortsByPackageSearchOrder)
+        (localHazardPackages + installedPackages)
+            .sorted(by: PackagePresentation.sortsActiveSecretAlertsAbovePackageSearchOrder)
     }
 
     private var appPalettePackages: [PackagePresentation] {

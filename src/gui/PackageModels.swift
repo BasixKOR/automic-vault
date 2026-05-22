@@ -4,6 +4,7 @@ import Foundation
 private let packageSearchOrderPrefixes = [
     "brew:",
     "cask:",
+    "gone:",
     "isotope:",
     "sys:",
     "av:",
@@ -1585,6 +1586,18 @@ struct PackagePresentation: Equatable {
             return leftName < rightName
         }
         return leftSortName < rightSortName
+    }
+
+    static func sortsActiveSecretAlertsAbovePackageSearchOrder(
+        _ left: PackagePresentation,
+        before right: PackagePresentation
+    ) -> Bool {
+        let leftHasAlert = left.hasActivePlainTextSecretAlert
+        let rightHasAlert = right.hasActivePlainTextSecretAlert
+        if leftHasAlert != rightHasAlert {
+            return leftHasAlert
+        }
+        return sortsByPackageSearchOrder(left, before: right)
     }
 
     var isInstalledIsotope: Bool {

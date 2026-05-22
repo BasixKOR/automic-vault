@@ -10743,6 +10743,32 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
+    fn hf_security_state_reports_huggingface_cli_remediation() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let token_dir = temp.path().join(".cache/huggingface");
+        fs::create_dir_all(&token_dir).unwrap();
+        fs::write(token_dir.join("token"), "hf_secret\n").unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", temp.path().to_str().unwrap())]);
+
+        let state = package_security_state_for_identifiers(["brew:hf".to_string()])
+            .expect("brew:hf should have security state");
+
+        assert_eq!(state.isotope_name, "huggingface-cli");
+        assert!(state.install_is_insecure);
+        assert!(state.remediation_available);
+        assert!(
+            state
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("Hugging Face token file")),
+            "expected Hugging Face token reason, got {:?}",
+            state.reasons
+        );
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
     fn package_security_state_reports_detector_only_radioisotopes_without_remediation() {
         let _lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();

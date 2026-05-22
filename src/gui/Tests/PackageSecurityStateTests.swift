@@ -143,6 +143,57 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testGoneDetectorHazardsSortByToolName() {
+        let presentations = [
+            installedPresentation(named: "gone:hf"),
+            installedPresentation(named: "brew:git"),
+        ].sorted(by: PackagePresentation.sortsByPackageSearchOrder)
+
+        XCTAssertEqual(
+            presentations.map(\.selectionID),
+            ["brew:git", "gone:hf"]
+        )
+        XCTAssertEqual("gone:hf".packageSearchOrderName, "hf")
+    }
+
+    func testActiveSecretAlertsSortAboveInstalledPackages() throws {
+        let safe = installedPresentation(named: "brew:ack")
+        let hazardDetail = try decodePackageDetail(
+            packageName: "gone:hf",
+            formula: "hf",
+            securityState: """
+            {
+              "isotopeName": "huggingface-cli",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["Hugging Face token file contains a plaintext token"],
+              "error": null
+            }
+            """
+        )
+        let hazard = PackagePresentation(
+            item: .installed(PackageRecord(
+                name: "gone:hf",
+                source: .formula(rootFormula: "hf"),
+                version: "1.15.0",
+                description: "Client library for huggingface.co hub",
+                securityState: hazardDetail.securityState,
+                installPackageNames: ["brew:hf"]
+            )),
+            detail: hazardDetail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(hazard.plainTextSecretAlertSource, .isotope)
+        XCTAssertTrue(hazard.hasActivePlainTextSecretAlert)
+        XCTAssertEqual(
+            [safe, hazard]
+                .sorted(by: PackagePresentation.sortsActiveSecretAlertsAbovePackageSearchOrder)
+                .map(\.selectionID),
+            ["gone:hf", "brew:ack"]
+        )
+    }
+
     @MainActor
     func testSystemDetectorOnlyDossierHidesPackageActions() throws {
         let lookupDetail = try decodePackageDetail(
