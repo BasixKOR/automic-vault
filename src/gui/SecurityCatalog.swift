@@ -49,6 +49,16 @@ struct PackageSecurityNotice: Equatable {
             "modded by packaging experts to incorporate Automic Vault’s " +
             "security bolstering technologies."
     }
+
+    fileprivate static var detectorOnlyHeadline: String {
+        "LOCAL SECRET EXPOSURE"
+    }
+
+    fileprivate static var detectorOnlyBody: String {
+        "Automic Vault detected plaintext secret exposure for this package. " +
+            "A detector exists, but Automic Vault does not yet provide " +
+            "migration or package modification for this tool."
+    }
 }
 
 final class SecurityCatalog {
@@ -74,6 +84,7 @@ final class SecurityCatalog {
         }
         let matchedIsotopePackages = identifiers.compactMap { isotopePackages[$0] }
         if let matchedIsotope = matchedIsotopePackages.first {
+            let remediationAvailable = detail.securityState?.remediationAvailable ?? true
             if let securityState = detail.securityState,
                securityState.isotopeName == matchedIsotope.isotopeName {
                 guard securityState.installIsInsecure else {
@@ -84,11 +95,15 @@ final class SecurityCatalog {
             }
             return PackageSecurityNotice(
                 source: .isotope,
-                applyPackageName: matchedIsotope.name,
+                applyPackageName: remediationAvailable ? matchedIsotope.name : nil,
                 headline: matchedIsotope.justification?.title
-                    ?? PackageSecurityNotice.defaultHeadline,
+                    ?? (remediationAvailable
+                        ? PackageSecurityNotice.defaultHeadline
+                        : PackageSecurityNotice.detectorOnlyHeadline),
                 body: matchedIsotope.justification?.detail
-                    ?? PackageSecurityNotice.defaultBody,
+                    ?? (remediationAvailable
+                        ? PackageSecurityNotice.defaultBody
+                        : PackageSecurityNotice.detectorOnlyBody),
                 reasons: detail.securityState?.reasons ?? [],
                 caveats: matchedIsotope.caveats?.noticeCaveats,
                 learnMoreURL: matchedIsotope.learnMoreURL
@@ -97,9 +112,18 @@ final class SecurityCatalog {
         }
         if let securityState = detail.securityState,
            securityState.installIsInsecure {
+            let remediationAvailable = securityState.remediationAvailable
             return PackageSecurityNotice(
                 source: .isotope,
-                applyPackageName: "isotope:\(securityState.isotopeName)",
+                applyPackageName: remediationAvailable
+                    ? "isotope:\(securityState.isotopeName)"
+                    : nil,
+                headline: remediationAvailable
+                    ? PackageSecurityNotice.defaultHeadline
+                    : PackageSecurityNotice.detectorOnlyHeadline,
+                body: remediationAvailable
+                    ? PackageSecurityNotice.defaultBody
+                    : PackageSecurityNotice.detectorOnlyBody,
                 reasons: securityState.reasons
             )
         }

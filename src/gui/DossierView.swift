@@ -684,39 +684,49 @@ final class DossierView: NSView {
             noticeCursorY += Metrics.securityNoticeButtonTopGap
 
             let learnMoreButtonWidth = securityNoticeButtonWidth(for: securityLearnMoreButton)
-            let applyButtonWidth = securityNoticeButtonWidth(for: securityApplyButton)
-            let horizontalButtonWidth = max(
-                (noticeContentWidth - Metrics.securityNoticeButtonGap) / 2,
-                0
-            )
-
-            if learnMoreButtonWidth <= horizontalButtonWidth,
-               applyButtonWidth <= horizontalButtonWidth {
+            if securityApplyButton.isHidden {
                 securityLearnMoreButton.frame = CGRect(
                     x: noticeContentMinX,
                     y: noticeCursorY,
-                    width: horizontalButtonWidth,
+                    width: noticeContentWidth,
                     height: Metrics.securityNoticeButtonHeight
                 )
-                securityApplyButton.frame = CGRect(
-                    x: securityLearnMoreButton.frame.maxX + Metrics.securityNoticeButtonGap,
-                    y: noticeCursorY,
-                    width: horizontalButtonWidth,
-                    height: Metrics.securityNoticeButtonHeight
-                )
+                securityApplyButton.frame = .zero
             } else {
-                securityLearnMoreButton.frame = CGRect(
-                    x: noticeContentMinX,
-                    y: noticeCursorY,
-                    width: noticeContentWidth,
-                    height: Metrics.securityNoticeButtonHeight
+                let applyButtonWidth = securityNoticeButtonWidth(for: securityApplyButton)
+                let horizontalButtonWidth = max(
+                    (noticeContentWidth - Metrics.securityNoticeButtonGap) / 2,
+                    0
                 )
-                securityApplyButton.frame = CGRect(
-                    x: noticeContentMinX,
-                    y: securityLearnMoreButton.frame.maxY + Metrics.securityNoticeButtonGap,
-                    width: noticeContentWidth,
-                    height: Metrics.securityNoticeButtonHeight
-                )
+
+                if learnMoreButtonWidth <= horizontalButtonWidth,
+                   applyButtonWidth <= horizontalButtonWidth {
+                    securityLearnMoreButton.frame = CGRect(
+                        x: noticeContentMinX,
+                        y: noticeCursorY,
+                        width: horizontalButtonWidth,
+                        height: Metrics.securityNoticeButtonHeight
+                    )
+                    securityApplyButton.frame = CGRect(
+                        x: securityLearnMoreButton.frame.maxX + Metrics.securityNoticeButtonGap,
+                        y: noticeCursorY,
+                        width: horizontalButtonWidth,
+                        height: Metrics.securityNoticeButtonHeight
+                    )
+                } else {
+                    securityLearnMoreButton.frame = CGRect(
+                        x: noticeContentMinX,
+                        y: noticeCursorY,
+                        width: noticeContentWidth,
+                        height: Metrics.securityNoticeButtonHeight
+                    )
+                    securityApplyButton.frame = CGRect(
+                        x: noticeContentMinX,
+                        y: securityLearnMoreButton.frame.maxY + Metrics.securityNoticeButtonGap,
+                        width: noticeContentWidth,
+                        height: Metrics.securityNoticeButtonHeight
+                    )
+                }
             }
             UIStyle.layoutControlChrome(in: securityLearnMoreButton.layer)
             UIStyle.layoutControlChrome(in: securityApplyButton.layer)
@@ -1199,7 +1209,7 @@ final class DossierView: NSView {
         securityLearnMoreButton.isHidden = false
         securityLearnMoreButton.isEnabled = true
         securityApplyButton.title = securityApplyButtonTitle()
-        securityApplyButton.isHidden = false
+        securityApplyButton.isHidden = notice.applyPackageName == nil
         securityApplyButton.isEnabled = !isActionInFlight
             && securityApplyButtonIsEnabled(notice: notice)
     }

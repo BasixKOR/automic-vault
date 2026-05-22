@@ -605,6 +605,8 @@ struct PackageSecurityState {
     isotope_name: String,
     #[serde(rename = "installIsInsecure")]
     install_is_insecure: bool,
+    #[serde(rename = "remediationAvailable")]
+    remediation_available: bool,
     reasons: Vec<String>,
     error: Option<String>,
 }
@@ -2756,15 +2758,17 @@ fn isotope_integration(name: &str) -> Option<&'static isotope_integrations::Isot
 }
 
 fn isotope_has_migration(name: &str) -> bool {
-    isotope_integration(name)
-        .and_then(|integration| integration.migrate)
-        .is_some()
+    isotope_integration(name).is_some_and(|integration| integration.has_migration)
 }
 
 fn isotope_has_post_install(name: &str) -> bool {
-    isotope_integration(name)
-        .and_then(|integration| integration.post_install)
-        .is_some()
+    isotope_integration(name).is_some_and(|integration| integration.has_install_remediation)
+}
+
+fn isotope_has_remediation(name: &str) -> bool {
+    isotope_integration(name).is_some_and(|integration| {
+        integration.has_migration || integration.has_install_remediation
+    })
 }
 
 fn run_generated_isotope_migration(name: &str) -> Option<Result<(), String>> {
@@ -2779,6 +2783,9 @@ fn run_generated_isotope_post_install(name: &str) -> Option<Result<(), String>> 
 
 fn detect_isotope_install_reasons(name: &str) -> Option<Result<Vec<String>, String>> {
     let integration = isotope_integration(name)?;
+    if !integration.has_detect {
+        return None;
+    }
     if let Some(detect_reasons) = integration.detect_reasons {
         return Some(detect_reasons());
     }
@@ -2805,10 +2812,22 @@ fn package_security_state_for_identifiers<I>(identifiers: I) -> Option<PackageSe
 where
     I: IntoIterator<Item = String>,
 {
-    let identifiers = identifiers
+    let mut identifiers = identifiers
         .into_iter()
         .map(|identifier| identifier.to_ascii_lowercase())
         .collect::<HashSet<_>>();
+    identifiers.extend(
+        identifiers
+            .iter()
+            .filter_map(|identifier| {
+                identifier
+                    .split_once(':')
+                    .map(|(_, suffix)| suffix)
+                    .filter(|suffix| !suffix.is_empty())
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>(),
+    );
     let mut isotopes = embedded_isotope_data().values().collect::<Vec<_>>();
     isotopes.sort_by(|left, right| left.name.cmp(&right.name));
 
@@ -2835,16 +2854,19 @@ where
 
 fn package_security_state_for_isotope(isotope_name: &str) -> Option<PackageSecurityState> {
     let result = detect_isotope_install_reasons(isotope_name)?;
+    let remediation_available = isotope_has_remediation(isotope_name);
     Some(match result {
         Ok(reasons) => PackageSecurityState {
             isotope_name: isotope_name.to_string(),
             install_is_insecure: !reasons.is_empty(),
+            remediation_available,
             reasons,
             error: None,
         },
         Err(err) => PackageSecurityState {
             isotope_name: isotope_name.to_string(),
             install_is_insecure: false,
+            remediation_available,
             reasons: Vec::new(),
             error: Some(err),
         },
@@ -10610,6 +10632,7 @@ or `npm:clawhub` for the aliased package"
             let state = state.expect("aws-cli should have security state");
             assert_eq!(state.isotope_name, "aws-cli");
             assert!(state.install_is_insecure);
+            assert!(state.remediation_available);
             assert!(
                 state
                     .reasons
@@ -10669,6 +10692,7 @@ or `npm:clawhub` for the aliased package"
             let state = state.expect("aws-cli should have security state");
             assert_eq!(state.isotope_name, "aws-cli");
             assert!(state.install_is_insecure);
+            assert!(state.remediation_available);
             assert!(
                 state
                     .reasons
@@ -10680,6 +10704,76 @@ or `npm:clawhub` for the aliased package"
             assert_eq!(state.error, None);
         } else {
             assert_eq!(state, None);
+        }
+    }
+
+    #[test]
+    fn package_security_state_reports_detector_only_radioisotopes_without_remediation() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(home.join(".ssh")).unwrap();
+        fs::create_dir_all(home.join(".gem")).unwrap();
+        fs::create_dir_all(home.join(".cpan/CPAN")).unwrap();
+        fs::create_dir_all(home.join(".ssl")).unwrap();
+        fs::write(
+            home.join(".git-credentials"),
+            "https://user:supersecret@example.com/repo.git\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".netrc"),
+            "machine example.com login user password supersecret\n",
+        )
+        .unwrap();
+        fs::write(home.join(".rsync_pass"), "supersecret\n").unwrap();
+        fs::write(
+            home.join(".gem/credentials"),
+            ":rubygems_api_key: rubygems_secret\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".cpan/CPAN/MyConfig.pm"),
+            "'proxy_pass' => 'supersecret',\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".ssh/id_rsa"),
+            "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".ssl/key.pem"),
+            "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", home.to_str().unwrap())]);
+
+        for (package, isotope, reason) in [
+            ("brew:git", "git", "Git credential store"),
+            ("brew:curl", "curl", "curl netrc"),
+            ("brew:rsync", "rsync", "rsync password file"),
+            ("brew:ruby", "ruby", "RubyGems credentials"),
+            ("brew:perl", "perl", "CPAN config"),
+            ("brew:openssh", "openssh", "SSH private key"),
+            ("brew:openssl@3", "openssl@3", "OpenSSL private key"),
+        ] {
+            if detect_isotope_install_reasons(isotope).is_none() {
+                continue;
+            }
+            let state = package_security_state_for_identifiers([package.to_string()])
+                .unwrap_or_else(|| panic!("{package} should have security state"));
+            assert_eq!(state.isotope_name, isotope);
+            assert!(state.install_is_insecure, "{package}");
+            assert!(!state.remediation_available, "{package}");
+            assert!(
+                state
+                    .reasons
+                    .iter()
+                    .any(|candidate| candidate.contains(reason)),
+                "expected {reason:?} in {:?}",
+                state.reasons
+            );
         }
     }
 

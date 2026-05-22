@@ -163,11 +163,46 @@
         "name": "isotope:aws-cli",
         "version": "1.0.0"
       },
+      "curl": {
+        "modifies": "brew:curl",
+        "name": "isotope:curl",
+        "version": "detector-only"
+      },
       "gh": {
         "migrate": "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
         "name": "isotope:gh",
         "replaces": "brew:gh",
         "version": "2.80.0"
+      },
+      "git": {
+        "modifies": "brew:git",
+        "name": "isotope:git",
+        "version": "detector-only"
+      },
+      "openssh": {
+        "modifies": "brew:openssh",
+        "name": "isotope:openssh",
+        "version": "detector-only"
+      },
+      "openssl@3": {
+        "modifies": "brew:openssl@3",
+        "name": "isotope:openssl@3",
+        "version": "detector-only"
+      },
+      "perl": {
+        "modifies": "brew:perl",
+        "name": "isotope:perl",
+        "version": "detector-only"
+      },
+      "rsync": {
+        "modifies": "brew:rsync",
+        "name": "isotope:rsync",
+        "version": "detector-only"
+      },
+      "ruby": {
+        "modifies": "brew:ruby",
+        "name": "isotope:ruby",
+        "version": "detector-only"
       },
       "terraform": {
         "modifies": "av:terraform",

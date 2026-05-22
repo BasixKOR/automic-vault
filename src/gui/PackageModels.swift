@@ -190,20 +190,40 @@ struct PackageRecord: Decodable, Equatable {
 struct PackageSecurityState: Decodable, Equatable {
     let isotopeName: String
     let installIsInsecure: Bool
+    let remediationAvailable: Bool
     let reasons: [String]
     let error: String?
 
     enum CodingKeys: String, CodingKey {
         case isotopeName
         case installIsInsecure
+        case remediationAvailable
         case reasons
         case error
+    }
+
+    init(
+        isotopeName: String,
+        installIsInsecure: Bool,
+        remediationAvailable: Bool = true,
+        reasons: [String],
+        error: String?
+    ) {
+        self.isotopeName = isotopeName
+        self.installIsInsecure = installIsInsecure
+        self.remediationAvailable = remediationAvailable
+        self.reasons = reasons
+        self.error = error
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         isotopeName = try container.decode(String.self, forKey: .isotopeName)
         installIsInsecure = try container.decode(Bool.self, forKey: .installIsInsecure)
+        remediationAvailable = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .remediationAvailable
+        ) ?? true
         reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
     }

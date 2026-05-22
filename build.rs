@@ -113,6 +113,9 @@ fn generate_isotope_integrations() {
         "  pub(crate) detect_reasons: Option<fn() -> Result<Vec<String>, String>>,\n",
         "  pub(crate) migrate: Option<fn() -> Result<(), String>>,\n",
         "  pub(crate) post_install: Option<fn() -> Result<(), String>>,\n",
+        "  pub(crate) has_detect: bool,\n",
+        "  pub(crate) has_migration: bool,\n",
+        "  pub(crate) has_install_remediation: bool,\n",
         "  pub(crate) credential_helper_name: Option<&'static str>,\n",
         "  pub(crate) credential_helper: Option<for<'a> fn(crate::isotope::CredentialHelperInvocation<'a>) -> Result<(), String>>,\n",
         "}\n\n",
@@ -188,14 +191,17 @@ fn generate_isotope_integrations() {
         output.push_str(&format!(
             concat!(
                 "  IsotopeIntegration {{ name: {:?}, detect: {}, detect_reasons: {}, ",
-                "migrate: {}, post_install: {}, credential_helper_name: {}, ",
-                "credential_helper: {} }},\n"
+                "migrate: {}, post_install: {}, has_detect: {}, has_migration: {}, ",
+                "has_install_remediation: {}, credential_helper_name: {}, credential_helper: {} }},\n"
             ),
             entry.isotope_name,
             detect,
             detect_reasons,
             migrate,
             post_install,
+            entry.detect_path.is_some(),
+            entry.migrate_path.is_some(),
+            entry.post_install_path.is_some(),
             credential_helper_name,
             credential_helper
         ));

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.7";
+pub(crate) const PROTOCOL_VERSION: &str = "1.8";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {

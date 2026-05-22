@@ -179,11 +179,46 @@ def main():
                     "migrate": "aws configure import --csv file://$1",
                     "version": "1.0.0",
                 },
+                "curl": {
+                    "name": "isotope:curl",
+                    "modifies": "brew:curl",
+                    "version": "detector-only",
+                },
                 "gh": {
                     "name": "isotope:gh",
                     "replaces": "brew:gh",
                     "migrate": "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
                     "version": "2.80.0",
+                },
+                "git": {
+                    "name": "isotope:git",
+                    "modifies": "brew:git",
+                    "version": "detector-only",
+                },
+                "openssh": {
+                    "name": "isotope:openssh",
+                    "modifies": "brew:openssh",
+                    "version": "detector-only",
+                },
+                "openssl@3": {
+                    "name": "isotope:openssl@3",
+                    "modifies": "brew:openssl@3",
+                    "version": "detector-only",
+                },
+                "perl": {
+                    "name": "isotope:perl",
+                    "modifies": "brew:perl",
+                    "version": "detector-only",
+                },
+                "rsync": {
+                    "name": "isotope:rsync",
+                    "modifies": "brew:rsync",
+                    "version": "detector-only",
+                },
+                "ruby": {
+                    "name": "isotope:ruby",
+                    "modifies": "brew:ruby",
+                    "version": "detector-only",
                 },
             },
             "npm": {
