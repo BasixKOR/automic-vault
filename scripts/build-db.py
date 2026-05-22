@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import base64
 import datetime
+import email.utils
 import hashlib
 import json
 import os
+import random
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -32,40 +35,98 @@ MANIFEST_ACCEPT = "application/vnd.oci.image.index.v1+json"
 TOKEN_SERVICE = "https://ghcr.io/token"
 FORCE_REFRESH = False
 NPM_REGISTRY_ROOT = "https://registry.npmjs.org"
-NPM_REPLICATE_CHANGES_URL = "https://replicate.npmjs.com/registry/_changes"
-NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search"
+NPM_REPLICATE_ROOT = "https://replicate.npmjs.com/registry"
+NPM_REPLICATE_CHANGES_URL = f"{NPM_REPLICATE_ROOT}/_changes"
+NPM_REPLICATE_ALL_DOCS_URL = f"{NPM_REPLICATE_ROOT}/_all_docs"
 NPM_DOWNLOADS_POINT_ROOT = "https://api.npmjs.org/downloads/point/last-month"
 NPM_MIN_MONTHLY_DOWNLOADS = 50_000
-NPM_SEARCH_PAGE_SIZE = 250
-NPM_SEARCH_MAX_PAGES = 4
+NPM_FULL_SCAN_PAGE_SIZE = 250
+NPM_DOWNLOADS_BATCH_SIZE = 64
 PULSE_NEW_WINDOW_DAYS = 7
 NPM_CHANGES_LIMIT = 5000
+NPM_CHANGE_REFRESH_LIMIT = 500
 NPM_INDEX_STATE_PATH = os.path.join(CACHE_DIR, NPM_ECOSYSTEM, "index.json")
-NPM_SEARCH_QUERIES = (
-    "cli",
-    "command",
-    "command-line",
-    "terminal",
-    "shell",
-    "devtool",
-    "runner",
-    "linter",
-    "formatter",
-    "generator",
-)
-NPM_SEED_PACKAGES = (
-    "tsx",
-    "vite",
-    "eslint",
-    "prettier",
-    "serve",
-    "nodemon",
-    "vitest",
-    "webpack-cli",
-    "rollup",
-)
+NPM_AUTH_HOSTS = {"registry.npmjs.org", "replicate.npmjs.com", "api.npmjs.org"}
+NPM_DOWNLOADS_HOSTS = {"api.npmjs.org"}
+NPM_FULL_SCAN = False
 
 _GHCR_TOKENS = {}
+
+
+class NpmFetchError(Exception):
+    pass
+
+
+class NpmRateLimitExceeded(NpmFetchError):
+    pass
+
+
+class NpmTransientFetchError(NpmFetchError):
+    pass
+
+
+class _TokenBucket:
+    def __init__(self, rps):
+        self.interval = 1.0 / rps if rps > 0 else 0
+        self.next_available = 0.0
+        self.lock = threading.Lock()
+
+    def wait(self):
+        if self.interval <= 0:
+            return
+        with self.lock:
+            now = time.monotonic()
+            sleep_for = max(0.0, self.next_available - now)
+            self.next_available = max(now, self.next_available) + self.interval
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+
+
+def _env_int(name, default):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        print(f"Ignoring invalid {name}={value!r}; using {default}", file=sys.stderr)
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _env_float(name, default):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        print(f"Ignoring invalid {name}={value!r}; using {default}", file=sys.stderr)
+        return default
+    return parsed if parsed > 0 else default
+
+
+NPM_REGISTRY_RPS = _env_float("NPM_REGISTRY_RPS", 2.0)
+NPM_DOWNLOADS_RPS = _env_float("NPM_DOWNLOADS_RPS", 0.5)
+NPM_MAX_RETRIES = _env_int("NPM_MAX_RETRIES", 4)
+NPM_RATE_LIMIT_BUDGET_SECONDS = _env_float("NPM_RATE_LIMIT_BUDGET_SECONDS", 600.0)
+NPM_MAX_WORKERS = _env_int("NPM_MAX_WORKERS", 4)
+NPM_CHANGE_REFRESH_LIMIT = _env_int(
+    "NPM_CHANGE_REFRESH_LIMIT",
+    NPM_CHANGE_REFRESH_LIMIT,
+)
+
+_NPM_BUCKETS = {
+    "registry": _TokenBucket(NPM_REGISTRY_RPS),
+    "downloads": _TokenBucket(NPM_DOWNLOADS_RPS),
+}
+_NPM_STATS = {
+    "requests": 0,
+    "cache_hits": 0,
+    "rate_limits": 0,
+    "retries": 0,
+    "stale_uses": 0,
+}
 
 
 def _ensure_cwd():
@@ -161,6 +222,141 @@ def _fetch_json(url, github_token=None, ecosystem=ECOSYSTEM, accept="application
             print(f"Using cached data for {url}: {err}", file=sys.stderr)
             return payload
         raise
+
+
+def _npm_token():
+    for key in ("NPM_TOKEN", "NODE_AUTH_TOKEN", "NPM_REGISTRY_TOKEN"):
+        value = os.environ.get(key)
+        if value:
+            return value.strip()
+    return None
+
+
+def _npm_bucket_for_host(hostname):
+    if hostname in NPM_DOWNLOADS_HOSTS:
+        return _NPM_BUCKETS["downloads"]
+    return _NPM_BUCKETS["registry"]
+
+
+def _retry_after_seconds(headers):
+    if not headers:
+        return None
+    value = headers.get("Retry-After")
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return max(0.0, float(value))
+    try:
+        retry_at = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return max(0.0, (retry_at - now).total_seconds())
+
+
+def _npm_backoff_seconds(attempt, err):
+    retry_after = _retry_after_seconds(getattr(err, "headers", None))
+    if retry_after is not None:
+        return retry_after
+    return min(60.0, (2**attempt) + random.uniform(0.0, 1.0))
+
+
+def _npm_fetch_json(url, accept="application/json", use_cache=True):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in NPM_AUTH_HOSTS:
+        raise ValueError(f"Refusing npm fetch for non-npm host: {url}")
+
+    path = _cache_path_for(url, NPM_ECOSYSTEM)
+    payload = None
+    meta = {}
+    if use_cache and os.path.exists(path):
+        payload, meta = _read_cached_json(url, NPM_ECOSYSTEM)
+
+    checked_at = meta.get("checked_at")
+    now = int(time.time())
+    if (
+        use_cache
+        and not FORCE_REFRESH
+        and isinstance(checked_at, int)
+        and now - checked_at < CHECK_INTERVAL_SECONDS
+    ):
+        _NPM_STATS["cache_hits"] += 1
+        return payload
+
+    headers = {"Accept": accept, "User-Agent": USER_AGENT}
+    token = _npm_token()
+    if token and parsed.hostname in NPM_AUTH_HOSTS:
+        headers["Authorization"] = f"Bearer {token}"
+    etag = meta.get("etag")
+    if etag:
+        headers["If-None-Match"] = etag
+
+    started_at = time.monotonic()
+    last_error = None
+    for attempt in range(NPM_MAX_RETRIES + 1):
+        _npm_bucket_for_host(parsed.hostname).wait()
+        request = urllib.request.Request(url, headers=headers)
+        _NPM_STATS["requests"] += 1
+        try:
+            with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
+                data = response.read()
+                etag = response.headers.get("etag")
+                payload = json.loads(data)
+                if use_cache:
+                    _write_cache(path, payload, etag, int(time.time()))
+                return payload
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                return None
+            if err.code == 304 and payload is not None:
+                if use_cache:
+                    _write_cache(path, payload, etag, int(time.time()))
+                return payload
+            if err.code not in (429, 503):
+                last_error = err
+                break
+            _NPM_STATS["rate_limits"] += 1
+            delay = _npm_backoff_seconds(attempt, err)
+            if (
+                attempt >= NPM_MAX_RETRIES
+                or time.monotonic() - started_at + delay > NPM_RATE_LIMIT_BUDGET_SECONDS
+            ):
+                if payload is not None:
+                    _NPM_STATS["stale_uses"] += 1
+                    print(
+                        f"Using cached npm data for {url}: HTTP {err.code}",
+                        file=sys.stderr,
+                    )
+                    return payload
+                raise NpmRateLimitExceeded(f"npm fetch rate-limited for {url}") from err
+            _NPM_STATS["retries"] += 1
+            time.sleep(delay)
+            continue
+        except urllib.error.URLError as err:
+            last_error = err
+            delay = _npm_backoff_seconds(attempt, err)
+            if (
+                attempt >= NPM_MAX_RETRIES
+                or time.monotonic() - started_at + delay > NPM_RATE_LIMIT_BUDGET_SECONDS
+            ):
+                if payload is not None:
+                    _NPM_STATS["stale_uses"] += 1
+                    print(f"Using cached npm data for {url}: {err}", file=sys.stderr)
+                    return payload
+                raise NpmTransientFetchError(f"npm fetch failed for {url}: {err}") from err
+            _NPM_STATS["retries"] += 1
+            time.sleep(delay)
+
+    if payload is not None:
+        _NPM_STATS["stale_uses"] += 1
+        print(f"Using cached npm data for {url}: {last_error}", file=sys.stderr)
+        return payload
+    if isinstance(last_error, Exception):
+        raise NpmTransientFetchError(f"npm fetch failed for {url}: {last_error}") from last_error
+    raise NpmTransientFetchError(f"npm fetch failed for {url}")
 
 
 def _github_token():
@@ -697,18 +893,20 @@ def _npm_downloads_url(package):
     return f"{NPM_DOWNLOADS_POINT_ROOT}/{urllib.parse.quote(package, safe='@/')}"
 
 
-def _npm_search_url(query, offset):
-    params = urllib.parse.urlencode(
-        {
-            "text": query,
-            "size": NPM_SEARCH_PAGE_SIZE,
-            "from": offset,
-            "quality": 0,
-            "maintenance": 0,
-            "popularity": 1,
-        }
-    )
-    return f"{NPM_SEARCH_URL}?{params}"
+def _npm_downloads_batch_url(packages):
+    joined = ",".join(packages)
+    return f"{NPM_DOWNLOADS_POINT_ROOT}/{urllib.parse.quote(joined, safe='@/,')}"
+
+
+def _npm_all_docs_url(startkey=None):
+    params = {
+        "include_docs": "true",
+        "limit": NPM_FULL_SCAN_PAGE_SIZE,
+    }
+    if startkey:
+        params["startkey"] = json.dumps(startkey)
+        params["skip"] = 1
+    return f"{NPM_REPLICATE_ALL_DOCS_URL}?{urllib.parse.urlencode(params)}"
 
 
 def _npm_install_leaf_name(package):
@@ -717,15 +915,32 @@ def _npm_install_leaf_name(package):
     return package
 
 
+def _valid_npm_executable_name(value):
+    if not isinstance(value, str) or not value:
+        return False
+    if value in (".", ".."):
+        return False
+    if "/" in value or "\\" in value:
+        return False
+    return not any(char.isspace() for char in value)
+
+
 def _npm_matching_executable(package, bin_value):
     leaf = _npm_install_leaf_name(package)
-    if isinstance(bin_value, str) and bin_value:
+    if isinstance(bin_value, str) and bin_value and _valid_npm_executable_name(leaf):
         return leaf
     if not isinstance(bin_value, dict):
         return None
     target = bin_value.get(leaf)
-    if isinstance(target, str) and target:
+    if isinstance(target, str) and target and _valid_npm_executable_name(leaf):
         return leaf
+    valid_bins = [
+        name
+        for name, target in bin_value.items()
+        if _valid_npm_executable_name(name) and isinstance(target, str) and target
+    ]
+    if len(valid_bins) == 1:
+        return valid_bins[0]
     return None
 
 
@@ -750,8 +965,11 @@ def _npm_last_updated_at(packument, latest):
     return value if isinstance(value, str) and value else None
 
 
-def _npm_metadata_from_packument(package, packument, monthly_downloads):
-    if monthly_downloads < NPM_MIN_MONTHLY_DOWNLOADS:
+def _npm_metadata_from_packument(package, packument, monthly_downloads, stale_metadata=None):
+    if monthly_downloads is None and isinstance(stale_metadata, dict):
+        popularity = stale_metadata.get("popularity") or {}
+        monthly_downloads = _parse_count(popularity.get("downloads_per_30_days"))
+    if monthly_downloads is None or monthly_downloads < NPM_MIN_MONTHLY_DOWNLOADS:
         return None
     latest, version_doc = _npm_latest_version_doc(packument)
     if latest is None or version_doc is None:
@@ -778,119 +996,70 @@ def _npm_metadata_from_packument(package, packument, monthly_downloads):
 
 
 def _fetch_npm_packument(package):
-    return _fetch_json(
+    return _npm_fetch_json(
         _npm_package_url(package),
-        ecosystem=NPM_ECOSYSTEM,
         accept="application/json",
     )
 
 
 def _fetch_npm_monthly_downloads(package):
-    payload = _fetch_json(_npm_downloads_url(package), ecosystem=NPM_ECOSYSTEM)
+    payload = _npm_fetch_json(_npm_downloads_url(package))
     if not isinstance(payload, dict):
         return 0
     return _parse_count(payload.get("downloads")) or 0
 
 
-def _fetch_npm_search_candidates():
-    candidates = {}
-    for package in NPM_SEED_PACKAGES:
-        try:
-            monthly = _fetch_npm_monthly_downloads(package)
-        except Exception as err:
-            print(f"Skipping seeded npm package {package}: {err}", file=sys.stderr)
-            continue
-        if monthly >= NPM_MIN_MONTHLY_DOWNLOADS:
-            candidates[package] = monthly
-
-    for query in NPM_SEARCH_QUERIES:
-        for page in range(NPM_SEARCH_MAX_PAGES):
-            url = _npm_search_url(query, page * NPM_SEARCH_PAGE_SIZE)
-            try:
-                payload = _fetch_json(url, ecosystem=NPM_ECOSYSTEM)
-            except urllib.error.HTTPError as err:
-                if err.code in (429, 503):
-                    print(
-                        f"Skipping npm search page for {query!r}: {err}",
-                        file=sys.stderr,
-                    )
-                    break
-                raise
-            except urllib.error.URLError as err:
-                print(
-                    f"Skipping npm search page for {query!r}: {err}",
-                    file=sys.stderr,
-                )
-                break
-            objects = payload.get("objects") if isinstance(payload, dict) else None
-            if not objects:
-                break
-            for item in objects:
-                package = item.get("package") if isinstance(item, dict) else None
-                downloads = item.get("downloads") if isinstance(item, dict) else None
-                if not isinstance(package, dict) or not isinstance(downloads, dict):
-                    continue
-                name = package.get("name")
-                monthly = _parse_count(downloads.get("monthly")) or 0
-                if not isinstance(name, str) or not name:
-                    continue
-                if monthly < NPM_MIN_MONTHLY_DOWNLOADS:
-                    continue
-                current = candidates.get(name)
-                if current is None or monthly > current:
-                    candidates[name] = monthly
-            if len(objects) < NPM_SEARCH_PAGE_SIZE:
-                break
-    return candidates
+def _default_npm_index_state():
+    return {
+        "last_seq": None,
+        "packages": {},
+        "full_scan_cursor": None,
+        "full_scan_started_at": None,
+        "last_full_scan_at": None,
+    }
 
 
 def _read_npm_index_state():
     if not os.path.exists(NPM_INDEX_STATE_PATH):
-        return {"last_seq": None, "packages": {}}
+        return _default_npm_index_state()
     with open(NPM_INDEX_STATE_PATH, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
-        return {"last_seq": None, "packages": {}}
+        return _default_npm_index_state()
+    state = _default_npm_index_state()
+    state.update(payload)
     packages = payload.get("packages")
     if not isinstance(packages, dict):
         packages = {}
-    return {
-        "last_seq": payload.get("last_seq"),
-        "packages": packages,
-    }
+    state["packages"] = packages
+    return state
 
 
-def _write_npm_index_state(last_seq, packages):
+def _write_npm_index_state(state):
     os.makedirs(os.path.dirname(NPM_INDEX_STATE_PATH), exist_ok=True)
     with open(NPM_INDEX_STATE_PATH, "w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "last_seq": last_seq,
-                "packages": packages,
-            },
-            handle,
-            indent=2,
-            sort_keys=True,
-        )
+        json.dump(state, handle, indent=2, sort_keys=True)
         handle.write("\n")
 
 
 def _current_npm_changes_sequence():
     params = urllib.parse.urlencode({"descending": "true", "limit": 1})
-    payload = _fetch_uncached_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}")
+    payload = _npm_fetch_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}", use_cache=False)
     return payload.get("last_seq") if isinstance(payload, dict) else None
 
 
-def _fetch_npm_changes_since(last_seq):
+def _fetch_npm_changes_since(last_seq, max_changes=NPM_CHANGE_REFRESH_LIMIT):
     if last_seq is None:
-        return set(), set(), _current_npm_changes_sequence()
+        return set(), set(), _current_npm_changes_sequence(), False
 
     changed = set()
     deleted = set()
     next_seq = last_seq
+    last_processed_seq = last_seq
+    processed_events = 0
     while True:
         params = urllib.parse.urlencode({"since": next_seq, "limit": NPM_CHANGES_LIMIT})
-        payload = _fetch_uncached_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}")
+        payload = _npm_fetch_json(f"{NPM_REPLICATE_CHANGES_URL}?{params}", use_cache=False)
         if not isinstance(payload, dict):
             break
         results = payload.get("results")
@@ -903,15 +1072,187 @@ def _fetch_npm_changes_since(last_seq):
             package = item.get("id")
             if not isinstance(package, str) or not package:
                 continue
+            item_seq = item.get("seq", last_processed_seq)
             if item.get("deleted"):
                 deleted.add(package)
                 changed.discard(package)
             else:
                 changed.add(package)
+            last_processed_seq = item_seq
+            processed_events += 1
+            if processed_events >= max_changes:
+                return changed, deleted, last_processed_seq, True
         next_seq = payload.get("last_seq", next_seq)
+        last_processed_seq = next_seq
         if len(results) < NPM_CHANGES_LIMIT:
             break
-    return changed, deleted, next_seq
+    return changed, deleted, next_seq, False
+
+
+def _npm_monthly_downloads_batch(packages, existing_packages):
+    downloads = {}
+    for package in packages:
+        stale = existing_packages.get(package) or {}
+        popularity = stale.get("popularity") or {}
+        stale_downloads = _parse_count(popularity.get("downloads_per_30_days"))
+        if stale_downloads is not None:
+            downloads[package] = stale_downloads
+
+    for index in range(0, len(packages), NPM_DOWNLOADS_BATCH_SIZE):
+        batch = packages[index : index + NPM_DOWNLOADS_BATCH_SIZE]
+        try:
+            payload = _npm_fetch_json(_npm_downloads_batch_url(batch))
+        except NpmFetchError as err:
+            if not isinstance(err, NpmRateLimitExceeded):
+                for package in batch:
+                    try:
+                        payload = _npm_fetch_json(_npm_downloads_url(package))
+                    except NpmFetchError:
+                        continue
+                    if isinstance(payload, dict):
+                        count = _parse_count(payload.get("downloads"))
+                        if count is not None:
+                            downloads[package] = count
+                continue
+            print(
+                "Using stale npm download counts for "
+                f"{len(batch)} packages: {err}",
+                file=sys.stderr,
+            )
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if len(batch) == 1 and "downloads" in payload:
+            count = _parse_count(payload.get("downloads"))
+            if count is not None:
+                downloads[batch[0]] = count
+            continue
+        for package in batch:
+            item = payload.get(package)
+            if not isinstance(item, dict):
+                continue
+            count = _parse_count(item.get("downloads"))
+            if count is not None:
+                downloads[package] = count
+    return downloads
+
+
+def _npm_packument_name(fallback, packument):
+    name = packument.get("name") if isinstance(packument, dict) else None
+    return name if isinstance(name, str) and name else fallback
+
+
+def _npm_packument_has_installable_cli(package, packument):
+    latest, version_doc = _npm_latest_version_doc(packument)
+    if latest is None or version_doc is None or version_doc.get("deprecated"):
+        return False
+    return _npm_matching_executable(package, version_doc.get("bin")) is not None
+
+
+def _refresh_npm_packuments(packages, packuments, existing_packages):
+    candidates = {}
+    for fallback, packument in packuments.items():
+        if not isinstance(packument, dict):
+            continue
+        package = _npm_packument_name(fallback, packument)
+        if not _npm_packument_has_installable_cli(package, packument):
+            packages.pop(package, None)
+            continue
+        candidates[package] = packument
+
+    downloads = _npm_monthly_downloads_batch(sorted(candidates), existing_packages)
+    for package, packument in candidates.items():
+        metadata = _npm_metadata_from_packument(
+            package,
+            packument,
+            downloads.get(package),
+            existing_packages.get(package),
+        )
+        if metadata is None:
+            packages.pop(package, None)
+        else:
+            packages[package] = metadata
+
+
+def _run_npm_full_scan(state):
+    packages = state["packages"]
+    cursor = state.get("full_scan_cursor")
+    if not state.get("full_scan_started_at"):
+        state["full_scan_started_at"] = datetime.datetime.now(
+            datetime.timezone.utc
+        ).isoformat()
+    page_count = 0
+    while True:
+        payload = _npm_fetch_json(_npm_all_docs_url(cursor), use_cache=False)
+        rows = payload.get("rows") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            state["full_scan_cursor"] = None
+            state["full_scan_started_at"] = None
+            state["last_full_scan_at"] = datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+            _write_npm_index_state(state)
+            break
+
+        packuments = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            package = row.get("id") or row.get("key")
+            doc = row.get("doc")
+            if isinstance(package, str) and package and isinstance(doc, dict):
+                packuments[package] = doc
+        _refresh_npm_packuments(packages, packuments, packages)
+        cursor = rows[-1].get("id") or rows[-1].get("key")
+        state["full_scan_cursor"] = cursor
+        _write_npm_index_state(state)
+        page_count += 1
+        if page_count % 20 == 0:
+            print(
+                f"Scanned {page_count * NPM_FULL_SCAN_PAGE_SIZE} npm registry docs...",
+                file=sys.stderr,
+            )
+
+        if len(rows) < NPM_FULL_SCAN_PAGE_SIZE:
+            state["full_scan_cursor"] = None
+            state["full_scan_started_at"] = None
+            state["last_full_scan_at"] = datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()
+            _write_npm_index_state(state)
+            break
+
+
+def _refresh_changed_npm_packages(packages, changed):
+    if not changed:
+        return
+    completed = 0
+    refreshed = {}
+    max_workers = max(1, min(NPM_MAX_WORKERS, len(changed)))
+
+    def fetch(package):
+        try:
+            return package, _fetch_npm_packument(package)
+        except NpmFetchError as err:
+            print(f"Keeping stale npm metadata for {package}: {err}", file=sys.stderr)
+            return package, None
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(fetch, package): package
+            for package in sorted(changed)
+        }
+        for future in as_completed(future_map):
+            package, packument = future.result()
+            if packument is not None:
+                refreshed[package] = packument
+            completed += 1
+            if completed % 100 == 0:
+                print(
+                    f"Fetched {completed}/{len(changed)} changed npm packages...",
+                    file=sys.stderr,
+                )
+    _refresh_npm_packuments(packages, refreshed, packages)
 
 
 def _collect_npm_metadata():
@@ -921,54 +1262,49 @@ def _collect_npm_metadata():
         for name, metadata in state["packages"].items()
         if isinstance(name, str) and isinstance(metadata, dict)
     }
+    state["packages"] = packages
 
-    candidates = _fetch_npm_search_candidates()
-    changed, deleted, next_seq = _fetch_npm_changes_since(state.get("last_seq"))
-    for package in deleted:
-        packages.pop(package, None)
+    auth_status = "enabled" if _npm_token() else "disabled"
+    print(
+        "npm registry auth "
+        f"{auth_status}; registry_rps={NPM_REGISTRY_RPS:g}, "
+        f"downloads_rps={NPM_DOWNLOADS_RPS:g}, workers={NPM_MAX_WORKERS}",
+        file=sys.stderr,
+    )
 
-    refresh_names = set(candidates)
-    refresh_names.update(package for package in changed if package in packages)
-    if changed:
-        print(
-            f"Processing {len(refresh_names)} npm candidates from "
-            f"{len(changed)} registry changes...",
-            file=sys.stderr,
+    try:
+        if NPM_FULL_SCAN or not packages or state.get("full_scan_cursor"):
+            print("Starting npm full metadata scan...", file=sys.stderr)
+            _run_npm_full_scan(state)
+
+        changed, deleted, next_seq, has_more_changes = _fetch_npm_changes_since(
+            state.get("last_seq")
         )
+        for package in deleted:
+            packages.pop(package, None)
 
-    completed = 0
-    max_workers = min(32, (os.cpu_count() or 4) * 4)
-
-    def refresh(package):
-        try:
-            monthly = candidates.get(package)
-            if monthly is None:
-                monthly = _fetch_npm_monthly_downloads(package)
-            packument = _fetch_npm_packument(package)
-            if packument is None:
-                return package, None
-            return package, _npm_metadata_from_packument(package, packument, monthly)
-        except Exception as err:
-            print(f"Failed to refresh npm package {package}: {err}", file=sys.stderr)
-            return package, packages.get(package)
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {
-            executor.submit(refresh, package): package
-            for package in sorted(refresh_names)
-        }
-        for future in as_completed(future_map):
-            package, metadata = future.result()
-            if metadata is None:
-                packages.pop(package, None)
-            else:
-                packages[package] = metadata
-            completed += 1
-            if completed % 100 == 0:
-                print(
-                    f"Refreshed {completed}/{len(refresh_names)} npm packages...",
-                    file=sys.stderr,
-                )
+        if changed:
+            print(
+                f"Processing {len(changed)} npm registry changes...",
+                file=sys.stderr,
+            )
+        if has_more_changes:
+            print(
+                "Deferring remaining npm registry changes to a later update cycle",
+                file=sys.stderr,
+            )
+        _refresh_changed_npm_packages(packages, changed)
+        if next_seq is not None:
+            state["last_seq"] = next_seq
+    except NpmFetchError as err:
+        if packages:
+            _NPM_STATS["stale_uses"] += 1
+            print(
+                f"Using stale npm package cache after npm fetch failure: {err}",
+                file=sys.stderr,
+            )
+        else:
+            raise
 
     ranked = {}
     sorted_packages = sorted(
@@ -983,8 +1319,17 @@ def _collect_npm_metadata():
         popularity["rank"] = rank
         ranked[package] = metadata
 
-    if next_seq is not None:
-        _write_npm_index_state(next_seq, ranked)
+    state["packages"] = ranked
+    _write_npm_index_state(state)
+    print(
+        "npm fetch stats: "
+        f"requests={_NPM_STATS['requests']} "
+        f"cache_hits={_NPM_STATS['cache_hits']} "
+        f"retries={_NPM_STATS['retries']} "
+        f"rate_limits={_NPM_STATS['rate_limits']} "
+        f"stale_uses={_NPM_STATS['stale_uses']}",
+        file=sys.stderr,
+    )
     return ranked
 
 
@@ -1028,19 +1373,30 @@ def _merge_entries(*groups):
 
 
 def main():
-    global FORCE_REFRESH
+    global FORCE_REFRESH, NPM_FULL_SCAN
 
     _ensure_cwd()
 
     for arg in sys.argv[1:]:
         if arg == "--refresh":
             FORCE_REFRESH = True
+        elif arg == "--npm-full-scan":
+            NPM_FULL_SCAN = True
         elif arg in ("--help", "-h"):
-            print("Usage: scripts/build-db.py [--refresh]")
+            print("Usage: scripts/build-db.py [--refresh] [--npm-full-scan]")
+            print()
+            print("Environment knobs:")
+            print("  NPM_TOKEN, NODE_AUTH_TOKEN, NPM_REGISTRY_TOKEN")
+            print("  NPM_REGISTRY_RPS, NPM_DOWNLOADS_RPS, NPM_MAX_RETRIES")
+            print("  NPM_RATE_LIMIT_BUDGET_SECONDS, NPM_MAX_WORKERS")
+            print("  NPM_CHANGE_REFRESH_LIMIT")
             return
         else:
             print(f"Unknown argument: {arg}", file=sys.stderr)
-            print("Usage: scripts/build-db.py [--refresh]", file=sys.stderr)
+            print(
+                "Usage: scripts/build-db.py [--refresh] [--npm-full-scan]",
+                file=sys.stderr,
+            )
             sys.exit(2)
 
     os.makedirs(os.path.join(CACHE_DIR, ECOSYSTEM), exist_ok=True)
@@ -1171,7 +1527,11 @@ def main():
             file=sys.stderr,
         )
         sys.exit(2)
-    npm_metadata = _collect_npm_metadata()
+    try:
+        npm_metadata = _collect_npm_metadata()
+    except NpmFetchError as err:
+        print(f"Failed to collect npm metadata: {err}", file=sys.stderr)
+        sys.exit(2)
     ordered_entries = _sorted_entries(_merge_entries(formula_entries, cask_entries))
     ordered_entries = _apply_npm_entries(ordered_entries, npm_metadata)
 
