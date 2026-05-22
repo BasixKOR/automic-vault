@@ -2763,9 +2763,11 @@ fn isotope_has_post_install(name: &str) -> bool {
 }
 
 fn isotope_has_remediation(name: &str) -> bool {
-    isotope_integration(name).is_some_and(|integration| {
-        integration.has_migration || integration.has_install_remediation
-    })
+    isotope_package_data(isotope_unqualified_name(name))
+        .is_ok_and(|record| record.migrate.is_some())
+        || isotope_integration(name).is_some_and(|integration| {
+            integration.has_migration || integration.has_install_remediation
+        })
 }
 
 fn run_generated_isotope_migration(name: &str) -> Option<Result<(), String>> {
@@ -10702,6 +10704,37 @@ or `npm:clawhub` for the aliased package"
         } else {
             assert_eq!(state, None);
         }
+    }
+
+    #[test]
+    fn gh_security_state_reports_manifest_migration_remediation() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join("hosts.yml"),
+            "github.com:\n    oauth_token: ghp_secret\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("GH_CONFIG_DIR", temp.path().to_str().unwrap()),
+            ("HOME", temp.path().to_str().unwrap()),
+        ]);
+
+        let state = package_security_state_for_identifiers(["brew:gh".to_string()])
+            .expect("gh should have security state");
+
+        assert_eq!(state.isotope_name, "gh");
+        assert!(state.install_is_insecure);
+        assert!(state.remediation_available);
+        assert!(
+            state
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("GitHub CLI hosts file")),
+            "expected hosts file reason, got {:?}",
+            state.reasons
+        );
+        assert_eq!(state.error, None);
     }
 
     #[test]
