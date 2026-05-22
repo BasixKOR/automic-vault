@@ -4,6 +4,8 @@ import XCTest
 final class PackageSecurityStateTests: XCTestCase {
     func testDetectorOnlySecurityStateDecodesWithoutRemediationAction() throws {
         let detail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
             securityState: """
             {
               "isotopeName": "git",
@@ -76,16 +78,55 @@ final class PackageSecurityStateTests: XCTestCase {
 
         XCTAssertEqual(presentation.plainTextSecretAlertSource, .isotope)
         XCTAssertTrue(presentation.hasPlainTextSecretAlert)
+        XCTAssertTrue(presentation.hasActivePlainTextSecretAlert)
+        XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
     }
 
-    private func decodePackageDetail(securityState: String) throws -> PackageDetail {
+    func testLocalDetectorHazardInInstalledPanelIsActiveEvenWhenPackageIsNotInstalled() throws {
+        let detail = try decodePackageDetail(
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["curl netrc file contains plaintext credentials"],
+              "error": null
+            }
+            """
+        )
+        let record = PackageRecord(
+            name: "brew:curl",
+            source: .formula(rootFormula: "curl"),
+            version: "8.20.0",
+            description: "Get a file from an HTTP, HTTPS or FTP server",
+            securityState: detail.securityState,
+            installRoot: detail.installRoot,
+            installPackageNames: ["brew:curl"]
+        )
+        let presentation = PackagePresentation(
+            item: .installed(record),
+            detail: detail,
+            freshness: 0
+        )
+
+        XCTAssertFalse(detail.installed)
+        XCTAssertEqual(presentation.plainTextSecretAlertSource, .isotope)
+        XCTAssertTrue(presentation.hasActivePlainTextSecretAlert)
+        XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
+    }
+
+    private func decodePackageDetail(
+        packageName: String = "brew:git",
+        formula: String = "git",
+        securityState: String
+    ) throws -> PackageDetail {
         let json = """
         {
-          "packageName": "brew:git",
-          "qualifiedName": "brew:git",
-          "installRoot": "/opt/homebrew/Cellar/git",
+          "packageName": "\(packageName)",
+          "qualifiedName": "\(packageName)",
+          "installRoot": "/opt/homebrew/Cellar/\(formula)",
           "installed": false,
-          "source": {"kind": "formula", "rootFormula": "git"},
+          "source": {"kind": "formula", "rootFormula": "\(formula)"},
           "sourceError": null,
           "aliases": [],
           "aliasesError": null,

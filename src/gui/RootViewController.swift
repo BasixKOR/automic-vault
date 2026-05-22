@@ -820,6 +820,15 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
+    private static let detectorOnlyHazardPackageNames = [
+        "brew:git",
+        "brew:openssh",
+        "brew:curl",
+        "brew:rsync",
+        "brew:ruby",
+        "brew:perl",
+        "brew:openssl@3",
+    ]
 
     private enum MastheadTab: Int, CaseIterable {
         case clis
@@ -1051,6 +1060,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var updateOverlayController: UpdateProgressViewController?
     private var statusAnimator: HeaderGlitchTextAnimator?
     private var installedRecords: [PackageRecord] = []
+    private var localDetectorHazardPackages: [PackagePresentation] = []
     private var outdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var homebrewOutdatedPackagesByName: [String: OutdatedPackageRecord] = [:]
     private var installedPackages: [PackagePresentation] = []
@@ -1720,6 +1730,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         homebrewMigrationRecommendation = nil
         homebrewInstalledPackageNames = []
         installedRecords = []
+        localDetectorHazardPackages = []
         installedPackages = []
         resetInstalledPulseResults()
         refreshRecommendations()
@@ -1748,6 +1759,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.installedRecords = records
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
+                    self.loadLocalDetectorHazards(
+                        requestID: requestID,
+                        excluding: self.installedRecommendationPackageNames()
+                    )
                     self.statusStore.requestRefresh()
                     if self.finishPackageReload() {
                         self.revealRecommendationsAfterInstalledLoad(requestID: requestID)
@@ -1757,6 +1772,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 DispatchQueue.main.async {
                     guard self.reloadRequestID == requestID else { return }
                     self.installedRecords = []
+                    self.localDetectorHazardPackages = []
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
                     self.statusStore.requestRefresh()
@@ -1824,6 +1840,57 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
                 }
+            }
+        }
+    }
+
+    private func loadLocalDetectorHazards(
+        requestID: Int,
+        excluding installedPackageNames: Set<String>
+    ) {
+        DispatchQueue.global(qos: .utility).async {
+            let hazards = Self.detectorOnlyHazardPackageNames.compactMap { packageName -> (
+                detail: PackageDetail,
+                presentation: PackagePresentation
+            )? in
+                guard let detail = try? self.bridge.fetchDetail(packageName: packageName),
+                      detail.securityState?.installIsInsecure == true,
+                      detail.securityState?.remediationAvailable == false,
+                      installedPackageNames.contains(detail.packageName) == false,
+                      installedPackageNames.contains(detail.qualifiedName) == false else {
+                    return nil
+                }
+                let record = PackageRecord(
+                    name: detail.qualifiedName,
+                    source: detail.source,
+                    version: detail.installedVersion ?? detail.latestVersion ?? "detected",
+                    description: detail.homebrewInfo?.description,
+                    latestVersion: detail.latestVersion,
+                    securityState: detail.securityState,
+                    installRoot: detail.installRoot,
+                    installPackageNames: [detail.qualifiedName],
+                    managementBackend: detail.managementBackend
+                )
+                return (
+                    detail,
+                    PackagePresentation(
+                        item: .installed(record),
+                        detail: detail,
+                        freshness: self.freshness(for: detail.qualifiedName)
+                    )
+                )
+            }
+
+            DispatchQueue.main.async {
+                guard self.reloadRequestID == requestID else { return }
+                for packageName in Self.detectorOnlyHazardPackageNames {
+                    self.detailsByPackageName.removeValue(forKey: packageName)
+                }
+                self.localDetectorHazardPackages = hazards.map(\.presentation)
+                for hazard in hazards {
+                    self.detailsByPackageName[hazard.presentation.selectionID] = hazard.detail
+                }
+                self.refreshInstalledPackages()
             }
         }
     }
@@ -2065,9 +2132,11 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private var installedPalettePackages: [PackagePresentation] {
         if areRecommendationsVisibleInInstalledList {
-            return installedPackages + installedPaletteSecondaryPackages
+            return localDetectorHazardPackages
+                + installedPackages
+                + installedPaletteSecondaryPackages
         }
-        return installedPackages
+        return localDetectorHazardPackages + installedPackages
     }
 
     private var appPalettePackages: [PackagePresentation] {

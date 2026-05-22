@@ -1596,7 +1596,7 @@ struct PackagePresentation: Equatable {
 
     var plainTextSecretAlertIsGhosted: Bool {
         if let detail, detail.securityNotice != nil {
-            return !detail.installed
+            return !detail.installed && !detail.hasLocalPlainTextSecretExposure
         }
         switch item {
         case .installed:
@@ -1604,9 +1604,12 @@ struct PackagePresentation: Equatable {
         case .recommendation(let recommendation):
             return recommendation.detail.securityNotice != nil
                 && !recommendation.detail.installed
+                && !recommendation.detail.hasLocalPlainTextSecretExposure
         case .available(let result):
             let fallbackDetail = result.fallbackDetail
-            return fallbackDetail.securityNotice != nil && !fallbackDetail.installed
+            return fallbackDetail.securityNotice != nil
+                && !fallbackDetail.installed
+                && !fallbackDetail.hasLocalPlainTextSecretExposure
         case .command:
             return false
         }
@@ -1758,5 +1761,11 @@ struct PackagePresentation: Equatable {
         case .installed, .recommendation, .available:
             return nil
         }
+    }
+}
+
+private extension PackageDetail {
+    var hasLocalPlainTextSecretExposure: Bool {
+        securityState?.installIsInsecure == true
     }
 }
