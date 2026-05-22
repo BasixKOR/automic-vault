@@ -215,6 +215,15 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertTrue(bodyField.cell?.wraps == true)
         XCTAssertGreaterThan(bodyField.frame.height, 34)
         XCTAssertLessThanOrEqual(bodyField.frame.maxX, view.bounds.maxX)
+        for field in noticeFields {
+            let cellHeight = field.cell?.cellSize(forBounds: NSRect(
+                x: 0,
+                y: 0,
+                width: field.frame.width,
+                height: .greatestFiniteMagnitude
+            )).height ?? 0
+            XCTAssertGreaterThanOrEqual(field.frame.height, ceil(cellHeight))
+        }
     }
 
     private func decodePackageDetail(

@@ -115,6 +115,20 @@ private final class DossierNoticeTextField: NSTextField {
             isHidden = newValue == nil
         }
     }
+
+    func requiredHeight(for width: CGFloat, minimumHeight: CGFloat) -> CGFloat {
+        guard attributedText != nil else {
+            return minimumHeight
+        }
+        let constrainedBounds = NSRect(
+            x: 0,
+            y: 0,
+            width: width,
+            height: .greatestFiniteMagnitude
+        )
+        let cellHeight = cell?.cellSize(forBounds: constrainedBounds).height ?? 0
+        return max(minimumHeight, ceil(cellHeight) + 6)
+    }
 }
 
 final class DossierView: NSView {
@@ -2058,14 +2072,7 @@ final class DossierView: NSView {
         width: CGFloat,
         minimumHeight: CGFloat
     ) -> CGFloat {
-        guard let attributedText = field.attributedText else {
-            return minimumHeight
-        }
-        let measured = attributedText.boundingRect(
-            with: CGSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return max(minimumHeight, ceil(measured.height) + 4)
+        field.requiredHeight(for: width, minimumHeight: minimumHeight)
     }
 
     private func securityNoticeButtonWidth(for button: NSButton) -> CGFloat {
