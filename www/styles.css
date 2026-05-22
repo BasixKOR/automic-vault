@@ -253,6 +253,13 @@ code {
   text-transform: uppercase;
 }
 
+.radar-copy p {
+  max-width: 18.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
 .radar-feed {
   position: relative;
   display: grid;

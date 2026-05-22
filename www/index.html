@@ -437,30 +437,31 @@
       <section class="secured-radar-section feature-section" aria-labelledby="secured-title">
         <div class="secured-radar" aria-label="Secured package catalog">
           <div class="radar-copy">
-            <span>99 secured packages</span>
-            <strong id="secured-title">Known toolchains, locked at the credential edge.</strong>
+            <span>100 secured or detected packages</span>
+            <strong id="secured-title">Known Homebrew secret escapes, closed or surfaced.</strong>
+            <p>17,450 formula and tap candidates reviewed; remaining known risks show as GUI hazards.</p>
           </div>
 
           <div class="radar-feed" data-secured-feed>
             <article class="feed-row accent-hot">
-              <span>gh</span>
-              <p>gated token reveal and Keychain reads</p>
+              <span>docker</span>
+              <p>ambient registry credential helpers flagged as hazards</p>
             </article>
             <article class="feed-row accent-green">
               <span>aws-cli</span>
-              <p>AWS credentials moved out of plaintext files</p>
+              <p>AWS credentials served through av credential-helper</p>
             </article>
             <article class="feed-row accent-blue">
               <span>terraform</span>
-              <p>cloud tokens exposed only through a temporary config</p>
+              <p>cloud tokens served through Terraform's helper protocol</p>
             </article>
             <article class="feed-row accent-gold">
-              <span>pnpm</span>
-              <p>npm auth token injected only while pnpm runs</p>
+              <span>git</span>
+              <p>plaintext credential-store files detected in the GUI</p>
             </article>
             <article class="feed-row accent-hot">
-              <span>vault</span>
-              <p>Vault token held in Keychain and injected at runtime</p>
+              <span>openssh</span>
+              <p>unencrypted private keys reported before agent runs</p>
             </article>
           </div>
         </div>
