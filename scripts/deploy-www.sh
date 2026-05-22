@@ -547,16 +547,15 @@ ensure_response_headers_policy() {
           Override: true,
           Protection: true,
           ModeBlock: true
+        },
+        ContentSecurityPolicy: {
+          Override: true,
+          ContentSecurityPolicy: "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\''; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com; font-src '\''self'\'' https://fonts.gstatic.com; img-src '\''self'\'' data: https://www.automicvault.com; connect-src '\''self'\''; frame-ancestors '\''none'\''; base-uri '\''self'\''; form-action '\''none'\''"
         }
       },
       CustomHeadersConfig: {
-        Quantity: 2,
+        Quantity: 1,
         Items: [
-          {
-            Header: "Content-Security-Policy",
-            Value: "default-src '\''self'\''; script-src '\''self'\'' '\''unsafe-inline'\''; style-src '\''self'\'' '\''unsafe-inline'\'' https://fonts.googleapis.com; font-src '\''self'\'' https://fonts.gstatic.com; img-src '\''self'\'' data: https://www.automicvault.com; connect-src '\''self'\''; frame-ancestors '\''none'\''; base-uri '\''self'\''; form-action '\''none'\''",
-            Override: true
-          },
           {
             Header: "Permissions-Policy",
             Value: "camera=(), microphone=(), geolocation=(), payment=()",
