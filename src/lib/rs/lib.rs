@@ -2849,6 +2849,20 @@ where
         return package_security_state_for_isotope(&isotope_name);
     }
 
+    compiled_isotope_security_state_for_identifiers(&identifiers)
+}
+
+fn compiled_isotope_security_state_for_identifiers(
+    identifiers: &HashSet<String>,
+) -> Option<PackageSecurityState> {
+    let mut integrations = isotope_integrations::INTEGRATIONS.iter().collect::<Vec<_>>();
+    integrations.sort_by(|left, right| left.name.cmp(right.name));
+    for integration in integrations {
+        let name = integration.name.to_ascii_lowercase();
+        if identifiers.contains(&name) || identifiers.contains(&format!("isotope:{name}")) {
+            return package_security_state_for_isotope(integration.name);
+        }
+    }
     None
 }
 
@@ -10775,6 +10789,36 @@ or `npm:clawhub` for the aliased package"
                 state.reasons
             );
         }
+    }
+
+    #[test]
+    fn package_security_state_falls_back_to_compiled_detector_integrations() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        fs::write(
+            home.join(".git-credentials"),
+            "https://user:supersecret@example.com/repo.git\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", home.to_str().unwrap())]);
+
+        let identifiers = HashSet::from(["brew:git".to_string(), "git".to_string()]);
+        let state = compiled_isotope_security_state_for_identifiers(&identifiers)
+            .expect("compiled git detector should provide security state");
+
+        assert_eq!(state.isotope_name, "git");
+        assert!(state.install_is_insecure);
+        assert!(!state.remediation_available);
+        assert!(
+            state
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("Git credential store")),
+            "expected Git credential reason, got {:?}",
+            state.reasons
+        );
     }
 
     #[test]
