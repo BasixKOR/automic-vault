@@ -74,6 +74,7 @@ secret protection.
 
 ## Isotope Contributor Docs
 
+- [Feature Map](./docs/features.md)
 - [General Isotope Guidelines](./docs/isotopes.md)
 - [Radioisotope Considerations](https://github.com/automic-vault/radioisotopes/#readme)
 
