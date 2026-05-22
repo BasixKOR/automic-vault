@@ -129,6 +129,20 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
     }
 
+    func testUnmanagedDetectorHazardsSortWithInstalledPackagesByToolName() {
+        let presentations = [
+            installedPresentation(named: "unmanaged:curl"),
+            installedPresentation(named: "brew:bat"),
+            installedPresentation(named: "ack"),
+            installedPresentation(named: "unmanaged:git"),
+        ].sorted(by: PackagePresentation.sortsByPackageSearchOrder)
+
+        XCTAssertEqual(
+            presentations.map(\.selectionID),
+            ["ack", "brew:bat", "unmanaged:curl", "unmanaged:git"]
+        )
+    }
+
     @MainActor
     func testUnmanagedDetectorOnlyDossierHidesPackageActions() throws {
         let lookupDetail = try decodePackageDetail(
@@ -237,5 +251,19 @@ final class PackageSecurityStateTests: XCTestCase {
         }
         """
         return try JSONDecoder().decode(PackageDetail.self, from: Data(json.utf8))
+    }
+
+    private func installedPresentation(named name: String) -> PackagePresentation {
+        PackagePresentation(
+            item: .installed(PackageRecord(
+                name: name,
+                source: nil,
+                version: "1.0",
+                description: nil,
+                securityState: nil
+            )),
+            detail: nil,
+            freshness: 0
+        )
     }
 }

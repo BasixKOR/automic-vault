@@ -1573,6 +1573,20 @@ struct PackagePresentation: Equatable {
         self.presentationID = presentationID
     }
 
+    static func sortsByPackageSearchOrder(
+        _ left: PackagePresentation,
+        before right: PackagePresentation
+    ) -> Bool {
+        let leftName = left.packageName ?? left.selectionID
+        let rightName = right.packageName ?? right.selectionID
+        let leftSortName = leftName.packageSearchOrderName
+        let rightSortName = rightName.packageSearchOrderName
+        if leftSortName == rightSortName {
+            return leftName < rightName
+        }
+        return leftSortName < rightSortName
+    }
+
     var isInstalledIsotope: Bool {
         switch item {
         case .installed(let record):

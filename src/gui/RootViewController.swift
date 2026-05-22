@@ -2143,12 +2143,16 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var installedPalettePackages: [PackagePresentation] {
+        let primaryPackages = sortedInstalledPalettePrimaryPackages
         if areRecommendationsVisibleInInstalledList {
-            return localDetectorHazardPackages
-                + installedPackages
-                + installedPaletteSecondaryPackages
+            return primaryPackages + installedPaletteSecondaryPackages
         }
-        return localDetectorHazardPackages + installedPackages
+        return primaryPackages
+    }
+
+    private var sortedInstalledPalettePrimaryPackages: [PackagePresentation] {
+        (localDetectorHazardPackages + installedPackages)
+            .sorted(by: PackagePresentation.sortsByPackageSearchOrder)
     }
 
     private var appPalettePackages: [PackagePresentation] {
