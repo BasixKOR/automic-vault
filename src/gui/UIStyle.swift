@@ -63,10 +63,11 @@ enum UIStyle {
 
     static func wrapParagraphStyle(
         lineHeightMultiple: CGFloat = 1.0,
-        paragraphSpacing: CGFloat = 0
+        paragraphSpacing: CGFloat = 0,
+        lineBreakMode: NSLineBreakMode = .byCharWrapping
     ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byCharWrapping
+        style.lineBreakMode = lineBreakMode
         style.hyphenationFactor = 0
         style.lineHeightMultiple = lineHeightMultiple
         style.paragraphSpacing = paragraphSpacing

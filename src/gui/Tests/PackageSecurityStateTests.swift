@@ -115,6 +115,48 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
     }
 
+    @MainActor
+    func testDossierSecurityNoticeUsesWrappedTextFields() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["curl netrc file contains plaintext credentials: /Users/test/.netrc"],
+              "error": null
+            }
+            """
+        )
+
+        XCTAssertNotNil(detail.securityNotice)
+
+        let view = DossierView(frame: NSRect(x: 0, y: 0, width: 290, height: 800))
+        view.render(detail: detail, animation: .none)
+        view.layoutSubtreeIfNeeded()
+
+        let noticeFields = view.subviews.compactMap { $0 as? NSTextField }
+            .filter { $0.attributedStringValue.length > 0 }
+        let bodyField = try XCTUnwrap(
+            noticeFields.first {
+                $0.attributedStringValue.string.contains("Automic Vault")
+            }
+        )
+
+        XCTAssertEqual(bodyField.lineBreakMode, .byWordWrapping)
+        let paragraphStyle = bodyField.attributedStringValue.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(paragraphStyle?.lineBreakMode, .byWordWrapping)
+        XCTAssertTrue(bodyField.cell?.wraps == true)
+        XCTAssertGreaterThan(bodyField.frame.height, 34)
+        XCTAssertLessThanOrEqual(bodyField.frame.maxX, view.bounds.maxX)
+    }
+
     private func decodePackageDetail(
         packageName: String = "brew:git",
         formula: String = "git",

@@ -86,6 +86,37 @@ private final class DossierActionButton: NSButton {
     }
 }
 
+private final class DossierNoticeTextField: NSTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = false
+        usesSingleLineMode = false
+        lineBreakMode = .byWordWrapping
+        maximumNumberOfLines = 0
+        cell?.wraps = true
+        cell?.isScrollable = false
+        wantsLayer = true
+        layer?.opacity = 1
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    var attributedText: NSAttributedString? {
+        get {
+            attributedStringValue.length == 0 ? nil : attributedStringValue
+        }
+        set {
+            attributedStringValue = newValue ?? NSAttributedString(string: "")
+            isHidden = newValue == nil
+        }
+    }
+}
+
 final class DossierView: NSView {
     enum RenderAnimation {
         case none
@@ -169,11 +200,11 @@ final class DossierView: NSView {
     private let securityNoticePanelLayer = CALayer()
     private let securityNoticeIconLayer = CATextLayer()
     private let securityNoticeHeadlineLayer = CATextLayer()
-    private let securityNoticeBodyLayer = CATextLayer()
+    private let securityNoticeBodyField = DossierNoticeTextField(frame: .zero)
     private let securityNoticeReasonsHeaderLayer = CATextLayer()
-    private let securityNoticeReasonsBodyLayer = CATextLayer()
+    private let securityNoticeReasonsBodyField = DossierNoticeTextField(frame: .zero)
     private let securityNoticeCaveatsHeaderLayer = CATextLayer()
-    private let securityNoticeCaveatsBodyLayer = CATextLayer()
+    private let securityNoticeCaveatsBodyField = DossierNoticeTextField(frame: .zero)
     private let popularityHeaderLayer = CATextLayer()
     private let popularityLayer = CATextLayer()
     private let lastUpdatedHeaderLayer = CATextLayer()
@@ -270,11 +301,8 @@ final class DossierView: NSView {
             descriptionLayer,
             securityNoticeIconLayer,
             securityNoticeHeadlineLayer,
-            securityNoticeBodyLayer,
             securityNoticeReasonsHeaderLayer,
-            securityNoticeReasonsBodyLayer,
             securityNoticeCaveatsHeaderLayer,
-            securityNoticeCaveatsBodyLayer,
             popularityHeaderLayer,
             popularityLayer,
             lastUpdatedHeaderLayer,
@@ -298,6 +326,15 @@ final class DossierView: NSView {
                 "opacity": NSNull()
             ]
             layer?.addSublayer(textLayer)
+        }
+
+        for noticeTextField in [
+            securityNoticeBodyField,
+            securityNoticeReasonsBodyField,
+            securityNoticeCaveatsBodyField
+        ] {
+            noticeTextField.isHidden = true
+            addSubview(noticeTextField)
         }
 
         popularityHeaderLayer.string = UIStyle.sectionHeaderText("Popularity")
@@ -617,15 +654,15 @@ final class DossierView: NSView {
                 + Metrics.securityNoticeInnerGap
 
             let bodyHeight = heightForNoticeBody(width: noticeContentWidth)
-            securityNoticeBodyLayer.frame = CGRect(
+            securityNoticeBodyField.frame = CGRect(
                 x: noticeContentMinX,
                 y: noticeCursorY,
                 width: noticeContentWidth,
                 height: bodyHeight
             )
-            noticeCursorY = securityNoticeBodyLayer.frame.maxY
+            noticeCursorY = securityNoticeBodyField.frame.maxY
 
-            if securityNoticeReasonsBodyLayer.string != nil {
+            if securityNoticeReasonsBodyField.attributedText != nil {
                 noticeCursorY += Metrics.securityNoticeDetailTopGap
                 securityNoticeReasonsHeaderLayer.frame = CGRect(
                     x: noticeContentMinX,
@@ -637,23 +674,23 @@ final class DossierView: NSView {
                     + Metrics.securityNoticeDetailBodyTopGap
 
                 let reasonsHeight = heightForNoticeText(
-                    in: securityNoticeReasonsBodyLayer,
+                    in: securityNoticeReasonsBodyField,
                     width: noticeContentWidth,
                     minimumHeight: 16
                 )
-                securityNoticeReasonsBodyLayer.frame = CGRect(
+                securityNoticeReasonsBodyField.frame = CGRect(
                     x: noticeContentMinX,
                     y: noticeCursorY,
                     width: noticeContentWidth,
                     height: reasonsHeight
                 )
-                noticeCursorY = securityNoticeReasonsBodyLayer.frame.maxY
+                noticeCursorY = securityNoticeReasonsBodyField.frame.maxY
             } else {
                 securityNoticeReasonsHeaderLayer.frame = .zero
-                securityNoticeReasonsBodyLayer.frame = .zero
+                securityNoticeReasonsBodyField.frame = .zero
             }
 
-            if securityNoticeCaveatsBodyLayer.string != nil {
+            if securityNoticeCaveatsBodyField.attributedText != nil {
                 noticeCursorY += Metrics.securityNoticeDetailTopGap
                 securityNoticeCaveatsHeaderLayer.frame = CGRect(
                     x: noticeContentMinX,
@@ -665,20 +702,20 @@ final class DossierView: NSView {
                     + Metrics.securityNoticeDetailBodyTopGap
 
                 let caveatsHeight = heightForNoticeText(
-                    in: securityNoticeCaveatsBodyLayer,
+                    in: securityNoticeCaveatsBodyField,
                     width: noticeContentWidth,
                     minimumHeight: 16
                 )
-                securityNoticeCaveatsBodyLayer.frame = CGRect(
+                securityNoticeCaveatsBodyField.frame = CGRect(
                     x: noticeContentMinX,
                     y: noticeCursorY,
                     width: noticeContentWidth,
                     height: caveatsHeight
                 )
-                noticeCursorY = securityNoticeCaveatsBodyLayer.frame.maxY
+                noticeCursorY = securityNoticeCaveatsBodyField.frame.maxY
             } else {
                 securityNoticeCaveatsHeaderLayer.frame = .zero
-                securityNoticeCaveatsBodyLayer.frame = .zero
+                securityNoticeCaveatsBodyField.frame = .zero
             }
 
             noticeCursorY += Metrics.securityNoticeButtonTopGap
@@ -746,11 +783,11 @@ final class DossierView: NSView {
             securityNoticePanelLayer.frame = .zero
             securityNoticeIconLayer.frame = .zero
             securityNoticeHeadlineLayer.frame = .zero
-            securityNoticeBodyLayer.frame = .zero
+            securityNoticeBodyField.frame = .zero
             securityNoticeReasonsHeaderLayer.frame = .zero
-            securityNoticeReasonsBodyLayer.frame = .zero
+            securityNoticeReasonsBodyField.frame = .zero
             securityNoticeCaveatsHeaderLayer.frame = .zero
-            securityNoticeCaveatsBodyLayer.frame = .zero
+            securityNoticeCaveatsBodyField.frame = .zero
             securityLearnMoreButton.frame = .zero
             securityApplyButton.frame = .zero
         }
@@ -1070,11 +1107,11 @@ final class DossierView: NSView {
             securityNoticePanelLayer.isHidden = true
             securityNoticeIconLayer.string = nil
             securityNoticeHeadlineLayer.string = nil
-            securityNoticeBodyLayer.string = nil
+            securityNoticeBodyField.attributedText = nil
             securityNoticeReasonsHeaderLayer.string = nil
-            securityNoticeReasonsBodyLayer.string = nil
+            securityNoticeReasonsBodyField.attributedText = nil
             securityNoticeCaveatsHeaderLayer.string = nil
-            securityNoticeCaveatsBodyLayer.string = nil
+            securityNoticeCaveatsBodyField.attributedText = nil
             popularityHeaderLayer.string = nil
             popularityLayer.string = nil
             lastUpdatedHeaderLayer.string = nil
@@ -1173,11 +1210,11 @@ final class DossierView: NSView {
             securityNoticePanelLayer.isHidden = true
             securityNoticeIconLayer.string = nil
             securityNoticeHeadlineLayer.string = nil
-            securityNoticeBodyLayer.string = nil
+            securityNoticeBodyField.attributedText = nil
             securityNoticeReasonsHeaderLayer.string = nil
-            securityNoticeReasonsBodyLayer.string = nil
+            securityNoticeReasonsBodyField.attributedText = nil
             securityNoticeCaveatsHeaderLayer.string = nil
-            securityNoticeCaveatsBodyLayer.string = nil
+            securityNoticeCaveatsBodyField.attributedText = nil
             securityLearnMoreButton.isHidden = true
             securityApplyButton.isHidden = true
             return
@@ -1197,15 +1234,15 @@ final class DossierView: NSView {
             weight: .medium,
             tracking: 0.2
         )
-        securityNoticeBodyLayer.string = securityNoticeBodyText(from: notice.body)
+        securityNoticeBodyField.attributedText = securityNoticeBodyText(from: notice.body)
         securityNoticeReasonsHeaderLayer.string = notice.reasons.isEmpty
             ? nil
             : UIStyle.sectionHeaderText("Detection")
-        securityNoticeReasonsBodyLayer.string = securityNoticeReasonsText(notice.reasons)
+        securityNoticeReasonsBodyField.attributedText = securityNoticeReasonsText(notice.reasons)
         securityNoticeCaveatsHeaderLayer.string = notice.caveats == nil
             ? nil
             : UIStyle.sectionHeaderText("Caveats")
-        securityNoticeCaveatsBodyLayer.string = securityNoticeCaveatsText(notice.caveats)
+        securityNoticeCaveatsBodyField.attributedText = securityNoticeCaveatsText(notice.caveats)
         securityLearnMoreButton.isHidden = false
         securityLearnMoreButton.isEnabled = true
         securityApplyButton.title = securityApplyButtonTitle()
@@ -1250,7 +1287,8 @@ final class DossierView: NSView {
                 .kern: 0.12,
                 .paragraphStyle: UIStyle.wrapParagraphStyle(
                     lineHeightMultiple: 1.24,
-                    paragraphSpacing: 2
+                    paragraphSpacing: 2,
+                    lineBreakMode: .byWordWrapping
                 )
             ],
             range: fullRange
@@ -1882,6 +1920,16 @@ final class DossierView: NSView {
         visibleLayers(for: visibleSections())
     }
 
+    private func noticeTextFieldLayers() -> [CALayer] {
+        [
+            securityNoticeBodyField,
+            securityNoticeReasonsBodyField,
+            securityNoticeCaveatsBodyField
+        ]
+            .filter { !$0.isHidden }
+            .compactMap(\.layer)
+    }
+
     private func visibleLayers(for sections: Set<String>) -> [CALayer] {
         var layers: [CALayer] = []
 
@@ -1899,12 +1947,10 @@ final class DossierView: NSView {
                 securityNoticePanelLayer,
                 securityNoticeIconLayer,
                 securityNoticeHeadlineLayer,
-                securityNoticeBodyLayer,
                 securityNoticeReasonsHeaderLayer,
-                securityNoticeReasonsBodyLayer,
-                securityNoticeCaveatsHeaderLayer,
-                securityNoticeCaveatsBodyLayer
+                securityNoticeCaveatsHeaderLayer
             ])
+            layers.append(contentsOf: noticeTextFieldLayers())
             if let buttonLayer = securityLearnMoreButton.layer {
                 layers.append(buttonLayer)
             }
@@ -1968,39 +2014,22 @@ final class DossierView: NSView {
     }
 
     private func heightForNoticeBody(width: CGFloat) -> CGFloat {
-        heightForNoticeText(in: securityNoticeBodyLayer, width: width, minimumHeight: 34)
+        heightForNoticeText(in: securityNoticeBodyField, width: width, minimumHeight: 34)
     }
 
     private func heightForNoticeText(
-        in layer: CATextLayer,
+        in field: DossierNoticeTextField,
         width: CGFloat,
         minimumHeight: CGFloat
     ) -> CGFloat {
-        guard let attributedText = layer.string as? NSAttributedString else {
+        guard let attributedText = field.attributedText else {
             return minimumHeight
         }
-        let font = UIStyle.monoFont(size: 11)
-        let characterWidth = max(
-            ceil(
-                ("M" as NSString).size(withAttributes: [
-                    .font: font,
-                    .kern: 0.12
-                ]).width
-            ),
-            1
+        let measured = attributedText.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
-        let charactersPerLine = max(Int(floor(width / characterWidth)), 1)
-        let lines = attributedText.string
-            .components(separatedBy: .newlines)
-            .reduce(0) { total, line in
-                let lineCount = line.isEmpty
-                    ? 1
-                    : Int(ceil(Double(line.count) / Double(charactersPerLine)))
-                return total + max(lineCount, 1)
-            }
-        let lineHeight = ceil(font.pointSize * 1.08)
-
-        return max(minimumHeight, CGFloat(lines) * lineHeight + 6)
+        return max(minimumHeight, ceil(measured.height) + 4)
     }
 
     private func securityNoticeButtonWidth(for button: NSButton) -> CGFloat {
