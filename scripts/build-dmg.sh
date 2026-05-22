@@ -352,7 +352,11 @@ app_icon_y="${applications_icon_y}"
 
 cli_title "Build Automic Vault DMG"
 cli_step "Building release app bundle"
-app_path="$("${repo_root}/scripts/build-app.sh" --release)"
+build_app_args=(--release)
+if [[ "${publish_release}" == "true" ]]; then
+  build_app_args+=(--publish)
+fi
+app_path="$("${repo_root}/scripts/build-app.sh" "${build_app_args[@]}")"
 app_name="$(basename "${app_path}")"
 app_stem="${app_name%.app}"
 plist_path="${app_path}/Contents/Info.plist"

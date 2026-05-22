@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GUI_DIR="$ROOT_DIR/src/gui"
 CONFIGURATION="${GUI_BUILD_CONFIGURATION:-debug}"
+PUBLISH_BUILD=false
 source "$ROOT_DIR/scripts/cli-style.sh"
 cli_style_init "Automic Vault"
 
@@ -30,13 +31,14 @@ rust_protocol_version() {
 
 usage() {
   cat <<'EOF'
-Usage: scripts/build-app.sh [--debug|--release]
+Usage: scripts/build-app.sh [--debug|--release] [--publish]
 
 Build Automic Vault.app and print the app bundle path.
 
 Options:
   --debug       Build faster local debug binaries. This is the default.
   --release     Build optimized release binaries for packaging.
+  --publish     Require a current package database. Use for published builds.
   --help        Show this help.
 EOF
 }
@@ -49,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --release)
       CONFIGURATION="release"
+      shift
+      ;;
+    --publish)
+      PUBLISH_BUILD=true
       shift
       ;;
     --help|-h)
@@ -109,7 +115,15 @@ MENU_BUNDLE_ID="com.automicvault.menu-helper"
 HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
 
 cli_step "Validating package database"
-"$ROOT_DIR/scripts/build-combined-json.py" --check
+if package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"; then
+  cli_info "${package_database_check}"
+elif [[ "$PUBLISH_BUILD" == "true" ]]; then
+  cli_error "${package_database_check}"
+  cli_die "Package database must be current for published builds."
+else
+  cli_warn "${package_database_check}"
+  cli_warn "Continuing with stale package database because --publish was not specified."
+fi
 
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
