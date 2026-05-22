@@ -4289,14 +4289,19 @@ fn reinstall_vendor_dependency_tree(
     vendor_installs: &[VendorInstall],
     progress: Option<&InstallProgress>,
 ) -> Result<(), String> {
-    let installs = if graph.is_empty() {
-        installs.to_vec()
+    let downloads = if graph.is_empty() {
+        None
     } else {
-        let downloads = download_bottles(graph, &plan.tmp_root, progress)?;
-        inspect_keg_dirs(graph, &downloads)?
+        Some(download_bottles(graph, &plan.tmp_root, progress)?)
+    };
+    let installs = if let Some(downloads) = downloads.as_ref() {
+        inspect_keg_dirs(graph, downloads)?
+    } else {
+        installs.to_vec()
     };
     prepare_vendor_root_area(plan)?;
     install_dependency_formulas(config, plan, &installs, &installs, progress)?;
+    drop(downloads);
     install_vendor_dependencies(plan, graph, vendor_installs, progress)
 }
 
@@ -13158,6 +13163,55 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn reinstall_vendor_dependency_tree_keeps_downloaded_bottles_alive_until_extract() {
+        let temp = TempDir::new().unwrap();
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "demo".to_string(),
+            root_formula: "demo".to_string(),
+            stable_root: temp.path().join("demo"),
+            install_root: temp.path().join("demo"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(&plan.tmp_root).unwrap();
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        fs::write(plan.install_root.join("bin/demo"), b"#!/bin/sh\n").unwrap();
+
+        let sqlite_archive = temp.path().join("sqlite.tar.gz");
+        write_test_bottle_archive(
+            &sqlite_archive,
+            "sqlite",
+            "3.49.1",
+            &[("bin/sqlite3", b"#!/bin/sh\n")],
+        );
+        let sqlite_bytes = fs::read(&sqlite_archive).unwrap();
+        let sqlite_sha = format!("{:x}", Sha256::digest(&sqlite_bytes));
+        let bottle_server =
+            start_counting_test_http_server(vec![("/sqlite.tar.gz".to_string(), sqlite_bytes)]);
+        let graph = vec![FormulaSpec {
+            name: "sqlite".to_string(),
+            bottle_sha256: sqlite_sha,
+            bottle_url: format!("{}/sqlite.tar.gz", bottle_server.base_url),
+        }];
+
+        reinstall_vendor_dependency_tree(
+            &Config {
+                bottle_tag: "arm64_tahoe".to_string(),
+            },
+            &plan,
+            &[],
+            &graph,
+            &[],
+            None,
+        )
+        .unwrap();
+
+        assert!(plan.install_root.join("bin/sqlite3").is_file());
+        assert!(plan.receipt_path("sqlite").is_file());
+        assert!(!plan.install_root.join("bin/demo").exists());
+    }
+
+    #[test]
     fn remove_package_stubs_preserves_shared_entries() {
         let temp = TempDir::new().unwrap();
         let opt_root = temp.path().join("opt");
@@ -15651,6 +15705,150 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &install_root.join("bin/archive-lifetime-test")
         ));
         assert!(is_executable(&stub_path));
+
+        for path in [&install_root, &stub_path] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn run_i_formula_update_keeps_dependency_bottles_alive_until_parallel_extract() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let package_name = "ripgrep-lifetime-test";
+        let dependency_name = "pcre2-lifetime-test";
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        let install_root = opt_root.join(package_name);
+        let stub_path = bin_root.join(package_name);
+        for path in [&install_root, &stub_path] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        fs::create_dir_all(install_root.join("bin")).unwrap();
+        fs::write(install_root.join("bin/ripgrep-lifetime-test"), b"old").unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: package_name.to_string(),
+                version: "0.9.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: package_name.to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_install_receipt(
+            &install_root
+                .join(RECEIPTS_DIR)
+                .join(format!("{dependency_name}.json")),
+            &InstallReceipt {
+                formula: dependency_name.to_string(),
+                version: "0.9.0".to_string(),
+                bottle_sha256: "old-dep-sha".to_string(),
+                bottle_tag: "all".to_string(),
+                owned_paths: vec!["lib/libpcre2-test.dylib".to_string()],
+            },
+        )
+        .unwrap();
+        write_install_receipt(
+            &install_root
+                .join(RECEIPTS_DIR)
+                .join(format!("{package_name}.json")),
+            &InstallReceipt {
+                formula: package_name.to_string(),
+                version: "0.9.0".to_string(),
+                bottle_sha256: "old-root-sha".to_string(),
+                bottle_tag: "all".to_string(),
+                owned_paths: vec!["bin/ripgrep-lifetime-test".to_string()],
+            },
+        )
+        .unwrap();
+
+        let temp = TempDir::new().unwrap();
+        let dep_archive = temp.path().join("pcre2-lifetime-test.tar.gz");
+        write_test_bottle_archive(
+            &dep_archive,
+            dependency_name,
+            "1.0.0",
+            &[("lib/libpcre2-test.dylib", b"dep")],
+        );
+        let root_archive = temp.path().join("ripgrep-lifetime-test.tar.gz");
+        write_test_bottle_archive(
+            &root_archive,
+            package_name,
+            "1.0.0",
+            &[("bin/ripgrep-lifetime-test", b"#!/bin/sh\nprintf rg\n")],
+        );
+        let dep_bytes = fs::read(&dep_archive).unwrap();
+        let root_bytes = fs::read(&root_archive).unwrap();
+        let dep_sha = format!("{:x}", Sha256::digest(&dep_bytes));
+        let root_sha = format!("{:x}", Sha256::digest(&root_bytes));
+        let bottle_server = start_counting_test_http_server(vec![
+            ("/pcre2.tar.gz".to_string(), dep_bytes),
+            ("/ripgrep.tar.gz".to_string(), root_bytes),
+        ]);
+        let dep_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": dep_sha,
+                            "url": format!("{}/pcre2.tar.gz", bottle_server.base_url),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let root_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [dependency_name],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": root_sha,
+                            "url": format!("{}/ripgrep.tar.gz", bottle_server.base_url),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let formula_server = start_counting_test_http_server(vec![
+            (format!("/{dependency_name}.json"), dep_json),
+            (format!("/{package_name}.json"), root_json),
+        ]);
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(formula_server.base_url.clone()),
+            ..Default::default()
+        });
+
+        run_i_formula(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            package_name.to_string(),
+            InstallIntent::Update,
+            None,
+        )
+        .unwrap();
+
+        assert!(is_executable(
+            &install_root.join("bin/ripgrep-lifetime-test")
+        ));
+        assert!(install_root.join("lib/libpcre2-test.dylib").is_file());
 
         for path in [&install_root, &stub_path] {
             if fs::symlink_metadata(path).is_ok() {
