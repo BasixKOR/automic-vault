@@ -5,6 +5,7 @@ set -uo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 combined_path="${repo_root}/data/combined.json"
+radioisotopes_dir="${repo_root}/data/radioisotopes"
 cache_control="public, max-age=3600"
 interval_seconds=3600
 run_once=false
@@ -182,7 +183,7 @@ die() {
   exit 1
 }
 
-for tool in aws; do
+for tool in aws git; do
   command -v "${tool}" >/dev/null 2>&1 || {
     die "Missing required tool: ${tool}."
   }
@@ -225,6 +226,15 @@ run_step() {
   return 1
 }
 
+pull_radioisotopes() {
+  if [[ ! -d "${radioisotopes_dir}/.git" ]]; then
+    log ERROR "Expected a git checkout at ${radioisotopes_dir}"
+    return 1
+  fi
+
+  git -C "${radioisotopes_dir}" pull --ff-only
+}
+
 update_once() {
   local started_at elapsed size_bytes had_best_effort_failure
 
@@ -232,6 +242,7 @@ update_once() {
   had_best_effort_failure=false
   log INFO "Update cycle started"
 
+  run_step "radioisotopes git pull" pull_radioisotopes || return 1
   if ! run_step "isotope update" \
     "${script_dir}/build-isotopes.sh" "${isotope_args[@]}"; then
     had_best_effort_failure=true
