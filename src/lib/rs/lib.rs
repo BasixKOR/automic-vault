@@ -2109,11 +2109,8 @@ fn run_i_formula(
                 Some(&progress),
             )?;
             progress.begin_install_phase();
-            let DependencyInstallState {
-                installs,
-                changed_installs,
-                ..
-            } = dependency_state;
+            let installs = &dependency_state.installs;
+            let changed_installs = &dependency_state.changed_installs;
             let root_install = installs
                 .iter()
                 .find(|install| install.spec.name == plan.root_formula)
@@ -2125,12 +2122,12 @@ fn run_i_formula(
                 })?;
 
             ensure_plan_parent_dirs(&staged_plan)?;
-            let rewrite_rules = build_rewrite_rules(&staged_plan, &installs);
+            let rewrite_rules = build_rewrite_rules(&staged_plan, installs);
             install_package(
                 config,
                 &staged_plan,
-                &installs,
-                &changed_installs,
+                installs,
+                changed_installs,
                 &rewrite_rules,
                 Some(&progress),
             )?;
@@ -15554,6 +15551,79 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         vendor_server.join().unwrap();
         assert!(tree_plan.install_root.join("bin/tool").is_file());
         assert!(tree_plan.install_root.join("share").is_dir());
+    }
+
+    #[test]
+    fn run_i_formula_keeps_downloaded_bottles_alive_until_extract() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let package_name = "archive-lifetime-test";
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        let install_root = opt_root.join(package_name);
+        let stub_path = bin_root.join(package_name);
+        for path in [&install_root, &stub_path] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
+
+        let temp = TempDir::new().unwrap();
+        let bottle_archive = temp.path().join("archive-lifetime-test.tar.gz");
+        write_test_bottle_archive(
+            &bottle_archive,
+            package_name,
+            "1.0.0",
+            &[("bin/archive-lifetime-test", b"#!/bin/sh\nprintf ok\n")],
+        );
+        let bottle_bytes = fs::read(&bottle_archive).unwrap();
+        let bottle_sha = format!("{:x}", Sha256::digest(&bottle_bytes));
+        let bottle_server =
+            start_counting_test_http_server(vec![("/bottle.tar.gz".to_string(), bottle_bytes)]);
+        let formula_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": bottle_sha,
+                            "url": format!("{}/bottle.tar.gz", bottle_server.base_url),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let formula_server =
+            start_counting_test_http_server(vec![(format!("/{package_name}.json"), formula_json)]);
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(formula_server.base_url.clone()),
+            ..Default::default()
+        });
+
+        run_i_formula(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            package_name.to_string(),
+            InstallIntent::Install,
+            None,
+        )
+        .unwrap();
+
+        assert!(is_executable(
+            &install_root.join("bin/archive-lifetime-test")
+        ));
+        assert!(is_executable(&stub_path));
+
+        for path in [&install_root, &stub_path] {
+            if fs::symlink_metadata(path).is_ok() {
+                remove_path(path).unwrap();
+            }
+        }
     }
 
     #[test]
