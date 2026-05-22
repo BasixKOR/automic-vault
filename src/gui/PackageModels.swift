@@ -1588,18 +1588,6 @@ struct PackagePresentation: Equatable {
         return leftSortName < rightSortName
     }
 
-    static func sortsActiveSecretAlertsAbovePackageSearchOrder(
-        _ left: PackagePresentation,
-        before right: PackagePresentation
-    ) -> Bool {
-        let leftHasAlert = left.hasActivePlainTextSecretAlert
-        let rightHasAlert = right.hasActivePlainTextSecretAlert
-        if leftHasAlert != rightHasAlert {
-            return leftHasAlert
-        }
-        return sortsByPackageSearchOrder(left, before: right)
-    }
-
     var isInstalledIsotope: Bool {
         switch item {
         case .installed(let record):

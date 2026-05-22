@@ -2152,7 +2152,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private var sortedInstalledPalettePrimaryPackages: [PackagePresentation] {
         (localHazardPackages + installedPackages)
-            .sorted(by: PackagePresentation.sortsActiveSecretAlertsAbovePackageSearchOrder)
+            .sorted(by: PackagePresentation.sortsByPackageSearchOrder)
     }
 
     private var appPalettePackages: [PackagePresentation] {

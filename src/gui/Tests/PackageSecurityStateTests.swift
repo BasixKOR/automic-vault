@@ -156,7 +156,7 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual("gone:hf".packageSearchOrderName, "hf")
     }
 
-    func testActiveSecretAlertsSortAboveInstalledPackages() throws {
+    func testLocalHazardsMixWithInstalledPackagesByToolName() throws {
         let safe = installedPresentation(named: "brew:ack")
         let hazardDetail = try decodePackageDetail(
             packageName: "gone:hf",
@@ -187,10 +187,10 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(hazard.plainTextSecretAlertSource, .isotope)
         XCTAssertTrue(hazard.hasActivePlainTextSecretAlert)
         XCTAssertEqual(
-            [safe, hazard]
-                .sorted(by: PackagePresentation.sortsActiveSecretAlertsAbovePackageSearchOrder)
+            [hazard, safe]
+                .sorted(by: PackagePresentation.sortsByPackageSearchOrder)
                 .map(\.selectionID),
-            ["gone:hf", "brew:ack"]
+            ["brew:ack", "gone:hf"]
         )
     }
 
