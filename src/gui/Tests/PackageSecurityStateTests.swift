@@ -194,6 +194,85 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testGoneRadioisotopeHazardUsesInstallPathInsteadOfConversion() throws {
+        let detail = try decodePackageDetail(
+            packageName: "gone:hf",
+            formula: "hf",
+            securityState: """
+            {
+              "isotopeName": "huggingface-cli",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["Hugging Face token file contains a plaintext token"],
+              "error": null
+            }
+            """
+        )
+        let plan = NucleusBridge.IsotopeMigrationPlan(
+            isotopeName: "huggingface-cli",
+            replacesPackage: nil,
+            modifiesPackage: "brew:hf",
+            isRadioisotope: true,
+            hasMigration: true
+        )
+
+        XCTAssertFalse(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
+    }
+
+    func testManagedModifiedPackageUsesRadioisotopeConversion() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:hf",
+            formula: "hf",
+            installed: true,
+            installRoot: "/opt/hf",
+            securityState: """
+            {
+              "isotopeName": "huggingface-cli",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["Hugging Face token file contains a plaintext token"],
+              "error": null
+            }
+            """
+        )
+        let plan = NucleusBridge.IsotopeMigrationPlan(
+            isotopeName: "huggingface-cli",
+            replacesPackage: nil,
+            modifiesPackage: "brew:hf",
+            isRadioisotope: true,
+            hasMigration: true
+        )
+
+        XCTAssertTrue(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
+    }
+
+    func testHomebrewModifiedPackageUsesInstallPathInsteadOfConversion() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:hf",
+            formula: "hf",
+            installed: true,
+            installRoot: "/opt/homebrew/Cellar/hf",
+            securityState: """
+            {
+              "isotopeName": "huggingface-cli",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["Hugging Face token file contains a plaintext token"],
+              "error": null
+            }
+            """
+        )
+        let plan = NucleusBridge.IsotopeMigrationPlan(
+            isotopeName: "huggingface-cli",
+            replacesPackage: nil,
+            modifiesPackage: "brew:hf",
+            isRadioisotope: true,
+            hasMigration: true
+        )
+
+        XCTAssertFalse(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
+    }
+
     @MainActor
     func testSystemDetectorOnlyDossierHidesPackageActions() throws {
         let lookupDetail = try decodePackageDetail(
@@ -280,14 +359,16 @@ final class PackageSecurityStateTests: XCTestCase {
     private func decodePackageDetail(
         packageName: String = "brew:git",
         formula: String = "git",
+        installed: Bool = false,
+        installRoot: String? = nil,
         securityState: String
     ) throws -> PackageDetail {
         let json = """
         {
           "packageName": "\(packageName)",
           "qualifiedName": "\(packageName)",
-          "installRoot": "/opt/homebrew/Cellar/\(formula)",
-          "installed": false,
+          "installRoot": "\(installRoot ?? "/opt/homebrew/Cellar/\(formula)")",
+          "installed": \(installed),
           "source": {"kind": "formula", "rootFormula": "\(formula)"},
           "sourceError": null,
           "aliases": [],

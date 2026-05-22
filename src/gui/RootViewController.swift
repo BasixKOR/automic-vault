@@ -4675,7 +4675,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             do {
                 let plan = try self.bridge.fetchIsotopeMigrationPlan(isotopeName: isotopeName)
                 DispatchQueue.main.async {
-                    if plan.isRadioisotope == true {
+                    if Self.shouldConvertRadioisotope(detail: detail, plan: plan) {
                         self.startRadioisotopeConversionMutation(
                             isotopeName: isotopeName,
                             detail: detail,
@@ -4696,6 +4696,19 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 }
             }
         }
+    }
+
+    static func shouldConvertRadioisotope(
+        detail: PackageDetail,
+        plan: NucleusBridge.IsotopeMigrationPlan
+    ) -> Bool {
+        guard plan.isRadioisotope == true,
+              detail.installed,
+              detail.isHomebrewInstall == false,
+              let modifiesPackage = plan.modifiesPackage else {
+            return false
+        }
+        return detail.helperPackageNames.contains(modifiesPackage)
     }
 
     private func startRadioisotopeConversionMutation(
