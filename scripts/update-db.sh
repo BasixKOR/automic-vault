@@ -226,13 +226,17 @@ run_step() {
 }
 
 update_once() {
-  local started_at elapsed size_bytes
+  local started_at elapsed size_bytes had_best_effort_failure
 
   started_at="$(date +%s)"
+  had_best_effort_failure=false
   log INFO "Update cycle started"
 
-  run_step "isotope update" \
-    "${script_dir}/build-isotopes.sh" "${isotope_args[@]}" || return 1
+  if ! run_step "isotope update" \
+    "${script_dir}/build-isotopes.sh" "${isotope_args[@]}"; then
+    had_best_effort_failure=true
+    log WARN "Continuing after isotope update failure; existing isotope metadata will be reused"
+  fi
   run_step "Homebrew database update" \
     "${script_dir}/build-db.py" --refresh || return 1
   run_step "combined database build" \
@@ -250,7 +254,11 @@ update_once() {
       --cache-control "${cache_control}" || return 1
 
   elapsed=$(($(date +%s) - started_at))
-  log OK "Update cycle completed in $(format_duration "${elapsed}")"
+  if [[ "${had_best_effort_failure}" == "true" ]]; then
+    log WARN "Update cycle completed with best-effort isotope metadata in $(format_duration "${elapsed}")"
+  else
+    log OK "Update cycle completed in $(format_duration "${elapsed}")"
+  fi
   log OK "Uploaded ${size_bytes} bytes with Cache-Control: ${cache_control}"
   return 0
 }

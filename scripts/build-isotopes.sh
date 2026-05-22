@@ -633,7 +633,8 @@ append_radioisotope_version_entries() {
         ;;
       *)
         echo "Unsupported radioisotope modifies target ${modifies}" >&2
-        return 1
+        echo "Skipping radioisotope ${isotope_name}" >&2
+        continue
         ;;
     esac
 
