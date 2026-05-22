@@ -121,6 +121,10 @@ impl IsotopeAlwaysAllowStore {
 
 pub(crate) trait CredentialHelperSecretStore {
     fn load_secret(&self, key: &str) -> Result<String, String>;
+
+    fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+        Err("credential helper store is read-only".to_string())
+    }
 }
 
 trait CredentialStore: CredentialHelperSecretStore {
@@ -426,7 +430,7 @@ fn run_save(
     value: &str,
     store: &dyn CredentialStore,
 ) -> Result<(), String> {
-    store.store_secret(&options.key, value)?;
+    CredentialStore::store_secret(store, &options.key, value)?;
     println!("saved {}", options.key);
     Ok(())
 }
@@ -1168,6 +1172,10 @@ pub(crate) fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
 impl CredentialHelperSecretStore for KeychainCredentialStore {
     fn load_secret(&self, key: &str) -> Result<String, String> {
         keychain_read_secret(KEYCHAIN_SERVICE, key)
+    }
+
+    fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+        keychain_write_secret(KEYCHAIN_SERVICE, key, value)
     }
 }
 
