@@ -3095,7 +3095,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     .map { result in
                         PackagePresentation(
                             item: .available(result),
-                            detail: cachedDetailsByPackageName[result.name],
+                            detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
                             freshness: self.freshness(for: result.name)
                         )
                     }

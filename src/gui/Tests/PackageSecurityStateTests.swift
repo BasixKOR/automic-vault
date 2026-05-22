@@ -51,6 +51,33 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(notice.headline, "PLAIN TEXT SECRET")
     }
 
+    func testAvailableSearchResultExposesDetectorOnlyHazardSource() {
+        let result = PackageSearchResult(
+            name: "git",
+            source: .formula(rootFormula: "git"),
+            version: "2.54.0",
+            description: "Distributed revision control system",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "git",
+                installIsInsecure: true,
+                remediationAvailable: false,
+                reasons: ["Git credential store contains plaintext credentials"],
+                error: nil
+            ),
+            pulseKind: nil
+        )
+        let presentation = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(presentation.plainTextSecretAlertSource, .isotope)
+        XCTAssertTrue(presentation.hasPlainTextSecretAlert)
+    }
+
     private func decodePackageDetail(securityState: String) throws -> PackageDetail {
         let json = """
         {

@@ -1621,7 +1621,9 @@ struct PackagePresentation: Equatable {
             return record.fallbackDetail.securityNotice?.source
         case .recommendation(let recommendation):
             return recommendation.detail.securityNotice?.source
-        case .available, .command:
+        case .available(let result):
+            return result.fallbackDetail.securityNotice?.source
+        case .command:
             return nil
         }
     }
