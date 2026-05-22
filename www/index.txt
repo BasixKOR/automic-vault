@@ -1,0 +1,13 @@
+Automic Vault is a local macOS security layer for AI coding agents. It keeps
+developer secrets out of plaintext files and model context, injects approved
+credentials only into trusted command-line tools, and adds human approval gates
+at the runtime layer where tools actually execute.
+
+Key pages:
+- Documentation: https://www.automicvault.com/docs/
+- Security: https://www.automicvault.com/security/
+- Pricing: https://www.automicvault.com/pricing.md
+- llms.txt: https://www.automicvault.com/llms.txt
+- llms-full.txt: https://www.automicvault.com/llms-full.txt
+
+Automic Vault is free open-source software under the Apache License 2.0.

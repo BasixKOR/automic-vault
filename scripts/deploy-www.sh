@@ -78,7 +78,7 @@ require_env() {
   fi
 }
 
-for tool in aws jq; do
+for tool in aws jq node; do
   command -v "$tool" >/dev/null 2>&1 || {
     die "Missing required tool: ${tool}."
   }
@@ -102,6 +102,7 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
+llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
 scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
@@ -178,6 +179,8 @@ prepare_site_for_upload() {
         unless $matches == 1;
     }
   ' "${index_path}"
+
+  node "${llms_full_generator}" "${prepared_site_dir}" "${prepared_site_dir}/llms-full.txt"
 
   log_ok "Stamped ${secured_package_display_count} secured packages"
 }
@@ -263,6 +266,122 @@ function handler(event) {
   var request = event.request;
   var host = request.headers.host.value;
 
+  function preferredContentType() {
+    var header = request.headers.accept && request.headers.accept.value;
+    var supported = ["text/html", "text/markdown", "text/plain", "application/json"];
+    var bestType = "text/html";
+    var bestQ = -1;
+    var bestOrder = 999999;
+    var bestSpecificity = -1;
+
+    if (!header) {
+      return bestType;
+    }
+
+    var ranges = header.split(",");
+    for (var order = 0; order < ranges.length; order++) {
+      var range = ranges[order].replace(/^\s+|\s+$/g, "");
+      if (!range) {
+        continue;
+      }
+      var parts = range.split(";");
+      var media = parts[0].replace(/^\s+|\s+$/g, "").toLowerCase();
+      var q = 1;
+
+      for (var paramIndex = 1; paramIndex < parts.length; paramIndex++) {
+        var param = parts[paramIndex].replace(/^\s+|\s+$/g, "").toLowerCase();
+        if (param.slice(0, 2) === "q=") {
+          var parsedQ = parseFloat(param.slice(2));
+          q = isNaN(parsedQ) ? 0 : parsedQ;
+        }
+      }
+
+      if (q <= 0) {
+        continue;
+      }
+
+      for (var typeIndex = 0; typeIndex < supported.length; typeIndex++) {
+        var candidate = supported[typeIndex];
+        var specificity = -1;
+        if (media === candidate) {
+          specificity = 2;
+        } else if (media.slice(-2) === "/*" && candidate.indexOf(media.slice(0, media.length - 1)) === 0) {
+          specificity = 1;
+        } else if (media === "*/*") {
+          specificity = 0;
+        }
+
+        if (specificity < 0) {
+          continue;
+        }
+        if (
+          q > bestQ ||
+          (q === bestQ && order < bestOrder) ||
+          (q === bestQ && order === bestOrder && specificity > bestSpecificity)
+        ) {
+          bestType = candidate;
+          bestQ = q;
+          bestOrder = order;
+          bestSpecificity = specificity;
+        }
+      }
+    }
+
+    return bestType;
+  }
+
+  function isKnownRoute(uri) {
+    var routes = {
+      "/": true,
+      "/about": true,
+      "/about/": true,
+      "/ai-agent-approval-gates": true,
+      "/ai-agent-approval-gates/": true,
+      "/api-key-management-for-ai-agents": true,
+      "/api-key-management-for-ai-agents/": true,
+      "/av-trace": true,
+      "/av-trace/": true,
+      "/docs": true,
+      "/docs/": true,
+      "/github-cli-token-security-ai-agents": true,
+      "/github-cli-token-security-ai-agents/": true,
+      "/hashicorp-vault-for-ai-agents": true,
+      "/hashicorp-vault-for-ai-agents/": true,
+      "/mcp-secrets-management": true,
+      "/mcp-secrets-management/": true,
+      "/privacy": true,
+      "/privacy/": true,
+      "/privileged-access-management-for-ai-agents": true,
+      "/privileged-access-management-for-ai-agents/": true,
+      "/secret-scanner-for-ai-agents": true,
+      "/secret-scanner-for-ai-agents/": true,
+      "/secret-scanning-vs-agent-secret-protection": true,
+      "/secret-scanning-vs-agent-secret-protection/": true,
+      "/secrets-manager-for-ai-agents": true,
+      "/secrets-manager-for-ai-agents/": true,
+      "/secure-aws-cli-credentials-ai-agents": true,
+      "/secure-aws-cli-credentials-ai-agents/": true,
+      "/security": true,
+      "/security/": true,
+      "/stop-ai-agents-reading-env-files": true,
+      "/stop-ai-agents-reading-env-files/": true,
+      "/terms": true,
+      "/terms/": true
+    };
+    return routes[uri] === true;
+  }
+
+  function jsonNotFound() {
+    return {
+      statusCode: 404,
+      statusDescription: "Not Found",
+      headers: {
+        "content-type": { value: "application/json; charset=utf-8" }
+      },
+      body: JSON.stringify({ error: "not_found", path: request.uri })
+    };
+  }
+
   function appendQueryString(location) {
     if (request.querystring && Object.keys(request.querystring).length > 0) {
       var parts = [];
@@ -308,6 +427,21 @@ function handler(event) {
         location: { value: location }
       }
     };
+  }
+
+  var preferredType = preferredContentType();
+  if (request.uri === "/" || request.uri === "/index.html") {
+    if (preferredType === "text/markdown") {
+      request.uri = "/index.md";
+    } else if (preferredType === "text/plain") {
+      request.uri = "/index.txt";
+    } else if (preferredType === "application/json") {
+      request.uri = "/index.json";
+    }
+    return request;
+  }
+  if (preferredType === "application/json" && request.uri.indexOf(".") === -1 && !isKnownRoute(request.uri)) {
+    return jsonNotFound();
   }
   if (request.uri !== "/" && request.uri.slice(-1) !== "/" && request.uri.indexOf(".") === -1) {
     return {
@@ -724,17 +858,43 @@ sync_site() {
     --exclude "*.xml" \
     --exclude "*.txt" \
     --exclude "*.md" \
+    --exclude "*.json" \
     --cache-control "${WWW_ASSET_CACHE_CONTROL}"
 
-  log_step "Syncing crawlable text content"
+  log_step "Syncing crawlable HTML and XML content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.html" \
     --include "*.xml" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Syncing crawlable plain text content"
+  aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
     --include "*.txt" \
+    --content-type "text/plain; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Syncing crawlable markdown content"
+  aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
     --include "*.md" \
+    --content-type "text/markdown; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Syncing crawlable JSON content"
+  aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "*.json" \
+    --content-type "application/json; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_ok "S3 content synced"

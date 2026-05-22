@@ -1,0 +1,21 @@
+{
+  "name": "Automic Vault",
+  "category": "AI agent security",
+  "platform": "macOS",
+  "license": "Apache License 2.0",
+  "description": "Automic Vault is a local macOS security layer for AI coding agents. It protects developer credentials by keeping secrets out of plaintext files and model context while approved command-line tools still receive the access they need at runtime.",
+  "url": "https://www.automicvault.com/",
+  "source": "https://github.com/automic-vault/automic-vault",
+  "pricing": "Free open-source software",
+  "docs": "https://www.automicvault.com/docs/",
+  "security": "https://www.automicvault.com/security/",
+  "llms_txt": "https://www.automicvault.com/llms.txt",
+  "llms_full_txt": "https://www.automicvault.com/llms-full.txt",
+  "use_cases": [
+    "Protect API keys, cloud credentials, and GitHub tokens from AI coding agents.",
+    "Replace plaintext .env, shell profile, and CLI config secrets with local keychain-backed storage.",
+    "Require approval before sensitive commands mutate infrastructure, publish packages, reveal tokens, or run sensitive developer tools.",
+    "Trace shell installers before an agent or developer runs them.",
+    "Install agent-used packages under controlled roots."
+  ]
+}
