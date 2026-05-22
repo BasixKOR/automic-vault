@@ -938,81 +938,103 @@ final class DossierView: NSView {
             versionSelector.frame = .zero
         }
 
-        commandHeaderLayer.frame = CGRect(
-            x: contentMinX,
-            y: cursorY,
-            width: contentWidth,
-            height: 16
-        )
-        cursorY = commandHeaderLayer.frame.maxY + Metrics.installCommandTopGap
-
-        let commandHeight = heightForText(
-            in: installCommandLayer,
-            width: contentWidth,
-            minimumHeight: 16
-        )
-        installCommandLayer.frame = CGRect(
-            x: contentMinX,
-            y: cursorY - Metrics.installCommandVisualLift,
-            width: contentWidth,
-            height: commandHeight
-        )
-        let buttonY = installCommandLayer.frame.maxY + Metrics.commandToButtonGap
-        let availableButtonWidth = max(contentWidth, 0)
-        if updateButton.isHidden {
-            updateButton.frame = .zero
-            primaryActionButton.frame = CGRect(
+        let showsActionControls = commandHeaderLayer.string != nil
+            || installCommandLayer.string != nil
+            || !updateButton.isHidden
+            || !primaryActionButton.isHidden
+            || !makeDefaultButton.isHidden
+        if showsActionControls {
+            commandHeaderLayer.frame = CGRect(
                 x: contentMinX,
-                y: buttonY,
-                width: min(
-                    primaryActionButtonWidth(maximum: availableButtonWidth),
-                    availableButtonWidth
-                ),
-                height: Metrics.actionButtonHeight
+                y: cursorY,
+                width: contentWidth,
+                height: 16
             )
-            if makeDefaultButton.isHidden {
-                makeDefaultButton.frame = .zero
-            } else {
-                makeDefaultButton.frame = CGRect(
-                    x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+            cursorY = commandHeaderLayer.frame.maxY + Metrics.installCommandTopGap
+
+            let commandHeight = heightForText(
+                in: installCommandLayer,
+                width: contentWidth,
+                minimumHeight: 16
+            )
+            installCommandLayer.frame = CGRect(
+                x: contentMinX,
+                y: cursorY - Metrics.installCommandVisualLift,
+                width: contentWidth,
+                height: commandHeight
+            )
+            let buttonY = installCommandLayer.frame.maxY + Metrics.commandToButtonGap
+            let availableButtonWidth = max(contentWidth, 0)
+            if updateButton.isHidden {
+                updateButton.frame = .zero
+                primaryActionButton.frame = CGRect(
+                    x: contentMinX,
                     y: buttonY,
-                    width: min(Metrics.actionButtonWidth, max(availableButtonWidth - primaryActionButton.frame.width - Metrics.actionButtonGap, 0)),
+                    width: min(
+                        primaryActionButtonWidth(maximum: availableButtonWidth),
+                        availableButtonWidth
+                    ),
                     height: Metrics.actionButtonHeight
                 )
-            }
-        } else {
-            let splitButtonWidth = min(
-                Metrics.actionButtonWidth,
-                max((availableButtonWidth - Metrics.actionButtonGap * 2) / 3, 0)
-            )
-            updateButton.frame = CGRect(
-                x: contentMinX,
-                y: buttonY,
-                width: splitButtonWidth,
-                height: Metrics.actionButtonHeight
-            )
-            primaryActionButton.frame = CGRect(
-                x: updateButton.frame.maxX + Metrics.actionButtonGap,
-                y: buttonY,
-                width: splitButtonWidth,
-                height: Metrics.actionButtonHeight
-            )
-            if makeDefaultButton.isHidden {
-                makeDefaultButton.frame = .zero
+                if makeDefaultButton.isHidden {
+                    makeDefaultButton.frame = .zero
+                } else {
+                    makeDefaultButton.frame = CGRect(
+                        x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+                        y: buttonY,
+                        width: min(
+                            Metrics.actionButtonWidth,
+                            max(
+                                availableButtonWidth
+                                    - primaryActionButton.frame.width
+                                    - Metrics.actionButtonGap,
+                                0
+                            )
+                        ),
+                        height: Metrics.actionButtonHeight
+                    )
+                }
             } else {
-                makeDefaultButton.frame = CGRect(
-                    x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+                let splitButtonWidth = min(
+                    Metrics.actionButtonWidth,
+                    max((availableButtonWidth - Metrics.actionButtonGap * 2) / 3, 0)
+                )
+                updateButton.frame = CGRect(
+                    x: contentMinX,
                     y: buttonY,
                     width: splitButtonWidth,
                     height: Metrics.actionButtonHeight
                 )
+                primaryActionButton.frame = CGRect(
+                    x: updateButton.frame.maxX + Metrics.actionButtonGap,
+                    y: buttonY,
+                    width: splitButtonWidth,
+                    height: Metrics.actionButtonHeight
+                )
+                if makeDefaultButton.isHidden {
+                    makeDefaultButton.frame = .zero
+                } else {
+                    makeDefaultButton.frame = CGRect(
+                        x: primaryActionButton.frame.maxX + Metrics.actionButtonGap,
+                        y: buttonY,
+                        width: splitButtonWidth,
+                        height: Metrics.actionButtonHeight
+                    )
+                }
             }
+        } else {
+            commandHeaderLayer.frame = .zero
+            installCommandLayer.frame = .zero
+            updateButton.frame = .zero
+            primaryActionButton.frame = .zero
+            makeDefaultButton.frame = .zero
         }
         UIStyle.layoutControlChrome(in: updateButton.layer)
         UIStyle.layoutControlChrome(in: primaryActionButton.layer)
         UIStyle.layoutControlChrome(in: makeDefaultButton.layer)
 
         let contentHeight = max(
+            cursorY,
             updateButton.frame.maxY,
             primaryActionButton.frame.maxY,
             makeDefaultButton.frame.maxY
@@ -1062,38 +1084,50 @@ final class DossierView: NSView {
             applyLastUpdatedStyle()
             configureVersionSelector(for: detail)
             let actionDetail = selectedActionDetail(from: detail)
-            installCommandLayer.string = UIStyle.attributedMonoText(
-                actionDetail.installCommand,
-                size: 12,
-                color: UIStyle.text.withAlphaComponent(0.66),
-                tracking: 0.1
-            )
-            installDestinationURL = actionDetail.installed
-                ? URL(fileURLWithPath: actionDetail.installRoot, isDirectory: true)
-                : nil
-            applyInstallDestinationStyle()
-            updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
-                || actionDetail.isHomebrewCaskManaged
-                || actionDetail.isNpmSkillsManaged
-            updateButton.isEnabled = !isActionInFlight
-            primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
-            if detail.homebrewMigration != nil {
-                primaryActionButton.title = "MIGRATE"
-            } else if detail.isHomebrewMigrationCandidate && !actionDetail.installed {
-                primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
-            } else if detail.isUnsupportedHomebrewInstall && !actionDetail.installed {
-                primaryActionButton.title = "UNSUPPORTED TAP"
-            }
-            if showsHomebrewMigrationButton(for: actionDetail) {
-                makeDefaultButton.title = "MIGRATE"
-                makeDefaultButton.isHidden = false
+            if detail.isUnmanagedDetectorOnlyHazard {
+                installCommandLayer.string = nil
+                installDestinationURL = nil
+                installDestinationLayer.string = nil
+                updateButton.isHidden = true
+                updateButton.isEnabled = false
+                primaryActionButton.isHidden = true
+                primaryActionButton.isEnabled = false
+                makeDefaultButton.isHidden = true
+                makeDefaultButton.isEnabled = false
             } else {
-                makeDefaultButton.title = "MAKE DEFAULT"
-                makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
+                installCommandLayer.string = UIStyle.attributedMonoText(
+                    actionDetail.installCommand,
+                    size: 12,
+                    color: UIStyle.text.withAlphaComponent(0.66),
+                    tracking: 0.1
+                )
+                installDestinationURL = actionDetail.installed
+                    ? URL(fileURLWithPath: actionDetail.installRoot, isDirectory: true)
+                    : nil
+                applyInstallDestinationStyle()
+                updateButton.isHidden = !(actionDetail.installed && actionDetail.isOutdated)
+                    || actionDetail.isHomebrewCaskManaged
+                    || actionDetail.isNpmSkillsManaged
+                updateButton.isEnabled = !isActionInFlight
+                primaryActionButton.title = actionDetail.installed ? "UNINSTALL" : "INSTALL"
+                if detail.homebrewMigration != nil {
+                    primaryActionButton.title = "MIGRATE"
+                } else if detail.isHomebrewMigrationCandidate && !actionDetail.installed {
+                    primaryActionButton.title = "MIGRATE TO AUTOMIC VAULT"
+                } else if detail.isUnsupportedHomebrewInstall && !actionDetail.installed {
+                    primaryActionButton.title = "UNSUPPORTED TAP"
+                }
+                if showsHomebrewMigrationButton(for: actionDetail) {
+                    makeDefaultButton.title = "MIGRATE"
+                    makeDefaultButton.isHidden = false
+                } else {
+                    makeDefaultButton.title = "MAKE DEFAULT"
+                    makeDefaultButton.isHidden = !showsMakeDefaultButton(for: actionDetail)
+                }
+                makeDefaultButton.isEnabled = !isActionInFlight
+                primaryActionButton.isHidden = false
+                primaryActionButton.isEnabled = !isActionInFlight
             }
-            makeDefaultButton.isEnabled = !isActionInFlight
-            primaryActionButton.isHidden = false
-            primaryActionButton.isEnabled = !isActionInFlight
             renderDependencies(
                 detail.dependencies,
                 installedDependencies: installedPackDependencies(for: detail)
@@ -1202,7 +1236,9 @@ final class DossierView: NSView {
         versionSelectorHintLayer.string = detail.versionOptions.isEmpty
             ? nil
             : versionSelectorHintText(for: detail)
-        commandHeaderLayer.string = UIStyle.sectionHeaderText("Install Vector")
+        commandHeaderLayer.string = detail.isUnmanagedDetectorOnlyHazard
+            ? nil
+            : UIStyle.sectionHeaderText("Install Vector")
     }
 
     private func applySecurityNoticeStyle() {

@@ -83,7 +83,9 @@ final class PackageSecurityStateTests: XCTestCase {
     }
 
     func testLocalDetectorHazardInInstalledPanelIsActiveEvenWhenPackageIsNotInstalled() throws {
-        let detail = try decodePackageDetail(
+        let lookupDetail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
             securityState: """
             {
               "isotopeName": "curl",
@@ -94,8 +96,12 @@ final class PackageSecurityStateTests: XCTestCase {
             }
             """
         )
+        let detail = lookupDetail.withPackageIdentity(
+            packageName: "unmanaged:curl",
+            installPackageNames: ["brew:curl"]
+        )
         let record = PackageRecord(
-            name: "brew:curl",
+            name: "unmanaged:curl",
             source: .formula(rootFormula: "curl"),
             version: "8.20.0",
             description: "Get a file from an HTTP, HTTPS or FTP server",
@@ -110,9 +116,49 @@ final class PackageSecurityStateTests: XCTestCase {
         )
 
         XCTAssertFalse(detail.installed)
+        XCTAssertEqual(record.name, "unmanaged:curl")
+        XCTAssertEqual(detail.packageName, "unmanaged:curl")
+        XCTAssertEqual(detail.qualifiedName, "unmanaged:curl")
+        XCTAssertEqual(detail.installPackageNames, ["brew:curl"])
+        XCTAssertEqual(detail.source, .formula(rootFormula: "curl"))
+        XCTAssertEqual("unmanaged:curl".packageSearchOrderName, "curl")
+        XCTAssertTrue(detail.isUnmanagedDetectorOnlyHazard)
         XCTAssertEqual(presentation.plainTextSecretAlertSource, .isotope)
+        XCTAssertNotNil(detail.securityNotice)
         XCTAssertTrue(presentation.hasActivePlainTextSecretAlert)
         XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
+    }
+
+    @MainActor
+    func testUnmanagedDetectorOnlyDossierHidesPackageActions() throws {
+        let lookupDetail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["curl netrc file contains plaintext credentials"],
+              "error": null
+            }
+            """
+        )
+        let detail = lookupDetail.withPackageIdentity(
+            packageName: "unmanaged:curl",
+            installPackageNames: ["brew:curl"]
+        )
+
+        let view = DossierView(frame: NSRect(x: 0, y: 0, width: 290, height: 800))
+        view.render(detail: detail, animation: .none)
+        view.layoutSubtreeIfNeeded()
+
+        let visibleButtonTitles = view.subviews
+            .compactMap { $0 as? NSButton }
+            .filter { !$0.isHidden }
+            .map(\.title)
+
+        XCTAssertEqual(visibleButtonTitles, ["LEARN MORE"])
     }
 
     @MainActor

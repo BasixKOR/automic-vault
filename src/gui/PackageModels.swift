@@ -5,6 +5,7 @@ private let packageSearchOrderPrefixes = [
     "brew:",
     "cask:",
     "isotope:",
+    "unmanaged:",
     "av:",
     "npm:",
     "pip:"
@@ -599,6 +600,38 @@ struct PackageDetail: Decodable, Equatable {
         )
     }
 
+    func withPackageIdentity(
+        packageName displayPackageName: String,
+        installPackageNames displayInstallPackageNames: [String]?
+    ) -> PackageDetail {
+        PackageDetail(
+            packageName: displayPackageName,
+            qualifiedName: displayPackageName,
+            installRoot: installRoot,
+            installed: installed,
+            source: source,
+            sourceError: sourceError,
+            aliases: aliases,
+            aliasesError: aliasesError,
+            installedVersion: installedVersion,
+            latestVersion: latestVersion,
+            latestVersionError: latestVersionError,
+            executablePaths: executablePaths,
+            executablePathsError: executablePathsError,
+            popularity: popularity,
+            lastUpdatedAt: lastUpdatedAt,
+            homebrewInfo: homebrewInfo,
+            homebrewInfoError: homebrewInfoError,
+            npmHomepage: npmHomepage,
+            npmPackageInfoError: npmPackageInfoError,
+            securityState: securityState,
+            installPackageNames: displayInstallPackageNames,
+            homebrewMigration: homebrewMigration,
+            versionOptions: versionOptions,
+            managementBackend: managementBackend
+        )
+    }
+
     private var rawHomepage: String? {
         homebrewInfo?.homepage ?? npmHomepage
     }
@@ -660,6 +693,12 @@ struct PackageDetail: Decodable, Equatable {
 
     var isHomebrewInstall: Bool {
         isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
+    }
+
+    var isUnmanagedDetectorOnlyHazard: Bool {
+        packageName.hasPrefix("unmanaged:")
+            && securityState?.installIsInsecure == true
+            && securityState?.remediationAvailable == false
     }
 
     var securityNotice: PackageSecurityNotice? {

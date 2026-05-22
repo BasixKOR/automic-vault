@@ -820,14 +820,19 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
-    private static let detectorOnlyHazardPackageNames = [
-        "brew:git",
-        "brew:openssh",
-        "brew:curl",
-        "brew:rsync",
-        "brew:ruby",
-        "brew:perl",
-        "brew:openssl@3",
+    private struct DetectorOnlyHazardTarget {
+        let lookupName: String
+        let displayName: String
+    }
+
+    private static let detectorOnlyHazardTargets = [
+        DetectorOnlyHazardTarget(lookupName: "brew:git", displayName: "unmanaged:git"),
+        DetectorOnlyHazardTarget(lookupName: "brew:openssh", displayName: "unmanaged:openssh"),
+        DetectorOnlyHazardTarget(lookupName: "brew:curl", displayName: "unmanaged:curl"),
+        DetectorOnlyHazardTarget(lookupName: "brew:rsync", displayName: "unmanaged:rsync"),
+        DetectorOnlyHazardTarget(lookupName: "brew:ruby", displayName: "unmanaged:ruby"),
+        DetectorOnlyHazardTarget(lookupName: "brew:perl", displayName: "unmanaged:perl"),
+        DetectorOnlyHazardTarget(lookupName: "brew:openssl@3", displayName: "unmanaged:openssl@3"),
     ]
 
     private enum MastheadTab: Int, CaseIterable {
@@ -1849,42 +1854,49 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         excluding installedPackageNames: Set<String>
     ) {
         DispatchQueue.global(qos: .utility).async {
-            let hazards = Self.detectorOnlyHazardPackageNames.compactMap { packageName -> (
+            let hazards = Self.detectorOnlyHazardTargets.compactMap { target -> (
                 detail: PackageDetail,
                 presentation: PackagePresentation
             )? in
-                guard let detail = try? self.bridge.fetchDetail(packageName: packageName),
+                guard let detail = try? self.bridge.fetchDetail(packageName: target.lookupName),
                       detail.securityState?.installIsInsecure == true,
                       detail.securityState?.remediationAvailable == false,
                       installedPackageNames.contains(detail.packageName) == false,
-                      installedPackageNames.contains(detail.qualifiedName) == false else {
+                      installedPackageNames.contains(detail.qualifiedName) == false,
+                      installedPackageNames.contains(target.lookupName) == false,
+                      installedPackageNames.contains(target.displayName) == false else {
                     return nil
                 }
+                let displayDetail = detail.withPackageIdentity(
+                    packageName: target.displayName,
+                    installPackageNames: [target.lookupName]
+                )
                 let record = PackageRecord(
-                    name: detail.qualifiedName,
-                    source: detail.source,
-                    version: detail.installedVersion ?? detail.latestVersion ?? "detected",
-                    description: detail.homebrewInfo?.description,
-                    latestVersion: detail.latestVersion,
-                    securityState: detail.securityState,
-                    installRoot: detail.installRoot,
-                    installPackageNames: [detail.qualifiedName],
-                    managementBackend: detail.managementBackend
+                    name: target.displayName,
+                    source: displayDetail.source,
+                    version: displayDetail.installedVersion ?? displayDetail.latestVersion ?? "detected",
+                    description: displayDetail.homebrewInfo?.description,
+                    latestVersion: displayDetail.latestVersion,
+                    securityState: displayDetail.securityState,
+                    installRoot: displayDetail.installRoot,
+                    installPackageNames: [target.lookupName],
+                    managementBackend: displayDetail.managementBackend
                 )
                 return (
-                    detail,
+                    displayDetail,
                     PackagePresentation(
                         item: .installed(record),
-                        detail: detail,
-                        freshness: self.freshness(for: detail.qualifiedName)
+                        detail: displayDetail,
+                        freshness: self.freshness(for: target.displayName)
                     )
                 )
             }
 
             DispatchQueue.main.async {
                 guard self.reloadRequestID == requestID else { return }
-                for packageName in Self.detectorOnlyHazardPackageNames {
-                    self.detailsByPackageName.removeValue(forKey: packageName)
+                for target in Self.detectorOnlyHazardTargets {
+                    self.detailsByPackageName.removeValue(forKey: target.lookupName)
+                    self.detailsByPackageName.removeValue(forKey: target.displayName)
                 }
                 self.localDetectorHazardPackages = hazards.map(\.presentation)
                 for hazard in hazards {
