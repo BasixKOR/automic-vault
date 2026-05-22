@@ -351,8 +351,6 @@ applications_icon_y=$(((finder_height / 2 - 60) * 6 / 5))
 app_icon_y="${applications_icon_y}"
 
 cli_title "Build Automic Vault DMG"
-cli_step "Refreshing packaged package database"
-"${repo_root}/scripts/download-combined-json.sh" --force
 cli_step "Building release app bundle"
 app_path="$("${repo_root}/scripts/build-app.sh" --release)"
 app_name="$(basename "${app_path}")"

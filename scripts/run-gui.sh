@@ -60,8 +60,6 @@ done
 
 cli_title "Run Automic Vault"
 terminate_existing_app
-cli_step "Preparing package database"
-"${repo_root}/scripts/download-combined-json.sh"
 cli_step "Preparing local app bundle"
 app_path="$("${repo_root}/scripts/build-app.sh")"
 cli_info "App: ${app_path}"

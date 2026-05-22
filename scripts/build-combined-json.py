@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import datetime
+import argparse
 import json
 import os
 import sys
@@ -63,6 +64,39 @@ def _load_sources():
     return sources
 
 
+def _expected_combined():
+    return {
+        "schema": SCHEMA_VERSION,
+        "sources": _load_sources(),
+    }
+
+
+def _load_combined(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+    combined = _read_json(path)
+    if not isinstance(combined, dict):
+        raise ValueError(f"{path} must contain an object")
+    return combined
+
+
+def _validate_combined(path):
+    combined = _load_combined(path)
+    expected = _expected_combined()
+
+    if combined.get("schema") != expected["schema"]:
+        raise ValueError(
+            f"{path} has schema {combined.get('schema')!r}; expected {SCHEMA_VERSION}"
+        )
+    if not combined.get("generated_at"):
+        raise ValueError(f"{path} is missing generated_at")
+    if combined.get("sources") != expected["sources"]:
+        raise ValueError(
+            f"{path} is stale; regenerate it from local data sources with "
+            "scripts/build-combined-json.py"
+        )
+
+
 def _validate_sources(sources):
     db = sources.get("db")
     if not isinstance(db, dict):
@@ -80,26 +114,53 @@ def _validate_sources(sources):
             )
 
 
+def _parse_args():
+    parser = argparse.ArgumentParser(
+        description="Build or validate data/combined.json from local source data."
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate that the output already matches local source data.",
+    )
+    parser.add_argument(
+        "--output",
+        default=OUTPUT_PATH,
+        help=f"Path to write or validate. Defaults to {OUTPUT_PATH}.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = _parse_args()
     _ensure_cwd()
+    if args.check:
+        try:
+            _validate_combined(args.output)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as err:
+            print(f"Invalid {args.output}: {err}", file=sys.stderr)
+            return 1
+        print(f"OK {args.output} is current")
+        return 0
+
     try:
         combined = {
             "schema": SCHEMA_VERSION,
             "generated_at": datetime.datetime.now(
                 datetime.timezone.utc
             ).isoformat(),
-            "sources": _load_sources(),
+            "sources": _expected_combined()["sources"],
         }
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as err:
-        print(f"Failed to build {OUTPUT_PATH}: {err}", file=sys.stderr)
+        print(f"Failed to build {args.output}: {err}", file=sys.stderr)
         return 1
 
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(combined, handle, indent=2, sort_keys=True)
         handle.write("\n")
 
-    print(f"Wrote {OUTPUT_PATH}")
+    print(f"Wrote {args.output}")
     return 0
 
 

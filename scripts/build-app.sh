@@ -108,6 +108,9 @@ APP_BUNDLE_ID="com.automicvault"
 MENU_BUNDLE_ID="com.automicvault.menu-helper"
 HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
 
+cli_step "Validating package database"
+"$ROOT_DIR/scripts/build-combined-json.py" --check
+
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
     APPLE_TEAM_ID="${match[1]}"
