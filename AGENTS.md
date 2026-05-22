@@ -249,3 +249,8 @@ When starting work:
 
 - gui and cli tools all have the same version from Cargo.toml
 - helpers and protocols have their own versions and must be bumped independently when their interface changes
+- Bump `NUKE_HELPER_VERSION` in `.env` whenever privileged helper behavior
+  changes, even if the XPC/protocol interface is unchanged. Installed helpers
+  are only replaced when the bundled helper version is newer.
+- Bump `NUKE_PROTOCOL_VERSION` only when the GUI/helper protocol surface
+  changes, such as XPC methods, wire payloads, or protocol daemon contracts.
