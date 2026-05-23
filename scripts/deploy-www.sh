@@ -882,6 +882,7 @@ sync_site() {
   log_step "Syncing static assets"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --delete \
+    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "Automic Vault.dmg" \
@@ -895,6 +896,7 @@ sync_site() {
 
   log_step "Syncing crawlable HTML and XML content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
@@ -904,6 +906,7 @@ sync_site() {
 
   log_step "Syncing crawlable plain text content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
@@ -913,6 +916,7 @@ sync_site() {
 
   log_step "Syncing crawlable markdown content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
@@ -922,6 +926,7 @@ sync_site() {
 
   log_step "Syncing crawlable JSON content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
+    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
