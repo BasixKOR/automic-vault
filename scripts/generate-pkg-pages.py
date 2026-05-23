@@ -633,6 +633,14 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
       {metric('source files', fmt_int(manifest.get('source_file_count')))}
     </aside>
   </section>
+  <section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title">
+    <div class="search-copy">
+      <p class="section-kicker">site search</p>
+      <h2 id="pkg-search-title">Find package coverage</h2>
+      <p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p>
+    </div>
+    <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
+  </section>
   <section class="pkg-section split-section">
     <div>
       <p class="section-kicker">crawlable catalog</p>
@@ -642,14 +650,6 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
     <div class="package-list" aria-label="Popular packages">
       {package_links}
     </div>
-  </section>
-  <section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title">
-    <div>
-      <p class="section-kicker">search</p>
-      <h2 id="pkg-search-title">Search every package and guide</h2>
-      <p>Pagefind indexes the whole static site, including generated package pages, security guides, documentation, and source-backed package metadata.</p>
-    </div>
-    <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
   </section>
 </main>
 {footer('../')}
@@ -668,7 +668,7 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
         excerptLength: 24,
         resetStyles: false,
         translations: {
-          placeholder: "Search packages, guides, and security notes"
+          placeholder: "Search awscli, gh, .env, npm publish"
         }
       });
     });
@@ -1290,10 +1290,20 @@ h1 {
 .sources-section { background: rgba(255, 255, 255, 0.018); }
 .pkg-search-section {
   display: grid;
-  grid-template-columns: minmax(260px, 0.36fr) minmax(0, 1fr);
-  gap: clamp(28px, 5vw, 72px);
-  align-items: start;
-  background: rgba(114, 182, 97, 0.034);
+  grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
+  gap: clamp(22px, 4vw, 58px);
+  align-items: center;
+  padding-top: clamp(22px, 3.2vw, 38px);
+  padding-bottom: clamp(22px, 3.2vw, 38px);
+  background:
+    linear-gradient(90deg, rgba(114, 182, 97, 0.052), transparent 44%),
+    rgba(255, 255, 255, 0.012);
+}
+.search-copy p {
+  max-width: 520px;
+  margin-top: 10px;
+  font-size: 0.96rem;
+  line-height: 1.45;
 }
 .pkg-section h2 {
   max-width: 780px;
@@ -1337,24 +1347,34 @@ h1 {
   --pagefind-ui-font: var(--font-ui);
   min-width: 0;
 }
+.pkg-search .pagefind-ui__form {
+  margin: 0;
+}
 .pkg-search .pagefind-ui__form::before { display: none; }
 .pkg-search .pagefind-ui__search-input {
-  height: 58px;
-  padding: 0 18px;
+  height: 54px;
+  padding: 0 18px 0 20px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--surface-2);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: clamp(0.82rem, 1.5vw, 0.95rem);
   font-weight: 700;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.pkg-search .pagefind-ui__search-input:focus {
+  border-color: rgba(114, 182, 97, 0.72);
+  background: #22211f;
+  outline: none;
+  transform: translateY(-1px);
 }
 .pkg-search .pagefind-ui__search-input::placeholder {
   color: var(--dim);
   opacity: 1;
 }
 .pkg-search .pagefind-ui__drawer {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 .pkg-search .pagefind-ui__message,
 .pkg-search .pagefind-ui__result-excerpt,
