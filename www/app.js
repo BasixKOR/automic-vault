@@ -7,32 +7,32 @@ const scrollMeter = document.querySelector(".scroll-meter span");
 const securedFeed = document.querySelector("[data-secured-feed]");
 
 const securedPackages = [
-  ["docker", "ambient registry credential helpers flagged as hazards", "accent-hot"],
-  ["aws-cli", "AWS credentials served through av credential-helper", "accent-green"],
-  ["terraform", "cloud tokens served through Terraform's helper protocol", "accent-blue"],
-  ["git", "plaintext credential-store files detected in the GUI", "accent-gold"],
-  ["openssh", "unencrypted private keys reported before agent runs", "accent-hot"],
-  ["kubectl", "kubeconfig credentials served through exec helpers", "accent-blue"],
-  ["bitwarden", "token-bearing app state moved into Keychain", "accent-green"],
-  ["heroku", "API token injected only for Heroku CLI execution", "accent-gold"],
-  ["firebase", "refresh token isolated behind a temporary config home", "accent-hot"],
-  ["pulumi", "cloud credentials injected through a temporary path", "accent-blue"],
-  ["rclone", "remote credentials mounted only while rclone runs", "accent-green"],
-  ["sentry-cli", "auth token hidden outside Sentry CLI execution", "accent-gold"],
-  ["snyk", "API token kept out of configstore plaintext", "accent-hot"],
-  ["uv", "package index credentials detected and isolated", "accent-blue"],
-  ["opentofu", "registry tokens served through Terraform helper flow", "accent-green"],
-  ["oci-cli", "OCI config and key files injected at runtime", "accent-gold"],
-  ["snowflake", "connection passwords moved out of local config", "accent-hot"],
-  ["jfrog", "server credentials mounted only for jfrog commands", "accent-blue"],
-  ["doctl", "DigitalOcean tokens isolated from config.yaml", "accent-green"],
-  ["glab", "GitLab tokens exposed only through GLAB_CONFIG_DIR", "accent-gold"],
-  ["helm", "chart repository credentials held in Keychain", "accent-hot"],
-  ["podman", "registry auth served through a temporary helper shim", "accent-blue"],
-  ["curl", "netrc and curlrc credentials detected as hazards", "accent-green"],
-  ["ruby", "RubyGems API keys detected before agent runs", "accent-gold"],
-  ["netlify", "API tokens restored into a temporary home", "accent-green"],
-  ["minio-mc", "S3 alias secrets scoped to mc execution", "accent-gold"],
+  ["docker", "ambient registry credential helpers flagged as hazards", "accent-hot", "/pkg/brew/docker/"],
+  ["aws-cli", "AWS credentials served through av credential-helper", "accent-green", "/pkg/brew/awscli/"],
+  ["terraform", "cloud tokens served through Terraform's helper protocol", "accent-blue", "/pkg/brew/tfenv/"],
+  ["git", "plaintext credential-store files detected in the GUI", "accent-gold", "/pkg/brew/git/"],
+  ["openssh", "unencrypted private keys reported before agent runs", "accent-hot", "/pkg/brew/openssh/"],
+  ["kubectl", "kubeconfig credentials served through exec helpers", "accent-blue", "/pkg/brew/kubernetes-cli/"],
+  ["bitwarden", "token-bearing app state moved into Keychain", "accent-green", "/pkg/brew/bitwarden-cli/"],
+  ["heroku", "API token injected only for Heroku CLI execution", "accent-gold", "/pkg/brew/heroku/"],
+  ["firebase", "refresh token isolated behind a temporary config home", "accent-hot", "/pkg/brew/firebase-cli/"],
+  ["pulumi", "cloud credentials injected through a temporary path", "accent-blue", "/pkg/brew/pulumi/"],
+  ["rclone", "remote credentials mounted only while rclone runs", "accent-green", "/pkg/brew/rclone/"],
+  ["sentry-cli", "auth token hidden outside Sentry CLI execution", "accent-gold", "/pkg/brew/sentry-cli/"],
+  ["snyk", "API token kept out of configstore plaintext", "accent-hot", "/pkg/brew/snyk-cli/"],
+  ["uv", "package index credentials detected and isolated", "accent-blue", "/pkg/brew/uv/"],
+  ["opentofu", "registry tokens served through Terraform helper flow", "accent-green", "/pkg/brew/opentofu/"],
+  ["oci-cli", "OCI config and key files injected at runtime", "accent-gold", "/pkg/brew/oci-cli/"],
+  ["snowflake", "connection passwords moved out of local config", "accent-hot", "/pkg/brew/snowflake-cli/"],
+  ["jfrog", "server credentials mounted only for jfrog commands", "accent-blue", "/pkg/brew/jfrog-cli/"],
+  ["doctl", "DigitalOcean tokens isolated from config.yaml", "accent-green", "/pkg/brew/doctl/"],
+  ["glab", "GitLab tokens exposed only through GLAB_CONFIG_DIR", "accent-gold", "/pkg/brew/glab/"],
+  ["helm", "chart repository credentials held in Keychain", "accent-hot", "/pkg/brew/helm/"],
+  ["podman", "registry auth served through a temporary helper shim", "accent-blue", "/pkg/brew/podman/"],
+  ["curl", "netrc and curlrc credentials detected as hazards", "accent-green", "/pkg/brew/curl/"],
+  ["ruby", "RubyGems API keys detected before agent runs", "accent-gold", "/pkg/brew/ruby/"],
+  ["netlify", "API tokens restored into a temporary home", "accent-green", "/pkg/brew/netlify-cli/"],
+  ["minio-mc", "S3 alias secrets scoped to mc execution", "accent-gold", "/pkg/brew/minio-mc/"],
 ];
 
 if (toggle && nav) {
@@ -88,7 +88,7 @@ if (securedFeed) {
       row.classList.remove("is-lit");
 
       window.setTimeout(() => {
-        const [name, detail, accent] = next;
+        const [name, detail, accent, href] = next;
         const label = row.querySelector("span");
         const text = row.querySelector("p");
 
@@ -100,6 +100,7 @@ if (securedFeed) {
           text.textContent = detail;
         }
 
+        row.href = href;
         row.className = `feed-row ${accent} is-entering`;
         void row.offsetWidth;
         row.classList.remove("is-entering");

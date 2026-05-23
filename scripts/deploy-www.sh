@@ -104,6 +104,7 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
 package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
+search_index_generator="${repo_root}/scripts/generate-search-index.py"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
 scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
@@ -192,6 +193,14 @@ assert_package_pages_current() {
     die "Missing package page generator: ${package_pages_generator}"
   fi
   python3 "${package_pages_generator}" --check
+}
+
+assert_search_index_current() {
+  log_step "Checking generated Pagefind search index"
+  if [[ ! -x "${search_index_generator}" && ! -f "${search_index_generator}" ]]; then
+    die "Missing search index generator: ${search_index_generator}"
+  fi
+  python3 "${search_index_generator}" --check
 }
 
 ensure_bucket() {
@@ -927,6 +936,7 @@ ensure_certificate_issued() {
 
 log_header
 assert_package_pages_current
+assert_search_index_current
 prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"

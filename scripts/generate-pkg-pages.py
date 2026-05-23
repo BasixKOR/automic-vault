@@ -643,11 +643,36 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
       {package_links}
     </div>
   </section>
+  <section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title">
+    <div>
+      <p class="section-kicker">search</p>
+      <h2 id="pkg-search-title">Search every package and guide</h2>
+      <p>Pagefind indexes the whole static site, including generated package pages, security guides, documentation, and source-backed package metadata.</p>
+    </div>
+    <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
+  </section>
 </main>
 {footer('../')}
 """,
         stylesheet_href="./styles.css",
         favicon_href="../favicon.ico",
+        extra_head='  <link rel="stylesheet" href="../pagefind/pagefind-ui.css">',
+        extra_body='''  <script src="../pagefind/pagefind-ui.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      new PagefindUI({
+        element: "#pkg-search",
+        showImages: false,
+        showSubResults: true,
+        pageSize: 8,
+        excerptLength: 24,
+        resetStyles: false,
+        translations: {
+          placeholder: "Search packages, guides, and security notes"
+        }
+      });
+    });
+  </script>''',
         schema={
             "@context": "https://schema.org",
             "@type": "CollectionPage",
@@ -1005,6 +1030,8 @@ def html_doc(
     stylesheet_href: str,
     favicon_href: str,
     schema: dict[str, Any],
+    extra_head: str = "",
+    extra_body: str = "",
 ) -> str:
     schema_json = json.dumps(schema, indent=2, ensure_ascii=False)
     return f"""<!DOCTYPE html>
@@ -1027,6 +1054,7 @@ def html_doc(
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="{favicon_href}" sizes="16x16 32x32 48x48">
   <link rel="stylesheet" href="{stylesheet_href}">
+{extra_head}
   <script type="application/ld+json">
 {schema_json}
   </script>
@@ -1035,6 +1063,7 @@ def html_doc(
   <div class="site-shell">
 {textwrap.indent(body.strip(), '    ')}
   </div>
+{extra_body}
 </body>
 </html>
 """
@@ -1259,6 +1288,13 @@ h1 {
 }
 .gate-section { background: rgba(45, 139, 216, 0.035); }
 .sources-section { background: rgba(255, 255, 255, 0.018); }
+.pkg-search-section {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.36fr) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+  background: rgba(114, 182, 97, 0.034);
+}
 .pkg-section h2 {
   max-width: 780px;
   margin-top: 8px;
@@ -1289,6 +1325,60 @@ h1 {
 .detail-stack ul { padding-left: 1.1rem; }
 .detail-stack li + li { margin-top: 8px; }
 .detail-stack a, table a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hot); text-underline-offset: 0.22em; overflow-wrap: anywhere; }
+.pkg-search {
+  --pagefind-ui-primary: var(--ink);
+  --pagefind-ui-text: var(--ink);
+  --pagefind-ui-background: transparent;
+  --pagefind-ui-border: var(--line-strong);
+  --pagefind-ui-tag: var(--surface-2);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 8px;
+  --pagefind-ui-image-border-radius: 6px;
+  --pagefind-ui-font: var(--font-ui);
+  min-width: 0;
+}
+.pkg-search .pagefind-ui__form::before { display: none; }
+.pkg-search .pagefind-ui__search-input {
+  height: 58px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.pkg-search .pagefind-ui__search-input::placeholder {
+  color: var(--dim);
+  opacity: 1;
+}
+.pkg-search .pagefind-ui__drawer {
+  margin-top: 18px;
+}
+.pkg-search .pagefind-ui__message,
+.pkg-search .pagefind-ui__result-excerpt,
+.pkg-search .pagefind-ui__result-nested {
+  color: var(--muted);
+}
+.pkg-search .pagefind-ui__result {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.pkg-search .pagefind-ui__result-title {
+  color: var(--ink);
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+.pkg-search .pagefind-ui__result-title a {
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
+}
+.pkg-search mark {
+  background: rgba(242, 109, 61, 0.18);
+  color: var(--ink);
+}
 .readme-excerpt {
   max-width: 860px;
   margin-top: 28px;
@@ -1412,7 +1502,7 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   .site-shell { width: min(calc(100% - 24px), var(--max)); margin: 12px auto; }
   .masthead, .site-footer { align-items: flex-start; flex-direction: column; }
   .nav { width: 100%; flex-wrap: wrap; gap: 12px 18px; }
-  .pkg-hero, .split-section, .security-section { grid-template-columns: 1fr; }
+  .pkg-hero, .split-section, .security-section, .pkg-search-section { grid-template-columns: 1fr; }
   .pkg-hero { padding-top: 38px; }
   h1 { font-size: clamp(3.2rem, 18vw, 5.6rem); }
   .lede { font-size: 1.32rem; }
