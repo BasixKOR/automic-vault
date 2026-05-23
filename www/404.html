@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Not Found | Automic Vault</title>
+  <meta name="description" content="The requested Automic Vault page could not be found.">
+  <meta name="robots" content="noindex, follow">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Page Not Found | Automic Vault">
+  <meta property="og:description" content="The requested Automic Vault page could not be found.">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles.css?v=25">
+  <style>
+    .not-found {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.36fr);
+      gap: clamp(28px, 5vw, 72px);
+      align-items: center;
+      min-height: calc(100dvh - 82px - 89px);
+      padding: clamp(52px, 8vw, 112px) clamp(20px, 3vw, 44px);
+    }
+
+    .not-found-copy {
+      display: grid;
+      gap: 24px;
+    }
+
+    .not-found h1 {
+      max-width: 980px;
+      font-size: clamp(4.4rem, 13vw, 13rem);
+      line-height: 0.84;
+      text-transform: uppercase;
+    }
+
+    .not-found .lede {
+      max-width: 780px;
+    }
+
+    .not-found-code {
+      display: grid;
+      gap: 16px;
+      padding: clamp(18px, 3vw, 28px);
+      border: 1px solid var(--line-strong);
+      background: var(--surface-2);
+    }
+
+    .not-found-code span {
+      color: var(--hot);
+      font-family: var(--font-mono);
+      font-size: clamp(4rem, 10vw, 8rem);
+      font-weight: 800;
+      line-height: 0.9;
+    }
+
+    .not-found-code p {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 900px) {
+      .not-found {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .not-found {
+        padding-inline: 18px;
+      }
+
+      .not-found h1 {
+        font-size: 3.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="site-shell" id="top">
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="Automic Vault home">
+        <img
+          class="brand-mark"
+          src="./assets/icon@2x.webp"
+          alt=""
+          width="54"
+          height="54"
+        >
+        <span class="brand-type">Automic Vault</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="nav" aria-label="Main navigation">
+        <a href="/download/">Download</a>
+        <a href="/docs/">Docs</a>
+        <a href="/security/">Security</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="not-found" aria-labelledby="not-found-title">
+        <div class="not-found-copy">
+          <p class="eyebrow">Not found</p>
+          <h1 id="not-found-title">This path is sealed.</h1>
+          <p class="lede">
+            The page you requested does not exist, moved, or was never part of the public surface.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="/">Go home</a>
+            <a class="button secondary" href="/docs/">Read docs</a>
+          </div>
+        </div>
+
+        <aside class="not-found-code" aria-label="HTTP status">
+          <span>404</span>
+          <p>CloudFront returns this page when S3 reports that a requested object is not available.</p>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; 2026 Automic Vault.</p>
+      <div class="footer-links">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="https://x.com/AutomicVault">X</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="./app.js?v=17"></script>
+</body>
+</html>

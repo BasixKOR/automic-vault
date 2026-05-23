@@ -710,7 +710,13 @@ build_distribution_config() {
         MaxTTL: 31536000
       },
       CustomErrorResponses: {
-        Quantity: 0
+        Quantity: 1,
+        Items: [{
+          ErrorCode: 403,
+          ResponsePagePath: "/404.html",
+          ResponseCode: "404",
+          ErrorCachingMinTTL: 60
+        }]
       },
       Restrictions: {
         GeoRestriction: {
@@ -801,6 +807,15 @@ upsert_distribution() {
       | .DistributionConfig.DefaultCacheBehavior.MinTTL = 0
       | .DistributionConfig.DefaultCacheBehavior.DefaultTTL = 86400
       | .DistributionConfig.DefaultCacheBehavior.MaxTTL = 31536000
+      | .DistributionConfig.CustomErrorResponses = {
+          Quantity: 1,
+          Items: [{
+            ErrorCode: 403,
+            ResponsePagePath: "/404.html",
+            ResponseCode: "404",
+            ErrorCachingMinTTL: 60
+          }]
+        }
       | .DistributionConfig.ViewerCertificate = {
           ACMCertificateArn: $cert_arn,
           SSLSupportMethod: "sni-only",
