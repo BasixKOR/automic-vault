@@ -103,6 +103,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
+package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
 scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
@@ -183,6 +184,14 @@ prepare_site_for_upload() {
   node "${llms_full_generator}" "${prepared_site_dir}" "${prepared_site_dir}/llms-full.txt"
 
   log_ok "Stamped ${secured_package_display_count} secured packages"
+}
+
+assert_package_pages_current() {
+  log_step "Checking generated package SEO pages"
+  if [[ ! -x "${package_pages_generator}" && ! -f "${package_pages_generator}" ]]; then
+    die "Missing package page generator: ${package_pages_generator}"
+  fi
+  python3 "${package_pages_generator}" --check
 }
 
 ensure_bucket() {
@@ -917,6 +926,7 @@ ensure_certificate_issued() {
 }
 
 log_header
+assert_package_pages_current
 prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"

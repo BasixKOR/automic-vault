@@ -23,3 +23,4 @@ User-agent: Bingbot
 Allow: /
 
 Sitemap: https://www.automicvault.com/sitemap.xml
+Sitemap: https://www.automicvault.com/pkg/sitemap.xml
