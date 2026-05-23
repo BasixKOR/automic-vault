@@ -163,7 +163,7 @@ prepare_site_for_upload() {
   secured_package_count="$(count_scan_log_entries)"
   secured_package_display_count="$(format_count_for_display "${secured_package_count}")"
   prepared_site_dir="$(mktemp -d)"
-  cp -R "${site_dir}/." "${prepared_site_dir}/"
+  rsync -a "${site_dir}/" "${prepared_site_dir}/"
 
   index_path="${prepared_site_dir}/index.html"
   if [[ ! -f "${index_path}" ]]; then
@@ -887,12 +887,80 @@ sync_site() {
     --exclude "*/.DS_Store" \
     --exclude "Automic Vault.dmg" \
     --exclude "db.json" \
+    --exclude "pagefind/*" \
     --exclude "*.html" \
     --exclude "*.xml" \
     --exclude "*.txt" \
     --exclude "*.md" \
     --exclude "*.json" \
     --cache-control "${WWW_ASSET_CACHE_CONTROL}"
+
+  log_step "Syncing immutable Pagefind search data"
+  aws s3 sync "${upload_site_dir}/pagefind/" "s3://${WWW_BUCKET}/pagefind/" \
+    --size-only \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "fragment/*.pf_fragment" \
+    --include "index/*.pf_index" \
+    --include "pagefind.*.pf_meta" \
+    --cache-control "${WWW_ASSET_CACHE_CONTROL}"
+
+  log_step "Syncing mutable Pagefind runtime assets"
+  aws s3 sync "${upload_site_dir}/pagefind/" "s3://${WWW_BUCKET}/pagefind/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include ".manifest.json" \
+    --include "pagefind-entry.json" \
+    --include "pagefind.js" \
+    --include "pagefind-*.js" \
+    --include "pagefind-*.css" \
+    --include "wasm.*.pagefind" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Normalizing mutable Pagefind cache headers"
+  local normalized_pagefind_count=0
+  local pagefind_runtime_asset pagefind_runtime_key pagefind_runtime_head pagefind_runtime_cache pagefind_runtime_type
+  while IFS= read -r -d '' pagefind_runtime_asset; do
+    pagefind_runtime_key="pagefind/${pagefind_runtime_asset##*/}"
+    pagefind_runtime_head="$(
+      aws s3api head-object \
+        --bucket "${WWW_BUCKET}" \
+        --key "${pagefind_runtime_key}" \
+        --output json
+    )"
+    pagefind_runtime_cache="$(jq -r '.CacheControl // "None"' <<<"${pagefind_runtime_head}")"
+    pagefind_runtime_type="$(jq -r '.ContentType // "None"' <<<"${pagefind_runtime_head}")"
+    if [[ "${pagefind_runtime_cache}" == "${WWW_HTML_CACHE_CONTROL}" ]]; then
+      continue
+    fi
+
+    local copy_args=(
+      s3api copy-object
+      --bucket "${WWW_BUCKET}"
+      --key "${pagefind_runtime_key}"
+      --copy-source "${WWW_BUCKET}/${pagefind_runtime_key}"
+      --metadata-directive REPLACE
+      --cache-control "${WWW_HTML_CACHE_CONTROL}"
+    )
+    if [[ -n "${pagefind_runtime_type}" && "${pagefind_runtime_type}" != "None" ]]; then
+      copy_args+=(--content-type "${pagefind_runtime_type}")
+    fi
+    aws "${copy_args[@]}" >/dev/null
+    normalized_pagefind_count="$((normalized_pagefind_count + 1))"
+  done < <(
+    find "${upload_site_dir}/pagefind" -maxdepth 1 -type f \( \
+      -name ".manifest.json" -o \
+      -name "pagefind-entry.json" -o \
+      -name "pagefind.js" -o \
+      -name "pagefind-*.js" -o \
+      -name "pagefind-*.css" -o \
+      -name "wasm.*.pagefind" \
+    \) -print0
+  )
+  log_ok "Normalized ${normalized_pagefind_count} mutable Pagefind headers"
 
   log_step "Syncing crawlable HTML and XML content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
@@ -902,6 +970,7 @@ sync_site() {
     --exclude "*" \
     --include "*.html" \
     --include "*.xml" \
+    --exclude "pagefind/*" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_step "Syncing crawlable plain text content"
@@ -911,6 +980,7 @@ sync_site() {
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.txt" \
+    --exclude "pagefind/*" \
     --content-type "text/plain; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
@@ -921,6 +991,7 @@ sync_site() {
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.md" \
+    --exclude "pagefind/*" \
     --content-type "text/markdown; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
@@ -931,6 +1002,7 @@ sync_site() {
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.json" \
+    --exclude "pagefind/*" \
     --content-type "application/json; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
