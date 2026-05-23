@@ -195,6 +195,11 @@ def main():
                     "modifies": "brew:git",
                     "version": "detector-only",
                 },
+                "huggingface-cli": {
+                    "name": "isotope:huggingface-cli",
+                    "modifies": "brew:hf",
+                    "version": "1.0.0",
+                },
                 "openssh": {
                     "name": "isotope:openssh",
                     "modifies": "brew:openssh",
@@ -219,6 +224,11 @@ def main():
                     "name": "isotope:ruby",
                     "modifies": "brew:ruby",
                     "version": "detector-only",
+                },
+                "terraform": {
+                    "name": "isotope:terraform",
+                    "modifies": "av:terraform",
+                    "version": "1.0.0",
                 },
             },
             "npm": {

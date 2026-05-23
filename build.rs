@@ -91,11 +91,17 @@ fn is_env_key(key: &str) -> bool {
 fn generate_isotope_integrations() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let repo_root = std::path::Path::new(&manifest_dir);
+    println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_REPO_CACHE");
+    println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     let isotope_roots = [
-        repo_root.join("data/isotopes"),
-        repo_root.join("data/radioisotopes"),
+        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes")),
+        path_env_or_default(
+            "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
+            repo_root.join("data/radioisotopes"),
+        ),
     ];
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+    let generated_sources_dir = std::path::Path::new(&out_dir).join("isotope-generated");
     let output_path = std::path::Path::new(&out_dir).join("isotope_integrations.rs");
 
     let mut entries = Vec::new();
@@ -124,27 +130,51 @@ fn generate_isotope_integrations() {
     for entry in &entries {
         output.push_str(&format!("mod {} {{\n", entry.module_name));
         if let Some(path) = &entry.detect_path {
+            let include_path = sanitized_isotope_source(
+                &generated_sources_dir,
+                &entry.module_name,
+                "detect",
+                path,
+            );
             output.push_str(&format!(
                 "  #[allow(dead_code)] pub(crate) mod detect {{ include!(r#\"{}\"#); }}\n",
-                path.display()
+                include_path.display()
             ));
         }
         if let Some(path) = &entry.migrate_path {
+            let include_path = sanitized_isotope_source(
+                &generated_sources_dir,
+                &entry.module_name,
+                "migrate",
+                path,
+            );
             output.push_str(&format!(
                 "  #[allow(dead_code)] pub(crate) mod migrate {{ include!(r#\"{}\"#); }}\n",
-                path.display()
+                include_path.display()
             ));
         }
         if let Some(path) = &entry.post_install_path {
+            let include_path = sanitized_isotope_source(
+                &generated_sources_dir,
+                &entry.module_name,
+                "post_install",
+                path,
+            );
             output.push_str(&format!(
                 "  #[allow(dead_code)] pub(crate) mod post_install {{ include!(r#\"{}\"#); }}\n",
-                path.display()
+                include_path.display()
             ));
         }
         if let Some(path) = &entry.credential_helper_path {
+            let include_path = sanitized_isotope_source(
+                &generated_sources_dir,
+                &entry.module_name,
+                "credential_helper",
+                path,
+            );
             output.push_str(&format!(
                 "  #[allow(dead_code)] pub(crate) mod credential_helper {{ include!(r#\"{}\"#); }}\n",
-                path.display()
+                include_path.display()
             ));
         }
         output.push_str("}\n\n");
@@ -210,6 +240,69 @@ fn generate_isotope_integrations() {
 
     write_if_changed(&output_path, &output)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", output_path.display()));
+}
+
+fn path_env_or_default(key: &str, default: std::path::PathBuf) -> std::path::PathBuf {
+    std::env::var_os(key)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or(default)
+}
+
+fn sanitized_isotope_source(
+    generated_sources_dir: &std::path::Path,
+    module_name: &str,
+    suffix: &str,
+    source_path: &std::path::Path,
+) -> std::path::PathBuf {
+    let contents = std::fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let output_path = generated_sources_dir.join(format!("{module_name}-{suffix}.rs"));
+    let sanitized = strip_cfg_test_modules(&contents);
+    write_if_changed(&output_path, &sanitized)
+        .unwrap_or_else(|err| panic!("failed to write {}: {err}", output_path.display()));
+    output_path
+}
+
+fn strip_cfg_test_modules(contents: &str) -> String {
+    let mut output = String::new();
+    let mut lines = contents.lines();
+
+    while let Some(line) = lines.next() {
+        if line.trim() == "#[cfg(test)]" {
+            let Some(next_line) = lines.next() else {
+                output.push_str(line);
+                output.push('\n');
+                break;
+            };
+            if next_line.trim_start().starts_with("mod tests {") {
+                let mut depth = brace_delta(next_line);
+                while depth > 0 {
+                    let Some(module_line) = lines.next() else {
+                        break;
+                    };
+                    depth += brace_delta(module_line);
+                }
+                continue;
+            }
+            output.push_str(line);
+            output.push('\n');
+            output.push_str(next_line);
+            output.push('\n');
+            continue;
+        }
+
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    output
+}
+
+fn brace_delta(line: &str) -> i32 {
+    let opens = line.chars().filter(|&ch| ch == '{').count() as i32;
+    let closes = line.chars().filter(|&ch| ch == '}').count() as i32;
+    opens - closes
 }
 
 fn collect_isotope_integrations(
@@ -372,6 +465,10 @@ fn helper_info_plist(manifest_dir: &str) -> String {
 fn write_if_changed(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
     if std::fs::read_to_string(path).is_ok_and(|existing| existing == contents) {
         return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
     }
 
     std::fs::write(path, contents)

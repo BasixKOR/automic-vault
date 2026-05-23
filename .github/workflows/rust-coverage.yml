@@ -25,17 +25,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           rm -rf data/isotopes data/radioisotopes
-          mkdir -p data/isotopes
-
-          gh repo list automic-vault --limit 200 --json name,isArchived,isFork \
-            --jq '.[] | select(.isFork and (.isArchived | not)) | .name' |
-            while IFS= read -r repo; do
-              if gh api "repos/automic-vault/${repo}/contents/automic-vault.yml" >/dev/null 2>&1; then
-                git clone --depth 1 "https://github.com/automic-vault/${repo}.git" "data/isotopes/${repo}"
-              fi
-            done
-
-          git clone --depth 1 https://github.com/automic-vault/radioisotopes.git data/radioisotopes
+          scripts/sync-isotope-checkouts.sh
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal

@@ -179,6 +179,11 @@
         "name": "isotope:git",
         "version": "detector-only"
       },
+      "huggingface-cli": {
+        "modifies": "brew:hf",
+        "name": "isotope:huggingface-cli",
+        "version": "1.0.0"
+      },
       "openssh": {
         "modifies": "brew:openssh",
         "name": "isotope:openssh",

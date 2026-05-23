@@ -186,3 +186,141 @@ pub(crate) fn error_response(
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_recognizes_supported_methods() {
+        let cases = [
+            ("packages.listInstalled", ProtocolMethod::PackagesListInstalled),
+            ("packages.listAvailable", ProtocolMethod::PackagesListAvailable),
+            ("packages.listPulse", ProtocolMethod::PackagesListPulse),
+            ("packages.info", ProtocolMethod::PackagesInfo),
+            ("packages.search", ProtocolMethod::PackagesSearch),
+            ("packages.listOutdated", ProtocolMethod::PackagesListOutdated),
+            (
+                "packages.homebrewMigrationRecommendation",
+                ProtocolMethod::PackagesHomebrewMigrationRecommendation,
+            ),
+            (
+                "packages.isotopeMigrationPlan",
+                ProtocolMethod::PackagesIsotopeMigrationPlan,
+            ),
+            ("packages.migrateIsotope", ProtocolMethod::PackagesMigrateIsotope),
+            ("packages.makeDefault", ProtocolMethod::PackagesMakeDefault),
+            ("system.info", ProtocolMethod::SystemInfo),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(ProtocolMethod::parse(value), Some(expected));
+        }
+    }
+
+    #[test]
+    fn parse_rejects_unknown_methods() {
+        assert_eq!(ProtocolMethod::parse("packages.unknown"), None);
+    }
+
+    #[test]
+    fn protocol_request_defaults_missing_params_to_null() {
+        let request: ProtocolRequest =
+            serde_json::from_value(json!({ "id": 42, "method": "packages.info" })).unwrap();
+
+        assert_eq!(request.id, 42);
+        assert_eq!(request.method, "packages.info");
+        assert_eq!(request.params, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn installed_package_summary_serializes_public_field_names() {
+        let summary = InstalledPackageSummary {
+            name: "openssl".to_string(),
+            source: PackageReceiptSource::Formula {
+                root_formula: "openssl@3".to_string(),
+            },
+            version: "3.0.0".to_string(),
+            description: Some("TLS toolkit".to_string()),
+            installed_versions: vec!["3.0.0".to_string()],
+            install_package_names: vec!["brew:openssl@3".to_string()],
+            security_state: Some(PackageSecurityState {
+                isotope_name: "openssl".to_string(),
+                install_is_insecure: false,
+                remediation_available: true,
+                reasons: vec!["covered".to_string()],
+                error: None,
+            }),
+        };
+
+        let value = serde_json::to_value(summary).unwrap();
+        assert_eq!(value["installedVersions"], json!(["3.0.0"]));
+        assert_eq!(value["installPackageNames"], json!(["brew:openssl@3"]));
+        assert_eq!(
+            value["source"],
+            json!({ "kind": "formula", "root_formula": "openssl@3" })
+        );
+        assert_eq!(value["securityState"]["isotopeName"], "openssl");
+    }
+
+    #[test]
+    fn response_types_use_expected_json_field_names() {
+        let search = SearchPackagesResponse {
+            packages: vec![SearchPackageSummary {
+                name: "pkg".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "pkg".to_string(),
+                },
+                version: Some("1.2.3".to_string()),
+                description: None,
+                pulse_kind: Some("release".to_string()),
+                security_state: None,
+            }],
+            total_count: 1,
+            next_offset: Some(25),
+        };
+        let search_json = serde_json::to_value(search).unwrap();
+        assert_eq!(search_json["totalCount"], 1);
+        assert_eq!(search_json["nextOffset"], 25);
+        assert_eq!(search_json["packages"][0]["pulseKind"], "release");
+
+        let plan = IsotopeMigrationPlanResponse {
+            isotope_name: "gh".to_string(),
+            replaces_package: Some("brew:gh".to_string()),
+            modifies_package: None,
+            is_radioisotope: true,
+            has_migration: false,
+        };
+        let plan_json = serde_json::to_value(plan).unwrap();
+        assert_eq!(plan_json["isotopeName"], "gh");
+        assert_eq!(plan_json["replacesPackage"], "brew:gh");
+        assert_eq!(plan_json["isRadioisotope"], true);
+        assert_eq!(plan_json["hasMigration"], false);
+
+        let hazard = HomebrewMigrationHazardSummary {
+            package_name: "gh".to_string(),
+            isotope_name: "gh".to_string(),
+            reasons: vec!["detector-only".to_string()],
+            error: Some("manual review".to_string()),
+        };
+        let hazard_json = serde_json::to_value(hazard).unwrap();
+        assert_eq!(hazard_json["packageName"], "gh");
+        assert_eq!(hazard_json["isotopeName"], "gh");
+        assert_eq!(hazard_json["reasons"], json!(["detector-only"]));
+    }
+
+    #[test]
+    fn response_helpers_wrap_payloads() {
+        let success = success_response(7, json!({ "ok": true }));
+        let success_json = serde_json::to_value(success).unwrap();
+        assert_eq!(success_json, json!({ "id": 7, "result": { "ok": true } }));
+
+        let error = error_response(9, -32000, "boom");
+        let error_json = serde_json::to_value(error).unwrap();
+        assert_eq!(
+            error_json,
+            json!({ "id": 9, "error": { "code": -32000, "message": "boom" } })
+        );
+    }
+}
