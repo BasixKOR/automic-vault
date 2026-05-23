@@ -1370,7 +1370,7 @@ h1 {
   transform: translateY(-1px);
 }
 .pkg-search .pagefind-ui__search-input::placeholder {
-  color: var(--dim);
+  color: #8d887f;
   opacity: 1;
 }
 .pkg-search .pagefind-ui__drawer {
