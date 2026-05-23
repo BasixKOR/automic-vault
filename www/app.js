@@ -92,6 +92,9 @@ if (securedFeed) {
         const label = row.querySelector("span");
         const text = row.querySelector("p");
 
+        row.setAttribute("href", href);
+        row.setAttribute("aria-label", `${name}: ${detail}`);
+
         if (label) {
           label.textContent = name;
         }
@@ -100,7 +103,6 @@ if (securedFeed) {
           text.textContent = detail;
         }
 
-        row.href = href;
         row.className = `feed-row ${accent} is-entering`;
         void row.offsetWidth;
         row.classList.remove("is-entering");
