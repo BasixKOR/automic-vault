@@ -7,27 +7,21 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 combined_path="${repo_root}/data/combined.json"
 radioisotopes_dir="${repo_root}/data/radioisotopes"
 cache_control="public, max-age=3600"
-interval_seconds=3600
-run_once=false
 color_mode="auto"
 isotope_args=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/update-db.sh [--once] [--interval-seconds SECONDS]
-                            [--skip-isotope-builds]
+Usage: scripts/update-db.sh [--skip-isotope-builds]
                             [--color auto|always|never] [--no-color]
 
 Refresh isotope metadata, rebuild the Homebrew package database, rebuild
 data/combined.json, and upload it as /db.json.
 
-By default this runs continuously. After each update it waits for 60 minutes
-minus the time spent updating before starting the next update.
+This script runs one update and exits. Use scripts/update-all for the
+hourly database loop and daily package-page deploy cadence.
 
 Options:
-  --once                      Run one update and exit.
-  --interval-seconds SECONDS  Target interval between update starts.
-                              Defaults to 3600.
   --skip-isotope-builds       Pass --skip-builds to build-isotopes.sh.
   --color auto|always|never   Control terminal color output.
                               Defaults to auto.
@@ -39,16 +33,13 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once)
-      run_once=true
+      # Kept as a no-op for old crontabs and manual muscle memory.
       shift
       ;;
     --interval-seconds)
-      if [[ $# -lt 2 ]]; then
-        echo "--interval-seconds requires a value" >&2
-        exit 1
-      fi
-      interval_seconds="$2"
-      shift 2
+      echo "--interval-seconds moved to scripts/update-all." >&2
+      usage >&2
+      exit 1
       ;;
     --skip-isotope-builds)
       isotope_args+=(--skip-builds)
@@ -86,11 +77,6 @@ case "${color_mode}" in
     exit 1
     ;;
 esac
-
-if ! [[ "${interval_seconds}" =~ ^[0-9]+$ ]] || [[ "${interval_seconds}" -eq 0 ]]; then
-  echo "--interval-seconds must be a positive integer" >&2
-  exit 1
-fi
 
 use_color=false
 if [[ "${color_mode}" == "always" ]]; then
@@ -275,28 +261,10 @@ update_once() {
 }
 
 log_header
-log INFO "Target update interval is $(format_duration "${interval_seconds}")"
+if update_once; then
+  exit 0
+fi
 
-while true; do
-  cycle_started_at="$(date +%s)"
-
-  if update_once; then
-    status=0
-  else
-    status=$?
-    log ERROR "Update cycle failed with exit status ${status}"
-  fi
-
-  if [[ "${run_once}" == "true" ]]; then
-    exit "${status}"
-  fi
-
-  elapsed=$(($(date +%s) - cycle_started_at))
-  if [[ "${elapsed}" -lt "${interval_seconds}" ]]; then
-    sleep_seconds=$((interval_seconds - elapsed))
-    log INFO "Sleeping $(format_duration "${sleep_seconds}") before next update"
-    sleep "${sleep_seconds}"
-  else
-    log WARN "Cycle took $(format_duration "${elapsed}"); starting next update immediately"
-  fi
-done
+status=$?
+log ERROR "Update failed with exit status ${status}"
+exit "${status}"

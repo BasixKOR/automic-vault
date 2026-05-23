@@ -35,6 +35,23 @@ class PackagePage:
     popularity: dict[str, Any] = field(default_factory=dict)
     aliases: set[str] = field(default_factory=set)
     source_notes: list[str] = field(default_factory=list)
+    package_manager: str = ""
+    package_manager_url: str = ""
+    repository: str = ""
+    upstream_docs: str = ""
+    license: str = ""
+    source_archive: str = ""
+    last_verified: str = ""
+    dependencies: list[str] = field(default_factory=list)
+    build_dependencies: list[str] = field(default_factory=list)
+    uses_from_macos: list[str] = field(default_factory=list)
+    install: dict[str, Any] = field(default_factory=dict)
+    executables: list[dict[str, Any]] = field(default_factory=list)
+    install_behavior: dict[str, Any] = field(default_factory=dict)
+    bottle: dict[str, Any] = field(default_factory=dict)
+    geiger: dict[str, Any] | None = None
+    related_packages: list[dict[str, Any]] = field(default_factory=list)
+    also_available_via: list[dict[str, Any]] = field(default_factory=list)
     isotope: dict[str, Any] | None = None
     isotope_readme: str = ""
     isotope_readme_html: str = ""
@@ -197,13 +214,19 @@ def load_sources() -> dict[str, Any]:
         combined = read_json(combined_path)
         sources = combined.get("sources") or {}
         if isinstance(sources, dict):
+            if Path("data/geiger-counter.json").exists():
+                sources["geiger"] = read_json(Path("data/geiger-counter.json"), {})
+            if Path("data/pkg-page-enrichment.json").exists():
+                sources["pkg_page_enrichment"] = read_json(Path("data/pkg-page-enrichment.json"), {})
             return sources
 
     return {
         "aliases": read_json(Path("data/aliases.json"), {}),
         "db": read_json(Path("data/db.json"), {}),
+        "geiger": read_json(Path("data/geiger-counter.json"), {}),
         "isotopes": read_json(Path("data/isotopes.json"), {}),
         "npm": read_json(Path("data/npm.json"), {}),
+        "pkg_page_enrichment": read_json(Path("data/pkg-page-enrichment.json"), {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
 
@@ -236,6 +259,8 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
             page.url = info.get("url") or page.url
             page.sha256 = info.get("sha256") or page.sha256
             page.binaries = info.get("binaries") or page.binaries
+            if info.get("dependencies"):
+                page.dependencies = info.get("dependencies") or page.dependencies
             page.popularity = info.get("popularity") or page.popularity
             page.source_notes.append("Nucleus package database")
 
@@ -254,13 +279,34 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     entries = db.get("entries") or {}
     if isinstance(entries, dict):
         for executable, provider_key in entries.items():
-            if not isinstance(provider_key, str) or ":" not in provider_key:
+            if not isinstance(provider_key, str):
                 continue
-            provider, name = provider_key.split(":", 1)
-            if provider == "formula":
-                provider = "brew"
+            if ":" in provider_key:
+                provider, name = provider_key.split(":", 1)
+                if provider == "formula":
+                    provider = "brew"
+            else:
+                provider, name = "brew", provider_key
             if provider in {"brew", "cask", "npm", "pip"}:
                 get_page(provider, name).aliases.add(executable)
+
+    stub_exclusions = sources.get("stub_exclusions") or {}
+    if isinstance(stub_exclusions, dict):
+        for package_key, excluded in stub_exclusions.items():
+            if not isinstance(package_key, str) or ":" not in package_key:
+                continue
+            provider, name = package_key.split(":", 1)
+            if provider in {"brew", "cask", "npm", "pip"} and isinstance(excluded, list):
+                page = get_page(provider, name)
+                page.extra["stub_exclusions"] = sorted(str(item) for item in excluded)
+
+    geiger_packages = (sources.get("geiger") or {}).get("packages") or {}
+    if isinstance(geiger_packages, dict):
+        for name, geiger in geiger_packages.items():
+            if isinstance(geiger, dict):
+                page = get_page("brew", name)
+                page.geiger = geiger
+                page.source_notes.append("Geiger risk classifier")
 
     for alias, provider_key in (sources.get("aliases") or {}).items():
         if not isinstance(provider_key, str) or ":" not in provider_key:
@@ -298,7 +344,72 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
         page.approval_gate = gate
         page.source_notes.append("approval-gate seed metadata")
 
+    apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
+    apply_package_page_supplements(pages)
+
     return pages
+
+
+def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dict[str, Any]) -> None:
+    packages = enrichment.get("packages") if isinstance(enrichment, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key, info in packages.items():
+        if not isinstance(package_key, str) or ":" not in package_key or not isinstance(info, dict):
+            continue
+        provider, name = package_key.split(":", 1)
+        if provider not in {"brew", "cask", "npm", "pip"} or not name:
+            continue
+        page = pages.setdefault(package_key, PackagePage(provider=provider, name=name))
+        package = info.get("package") or {}
+        if isinstance(package, dict):
+            page.package_manager = package.get("packageManager") or page.package_manager
+            page.package_manager_url = package.get("packageManagerUrl") or page.package_manager_url
+        page.homepage = info.get("homepage") or page.homepage
+        page.version = info.get("version") or page.version
+        page.license = info.get("license") or page.license
+        page.source_archive = info.get("sourceArchive") or page.source_archive
+        page.dependencies = info.get("dependencies") or page.dependencies
+        page.build_dependencies = info.get("buildDependencies") or page.build_dependencies
+        page.uses_from_macos = info.get("usesFromMacos") or page.uses_from_macos
+        page.executables = info.get("executables") or page.executables
+        page.install_behavior = info.get("installBehavior") or page.install_behavior
+        page.bottle = info.get("bottle") or page.bottle
+        page.source_notes.append("package-page enrichment")
+
+
+def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
+    base = Path("data/pkg-pages")
+    if not base.exists():
+        return
+    for path in sorted(base.glob("*/*.json")):
+        supplement = read_json(path, {})
+        package = supplement.get("package") or {}
+        provider = package.get("provider") or path.parent.name
+        name = package.get("name") or path.stem
+        if provider not in {"brew", "cask", "npm", "pip"} or not name:
+            continue
+        page = pages.setdefault(f"{provider}:{name}", PackagePage(provider=provider, name=name))
+        page.summary = supplement.get("summary") or page.summary
+        page.homepage = supplement.get("homepage") or page.homepage
+        page.version = supplement.get("version") or page.version
+        page.last_verified = supplement.get("lastVerified") or page.last_verified
+        page.package_manager = package.get("packageManager") or page.package_manager
+        page.package_manager_url = package.get("packageManagerUrl") or page.package_manager_url
+        page.repository = supplement.get("repository") or page.repository
+        page.upstream_docs = supplement.get("upstreamDocs") or page.upstream_docs
+        page.license = supplement.get("license") or page.license
+        page.source_archive = supplement.get("sourceArchive") or page.source_archive
+        page.dependencies = supplement.get("dependencies") or page.dependencies
+        page.build_dependencies = supplement.get("buildDependencies") or page.build_dependencies
+        page.uses_from_macos = supplement.get("usesFromMacos") or page.uses_from_macos
+        page.install = supplement.get("install") or page.install
+        page.executables = supplement.get("executables") or page.executables
+        page.install_behavior = supplement.get("installBehavior") or page.install_behavior
+        page.bottle = supplement.get("bottle") or page.bottle
+        page.related_packages = supplement.get("relatedPackages") or page.related_packages
+        page.also_available_via = supplement.get("alsoAvailableVia") or page.also_available_via
+        page.source_notes.append(f"package-page supplement {path.as_posix()}")
 
 
 def isotope_metadata_by_package(isotopes: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -386,19 +497,54 @@ def approval_gate_metadata_by_package() -> dict[str, dict[str, Any]]:
             provider = namespace
         else:
             continue
-        descriptions = re.findall(r"^\s+description:\s*(.+)$", text, flags=re.MULTILINE)
-        severities = re.findall(r"^\s+severity:\s*([^\n#]+)", text, flags=re.MULTILINE)
+        rules = parse_approval_rules(text)
+        descriptions = [rule.get("description", "") for rule in rules if rule.get("description")]
+        severities = [rule.get("severity", "") for rule in rules if rule.get("severity")]
         entrypoints = re.findall(r"^\s+-\s+name:\s*([^\n#]+)", text, flags=re.MULTILINE)
         analytics_rank = match_yaml_scalar(text, r"^\s+rank:\s*([^\n#]+)")
+        reviewed_at = match_yaml_scalar(text, r"^\s+reviewedAt:\s*([^\n#]+)")
+        coverage_status = match_yaml_scalar(text, r"^\s+status:\s*([^\n#]+)")
         result[f"{provider}:{name}"] = {
             "path": str(path),
-            "rule_count": len(descriptions),
+            "rule_count": len(rules),
             "rules": [clean_yaml_scalar(item) for item in descriptions[:7]],
             "severities": sorted({clean_yaml_scalar(item) for item in severities}),
             "entrypoints": sorted({clean_yaml_scalar(item) for item in entrypoints[:8]}),
             "analytics_rank": clean_yaml_scalar(analytics_rank),
+            "reviewed_at": clean_yaml_scalar(reviewed_at),
+            "coverage_status": clean_yaml_scalar(coverage_status),
         }
     return result
+
+
+def parse_approval_rules(text: str) -> list[dict[str, str]]:
+    rules: list[dict[str, str]] = []
+    in_rules = False
+    current: dict[str, str] | None = None
+    for line in text.splitlines():
+        if re.match(r"^rules:\s*$", line):
+            in_rules = True
+            continue
+        if not in_rules:
+            continue
+        if line and not line.startswith(" "):
+            break
+        rule_id = re.match(r"^\s+-\s+id:\s*([^\n#]+)", line)
+        if rule_id:
+            current = {"id": clean_yaml_scalar(rule_id.group(1))}
+            rules.append(current)
+            continue
+        if current is None:
+            continue
+        description = re.match(r"^\s+description:\s*(.+)$", line)
+        if description:
+            current["description"] = clean_yaml_scalar(description.group(1))
+            continue
+        severity = re.match(r"^\s+severity:\s*([^\n#]+)", line)
+        if severity:
+            current["severity"] = clean_yaml_scalar(severity.group(1))
+            continue
+    return rules
 
 
 def match_yaml_scalar(text: str, pattern: str) -> str:
@@ -550,6 +696,9 @@ def source_files() -> list[Path]:
             if ".git" in parts or path.name == ".DS_Store":
                 continue
             files.append(path)
+    supplement_root = Path("data/pkg-pages")
+    if supplement_root.exists():
+        files.extend(path for path in supplement_root.rglob("*.json") if path.is_file())
     isotope_root = Path("data/isotopes")
     if isotope_root.exists():
         files.extend(path for path in isotope_root.glob("*/README.md") if path.is_file())
@@ -685,11 +834,19 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
 
 
 def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
-    title = f"{page.display_name} package security | Automic Vault"
+    title = f"Install {page.display_name} with {package_manager_label(page)} | Automic Vault"
     description = meta_description(page)
-    updated = fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
+    updated = fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
     facts = package_facts(page)
-    sections = [render_overview(page), render_security(page), render_install_metadata(page), render_sources(page)]
+    sections = [
+        render_install(page),
+        render_overview(page),
+        render_security(page),
+        render_executables(page),
+        render_install_metadata(page),
+        render_related(page),
+        render_sources(page),
+    ]
     breadcrumbs = f"""
 <nav class="breadcrumbs" aria-label="Breadcrumbs">
   <a href="../../../">Home</a>
@@ -710,11 +867,11 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
   <section class="pkg-hero" aria-labelledby="pkg-title">
     <div class="hero-copy">
       <p class="eyebrow">{html_escape(page.provider)} package intelligence</p>
-      <h1 id="pkg-title">{html_escape(page.display_name)}</h1>
+      <h1 id="pkg-title">Install {html_escape(page.display_name)}</h1>
       <p class="lede">{html_escape(hero_sentence(page))}</p>
       <div class="hero-actions">
-        <a class="button primary" href="../../../docs/">Read docs</a>
-        <a class="button secondary" href="../../../secret-scanner-for-ai-agents/">Run scanner</a>
+        <a class="button primary" href="#install">Install command</a>
+        <a class="button secondary" href="#security">Security notes</a>
       </div>
     </div>
     <aside class="hero-panel" aria-label="Package facts">
@@ -728,10 +885,13 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
         stylesheet_href="../../../pkg/styles.css",
         favicon_href="../../../favicon.ico",
         schema=schema_for_package(page, description, updated),
+        extra_body=copy_script(),
     )
 
 
 def hero_sentence(page: PackagePage) -> str:
+    if page.summary and install_command(page):
+        return f"{page.summary}. Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
         return f"Automic Vault tracks {page.display_name} because {title.lower()} matters when AI agents run command-line tools on macOS."
@@ -743,9 +903,11 @@ def hero_sentence(page: PackagePage) -> str:
 
 
 def meta_description(page: PackagePage) -> str:
-    parts = [f"Automic Vault package page for {page.display_name}."]
+    parts = [f"Install {page.display_name} with {package_manager_label(page)}."]
     if page.summary:
         parts.append(page.summary)
+    if page.executables or page.aliases:
+        parts.append("View executables, metadata, and security notes.")
     if page.isotope:
         title = (page.isotope.get("justification") or {}).get("title")
         if title:
@@ -768,9 +930,14 @@ def label_for(page: PackagePage) -> str:
 
 
 def package_facts(page: PackagePage) -> str:
-    facts = [metric("provider", page.provider)]
+    facts = [metric("manager", package_manager_label(page))]
     if page.version:
         facts.append(metric("version", page.version))
+    if page.license:
+        facts.append(metric("license", page.license))
+    if page.geiger:
+        facts.append(metric("risk", geiger_level_label(page.geiger)))
+        facts.append(metric("classifier confidence", geiger_confidence_label(page.geiger)))
     rank = page.popularity.get("rank")
     if rank:
         facts.append(metric("rank", fmt_int(rank)))
@@ -782,13 +949,90 @@ def package_facts(page: PackagePage) -> str:
         facts.append(metric("radioisotope", "covered"))
     if page.approval_gate:
         facts.append(metric("approval rules", fmt_int(page.approval_gate.get("rule_count"))))
-    if page.last_updated_at:
+    if page.last_verified:
+        facts.append(metric("verified", fmt_date(page.last_verified)))
+    elif page.last_updated_at:
         facts.append(metric("updated", fmt_date(page.last_updated_at)))
     return "".join(facts)
 
 
 def metric(label: str, value: Any) -> str:
     return f'<div class="metric"><span>{html_escape(label)}</span><strong>{html_escape(value)}</strong></div>'
+
+
+def package_manager_label(page: PackagePage) -> str:
+    if page.package_manager:
+        return page.package_manager
+    return {
+        "brew": "Homebrew",
+        "cask": "Homebrew Cask",
+        "npm": "npm",
+        "pip": "PyPI",
+    }.get(page.provider, page.provider)
+
+
+def install_command(page: PackagePage) -> str:
+    command = page.install.get("command")
+    if command:
+        return str(command)
+    if page.provider == "brew":
+        return f"brew install {page.name}"
+    if page.provider == "cask":
+        return f"brew install --cask {page.name}"
+    if page.provider == "npm":
+        return f"npm install -g {page.name}"
+    if page.provider == "pip":
+        return f"pip install {page.name}"
+    return ""
+
+
+def geiger_level_label(geiger: dict[str, Any]) -> str:
+    level = geiger.get("level") or "unknown"
+    return str(level)
+
+
+def geiger_confidence_label(geiger: dict[str, Any]) -> str:
+    confidence = geiger.get("confidence") or ""
+    return str(confidence or "unknown")
+
+
+def render_install(page: PackagePage) -> str:
+    command = install_command(page)
+    notes = page.install.get("notes") or []
+    note_items = "".join(f"<li>{html_escape(note)}</li>" for note in notes[:6])
+    manager = page.package_manager_url
+    manager_link = (
+        f'<a href="{attr(manager)}">{html_escape(manager)}</a>'
+        if manager
+        else f"{html_escape(package_manager_label(page))} metadata was not linked in local data."
+    )
+    return f"""
+<section id="install" class="pkg-section install-section" aria-labelledby="install-title">
+  <div class="install-command-panel">
+    <div>
+      <p class="section-kicker">install</p>
+      <h2 id="install-title">Install command</h2>
+    </div>
+    <div class="terminal-block">
+      <div class="terminal-head">
+        <span>shell</span>
+        <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
+      </div>
+      <pre><code>{html_escape(command)}</code></pre>
+    </div>
+  </div>
+  <div class="install-notes-grid">
+    <article>
+      <h3>Package manager source</h3>
+      <p>{manager_link}</p>
+    </article>
+    <article>
+      <h3>Platform notes</h3>
+      <ul>{note_items or '<li>No package-specific platform notes were present.</li>'}</ul>
+    </article>
+  </div>
+</section>
+"""
 
 
 def render_overview(page: PackagePage) -> str:
@@ -801,7 +1045,7 @@ def render_overview(page: PackagePage) -> str:
 <section class="pkg-section split-section">
   <div>
     <p class="section-kicker">overview</p>
-    <h2>What Automic Vault knows about {html_escape(page.display_name)}</h2>
+    <h2>Package summary</h2>
     <p>{summary}</p>
   </div>
   <div class="detail-stack">
@@ -819,6 +1063,8 @@ def render_overview(page: PackagePage) -> str:
 
 
 def render_security(page: PackagePage) -> str:
+    geiger = render_geiger(page)
+    install_signals = render_install_behavior_signals(page)
     if page.isotope:
         justification = page.isotope.get("justification") or {}
         title = html_escape(justification.get("title") or "Radioisotope coverage")
@@ -829,11 +1075,13 @@ def render_security(page: PackagePage) -> str:
         release = page.isotope.get("releaseUrl") or ""
         release_html = f'<a href="{attr(release)}">{html_escape(release)}</a>' if release else "Local radioisotope manifest"
         return f"""
-<section class="pkg-section security-section">
+<section id="security" class="pkg-section security-section">
   <div>
     <p class="section-kicker">radioisotope</p>
     <h2>{title}</h2>
     <p>{detail}</p>
+    {geiger}
+    {install_signals}
     {readme}
   </div>
   <div class="detail-stack">
@@ -850,11 +1098,13 @@ def render_security(page: PackagePage) -> str:
 {render_gate(page)}
 """
     return render_gate(page) or f"""
-<section class="pkg-section security-section">
+<section id="security" class="pkg-section security-section">
   <div>
     <p class="section-kicker">security posture</p>
-    <h2>No radioisotope coverage found yet</h2>
-    <p>This generated page did not find a matching local radioisotope manifest for {html_escape(page.display_name)}. Nucleus package metadata is still published here so future coverage has a stable package URL.</p>
+    <h2>{html_escape(security_heading(page))}</h2>
+    <p>{html_escape(security_summary(page))}</p>
+    {geiger}
+    {install_signals}
   </div>
   <div class="detail-stack">
     <article>
@@ -863,6 +1113,78 @@ def render_security(page: PackagePage) -> str:
     </article>
   </div>
 </section>
+"""
+
+
+def security_heading(page: PackagePage) -> str:
+    if page.geiger:
+        return f"Risk level: {geiger_level_label(page.geiger)}"
+    return "No radioisotope coverage found yet"
+
+
+def security_summary(page: PackagePage) -> str:
+    if page.geiger:
+        reasons = page.geiger.get("reasons") or []
+        if reasons:
+            return " ".join(str(reason).rstrip(".") + "." for reason in reasons[:2])
+    return f"This generated page did not find a matching local radioisotope manifest for {page.display_name}. Nucleus package metadata is still published here so future coverage has a stable package URL."
+
+
+def render_geiger(page: PackagePage) -> str:
+    if not page.geiger:
+        return ""
+    reasons = "".join(f"<li>{html_escape(reason)}</li>" for reason in (page.geiger.get("reasons") or [])[:5])
+    signals = "".join(f"<li>{html_escape(signal)}</li>" for signal in (page.geiger.get("signals") or [])[:5])
+    return f"""
+<div class="signal-grid" aria-label="Geiger classifier signals">
+  <article>
+    <h3>Risk classifier</h3>
+    <p><strong>{html_escape(geiger_level_label(page.geiger))}</strong> risk · {html_escape(geiger_confidence_label(page.geiger))} confidence · {html_escape(page.geiger.get('category') or 'uncategorized')}</p>
+  </article>
+  <article>
+    <h3>Why</h3>
+    <ul>{reasons or '<li>No classifier reasons were present.</li>'}</ul>
+  </article>
+  <article>
+    <h3>Signals</h3>
+    <ul>{signals or '<li>No classifier signals were present.</li>'}</ul>
+  </article>
+</div>
+"""
+
+
+def render_install_behavior_signals(page: PackagePage) -> str:
+    signals: list[str] = []
+    behavior = page.install_behavior or {}
+    if behavior.get("postInstallDefined") is True:
+        signals.append("Homebrew declares a post-install hook for this formula.")
+    elif behavior.get("postInstallDefined") is False:
+        signals.append("No Homebrew post-install hook is recorded in formula metadata.")
+    if behavior.get("service"):
+        signals.append("Formula metadata declares a service or daemon block.")
+    if page.bottle:
+        if page.bottle.get("available"):
+            platforms = page.bottle.get("platforms") or []
+            if platforms:
+                signals.append(f"Homebrew bottle metadata is available for {len(platforms)} platform targets.")
+            else:
+                signals.append("Homebrew bottle metadata is available.")
+        else:
+            signals.append("No Homebrew bottle metadata was recorded.")
+    if page.dependencies:
+        signals.append(f"Installs with {len(page.dependencies)} runtime dependencies.")
+    if page.build_dependencies:
+        signals.append(f"Build metadata lists {len(page.build_dependencies)} build dependencies.")
+    if not signals:
+        return ""
+    items = "".join(f"<li>{html_escape(signal)}</li>" for signal in signals[:6])
+    return f"""
+<div class="signal-grid install-signal-grid" aria-label="Install behavior signals">
+  <article>
+    <h3>Install behavior</h3>
+    <ul>{items}</ul>
+  </article>
+</div>
 """
 
 
@@ -886,12 +1208,14 @@ def render_gate(page: PackagePage) -> str:
     rules = "".join(f"<li>{html_escape(rule)}</li>" for rule in gate.get("rules", []))
     severities = ", ".join(gate.get("severities") or []) or "not specified"
     entrypoints = ", ".join(gate.get("entrypoints") or []) or page.display_name
+    coverage = gate.get("coverage_status") or "unknown"
+    reviewed = gate.get("reviewed_at") or ""
     return f"""
 <section class="pkg-section split-section gate-section">
   <div>
     <p class="section-kicker">approval gates</p>
     <h2>Human review metadata for risky commands</h2>
-    <p>The local approval-gate seed includes {html_escape(gate.get('rule_count'))} rules for {html_escape(page.display_name)}. Covered entrypoints: {html_escape(entrypoints)}. Severity labels: {html_escape(severities)}.</p>
+    <p>The local approval-gate seed includes {html_escape(gate.get('rule_count'))} rules for {html_escape(page.display_name)}. Covered entrypoints: {html_escape(entrypoints)}. Severity labels: {html_escape(severities)}. Coverage is {html_escape(coverage)}{html_escape(f', reviewed {reviewed}' if reviewed else '')}.</p>
   </div>
   <div class="detail-stack">
     <article>
@@ -903,12 +1227,60 @@ def render_gate(page: PackagePage) -> str:
 """
 
 
+def render_executables(page: PackagePage) -> str:
+    executable_rows: list[str] = []
+    seen: set[str] = set()
+    for item in page.executables:
+        name = str(item.get("name") or item.get("target") or item.get("source") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        executable_rows.append(executable_row(name, item.get("kind") or "executable", item.get("exposure") or "global executable", item.get("note") or ""))
+    for item in page.binaries:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("target") or item.get("source") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            executable_rows.append(executable_row(name, "binary", "Homebrew cask binary", str(item.get("source") or "")))
+    for alias in sorted(page.aliases):
+        if alias not in seen:
+            seen.add(alias)
+            exposure = "Automic Vault stub excluded" if alias in page.extra.get("stub_exclusions", []) else "indexed executable"
+            executable_rows.append(executable_row(alias, "executable", exposure, "Discovered from the local executable index."))
+    body = "".join(executable_rows)
+    return f"""
+<section class="pkg-section" aria-labelledby="executables-title">
+  <p class="section-kicker">executables</p>
+  <h2 id="executables-title">Installed executables</h2>
+  <div class="table-wrap executable-table">
+    <table>
+      <thead><tr><th>Command</th><th>Kind</th><th>Exposure</th><th>Note</th></tr></thead>
+      <tbody>{body or '<tr><td colspan="4">No executable data was present.</td></tr>'}</tbody>
+    </table>
+  </div>
+</section>
+"""
+
+
+def executable_row(name: str, kind: Any, exposure: Any, note: Any) -> str:
+    return f"<tr><td><code>{html_escape(name)}</code></td><td>{html_escape(kind)}</td><td>{html_escape(exposure)}</td><td>{html_escape(note)}</td></tr>"
+
+
 def render_install_metadata(page: PackagePage) -> str:
     rows: list[tuple[str, str]] = []
     for label, value in (
         ("Package key", page.key),
         ("Version", page.version),
+        ("Package manager", package_manager_label(page)),
+        ("Package manager page", page.package_manager_url),
+        ("Homepage", page.homepage),
+        ("Repository", page.repository),
+        ("Upstream docs", page.upstream_docs),
+        ("License", page.license),
+        ("Source archive", page.source_archive),
         ("Last updated", page.last_updated_at),
+        ("Last verified", page.last_verified),
         ("Pulse", page.pulse_kind),
         ("SHA-256", page.sha256),
         ("Download URL", page.url),
@@ -917,6 +1289,25 @@ def render_install_metadata(page: PackagePage) -> str:
             rows.append((label, value))
     if page.binaries:
         rows.append(("Binaries", ", ".join(sorted({item.get("target") or item.get("source") or "" for item in page.binaries if isinstance(item, dict)}))))
+    if page.dependencies:
+        rows.append(("Dependencies", ", ".join(page.dependencies)))
+    if page.build_dependencies:
+        rows.append(("Build dependencies", ", ".join(page.build_dependencies)))
+    if page.uses_from_macos:
+        rows.append(("Uses from macOS", ", ".join(page.uses_from_macos)))
+    if page.bottle:
+        bottle = "available" if page.bottle.get("available") else "not recorded"
+        platforms = ", ".join(page.bottle.get("platforms") or [])
+        rows.append(("Bottle", f"{bottle}{f' ({platforms})' if platforms else ''}"))
+    if page.install_behavior:
+        post_install = page.install_behavior.get("postInstallDefined")
+        if post_install is not None:
+            rows.append(("Homebrew post-install", "defined" if post_install else "not defined"))
+        service = page.install_behavior.get("service")
+        rows.append(("Service", service if service else "none declared"))
+        caveats = page.install_behavior.get("caveats")
+        if caveats:
+            rows.append(("Caveats", caveats))
     deps = page.extra.get("homebrewDeps") or page.extra.get("npm_homebrewDeps")
     if deps:
         rows.append(("Homebrew dependencies", ", ".join(deps)))
@@ -927,7 +1318,7 @@ def render_install_metadata(page: PackagePage) -> str:
     return f"""
 <section class="pkg-section">
   <p class="section-kicker">install metadata</p>
-  <h2>Resolver facts</h2>
+  <h2>Package metadata</h2>
   <div class="table-wrap">
     <table>
       <tbody>{row_html or '<tr><th>Status</th><td>No resolver details were present.</td></tr>'}</tbody>
@@ -935,6 +1326,55 @@ def render_install_metadata(page: PackagePage) -> str:
   </div>
 </section>
 """
+
+
+def render_related(page: PackagePage) -> str:
+    related = [related_link(item) for item in page.related_packages]
+    also = [related_link(item) for item in page.also_available_via]
+    if not related and not also:
+        related = inferred_related_links(page)
+    return f"""
+<section class="pkg-section split-section related-section" aria-labelledby="related-title">
+  <div>
+    <p class="section-kicker">package graph</p>
+    <h2 id="related-title">Related packages</h2>
+    <p>Links here are intentionally sparse. The page only uses relationships present in local data or this package's supplement.</p>
+  </div>
+  <div class="related-columns">
+    <article>
+      <h3>Related</h3>
+      <ul>{''.join(related) or '<li>No related package links were present.</li>'}</ul>
+    </article>
+    <article>
+      <h3>Also available via</h3>
+      <ul>{''.join(also) or '<li>No cross-ecosystem equivalent was recorded.</li>'}</ul>
+    </article>
+  </div>
+</section>
+"""
+
+
+def inferred_related_links(page: PackagePage) -> list[str]:
+    links: list[str] = []
+    for dependency in page.dependencies[:6]:
+        links.append(related_link({
+            "provider": "brew",
+            "name": dependency,
+            "label": dependency,
+            "reason": "Homebrew dependency.",
+        }))
+    return links
+
+
+def related_link(item: dict[str, Any]) -> str:
+    provider = str(item.get("provider") or "").strip()
+    name = str(item.get("name") or "").strip()
+    label = str(item.get("label") or name).strip()
+    reason = str(item.get("reason") or "").strip()
+    if not provider or not name:
+        return ""
+    href = f"../../{attr(provider)}/{attr(slugify(name))}/"
+    return f'<li><a href="{href}">{html_escape(label)}</a>{f"<span>{html_escape(reason)}</span>" if reason else ""}</li>'
 
 
 def link_value(value: str) -> str:
@@ -964,22 +1404,84 @@ def render_sources(page: PackagePage) -> str:
 
 
 def schema_for_package(page: PackagePage, description: str, updated: str) -> dict[str, Any]:
-    schema: dict[str, Any] = {
-        "@context": "https://schema.org",
+    url = f"{SITE_ORIGIN}{page.path}"
+    software: dict[str, Any] = {
         "@type": "SoftwareApplication",
+        "@id": f"{url}#software",
         "name": page.display_name,
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS",
-        "url": f"{SITE_ORIGIN}{page.path}",
+        "url": url,
         "description": description,
         "dateModified": updated,
-        "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": SITE_ORIGIN + "/"},
+        "isPartOf": {"@id": f"{SITE_ORIGIN}/#website"},
     }
     if page.homepage:
-        schema["sameAs"] = page.homepage
+        software["sameAs"] = page.homepage
     if page.version:
-        schema["softwareVersion"] = page.version
-    return schema
+        software["softwareVersion"] = page.version
+    if page.license:
+        software["license"] = page.license
+
+    article = {
+        "@type": "TechArticle",
+        "@id": f"{url}#article",
+        "headline": f"Install {page.display_name} with {package_manager_label(page)}",
+        "description": description,
+        "dateModified": updated,
+        "mainEntity": {"@id": f"{url}#software"},
+    }
+    breadcrumb = {
+        "@type": "BreadcrumbList",
+        "@id": f"{url}#breadcrumbs",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
+            {"@type": "ListItem", "position": 2, "name": "Packages", "item": f"{SITE_ORIGIN}/pkg/"},
+            {"@type": "ListItem", "position": 3, "name": page.display_name, "item": url},
+        ],
+    }
+    how_to = {
+        "@type": "HowTo",
+        "@id": f"{url}#install-howto",
+        "name": f"Install {page.display_name}",
+        "step": [{
+            "@type": "HowToStep",
+            "name": "Run install command",
+            "text": install_command(page),
+        }],
+    }
+    return {
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "WebSite", "@id": f"{SITE_ORIGIN}/#website", "name": "Automic Vault", "url": f"{SITE_ORIGIN}/"},
+            software,
+            article,
+            breadcrumb,
+            how_to,
+        ],
+    }
+
+
+def copy_script() -> str:
+    return """  <script>
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-copy]");
+      if (!button) return;
+      try {
+        await navigator.clipboard.writeText(button.getAttribute("data-copy"));
+        const previous = button.textContent;
+        button.textContent = "Copied";
+        button.setAttribute("data-state", "copied");
+        window.setTimeout(() => {
+          button.textContent = previous;
+          button.removeAttribute("data-state");
+        }, 1600);
+      } catch (_error) {
+        button.textContent = "Copy failed";
+        button.setAttribute("data-state", "error");
+      }
+    });
+  </script>"""
 
 
 def render_sitemap(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
@@ -1100,9 +1602,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 12% 8%, rgba(242, 109, 61, 0.08), transparent 22rem),
-    radial-gradient(circle at 86% 24%, rgba(45, 139, 216, 0.07), transparent 25rem),
-    #050505;
+    linear-gradient(180deg, rgba(34, 33, 30, 0.92), rgba(8, 8, 8, 0.98) 42rem),
+    #080808;
   font-family: var(--font-ui);
   letter-spacing: 0;
 }
@@ -1206,12 +1707,12 @@ code { font-family: var(--font-mono); }
   text-transform: uppercase;
 }
 h1 {
-  max-width: 11ch;
+  max-width: 14ch;
   margin-top: 14px;
   color: var(--ink);
-  font-size: clamp(4.4rem, 11vw, 12.8rem);
+  font-size: clamp(3.2rem, 7.6vw, 7.8rem);
   font-weight: 800;
-  line-height: 0.78;
+  line-height: 0.88;
   overflow-wrap: anywhere;
   text-transform: uppercase;
 }
@@ -1243,6 +1744,24 @@ h1 {
 .button:active { transform: translateY(1px); }
 .button.primary { border-color: var(--hot); background: var(--hot); color: #11100f; }
 .button.secondary { background: rgba(255, 255, 255, 0.035); }
+.copy-button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.copy-button:hover { border-color: var(--hot); }
+.copy-button:active { transform: translateY(1px) scale(0.98); }
+.copy-button[data-state="copied"] { border-color: rgba(114, 182, 97, 0.72); color: var(--green); }
+.copy-button[data-state="error"] { border-color: rgba(242, 109, 61, 0.72); color: var(--hot); }
 
 .hero-panel {
   display: grid;
@@ -1319,6 +1838,114 @@ h1 {
   color: var(--muted);
   font-size: 1.05rem;
   line-height: 1.58;
+}
+.install-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.72fr);
+  gap: clamp(24px, 4.5vw, 64px);
+  align-items: start;
+  background: rgba(255, 255, 255, 0.014);
+}
+.install-command-panel {
+  display: grid;
+  gap: 22px;
+}
+.terminal-block {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #10100f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.terminal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 10px 8px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.terminal-block pre {
+  overflow-x: auto;
+  padding: 24px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.5;
+}
+.install-notes-grid,
+.signal-grid,
+.related-columns {
+  display: grid;
+  gap: 12px;
+}
+.install-notes-grid article,
+.signal-grid article,
+.related-columns article {
+  padding: 18px;
+  border-top: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.018);
+}
+.install-notes-grid h3,
+.signal-grid h3,
+.related-columns h3 {
+  color: var(--ink);
+  font-size: 1.02rem;
+  line-height: 1.2;
+}
+.install-notes-grid p,
+.install-notes-grid ul,
+.signal-grid p,
+.signal-grid ul,
+.related-columns p,
+.related-columns ul {
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.install-notes-grid ul,
+.signal-grid ul,
+.related-columns ul {
+  padding-left: 1.1rem;
+}
+.install-notes-grid li + li,
+.signal-grid li + li,
+.related-columns li + li {
+  margin-top: 8px;
+}
+.signal-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 28px;
+}
+.signal-grid strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+.related-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.related-columns a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
+}
+.related-columns span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.executable-table td:first-child {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
 }
 .detail-stack { display: grid; gap: 12px; }
 .detail-stack article {
@@ -1522,9 +2149,9 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   .site-shell { width: min(calc(100% - 24px), var(--max)); margin: 12px auto; }
   .masthead, .site-footer { align-items: flex-start; flex-direction: column; }
   .nav { width: 100%; flex-wrap: wrap; gap: 12px 18px; }
-  .pkg-hero, .split-section, .security-section, .pkg-search-section { grid-template-columns: 1fr; }
+  .pkg-hero, .split-section, .security-section, .pkg-search-section, .install-section, .signal-grid, .related-columns { grid-template-columns: 1fr; }
   .pkg-hero { padding-top: 38px; }
-  h1 { font-size: clamp(3.2rem, 18vw, 5.6rem); }
+  h1 { font-size: clamp(2.8rem, 15vw, 4.8rem); }
   .lede { font-size: 1.32rem; }
   .package-list { grid-template-columns: 1fr; }
   .metric { grid-template-columns: 1fr; gap: 6px; }
