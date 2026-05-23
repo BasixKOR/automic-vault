@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for tool in gh git jq; do
+for tool in gh git; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "Missing required tool: ${tool}" >&2
     exit 1
