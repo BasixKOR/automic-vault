@@ -31,6 +31,31 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(notice.reasons, state.reasons)
     }
 
+    func testDetectorOnlyNoticeLinksToRadioisotopeReadme() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["curl netrc file contains plaintext credentials"],
+              "error": null
+            }
+            """
+        )
+
+        let notice = try XCTUnwrap(
+            SecurityCatalog(bundle: Bundle(for: Self.self)).notice(for: detail)
+        )
+
+        XCTAssertEqual(
+            notice.learnMoreURL.absoluteString,
+            "https://github.com/automic-vault/radioisotopes/tree/main/curl#readme"
+        )
+    }
+
     func testMissingRemediationAvailabilityDefaultsToAvailable() throws {
         let detail = try decodePackageDetail(
             securityState: """

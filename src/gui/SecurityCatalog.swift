@@ -1,5 +1,18 @@
 import Foundation
 
+private func radioisotopeReadmeURL(for isotopeName: String) -> URL? {
+    var pathAllowed = CharacterSet.urlPathAllowed
+    pathAllowed.remove("/")
+    guard let isotopePath = isotopeName.addingPercentEncoding(
+        withAllowedCharacters: pathAllowed
+    ) else {
+        return nil
+    }
+    return URL(
+        string: "https://github.com/automic-vault/radioisotopes/tree/main/\(isotopePath)#readme"
+    )
+}
+
 struct PackageSecurityNotice: Equatable {
     enum Caveats: Equatable {
         case paragraph(String)
@@ -124,7 +137,9 @@ final class SecurityCatalog {
                 body: remediationAvailable
                     ? PackageSecurityNotice.defaultBody
                     : PackageSecurityNotice.detectorOnlyBody,
-                reasons: securityState.reasons
+                reasons: securityState.reasons,
+                learnMoreURL: radioisotopeReadmeURL(for: securityState.isotopeName)
+                    ?? PackageSecurityNotice.defaultLearnMoreURL
             )
         }
         return nil
@@ -290,6 +305,9 @@ private struct IsotopeRecord: Decodable {
         guard let repository,
               repository.contains("/") else {
             return nil
+        }
+        if repository.lowercased() == "automic-vault/radioisotopes" {
+            return radioisotopeReadmeURL(for: isotopeName)
         }
         return URL(string: "https://github.com/\(repository)#readme")
     }
