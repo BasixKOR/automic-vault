@@ -91,9 +91,14 @@ fn is_env_key(key: &str) -> bool {
 fn generate_isotope_integrations() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let repo_root = std::path::Path::new(&manifest_dir);
+    println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_REPO_CACHE");
+    println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     let isotope_roots = [
-        repo_root.join("data/isotopes"),
-        repo_root.join("data/radioisotopes"),
+        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes")),
+        path_env_or_default(
+            "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
+            repo_root.join("data/radioisotopes"),
+        ),
     ];
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output_path = std::path::Path::new(&out_dir).join("isotope_integrations.rs");
@@ -210,6 +215,13 @@ fn generate_isotope_integrations() {
 
     write_if_changed(&output_path, &output)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", output_path.display()));
+}
+
+fn path_env_or_default(key: &str, default: std::path::PathBuf) -> std::path::PathBuf {
+    std::env::var_os(key)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or(default)
 }
 
 fn collect_isotope_integrations(
