@@ -220,6 +220,11 @@ def main():
                     "modifies": "brew:ruby",
                     "version": "detector-only",
                 },
+                "terraform": {
+                    "name": "isotope:terraform",
+                    "modifies": "av:terraform",
+                    "version": "1.0.0",
+                },
             },
             "npm": {
                 "coverage-npm": {"homebrewDeps": ["node"]},
