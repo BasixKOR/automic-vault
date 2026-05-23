@@ -113,7 +113,10 @@ repo_has_manifest() {
 
 sync_checkout "${org}/radioisotopes" "${radioisotopes_dir}"
 
-mapfile -t isotope_repos < <(
+isotope_repos=()
+while IFS= read -r repo; do
+  isotope_repos+=("${repo}")
+done < <(
   gh repo list "${org}" --limit 200 --json name,isArchived,isFork,parent \
     --jq '.[] | select(.isFork and (.isArchived | not) and .parent != null) | .name'
 )
