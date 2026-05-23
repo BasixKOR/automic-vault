@@ -37,6 +37,8 @@ class PackagePage:
     source_notes: list[str] = field(default_factory=list)
     isotope: dict[str, Any] | None = None
     isotope_readme: str = ""
+    isotope_readme_html: str = ""
+    isotope_readme_source: str = ""
     approval_gate: dict[str, Any] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -57,6 +59,13 @@ class PackagePage:
         if self.provider == "npm" and self.name.startswith("@"):
             return self.name
         return self.name
+
+
+@dataclass(frozen=True)
+class ReadmeExcerpt:
+    summary: str
+    html: str
+    source: str
 
 
 class Terminal:
@@ -268,10 +277,20 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
         page.source_notes.append("radioisotope security manifest")
 
     readmes = radioisotope_readmes()
+    fork_readmes = isotope_fork_readmes()
     for page in pages.values():
         if page.isotope:
             isotope_name = str(page.isotope.get("name") or "").removeprefix("isotope:")
-            page.isotope_readme = readmes.get(isotope_name, "")
+            readme = readmes.get(isotope_name)
+            if not readme:
+                repository_name = str(page.isotope.get("repository") or "").rsplit("/", 1)[-1]
+                directory_name = str(page.isotope.get("directory") or "")
+                readme = fork_readmes.get(directory_name) or fork_readmes.get(repository_name)
+            if readme:
+                page.isotope_readme = readme.summary
+                page.isotope_readme_html = readme.html
+                page.isotope_readme_source = readme.source
+                page.source_notes.append("local isotope README")
 
     for package_key, gate in approval_gate_metadata_by_package().items():
         provider, name = package_key.split(":", 1)
@@ -301,8 +320,8 @@ def isotope_metadata_by_package(isotopes: dict[str, Any]) -> dict[str, dict[str,
     return result
 
 
-def radioisotope_readmes() -> dict[str, str]:
-    readmes: dict[str, str] = {}
+def radioisotope_readmes() -> dict[str, ReadmeExcerpt]:
+    readmes: dict[str, ReadmeExcerpt] = {}
     base = Path("data/radioisotopes")
     if not base.exists():
         return readmes
@@ -311,8 +330,43 @@ def radioisotope_readmes() -> dict[str, str]:
             continue
         readme = path / "README.md"
         if readme.exists():
-            readmes[path.name] = summarize_markdown(readme.read_text(encoding="utf-8", errors="replace"))
+            text = readme.read_text(encoding="utf-8", errors="replace")
+            readmes[path.name] = ReadmeExcerpt(
+                summary=summarize_markdown(text),
+                html=render_markdown_excerpt(text),
+                source=readme.as_posix(),
+            )
     return readmes
+
+
+def isotope_fork_readmes() -> dict[str, ReadmeExcerpt]:
+    readmes: dict[str, ReadmeExcerpt] = {}
+    base = Path("data/isotopes")
+    if not base.exists():
+        return readmes
+    for readme in sorted(base.glob("*/README.md")):
+        text = trim_isotope_fork_readme(readme.read_text(encoding="utf-8", errors="replace"))
+        if not text.strip():
+            continue
+        readmes[readme.parent.name] = ReadmeExcerpt(
+            summary=summarize_markdown(text),
+            html=render_markdown_excerpt(text),
+            source=readme.as_posix(),
+        )
+    return readmes
+
+
+def trim_isotope_fork_readme(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        if re.search(r"\b(remainder|rest) of this README\b.*\boriginal upstream\b", line, flags=re.IGNORECASE):
+            break
+        lines.append(line)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and re.fullmatch(r"-{3,}", lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip() + "\n" if lines else ""
 
 
 def approval_gate_metadata_by_package() -> dict[str, dict[str, Any]]:
@@ -374,6 +428,112 @@ def summarize_markdown(text: str) -> str:
     return paragraph_text(" ".join(lines), 720)
 
 
+def render_markdown_excerpt(text: str) -> str:
+    html_blocks: list[str] = []
+    paragraph: list[str] = []
+    list_type = ""
+    code_lines: list[str] | None = None
+
+    def close_paragraph() -> None:
+        if paragraph:
+            html_blocks.append(f"<p>{render_inline_markdown(' '.join(paragraph))}</p>")
+            paragraph.clear()
+
+    def close_list() -> None:
+        nonlocal list_type
+        if list_type:
+            html_blocks.append(f"</{list_type}>")
+            list_type = ""
+
+    def open_list(kind: str) -> None:
+        nonlocal list_type
+        close_paragraph()
+        if list_type != kind:
+            close_list()
+            html_blocks.append(f"<{kind}>")
+            list_type = kind
+
+    for raw_line in text.replace("\r\n", "\n").split("\n"):
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if code_lines is not None:
+            if stripped.startswith("```"):
+                html_blocks.append(f"<pre><code>{html_escape(chr(10).join(code_lines))}</code></pre>")
+                code_lines = None
+            else:
+                code_lines.append(line)
+            continue
+        if stripped.startswith("```"):
+            close_paragraph()
+            close_list()
+            code_lines = []
+            continue
+        if not stripped:
+            close_paragraph()
+            close_list()
+            continue
+        if re.match(r"^\[[^\]]+\]:\s+", stripped):
+            continue
+        heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        if heading:
+            close_paragraph()
+            close_list()
+            tag = "h3" if len(heading.group(1)) == 1 else "h4"
+            html_blocks.append(f"<{tag}>{render_inline_markdown(heading.group(2))}</{tag}>")
+            continue
+        unordered = re.match(r"^[-*]\s+(.+)$", stripped)
+        if unordered:
+            open_list("ul")
+            html_blocks.append(f"<li>{render_inline_markdown(unordered.group(1))}</li>")
+            continue
+        ordered = re.match(r"^\d+\.\s+(.+)$", stripped)
+        if ordered:
+            open_list("ol")
+            html_blocks.append(f"<li>{render_inline_markdown(ordered.group(1))}</li>")
+            continue
+        close_list()
+        paragraph.append(stripped)
+
+    if code_lines is not None:
+        html_blocks.append(f"<pre><code>{html_escape(chr(10).join(code_lines))}</code></pre>")
+    close_paragraph()
+    close_list()
+    return "\n".join(html_blocks)
+
+
+def render_inline_markdown(text: str) -> str:
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    pieces: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "`":
+            end = text.find("`", index + 1)
+            if end != -1:
+                pieces.append(f"<code>{html_escape(text[index + 1:end])}</code>")
+                index = end + 1
+                continue
+        if text[index] == "[":
+            close = text.find("]", index + 1)
+            if close != -1 and close + 1 < len(text) and text[close + 1] == "(":
+                url_end = text.find(")", close + 2)
+                if url_end != -1:
+                    label = text[index + 1:close]
+                    url = text[close + 2:url_end].strip()
+                    if is_public_url(url):
+                        pieces.append(f'<a href="{attr(url)}">{render_inline_markdown(label)}</a>')
+                    else:
+                        pieces.append(html_escape(label))
+                    index = url_end + 1
+                    continue
+        pieces.append(html_escape(text[index]))
+        index += 1
+    return "".join(pieces)
+
+
+def is_public_url(url: str) -> bool:
+    return url.startswith("https://") or url.startswith("http://")
+
+
 def source_files() -> list[Path]:
     files: list[Path] = []
     data = Path("data")
@@ -390,6 +550,9 @@ def source_files() -> list[Path]:
             if ".git" in parts or path.name == ".DS_Store":
                 continue
             files.append(path)
+    isotope_root = Path("data/isotopes")
+    if isotope_root.exists():
+        files.extend(path for path in isotope_root.glob("*/README.md") if path.is_file())
     return sorted(set(files))
 
 
@@ -637,7 +800,7 @@ def render_security(page: PackagePage) -> str:
         detail = html_escape(paragraph_text(justification.get("detail") or page.isotope_readme or "Automic Vault has a local radioisotope manifest for this package."))
         caveats = page.isotope.get("caveats") or []
         caveat_items = "".join(f"<li>{html_escape(item)}</li>" for item in caveats[:8])
-        readme = f"<p>{html_escape(page.isotope_readme)}</p>" if page.isotope_readme else ""
+        readme = render_readme_excerpt(page)
         release = page.isotope.get("releaseUrl") or ""
         release_html = f'<a href="{attr(release)}">{html_escape(release)}</a>' if release else "Local radioisotope manifest"
         return f"""
@@ -675,6 +838,19 @@ def render_security(page: PackagePage) -> str:
     </article>
   </div>
 </section>
+"""
+
+
+def render_readme_excerpt(page: PackagePage) -> str:
+    if not page.isotope_readme_html:
+        return ""
+    source = f"<p class=\"readme-source\">Source: <code>{html_escape(page.isotope_readme_source)}</code></p>" if page.isotope_readme_source else ""
+    return f"""
+<div class="readme-excerpt">
+  <p class="readme-label">Local README excerpt</p>
+  {page.isotope_readme_html}
+  {source}
+</div>
 """
 
 
@@ -918,7 +1094,7 @@ body::before {
 
 a { color: inherit; text-decoration: none; }
 a:focus-visible { outline: 1px solid var(--gold); outline-offset: 4px; }
-h1, h2, h3, p, ul { margin: 0; }
+h1, h2, h3, h4, p, ul, ol, pre { margin: 0; }
 code { font-family: var(--font-mono); }
 
 .site-shell {
@@ -1113,6 +1289,61 @@ h1 {
 .detail-stack ul { padding-left: 1.1rem; }
 .detail-stack li + li { margin-top: 8px; }
 .detail-stack a, table a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hot); text-underline-offset: 0.22em; overflow-wrap: anywhere; }
+.readme-excerpt {
+  max-width: 860px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-strong);
+}
+.readme-excerpt h3 {
+  color: var(--ink);
+  font-size: clamp(1.45rem, 2.2vw, 2.35rem);
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.readme-excerpt h4 {
+  margin-top: 24px;
+  color: var(--ink);
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+.readme-excerpt p,
+.readme-excerpt ul,
+.readme-excerpt ol,
+.readme-excerpt pre {
+  margin-top: 14px;
+}
+.readme-excerpt ul,
+.readme-excerpt ol {
+  padding-left: 1.25rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.readme-excerpt li + li { margin-top: 8px; }
+.readme-excerpt code {
+  color: var(--ink);
+  font-size: 0.92em;
+}
+.readme-excerpt pre {
+  overflow-x: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.24);
+}
+.readme-excerpt a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
+}
+.readme-label,
+.readme-source {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 .chip-list {
   display: flex;
   flex-wrap: wrap;
