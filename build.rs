@@ -93,6 +93,7 @@ fn generate_isotope_integrations() {
     let repo_root = std::path::Path::new(&manifest_dir);
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_REPO_CACHE");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
+    println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
     let isotope_roots = [
         path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes")),
         path_env_or_default(
@@ -103,6 +104,7 @@ fn generate_isotope_integrations() {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let generated_sources_dir = std::path::Path::new(&out_dir).join("isotope-generated");
     let output_path = std::path::Path::new(&out_dir).join("isotope_integrations.rs");
+    let include_isotope_tests = include_isotope_tests_for_coverage();
 
     let mut entries = Vec::new();
     for root in isotope_roots {
@@ -130,7 +132,8 @@ fn generate_isotope_integrations() {
     for entry in &entries {
         output.push_str(&format!("mod {} {{\n", entry.module_name));
         if let Some(path) = &entry.detect_path {
-            let include_path = sanitized_isotope_source(
+            let include_path = isotope_include_path(
+                include_isotope_tests,
                 &generated_sources_dir,
                 &entry.module_name,
                 "detect",
@@ -142,7 +145,8 @@ fn generate_isotope_integrations() {
             ));
         }
         if let Some(path) = &entry.migrate_path {
-            let include_path = sanitized_isotope_source(
+            let include_path = isotope_include_path(
+                include_isotope_tests,
                 &generated_sources_dir,
                 &entry.module_name,
                 "migrate",
@@ -154,7 +158,8 @@ fn generate_isotope_integrations() {
             ));
         }
         if let Some(path) = &entry.post_install_path {
-            let include_path = sanitized_isotope_source(
+            let include_path = isotope_include_path(
+                include_isotope_tests,
                 &generated_sources_dir,
                 &entry.module_name,
                 "post_install",
@@ -166,7 +171,8 @@ fn generate_isotope_integrations() {
             ));
         }
         if let Some(path) = &entry.credential_helper_path {
-            let include_path = sanitized_isotope_source(
+            let include_path = isotope_include_path(
+                include_isotope_tests,
                 &generated_sources_dir,
                 &entry.module_name,
                 "credential_helper",
@@ -247,6 +253,34 @@ fn path_env_or_default(key: &str, default: std::path::PathBuf) -> std::path::Pat
         .filter(|value| !value.is_empty())
         .map(std::path::PathBuf::from)
         .unwrap_or(default)
+}
+
+fn include_isotope_tests_for_coverage() -> bool {
+    // cargo-llvm-cov sets cfg(coverage). The explicit env var keeps CI and
+    // automation runs readable while preserving the cargo-llvm-cov default.
+    std::env::var_os("CARGO_CFG_COVERAGE").is_some()
+        || env_flag("AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS")
+}
+
+fn env_flag(key: &str) -> bool {
+    std::env::var_os(key).is_some_and(|value| {
+        let value = value.to_string_lossy();
+        !value.is_empty() && value != "0" && value != "false"
+    })
+}
+
+fn isotope_include_path(
+    include_isotope_tests: bool,
+    generated_sources_dir: &std::path::Path,
+    module_name: &str,
+    suffix: &str,
+    source_path: &std::path::Path,
+) -> std::path::PathBuf {
+    if include_isotope_tests {
+        return source_path.to_path_buf();
+    }
+
+    sanitized_isotope_source(generated_sources_dir, module_name, suffix, source_path)
 }
 
 fn sanitized_isotope_source(

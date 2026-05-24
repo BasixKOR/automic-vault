@@ -41,9 +41,16 @@ jobs:
             src/lib/rs/fixtures/coverage-combined.json
 
       - name: Generate Rust coverage
+        env:
+          AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS: "1"
         run: >
           cargo llvm-cov --workspace --lcov --output-path lcov.info
           -- --test-threads=1
+
+      - name: Verify isotope coverage paths
+        run: |
+          grep -Eq '^SF:.*/data/isotopes/.+\.rs$' lcov.info
+          grep -Eq '^SF:.*/data/radioisotopes/.+\.rs$' lcov.info
 
       - name: Upload Rust coverage to Coveralls
         uses: coverallsapp/github-action@v2
