@@ -250,10 +250,21 @@ fn generate_isotope_integrations() {
 }
 
 fn path_env_or_default(key: &str, default: std::path::PathBuf) -> std::path::PathBuf {
-    std::env::var_os(key)
+    let path = std::env::var_os(key)
         .filter(|value| !value.is_empty())
         .map(std::path::PathBuf::from)
-        .unwrap_or(default)
+        .unwrap_or(default);
+    absolute_path(path)
+}
+
+fn absolute_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+
+    std::env::current_dir()
+        .unwrap_or_else(|err| panic!("failed to resolve current directory: {err}"))
+        .join(path)
 }
 
 fn include_isotope_tests_for_coverage() -> bool {
