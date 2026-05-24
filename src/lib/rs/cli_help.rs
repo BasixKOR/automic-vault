@@ -597,3 +597,112 @@ pub(crate) fn print_mode_usage(mode: Mode, program: &str) {
         Mode::I => print_i_usage(program),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn set(values: &[(&'static str, Option<&str>)]) -> Self {
+            let saved = values
+                .iter()
+                .map(|(key, _)| (*key, env::var_os(key)))
+                .collect::<Vec<_>>();
+            for (key, value) in values {
+                match value {
+                    Some(value) => unsafe { env::set_var(key, value) },
+                    None => unsafe { env::remove_var(key) },
+                }
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.saved.drain(..).rev() {
+                match value {
+                    Some(value) => unsafe { env::set_var(key, value) },
+                    None => unsafe { env::remove_var(key) },
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn help_screen_layout_covers_rules_legend_and_color_paths() {
+        let compact = HelpScreen::new("av", 1, false);
+        assert_eq!(compact.rule_width(), 48);
+        assert!(compact.top_rule().ends_with("★"));
+        assert!(compact.rule_with_star().contains("★"));
+
+        let wide = HelpScreen::new("av", 160, true);
+        assert_eq!(wide.rule_width(), 120);
+        assert!(wide.top_rule().contains("\x1b[38;2;224;90;71m"));
+        assert!(wide.rule_with_star().contains("★"));
+        assert!(wide.usage_line().contains("subcommand"));
+
+        let commands = wide.command_lines();
+        assert!(
+            commands
+                .iter()
+                .any(|line| line.render(false).contains("install (i)"))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|line| line.render(false).contains("LOCAL SYSTEM"))
+        );
+
+        let legend = wide.legend_lines();
+        assert_eq!(legend.len(), 10);
+        assert!(legend[3].render(false).contains("required"));
+        assert!(legend[6].render(true).contains("\x1b[38;2;224;90;71m"));
+
+        wide.print_with_legend(&commands[0], legend.first());
+        compact.print_with_legend(&commands[0], legend.first());
+        HelpScreen::new("vault", 120, false).print();
+    }
+
+    #[test]
+    fn terminal_environment_helpers_cover_columns_and_color_flags() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+
+        {
+            let _env = EnvGuard::set(&[
+                ("COLUMNS", Some("96")),
+                ("NO_COLOR", None),
+                ("CLICOLOR_FORCE", Some("1")),
+                ("TERM", Some("dumb")),
+            ]);
+            assert_eq!(terminal_columns(), 96);
+            assert!(stdout_supports_ansi());
+        }
+
+        {
+            let _env = EnvGuard::set(&[
+                ("COLUMNS", Some("0")),
+                ("NO_COLOR", Some("1")),
+                ("CLICOLOR_FORCE", Some("1")),
+            ]);
+            assert!(terminal_columns() > 0);
+            assert!(!stdout_supports_ansi());
+        }
+
+        {
+            let _env = EnvGuard::set(&[
+                ("COLUMNS", None),
+                ("NO_COLOR", None),
+                ("CLICOLOR_FORCE", Some("0")),
+                ("TERM", Some("dumb")),
+            ]);
+            assert!(terminal_columns() > 0);
+            assert!(!stdout_supports_ansi());
+        }
+    }
+}
