@@ -971,47 +971,50 @@ sync_site() {
 
   log_step "Syncing crawlable HTML and XML content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
-    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.html" \
     --include "*.xml" \
+    --exclude "AGENTS.md" \
     --exclude "pagefind/*" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_step "Syncing crawlable plain text content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
-    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.txt" \
+    --exclude "AGENTS.md" \
     --exclude "pagefind/*" \
     --content-type "text/plain; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_step "Syncing crawlable markdown content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
-    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.md" \
+    --exclude "AGENTS.md" \
     --exclude "pagefind/*" \
     --content-type "text/markdown; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   log_step "Syncing crawlable JSON content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
-    --exclude "AGENTS.md" \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "*" \
     --include "*.json" \
+    --exclude "AGENTS.md" \
     --exclude "pagefind/*" \
     --content-type "application/json; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Removing repo-local guidance from S3"
+  aws s3 rm "s3://${WWW_BUCKET}/AGENTS.md"
 
   log_ok "S3 content synced"
 }
