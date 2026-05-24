@@ -3,8 +3,7 @@
 set -uo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-db_interval_seconds=3600
-daily_interval_seconds=86400
+daily_hour=3
 color_mode="auto"
 skip_isotope_builds=false
 skip_daily=false
@@ -12,23 +11,19 @@ run_once=false
 
 usage() {
   cat <<'EOF'
-Usage: scripts/update-all [--db-interval-seconds SECONDS]
-                          [--daily-interval-seconds SECONDS]
-                          [--skip-isotope-builds] [--skip-daily]
+Usage: scripts/update-all [--skip-isotope-builds] [--skip-daily]
                           [--once]
                           [--color auto|always|never] [--no-color]
 
 Run the full publishing cadence:
-  - update and upload /db.json every hour
+  - update and upload /db.json at the top of every hour
   - refresh package-page enrichment, regenerate package pages, rebuild search,
-    and deploy the static site once per day
+    and deploy the static site daily during the 3 AM local-hour slot
 
 Options:
-  --db-interval-seconds SECONDS     Database update cadence. Defaults to 3600.
-  --daily-interval-seconds SECONDS  Package-page deploy cadence. Defaults to 86400.
   --skip-isotope-builds             Pass --skip-builds through to update-db.sh.
   --skip-daily                      Only run the hourly database cadence.
-  --once                            Run one scheduler cycle and exit.
+  --once                            Run the next scheduled hourly slot and exit.
   --color auto|always|never         Control terminal color output.
                                     Defaults to auto.
   --no-color                        Disable terminal color output.
@@ -39,20 +34,14 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --db-interval-seconds)
-      if [[ $# -lt 2 ]]; then
-        echo "--db-interval-seconds requires a value" >&2
-        exit 1
-      fi
-      db_interval_seconds="$2"
-      shift 2
+      echo "--db-interval-seconds is no longer supported; database updates run on the hour." >&2
+      usage >&2
+      exit 1
       ;;
     --daily-interval-seconds)
-      if [[ $# -lt 2 ]]; then
-        echo "--daily-interval-seconds requires a value" >&2
-        exit 1
-      fi
-      daily_interval_seconds="$2"
-      shift 2
+      echo "--daily-interval-seconds is no longer supported; package-page deploys run at 3 AM." >&2
+      usage >&2
+      exit 1
       ;;
     --skip-isotope-builds)
       skip_isotope_builds=true
@@ -98,14 +87,6 @@ case "${color_mode}" in
     exit 1
     ;;
 esac
-
-for interval_name in db_interval_seconds daily_interval_seconds; do
-  interval_value="${!interval_name}"
-  if ! [[ "${interval_value}" =~ ^[0-9]+$ ]] || [[ "${interval_value}" -eq 0 ]]; then
-    echo "--${interval_name//_/-} must be a positive integer" >&2
-    exit 1
-  fi
-done
 
 use_color=false
 if [[ "${color_mode}" == "always" ]]; then
@@ -243,59 +224,80 @@ run_daily_publish() {
     "${script_dir}/deploy-www.sh" || return 1
 }
 
-sleep_until_next_cycle() {
-  local cycle_started_at="$1"
-  local elapsed sleep_seconds
+next_hour_epoch() {
+  local now remainder
+  now="$(date +%s)"
+  remainder=$((now % 3600))
+  if [[ "${remainder}" -eq 0 ]]; then
+    printf '%s\n' "${now}"
+  else
+    printf '%s\n' $((now + 3600 - remainder))
+  fi
+}
 
-  elapsed=$(($(date +%s) - cycle_started_at))
-  if [[ "${elapsed}" -lt "${db_interval_seconds}" ]]; then
-    sleep_seconds=$((db_interval_seconds - elapsed))
-    log INFO "Sleeping $(format_duration "${sleep_seconds}") until the next database update"
+wait_until_next_hour() {
+  local target now sleep_seconds target_label
+
+  target="$(next_hour_epoch)"
+  now="$(date +%s)"
+  sleep_seconds=$((target - now))
+  target_label="$(date -r "${target}" '+%Y-%m-%d %H:%M:%S %Z')"
+
+  if [[ "${sleep_seconds}" -gt 0 ]]; then
+    log INFO "Next database update at ${target_label}; sleeping $(format_duration "${sleep_seconds}")"
     sleep "${sleep_seconds}"
   else
-    log WARN "Cycle took $(format_duration "${elapsed}"); starting the next database update immediately"
+    log INFO "Starting scheduled database update for ${target_label}"
   fi
+
+  printf '%s\n' "${target}"
+}
+
+is_daily_slot() {
+  local scheduled_epoch="$1"
+  [[ "$(date -r "${scheduled_epoch}" '+%H')" == "$(printf '%02d' "${daily_hour}")" ]]
 }
 
 trap 'log WARN "Stopping update-all"; exit 130' INT TERM
 
 log INFO "${bold}Automic Vault publishing cadence${reset}"
-log INFO "Database updates every $(format_duration "${db_interval_seconds}")"
+log INFO "Database updates at the top of every hour"
 if [[ "${skip_daily}" == "true" ]]; then
   log WARN "Daily package-page deploy is disabled"
 else
-  log INFO "Package-page deploys every $(format_duration "${daily_interval_seconds}")"
+  log INFO "Package-page deploy runs daily at 03:00 local time"
 fi
 
-last_daily_at=0
+last_daily_date=""
 
 while true; do
-  cycle_started_at="$(date +%s)"
+  scheduled_epoch="$(wait_until_next_hour)"
+  scheduled_date="$(date -r "${scheduled_epoch}" '+%Y-%m-%d')"
+  scheduled_label="$(date -r "${scheduled_epoch}" '+%Y-%m-%d %H:%M:%S %Z')"
   cycle_status=0
   if run_database_update; then
     if [[ "${skip_daily}" != "true" ]]; then
-      now="$(date +%s)"
-      if [[ $((now - last_daily_at)) -ge "${daily_interval_seconds}" ]]; then
+      if is_daily_slot "${scheduled_epoch}" && [[ "${last_daily_date}" != "${scheduled_date}" ]]; then
+        log INFO "Starting daily package-page publish for ${scheduled_label}"
         if run_daily_publish; then
-          last_daily_at="$(date +%s)"
+          last_daily_date="${scheduled_date}"
           log OK "Daily package-page publish completed"
         else
           cycle_status=1
-          log ERROR "Daily package-page publish failed; retrying after the next database update"
+          log ERROR "Daily package-page publish failed; next retry is tomorrow at 03:00"
         fi
       else
-        next_daily_in=$((daily_interval_seconds - (now - last_daily_at)))
-        log INFO "Next package-page deploy in $(format_duration "${next_daily_in}")"
+        log INFO "Daily package-page deploy is scheduled for 03:00 local time"
       fi
     fi
   else
     cycle_status=1
-    log ERROR "Database update failed; retrying after the next interval"
+    log ERROR "Database update failed; retrying at the next hour"
   fi
 
   if [[ "${run_once}" == "true" ]]; then
     exit "${cycle_status}"
   fi
 
-  sleep_until_next_cycle "${cycle_started_at}"
+  sleep 1
 done
