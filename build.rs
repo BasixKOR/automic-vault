@@ -94,6 +94,7 @@ fn generate_isotope_integrations() {
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_REPO_CACHE");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
     let isotope_roots = [
         path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes")),
         path_env_or_default(
