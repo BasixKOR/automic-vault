@@ -93,6 +93,7 @@ final class AVPackageSpec: NSObject, NSSecureCoding {
     func rememberIsotopeAlwaysAllow(
         _ executablePath: String,
         scriptPath: String?,
+        scriptSha256: String?,
         keys: [String],
         reply: @escaping ([String: Any]) -> Void
     )
@@ -452,6 +453,7 @@ final class NukeHelperBridge {
     func rememberIsotopeAlwaysAllow(
         executablePath: String,
         scriptPath: String?,
+        scriptSha256: String?,
         keys: [String],
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
@@ -468,6 +470,7 @@ final class NukeHelperBridge {
                 proxy.rememberIsotopeAlwaysAllow(
                     executablePath,
                     scriptPath: scriptPath,
+                    scriptSha256: scriptSha256,
                     keys: keys
                 ) { result in
                     self.complete(result, completion: completion)
@@ -769,21 +772,27 @@ final class NukeHelperBridge {
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
             argumentIndex: 0,
             ofReply: false
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
             argumentIndex: 1,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
+            argumentIndex: 2,
             ofReply: false
         )
         let stringArrayClasses = (NSSet(array: [NSArray.self, NSString.self]) as? Set<AnyHashable>) ?? []
         interface.setClasses(
             stringArrayClasses,
-            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:keys:reply:)),
-            argumentIndex: 2,
+            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
+            argumentIndex: 3,
             ofReply: false
         )
         let resultClasses = (NSSet(
@@ -839,7 +848,7 @@ final class NukeHelperBridge {
         )
         interface.setClasses(
             resultClasses,
-            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
             argumentIndex: 0,
             ofReply: true
         )

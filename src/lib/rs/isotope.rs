@@ -60,6 +60,8 @@ struct IsotopeApprovalRequestSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     script_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    script_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     requested_script_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_root_controlled: Option<bool>,
@@ -90,6 +92,8 @@ struct IsotopeAlwaysAllowEntry {
     executable_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_sha256: Option<String>,
     keys: Vec<String>,
 }
 
@@ -97,6 +101,7 @@ struct IsotopeAlwaysAllowEntry {
 struct IsotopeAlwaysAllowScope {
     executable_path: String,
     script_path: Option<String>,
+    script_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,6 +117,7 @@ impl IsotopeAlwaysAllowStore {
             .filter(|entry| {
                 entry.executable_path == scope.executable_path
                     && entry.script_path == scope.script_path
+                    && entry.script_sha256 == scope.script_sha256
             })
             .flat_map(|entry| entry.keys.iter())
             .collect::<BTreeSet<_>>();
@@ -148,7 +154,10 @@ pub fn isotope_main_entry() {
     }
 }
 
-pub(crate) fn run_isotope_entry(program_name: &str, args: env::ArgsOs) -> Result<(), String> {
+pub(crate) fn run_isotope_entry(
+    program_name: &str,
+    args: impl Iterator<Item = OsString>,
+) -> Result<(), String> {
     dispatch_isotope(program_name, args, &KeychainCredentialStore)
 }
 
@@ -626,37 +635,61 @@ fn always_allow_scope(
     args: &[OsString],
 ) -> Result<IsotopeAlwaysAllowScope, String> {
     validate_target_root_installation(resolved_executable_path, file)?;
-    let script_path = interpreter_script_path_for_always_allow(resolved_executable_path, args)?;
+    let script = interpreter_script_for_always_allow(resolved_executable_path, args)?;
     Ok(IsotopeAlwaysAllowScope {
         executable_path: executable_path.to_string(),
-        script_path: script_path
+        script_path: script
+            .as_ref()
             .map(|path| {
-                path.to_str()
+                path.path
+                    .to_str()
                     .map(str::to_string)
                     .ok_or_else(|| "script path must be valid UTF-8".to_string())
             })
             .transpose()?,
+        script_sha256: script.and_then(|script| script.sha256),
     })
 }
 
-fn interpreter_script_path_for_always_allow(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsotopeAlwaysAllowScript {
+    path: PathBuf,
+    sha256: Option<String>,
+}
+
+fn interpreter_script_for_always_allow(
     executable_path: &Path,
     args: &[OsString],
-) -> Result<Option<PathBuf>, String> {
+) -> Result<Option<IsotopeAlwaysAllowScript>, String> {
     if executable_file_name(executable_path) == Some("env") {
         return Err("env always-allow is not supported".to_string());
     }
     if !is_script_interpreter(executable_path) {
         return Ok(None);
     }
-    let script_path = interpreter_script_operand(args)
+    let script_operand = interpreter_script_operand(args)
         .ok_or_else(|| "interpreter always-allow requires a root-owned script file".to_string())?;
-    let script_path = resolve_script_operand(script_path)?;
+    let script_path = resolve_script_operand(script_operand)?;
     let file = File::open(&script_path)
         .map_err(|err| format!("failed to open {}: {err}", script_path.display()))?;
     validate_regular_target(&script_path, &file)?;
-    validate_target_root_installation(&script_path, &file)?;
-    Ok(Some(script_path))
+    if validate_target_root_installation(&script_path, &file).is_ok() {
+        return Ok(Some(IsotopeAlwaysAllowScript {
+            path: script_path,
+            sha256: None,
+        }));
+    }
+    if !script_operand.is_absolute() {
+        return Err(
+            "interpreter always-allow requires a root-owned script file or absolute script path"
+                .to_string(),
+        );
+    }
+    let sha256 = sha256_file(&script_path)?;
+    Ok(Some(IsotopeAlwaysAllowScript {
+        path: script_path,
+        sha256: Some(sha256),
+    }))
 }
 
 fn interpreter_script_path_for_display(
@@ -752,6 +785,23 @@ fn resolve_script_operand(path: &Path) -> Result<PathBuf, String> {
     fs::canonicalize(&path).map_err(|err| format!("failed to resolve {}: {err}", path.display()))
 }
 
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file =
+        File::open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn always_allows_usage(scope: &IsotopeAlwaysAllowScope, keys: &[String]) -> Result<bool, String> {
     let store = load_always_allow_store()?;
     Ok(store.always_allows_keys(scope, keys))
@@ -804,6 +854,7 @@ fn request_isotope_approval(
         executable_path: executable_path.to_string(),
         executable_root_controlled,
         script_path: always_allow_scope.and_then(|scope| scope.script_path.clone()),
+        script_sha256: always_allow_scope.and_then(|scope| scope.script_sha256.clone()),
         requested_script_path: requested_script_path
             .as_deref()
             .map(path_to_display_string)
@@ -1874,6 +1925,7 @@ mod tests {
                 executable_path: "/bin/sh".to_string(),
                 executable_root_controlled: true,
                 script_path: None,
+                script_sha256: None,
                 requested_script_path: None,
                 script_root_controlled: None,
                 requested_executable_path: "/bin/sh".to_string(),
@@ -2059,11 +2111,13 @@ mod tests {
                 IsotopeAlwaysAllowEntry {
                     executable_path: "/bin/tool".to_string(),
                     script_path: None,
+                    script_sha256: None,
                     keys: vec!["A".to_string()],
                 },
                 IsotopeAlwaysAllowEntry {
                     executable_path: "/bin/tool".to_string(),
                     script_path: None,
+                    script_sha256: None,
                     keys: vec!["B".to_string()],
                 },
             ],
@@ -2071,10 +2125,12 @@ mod tests {
         let scope = IsotopeAlwaysAllowScope {
             executable_path: "/bin/tool".to_string(),
             script_path: None,
+            script_sha256: None,
         };
         let other_scope = IsotopeAlwaysAllowScope {
             executable_path: "/bin/other".to_string(),
             script_path: None,
+            script_sha256: None,
         };
         assert!(store.always_allows_keys(&scope, &["A".to_string(), "B".to_string()]));
         assert!(!store.always_allows_keys(&scope, &["A".to_string(), "C".to_string()]));
@@ -2087,20 +2143,24 @@ mod tests {
             entries: vec![IsotopeAlwaysAllowEntry {
                 executable_path: "/opt/python/bin/python3.14".to_string(),
                 script_path: Some("/opt/awscli/bin/aws".to_string()),
+                script_sha256: None,
                 keys: vec!["AWS_ACCESS_KEY_ID".to_string()],
             }],
         };
         let aws_scope = IsotopeAlwaysAllowScope {
             executable_path: "/opt/python/bin/python3.14".to_string(),
             script_path: Some("/opt/awscli/bin/aws".to_string()),
+            script_sha256: None,
         };
         let other_script_scope = IsotopeAlwaysAllowScope {
             executable_path: "/opt/python/bin/python3.14".to_string(),
             script_path: Some("/opt/awscli/bin/other".to_string()),
+            script_sha256: None,
         };
         let missing_script_scope = IsotopeAlwaysAllowScope {
             executable_path: "/opt/python/bin/python3.14".to_string(),
             script_path: None,
+            script_sha256: None,
         };
 
         assert!(store.always_allows_keys(&aws_scope, &["AWS_ACCESS_KEY_ID".to_string()]));
@@ -2108,6 +2168,39 @@ mod tests {
         assert!(
             !store.always_allows_keys(&missing_script_scope, &["AWS_ACCESS_KEY_ID".to_string()])
         );
+    }
+
+    #[test]
+    fn isotopes_always_allow_requires_matching_script_sha_when_present() {
+        let old_sha = "a".repeat(64);
+        let new_sha = "b".repeat(64);
+        let store = IsotopeAlwaysAllowStore {
+            entries: vec![IsotopeAlwaysAllowEntry {
+                executable_path: "/bin/sh".to_string(),
+                script_path: Some("/Users/example/tool.sh".to_string()),
+                script_sha256: Some(old_sha.clone()),
+                keys: vec!["TOKEN".to_string()],
+            }],
+        };
+        let matching_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/sh".to_string(),
+            script_path: Some("/Users/example/tool.sh".to_string()),
+            script_sha256: Some(old_sha),
+        };
+        let changed_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/sh".to_string(),
+            script_path: Some("/Users/example/tool.sh".to_string()),
+            script_sha256: Some(new_sha),
+        };
+        let root_owned_scope = IsotopeAlwaysAllowScope {
+            executable_path: "/bin/sh".to_string(),
+            script_path: Some("/Users/example/tool.sh".to_string()),
+            script_sha256: None,
+        };
+
+        assert!(store.always_allows_keys(&matching_scope, &["TOKEN".to_string()]));
+        assert!(!store.always_allows_keys(&changed_scope, &["TOKEN".to_string()]));
+        assert!(!store.always_allows_keys(&root_owned_scope, &["TOKEN".to_string()]));
     }
 
     #[test]
@@ -2123,25 +2216,50 @@ mod tests {
     }
 
     #[test]
-    fn isotopes_always_allow_rejects_non_root_owned_interpreter_scripts() {
+    fn isotopes_always_allow_rejects_relative_non_root_owned_interpreter_scripts() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("script.sh");
+        fs::write(&script, b"#!/bin/sh\n").unwrap();
+        let previous_cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp.path()).unwrap();
+        let result = interpreter_script_for_always_allow(
+            Path::new("/bin/bash"),
+            &[OsString::from("script.sh")],
+        );
+        env::set_current_dir(previous_cwd).unwrap();
+        let err = result.unwrap_err();
+        assert!(err.contains("root-owned script file or absolute script path"));
+    }
+
+    #[test]
+    fn isotopes_always_allow_hashes_absolute_non_root_interpreter_scripts() {
         if unsafe { libc::geteuid() } == 0 {
             return;
         }
 
         let temp = tempfile::tempdir().unwrap();
         let script = temp.path().join("script.sh");
-        fs::write(&script, b"#!/bin/sh\n").unwrap();
-        let err = interpreter_script_path_for_always_allow(
+        fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
+
+        let detected = interpreter_script_for_always_allow(
             Path::new("/bin/bash"),
             &[OsString::from(script.as_os_str())],
         )
-        .unwrap_err();
-        assert!(err.contains("owned by root"));
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(detected.path, fs::canonicalize(&script).unwrap());
+        assert_eq!(detected.sha256, Some(sha256_file(&script).unwrap()));
     }
 
     #[test]
     fn isotopes_always_allow_rejects_inline_interpreter_commands() {
-        let err = interpreter_script_path_for_always_allow(
+        let err = interpreter_script_for_always_allow(
             Path::new("/bin/bash"),
             &[OsString::from("-c"), OsString::from("echo hi")],
         )
@@ -2176,7 +2294,7 @@ mod tests {
 
     #[test]
     fn isotopes_always_allow_rejects_env_launchers() {
-        let err = interpreter_script_path_for_always_allow(
+        let err = interpreter_script_for_always_allow(
             Path::new("/usr/bin/env"),
             &[OsString::from("bash"), OsString::from("script.sh")],
         )
@@ -2264,6 +2382,7 @@ mod tests {
                 entries: vec![IsotopeAlwaysAllowEntry {
                     executable_path: "/bin/sh".to_string(),
                     script_path: Some("/bin/sh".to_string()),
+                    script_sha256: None,
                     keys: vec!["TOKEN".to_string()],
                 }],
             })
@@ -2290,6 +2409,7 @@ mod tests {
         let scope = IsotopeAlwaysAllowScope {
             executable_path: "/bin/sh".to_string(),
             script_path: Some("/bin/sh".to_string()),
+            script_sha256: None,
         };
         assert!(!always_allows_usage(&scope, &["TOKEN".to_string()]).unwrap());
         assert_eq!(
@@ -2322,12 +2442,15 @@ mod tests {
         assert!(validate_target_root_installation(Path::new("/bin/sh"), &file).is_ok());
         assert!(validate_root_controlled_path(Path::new("/bin/sh")).is_ok());
         assert_eq!(
-            interpreter_script_path_for_always_allow(
+            interpreter_script_for_always_allow(
                 Path::new("/bin/bash"),
                 &[OsString::from("/bin/sh")]
             )
             .unwrap(),
-            Some(PathBuf::from("/bin/sh"))
+            Some(IsotopeAlwaysAllowScript {
+                path: PathBuf::from("/bin/sh"),
+                sha256: None,
+            })
         );
     }
 

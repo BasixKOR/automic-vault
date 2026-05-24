@@ -42,6 +42,7 @@ pub enum HelperCommand {
     RememberIsotopeAlwaysAllow {
         executable_path: String,
         script_path: Option<String>,
+        script_sha256: Option<String>,
         keys: Vec<String>,
     },
 }
@@ -121,8 +122,14 @@ where
         HelperCommand::RememberIsotopeAlwaysAllow {
             executable_path,
             script_path,
+            script_sha256,
             keys,
-        } => remember_isotope_always_allow(&executable_path, script_path.as_deref(), keys),
+        } => remember_isotope_always_allow(
+            &executable_path,
+            script_path.as_deref(),
+            script_sha256.as_deref(),
+            keys,
+        ),
     };
     if let Err(err) = &result {
         if let Ok(mut callback) = progress_callback.lock() {
@@ -139,6 +146,8 @@ struct IsotopeAlwaysAllowEntry {
     executable_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    script_sha256: Option<String>,
     keys: Vec<String>,
 }
 
@@ -1049,18 +1058,25 @@ fn install_binary_at(
 fn remember_isotope_always_allow(
     executable_path: &str,
     script_path: Option<&str>,
+    script_sha256: Option<&str>,
     mut keys: Vec<String>,
 ) -> HelperCommandResult {
     require_root()?;
     let executable_path = validate_isotope_always_allow_target(executable_path)?;
-    let script_path = validate_isotope_always_allow_script(&executable_path, script_path)?;
+    let script =
+        validate_isotope_always_allow_script(&executable_path, script_path, script_sha256)?;
     validate_isotope_keys(&keys)?;
     keys.sort();
     keys.dedup();
+    let (script_path, script_sha256) = match script {
+        Some(script) => (Some(script.path), script.sha256),
+        None => (None, None),
+    };
     remember_isotope_always_allow_at_path(
         Path::new(ISOTOPE_ALWAYS_ALLOW_PATH),
         executable_path,
         script_path,
+        script_sha256,
         keys,
     )
 }
@@ -1098,23 +1114,27 @@ fn remember_isotope_always_allow_at_path(
     path: &Path,
     executable_path: String,
     script_path: Option<String>,
+    script_sha256: Option<String>,
     keys: Vec<String>,
 ) -> HelperCommandResult {
     let mut store = load_isotope_always_allow_store(path)?;
     if !store.entries.iter().any(|entry| {
         entry.executable_path == executable_path
             && entry.script_path == script_path
+            && entry.script_sha256 == script_sha256
             && entry.keys == keys
     }) {
         store.entries.push(IsotopeAlwaysAllowEntry {
             executable_path,
             script_path,
+            script_sha256,
             keys,
         });
         store.entries.sort_by(|left, right| {
             left.executable_path
                 .cmp(&right.executable_path)
                 .then_with(|| left.script_path.cmp(&right.script_path))
+                .then_with(|| left.script_sha256.cmp(&right.script_sha256))
                 .then_with(|| left.keys.cmp(&right.keys))
         });
         write_isotope_always_allow_store(path, &store)?;
@@ -1158,14 +1178,90 @@ fn validate_isotope_always_allow_target(executable_path: &str) -> Result<String,
 fn validate_isotope_always_allow_script(
     executable_path: &str,
     script_path: Option<&str>,
-) -> Result<Option<String>, String> {
+    script_sha256: Option<&str>,
+) -> Result<Option<IsotopeAlwaysAllowScript>, String> {
     let is_interpreter = is_isotope_script_interpreter(Path::new(executable_path));
+    if Path::new(executable_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("env")
+    {
+        return Err("isotope env always-allow is not supported".to_string());
+    }
     match (is_interpreter, script_path.filter(|path| !path.is_empty())) {
-        (true, Some(script_path)) => validate_isotope_always_allow_target(script_path).map(Some),
+        (true, Some(script_path)) => {
+            validate_isotope_always_allow_script_path(script_path, script_sha256).map(Some)
+        }
         (true, None) => Err("isotope interpreter target requires a script path".to_string()),
         (false, Some(_)) => Err("isotope script path requires an interpreter target".to_string()),
         (false, None) => Ok(None),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsotopeAlwaysAllowScript {
+    path: String,
+    sha256: Option<String>,
+}
+
+fn validate_isotope_always_allow_script_path(
+    script_path: &str,
+    script_sha256: Option<&str>,
+) -> Result<IsotopeAlwaysAllowScript, String> {
+    if !Path::new(script_path).is_absolute() {
+        return Err("isotope script path must be absolute".to_string());
+    }
+    if let Ok(path) = validate_isotope_always_allow_target(script_path) {
+        return Ok(IsotopeAlwaysAllowScript { path, sha256: None });
+    }
+
+    let expected_sha256 =
+        script_sha256.ok_or_else(|| "non-root isotope script requires a sha256".to_string())?;
+    validate_isotope_script_sha256(expected_sha256)?;
+    let path = fs::canonicalize(script_path)
+        .map_err(|err| format!("failed to resolve isotope script {script_path}: {err}"))?;
+    let metadata = fs::metadata(&path)
+        .map_err(|err| format!("failed to stat isotope script {}: {err}", path.display()))?;
+    if !metadata.is_file() {
+        return Err("isotope script must be a regular file".to_string());
+    }
+    let actual_sha256 = sha256_file(&path)?;
+    if actual_sha256 != expected_sha256 {
+        return Err(
+            "isotope script sha256 changed before always-allow could be remembered".to_string(),
+        );
+    }
+    Ok(IsotopeAlwaysAllowScript {
+        path: path
+            .to_str()
+            .map(str::to_string)
+            .ok_or_else(|| "isotope script path must be valid UTF-8".to_string())?,
+        sha256: Some(expected_sha256.to_string()),
+    })
+}
+
+fn validate_isotope_script_sha256(value: &str) -> Result<(), String> {
+    if value.len() != 64 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("isotope script sha256 must be a 64-character hex digest".to_string());
+    }
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file =
+        File::open(path).map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn is_isotope_script_interpreter(path: &Path) -> bool {
@@ -1605,10 +1701,12 @@ mod tests {
     fn isotope_always_allow_store_uses_script_path_shape() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("always-allow.json");
+        let script_sha = "a".repeat(64);
         let store = IsotopeAlwaysAllowStore {
             entries: vec![IsotopeAlwaysAllowEntry {
                 executable_path: "/opt/awscli/bin/python3.14".to_string(),
                 script_path: Some("/opt/awscli/bin/aws".to_string()),
+                script_sha256: Some(script_sha),
                 keys: vec![
                     "AWS_ACCESS_KEY_ID".to_string(),
                     "AWS_SECRET_ACCESS_KEY".to_string(),
@@ -1622,6 +1720,7 @@ mod tests {
         assert_eq!(reloaded, store);
         let encoded = fs::read_to_string(path).unwrap();
         assert!(encoded.contains("\"script_path\""));
+        assert!(encoded.contains("\"script_sha256\""));
     }
 
     #[test]
@@ -1819,6 +1918,7 @@ mod tests {
             HelperCommand::RememberIsotopeAlwaysAllow {
                 executable_path: String::new(),
                 script_path: None,
+                script_sha256: None,
                 keys: Vec::new(),
             },
         ] {
@@ -2192,18 +2292,52 @@ mod tests {
         assert!(validate_isotope_keys(&["GOOD_1".to_string()]).is_ok());
 
         assert!(
-            validate_isotope_always_allow_script("/bin/sh", None)
+            validate_isotope_always_allow_script("/bin/sh", None, None)
                 .unwrap_err()
                 .contains("requires a script path")
         );
         assert!(
-            validate_isotope_always_allow_script("/bin/echo", Some("/tmp/script"))
+            validate_isotope_always_allow_script("/bin/echo", Some("/tmp/script"), None)
                 .unwrap_err()
                 .contains("requires an interpreter target")
         );
         assert_eq!(
-            validate_isotope_always_allow_script("/bin/echo", None).unwrap(),
+            validate_isotope_always_allow_script("/bin/echo", None, None).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn isotope_always_allow_validates_non_root_script_sha() {
+        let temp = TempDir::new().unwrap();
+        let script = temp.path().join("tool.sh");
+        fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
+        let sha = sha256_file(&script).unwrap();
+        let script_path = script.to_string_lossy().into_owned();
+
+        let validated =
+            validate_isotope_always_allow_script("/bin/sh", Some(&script_path), Some(&sha))
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            validated.path,
+            fs::canonicalize(&script)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        );
+        assert_eq!(validated.sha256.as_deref(), Some(sha.as_str()));
+
+        let wrong_sha = "0".repeat(64);
+        assert!(
+            validate_isotope_always_allow_script("/bin/sh", Some(&script_path), Some(&wrong_sha))
+                .unwrap_err()
+                .contains("sha256 changed")
+        );
+        assert!(
+            validate_isotope_always_allow_script("/bin/sh", Some(&script_path), None)
+                .unwrap_err()
+                .contains("requires a sha256")
         );
     }
 
@@ -2211,11 +2345,11 @@ mod tests {
     fn isotope_always_allow_target_and_store_helpers_cover_success_paths() {
         let validated_executable = validate_isotope_always_allow_target("/bin/sh").unwrap();
         let validated_script =
-            validate_isotope_always_allow_script("/bin/sh", Some("/etc/profile"))
+            validate_isotope_always_allow_script("/bin/sh", Some("/etc/profile"), None)
                 .unwrap()
                 .unwrap();
         assert_eq!(validated_executable, "/bin/sh");
-        assert!(validated_script.ends_with("/etc/profile"));
+        assert!(validated_script.path.ends_with("/etc/profile"));
 
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("always-allow.json");
@@ -2223,7 +2357,8 @@ mod tests {
         let first = remember_isotope_always_allow_at_path(
             &path,
             validated_executable.clone(),
-            Some(validated_script.clone()),
+            Some(validated_script.path.clone()),
+            None,
             vec!["AAA_TOKEN".to_string(), "ZZZ_TOKEN".to_string()],
         )
         .unwrap();
@@ -2233,13 +2368,15 @@ mod tests {
             &path,
             "/bin/echo".to_string(),
             None,
+            None,
             vec!["ONLY_TOKEN".to_string()],
         )
         .unwrap();
         remember_isotope_always_allow_at_path(
             &path,
             validated_executable,
-            Some(validated_script),
+            Some(validated_script.path),
+            None,
             vec!["AAA_TOKEN".to_string(), "ZZZ_TOKEN".to_string()],
         )
         .unwrap();

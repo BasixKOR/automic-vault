@@ -32,6 +32,7 @@
                       reply:(void (^)(NSDictionary *result))reply;
 - (void)rememberIsotopeAlwaysAllow:(NSString *)executablePath
                          scriptPath:(NSString *_Nullable)scriptPath
+                      scriptSha256:(NSString *_Nullable)scriptSha256
                                keys:(NSArray<NSString *> *)keys
                               reply:(void (^)(NSDictionary *result))reply;
 - (void)refreshRemoteDatabase:(void (^)(BOOL updated))reply;
@@ -77,6 +78,7 @@ extern char *nuke_helper_install_isotope_stubs(
 extern char *nuke_helper_remember_isotope_always_allow(
     const char *executable_path,
     const char *script_path,
+    const char *script_sha256,
     const char *keys_json,
     void *context,
     void (*progress_callback)(void *context, const char *event_json));
@@ -305,24 +307,28 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
            argumentIndex:0
                  ofReply:YES];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:keys:reply:)
+             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
            argumentIndex:0
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:keys:reply:)
+             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
            argumentIndex:1
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
+           argumentIndex:2
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSArray class],
                                                 [NSString class], nil]
-             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:keys:reply:)
-           argumentIndex:2
+             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
+           argumentIndex:3
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
                                                 [NSArray class],
                                                 [NSString class],
                                                 [NSNumber class],
                                                 [NSNull class], nil]
-             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:keys:reply:)
+             forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
            argumentIndex:0
                  ofReply:YES];
 
@@ -465,6 +471,7 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
 
 - (void)rememberIsotopeAlwaysAllow:(NSString *)executablePath
                          scriptPath:(NSString *_Nullable)scriptPath
+                      scriptSha256:(NSString *_Nullable)scriptSha256
                                keys:(NSArray<NSString *> *)keys
                               reply:(void (^)(NSDictionary *result))reply {
     [self executeWithConnection:NSXPCConnection.currentConnection
@@ -474,6 +481,7 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
         return nuke_helper_remember_isotope_always_allow(
             executablePath.UTF8String,
             scriptPath.UTF8String,
+            scriptSha256.UTF8String,
             [[self serializeStringArray:keys] UTF8String],
             context,
             progress_callback);

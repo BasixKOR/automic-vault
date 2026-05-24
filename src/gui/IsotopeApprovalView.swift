@@ -110,7 +110,7 @@ final class IsotopeApprovalView: NSView {
             rows.append(InfoRow(
                 "Interpreter script",
                 scriptPath.map(abbreviatedPath) ?? "No script file detected; flags or inline code are in use",
-                scriptPath.map { _ in rootStatus(scriptRootControlled) }
+                scriptPath.map { _ in scriptStatus }
                     ?? Status(title: "not a script", color: Palette.amber)
             ))
         } else {
@@ -414,8 +414,18 @@ final class IsotopeApprovalView: NSView {
             ?? ((approval.scriptPath != nil && approval.scriptPath == displayScriptPath) ? true : nil)
     }
 
+    private var scriptStatus: Status {
+        if approval.scriptSha256 != nil {
+            return Status(title: "hash-bound", color: Palette.accent)
+        }
+        return rootStatus(scriptRootControlled)
+    }
+
     private var alwaysAllowDescription: String {
         if displayScriptPath != nil {
+            if approval.scriptSha256 != nil {
+                return "Available for this root-controlled interpreter and unchanged script"
+            }
             return "Available for this root-controlled interpreter and script"
         }
         return "Available for this root-controlled executable"

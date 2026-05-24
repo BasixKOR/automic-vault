@@ -474,6 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         helperBridge.rememberIsotopeAlwaysAllow(
             executablePath: approval.executablePath,
             scriptPath: approval.scriptPath,
+            scriptSha256: approval.scriptSha256,
             keys: approval.keys
         ) { [weak self] result in
             guard let self else { return }

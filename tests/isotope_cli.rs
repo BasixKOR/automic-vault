@@ -1,5 +1,7 @@
 use std::ffi::OsString;
+use std::fs;
 use std::os::unix::ffi::OsStringExt;
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output};
 
 fn pkg_version() -> &'static str {
@@ -110,6 +112,31 @@ fn subs_isotope_rejects_removed_allow_existing_env_flag() {
     let output = run_isotope(&["--allow-existing-env", "+TOKEN", "/bin/echo"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("--replace-existing-env"));
+}
+
+#[test]
+fn subs_isotope_accepts_single_argument_shebang_dispatch() {
+    let temp = tempfile::tempdir().unwrap();
+    let script = temp.path().join("tool");
+    fs::write(
+        &script,
+        format!(
+            "#!{} inject +SOME_SECRET /bin/echo\n",
+            env!("CARGO_BIN_EXE_av")
+        ),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&script, permissions).unwrap();
+
+    let output = Command::new(&script)
+        .env("SOME_SECRET", "expected")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout(&output).contains(&script.to_string_lossy().into_owned()));
 }
 
 #[test]

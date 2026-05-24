@@ -153,12 +153,14 @@ pub extern "C" fn nuke_helper_install_isotope_stubs(
 pub extern "C" fn nuke_helper_remember_isotope_always_allow(
     executable_path: *const c_char,
     script_path: *const c_char,
+    script_sha256: *const c_char,
     keys_json: *const c_char,
     context: *mut c_void,
     progress_callback: Option<ProgressCallback>,
 ) -> *mut c_char {
     let executable_path = c_string(executable_path).unwrap_or_default();
     let script_path = c_string(script_path).unwrap_or_default();
+    let script_sha256 = c_string(script_sha256).unwrap_or_default();
     let keys = parse_string_array(keys_json);
     execute_command(
         HelperCommand::RememberIsotopeAlwaysAllow {
@@ -167,6 +169,11 @@ pub extern "C" fn nuke_helper_remember_isotope_always_allow(
                 None
             } else {
                 Some(script_path)
+            },
+            script_sha256: if script_sha256.is_empty() {
+                None
+            } else {
+                Some(script_sha256)
             },
             keys,
         },
@@ -441,6 +448,7 @@ mod tests {
                 ptr::null(),
                 ptr::null(),
                 ptr::null(),
+                ptr::null(),
                 ptr::null_mut(),
                 None,
             ),
@@ -485,6 +493,7 @@ mod tests {
             nuke_helper_remember_isotope_always_allow(
                 executable.as_ptr(),
                 script.as_ptr(),
+                ptr::null(),
                 keys.as_ptr(),
                 ptr::null_mut(),
                 Some(capture_progress),

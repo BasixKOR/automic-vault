@@ -41,6 +41,7 @@ struct IsotopeApprovalRequestSnapshot: Codable, Equatable {
     let executablePath: String
     let executableRootControlled: Bool?
     let scriptPath: String?
+    let scriptSha256: String?
     let requestedScriptPath: String?
     let scriptRootControlled: Bool?
     let requestedExecutablePath: String?
@@ -55,6 +56,7 @@ struct IsotopeApprovalRequestSnapshot: Codable, Equatable {
         case executablePath = "executable_path"
         case executableRootControlled = "executable_root_controlled"
         case scriptPath = "script_path"
+        case scriptSha256 = "script_sha256"
         case requestedScriptPath = "requested_script_path"
         case scriptRootControlled = "script_root_controlled"
         case requestedExecutablePath = "requested_executable_path"

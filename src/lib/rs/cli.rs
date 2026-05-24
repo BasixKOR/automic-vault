@@ -310,6 +310,14 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
         print_pkg_usage(&invocation.name);
         return Err("missing subcommand".to_string());
     };
+    if let Some(words) = split_shebang_subcommand_arg(&first_arg) {
+        if words.first().and_then(|word| word.to_str()) == Some("inject") {
+            let program_name = format!("{} inject", invocation.binary_name);
+            let normalized_args = words.into_iter().skip(1).chain(args);
+            return isotope::run_isotope_entry(&program_name, normalized_args)
+                .map_err(|err| format!("{RENDERED_ERROR_PREFIX}{program_name}: {err}"));
+        }
+    }
 
     if is_help_flag(&first_arg) {
         print_pkg_usage(&invocation.name);
@@ -512,6 +520,62 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     };
     let nested = Invocation::for_subcommand(&invocation.binary_name, subcommand, mode);
     run_mode(mode, &nested, args)
+}
+
+fn split_shebang_subcommand_arg(value: &OsStr) -> Option<Vec<OsString>> {
+    let value = value.to_str()?;
+    if !value.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut chars = value.chars().peekable();
+    let mut quote = None;
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some('\'') => {
+                if ch == '\'' {
+                    quote = None;
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some('"') => match ch {
+                '"' => quote = None,
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                }
+                _ => current.push(ch),
+            },
+            Some(_) => unreachable!(),
+            None => match ch {
+                '\'' | '"' => quote = Some(ch),
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                }
+                ch if ch.is_whitespace() => {
+                    if !current.is_empty() {
+                        words.push(OsString::from(std::mem::take(&mut current)));
+                    }
+                }
+                _ => current.push(ch),
+            },
+        }
+    }
+
+    if quote.is_some() {
+        return None;
+    }
+    if !current.is_empty() {
+        words.push(OsString::from(current));
+    }
+    if words.is_empty() { None } else { Some(words) }
 }
 
 pub(crate) fn parse_i_request(
