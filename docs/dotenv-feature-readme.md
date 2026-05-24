@@ -15,6 +15,10 @@ That was fine until agents learned to edit and run the code.
 applications request secrets explicitly through AV SDKs. Every request is
 observable, approval-gated, logged, and tied to the callsite that asked for it.
 
+In production and CI, the same AV secret APIs resolve through the process
+environment. Use `dotenvx`, your CI secret store, or your production platform
+to deliver `OPENAI_API_KEY`; application code still calls `secret(...)`.
+
 ## Quickstart
 
 Start with the `.env` files you already have:
@@ -160,6 +164,25 @@ let api_key = av::secret("OPENAI_API_KEY").await?;
 > This intentionally requires application changes. Transparent compatibility
 > with unmodified dotenv applications is not the goal.
 
+## Production and CI
+
+The SDK call stays the same:
+
+```js
+const apiKey = await secret("OPENAI_API_KEY")
+```
+
+Local development can route that through AV approvals, backtraces, and logging.
+Production and CI can route it through `getenv`.
+
+```sh
+$ dotenvx run -- npm test
+# ^^ dotenvx decrypts into the environment; AV SDK reads getenv in CI
+```
+
+This keeps deploys boring. AV improves the development security model without
+requiring a new production secret delivery system.
+
 ## What AV Watches
 
 Every runtime request includes enough identity to decide whether it is the same
@@ -231,6 +254,15 @@ encrypted .env
   -> usage logged in the AV app
 ```
 
+In production and CI:
+
+```txt
+platform secrets or dotenvx
+  -> process environment
+  -> AV SDK getenv fallback
+  -> application code
+```
+
 The core abstraction is no longer "environment variables." It is runtime secret
 capabilities.
 
@@ -245,6 +277,7 @@ observable, and reviewable before it becomes normal behavior.
 Also not goals:
 
 - replacing production secret managers
+- replacing `dotenvx` in CI
 - mandatory sandboxing
 - invisible shell-wide injection
 - supporting unmodified dotenv apps transparently
