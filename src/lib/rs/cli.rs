@@ -1761,10 +1761,14 @@ mod tests {
         );
         assert_eq!(parse_embedded_provider("pkg:custom").unwrap(), None);
 
+        let db = load_db().unwrap();
+        ensure_db_schema(&db).unwrap();
         assert!(
-            ensure_alias_install_target_unambiguous(
+            ensure_alias_install_target_unambiguous_with_db(
                 "__coverage_alias__",
                 &PackageAliasTarget::NpmPackage("coverage-npm".to_string()),
+                &db,
+                |_| Ok(false),
             )
             .is_ok()
         );
