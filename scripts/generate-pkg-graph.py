@@ -13,6 +13,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 OUTPUT_PATH = Path("data/pkg-graph.json")
+CURATION_PATH = Path("data/pkg-graph-curation.json")
 
 HUB_DEFINITIONS = {
     "cloud-clis": {
@@ -96,6 +97,14 @@ RELATION_DEFINITIONS = {
     "same_homepage": "Packages share the same homepage.",
     "same_software_cross_ecosystem": "A package with the same normalized name exists in another local ecosystem.",
     "hub_member": "Package belongs to a generated package hub.",
+    "alternative": "Agent-curated package that can satisfy a similar need.",
+    "adjacent_workflow": "Agent-curated package in an adjacent workflow.",
+    "similar_tool": "Agent-curated package with similar tool semantics.",
+    "format_peer": "Agent-curated package that works with overlapping file formats.",
+    "language_runtime_peer": "Agent-curated package that shares a language runtime or ecosystem.",
+    "command_surface_peer": "Agent-curated package with overlapping command surfaces.",
+    "security_surface_peer": "Agent-curated package with related security-sensitive surfaces.",
+    "domain_peer": "Agent-curated package in the same topical domain.",
 }
 
 
@@ -191,6 +200,8 @@ def input_files() -> list[Path]:
         Path("data/npm.json"),
         Path("data/pip.json"),
     ]
+    if CURATION_PATH.exists():
+        files.append(CURATION_PATH)
     for root in (Path("data/approval-gates"), Path("data/pkg-pages")):
         if root.exists():
             files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
@@ -287,6 +298,210 @@ def hub_memberships(name: str, info: dict[str, Any], geiger: dict[str, Any] | No
     return memberships
 
 
+def curation_target_key(item: dict[str, Any]) -> str:
+    return f"{item.get('provider') or ''}:{item.get('name') or ''}"
+
+
+def package_key_parts(package_key: str) -> tuple[str, str]:
+    if ":" not in package_key:
+        return "", ""
+    provider, name = package_key.split(":", 1)
+    return provider, name
+
+
+def db_section_for_provider(provider: str) -> str:
+    return {"brew": "formulas", "cask": "casks", "npm": "npms"}.get(provider, "")
+
+
+def package_keys_from_sources(enrichment_packages: dict[str, Any], db: dict[str, Any], pip: dict[str, Any], curation: dict[str, Any]) -> set[str]:
+    keys = set(enrichment_packages.keys())
+    for provider, section in (("brew", "formulas"), ("cask", "casks"), ("npm", "npms")):
+        values = db.get(section) or {}
+        if isinstance(values, dict):
+            keys.update(f"{provider}:{name}" for name in values)
+    if isinstance(pip, dict):
+        keys.update(f"pip:{name}" for name in pip)
+    curation_packages = curation.get("packages") if isinstance(curation, dict) else None
+    if isinstance(curation_packages, dict):
+        keys.update(curation_packages.keys())
+        for entry in curation_packages.values():
+            intents = (entry or {}).get("linkIntents") if isinstance(entry, dict) else {}
+            if not isinstance(intents, dict):
+                continue
+            for section in ("relatedPackages", "alsoAvailableVia"):
+                for item in intents.get(section) or []:
+                    if isinstance(item, dict) and item.get("provider") and item.get("name"):
+                        keys.add(f"{item['provider']}:{item['name']}")
+    return keys
+
+
+def package_info_for_key(package_key: str, enrichment_packages: dict[str, Any], db: dict[str, Any], geiger_packages: dict[str, Any]) -> dict[str, Any]:
+    provider, name = package_key_parts(package_key)
+    enrichment = enrichment_packages.get(package_key) if isinstance(enrichment_packages.get(package_key), dict) else {}
+    db_info = {}
+    section = db_section_for_provider(provider)
+    if section:
+        db_info = ((db.get(section) or {}).get(name) or {})
+        if not isinstance(db_info, dict):
+            db_info = {}
+    package = enrichment.get("package") or {}
+    repo = enrichment.get("repository") or repository_url(enrichment)
+    homepage = enrichment.get("homepage") or db_info.get("homepage") or ""
+    geiger = geiger_packages.get(name) if provider == "brew" and isinstance(geiger_packages.get(name), dict) else None
+    return {
+        "identity": {
+            "provider": provider,
+            "name": name,
+            "summary": enrichment.get("summary") or db_info.get("summary") or "",
+            "version": enrichment.get("version") or db_info.get("version") or "",
+            "homepage": homepage,
+            "repository": repo,
+            "sourceHost": source_host(enrichment.get("sourceArchive") or homepage or ""),
+            "packageManagerUrl": package.get("packageManagerUrl") or "",
+        },
+        "operationalContext": {
+            "runtimeDependencyCount": len(enrichment.get("dependencies") or db_info.get("dependencies") or []),
+            "buildDependencyCount": len(enrichment.get("buildDependencies") or []),
+            "executableCount": len(enrichment.get("executables") or []),
+            "bottleAvailable": bool((enrichment.get("bottle") or {}).get("available")),
+            "postInstallDefined": (enrichment.get("installBehavior") or {}).get("postInstallDefined"),
+            "serviceDeclared": bool((enrichment.get("installBehavior") or {}).get("service")),
+            "geigerLevel": (geiger or {}).get("level") or "",
+            "radioisotope": False,
+            "approvalGate": False,
+        },
+    }
+
+
+def empty_graph_entry(package_key: str, enrichment_packages: dict[str, Any], db: dict[str, Any], geiger_packages: dict[str, Any]) -> dict[str, Any]:
+    info = package_info_for_key(package_key, enrichment_packages, db, geiger_packages)
+    return {
+        "identity": info["identity"],
+        "operationalContext": info["operationalContext"],
+        "linkIntents": {
+            "relatedPackages": [],
+            "alsoAvailableVia": [],
+            "packageHubs": [],
+        },
+        "claims": [],
+    }
+
+
+def merge_unique_link(target: list[dict[str, Any]], item: dict[str, Any], page_keys: set[str], limit: int) -> bool:
+    provider = str(item.get("provider") or "").strip()
+    name = str(item.get("name") or "").strip()
+    rel = str(item.get("rel") or "").strip()
+    if not provider or not name or f"{provider}:{name}" not in page_keys:
+        return False
+    key = (provider, name, rel)
+    seen = {(existing.get("provider"), existing.get("name"), existing.get("rel")) for existing in target if isinstance(existing, dict)}
+    if key in seen or len(target) >= limit:
+        return False
+    target.append(dict(item))
+    return True
+
+
+def merge_unique_hub(target: list[dict[str, Any]], item: dict[str, Any]) -> bool:
+    slug = str(item.get("slug") or "").strip()
+    if not slug:
+        return False
+    if slug in {str(existing.get("slug") or "") for existing in target if isinstance(existing, dict)}:
+        return False
+    target.append(dict(item))
+    return True
+
+
+def apply_curation(
+    graph_packages: dict[str, Any],
+    curation: dict[str, Any],
+    page_keys: set[str],
+    enrichment_packages: dict[str, Any],
+    db: dict[str, Any],
+    geiger_packages: dict[str, Any],
+) -> None:
+    packages = curation.get("packages") if isinstance(curation, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key in sorted(packages):
+        if package_key not in page_keys:
+            continue
+        entry = packages[package_key]
+        if not isinstance(entry, dict):
+            continue
+        graph_entry = graph_packages.setdefault(package_key, empty_graph_entry(package_key, enrichment_packages, db, geiger_packages))
+        intents = graph_entry.setdefault("linkIntents", {})
+        curated_intents = entry.get("linkIntents") or {}
+        if not isinstance(curated_intents, dict):
+            continue
+        for item in curated_intents.get("relatedPackages") or []:
+            if isinstance(item, dict) and merge_unique_link(intents.setdefault("relatedPackages", []), item, page_keys, 24):
+                graph_entry.setdefault("claims", []).append({
+                    "intent": "internal-link",
+                    "predicate": item.get("rel") or "domain_peer",
+                    "target": curation_target_key(item),
+                    "why": item.get("reason") or "Agent-curated package graph relation.",
+                    "confidence": item.get("confidence") or 0.6,
+                    "evidence": item.get("evidence") or "pkg-graph-curation",
+                })
+        for item in curated_intents.get("alsoAvailableVia") or []:
+            if isinstance(item, dict) and merge_unique_link(intents.setdefault("alsoAvailableVia", []), item, page_keys, 12):
+                graph_entry.setdefault("claims", []).append({
+                    "intent": "cross-ecosystem-link",
+                    "predicate": item.get("rel") or "alternative",
+                    "target": curation_target_key(item),
+                    "why": item.get("reason") or "Agent-curated cross-ecosystem relation.",
+                    "confidence": item.get("confidence") or 0.6,
+                    "evidence": item.get("evidence") or "pkg-graph-curation",
+                })
+        for hub in curated_intents.get("packageHubs") or []:
+            if isinstance(hub, dict) and merge_unique_hub(intents.setdefault("packageHubs", []), hub):
+                graph_entry.setdefault("claims", []).append({
+                    "intent": "hub-backlink",
+                    "predicate": "hub_member",
+                    "target": f"pkg-hub:{hub.get('slug')}",
+                    "why": hub.get("reason") or "Agent-curated package hub membership.",
+                    "confidence": 0.66,
+                    "evidence": "pkg-graph-curation.packageHubs",
+                })
+
+
+def hub_catalog(curation: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    catalog = {
+        slug: {
+            "label": str(hub["label"]),
+            "reason": str(hub["reason"]),
+        }
+        for slug, hub in HUB_DEFINITIONS.items()
+    }
+    curated = curation.get("hubs") if isinstance(curation, dict) else None
+    if isinstance(curated, dict):
+        for slug, hub in curated.items():
+            if not isinstance(hub, dict):
+                continue
+            catalog[slug] = {
+                "label": str(hub.get("label") or slug),
+                "kicker": str(hub.get("kicker") or "package graph cluster"),
+                "description": str(hub.get("description") or hub.get("reason") or "Agent-curated package graph hub."),
+                "reason": str(hub.get("reason") or "Agent-curated package graph hub."),
+            }
+    return catalog
+
+
+def count_hub_memberships(graph_packages: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for entry in graph_packages.values():
+        intents = entry.get("linkIntents") if isinstance(entry, dict) else None
+        if not isinstance(intents, dict):
+            continue
+        seen = set()
+        for hub in intents.get("packageHubs") or []:
+            if isinstance(hub, dict) and hub.get("slug"):
+                seen.add(str(hub["slug"]))
+        for slug in seen:
+            counts[slug] += 1
+    return counts
+
+
 def build_graph() -> dict[str, Any]:
     enrichment = read_json(Path("data/pkg-page-enrichment.json"))
     db = read_json(Path("data/db.json"))
@@ -294,9 +509,11 @@ def build_graph() -> dict[str, Any]:
     isotopes = read_json(Path("data/isotopes.json"), {})
     npm = read_json(Path("data/npm.json"), {})
     pip = read_json(Path("data/pip.json"), {})
+    curation = read_json(CURATION_PATH, {})
     packages = enrichment.get("packages") if isinstance(enrichment, dict) else {}
     if not isinstance(packages, dict):
         raise ValueError("data/pkg-page-enrichment.json must contain packages")
+    page_keys = package_keys_from_sources(packages, db, pip, curation)
 
     provider_names = provider_packages(db, pip)
     normalized_by_provider: dict[str, dict[str, list[str]]] = {}
@@ -335,7 +552,6 @@ def build_graph() -> dict[str, Any]:
     gated_packages = approval_gate_packages()
     isotope_names = isotope_packages(isotopes)
     graph_packages: dict[str, Any] = {}
-    hub_counts: dict[str, int] = defaultdict(int)
 
     for key in sorted(packages):
         if not key.startswith("brew:"):
@@ -386,8 +602,6 @@ def build_graph() -> dict[str, Any]:
                 )
 
         hubs = hub_memberships(name, {**info, "summary": summary}, geiger, gated, isotope)
-        for hub in hubs:
-            hub_counts[hub["slug"]] += 1
 
         claims = []
         for item in related[:20]:
@@ -448,6 +662,9 @@ def build_graph() -> dict[str, Any]:
             "claims": claims[:40],
         }
 
+    apply_curation(graph_packages, curation, page_keys, packages, db, geiger_packages)
+    hub_counts = count_hub_memberships(graph_packages)
+    hubs = hub_catalog(curation)
     files = input_files()
     return {
         "schema": SCHEMA_VERSION,
@@ -457,8 +674,8 @@ def build_graph() -> dict[str, Any]:
         "input_files": [path.as_posix() for path in files],
         "relation_definitions": RELATION_DEFINITIONS,
         "hubs": {
-            slug: {"label": str(hub["label"]), "packageCount": hub_counts.get(slug, 0), "reason": str(hub["reason"])}
-            for slug, hub in HUB_DEFINITIONS.items()
+            slug: {**hub, "packageCount": hub_counts.get(slug, 0)}
+            for slug, hub in hubs.items()
         },
         "packages": graph_packages,
     }

@@ -1014,9 +1014,39 @@ def is_indexable_package_page(page: PackagePage) -> bool:
 
 def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[PackagePage]]]:
     hubs: list[tuple[PackageHub, list[PackagePage]]] = []
+    static_slugs = {hub.slug for hub in PACKAGE_HUBS}
     for hub in PACKAGE_HUBS:
         matches = sorted(
             [page for page in pages if package_matches_hub(page, hub)],
+            key=hub_sort_key,
+        )
+        if matches:
+            hubs.append((hub, matches))
+    dynamic_hubs: dict[str, dict[str, str]] = {}
+    for page in pages:
+        for item in page.package_hubs:
+            if not isinstance(item, dict):
+                continue
+            slug = str(item.get("slug") or "").strip()
+            if not slug or slug in static_slugs:
+                continue
+            dynamic_hubs.setdefault(slug, {
+                "title": str(item.get("label") or slug.replace("-", " ").title()),
+                "kicker": str(item.get("kicker") or "package graph cluster"),
+                "description": str(item.get("description") or item.get("reason") or "Agent-curated package graph hub generated from local package facts."),
+            })
+    for slug, info in sorted(dynamic_hubs.items(), key=lambda item: item[1]["title"].lower()):
+        hub = PackageHub(
+            slug=slug,
+            title=info["title"],
+            kicker=info["kicker"],
+            description=info["description"],
+        )
+        matches = sorted(
+            [
+                page for page in pages
+                if any(isinstance(item, dict) and item.get("slug") == slug for item in page.package_hubs)
+            ],
             key=hub_sort_key,
         )
         if matches:
@@ -2127,6 +2157,15 @@ def inferred_related_links(page: PackagePage) -> list[str]:
     return links
 
 
+def has_internal_package_navigation(page: PackagePage) -> bool:
+    return bool(
+        page.related_packages
+        or page.also_available_via
+        or page.package_hubs
+        or inferred_related_links(page)
+    )
+
+
 def related_link(item: dict[str, Any]) -> str:
     provider = str(item.get("provider") or "").strip()
     name = str(item.get("name") or "").strip()
@@ -3044,6 +3083,11 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
     indexable_page_count = int(manifest.get("indexable_page_count") or 0)
     if indexable_page_count != len(indexable_pages):
         failures.append(f"manifest indexable page count is {indexable_page_count}, but current data yields {len(indexable_pages)}")
+    isolated_pages = [page.key for page in indexable_pages if not has_internal_package_navigation(page)]
+    if isolated_pages:
+        failures.append(
+            f"{len(isolated_pages):,} indexable package pages have no internal package graph links: {', '.join(isolated_pages[:12])}"
+        )
     noindex_page_count = int(manifest.get("noindex_page_count") or 0)
     if noindex_page_count != len(noindex_pages):
         failures.append(f"manifest noindex page count is {noindex_page_count}, but current data yields {len(noindex_pages)}")
