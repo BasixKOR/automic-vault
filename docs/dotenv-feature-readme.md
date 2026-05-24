@@ -13,11 +13,13 @@ That was fine until agents learned to edit and run the code.
 
 `av dotenv` keeps encrypted dotenv storage, but changes the runtime model:
 applications request secrets explicitly through AV SDKs. Every request is
-observable, approval-gated, logged, and tied to the callsite that asked for it.
+observable, logged, and tied to the callsite that asked for it. Local
+development can approval-gate new access paths.
 
 In production and CI, the same AV secret APIs resolve through the process
 environment. Use `dotenvx`, your CI secret store, or your production platform
-to deliver `OPENAI_API_KEY`; application code still calls `secret(...)`.
+to deliver `OPENAI_API_KEY`; application code still calls `secret(...)`. The
+SDK still captures backtraces so unexpected usage can be reported.
 
 ## Quickstart
 
@@ -173,7 +175,8 @@ const apiKey = await secret("OPENAI_API_KEY")
 ```
 
 Local development can route that through AV approvals, backtraces, and logging.
-Production and CI can route it through `getenv`.
+Production and CI can route it through `getenv`, while still recording the
+backtrace behind the secret request.
 
 ```sh
 $ dotenvx run -- npm test
@@ -181,7 +184,8 @@ $ dotenvx run -- npm test
 ```
 
 This keeps deploys boring. AV improves the development security model without
-requiring a new production secret delivery system.
+requiring a new production secret delivery system. Unexpected production or CI
+callers can still show up as reports, alerts, or audit events.
 
 ## What AV Watches
 
@@ -260,6 +264,8 @@ In production and CI:
 platform secrets or dotenvx
   -> process environment
   -> AV SDK getenv fallback
+  -> captured backtrace
+  -> unexpected usage reported
   -> application code
 ```
 
