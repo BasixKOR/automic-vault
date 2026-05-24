@@ -101,6 +101,112 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertEqual(daemonish["installBehavior"]["postInstallDefined"], True)
         self.assertEqual(daemonish["bottle"]["available"], False)
 
+    def test_npm_enrichment_extracts_registry_metadata(self):
+        module = load_module(ENRICHMENT_SCRIPT, "pkg_page_enrichment_npm")
+        payload = {
+            "dist-tags": {"latest": "3.1.5"},
+            "time": {"3.1.5": "2026-03-18T19:02:50.186Z"},
+            "versions": {
+                "3.1.5": {
+                    "name": "@11ty/eleventy",
+                    "version": "3.1.5",
+                    "homepage": "https://www.11ty.dev/",
+                    "license": "MIT",
+                    "repository": {"url": "git+https://github.com/11ty/eleventy.git"},
+                    "bugs": {"url": "https://github.com/11ty/eleventy/issues"},
+                    "dependencies": {"@11ty/dependency-tree": "^4.0.0", "kleur": "^4.1.5"},
+                    "devDependencies": {"ava": "^6.0.0"},
+                    "bin": {"eleventy": "cmd.cjs"},
+                    "scripts": {"postinstall": "node scripts/postinstall.js", "prepare": "npm run build"},
+                    "dist": {"tarball": "https://registry.npmjs.org/@11ty/eleventy/-/eleventy-3.1.5.tgz"},
+                    "keywords": ["static-site-generator", "ssg"],
+                }
+            },
+        }
+
+        key, entry = module.npm_enrichment(
+            "@11ty/eleventy",
+            {"executable": "eleventy", "summary": "A simpler static site generator."},
+            payload,
+        )
+
+        self.assertEqual(key, "npm:@11ty/eleventy")
+        self.assertEqual(entry["package"]["packageManager"], "npm")
+        self.assertEqual(entry["package"]["packageManagerUrl"], "https://www.npmjs.com/package/@11ty/eleventy")
+        self.assertEqual(entry["version"], "3.1.5")
+        self.assertEqual(entry["homepage"], "https://www.11ty.dev/")
+        self.assertEqual(entry["repository"], "https://github.com/11ty/eleventy")
+        self.assertEqual(entry["issueTracker"], "https://github.com/11ty/eleventy/issues")
+        self.assertEqual(entry["license"], "MIT")
+        self.assertEqual(entry["dependencies"], ["@11ty/dependency-tree", "kleur"])
+        self.assertEqual(entry["buildDependencies"], ["ava"])
+        self.assertEqual(entry["executables"][0]["name"], "eleventy")
+        self.assertEqual(entry["installBehavior"]["lifecycleScripts"], ["postinstall", "prepare"])
+        self.assertEqual(entry["installBehavior"]["postInstallDefined"], True)
+        self.assertEqual(entry["publishedAt"], "2026-03-18T19:02:50.186Z")
+        self.assertEqual(entry["sourceArchive"], "https://registry.npmjs.org/@11ty/eleventy/-/eleventy-3.1.5.tgz")
+
+    def test_pypi_enrichment_extracts_project_metadata(self):
+        module = load_module(ENRICHMENT_SCRIPT, "pkg_page_enrichment_pypi")
+        payload = {
+            "info": {
+                "name": "pgcli",
+                "version": "4.3.0",
+                "summary": "CLI for Postgres Database.",
+                "home_page": "https://www.pgcli.com/",
+                "license": "BSD",
+                "requires_python": ">=3.9",
+                "requires_dist": [
+                    "click >=4.1",
+                    "psycopg >=3.0.14 ; python_version >= '3.8'",
+                    "setproctitle; sys_platform != 'win32'",
+                ],
+                "project_urls": {
+                    "Source": "https://github.com/dbcli/pgcli",
+                    "Documentation": "https://www.pgcli.com/",
+                    "Issues": "https://github.com/dbcli/pgcli/issues",
+                },
+                "classifiers": [
+                    "License :: OSI Approved :: BSD License",
+                    "Programming Language :: Python :: 3",
+                ],
+            },
+            "urls": [
+                {
+                    "packagetype": "bdist_wheel",
+                    "url": "https://files.pythonhosted.org/packages/pgcli.whl",
+                    "upload_time_iso_8601": "2026-04-01T12:00:00.000000Z",
+                },
+                {
+                    "packagetype": "sdist",
+                    "url": "https://files.pythonhosted.org/packages/pgcli.tar.gz",
+                    "upload_time_iso_8601": "2026-04-01T12:00:00.000000Z",
+                },
+            ],
+        }
+
+        key, entry = module.pypi_enrichment(
+            "pgcli",
+            {"pythonFormula": "python@3.12", "homebrewDeps": ["libpq"]},
+            payload,
+        )
+
+        self.assertEqual(key, "pip:pgcli")
+        self.assertEqual(entry["package"]["packageManager"], "PyPI")
+        self.assertEqual(entry["package"]["packageManagerUrl"], "https://pypi.org/project/pgcli/")
+        self.assertEqual(entry["version"], "4.3.0")
+        self.assertEqual(entry["summary"], "CLI for Postgres Database.")
+        self.assertEqual(entry["repository"], "https://github.com/dbcli/pgcli")
+        self.assertEqual(entry["upstreamDocs"], "https://www.pgcli.com/")
+        self.assertEqual(entry["issueTracker"], "https://github.com/dbcli/pgcli/issues")
+        self.assertEqual(entry["dependencies"], ["click", "psycopg", "setproctitle"])
+        self.assertEqual(entry["executables"][0]["name"], "pgcli")
+        self.assertEqual(entry["sourceArchive"], "https://files.pythonhosted.org/packages/pgcli.tar.gz")
+        self.assertEqual(entry["publishedAt"], "2026-04-01T12:00:00.000000Z")
+        self.assertEqual(entry["installBehavior"]["pythonRequires"], ">=3.9")
+        self.assertEqual(entry["homebrewDependencies"], ["libpq"])
+        self.assertEqual(entry["pythonFormula"], "python@3.12")
+
     def test_check_fails_when_artifact_is_missing_or_stale(self):
         module = load_module(ENRICHMENT_SCRIPT, "pkg_page_enrichment_check")
         terminal = module.Terminal(json_mode=True)
@@ -129,6 +235,55 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_for_enrichment_test")
         source_paths = {path.as_posix() for path in module.source_files()}
         self.assertIn("data/pkg-page-enrichment.json", source_paths)
+
+    def test_thin_package_pages_are_noindex_but_security_pages_remain_indexable(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_thin_policy_test")
+
+        thin = module.PackagePage(provider="npm", name="qmd")
+        thin.executables = [{"name": "qmd", "source": "test"}]
+        self.assertFalse(module.is_indexable_package_page(thin))
+
+        enriched = module.PackagePage(provider="brew", name="ripgrep")
+        enriched.summary = "Search tool"
+        enriched.version = "15.0.0"
+        self.assertTrue(module.is_indexable_package_page(enriched))
+
+        security = module.PackagePage(provider="brew", name="vault")
+        security.isotope = {"name": "isotope:vault"}
+        self.assertTrue(module.is_indexable_package_page(security))
+
+    def test_package_sitemap_index_points_to_ecosystem_sitemaps(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_sitemap_test")
+        manifest = {"generated_at": "2026-05-24T12:00:00+00:00"}
+        sitemap_index = module.render_sitemap_index(["sitemap-hubs.xml", "sitemap-brew.xml", "sitemap-npm.xml"], manifest)
+        self.assertIn("<sitemapindex", sitemap_index)
+        self.assertIn("https://www.automicvault.com/pkg/sitemap-brew.xml", sitemap_index)
+
+        brew = module.PackagePage(provider="brew", name="ripgrep")
+        brew.last_updated_at = "2026-05-20T00:00:00+00:00"
+        package_sitemap = module.render_package_sitemap([brew], manifest)
+        self.assertIn("<urlset", package_sitemap)
+        self.assertIn("https://www.automicvault.com/pkg/brew/ripgrep/", package_sitemap)
+
+    def test_package_markdown_alternate_contains_agent_facts(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_markdown_test")
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        page.package_manager = "Homebrew"
+        page.package_manager_url = "https://formulae.brew.sh/formula/ripgrep"
+        page.repository = "https://github.com/BurntSushi/ripgrep"
+        page.dependencies = ["pcre2"]
+        page.executables = [{"name": "rg", "kind": "binary"}]
+        page.geiger = {"level": "green", "confidence": "high", "reasons": ["No service hooks."]}
+
+        markdown = module.render_package_markdown(page, {"generated_at": "2026-05-24T12:00:00+00:00"})
+
+        self.assertIn("# Install ripgrep", markdown)
+        self.assertIn("brew install ripgrep", markdown)
+        self.assertIn("https://formulae.brew.sh/formula/ripgrep", markdown)
+        self.assertIn("- pcre2", markdown)
+        self.assertIn("Geiger risk", markdown)
 
 
 if __name__ == "__main__":

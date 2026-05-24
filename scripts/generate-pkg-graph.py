@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+
+SCHEMA_VERSION = 1
+OUTPUT_PATH = Path("data/pkg-graph.json")
+
+HUB_DEFINITIONS = {
+    "cloud-clis": {
+        "label": "Cloud CLI packages",
+        "terms": (
+            "amazon web services",
+            "aws",
+            "azure",
+            "cloudflare",
+            "digitalocean",
+            "docker",
+            "google cloud",
+            "kubernetes",
+            "oci",
+            "s3",
+            "terraform",
+        ),
+        "names": (
+            "awscli",
+            "aws-cdk",
+            "azure-cli",
+            "cloudflared",
+            "doctl",
+            "firebase-cli",
+            "flyctl",
+            "gcloud-cli",
+            "glab",
+            "google-cloud-sdk",
+            "helm",
+            "heroku",
+            "jfrog-cli",
+            "kubernetes-cli",
+            "minio-mc",
+            "netlify-cli",
+            "oci-cli",
+            "opentofu",
+            "podman",
+            "pulumi",
+            "s3cmd",
+            "s5cmd",
+            "snowflake-cli",
+            "terraform",
+            "tfenv",
+            "vercel-cli",
+            "wrangler",
+        ),
+        "reason": "Belongs to a cloud or infrastructure command family.",
+    },
+    "source-control-tools": {
+        "label": "Source-control packages",
+        "terms": ("source control", "version control"),
+        "names": ("fossil", "gh", "git", "git-lfs", "glab", "hub", "jj", "lazygit", "mercurial", "subversion", "svn"),
+        "reason": "Belongs to a source-control command family.",
+    },
+    "package-publishers": {
+        "label": "Package publisher tools",
+        "terms": ("package publish", "publish package", "registry token", "rubygems", "npm", "pypi", "cargo"),
+        "names": ("cargo", "gem", "go", "node", "npm", "pnpm", "poetry", "python", "ruby", "rubygems", "twine", "uv", "yarn"),
+        "reason": "Belongs to a package publishing or registry command family.",
+    },
+    "mcp-tools": {
+        "label": "MCP tool packages",
+        "terms": ("mcp", "model context protocol"),
+        "names": (),
+        "reason": "Mentions MCP or Model Context Protocol.",
+    },
+    "secret-risk-packages": {
+        "label": "Secret-risk packages",
+        "terms": (),
+        "names": (),
+        "reason": "Has radioisotope, approval-gate, or non-low Geiger security signals.",
+    },
+}
+
+RELATION_DEFINITIONS = {
+    "runtime_dependency": "Homebrew declares the target as a runtime dependency.",
+    "build_dependency": "Homebrew declares the target as a build dependency.",
+    "depended_on_by": "Another Homebrew package depends on this package.",
+    "same_family": "Package names indicate a versioned or adjacent formula family.",
+    "same_repository": "Packages resolve to the same upstream source repository.",
+    "same_homepage": "Packages share the same homepage.",
+    "same_software_cross_ecosystem": "A package with the same normalized name exists in another local ecosystem.",
+    "hub_member": "Package belongs to a generated package hub.",
+}
+
+
+class Terminal:
+    def __init__(self, json_mode: bool = False):
+        self.json_mode = json_mode
+
+    def log(self, message: str) -> None:
+        if not self.json_mode:
+            print(message, file=sys.stderr)
+
+    def ok(self, message: str) -> None:
+        self.log(f"OK {message}")
+
+    def error(self, message: str) -> None:
+        self.log(f"ERROR {message}")
+
+
+def ensure_cwd() -> Path:
+    scripts_dir = Path(__file__).resolve().parent
+    root = scripts_dir.parent
+    os.chdir(root)
+    return root
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def read_json(path: Path, default: Any = None) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if default is not None:
+            return default
+        raise
+
+
+def slugify(value: str) -> str:
+    value = value.lower().strip()
+    if value.startswith("@"):
+        value = value[1:]
+    value = value.replace("@", "-").replace("+", "plus").replace("/", "-")
+    value = re.sub(r"[^a-z0-9-]+", "-", value)
+    return value.strip("-") or "package"
+
+
+def normalize_name(value: str) -> str:
+    value = value.lower().strip()
+    value = value.removeprefix("@")
+    value = re.sub(r"[@_/+.]+", "-", value)
+    value = re.sub(r"[^a-z0-9-]+", "-", value)
+    value = re.sub(r"-+", "-", value).strip("-")
+    return value
+
+
+def family_key(name: str) -> str:
+    value = normalize_name(name)
+    value = re.sub(r"-?\d+(\-\d+)*$", "", value)
+    value = re.sub(r"-v?\d+(\-\d+)*$", "", value)
+    value = re.sub(r"-(cli|client|tool|tools|core|common|lib|libs)$", "", value)
+    return value or normalize_name(name)
+
+
+def repository_url(info: dict[str, Any]) -> str:
+    for key in ("repository", "homepage", "sourceArchive"):
+        value = info.get(key)
+        if isinstance(value, str):
+            match = re.search(r"https://github\.com/([^/\s]+)/([^/#?\s]+)", value)
+            if match:
+                owner = match.group(1)
+                repo = re.sub(r"\.git$", "", match.group(2))
+                return f"https://github.com/{owner}/{repo}"
+    return ""
+
+
+def source_host(value: str) -> str:
+    match = re.match(r"https?://([^/]+)", value or "")
+    return match.group(1).lower() if match else ""
+
+
+def term_matches(haystack: str, term: str) -> bool:
+    escaped = re.escape(term.lower())
+    return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", haystack) is not None
+
+
+def input_files() -> list[Path]:
+    files = [
+        Path("data/pkg-page-enrichment.json"),
+        Path("data/db.json"),
+        Path("data/geiger-counter.json"),
+        Path("data/isotopes.json"),
+        Path("data/npm.json"),
+        Path("data/pip.json"),
+    ]
+    for root in (Path("data/approval-gates"), Path("data/pkg-pages")):
+        if root.exists():
+            files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
+    return sorted(path for path in files if path.exists())
+
+
+def input_hash(files: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def provider_packages(db: dict[str, Any], pip: dict[str, Any]) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {"brew": set(), "cask": set(), "npm": set(), "pip": set()}
+    for provider, section in (("brew", "formulas"), ("cask", "casks"), ("npm", "npms")):
+        values = db.get(section) or {}
+        if isinstance(values, dict):
+            result[provider].update(str(name) for name in values)
+    if isinstance(pip, dict):
+        result["pip"].update(str(name) for name in pip)
+    return result
+
+
+def approval_gate_packages() -> set[str]:
+    result = set()
+    root = Path("data/approval-gates/brew")
+    if root.exists():
+        result.update(path.stem for path in root.glob("*.yaml"))
+    return result
+
+
+def isotope_packages(isotopes: dict[str, Any]) -> set[str]:
+    result = set()
+    for isotope in isotopes.values() if isinstance(isotopes, dict) else []:
+        if not isinstance(isotope, dict):
+            continue
+        modifies = isotope.get("modifies") or isotope.get("replaces")
+        if isinstance(modifies, str) and modifies.startswith("brew:"):
+            result.add(modifies.split(":", 1)[1])
+    return result
+
+
+def package_popularity(db: dict[str, Any], name: str) -> int:
+    info = ((db.get("formulas") or {}).get(name) or {})
+    popularity = info.get("popularity") if isinstance(info, dict) else {}
+    if not isinstance(popularity, dict):
+        return 999999
+    try:
+        return int(popularity.get("rank") or 999999)
+    except (TypeError, ValueError):
+        return 999999
+
+
+def link_target(provider: str, name: str, reason: str, rel: str, confidence: float, evidence: str) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "name": name,
+        "label": name,
+        "reason": reason,
+        "rel": rel,
+        "confidence": confidence,
+        "evidence": evidence,
+    }
+
+
+def append_unique(targets: list[dict[str, Any]], item: dict[str, Any], seen: set[tuple[str, str, str]]) -> None:
+    key = (item.get("provider", ""), item.get("name", ""), item.get("rel", ""))
+    if key in seen:
+        return
+    seen.add(key)
+    targets.append(item)
+
+
+def hub_memberships(name: str, info: dict[str, Any], geiger: dict[str, Any] | None, gated: bool, isotope: bool) -> list[dict[str, str]]:
+    memberships = []
+    names = {normalize_name(name)}
+    for executable in info.get("executables") or []:
+        if isinstance(executable, dict) and executable.get("name"):
+            names.add(normalize_name(str(executable["name"])))
+    haystack = " ".join(str(info.get(key) or "") for key in ("summary", "homepage")).lower()
+    for slug, hub in HUB_DEFINITIONS.items():
+        matched = False
+        if slug == "secret-risk-packages":
+            level = str((geiger or {}).get("level") or "").lower()
+            matched = isotope or gated or level not in {"", "green", "low", "unknown"}
+        else:
+            matched = any(normalize_name(item) in names for item in hub["names"]) or any(term_matches(haystack, term) for term in hub["terms"])
+        if matched:
+            memberships.append({"slug": slug, "label": str(hub["label"]), "reason": str(hub["reason"])})
+    return memberships
+
+
+def build_graph() -> dict[str, Any]:
+    enrichment = read_json(Path("data/pkg-page-enrichment.json"))
+    db = read_json(Path("data/db.json"))
+    geiger_data = read_json(Path("data/geiger-counter.json"), {})
+    isotopes = read_json(Path("data/isotopes.json"), {})
+    npm = read_json(Path("data/npm.json"), {})
+    pip = read_json(Path("data/pip.json"), {})
+    packages = enrichment.get("packages") if isinstance(enrichment, dict) else {}
+    if not isinstance(packages, dict):
+        raise ValueError("data/pkg-page-enrichment.json must contain packages")
+
+    provider_names = provider_packages(db, pip)
+    normalized_by_provider: dict[str, dict[str, list[str]]] = {}
+    for provider, names in provider_names.items():
+        normalized: dict[str, list[str]] = defaultdict(list)
+        for name in names:
+            normalized[normalize_name(name)].append(name)
+        normalized_by_provider[provider] = {key: sorted(value) for key, value in normalized.items()}
+
+    brew_names = {key.split(":", 1)[1] for key in packages if key.startswith("brew:")}
+    reverse_runtime: dict[str, list[str]] = defaultdict(list)
+    reverse_build: dict[str, list[str]] = defaultdict(list)
+    family_groups: dict[str, list[str]] = defaultdict(list)
+    repo_groups: dict[str, list[str]] = defaultdict(list)
+    homepage_groups: dict[str, list[str]] = defaultdict(list)
+
+    for key, info in packages.items():
+        if not key.startswith("brew:") or not isinstance(info, dict):
+            continue
+        name = key.split(":", 1)[1]
+        family_groups[family_key(name)].append(name)
+        repo = repository_url(info)
+        if repo:
+            repo_groups[repo].append(name)
+        homepage = info.get("homepage")
+        if isinstance(homepage, str) and homepage:
+            homepage_groups[homepage].append(name)
+        for dep in info.get("dependencies") or []:
+            if dep in brew_names:
+                reverse_runtime[dep].append(name)
+        for dep in info.get("buildDependencies") or []:
+            if dep in brew_names:
+                reverse_build[dep].append(name)
+
+    geiger_packages = (geiger_data.get("packages") or {}) if isinstance(geiger_data, dict) else {}
+    gated_packages = approval_gate_packages()
+    isotope_names = isotope_packages(isotopes)
+    graph_packages: dict[str, Any] = {}
+    hub_counts: dict[str, int] = defaultdict(int)
+
+    for key in sorted(packages):
+        if not key.startswith("brew:"):
+            continue
+        info = packages[key]
+        if not isinstance(info, dict):
+            continue
+        name = key.split(":", 1)[1]
+        db_info = ((db.get("formulas") or {}).get(name) or {})
+        summary = db_info.get("summary") if isinstance(db_info, dict) else ""
+        repo = repository_url(info)
+        geiger = geiger_packages.get(name) if isinstance(geiger_packages.get(name), dict) else None
+        gated = name in gated_packages
+        isotope = name in isotope_names
+        related: list[dict[str, Any]] = []
+        related_seen: set[tuple[str, str, str]] = set()
+
+        for dep in sorted(info.get("dependencies") or [], key=lambda item: package_popularity(db, item))[:8]:
+            if dep in brew_names:
+                append_unique(related, link_target("brew", dep, "Runtime dependency declared by Homebrew.", "runtime_dependency", 1.0, "pkg-page-enrichment.dependencies"), related_seen)
+        for dep in sorted(info.get("buildDependencies") or [], key=lambda item: package_popularity(db, item))[:4]:
+            if dep in brew_names:
+                append_unique(related, link_target("brew", dep, "Build dependency declared by Homebrew.", "build_dependency", 0.82, "pkg-page-enrichment.buildDependencies"), related_seen)
+        for dependent in sorted(reverse_runtime.get(name, []), key=lambda item: package_popularity(db, item))[:8]:
+            append_unique(related, link_target("brew", dependent, "Popular package that depends on this formula.", "depended_on_by", 0.76, "reverse runtime dependency"), related_seen)
+        for sibling in sorted(family_groups.get(family_key(name), []), key=lambda item: package_popularity(db, item))[:8]:
+            if sibling != name:
+                append_unique(related, link_target("brew", sibling, "Package name indicates the same formula family.", "same_family", 0.68, "normalized package family"), related_seen)
+        if repo:
+            for sibling in sorted(repo_groups.get(repo, []), key=lambda item: package_popularity(db, item))[:8]:
+                if sibling != name:
+                    append_unique(related, link_target("brew", sibling, "Shares the same upstream source repository.", "same_repository", 0.9, repo), related_seen)
+        homepage = info.get("homepage")
+        if isinstance(homepage, str) and homepage:
+            for sibling in sorted(homepage_groups.get(homepage, []), key=lambda item: package_popularity(db, item))[:6]:
+                if sibling != name:
+                    append_unique(related, link_target("brew", sibling, "Shares the same upstream homepage.", "same_homepage", 0.72, homepage), related_seen)
+
+        also: list[dict[str, Any]] = []
+        also_seen: set[tuple[str, str, str]] = set()
+        normalized_name = normalize_name(name)
+        for provider in ("cask", "npm", "pip"):
+            for other in normalized_by_provider.get(provider, {}).get(normalized_name, [])[:4]:
+                append_unique(
+                    also,
+                    link_target(provider, other, "Same normalized package name in another local ecosystem.", "same_software_cross_ecosystem", 0.74, "normalized package name"),
+                    also_seen,
+                )
+
+        hubs = hub_memberships(name, {**info, "summary": summary}, geiger, gated, isotope)
+        for hub in hubs:
+            hub_counts[hub["slug"]] += 1
+
+        claims = []
+        for item in related[:20]:
+            claims.append({
+                "intent": "internal-link",
+                "predicate": item["rel"],
+                "target": f"{item['provider']}:{item['name']}",
+                "why": item["reason"],
+                "confidence": item["confidence"],
+                "evidence": item["evidence"],
+            })
+        for item in also:
+            claims.append({
+                "intent": "cross-ecosystem-link",
+                "predicate": item["rel"],
+                "target": f"{item['provider']}:{item['name']}",
+                "why": item["reason"],
+                "confidence": item["confidence"],
+                "evidence": item["evidence"],
+            })
+        for hub in hubs:
+            claims.append({
+                "intent": "hub-backlink",
+                "predicate": "hub_member",
+                "target": f"pkg-hub:{hub['slug']}",
+                "why": hub["reason"],
+                "confidence": 0.7,
+                "evidence": "generated hub classifier",
+            })
+
+        graph_packages[key] = {
+            "identity": {
+                "provider": "brew",
+                "name": name,
+                "summary": summary or "",
+                "version": info.get("version") or "",
+                "homepage": info.get("homepage") or "",
+                "repository": repo,
+                "sourceHost": source_host(info.get("sourceArchive") or info.get("homepage") or ""),
+                "packageManagerUrl": ((info.get("package") or {}).get("packageManagerUrl") or ""),
+            },
+            "operationalContext": {
+                "runtimeDependencyCount": len(info.get("dependencies") or []),
+                "buildDependencyCount": len(info.get("buildDependencies") or []),
+                "executableCount": len(info.get("executables") or []),
+                "bottleAvailable": bool((info.get("bottle") or {}).get("available")),
+                "postInstallDefined": (info.get("installBehavior") or {}).get("postInstallDefined"),
+                "serviceDeclared": bool((info.get("installBehavior") or {}).get("service")),
+                "geigerLevel": (geiger or {}).get("level") or "",
+                "radioisotope": isotope,
+                "approvalGate": gated,
+            },
+            "linkIntents": {
+                "relatedPackages": related[:24],
+                "alsoAvailableVia": also[:12],
+                "packageHubs": hubs,
+            },
+            "claims": claims[:40],
+        }
+
+    files = input_files()
+    return {
+        "schema": SCHEMA_VERSION,
+        "generated_at": utc_now(),
+        "description": "Agent-oriented package relationship graph. Edges are link intents with evidence, confidence, and operational reasons rather than generic tags.",
+        "input_hash": input_hash(files),
+        "input_files": [path.as_posix() for path in files],
+        "relation_definitions": RELATION_DEFINITIONS,
+        "hubs": {
+            slug: {"label": str(hub["label"]), "packageCount": hub_counts.get(slug, 0), "reason": str(hub["reason"])}
+            for slug, hub in HUB_DEFINITIONS.items()
+        },
+        "packages": graph_packages,
+    }
+
+
+def comparable_graph(graph: dict[str, Any]) -> dict[str, Any]:
+    result = dict(graph)
+    result.pop("generated_at", None)
+    return result
+
+
+def check_current(path: Path, terminal: Terminal) -> int:
+    if not path.exists():
+        terminal.error(f"Missing {path}. Run scripts/generate-pkg-graph.py.")
+        return 1
+    try:
+        current = read_json(path)
+        expected = build_graph()
+    except (OSError, ValueError, json.JSONDecodeError) as err:
+        terminal.error(f"Unable to validate {path}: {err}")
+        return 1
+    failures = []
+    if current.get("schema") != SCHEMA_VERSION:
+        failures.append(f"schema is {current.get('schema')!r}, expected {SCHEMA_VERSION}")
+    if comparable_graph(current) != comparable_graph(expected):
+        failures.append("package graph does not match current local package data")
+    if failures:
+        terminal.error("Package graph is stale.")
+        for failure in failures:
+            terminal.log(f"  - {failure}")
+        terminal.log("Run scripts/generate-pkg-graph.py and regenerate package pages.")
+        return 1
+    terminal.ok(f"Package graph is current ({len(current.get('packages') or {}):,} packages)")
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate agent-friendly package relationship graph data.")
+    parser.add_argument("--check", action="store_true", help="Validate that the graph matches current local inputs.")
+    parser.add_argument("--output", default=str(OUTPUT_PATH), help=f"Path to write or validate. Defaults to {OUTPUT_PATH}.")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable status.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    ensure_cwd()
+    terminal = Terminal(json_mode=args.json)
+    output_path = Path(args.output)
+    if args.check:
+        return check_current(output_path, terminal)
+    try:
+        graph = build_graph()
+    except (OSError, ValueError, json.JSONDecodeError) as err:
+        terminal.error(f"Failed to build package graph: {err}")
+        return 1
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(graph, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    terminal.ok(f"Wrote {len(graph.get('packages') or {}):,} package graph entries to {output_path}")
+    if args.json:
+        print(json.dumps({"ok": True, "output": str(output_path), "package_count": len(graph.get("packages") or {})}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

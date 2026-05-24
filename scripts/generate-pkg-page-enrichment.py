@@ -9,12 +9,15 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
 
 SCHEMA_VERSION = 1
 FORMULA_URL = "https://formulae.brew.sh/api/formula.json"
+NPM_PACKAGE_URL = "https://registry.npmjs.org/{name}"
+PYPI_PACKAGE_URL = "https://pypi.org/pypi/{name}/json"
 CACHE_DIR = Path("cache")
 ECOSYSTEM = "brew.sh"
 META_KEY = "__pkgdb_meta__"
@@ -105,12 +108,12 @@ def write_cache(path: Path, payload: Any, etag: str | None, checked_at: int) -> 
     )
 
 
-def fetch_json(url: str, force_refresh: bool = False) -> Any:
-    path = cache_path_for(url)
+def fetch_json(url: str, ecosystem: str = ECOSYSTEM, force_refresh: bool = False) -> Any:
+    path = cache_path_for(url, ecosystem)
     payload = None
     meta: dict[str, Any] = {}
     if path.exists():
-        payload, meta = read_cached_json(url)
+        payload, meta = read_cached_json(url, ecosystem)
 
     checked_at = meta.get("checked_at")
     now = int(time.time())
@@ -162,6 +165,12 @@ def normalize_list(value: Any) -> list[str]:
     return sorted(set(result))
 
 
+def normalize_dependency_names(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        return sorted(str(name) for name in value if name)
+    return normalize_list(value)
+
+
 def normalize_license(value: Any) -> str:
     if isinstance(value, str):
         return value
@@ -193,6 +202,172 @@ def source_archive(formula: dict[str, Any]) -> str:
         return ""
     url = stable.get("url")
     return url if isinstance(url, str) else ""
+
+
+def normalize_url(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("url", "web", "browse"):
+            child = value.get(key)
+            if isinstance(child, str) and child.strip():
+                return child.strip()
+    return ""
+
+
+def normalize_repository(value: Any) -> str:
+    url = normalize_url(value)
+    if not url:
+        return ""
+    url = re.sub(r"^git\+", "", url)
+    url = re.sub(r"^git://github\.com/", "https://github.com/", url)
+    url = re.sub(r"^ssh://git@github\.com/", "https://github.com/", url)
+    url = re.sub(r"^git@github\.com:", "https://github.com/", url)
+    return re.sub(r"\.git$", "", url)
+
+
+def npm_package_url(name: str) -> str:
+    return NPM_PACKAGE_URL.format(name=urllib.parse.quote(name, safe="@"))
+
+
+def pypi_package_url(name: str) -> str:
+    return PYPI_PACKAGE_URL.format(name=urllib.parse.quote(name, safe=""))
+
+
+def npm_latest_version(payload: dict[str, Any]) -> str:
+    dist_tags = payload.get("dist-tags") or {}
+    latest = dist_tags.get("latest") if isinstance(dist_tags, dict) else None
+    if isinstance(latest, str) and latest:
+        return latest
+    versions = payload.get("versions") or {}
+    if isinstance(versions, dict) and versions:
+        return sorted(versions)[-1]
+    return ""
+
+
+def npm_latest_manifest(payload: dict[str, Any]) -> dict[str, Any]:
+    version = npm_latest_version(payload)
+    versions = payload.get("versions") or {}
+    manifest = versions.get(version) if isinstance(versions, dict) else None
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def npm_executable_records(manifest: dict[str, Any], fallback: str = "") -> list[dict[str, str]]:
+    binaries = manifest.get("bin")
+    records: list[dict[str, str]] = []
+    if isinstance(binaries, str):
+        name = fallback or manifest.get("name") or ""
+        if isinstance(name, str) and name:
+            records.append({"name": name, "kind": "cli", "exposure": "global executable", "source": binaries})
+    elif isinstance(binaries, dict):
+        for name, target in sorted(binaries.items()):
+            if isinstance(name, str) and name:
+                record = {"name": name, "kind": "cli", "exposure": "global executable"}
+                if isinstance(target, str) and target:
+                    record["source"] = target
+                records.append(record)
+    elif fallback:
+        records.append({"name": fallback, "kind": "cli", "exposure": "global executable"})
+    return records
+
+
+def npm_install_behavior(manifest: dict[str, Any]) -> dict[str, Any]:
+    scripts = manifest.get("scripts") or {}
+    lifecycle = []
+    if isinstance(scripts, dict):
+        for name in ("preinstall", "install", "postinstall", "prepublish", "prepare"):
+            if scripts.get(name):
+                lifecycle.append(name)
+    return {
+        "lifecycleScripts": lifecycle,
+        "postInstallDefined": "postinstall" in lifecycle,
+        "prepareDefined": "prepare" in lifecycle,
+    }
+
+
+def npm_license(payload: dict[str, Any], manifest: dict[str, Any]) -> str:
+    return normalize_license(manifest.get("license") or payload.get("license"))
+
+
+def pypi_project_url(info: dict[str, Any], names: tuple[str, ...]) -> str:
+    project_urls = info.get("project_urls") or {}
+    if not isinstance(project_urls, dict):
+        return ""
+    lower = {str(key).lower(): value for key, value in project_urls.items()}
+    for name in names:
+        value = normalize_url(lower.get(name.lower()))
+        if value:
+            return value
+    return ""
+
+
+def pypi_repository(info: dict[str, Any]) -> str:
+    return normalize_repository(pypi_project_url(info, ("source", "source code", "repository", "github", "code")))
+
+
+def pypi_license(info: dict[str, Any]) -> str:
+    license_text = normalize_license(info.get("license"))
+    if license_text:
+        return license_text
+    classifiers = info.get("classifiers") or []
+    if isinstance(classifiers, list):
+        for classifier in classifiers:
+            if isinstance(classifier, str) and classifier.startswith("License ::"):
+                return classifier.rsplit("::", 1)[-1].strip()
+    return ""
+
+
+def pypi_dependency_name(requirement: str) -> str:
+    requirement = requirement.split(";", 1)[0].strip()
+    requirement = re.split(r"\s|\[|<|>|=|!|~", requirement, maxsplit=1)[0].strip()
+    return requirement
+
+
+def pypi_dependencies(info: dict[str, Any]) -> list[str]:
+    requires = info.get("requires_dist") or []
+    if not isinstance(requires, list):
+        return []
+    return sorted({name for item in requires if isinstance(item, str) for name in [pypi_dependency_name(item)] if name})
+
+
+def pypi_source_archive(payload: dict[str, Any], version: str) -> str:
+    urls = payload.get("urls") or []
+    if not isinstance(urls, list):
+        return ""
+    candidates = [item for item in urls if isinstance(item, dict) and item.get("url")]
+    for packagetype in ("sdist", "bdist_wheel"):
+        for item in candidates:
+            if item.get("packagetype") == packagetype:
+                return str(item.get("url"))
+    releases = payload.get("releases") or {}
+    release_urls = releases.get(version) if isinstance(releases, dict) else None
+    if isinstance(release_urls, list):
+        for item in release_urls:
+            if isinstance(item, dict) and item.get("url"):
+                return str(item.get("url"))
+    return ""
+
+
+def pypi_upload_time(payload: dict[str, Any], version: str) -> str:
+    urls = payload.get("urls") or []
+    if isinstance(urls, list):
+        for item in urls:
+            if isinstance(item, dict) and item.get("upload_time_iso_8601"):
+                return str(item["upload_time_iso_8601"])
+    releases = payload.get("releases") or {}
+    release_urls = releases.get(version) if isinstance(releases, dict) else None
+    if isinstance(release_urls, list):
+        for item in release_urls:
+            if isinstance(item, dict) and item.get("upload_time_iso_8601"):
+                return str(item["upload_time_iso_8601"])
+    return ""
+
+
+def pypi_executable_records(name: str, info: dict[str, Any]) -> list[dict[str, str]]:
+    summary = str(info.get("summary") or "").lower()
+    if name.endswith("cli") or "command line" in summary or "command-line" in summary or " cli" in summary:
+        return [{"name": name, "kind": "cli", "exposure": "console script"}]
+    return []
 
 
 def bottle_metadata(formula: dict[str, Any]) -> dict[str, Any]:
@@ -282,6 +457,99 @@ def formula_enrichment(formula: dict[str, Any], executables: dict[str, list[str]
     return f"brew:{name}", prune(entry)
 
 
+def npm_enrichment(name: str, db_info: dict[str, Any], payload: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    if not name:
+        return None
+    manifest = npm_latest_manifest(payload)
+    latest = npm_latest_version(payload) or str(db_info.get("version") or "")
+    if not manifest and latest:
+        manifest = {
+            "name": name,
+            "version": latest,
+            "description": db_info.get("summary") or "",
+            "homepage": db_info.get("homepage") or "",
+        }
+    executable = db_info.get("executable") if isinstance(db_info.get("executable"), str) else ""
+    homepage = normalize_url(manifest.get("homepage")) or normalize_url(payload.get("homepage")) or str(db_info.get("homepage") or "")
+    repository = normalize_repository(manifest.get("repository") or payload.get("repository"))
+    bugs = normalize_url(manifest.get("bugs") or payload.get("bugs"))
+    tarball = normalize_url((manifest.get("dist") or {}).get("tarball") if isinstance(manifest.get("dist"), dict) else "")
+    entry: dict[str, Any] = {
+        "package": {
+            "provider": "npm",
+            "name": name,
+            "packageManager": "npm",
+            "packageManagerUrl": f"https://www.npmjs.com/package/{urllib.parse.quote(name, safe='@/')}",
+        },
+        "version": latest,
+        "summary": manifest.get("description") or payload.get("description") or db_info.get("summary") or "",
+        "homepage": homepage,
+        "repository": repository,
+        "upstreamDocs": homepage,
+        "license": npm_license(payload, manifest),
+        "sourceArchive": tarball,
+        "dependencies": normalize_dependency_names(manifest.get("dependencies")),
+        "buildDependencies": normalize_dependency_names(manifest.get("devDependencies")),
+        "executables": npm_executable_records(manifest, executable),
+        "installBehavior": npm_install_behavior(manifest),
+        "publishedAt": ((payload.get("time") or {}).get(latest) if isinstance(payload.get("time"), dict) else ""),
+    }
+    keywords = manifest.get("keywords")
+    if isinstance(keywords, list):
+        entry["keywords"] = [str(item) for item in keywords if isinstance(item, str) and item][:16]
+    if bugs:
+        entry["issueTracker"] = bugs
+    return f"npm:{name}", prune(entry)
+
+
+def pypi_enrichment(name: str, overlay: dict[str, Any], payload: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    if not name:
+        return None
+    info = payload.get("info") or {}
+    if not isinstance(info, dict):
+        return None
+    version = str(info.get("version") or "")
+    homepage = normalize_url(info.get("home_page")) or pypi_project_url(info, ("homepage", "home", "documentation", "docs"))
+    repository = pypi_repository(info)
+    docs = pypi_project_url(info, ("documentation", "docs", "homepage", "home")) or homepage
+    issue_tracker = pypi_project_url(info, ("issues", "issue tracker", "bug tracker", "bugs"))
+    entry: dict[str, Any] = {
+        "package": {
+            "provider": "pip",
+            "name": name,
+            "packageManager": "PyPI",
+            "packageManagerUrl": f"https://pypi.org/project/{urllib.parse.quote(name, safe='')}/",
+        },
+        "version": version,
+        "summary": info.get("summary") if isinstance(info.get("summary"), str) else "",
+        "homepage": homepage,
+        "repository": repository,
+        "upstreamDocs": docs,
+        "license": pypi_license(info),
+        "sourceArchive": pypi_source_archive(payload, version),
+        "dependencies": pypi_dependencies(info),
+        "executables": pypi_executable_records(name, info),
+        "publishedAt": pypi_upload_time(payload, version),
+        "installBehavior": {
+            "pythonRequires": info.get("requires_python") if isinstance(info.get("requires_python"), str) else "",
+            "requiresDistCount": len(pypi_dependencies(info)),
+        },
+    }
+    classifiers = info.get("classifiers") or []
+    if isinstance(classifiers, list):
+        entry["classifiers"] = [str(item) for item in classifiers if isinstance(item, str)][:16]
+    project_urls = info.get("project_urls") or {}
+    if isinstance(project_urls, dict):
+        entry["projectUrls"] = {str(key): str(value) for key, value in sorted(project_urls.items()) if value}
+    if issue_tracker:
+        entry["issueTracker"] = issue_tracker
+    if overlay.get("homebrewDeps"):
+        entry["homebrewDependencies"] = overlay.get("homebrewDeps")
+    if overlay.get("pythonFormula"):
+        entry["pythonFormula"] = overlay.get("pythonFormula")
+    return f"pip:{name}", prune(entry)
+
+
 def prune(value: Any) -> Any:
     if isinstance(value, dict):
         pruned = {}
@@ -302,13 +570,46 @@ def prune(value: Any) -> Any:
     return value
 
 
-def build_enrichment(formulae: list[Any], db: dict[str, Any]) -> dict[str, Any]:
+def build_enrichment(
+    formulae: list[Any],
+    db: dict[str, Any],
+    npm_payloads: dict[str, Any] | None = None,
+    pip_overlays: dict[str, Any] | None = None,
+    pypi_payloads: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     executables = executable_index(db)
     packages: dict[str, Any] = {}
     for formula in formulae:
         if not isinstance(formula, dict):
             continue
         enriched = formula_enrichment(formula, executables)
+        if enriched is None:
+            continue
+        key, entry = enriched
+        packages[key] = entry
+    npm_payloads = npm_payloads or {}
+    npms = db.get("npms") or {}
+    if isinstance(npms, dict):
+        for name, info in sorted(npms.items()):
+            if not isinstance(name, str) or not isinstance(info, dict):
+                continue
+            payload = npm_payloads.get(name)
+            if not isinstance(payload, dict):
+                continue
+            enriched = npm_enrichment(name, info, payload)
+            if enriched is None:
+                continue
+            key, entry = enriched
+            packages[key] = entry
+    pip_overlays = pip_overlays or {}
+    pypi_payloads = pypi_payloads or {}
+    for name, overlay in sorted(pip_overlays.items()):
+        if not isinstance(name, str) or not isinstance(overlay, dict):
+            continue
+        payload = pypi_payloads.get(name)
+        if not isinstance(payload, dict):
+            continue
+        enriched = pypi_enrichment(name, overlay, payload)
         if enriched is None:
             continue
         key, entry = enriched
@@ -327,7 +628,21 @@ def expected_enrichment(force_refresh: bool = False) -> dict[str, Any]:
     db = read_json(Path("data/db.json"))
     if not isinstance(db, dict):
         raise ValueError("data/db.json must contain an object")
-    return build_enrichment(formulae, db)
+    npms = db.get("npms") or {}
+    npm_payloads: dict[str, Any] = {}
+    if isinstance(npms, dict):
+        for name in sorted(npms):
+            if not isinstance(name, str) or not name:
+                continue
+            npm_payloads[name] = fetch_json(npm_package_url(name), ecosystem="registry.npmjs.org", force_refresh=force_refresh)
+    pip_overlays = read_json(Path("data/pip.json"))
+    pypi_payloads: dict[str, Any] = {}
+    if isinstance(pip_overlays, dict):
+        for name in sorted(pip_overlays):
+            if not isinstance(name, str) or not name:
+                continue
+            pypi_payloads[name] = fetch_json(pypi_package_url(name), ecosystem="pypi.org", force_refresh=force_refresh)
+    return build_enrichment(formulae, db, npm_payloads=npm_payloads, pip_overlays=pip_overlays, pypi_payloads=pypi_payloads)
 
 
 def check_current(path: Path, terminal: Terminal) -> int:

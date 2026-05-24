@@ -105,6 +105,7 @@ site_dir="${repo_root}/www"
 llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
 package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
 package_page_enrichment_generator="${repo_root}/scripts/generate-pkg-page-enrichment.py"
+package_graph_generator="${repo_root}/scripts/generate-pkg-graph.py"
 search_index_generator="${repo_root}/scripts/generate-search-index.py"
 product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
@@ -281,6 +282,12 @@ assert_package_pages_current() {
     die "Missing package page enrichment generator: ${package_page_enrichment_generator}"
   fi
   python3 "${package_page_enrichment_generator}" --check
+
+  log_step "Checking package relationship graph"
+  if [[ ! -x "${package_graph_generator}" && ! -f "${package_graph_generator}" ]]; then
+    die "Missing package graph generator: ${package_graph_generator}"
+  fi
+  python3 "${package_graph_generator}" --check
 
   log_step "Checking generated package SEO pages"
   if [[ ! -x "${package_pages_generator}" && ! -f "${package_pages_generator}" ]]; then

@@ -18,6 +18,7 @@ SCHEMA_VERSION = 1
 SITE_ORIGIN = "https://www.automicvault.com"
 OUTPUT_DIR = Path("www/pkg")
 MANIFEST_NAME = ".manifest.json"
+INDEXABLE_MIN_SIGNAL_COUNT = 2
 
 
 @dataclass
@@ -49,9 +50,15 @@ class PackagePage:
     executables: list[dict[str, Any]] = field(default_factory=list)
     install_behavior: dict[str, Any] = field(default_factory=dict)
     bottle: dict[str, Any] = field(default_factory=dict)
+    published_at: str = ""
+    keywords: list[str] = field(default_factory=list)
+    issue_tracker: str = ""
+    classifiers: list[str] = field(default_factory=list)
+    project_urls: dict[str, str] = field(default_factory=dict)
     geiger: dict[str, Any] | None = None
     related_packages: list[dict[str, Any]] = field(default_factory=list)
     also_available_via: list[dict[str, Any]] = field(default_factory=list)
+    package_hubs: list[dict[str, Any]] = field(default_factory=list)
     isotope: dict[str, Any] | None = None
     isotope_readme: str = ""
     isotope_readme_html: str = ""
@@ -357,6 +364,8 @@ def load_sources() -> dict[str, Any]:
                 sources["geiger"] = read_json(Path("data/geiger-counter.json"), {})
             if Path("data/pkg-page-enrichment.json").exists():
                 sources["pkg_page_enrichment"] = read_json(Path("data/pkg-page-enrichment.json"), {})
+            if Path("data/pkg-graph.json").exists():
+                sources["pkg_graph"] = read_json(Path("data/pkg-graph.json"), {})
             return sources
 
     return {
@@ -365,6 +374,7 @@ def load_sources() -> dict[str, Any]:
         "geiger": read_json(Path("data/geiger-counter.json"), {}),
         "isotopes": read_json(Path("data/isotopes.json"), {}),
         "npm": read_json(Path("data/npm.json"), {}),
+        "pkg_graph": read_json(Path("data/pkg-graph.json"), {}),
         "pkg_page_enrichment": read_json(Path("data/pkg-page-enrichment.json"), {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
@@ -485,6 +495,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
 
     apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
     apply_package_page_supplements(pages)
+    apply_package_graph(pages, sources.get("pkg_graph") or {})
 
     return pages
 
@@ -504,7 +515,10 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         if isinstance(package, dict):
             page.package_manager = package.get("packageManager") or page.package_manager
             page.package_manager_url = package.get("packageManagerUrl") or page.package_manager_url
+        page.summary = info.get("summary") or page.summary
         page.homepage = info.get("homepage") or page.homepage
+        page.repository = info.get("repository") or page.repository
+        page.upstream_docs = info.get("upstreamDocs") or page.upstream_docs
         page.version = info.get("version") or page.version
         page.license = info.get("license") or page.license
         page.source_archive = info.get("sourceArchive") or page.source_archive
@@ -514,6 +528,13 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         page.executables = info.get("executables") or page.executables
         page.install_behavior = info.get("installBehavior") or page.install_behavior
         page.bottle = info.get("bottle") or page.bottle
+        page.published_at = info.get("publishedAt") or page.published_at
+        page.keywords = info.get("keywords") or page.keywords
+        page.issue_tracker = info.get("issueTracker") or page.issue_tracker
+        page.classifiers = info.get("classifiers") or page.classifiers
+        page.project_urls = info.get("projectUrls") or page.project_urls
+        page.extra["homebrewDeps"] = info.get("homebrewDependencies") or page.extra.get("homebrewDeps")
+        page.extra["pythonFormula"] = info.get("pythonFormula") or page.extra.get("pythonFormula")
         page.source_notes.append("package-page enrichment")
 
 
@@ -546,9 +567,78 @@ def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
         page.executables = supplement.get("executables") or page.executables
         page.install_behavior = supplement.get("installBehavior") or page.install_behavior
         page.bottle = supplement.get("bottle") or page.bottle
+        page.published_at = supplement.get("publishedAt") or page.published_at
+        page.keywords = supplement.get("keywords") or page.keywords
+        page.issue_tracker = supplement.get("issueTracker") or page.issue_tracker
         page.related_packages = supplement.get("relatedPackages") or page.related_packages
         page.also_available_via = supplement.get("alsoAvailableVia") or page.also_available_via
         page.source_notes.append(f"package-page supplement {path.as_posix()}")
+
+
+def apply_package_graph(pages: dict[str, PackagePage], graph: dict[str, Any]) -> None:
+    packages = graph.get("packages") if isinstance(graph, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key, graph_entry in packages.items():
+        if not isinstance(package_key, str) or ":" not in package_key or not isinstance(graph_entry, dict):
+            continue
+        provider, name = package_key.split(":", 1)
+        if provider not in {"brew", "cask", "npm", "pip"} or not name:
+            continue
+        page = pages.get(package_key)
+        if page is None:
+            continue
+        identity = graph_entry.get("identity") or {}
+        if isinstance(identity, dict):
+            page.repository = identity.get("repository") or page.repository
+            if not page.upstream_docs and identity.get("homepage") and identity.get("homepage") != page.repository:
+                page.upstream_docs = identity.get("homepage") or page.upstream_docs
+        intents = graph_entry.get("linkIntents") or {}
+        if not isinstance(intents, dict):
+            continue
+        page.related_packages = merge_related_links(
+            page.related_packages,
+            intents.get("relatedPackages") if isinstance(intents.get("relatedPackages"), list) else [],
+        )
+        page.also_available_via = merge_related_links(
+            page.also_available_via,
+            intents.get("alsoAvailableVia") if isinstance(intents.get("alsoAvailableVia"), list) else [],
+        )
+        page.package_hubs = merge_hub_links(
+            page.package_hubs,
+            intents.get("packageHubs") if isinstance(intents.get("packageHubs"), list) else [],
+        )
+        page.source_notes.append("package relationship graph")
+
+
+def merge_related_links(existing: list[dict[str, Any]], generated: list[Any], limit: int = 24) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in list(existing) + [item for item in generated if isinstance(item, dict)]:
+        provider = str(item.get("provider") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if not provider or not name:
+            continue
+        key = (provider, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def merge_hub_links(existing: list[dict[str, Any]], generated: list[Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in list(existing) + [item for item in generated if isinstance(item, dict)]:
+        slug = str(item.get("slug") or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        result.append(item)
+    return result
 
 
 def isotope_metadata_by_package(isotopes: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -872,6 +962,56 @@ def build_manifest(page_count: int, files: list[Path]) -> dict[str, Any]:
     }
 
 
+def package_index_signals(page: PackagePage) -> list[str]:
+    signals: list[str] = []
+    for attr_name in (
+        "summary",
+        "homepage",
+        "version",
+        "license",
+        "package_manager_url",
+        "repository",
+        "upstream_docs",
+        "source_archive",
+        "issue_tracker",
+        "published_at",
+    ):
+        if getattr(page, attr_name):
+            signals.append(attr_name)
+    for attr_name in (
+        "dependencies",
+        "build_dependencies",
+        "uses_from_macos",
+        "keywords",
+        "classifiers",
+    ):
+        if getattr(page, attr_name):
+            signals.append(attr_name)
+    if page.executables or page.aliases or page.binaries:
+        signals.append("commands")
+    if any(value for value in page.install_behavior.values()):
+        signals.append("install_behavior")
+    if page.bottle and (page.bottle.get("available") or page.bottle.get("platforms")):
+        signals.append("bottle")
+    if page.isotope:
+        signals.append("radioisotope")
+    if page.approval_gate:
+        signals.append("approval_gate")
+    if page.geiger:
+        signals.append("geiger")
+    if page.related_packages or page.also_available_via or page.package_hubs:
+        signals.append("relationships")
+    if any(page.extra.get(key) for key in ("homebrewDeps", "pythonFormula", "stub_exclusions")):
+        signals.append("local_overlay")
+    return signals
+
+
+def is_indexable_package_page(page: PackagePage) -> bool:
+    if page.isotope or page.approval_gate or page.geiger:
+        return True
+    return len(package_index_signals(page)) >= INDEXABLE_MIN_SIGNAL_COUNT
+
+
 def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[PackagePage]]]:
     hubs: list[tuple[PackageHub, list[PackagePage]]] = []
     for hub in PACKAGE_HUBS:
@@ -931,17 +1071,39 @@ def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_d
     (output_dir / "styles.css").write_text(render_css(), encoding="utf-8")
     ordered = sorted(pages.values(), key=lambda page: (page.provider, page.slug, page.name))
     hubs = package_hub_pages(ordered)
+    indexable_pages = [page for page in ordered if is_indexable_package_page(page)]
+    sitemap_names = ["sitemap-hubs.xml"] + [
+        f"sitemap-{provider}.xml"
+        for provider in ("brew", "cask", "npm", "pip")
+        if any(page.provider == provider for page in indexable_pages)
+    ]
     manifest["hub_count"] = len(hubs)
+    manifest["indexable_page_count"] = len(indexable_pages)
+    manifest["noindex_page_count"] = len(ordered) - len(indexable_pages)
+    manifest["markdown_page_count"] = len(indexable_pages)
+    manifest["sitemap_count"] = len(sitemap_names)
+    manifest["sitemap_page_counts"] = {
+        provider: sum(1 for page in indexable_pages if page.provider == provider)
+        for provider in ("brew", "cask", "npm", "pip")
+        if any(page.provider == provider for page in indexable_pages)
+    }
     for page in ordered:
         page_dir = output_dir / page.provider / page.slug
         page_dir.mkdir(parents=True, exist_ok=True)
         (page_dir / "index.html").write_text(render_package_page(page, manifest), encoding="utf-8")
+        if is_indexable_package_page(page):
+            (page_dir / "index.md").write_text(render_package_markdown(page, manifest), encoding="utf-8")
     for hub, hub_pages in hubs:
         hub_dir = output_dir / hub.slug
         hub_dir.mkdir(parents=True, exist_ok=True)
         (hub_dir / "index.html").write_text(render_hub_page(hub, hub_pages, manifest), encoding="utf-8")
     (output_dir / "index.html").write_text(render_index(ordered, hubs, manifest), encoding="utf-8")
-    (output_dir / "sitemap.xml").write_text(render_sitemap(ordered, hubs, manifest), encoding="utf-8")
+    (output_dir / "sitemap.xml").write_text(render_sitemap_index(sitemap_names, manifest), encoding="utf-8")
+    (output_dir / "sitemap-hubs.xml").write_text(render_hub_sitemap(hubs, manifest), encoding="utf-8")
+    for provider in ("brew", "cask", "npm", "pip"):
+        provider_pages = [page for page in indexable_pages if page.provider == provider]
+        if provider_pages:
+            (output_dir / f"sitemap-{provider}.xml").write_text(render_package_sitemap(provider_pages, manifest), encoding="utf-8")
     (output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -1240,6 +1402,7 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
         title=title,
         description=description,
         canonical=f"{SITE_ORIGIN}{page.path}",
+        robots="index,follow" if is_indexable_package_page(page) else "noindex,follow",
         body=f"""
 {nav('../../../')}
 <main>
@@ -1265,13 +1428,188 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
         stylesheet_href="../../../pkg/styles.css",
         favicon_href="../../../favicon.ico",
         schema=schema_for_package(page, description, updated),
+        extra_head=markdown_alternate_head(page) if is_indexable_package_page(page) else "",
         extra_body=copy_script(),
     )
 
 
+def markdown_alternate_head(page: PackagePage) -> str:
+    return f'  <link rel="alternate" type="text/markdown" href="{attr(f"{SITE_ORIGIN}{page.path}index.md")}">'
+
+
+def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
+    updated = fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
+    lines = [
+        f"# Install {md_text(page.display_name)}",
+        "",
+        md_text(hero_sentence(page)),
+        "",
+        "## Install",
+        "",
+        "```sh",
+        install_command(page),
+        "```",
+        "",
+        "## Package Facts",
+        "",
+    ]
+    fact_rows = [
+        ("Package key", page.key),
+        ("Package manager", package_manager_label(page)),
+        ("Package manager URL", page.package_manager_url),
+        ("Version", page.version),
+        ("Summary", page.summary),
+        ("Homepage", page.homepage),
+        ("Repository", page.repository),
+        ("Upstream docs", page.upstream_docs),
+        ("License", page.license),
+        ("Source archive", page.source_archive),
+        ("Issue tracker", page.issue_tracker),
+        ("Published", page.published_at),
+        ("Last verified", page.last_verified),
+        ("Last updated", page.last_updated_at),
+        ("Generated", manifest.get("generated_at")),
+    ]
+    lines.extend(md_fact_lines(fact_rows))
+    lines.extend(md_section_list("Executables", executable_markdown_items(page)))
+    lines.extend(md_section_list("Dependencies", [*page.dependencies]))
+    lines.extend(md_section_list("Build Dependencies", [*page.build_dependencies]))
+    lines.extend(md_section_list("macOS Provided Libraries", [*page.uses_from_macos]))
+    lines.extend(md_install_behavior_section(page))
+    lines.extend(md_security_section(page))
+    lines.extend(md_related_section(page))
+    lines.extend(md_section_list("Sources", page.source_notes))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def md_fact_lines(rows: list[tuple[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for label, value in rows:
+        if value:
+            lines.append(f"- **{md_text(label)}:** {md_value(value)}")
+    lines.append("")
+    return lines
+
+
+def md_section_list(title: str, items: list[Any]) -> list[str]:
+    values = [md_value(item) for item in items if str(item or "").strip()]
+    if not values:
+        return []
+    lines = [f"## {md_text(title)}", ""]
+    lines.extend(f"- {value}" for value in values)
+    lines.append("")
+    return lines
+
+
+def executable_markdown_items(page: PackagePage) -> list[str]:
+    items: list[str] = []
+    for item in page.executables:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("target") or item.get("source") or "").strip()
+        if not name:
+            continue
+        kind = str(item.get("kind") or item.get("type") or "executable").strip()
+        note = str(item.get("note") or item.get("source") or "").strip()
+        detail = f"{name} ({kind})"
+        if note:
+            detail += f": {note}"
+        items.append(detail)
+    for binary in page.binaries:
+        if not isinstance(binary, dict):
+            continue
+        name = str(binary.get("target") or binary.get("source") or "").strip()
+        if name:
+            items.append(f"{name} (binary)")
+    for alias_name in sorted(page.aliases):
+        items.append(f"{alias_name} (alias)")
+    return items
+
+
+def md_install_behavior_section(page: PackagePage) -> list[str]:
+    behavior = page.install_behavior or {}
+    items: list[str] = []
+    if behavior.get("postInstallDefined") is not None:
+        items.append(f"Post-install hook: {'defined' if behavior.get('postInstallDefined') else 'not defined'}")
+    if behavior.get("service"):
+        items.append(f"Service: {behavior.get('service')}")
+    if behavior.get("caveats"):
+        items.append(f"Caveats: {behavior.get('caveats')}")
+    if behavior.get("lifecycleScripts"):
+        items.append(f"Lifecycle scripts: {', '.join(str(item) for item in behavior.get('lifecycleScripts') or [])}")
+    if behavior.get("pythonRequires"):
+        items.append(f"Python requires: {behavior.get('pythonRequires')}")
+    if behavior.get("requiresDistCount") is not None:
+        items.append(f"PyPI dependency specs: {behavior.get('requiresDistCount')}")
+    bottle = page.bottle or {}
+    if bottle:
+        available = bottle.get("available")
+        bottle_detail = "available" if available else "not available"
+        platforms = bottle.get("platforms") or []
+        if platforms:
+            bottle_detail += f" on {', '.join(str(item) for item in platforms[:12])}"
+        items.append(f"Bottle: {bottle_detail}")
+    return md_section_list("Install Behavior", items)
+
+
+def md_security_section(page: PackagePage) -> list[str]:
+    lines = ["## Security Notes", "", md_text(security_summary(page)), ""]
+    if page.geiger:
+        lines.append(f"- **Geiger risk:** {md_text(geiger_level_label(page.geiger))} / {md_text(geiger_confidence_label(page.geiger))}")
+        for reason in (page.geiger.get("reasons") or [])[:5]:
+            lines.append(f"- {md_value(reason)}")
+    if page.isotope:
+        justification = page.isotope.get("justification") or {}
+        title = justification.get("title") or "Radioisotope coverage"
+        lines.append(f"- **Radioisotope:** {md_value(title)}")
+    if page.approval_gate:
+        lines.append(f"- **Approval gate rules:** {md_value(page.approval_gate.get('rule_count'))}")
+    lines.append("")
+    return lines
+
+
+def md_related_section(page: PackagePage) -> list[str]:
+    related = list(page.related_packages) + list(page.also_available_via)
+    if not related and not page.package_hubs:
+        return []
+    lines = ["## Related Links", ""]
+    for item in related[:24]:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider") or "").strip()
+        name = str(item.get("name") or "").strip()
+        label = str(item.get("label") or name).strip()
+        if not provider or not name:
+            continue
+        reason = str(item.get("reason") or item.get("rel") or "").strip()
+        href = f"{SITE_ORIGIN}/pkg/{provider}/{slugify(name)}/"
+        suffix = f" - {md_text(reason)}" if reason else ""
+        lines.append(f"- [{md_text(label)}]({href}){suffix}")
+    for hub in page.package_hubs[:12]:
+        if not isinstance(hub, dict):
+            continue
+        slug = str(hub.get("slug") or "").strip()
+        label = str(hub.get("label") or slug).strip()
+        if slug and label:
+            lines.append(f"- [{md_text(label)}]({SITE_ORIGIN}/pkg/{slug}/)")
+    lines.append("")
+    return lines
+
+
+def md_value(value: Any) -> str:
+    text = md_text(value)
+    if re.match(r"^https?://", text):
+        return f"<{text}>"
+    return text
+
+
+def md_text(value: Any) -> str:
+    return normalize_space(value).replace("|", "\\|")
+
+
 def hero_sentence(page: PackagePage) -> str:
     if page.summary and install_command(page):
-        return f"{page.summary}. Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
+        return f"{sentence_text(page.summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
         return f"Automic Vault tracks {page.display_name} because {title.lower()} matters when AI agents run command-line tools on macOS."
@@ -1280,6 +1618,15 @@ def hero_sentence(page: PackagePage) -> str:
     if page.summary:
         return f"Nucleus can resolve {page.display_name}: {page.summary}"
     return f"Nucleus package metadata for {page.display_name}, generated from local Automic Vault package sources."
+
+
+def sentence_text(value: str) -> str:
+    text = normalize_space(value)
+    if not text:
+        return ""
+    if text[-1] not in ".!?":
+        text += "."
+    return text
 
 
 def meta_description(page: PackagePage) -> str:
@@ -1536,10 +1883,21 @@ def render_geiger(page: PackagePage) -> str:
 def render_install_behavior_signals(page: PackagePage) -> str:
     signals: list[str] = []
     behavior = page.install_behavior or {}
+    lifecycle = behavior.get("lifecycleScripts") or []
+    if lifecycle:
+        signals.append(f"npm lifecycle scripts are declared: {', '.join(str(item) for item in lifecycle[:5])}.")
     if behavior.get("postInstallDefined") is True:
-        signals.append("Homebrew declares a post-install hook for this formula.")
+        label = "npm package metadata declares a postinstall script." if page.provider == "npm" else "Homebrew declares a post-install hook for this formula."
+        signals.append(label)
     elif behavior.get("postInstallDefined") is False:
-        signals.append("No Homebrew post-install hook is recorded in formula metadata.")
+        label = "No npm postinstall script is recorded in package metadata." if page.provider == "npm" else "No Homebrew post-install hook is recorded in formula metadata."
+        signals.append(label)
+    if behavior.get("prepareDefined") is True:
+        signals.append("npm package metadata declares a prepare script.")
+    if behavior.get("pythonRequires"):
+        signals.append(f"PyPI metadata requires Python {behavior.get('pythonRequires')}.")
+    if behavior.get("requiresDistCount"):
+        signals.append(f"PyPI metadata lists {behavior.get('requiresDistCount')} dependency specifications.")
     if behavior.get("service"):
         signals.append("Formula metadata declares a service or daemon block.")
     if page.bottle:
@@ -1659,8 +2017,10 @@ def render_install_metadata(page: PackagePage) -> str:
         ("Upstream docs", page.upstream_docs),
         ("License", page.license),
         ("Source archive", page.source_archive),
+        ("Issue tracker", page.issue_tracker),
         ("Last updated", page.last_updated_at),
         ("Last verified", page.last_verified),
+        ("Published", page.published_at),
         ("Pulse", page.pulse_kind),
         ("SHA-256", page.sha256),
         ("Download URL", page.url),
@@ -1682,12 +2042,26 @@ def render_install_metadata(page: PackagePage) -> str:
     if page.install_behavior:
         post_install = page.install_behavior.get("postInstallDefined")
         if post_install is not None:
-            rows.append(("Homebrew post-install", "defined" if post_install else "not defined"))
+            label = "npm postinstall" if page.provider == "npm" else "Homebrew post-install"
+            rows.append((label, "defined" if post_install else "not defined"))
         service = page.install_behavior.get("service")
         rows.append(("Service", service if service else "none declared"))
         caveats = page.install_behavior.get("caveats")
         if caveats:
             rows.append(("Caveats", caveats))
+        lifecycle = page.install_behavior.get("lifecycleScripts")
+        if lifecycle:
+            rows.append(("npm lifecycle scripts", ", ".join(str(item) for item in lifecycle)))
+        python_requires = page.install_behavior.get("pythonRequires")
+        if python_requires:
+            rows.append(("Python requires", str(python_requires)))
+        requires_dist_count = page.install_behavior.get("requiresDistCount")
+        if requires_dist_count:
+            rows.append(("PyPI dependency specs", fmt_int(requires_dist_count)))
+    if page.keywords:
+        rows.append(("Keywords", ", ".join(page.keywords[:16])))
+    if page.classifiers:
+        rows.append(("Classifiers", ", ".join(page.classifiers[:12])))
     deps = page.extra.get("homebrewDeps") or page.extra.get("npm_homebrewDeps")
     if deps:
         rows.append(("Homebrew dependencies", ", ".join(deps)))
@@ -1711,6 +2085,7 @@ def render_install_metadata(page: PackagePage) -> str:
 def render_related(page: PackagePage) -> str:
     related = [related_link(item) for item in page.related_packages]
     also = [related_link(item) for item in page.also_available_via]
+    hubs = [hub_link(item) for item in page.package_hubs]
     if not related and not also:
         related = inferred_related_links(page)
     return f"""
@@ -1718,7 +2093,7 @@ def render_related(page: PackagePage) -> str:
   <div>
     <p class="section-kicker">package graph</p>
     <h2 id="related-title">Related packages</h2>
-    <p>Links here are intentionally sparse. The page only uses relationships present in local data or this package's supplement.</p>
+    <p>Links come from the local package relationship graph, curated supplements, dependency edges, ecosystem matches, and package hub membership.</p>
   </div>
   <div class="related-columns">
     <article>
@@ -1729,6 +2104,10 @@ def render_related(page: PackagePage) -> str:
       <h3>Also available via</h3>
       <ul>{''.join(also) or '<li>No cross-ecosystem equivalent was recorded.</li>'}</ul>
     </article>
+    <article>
+      <h3>Package hubs</h3>
+      <ul>{''.join(hubs) or '<li>No package hub membership was generated.</li>'}</ul>
+    </article>
   </div>
 </section>
 """
@@ -1736,12 +2115,14 @@ def render_related(page: PackagePage) -> str:
 
 def inferred_related_links(page: PackagePage) -> list[str]:
     links: list[str] = []
+    if page.provider != "brew":
+        return links
     for dependency in page.dependencies[:6]:
         links.append(related_link({
-            "provider": "brew",
+            "provider": page.provider,
             "name": dependency,
             "label": dependency,
-            "reason": "Homebrew dependency.",
+            "reason": f"{package_manager_label(page)} dependency.",
         }))
     return links
 
@@ -1755,6 +2136,15 @@ def related_link(item: dict[str, Any]) -> str:
         return ""
     href = f"../../{attr(provider)}/{attr(slugify(name))}/"
     return f'<li><a href="{href}">{html_escape(label)}</a>{f"<span>{html_escape(reason)}</span>" if reason else ""}</li>'
+
+
+def hub_link(item: dict[str, Any]) -> str:
+    slug = str(item.get("slug") or "").strip()
+    label = str(item.get("label") or slug).strip()
+    reason = str(item.get("reason") or "").strip()
+    if not slug:
+        return ""
+    return f'<li><a href="../../{attr(slug)}/">{html_escape(label)}</a>{f"<span>{html_escape(reason)}</span>" if reason else ""}</li>'
 
 
 def link_value(value: str) -> str:
@@ -1802,6 +2192,10 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         software["softwareVersion"] = page.version
     if page.license:
         software["license"] = page.license
+    if page.repository:
+        software["codeRepository"] = page.repository
+    if page.dependencies:
+        software["softwareRequirements"] = ", ".join(page.dependencies[:16])
 
     article = {
         "@type": "TechArticle",
@@ -1869,17 +2263,36 @@ def copy_script() -> str:
   </script>"""
 
 
-def render_sitemap(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
+def render_sitemap_index(sitemap_names: list[str], manifest: dict[str, Any]) -> str:
     lastmod = fmt_date(manifest.get("generated_at", ""))
-    urls = [f"  <url>\n    <loc>{SITE_ORIGIN}/pkg/</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"]
-    urls.extend(
-        f"  <url>\n    <loc>{SITE_ORIGIN}{hub.path}</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"
-        for hub, _hub_pages in hubs
+    entries = "\n".join(
+        f"  <sitemap>\n    <loc>{SITE_ORIGIN}/pkg/{name}</loc>\n    <lastmod>{lastmod}</lastmod>\n  </sitemap>"
+        for name in sitemap_names
     )
-    urls.extend(
-        f"  <url>\n    <loc>{SITE_ORIGIN}{page.path}</loc>\n    <lastmod>{fmt_date(page.last_updated_at) or lastmod}</lastmod>\n  </url>"
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + entries + "\n</sitemapindex>\n"
+
+
+def render_hub_sitemap(hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
+    lastmod = fmt_date(manifest.get("generated_at", ""))
+    urls = [sitemap_url(f"{SITE_ORIGIN}/pkg/", lastmod)]
+    urls.extend(sitemap_url(f"{SITE_ORIGIN}{hub.path}", lastmod) for hub, _hub_pages in hubs)
+    return render_urlset(urls)
+
+
+def render_package_sitemap(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
+    lastmod = fmt_date(manifest.get("generated_at", ""))
+    urls = [
+        sitemap_url(f"{SITE_ORIGIN}{page.path}", fmt_date(page.last_updated_at) or lastmod)
         for page in pages
-    )
+    ]
+    return render_urlset(urls)
+
+
+def sitemap_url(loc: str, lastmod: str) -> str:
+    return f"  <url>\n    <loc>{loc}</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"
+
+
+def render_urlset(urls: list[str]) -> str:
     return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
 
 
@@ -1921,6 +2334,7 @@ def html_doc(
     stylesheet_href: str,
     favicon_href: str,
     schema: dict[str, Any],
+    robots: str = "index,follow",
     extra_head: str = "",
     extra_body: str = "",
 ) -> str:
@@ -1932,6 +2346,7 @@ def html_doc(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{html_escape(title)}</title>
   <meta name="description" content="{attr(description)}">
+  <meta name="robots" content="{attr(robots)}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="{attr(title)}">
@@ -2320,7 +2735,10 @@ h1 {
   font-family: var(--font-mono);
 }
 .related-columns {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.related-section {
+  grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
 }
 .related-columns a {
   color: var(--ink);
@@ -2618,9 +3036,64 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
         failures.append(f"manifest page count is {page_count}, but found {actual_pages} pages")
     pages = sorted(package_pages_from_sources(load_sources()).values(), key=lambda page: (page.provider, page.slug, page.name))
     hubs = package_hub_pages(pages)
+    indexable_pages = [page for page in pages if is_indexable_package_page(page)]
+    noindex_pages = [page for page in pages if not is_indexable_package_page(page)]
     hub_count = int(manifest.get("hub_count") or 0)
     if hub_count != len(hubs):
         failures.append(f"manifest hub count is {hub_count}, but current data yields {len(hubs)} hubs")
+    indexable_page_count = int(manifest.get("indexable_page_count") or 0)
+    if indexable_page_count != len(indexable_pages):
+        failures.append(f"manifest indexable page count is {indexable_page_count}, but current data yields {len(indexable_pages)}")
+    noindex_page_count = int(manifest.get("noindex_page_count") or 0)
+    if noindex_page_count != len(noindex_pages):
+        failures.append(f"manifest noindex page count is {noindex_page_count}, but current data yields {len(noindex_pages)}")
+    markdown_page_count = int(manifest.get("markdown_page_count") or 0)
+    if markdown_page_count != len(indexable_pages):
+        failures.append(f"manifest markdown page count is {markdown_page_count}, but current data yields {len(indexable_pages)}")
+    for page in indexable_pages:
+        if not (output_dir / page.provider / page.slug / "index.md").exists():
+            failures.append(f"missing package markdown alternate: {output_dir / page.provider / page.slug / 'index.md'}")
+            break
+    for page in noindex_pages:
+        if (output_dir / page.provider / page.slug / "index.md").exists():
+            failures.append(f"noindex package page has markdown alternate: {page.key}")
+            break
+    sitemap_path = output_dir / "sitemap.xml"
+    expected_sitemap_names = ["sitemap-hubs.xml"] + [
+        f"sitemap-{provider}.xml"
+        for provider in ("brew", "cask", "npm", "pip")
+        if any(page.provider == provider for page in indexable_pages)
+    ]
+    if int(manifest.get("sitemap_count") or 0) != len(expected_sitemap_names):
+        failures.append(f"manifest sitemap count is {manifest.get('sitemap_count')}, but current data yields {len(expected_sitemap_names)}")
+    sitemap_page_counts = manifest.get("sitemap_page_counts") or {}
+    if not isinstance(sitemap_page_counts, dict):
+        failures.append("manifest sitemap page counts are missing or invalid")
+        sitemap_page_counts = {}
+    for provider in ("brew", "cask", "npm", "pip"):
+        expected_provider_count = sum(1 for page in indexable_pages if page.provider == provider)
+        if expected_provider_count and int(sitemap_page_counts.get(provider) or 0) != expected_provider_count:
+            failures.append(
+                f"manifest {provider} sitemap count is {sitemap_page_counts.get(provider)}, but current data yields {expected_provider_count}"
+            )
+    if sitemap_path.exists():
+        sitemap = sitemap_path.read_text(encoding="utf-8")
+        if "<sitemapindex" not in sitemap:
+            failures.append(f"package sitemap root is not a sitemap index: {sitemap_path}")
+        for name in expected_sitemap_names:
+            provider_sitemap = output_dir / name
+            if not provider_sitemap.exists():
+                failures.append(f"missing package sitemap: {provider_sitemap}")
+                continue
+            if f"{SITE_ORIGIN}/pkg/{name}" not in sitemap:
+                failures.append(f"package sitemap index does not reference {name}")
+            provider_sitemap_text = provider_sitemap.read_text(encoding="utf-8")
+            for page in noindex_pages:
+                if f"{SITE_ORIGIN}{page.path}" in provider_sitemap_text:
+                    failures.append(f"noindex package page is present in sitemap: {page.key}")
+                    break
+    else:
+        failures.append(f"missing package sitemap: {sitemap_path}")
     for hub, _hub_pages in hubs:
         if not (output_dir / hub.slug / "index.html").exists():
             failures.append(f"missing package hub page: {output_dir / hub.slug / 'index.html'}")
@@ -2630,7 +3103,7 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
             terminal.log(f"  - {failure}")
         terminal.log(f"{terminal.dim}Run scripts/generate-pkg-pages.py and retry deploy-www.{terminal.reset}")
         return 1
-    terminal.ok_log(f"Package SEO pages are current ({fmt_int(page_count)} pages)")
+    terminal.ok_log(f"Package SEO pages are current ({fmt_int(page_count)} pages, {fmt_int(len(noindex_pages))} noindex)")
     return 0
 
 
@@ -2663,7 +3136,7 @@ def main() -> int:
     terminal.ok_log(f"Loaded {fmt_int(len(pages))} packages from {fmt_int(len(files))} source files")
     terminal.step_log("Rendering HTML, CSS, sitemap, and freshness manifest")
     render_all(pages, manifest, output_dir)
-    terminal.ok_log(f"Wrote {fmt_int(len(pages))} package pages to {output_dir}")
+    terminal.ok_log(f"Wrote {fmt_int(len(pages))} package pages to {output_dir} ({fmt_int(manifest['noindex_page_count'])} noindex)")
     if args.json:
         print(json.dumps({"ok": True, "output": str(output_dir), "page_count": len(pages), "source_file_count": len(files)}, sort_keys=True))
     return 0
