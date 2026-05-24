@@ -1,32 +1,21 @@
 # `av dotenv`
 
-Encrypted dotenv files with approval-gated secret injection.
+Runtime secret capabilities for applications that have outgrown ambient `.env`.
 
 > [!NOTE]
 > This is a README-style draft for the proposed `av dotenv` feature. The full
 > design lives in [`dotenv-feature-spec.md`](./dotenv-feature-spec.md).
 
-`av dotenv` is for projects that already use `.env` files and do not want to
-turn every local process, editor plugin, test runner, and agent session into a
-secret reader.
+Traditional dotenv is convenient because every line of code can read every
+secret once the process starts.
 
-It keeps the migration boring:
+That was fine until agents learned to edit and run the code.
 
-```sh
-$ npm run dev
-# reads plaintext .env today
+`av dotenv` keeps encrypted dotenv storage, but changes the runtime model:
+applications request secrets explicitly through AV SDKs. Every request is
+observable, approval-gated, logged, and tied to the callsite that asked for it.
 
-$ av dotenv ingest .
-# rewrites .env files with dotenvx-compatible encrypted values
-# stores the private decryption key in Keychain
-
-$ av dotenv run -- npm run dev
-# decrypts in memory, asks for approval when needed, then runs your command
-```
-
-No shell-wide magic. No ecosystem guessing. No ambient authority cosplay.
-
-## The Common Path
+## Quickstart
 
 Start with the `.env` files you already have:
 
@@ -36,176 +25,243 @@ found .env
 encrypted OPENAI_API_KEY
 encrypted DATABASE_URL
 stored project decryption key in Keychain
-initialized dotenv execution policy
+generated SDK migration prompt
+# ^^ dotenv remains the migration format, not the runtime security boundary
 ```
 
-The resulting `.env` can be committed:
+Then update application code to ask for secrets instead of reading the process
+environment:
+
+```js
+import { secret } from "@automic/av"
+
+const apiKey = await secret("OPENAI_API_KEY")
+```
+
+First new access path:
+
+```txt
+OPENAI_API_KEY requested by:
+
+src/lib/secrets.ts:12
+  at src/llm/client.ts:48
+  at src/routes/chat.ts:12
+
+Approve this secret access?
+```
+
+Approve it once, or approve future matching requests. If the source path,
+backtrace, executable, or project identity changes, AV asks again.
+
+Annoying? A little. That is the point.
+
+## What Gets Written
+
+`av dotenv ingest` rewrites dotenv files with `dotenvx`-compatible encrypted
+values:
 
 ```dotenv
 # AUTOMIC VAULT MANAGED ENVIRONMENT
 #
 # Secrets are encrypted using dotenvx-compatible encryption.
+#
+# Secrets must be accessed through AV SDKs.
 
 OPENAI_API_KEY="encrypted:ZXlKaGJHY2lPa..."
 DATABASE_URL="encrypted:ZXlKaGJHY2lPa..."
+STRIPE_SECRET_KEY="encrypted:ZXlKaGJHY2lPa..."
 ```
 
-Run the project through `av dotenv run`:
-
-```sh
-$ av dotenv run -- npm run dev
-Automic Vault wants to inject 2 dotenv secrets into npm
-approved
-> app@dev
-> vite
-```
-
-The child process gets the environment it expected. The shell does not.
-
-## Trust Executables Explicitly
-
-`av dotenv` does not decide that `node`, `python`, `cargo`, or `docker` are
-safe because they look familiar. You approve the tools that may receive
-project secrets:
-
-```sh
-$ av dotenv allow node
-allowed node for this project
-
-$ av dotenv allow /opt/homebrew/bin/python
-allowed /opt/homebrew/bin/python for this project
-```
-
-Approvals are scoped to execution policy, not vibes. The proposed modes are:
-
-- `ONCE`: allow this run
-- `ALWAYS`: allow future matching runs
-- `IF UNCHANGED`: allow future runs while the executable, arguments, working
-  directory, entrypoint, and requested secret set still match
-
-You can take trust back:
-
-```sh
-$ av dotenv revoke node
-revoked node for this project
-```
-
-## Why This Exists
-
-Plaintext dotenv is convenient because everything can read it.
-
-That is also the bug.
+The encrypted files are intended to be committed. The project decryption keys
+live in Keychain:
 
 ```txt
-.env on disk
-  -> every process with file access
-  -> every child process with inherited environment
-  -> every agent/tooling layer that can inspect the workspace
+av.dotenv.project.<hash>.privatekey
 ```
 
-`av dotenv` changes the shape:
+Individual secrets are not stored separately in Keychain.
+
+> [!WARNING]
+> Plaintext secrets must not be written to disk: no plaintext dotenv files, no
+> decrypted temp files, no plaintext caches, no logging, no shell history.
+
+## The Migration is Agent-Shaped
+
+Automic Vault assumes modern coding agents can modify repositories. So ingest
+does not stop at "your `.env` is encrypted now, good luck."
+
+It emits a migration prompt for agents:
 
 ```txt
-encrypted .env in git
-  -> private key in Keychain
-  -> explicit command through av dotenv run
-  -> approved executable
-  -> plaintext only in process memory
+Replace all environment-variable access:
+
+  process.env.SECRET_NAME
+  os.getenv(...)
+  env::var(...)
+
+with AV SDK usage.
+
+Requirements:
+- preserve existing behavior
+- minimize unrelated edits
+- do not log secrets
+- do not serialize secrets
+- do not expose secrets to frontend code
+- prefer centralized secret access modules
 ```
 
-It is not perfect isolation. It is a better default for the workflow developers
-already use.
+You still review the patch. Obviously.
 
-## Compatibility
+## Use a Secret Module
 
-The encrypted values use the `dotenvx` format by design. That keeps the files
-portable across development, CI, and production systems that already understand
-dotenvx-style encryption.
+Prefer one boring place for secret access:
 
-Initial runtime support is intentionally explicit:
+```js
+// src/lib/secrets.ts
 
-- `node`: `npm`, `pnpm`, `yarn`, `tsx`, `vite`, `next`
-- `python`: `python`, `uv`, `poetry`
-- `cargo`
-- `go run`
-- `ruby`: `bundler`, `rails`
-- `php`: `composer`
-- `java`: `gradle`, `maven`
-- `docker`: compose and local container execution
+import { secret } from "@automic/av"
+
+export async function openAIKey() {
+  return await secret("OPENAI_API_KEY")
+}
+```
+
+Then application code imports that helper.
+
+Do not spray `secret("OPENAI_API_KEY")` through the codebase unless you enjoy
+approval prompts that look like a stack trace fell down the stairs.
+
+Centralized access gives AV stable callsites, cleaner logs, and better anomaly
+detection.
+
+## SDKs
+
+Initial SDK targets:
+
+- Node.js: `@automic/av`
+- Python: `automic`
+- Rust: `av`
+- Go: planned
+- Ruby: planned
+
+Examples:
+
+```python
+from automic import secret
+
+api_key = secret("OPENAI_API_KEY")
+```
+
+```rust
+let api_key = av::secret("OPENAI_API_KEY").await?;
+```
 
 > [!IMPORTANT]
-> Unsupported tools should fail closed. If a runtime needs a shim, wrapper, or
-> special environment handling, Automic Vault should know that before secrets
-> are injected.
+> This intentionally requires application changes. Transparent compatibility
+> with unmodified dotenv applications is not the goal.
 
-## Inspect the Project Policy
+## What AV Watches
 
-Use `info` when you need to see what Automic Vault thinks is managed:
+Every runtime request includes enough identity to decide whether it is the same
+access path as before:
+
+- secret name
+- executable identity
+- working directory
+- normalized backtrace
+- source fingerprints
+- project identity
+
+That lets unrelated code churn continue without retraining every approval. If
+an agent changes the path that reads `STRIPE_SECRET_KEY`, that is related. AV
+should interrupt.
+
+Inspect what AV knows:
 
 ```sh
 $ av dotenv info
 managed files:
   .env
 
-approved executables:
-  node
-  /opt/homebrew/bin/python
+known secrets:
+  OPENAI_API_KEY
+  DATABASE_URL
 
-policy:
-  mode: if-unchanged
-  last access: 2026-05-23T14:12:08Z
+observed callsites:
+  OPENAI_API_KEY  src/lib/secrets.ts:12
+
+sdk usage:
+  node: detected
 ```
 
-For the full command surface and security invariants:
+Revoke approvals when the baseline is no longer trusted:
 
 ```sh
-$ av dotenv --help
+$ av dotenv revoke OPENAI_API_KEY
+revoked approvals for OPENAI_API_KEY
 ```
 
-Until the feature ships, read the design spec instead.
-
-## What This Does Not Try To Do
-
-`av dotenv` is not a production secret manager. Use your production secret
-manager in production.
-
-It also does not promise to prevent every exfiltration path. Once a trusted
-program receives a secret, that program can misuse it. Automic Vault can reduce
-casual leakage, require human approval, monitor stdout/stderr, and make access
-visible. It cannot make arbitrary code morally upright.
-
-> [!WARNING]
-> The invariant is stricter on disk than at runtime: no plaintext dotenv files,
-> no plaintext temp files, no decrypted cache. Plaintext exists only in memory
-> during approved execution.
-
-## Temporary Reveals
-
-Some workflows need a single value briefly:
+Or start over:
 
 ```sh
-$ av inject +OPENAI_API_KEY
-Automic Vault wants to reveal OPENAI_API_KEY
-approved
+$ av dotenv revoke
+revoked dotenv approvals for this project
 ```
 
-This should require human approval unless the request is already trusted.
+## What This Replaces
 
-Use it sparingly. If a command needs the project environment, prefer:
+The old model:
 
-```sh
-$ av dotenv run -- command-that-needs-env
+```txt
+.env
+  -> process environment
+  -> any code in the process
+  -> every dependency on that execution path
 ```
 
-## Implementation Notes
+The AV model:
 
-Runtime interception may use installed shims, wrappers, or a dynamically
-modified `PATH` during `av dotenv run`.
+```txt
+encrypted .env
+  -> project key in Keychain
+  -> SDK secret request
+  -> captured backtrace
+  -> approval engine
+  -> plaintext returned in memory
+  -> usage logged in the AV app
+```
 
-Whatever mechanism wins, it must be reversible, predictable, and compatible
-with developer tooling. If that sounds less glamorous than transparent magic,
-good.
+The core abstraction is no longer "environment variables." It is runtime secret
+capabilities.
 
-See [`dotenv-feature-spec.md`](./dotenv-feature-spec.md) for the complete draft:
-encryption model, approval identity, leakage detection, supported runtimes, and
-future capability-tracked secret access.
+## What This Does Not Do
+
+No, this does not prevent all secret exfiltration.
+
+If approved application code receives a secret and then sends it to the wrong
+place, AV cannot un-send it. The point is to make secret access explicit,
+observable, and reviewable before it becomes normal behavior.
+
+Also not goals:
+
+- replacing production secret managers
+- mandatory sandboxing
+- invisible shell-wide injection
+- supporting unmodified dotenv apps transparently
+- preventing arbitrary malicious code execution
+
+## Why Bother?
+
+Because callsites are security information.
+
+When `OPENAI_API_KEY` is always requested from `src/lib/secrets.ts`, that is a
+baseline. When it starts getting requested from `src/debug/export.ts`, that is
+a signal.
+
+Development gets approval gates. The AV app gets an audit trail. Future
+production monitoring can turn the same model into anomaly detection, alerts,
+deployment blocking, and other paid sharp edges.
+
+For the full draft:
+
+> [`dotenv-feature-spec.md`](./dotenv-feature-spec.md)
