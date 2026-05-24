@@ -1,25 +1,52 @@
-# Automic Vault: Secure dotenv Environments
+# Automic Vault Secret Capabilities
 
 ## Status
 
 Draft Design Document
 
-## Summary
+---
 
-`av dotenv` replaces plaintext `.env` workflows with encrypted, approval-gated secret injection while preserving compatibility with existing developer tooling and deployment systems.
+# Summary
 
-The system is intentionally explicit.
+Automic Vault replaces ambient environment-variable secrets with observable, approval-gated runtime secret capabilities.
 
-Automic Vault does **not** attempt to infer developer intent, detect ecosystems automatically, or inject secrets ambiently into shells. Secrets are only made available to explicitly approved executables and only through `av dotenv run`.
+Traditional `.env` systems expose secrets globally to all executing code within a process. In the era of autonomous agents this model is no longer sufficient.
 
-The design prioritizes:
+Automic Vault instead requires applications to explicitly request secrets through AV SDKs.
 
-* zero-friction migration from plaintext `.env`
-* compatibility with existing dotenv ecosystems
-* compatibility with `dotenvx`
-* explicit execution trust
-* gradual security improvement
-* future evolution toward capability-tracked secret access
+Every secret request:
+
+* is observable
+* is logged
+* captures a backtrace
+* is approval-gated
+* becomes part of a behavioral security model
+
+The system is designed around the assumption that modern AI agents are capable of rewriting application codebases automatically. As such, introducing SDK/library requirements is considered acceptable when it produces materially better security and observability.
+
+---
+
+# Core Philosophy
+
+Traditional dotenv systems provide:
+
+```txt id="rjlvlf"
+ambient authority
+```
+
+Once a process starts, any executing code can access all secrets.
+
+Automic Vault instead provides:
+
+```txt id="om4n3k"
+observable capability grants
+```
+
+Secrets are not inherited passively.
+
+Secrets are requested actively by executing code.
+
+This distinction is foundational.
 
 ---
 
@@ -27,220 +54,121 @@ The design prioritizes:
 
 ## Primary Goals
 
-* eliminate plaintext `.env` files
-* preserve existing development workflows
-* support incremental adoption
-* provide human approval gates for secret access
-* provide visibility into secret usage
-* support encrypted `.env` files committed to git
-* maintain compatibility with `dotenvx`
+* eliminate plaintext secrets
+* eliminate ambient secret access
+* provide runtime observability for secret usage
+* approval-gate new secret access paths
+* make agent-driven code modification safer
+* maintain dotenvx-compatible encrypted storage
+* support behavioral anomaly detection
+* support future production monitoring products
+* provide a low-friction migration path from `.env`
 
-## Non-Goals
+---
 
-* preventing all possible secret exfiltration
-* mandatory sandboxing
-* runtime taint tracking
-* ecosystem autodetection
-* transparent shell-wide secret injection
+# Non-Goals
+
+* preventing all secret exfiltration
 * replacing production secret managers
+* mandatory sandboxing
+* transparent compatibility with unmodified dotenv applications
+* invisible shell-wide injection
+* preventing malicious code execution
 
 ---
 
-# Core Philosophy
+# High-Level Architecture
 
-Traditional `.env` systems provide:
+The system consists of four major components:
 
-```txt
-ambient authority
-```
-
-Any process that can read the file or inherit the environment gains all secrets.
-
-Automic Vault instead provides:
-
-```txt
-explicit capability grants
-```
-
-A secret is only made available:
-
-* to approved executables
-* for approved working directories
-* after human approval
-* at execution time
+| Component              | Responsibility                                |
+| ---------------------- | --------------------------------------------- |
+| Encrypted Secret Store | dotenvx-compatible encrypted storage          |
+| AV SDKs                | runtime secret capability requests            |
+| Approval Engine        | evaluates new secret access paths             |
+| AV App                 | observability, logging, approvals, monitoring |
 
 ---
 
-# Command Surface
+# CLI Surface
 
 ## Ingest Existing dotenv Files
 
-```sh
+```sh id="jv1brs"
 av dotenv ingest .
 ```
 
 This command:
 
 1. parses `.env*` files
-2. encrypts secret values using dotenvx-compatible encryption
-3. stores the private decryption key in Keychain
+2. encrypts values using dotenvx-compatible encryption
+3. stores project decryption keys in Keychain
 4. rewrites dotenv files with encrypted values
-5. initializes execution policy metadata
+5. initializes AV metadata
+6. generates migration prompts for coding agents
 
 ---
 
-## Run Commands With Secret Injection
+## Display Project Information
 
-```sh
-av dotenv run -- node app.js
-```
-
-Examples:
-
-```sh
-av dotenv run -- npm run dev
-av dotenv run -- python server.py
-av dotenv run -- cargo run
-```
-
----
-
-## Show Environment Information
-
-```sh
+```sh id="qg2h6c"
 av dotenv info
 ```
 
 Displays:
 
 * managed dotenv files
-* approved executables
+* known secrets
 * approval history
+* observed callsites
 * encryption status
-* last access times
-* policy mode
+* SDK usage status
+* last secret access timestamps
 
 ---
 
-## Approve Executables
+## Revoke Approvals
 
-```sh
-av dotenv allow node
-av dotenv allow python
-av dotenv allow cargo
+```sh id="qjlwmn"
+av dotenv revoke
 ```
 
-Explicit binary paths are also supported:
+or:
 
-```sh
-av dotenv allow /opt/homebrew/bin/node
-```
-
----
-
-## Remove Approval
-
-```sh
-av dotenv revoke node
+```sh id="afzr4g"
+av dotenv revoke OPENAI_API_KEY
 ```
 
 ---
 
-## Reveal Secret Temporarily
+# Example Resulting dotenv File
 
-```sh
-av inject +OPENAI_API_KEY
-```
-
-This command requires human approval unless previously trusted.
-
----
-
-# Supported Toolchains
-
-The supported toolchain list is intentionally explicit because AV must install execution shims and wrappers.
-
-Initial supported runtimes:
-
-| Runtime | Notes                               |
-| ------- | ----------------------------------- |
-| node    | npm, pnpm, yarn, tsx, vite, next    |
-| python  | python, uv, poetry                  |
-| cargo   | rust tooling                        |
-| go      | `go run`                            |
-| ruby    | bundler, rails                      |
-| php     | composer                            |
-| java    | gradle, maven                       |
-| docker  | compose + local container execution |
-
----
-
-# Installation Consequences
-
-`av dotenv` requires runtime interception.
-
-This means AV installs shims/wrappers for supported executables.
-
-Example:
-
-```txt
-/usr/local/bin/node
-```
-
-may become:
-
-```txt
-AV shim
-→ real executable
-```
-
-or alternatively:
-
-```txt
-av dotenv run -- node app.js
-```
-
-may dynamically modify `PATH`.
-
-The exact mechanism is implementation-defined but must preserve:
-
-* predictable execution
-* reversibility
-* compatibility with developer tooling
-* code signing integrity checks where possible
-
----
-
-# Dotenv File Format
-
-AV uses dotenvx-compatible encryption.
-
-Example resulting `.env`:
-
-```dotenv
+```dotenv id="s1lgqd"
 # AUTOMIC VAULT MANAGED ENVIRONMENT
 #
 # Secrets are encrypted using dotenvx-compatible encryption.
 #
-# To inject secrets into a command:
+# Secrets must be accessed through AV SDKs.
 #
-#   av dotenv run -- node app.js
+# JavaScript:
+#   import { secret } from "@automic/av"
 #
-# Or request a temporary secret:
+# Python:
+#   from automic import secret
 #
-#   av inject +OPENAI_API_KEY
-#
-# Secret injection may require human approval.
+# Rust:
+#   av::secret(...)
 
 OPENAI_API_KEY="encrypted:ZXlKaGJHY2lPa..."
 DATABASE_URL="encrypted:ZXlKaGJHY2lPa..."
+STRIPE_SECRET_KEY="encrypted:ZXlKaGJHY2lPa..."
 ```
 
-The resulting files are intended to be:
+These files are intended to be:
 
 * safe to commit
 * safe to share
-* portable across environments
+* portable between environments
 
 ---
 
@@ -248,260 +176,409 @@ The resulting files are intended to be:
 
 ## Encryption Format
 
-AV uses the same encryption format as `dotenvx`.
+AV uses dotenvx-compatible encryption.
 
-This provides:
+Reasons:
 
 * ecosystem compatibility
-* production compatibility
-* CI compatibility
+* CI/CD compatibility
 * reduced cryptographic surface area
-* easier migration between systems
+* production interoperability
 
 ---
 
 ## Key Storage
 
-AV stores only the private decryption key in Keychain.
+AV stores only project decryption keys in Keychain.
 
 Example:
 
-```txt
+```txt id="ew3htd"
 av.dotenv.project.<hash>.privatekey
 ```
 
-Secrets themselves are never individually stored in Keychain.
+Individual secrets are not stored separately in Keychain.
 
 ---
 
 # Security Invariants
 
-## Secrets Must Never Exist Unencrypted On Disk
+## Plaintext Secrets Must Never Exist On Disk
 
 AV must never:
 
-* write plaintext temp dotenv files
-* cache decrypted secrets on disk
+* write plaintext dotenv files
+* cache plaintext secrets
 * log plaintext secrets
 * store secrets in shell history
 
 ---
 
-## Plaintext Exists Only In Memory
+## Secrets Exist In Plaintext Only In Memory
 
-Secrets should only exist:
-
-* transiently
-* in process memory
-* during approved execution
+Secrets should only exist transiently during approved runtime access.
 
 ---
 
-# Execution Model
+# Runtime SDKs
 
-## Secret Injection
+Automic Vault requires explicit runtime SDK usage.
 
-Secrets are decrypted only during:
+This is intentional.
 
-```sh
-av dotenv run -- <command>
+---
+
+# Initial SDK Support
+
+| Platform | Package       |
+| -------- | ------------- |
+| Node.js  | `@automic/av` |
+| Python   | `automic`     |
+| Rust     | `av` crate    |
+| Go       | planned       |
+| Ruby     | planned       |
+
+---
+
+# JavaScript Example
+
+```js id="wjlwm9"
+import { secret } from "@automic/av"
+
+const apiKey = await secret("OPENAI_API_KEY")
 ```
 
-Execution flow:
+---
 
-```txt
-command requested
+# Python Example
+
+```python id="omce1z"
+from automic import secret
+
+api_key = secret("OPENAI_API_KEY")
+```
+
+---
+
+# Rust Example
+
+```rust id="jstbuh"
+let api_key = av::secret("OPENAI_API_KEY").await?;
+```
+
+---
+
+# Runtime Secret Resolution
+
+Secret access occurs dynamically at runtime.
+
+Example flow:
+
+```txt id="o0i9fx"
+application requests secret
 ↓
-cwd resolved
+AV SDK captures runtime metadata
 ↓
-dotenv metadata loaded
-↓
-policy evaluated
+approval engine evaluates request
 ↓
 human approval if required
 ↓
-secrets decrypted in memory
+secret decrypted in memory
 ↓
-child process spawned
+secret returned to caller
 ↓
-stdout/stderr monitored
+usage logged in AV app
 ```
+
+Secrets are never globally injected into process environments.
+
+---
+
+# Backtrace Requirement
+
+Every secret request must include a runtime backtrace.
+
+This is a core architectural requirement.
+
+Example:
+
+```txt id="rypr0u"
+OPENAI_API_KEY requested by:
+
+src/lib/secrets.ts:12
+└── src/llm/client.ts:48
+    └── src/routes/chat.ts:12
+```
+
+This allows AV to reason about:
+
+* where secrets are used
+* how secrets are used
+* whether usage patterns changed
+
+---
+
+# Secret Capability Identity
+
+Secret access approvals are tied to:
+
+* secret name
+* executable identity
+* working directory
+* normalized backtrace
+* source fingerprints
+
+Not merely process identity.
 
 ---
 
 # Approval Model
 
-## Approval Modes
+## Approve Once
 
-### ONCE
-
-Approve a single execution.
+Approve a single runtime request.
 
 ---
 
-### ALWAYS
+## Approve Always
 
-Approve all future matching executions.
-
----
-
-### IF UNCHANGED
-
-Approve future executions only if execution identity remains unchanged.
-
-This mode attempts to balance:
-
-* usability
-* agent iteration
-* malware resistance
+Approve future matching requests indefinitely.
 
 ---
 
-# Execution Identity
+# Re-Approval Triggers
 
-`IF UNCHANGED` fingerprints:
+Re-approval is required if:
 
-* executable hash
-* argv
-* working directory
-* entrypoint hash
-* requested secret set
+* backtrace changes
+* executable changes
+* source fingerprint changes
+* project identity changes
+* module graph changes
+
+This intentionally allows agents to modify unrelated application code without constantly requiring re-approval.
+
+Only secret-related execution paths matter.
+
+---
+
+# Logging and Observability
+
+All secret usage is logged in the AV app.
+
+Example timeline:
+
+```txt id="8kprcx"
+10:14 AM
+OPENAI_API_KEY requested
+src/lib/secrets.ts
+
+10:16 AM
+DATABASE_URL requested
+src/db/index.ts
+
+10:18 AM
+NEW SECRET ACCESS PATH DETECTED
+Approval required
+```
+
+The AV app becomes an operational visibility layer for authority usage.
+
+---
+
+# Behavioral Security Model
+
+Automic Vault treats secret usage as a behavioral signal.
+
+Known-good development behavior becomes a baseline.
+
+New or unexpected secret usage patterns become anomalies.
+
+---
+
+# Production Monitoring (Paid)
+
+Future paid functionality will support production anomaly detection.
 
 Example:
 
-```txt
-sha256(
-  executable +
-  argv +
-  cwd +
-  entrypoint +
-  secret_set
-)
+```txt id="3mk3pv"
+Production service accessed STRIPE_SECRET_KEY
+from previously unseen callsite:
+
+src/debug/export.ts
+```
+
+Possible actions:
+
+* alerts
+* Slack notifications
+* audit logging
+* deployment blocking
+* approval escalation
+
+This system is intended to detect:
+
+* compromised agents
+* malicious code paths
+* accidental secret misuse
+* unexpected production behavior
+
+---
+
+# Agent Migration Support
+
+Automic Vault assumes modern coding agents are capable of adapting repositories automatically.
+
+The migration experience is therefore designed around agent-assisted code rewriting.
+
+---
+
+# Migration Flow
+
+```sh id="kx4b3m"
+av dotenv ingest .
+```
+
+Produces:
+
+* encrypted dotenv files
+* initialized AV metadata
+* generated migration prompts
+* detected secret inventory
+* SDK installation instructions
+
+---
+
+# Generated Agent Prompt
+
+After ingest, AV emits a prompt intended for coding agents such as Codex, Claude Code, OpenAI agents, etc.
+
+Example:
+
+```txt id="t8vhx5"
+This repository now uses Automic Vault runtime
+secret capabilities.
+
+Replace all environment-variable access:
+
+  process.env.SECRET_NAME
+  os.getenv(...)
+  env::var(...)
+
+with AV SDK usage.
+
+JavaScript:
+  import { secret } from "@automic/av"
+
+Python:
+  from automic import secret
+
+Rust:
+  av::secret(...)
+
+Requirements:
+
+- preserve existing behavior
+- preserve async semantics
+- minimize unrelated edits
+- preserve tests
+- do not log secrets
+- do not serialize secrets
+- do not expose secrets to frontend code
+- prefer centralized secret access modules
+- avoid repeated secret fetches
+- cache secrets appropriately
+
+Detected secrets:
+
+- OPENAI_API_KEY
+- DATABASE_URL
+- STRIPE_SECRET_KEY
 ```
 
 ---
 
-# Secret Leakage Detection
+# Recommended Secret Access Pattern
 
-AV attempts best-effort leak reduction.
+AV strongly recommends centralized secret-access layers.
 
-This is not considered complete exfiltration prevention.
+Preferred:
+
+```js id="q83v4h"
+// src/lib/secrets.ts
+
+import { secret } from "@automic/av"
+
+export async function openAIKey() {
+  return await secret("OPENAI_API_KEY")
+}
+```
+
+Discouraged:
+
+```js id="mjlwmf"
+await secret("OPENAI_API_KEY")
+```
+
+scattered throughout the codebase.
+
+Centralized access improves:
+
+* auditability
+* approval stability
+* migration quality
+* observability clarity
 
 ---
 
-## Stdout/Stderr Monitoring
+# Relationship To dotenv
 
-AV scans process output for:
+dotenv ingestion is considered migration tooling.
 
-* exact secret matches
-* partial secret matches
-* high-entropy suspicious output
+The core abstraction is no longer:
 
-Possible responses:
+```txt id="m77a6g"
+environment variables
+```
 
-* redact output
-* warn user
-* terminate process
-* require re-approval
+The core abstraction is:
+
+```txt id="x47f0m"
+runtime secret capabilities
+```
 
 ---
 
-## Future Enhancements
+# Explicit Design Tradeoff
+
+Automic Vault intentionally imposes a runtime library burden.
+
+This is considered acceptable because:
+
+* modern agents can rewrite applications automatically
+* explicit secret access enables observability
+* explicit secret access enables behavioral security
+* explicit secret access enables approval gating
+
+The resulting security model is materially stronger than traditional dotenv systems.
+
+---
+
+# Future Directions
 
 Possible future enhancements include:
 
-* filesystem write monitoring
-* sandboxing
-* syscall interception
-* runtime secret resolution
-* capability-tracked secret access
-* `getenv()` interception
+* capability-scoped secrets
+* secret intent metadata
+* temporary secret leases
+* filesystem exfiltration monitoring
+* runtime taint tracking
+* sandbox integration
+* production policy enforcement
+* agent-specific secret policies
+* semantic anomaly detection
+* callsite reputation systems
+* secret usage risk scoring
 
 These are intentionally outside the scope of the initial implementation.
-
----
-
-# Explicit Trust Model
-
-AV intentionally avoids automatic ecosystem inference.
-
-Users must explicitly approve trusted executables.
-
-Example:
-
-```sh
-av dotenv allow node
-av dotenv allow python
-```
-
-This preserves:
-
-* auditability
-* predictability
-* comprehensible security boundaries
-
----
-
-# Migration Story
-
-## Existing Workflow
-
-```sh
-npm run dev
-```
-
-## AV Workflow
-
-```sh
-av dotenv run -- npm run dev
-```
-
-This is intentionally minimal friction.
-
----
-
-# Compatibility
-
-## Compatible With
-
-* dotenv
-* dotenvx
-* existing runtime tooling
-* git workflows
-* CI/CD systems
-* encrypted repo storage
-
-## Not Compatible With
-
-* ambient shell-wide env inheritance
-* implicit secret injection
-* transparent execution without approval
-
----
-
-# Future Direction
-
-The current design uses coarse-grained environment injection.
-
-Future versions may evolve toward:
-
-```txt
-secret capability resolution
-```
-
-Examples:
-
-* lazy secret resolution
-* runtime `getenv()` interception
-* per-callsite approvals
-* code-path-aware secret access
-* capability-scoped APIs
-
-However, the initial release intentionally prioritizes:
-
-* simplicity
-* compatibility
-* deployability
-* developer adoption
-
-over maximal isolation.
