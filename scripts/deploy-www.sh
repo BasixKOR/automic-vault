@@ -106,6 +106,7 @@ llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
 package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
 package_page_enrichment_generator="${repo_root}/scripts/generate-pkg-page-enrichment.py"
 search_index_generator="${repo_root}/scripts/generate-search-index.py"
+product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
 scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
@@ -117,6 +118,10 @@ fi
 
 if [[ ! -f "${db_source}" ]]; then
   die "Missing database source: ${db_source}"
+fi
+
+if [[ ! -f "${product_version_source}" ]]; then
+  die "Missing product version source: ${product_version_source}"
 fi
 
 origin_domain="${WWW_BUCKET}.s3.${AWS_REGION}.amazonaws.com"
@@ -158,13 +163,94 @@ format_count_for_display() {
   ' "${count}"
 }
 
+read_product_version() {
+  local version
+  version="$(
+    awk -F'"' '/^version = / { print $2; exit }' "${product_version_source}"
+  )"
+
+  if [[ -z "${version}" ]]; then
+    die "Could not read product version from ${product_version_source}"
+  fi
+
+  if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+    die "Unexpected product version in ${product_version_source}: ${version}"
+  fi
+
+  printf '%s\n' "${version}"
+}
+
+prepared_product_files() {
+  find "${prepared_site_dir}" \
+    \( -path "${prepared_site_dir}/pkg" -o -path "${prepared_site_dir}/pagefind" \) -prune \
+    -o -type f \
+    \( -name '*.html' -o -name '*.txt' -o -name '*.md' -o -name '*.json' \) \
+    -print0
+}
+
+assert_product_version_stamped() {
+  local product_version="$1"
+  local file mismatch_file
+  mismatch_file="$(mktemp)"
+
+  while IFS= read -r -d '' file; do
+    PRODUCT_VERSION="${product_version}" perl -0ne '
+      my $version = $ENV{"PRODUCT_VERSION"};
+      if (/__AUTOMIC_VAULT_VERSION__/) {
+        print "$ARGV: unresolved __AUTOMIC_VAULT_VERSION__ placeholder\n";
+      }
+      while (/"softwareVersion"\s*:\s*"([^"]+)"/g) {
+        print "$ARGV: softwareVersion=$1 expected $version\n" if $1 ne $version;
+      }
+      while (/^- Current version:\s*([^\r\n]+)/mg) {
+        my $current = $1;
+        $current =~ s/\s+$//;
+        print "$ARGV: Current version=$current expected $version\n" if $current ne $version;
+      }
+    ' "${file}" >>"${mismatch_file}"
+  done < <(prepared_product_files)
+
+  if [[ -s "${mismatch_file}" ]]; then
+    log_error "Product version stamping left mismatches:"
+    sed -n '1,40p' "${mismatch_file}" >&2
+    rm -f "${mismatch_file}"
+    die "Prepared site product version must match ${product_version} before deploy."
+  fi
+
+  rm -f "${mismatch_file}"
+}
+
+stamp_product_version() {
+  local product_version="$1"
+  local file file_count
+  file_count=0
+
+  while IFS= read -r -d '' file; do
+    PRODUCT_VERSION="${product_version}" perl -0pi -e '
+      my $version = $ENV{"PRODUCT_VERSION"};
+      s{__AUTOMIC_VAULT_VERSION__}{$version}g;
+      s{("softwareVersion"\s*:\s*")[^"]+(")}{$1 . $version . $2}ge;
+      s{(- Current version:\s*)[^\r\n]+}{$1 . $version}ge;
+    ' "${file}"
+    file_count=$((file_count + 1))
+  done < <(prepared_product_files)
+
+  if [[ "${file_count}" == "0" ]]; then
+    die "No prepared product files found for version stamping."
+  fi
+
+  assert_product_version_stamped "${product_version}"
+}
+
 prepare_site_for_upload() {
-  local secured_package_count secured_package_display_count index_path
+  local product_version secured_package_count secured_package_display_count index_path
   log_step "Preparing deploy-time site content"
+  product_version="$(read_product_version)"
   secured_package_count="$(count_scan_log_entries)"
   secured_package_display_count="$(format_count_for_display "${secured_package_count}")"
   prepared_site_dir="$(mktemp -d)"
   rsync -a "${site_dir}/" "${prepared_site_dir}/"
+  stamp_product_version "${product_version}"
 
   index_path="${prepared_site_dir}/index.html"
   if [[ ! -f "${index_path}" ]]; then
@@ -185,6 +271,7 @@ prepare_site_for_upload() {
 
   node "${llms_full_generator}" "${prepared_site_dir}" "${prepared_site_dir}/llms-full.txt"
 
+  log_ok "Stamped Automic Vault ${product_version}"
   log_ok "Stamped ${secured_package_display_count} secured packages"
 }
 
@@ -368,6 +455,8 @@ function handler(event) {
       "/av-trace/": true,
       "/docs": true,
       "/docs/": true,
+      "/download": true,
+      "/download/": true,
       "/github-cli-token-security-ai-agents": true,
       "/github-cli-token-security-ai-agents/": true,
       "/hashicorp-vault-for-ai-agents": true,
@@ -376,6 +465,8 @@ function handler(event) {
       "/mcp-secrets-management/": true,
       "/privacy": true,
       "/privacy/": true,
+      "/pricing": true,
+      "/pricing/": true,
       "/privileged-access-management-for-ai-agents": true,
       "/privileged-access-management-for-ai-agents/": true,
       "/secret-scanner-for-ai-agents": true,

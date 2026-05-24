@@ -13,7 +13,8 @@ under the Apache License 2.0.
 
 - [Documentation](/docs/) — CLI commands and runtime patterns.
 - [Security](/security/) — threat model and disclosure information.
-- [Pricing](/pricing.md) — free open-source software pricing.
+- [Pricing](/pricing/) — free open-source software pricing.
+- [security.txt](/.well-known/security.txt) — machine-readable security disclosure policy.
 - [llms.txt](/llms.txt) — concise AI system navigation.
 - [llms-full.txt](/llms-full.txt) — full concatenated site text.
 

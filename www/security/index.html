@@ -18,135 +18,138 @@
   <meta name="twitter:description" content="Security notes for Automic Vault's local AI agent runtime controls.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://www.automicvault.com/#organization",
-        "name": "Automic Vault",
-        "url": "https://www.automicvault.com/",
-        "logo": "https://www.automicvault.com/assets/icon@2x.webp",
-        "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
-        "founder": {
-          "@id": "https://www.automicvault.com/about/#max-howell"
-        },
-        "knowsAbout": [
-          "AI agent security",
-          "macOS package management",
-          "developer tooling",
-          "local secrets management",
-          "command approval gates"
-        ],
-        "sameAs": [
-          "https://github.com/automic-vault/",
-          "https://github.com/automic-vault/automic-vault",
-          "https://x.com/AutomicVault",
-          "https://mxcl.dev/",
-          "https://brew.sh/"
-        ]
-      },
-      {
-        "@type": "Person",
-        "@id": "https://www.automicvault.com/about/#max-howell",
-        "name": "Max Howell",
-        "url": "https://mxcl.dev/",
-        "description": "Max Howell is the creator of Homebrew and builds developer tooling for macOS.",
-        "sameAs": [
-          "https://mxcl.dev/",
-          "https://brew.sh/",
-          "https://en.wikipedia.org/wiki/Homebrew_(package_manager)"
-        ]
-      },
-      {
-        "@type": "WebSite",
-        "@id": "https://www.automicvault.com/#website",
-        "name": "Automic Vault",
-        "url": "https://www.automicvault.com/",
-        "publisher": {
-          "@id": "https://www.automicvault.com/#organization"
-        }
-      },
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://www.automicvault.com/#software",
-        "name": "Automic Vault",
-        "applicationCategory": "SecurityApplication",
-        "applicationSubCategory": "AI agent security",
-        "operatingSystem": "macOS",
-        "softwareVersion": "1.6.0",
-        "url": "https://www.automicvault.com/",
-        "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
-        "codeRepository": "https://github.com/automic-vault/automic-vault",
-        "license": "https://www.apache.org/licenses/LICENSE-2.0",
-        "screenshot": "https://www.automicvault.com/preview.jpg",
-        "featureList": [
-          "Local AI agent secrets manager",
-          "Keychain-backed secret storage",
-          "Approved secret injection into command-line tools",
-          "Command approval gates",
-          "AI agent secret scanner",
-          "Shell installer tracing",
-          "Hardened package installation roots"
-        ],
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD",
-          "availability": "https://schema.org/InStock",
-          "url": "https://www.automicvault.com/pricing.md"
-        },
-        "description": "From the creator of Homebrew, Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
-        "publisher": {
-          "@id": "https://www.automicvault.com/#organization"
-        }
-      },
-      {
-        "@type": "Article",
-        "@id": "https://www.automicvault.com/security/#webpage",
-        "url": "https://www.automicvault.com/security/",
-        "name": "Security | Automic Vault",
-        "headline": "Security",
-        "description": "Automic Vault security notes for local AI agent secret storage, command approval gates, package roots, disclosure, and current product boundaries.",
-        "datePublished": "2026-05-15",
-        "dateModified": "2026-05-15",
-        "image": "https://www.automicvault.com/preview.jpg",
-        "author": {
-          "@id": "https://www.automicvault.com/about/#max-howell"
-        },
-        "publisher": {
-          "@id": "https://www.automicvault.com/#organization"
-        },
-        "isPartOf": {
-          "@id": "https://www.automicvault.com/#software"
-        },
-        "about": {
-          "@id": "https://www.automicvault.com/#software"
-        },
-        "breadcrumb": {
-          "@id": "https://www.automicvault.com/security/#breadcrumb"
-        }
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://www.automicvault.com/security/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Automic Vault",
-            "item": "https://www.automicvault.com/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Security",
-            "item": "https://www.automicvault.com/security/"
-          }
-        ]
-      }
-    ]
-  }
+{
+      "@context": "https://schema.org",
+      "@graph": [
+            {
+                  "@type": "Organization",
+                  "@id": "https://www.automicvault.com/#organization",
+                  "name": "Automic Vault",
+                  "url": "https://www.automicvault.com/",
+                  "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+                  "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
+                  "founder": {
+                        "@id": "https://www.automicvault.com/about/#max-howell"
+                  },
+                  "knowsAbout": [
+                        "AI agent security",
+                        "macOS package management",
+                        "developer tooling",
+                        "local secrets management",
+                        "command approval gates"
+                  ],
+                  "sameAs": [
+                        "https://github.com/automic-vault/",
+                        "https://github.com/automic-vault/automic-vault",
+                        "https://x.com/AutomicVault",
+                        "https://mxcl.dev/",
+                        "https://brew.sh/"
+                  ]
+            },
+            {
+                  "@type": "Person",
+                  "@id": "https://www.automicvault.com/about/#max-howell",
+                  "name": "Max Howell",
+                  "url": "https://mxcl.dev/",
+                  "description": "Max Howell is the creator of Homebrew and builds developer tooling for macOS.",
+                  "sameAs": [
+                        "https://mxcl.dev/",
+                        "https://brew.sh/",
+                        "https://en.wikipedia.org/wiki/Homebrew_(package_manager)"
+                  ]
+            },
+            {
+                  "@type": "WebSite",
+                  "@id": "https://www.automicvault.com/#website",
+                  "name": "Automic Vault",
+                  "url": "https://www.automicvault.com/",
+                  "publisher": {
+                        "@id": "https://www.automicvault.com/#organization"
+                  }
+            },
+            {
+                  "@type": "SoftwareApplication",
+                  "@id": "https://www.automicvault.com/#software",
+                  "name": "Automic Vault",
+                  "applicationCategory": "SecurityApplication",
+                  "applicationSubCategory": "AI agent security",
+                  "operatingSystem": "macOS",
+                  "softwareVersion": "__AUTOMIC_VAULT_VERSION__",
+                  "url": "https://www.automicvault.com/",
+                  "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
+                  "codeRepository": "https://github.com/automic-vault/automic-vault",
+                  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+                  "screenshot": "https://www.automicvault.com/preview.jpg",
+                  "featureList": [
+                        "Local AI agent secrets manager",
+                        "Keychain-backed secret storage",
+                        "Approved secret injection into command-line tools",
+                        "Command approval gates",
+                        "AI agent secret scanner",
+                        "Shell installer tracing",
+                        "Hardened package installation roots"
+                  ],
+                  "offers": {
+                        "@type": "Offer",
+                        "price": "0",
+                        "priceCurrency": "USD",
+                        "availability": "https://schema.org/InStock",
+                        "url": "https://www.automicvault.com/pricing/"
+                  },
+                  "description": "From the creator of Homebrew, Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
+                  "publisher": {
+                        "@id": "https://www.automicvault.com/#organization"
+                  }
+            },
+            {
+                  "@type": "Article",
+                  "@id": "https://www.automicvault.com/security/#webpage",
+                  "url": "https://www.automicvault.com/security/",
+                  "name": "Security | Automic Vault",
+                  "headline": "Security",
+                  "description": "Automic Vault security notes for local AI agent secret storage, command approval gates, package roots, disclosure, and current product boundaries.",
+                  "datePublished": "2026-05-15",
+                  "dateModified": "2026-05-24",
+                  "image": "https://www.automicvault.com/preview.jpg",
+                  "author": {
+                        "@id": "https://www.automicvault.com/about/#max-howell"
+                  },
+                  "publisher": {
+                        "@id": "https://www.automicvault.com/#organization"
+                  },
+                  "isPartOf": {
+                        "@id": "https://www.automicvault.com/#software"
+                  },
+                  "about": {
+                        "@id": "https://www.automicvault.com/#software"
+                  },
+                  "breadcrumb": {
+                        "@id": "https://www.automicvault.com/security/#breadcrumb"
+                  },
+                  "reviewedBy": {
+                        "@id": "https://www.automicvault.com/about/#max-howell"
+                  }
+            },
+            {
+                  "@type": "BreadcrumbList",
+                  "@id": "https://www.automicvault.com/security/#breadcrumb",
+                  "itemListElement": [
+                        {
+                              "@type": "ListItem",
+                              "position": 1,
+                              "name": "Automic Vault",
+                              "item": "https://www.automicvault.com/"
+                        },
+                        {
+                              "@type": "ListItem",
+                              "position": 2,
+                              "name": "Security",
+                              "item": "https://www.automicvault.com/security/"
+                        }
+                  ]
+            }
+      ]
+}
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -176,7 +179,8 @@
           <p class="kicker">Security model</p>
           <h1>Agent security belongs at the local runtime boundary</h1>
           <p class="lede">Automic Vault protects macOS developer machines by moving secrets out of plaintext files, injecting approved credentials into trusted tools, and gating sensitive commands before they execute.</p>
-          <p class="updated">Last updated: May 15, 2026</p>
+          <p class="updated">Last updated: May 24, 2026</p>
+          <div class="answer-box"><p>Automic Vault is a local macOS security layer for AI coding agents. Its security model assumes the agent may read project files and invoke local tools, so secrets are moved out of plaintext files, approved credentials are injected only into trusted executables, and sensitive commands can require human approval before they run.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Review commands <span aria-hidden="true">›</span></a>
             <a class="button" href="https://github.com/automic-vault/automic-vault/issues">Report an issue <span aria-hidden="true">›</span></a>
@@ -203,12 +207,57 @@
         <div class="section-heading">
           <p class="kicker">Disclosure</p>
           <h2>Report security issues through GitHub.</h2>
-          <p>Automic Vault is open-source software. Use the public repository for source review, issue reporting, and release tracking. Do not include live secrets in public issues.</p>
+          <p>Automic Vault is open-source software. Use the public repository for source review, issue reporting, and release tracking. Do not include live secrets, cloud account identifiers, private keys, or unreleased exploit details in public issues. If a report requires sensitive material, open a minimal public issue asking for a private reporting channel.</p>
         </div>
         <div class="resource-list">
           <a href="https://github.com/automic-vault/automic-vault"><strong>Source repository</strong><p>Review source, releases, and implementation details.</p></a>
           <a href="https://github.com/automic-vault/automic-vault/issues"><strong>Issue tracker</strong><p>Report defects and security-sensitive behavior without including credentials.</p></a>
           <a href="../docs/#faq"><strong>Operational trust notes</strong><p>Read current boundary notes for keychain access, SSH sessions, and approved execution.</p></a>
+          <a href="../.well-known/security.txt"><strong>security.txt</strong><p>Machine-readable disclosure and policy location.</p></a>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Release trust</p>
+          <h2>Use public releases and source as the verification path.</h2>
+          <p>The public GitHub repository is the durable reference for code, tags, releases, issues, and license terms. Download links on this site point to the published macOS release artifact, and the app version is derived from the repository's Cargo metadata during deployment.</p>
+        </div>
+        <table class="comparison-table">
+          <thead>
+            <tr><th scope="col">Trust signal</th><th scope="col">Current source of truth</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Source code</th><td><a href="https://github.com/automic-vault/automic-vault">github.com/automic-vault/automic-vault</a></td></tr>
+            <tr><th scope="row">Version</th><td>The deployed site stamps product schema and LLM metadata from <code>Cargo.toml</code>.</td></tr>
+            <tr><th scope="row">Releases</th><td>Use GitHub releases and tags to inspect published builds and source history.</td></tr>
+            <tr><th scope="row">License</th><td>Apache License 2.0, with the repository license text as the source of truth.</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Local data boundary</p>
+          <h2>Secrets are product data on the local Mac.</h2>
+          <p>Automic Vault is not a hosted SaaS vault. The website is static, while the product focuses on local storage, local command execution, and local approval decisions on macOS.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Keychain</span><h3>Local storage</h3><p>Secrets are intended to move out of readable project files and into local keychain-backed storage.</p></article>
+          <article><span>Tools</span><h3>Scoped injection</h3><p>Approved command-line tools receive named credentials for the execution that needs them.</p></article>
+          <article><span>Agents</span><h3>No raw prompt handoff</h3><p>The model should not receive raw token values to quote, summarize, or paste elsewhere.</p></article>
+          <article><span>Approvals</span><h3>Runtime decision</h3><p>Commands that mutate cloud, source, packages, or credentials can be reviewed before execution.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Supported surface</p>
+          <h2>Security review should focus on the current public release.</h2>
+          <p>Automic Vault is young open-source software, so the safest security reference is the current public release and source tree. Reports should identify the version, macOS version, command being run, package or tool involved, and whether the behavior requires a local agent, local shell access, or an already-approved credential.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Version</span><h3>Name the release</h3><p>Include the app or CLI version from <code>av --version</code>, the download page, or the relevant Git tag.</p></article>
+          <article><span>Repro</span><h3>Describe the local path</h3><p>Show whether the issue involves file reads, keychain-backed storage, package roots, command approval, or shell installer tracing.</p></article>
+          <article><span>Scope</span><h3>Separate model and tool risk</h3><p>State whether the model can read a value directly, whether a tool can receive it, or whether a command can reveal it.</p></article>
+          <article><span>Secrets</span><h3>Redact credentials</h3><p>Use fake tokens and sanitized paths in public reports; avoid posting live keys, account IDs, or private repository details.</p></article>
         </div>
       </section>
     </main>

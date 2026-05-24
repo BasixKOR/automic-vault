@@ -85,6 +85,145 @@ class ReadmeExcerpt:
     source: str
 
 
+@dataclass(frozen=True)
+class PackageHub:
+    slug: str
+    title: str
+    kicker: str
+    description: str
+    query_terms: tuple[str, ...] = ()
+    package_names: tuple[str, ...] = ()
+    providers: tuple[str, ...] = ()
+    risk_hub: bool = False
+
+    @property
+    def path(self) -> str:
+        return f"/pkg/{self.slug}/"
+
+
+PACKAGE_HUBS = (
+    PackageHub(
+        slug="cloud-clis",
+        title="Cloud CLI packages",
+        kicker="cloud command surfaces",
+        description=(
+            "Cloud CLIs are high-value package targets because they often broker access to "
+            "accounts, deploys, registries, state, and production infrastructure from a local shell."
+        ),
+        package_names=(
+            "awscli",
+            "aws-cdk",
+            "azure-cli",
+            "cloudflared",
+            "doctl",
+            "firebase-cli",
+            "flyctl",
+            "gcloud-cli",
+            "glab",
+            "google-cloud-sdk",
+            "helm",
+            "heroku",
+            "jfrog-cli",
+            "kubernetes-cli",
+            "minio-mc",
+            "netlify-cli",
+            "oci-cli",
+            "opentofu",
+            "podman",
+            "pulumi",
+            "s3cmd",
+            "s5cmd",
+            "snowflake-cli",
+            "terraform",
+            "tfenv",
+            "vercel-cli",
+            "wrangler",
+        ),
+        query_terms=(
+            "amazon web services",
+            "aws",
+            "azure",
+            "cloudflare",
+            "digitalocean",
+            "docker",
+            "google cloud",
+            "kubernetes",
+            "oci",
+            "s3",
+            "terraform",
+        ),
+    ),
+    PackageHub(
+        slug="source-control-tools",
+        title="Source-control packages",
+        kicker="repository authority",
+        description=(
+            "Source-control tools can read private repositories, move release tags, push commits, "
+            "and publish code changes that AI agents should not perform without review."
+        ),
+        package_names=(
+            "fossil",
+            "gh",
+            "git",
+            "git-lfs",
+            "glab",
+            "hub",
+            "jj",
+            "lazygit",
+            "mercurial",
+            "subversion",
+            "svn",
+        ),
+        query_terms=("source control", "version control"),
+    ),
+    PackageHub(
+        slug="package-publishers",
+        title="Package publisher tools",
+        kicker="publishing authority",
+        description=(
+            "Package publishing tools are sensitive because registry tokens can release new artifacts, "
+            "overwrite distribution metadata, and turn a local AI-agent run into a supply-chain event."
+        ),
+        package_names=(
+            "cargo",
+            "gem",
+            "go",
+            "node",
+            "npm",
+            "pnpm",
+            "poetry",
+            "python",
+            "ruby",
+            "rubygems",
+            "twine",
+            "uv",
+            "yarn",
+        ),
+        query_terms=("package publish", "publish package", "registry token", "rubygems", "npm", "pypi", "cargo"),
+    ),
+    PackageHub(
+        slug="mcp-tools",
+        title="MCP tool packages",
+        kicker="agent tool servers",
+        description=(
+            "Model Context Protocol tools are important package targets because they sit between "
+            "AI agents and local credentials, files, APIs, or command execution."
+        ),
+        query_terms=("mcp", "model context protocol"),
+    ),
+    PackageHub(
+        slug="secret-risk-packages",
+        title="Secret-risk packages",
+        kicker="credential exposure",
+        description=(
+            "Secret-risk package pages group tools with radioisotope coverage, approval gates, or "
+            "Geiger classifier findings that matter when an AI agent can invoke local executables."
+        ),
+        risk_hub=True,
+    ),
+)
+
+
 class Terminal:
     def __init__(self, json_mode: bool = False):
         self.json_mode = json_mode
@@ -733,22 +872,80 @@ def build_manifest(page_count: int, files: list[Path]) -> dict[str, Any]:
     }
 
 
+def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[PackagePage]]]:
+    hubs: list[tuple[PackageHub, list[PackagePage]]] = []
+    for hub in PACKAGE_HUBS:
+        matches = sorted(
+            [page for page in pages if package_matches_hub(page, hub)],
+            key=hub_sort_key,
+        )
+        if matches:
+            hubs.append((hub, matches))
+    return hubs
+
+
+def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
+    if hub.providers and page.provider not in hub.providers:
+        return False
+    if hub.risk_hub:
+        if page.isotope or page.approval_gate:
+            return True
+        level = str((page.geiger or {}).get("level") or "").lower()
+        return level not in {"", "green", "low", "unknown"}
+    names = {page.name.lower(), page.slug.lower(), page.display_name.lower()}
+    names.update(alias.lower() for alias in page.aliases)
+    names.update(str(item.get("name") or "").lower() for item in page.executables if isinstance(item, dict))
+    if any(name in names for name in hub.package_names):
+        return True
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            page.name,
+            page.summary,
+            " ".join(page.aliases),
+        )
+    ).lower()
+    return any(hub_term_matches(haystack, term) for term in hub.query_terms)
+
+
+def hub_term_matches(haystack: str, term: str) -> bool:
+    escaped = re.escape(term.lower())
+    if re.search(r"\s", term):
+        return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", haystack) is not None
+    return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", haystack) is not None
+
+
+def hub_sort_key(page: PackagePage) -> tuple[int, int, int, str, str]:
+    risk_rank = {"critical": 0, "high": 1, "medium": 2, "yellow": 3, "low": 4, "green": 5}
+    level = str((page.geiger or {}).get("level") or "").lower()
+    coverage = 0 if page.isotope else 1
+    gated = 0 if page.approval_gate else 1
+    rank = int(page.popularity.get("rank") or 999999)
+    return (coverage, gated, risk_rank.get(level, 6), rank, page.display_name.lower())
+
+
 def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_dir: Path) -> None:
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "styles.css").write_text(render_css(), encoding="utf-8")
     ordered = sorted(pages.values(), key=lambda page: (page.provider, page.slug, page.name))
+    hubs = package_hub_pages(ordered)
+    manifest["hub_count"] = len(hubs)
     for page in ordered:
         page_dir = output_dir / page.provider / page.slug
         page_dir.mkdir(parents=True, exist_ok=True)
         (page_dir / "index.html").write_text(render_package_page(page, manifest), encoding="utf-8")
-    (output_dir / "index.html").write_text(render_index(ordered, manifest), encoding="utf-8")
-    (output_dir / "sitemap.xml").write_text(render_sitemap(ordered, manifest), encoding="utf-8")
+    for hub, hub_pages in hubs:
+        hub_dir = output_dir / hub.slug
+        hub_dir.mkdir(parents=True, exist_ok=True)
+        (hub_dir / "index.html").write_text(render_hub_page(hub, hub_pages, manifest), encoding="utf-8")
+    (output_dir / "index.html").write_text(render_index(ordered, hubs, manifest), encoding="utf-8")
+    (output_dir / "sitemap.xml").write_text(render_sitemap(ordered, hubs, manifest), encoding="utf-8")
     (output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
+def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
     secured = [page for page in pages if page.isotope]
     gated = [page for page in pages if page.approval_gate]
     top_pages = sorted(
@@ -758,6 +955,10 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
     package_links = "\n".join(
         f'<a class="package-row" href="{page.path}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page))}</small></a>'
         for page in top_pages
+    )
+    hub_links = "\n".join(
+        f'<a class="hub-card" href="{hub.path}"><span>{html_escape(hub.title)}</span><strong>{fmt_int(len(hub_pages))}</strong><small>{html_escape(hub.kicker)}</small></a>'
+        for hub, hub_pages in hubs
     )
     return html_doc(
         title="Package security catalog | Automic Vault",
@@ -789,6 +990,14 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
       <p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p>
     </div>
     <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
+  </section>
+  <section class="pkg-section" aria-labelledby="pkg-hubs-title">
+    <p class="section-kicker">package hubs</p>
+    <h2 id="pkg-hubs-title">High-value package groups</h2>
+    <p>These crawlable hubs summarize package families that matter for AI-agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p>
+    <div class="hub-grid" aria-label="Package category hubs">
+      {hub_links}
+    </div>
   </section>
   <section class="pkg-section split-section">
     <div>
@@ -831,6 +1040,177 @@ def render_index(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
             "about": "Nucleus packages, AI agent package security, approval gates, and secret migration metadata",
         },
     )
+
+
+def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[str, Any]) -> str:
+    updated = fmt_date(manifest.get("generated_at", ""))
+    top = pages[:72]
+    secured = [page for page in pages if page.isotope]
+    gated = [page for page in pages if page.approval_gate]
+    rows = "\n".join(hub_package_row(page) for page in top)
+    description = short_text(
+        f"{hub.description} Browse {len(pages)} generated package pages with install commands, metadata, and Automic Vault security notes.",
+        155,
+    )
+    return html_doc(
+        title=f"{hub.title} | Automic Vault package catalog",
+        description=description,
+        canonical=f"{SITE_ORIGIN}{hub.path}",
+        body=f"""
+{nav('../../')}
+<main>
+  <nav class="breadcrumbs" aria-label="Breadcrumbs">
+    <a href="../../">Home</a>
+    <span>/</span>
+    <a href="../">Packages</a>
+    <span>/</span>
+    <span>{html_escape(hub.title)}</span>
+  </nav>
+  <section class="pkg-hero pkg-hero-index" aria-labelledby="hub-title">
+    <div class="hero-copy">
+      <p class="eyebrow">{html_escape(hub.kicker)}</p>
+      <h1 id="hub-title">{html_escape(hub.title)}</h1>
+      <p class="lede">{html_escape(hub.description)}</p>
+    </div>
+    <aside class="hero-panel" aria-label="Hub counts">
+      {metric('packages', fmt_int(len(pages)))}
+      {metric('radioisotopes', fmt_int(len(secured)))}
+      {metric('approval gates', fmt_int(len(gated)))}
+      {metric('updated', updated)}
+    </aside>
+  </section>
+  <section class="pkg-section split-section">
+    <div>
+      <p class="section-kicker">GEO summary</p>
+      <h2>Why this package group matters</h2>
+      <p>{html_escape(hub_description_detail(hub, pages))}</p>
+    </div>
+    <div class="detail-stack">
+      <article>
+        <h3>Generated source</h3>
+        <p>This hub is built from the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.</p>
+      </article>
+      <article>
+        <h3>Review model</h3>
+        <p>Use the hub to find command families that should receive tighter runtime secret injection, approval gates, or manual review before AI agents execute them.</p>
+      </article>
+    </div>
+  </section>
+  <section class="pkg-section">
+    <p class="section-kicker">packages</p>
+    <h2>Indexed package pages</h2>
+    <div class="table-wrap hub-table">
+      <table>
+        <thead><tr><th>Package</th><th>Manager</th><th>Signals</th><th>Why it appears here</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>
+  </section>
+</main>
+{footer('../../')}
+""",
+        stylesheet_href="../styles.css",
+        favicon_href="../../favicon.ico",
+        schema=schema_for_hub(hub, pages, description, updated),
+    )
+
+
+def hub_description_detail(hub: PackageHub, pages: list[PackagePage]) -> str:
+    secured = sum(1 for page in pages if page.isotope)
+    gated = sum(1 for page in pages if page.approval_gate)
+    risked = sum(1 for page in pages if page.geiger and str(page.geiger.get("level") or "").lower() not in {"", "green", "low", "unknown"})
+    return (
+        f"{hub.title} currently includes {len(pages)} generated package pages. "
+        f"{secured} have radioisotope coverage, {gated} have approval-gate metadata, "
+        f"and {risked} have non-low Geiger classifier findings. "
+        "The grouping is generated, not curated prose, so it can stay current as package metadata changes."
+    )
+
+
+def hub_package_row(page: PackagePage) -> str:
+    signals = []
+    if page.isotope:
+        signals.append("radioisotope")
+    if page.approval_gate:
+        signals.append("approval gate")
+    if page.geiger:
+        signals.append(f"{geiger_level_label(page.geiger)} risk")
+    if page.version:
+        signals.append(f"v{page.version}")
+    reason = hub_package_reason(page)
+    return (
+        f'<tr><td><a href="{attr(page.path)}">{html_escape(page.display_name)}</a></td>'
+        f"<td>{html_escape(package_manager_label(page))}</td>"
+        f"<td>{html_escape(', '.join(signals) or label_for(page))}</td>"
+        f"<td>{html_escape(reason)}</td></tr>"
+    )
+
+
+def hub_package_reason(page: PackagePage) -> str:
+    if page.isotope:
+        title = (page.isotope.get("justification") or {}).get("title")
+        if title:
+            return str(title)
+    if page.approval_gate:
+        return f"{page.approval_gate.get('rule_count') or 'Local'} approval-gate rules are present."
+    if page.geiger:
+        reasons = page.geiger.get("reasons") or []
+        if reasons:
+            return short_text(reasons[0], 140)
+    if page.summary:
+        return short_text(page.summary, 140)
+    aliases = sorted(page.aliases)
+    if aliases:
+        return f"Executable aliases include {', '.join(aliases[:4])}."
+    return "Matched generated package metadata for this hub."
+
+
+def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, updated: str) -> dict[str, Any]:
+    url = f"{SITE_ORIGIN}{hub.path}"
+    return {
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "WebSite", "@id": f"{SITE_ORIGIN}/#website", "name": "Automic Vault", "url": f"{SITE_ORIGIN}/"},
+            {"@type": "Organization", "@id": f"{SITE_ORIGIN}/#organization", "name": "Automic Vault", "url": f"{SITE_ORIGIN}/"},
+            {"@type": "Person", "@id": f"{SITE_ORIGIN}/about/#max-howell", "name": "Max Howell", "url": f"{SITE_ORIGIN}/about/"},
+            {
+                "@type": "CollectionPage",
+                "@id": f"{url}#webpage",
+                "name": hub.title,
+                "headline": hub.title,
+                "url": url,
+                "description": description,
+                "dateModified": updated,
+                "isPartOf": {"@id": f"{SITE_ORIGIN}/#website"},
+                "about": {"@id": f"{SITE_ORIGIN}/#software"},
+                "author": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
+                "reviewedBy": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
+                "publisher": {"@id": f"{SITE_ORIGIN}/#organization"},
+                "mainEntity": {
+                    "@type": "ItemList",
+                    "numberOfItems": len(pages),
+                    "itemListElement": [
+                        {
+                            "@type": "ListItem",
+                            "position": index + 1,
+                            "url": f"{SITE_ORIGIN}{page.path}",
+                            "name": page.display_name,
+                        }
+                        for index, page in enumerate(pages[:50])
+                    ],
+                },
+            },
+            {
+                "@type": "BreadcrumbList",
+                "@id": f"{url}#breadcrumbs",
+                "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
+                    {"@type": "ListItem", "position": 2, "name": "Packages", "item": f"{SITE_ORIGIN}/pkg/"},
+                    {"@type": "ListItem", "position": 3, "name": hub.title, "item": url},
+                ],
+            },
+        ],
+    }
 
 
 def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
@@ -1429,6 +1809,9 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         "headline": f"Install {page.display_name} with {package_manager_label(page)}",
         "description": description,
         "dateModified": updated,
+        "author": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
+        "reviewedBy": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
+        "publisher": {"@id": f"{SITE_ORIGIN}/#organization"},
         "mainEntity": {"@id": f"{url}#software"},
     }
     breadcrumb = {
@@ -1454,6 +1837,8 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         "@context": "https://schema.org",
         "@graph": [
             {"@type": "WebSite", "@id": f"{SITE_ORIGIN}/#website", "name": "Automic Vault", "url": f"{SITE_ORIGIN}/"},
+            {"@type": "Organization", "@id": f"{SITE_ORIGIN}/#organization", "name": "Automic Vault", "url": f"{SITE_ORIGIN}/"},
+            {"@type": "Person", "@id": f"{SITE_ORIGIN}/about/#max-howell", "name": "Max Howell", "url": f"{SITE_ORIGIN}/about/"},
             software,
             article,
             breadcrumb,
@@ -1484,9 +1869,13 @@ def copy_script() -> str:
   </script>"""
 
 
-def render_sitemap(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
+def render_sitemap(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
     lastmod = fmt_date(manifest.get("generated_at", ""))
     urls = [f"  <url>\n    <loc>{SITE_ORIGIN}/pkg/</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"]
+    urls.extend(
+        f"  <url>\n    <loc>{SITE_ORIGIN}{hub.path}</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"
+        for hub, _hub_pages in hubs
+    )
     urls.extend(
         f"  <url>\n    <loc>{SITE_ORIGIN}{page.path}</loc>\n    <lastmod>{fmt_date(page.last_updated_at) or lastmod}</lastmod>\n  </url>"
         for page in pages
@@ -1550,6 +1939,9 @@ def html_doc(
   <meta property="og:url" content="{attr(canonical)}">
   <meta property="og:image" content="{SITE_ORIGIN}/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{attr(title)}">
+  <meta name="twitter:description" content="{attr(description)}">
+  <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
   <link rel="canonical" href="{attr(canonical)}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2132,6 +2524,46 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   font-weight: 700;
   text-transform: uppercase;
 }
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+.hub-card {
+  display: grid;
+  min-height: 160px;
+  gap: 12px;
+  align-content: space-between;
+  padding: 18px;
+  background: var(--surface-2);
+  transition: background 160ms ease, transform 160ms ease;
+}
+.hub-card:hover { background: #22211f; transform: translateY(-1px); }
+.hub-card span {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.hub-card strong {
+  color: var(--hot);
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  line-height: 1;
+}
+.hub-card small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hub-table td:first-child { min-width: 160px; font-weight: 700; }
 .site-footer {
   display: flex;
   align-items: center;
@@ -2154,6 +2586,7 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   h1 { font-size: clamp(2.8rem, 15vw, 4.8rem); }
   .lede { font-size: 1.32rem; }
   .package-list { grid-template-columns: 1fr; }
+  .hub-grid { grid-template-columns: 1fr; }
   .metric { grid-template-columns: 1fr; gap: 6px; }
   th { width: 150px; }
 }
@@ -2183,6 +2616,14 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
     actual_pages = sum(1 for path in output_dir.glob("*/*/index.html"))
     if actual_pages != page_count:
         failures.append(f"manifest page count is {page_count}, but found {actual_pages} pages")
+    pages = sorted(package_pages_from_sources(load_sources()).values(), key=lambda page: (page.provider, page.slug, page.name))
+    hubs = package_hub_pages(pages)
+    hub_count = int(manifest.get("hub_count") or 0)
+    if hub_count != len(hubs):
+        failures.append(f"manifest hub count is {hub_count}, but current data yields {len(hubs)} hubs")
+    for hub, _hub_pages in hubs:
+        if not (output_dir / hub.slug / "index.html").exists():
+            failures.append(f"missing package hub page: {output_dir / hub.slug / 'index.html'}")
     if failures:
         terminal.error_log("Package SEO pages are stale.")
         for failure in failures:

@@ -11,11 +11,12 @@ and sensitive commands can require human approval before execution.
 - Category: AI agent security, local secrets management, package management,
   command approval gates
 - Platform: macOS
-- Current version: 1.6.0
+- Current version: __AUTOMIC_VAULT_VERSION__
 - License: Apache License 2.0
 - Source: https://github.com/automic-vault/automic-vault
 - Website: https://www.automicvault.com/
-- Pricing: Free open-source software; see https://www.automicvault.com/pricing.md
+- Pricing: Free open-source software; see https://www.automicvault.com/pricing/
+- Security disclosure policy: https://www.automicvault.com/.well-known/security.txt
 - Positioning: From the creator of Homebrew
 - Founder: Max Howell, creator of Homebrew in 2009
 - Founder reference: https://mxcl.dev/
@@ -54,7 +55,8 @@ and credentials already present on a developer machine.
 - [Security model](https://www.automicvault.com/security/) — local runtime threat model and disclosure path.
 - [Privacy boundary](https://www.automicvault.com/privacy/) — local data and website privacy notes.
 - [Terms and licensing](https://www.automicvault.com/terms/) — Apache 2.0 licensing summary.
-- [Pricing](https://www.automicvault.com/pricing.md) — free open-source software pricing.
+- [Pricing](https://www.automicvault.com/pricing/) — free open-source software pricing.
+- [security.txt](https://www.automicvault.com/.well-known/security.txt) — machine-readable security disclosure policy.
 - [Secrets manager for AI agents](https://www.automicvault.com/secrets-manager-for-ai-agents/) — local secret storage for agent workflows.
 - [Stop AI agents reading .env files](https://www.automicvault.com/stop-ai-agents-reading-env-files/) — replacing ambient dotenv secrets.
 - [API key management for AI agents](https://www.automicvault.com/api-key-management-for-ai-agents/) — protecting CLI and SDK tokens.

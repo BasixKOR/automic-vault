@@ -7,8 +7,10 @@
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",
   "pricing": "Free open-source software",
+  "pricing_url": "https://www.automicvault.com/pricing/",
   "docs": "https://www.automicvault.com/docs/",
   "security": "https://www.automicvault.com/security/",
+  "security_txt": "https://www.automicvault.com/.well-known/security.txt",
   "llms_txt": "https://www.automicvault.com/llms.txt",
   "llms_full_txt": "https://www.automicvault.com/llms-full.txt",
   "use_cases": [
