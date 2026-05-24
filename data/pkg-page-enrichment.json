@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-24T18:00:29+00:00",
+  "generated_at": "2026-05-24T23:28:22+00:00",
   "packages": {
     "brew:a2ps": {
       "bottle": {
@@ -5438,8 +5438,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/algernon",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/xyproto/algernon/archive/refs/tags/v1.17.7.tar.gz",
-      "version": "1.17.7"
+      "sourceArchive": "https://github.com/xyproto/algernon/archive/refs/tags/v1.17.8.tar.gz",
+      "version": "1.17.8"
     },
     "brew:algol68g": {
       "bottle": {
@@ -18424,7 +18424,7 @@
         "libyaml",
         "openssl@3",
         "pydantic",
-        "python@3.13",
+        "python@3.14",
         "rpds-py"
       ],
       "executables": [
@@ -20511,6 +20511,9 @@
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
       },
+      "buildDependencies": [
+        "go"
+      ],
       "dependencies": [
         "node"
       ],
@@ -42536,8 +42539,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cdk8s",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/cdk8s-cli/-/cdk8s-cli-2.207.6.tgz",
-      "version": "2.207.6"
+      "sourceArchive": "https://registry.npmjs.org/cdk8s-cli/-/cdk8s-cli-2.207.7.tgz",
+      "version": "2.207.7"
     },
     "brew:cdktf": {
       "bottle": {
@@ -42639,8 +42642,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cdncheck",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/projectdiscovery/cdncheck/archive/refs/tags/v1.2.36.tar.gz",
-      "version": "1.2.36"
+      "sourceArchive": "https://github.com/projectdiscovery/cdncheck/archive/refs/tags/v1.2.37.tar.gz",
+      "version": "1.2.37"
     },
     "brew:cdo": {
       "bottle": {
@@ -42680,8 +42683,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cdo",
         "provider": "brew"
       },
-      "sourceArchive": "https://code.mpimet.mpg.de/attachments/download/30182/cdo-2.6.0.tar.gz",
-      "version": "2.6.0"
+      "sourceArchive": "https://code.mpimet.mpg.de/attachments/download/30210/cdo-2.6.1.tar.gz",
+      "version": "2.6.1"
     },
     "brew:cdogs-sdl": {
       "bottle": {
@@ -43496,8 +43499,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cdxgen",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/@cyclonedx/cdxgen/-/cdxgen-12.4.2.tgz",
-      "version": "12.4.2"
+      "sourceArchive": "https://registry.npmjs.org/@cyclonedx/cdxgen/-/cdxgen-12.4.3.tgz",
+      "version": "12.4.3"
     },
     "brew:cek": {
       "bottle": {
@@ -46217,12 +46220,12 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/chawan",
         "provider": "brew"
       },
-      "sourceArchive": "https://git.sr.ht/~bptato/chawan/archive/v0.4.0.tar.gz",
+      "sourceArchive": "https://git.sr.ht/~bptato/chawan/archive/v0.4.1.tar.gz",
       "usesFromMacos": [
         "curl",
         "ncurses"
       ],
-      "version": "0.4.0"
+      "version": "0.4.1"
     },
     "brew:chdig": {
       "bottle": {
@@ -47782,7 +47785,7 @@
       },
       "buildDependencies": [
         "go",
-        "node@22",
+        "node",
         "pkg-config-wrapper",
         "pkgconf",
         "rust",
@@ -49534,6 +49537,7 @@
         "harfbuzz",
         "libetpan",
         "nettle",
+        "openssl@3",
         "pango"
       ],
       "executables": [
@@ -50770,8 +50774,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cliproxyapi",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/router-for-me/CLIProxyAPI/archive/refs/tags/v7.1.15.tar.gz",
-      "version": "7.1.15"
+      "sourceArchive": "https://github.com/router-for-me/CLIProxyAPI/archive/refs/tags/v7.1.20.tar.gz",
+      "version": "7.1.20"
     },
     "brew:clipsafe": {
       "bottle": {
@@ -56325,8 +56329,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/convco",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/convco/convco/archive/refs/tags/v0.6.3.tar.gz",
-      "version": "0.6.3"
+      "sourceArchive": "https://github.com/convco/convco/archive/refs/tags/v0.6.4.tar.gz",
+      "version": "0.6.4"
     },
     "brew:convertlit": {
       "bottle": {
@@ -58050,11 +58054,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/coturn",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/coturn/coturn/archive/refs/tags/4.11.0.tar.gz",
+      "sourceArchive": "https://github.com/coturn/coturn/archive/refs/tags/4.12.0.tar.gz",
       "usesFromMacos": [
         "sqlite"
       ],
-      "version": "4.11.0"
+      "version": "4.12.0"
     },
     "brew:couchbase-shell": {
       "bottle": {
@@ -58712,8 +58716,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cpm",
         "provider": "brew"
       },
-      "sourceArchive": "https://cpan.metacpan.org/authors/id/S/SK/SKAJI/App-cpm-v1.1.0.tar.gz",
-      "version": "1.1.0"
+      "sourceArchive": "https://cpan.metacpan.org/authors/id/S/SK/SKAJI/App-cpm-v1.1.1.tar.gz",
+      "version": "1.1.1"
     },
     "brew:cpmtools": {
       "bottle": {
@@ -63005,8 +63009,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/cubejs-cli",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/cubejs-cli/-/cubejs-cli-1.6.49.tgz",
-      "version": "1.6.49"
+      "sourceArchive": "https://registry.npmjs.org/cubejs-cli/-/cubejs-cli-1.6.50.tgz",
+      "version": "1.6.50"
     },
     "brew:cubelib": {
       "bottle": {
@@ -66021,8 +66025,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dart-sdk",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/dart-lang/sdk/archive/refs/tags/3.11.6.tar.gz",
-      "version": "3.11.6"
+      "sourceArchive": "https://github.com/dart-lang/sdk/archive/refs/tags/3.12.0.tar.gz",
+      "version": "3.12.0"
     },
     "brew:dartaotruntime": {
       "bottle": {
@@ -66058,8 +66062,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dartaotruntime",
         "provider": "brew"
       },
-      "sourceArchive": "https://raw.githubusercontent.com/dart-lang/sdk/refs/tags/3.11.6/README.md",
-      "version": "3.11.6"
+      "sourceArchive": "https://raw.githubusercontent.com/dart-lang/sdk/refs/tags/3.12.0/README.md",
+      "version": "3.12.0"
     },
     "brew:dartsim": {
       "bottle": {
@@ -66224,11 +66228,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dash-shell",
         "provider": "brew"
       },
-      "sourceArchive": "https://cdn.netbsd.org/pub/pkgsrc/distfiles/dash-0.5.13.3.tar.gz",
+      "sourceArchive": "https://cdn.netbsd.org/pub/pkgsrc/distfiles/dash-0.5.13.4.tar.gz",
       "usesFromMacos": [
         "libedit"
       ],
-      "version": "0.5.13.3"
+      "version": "0.5.13.4"
     },
     "brew:dashing": {
       "bottle": {
@@ -69467,8 +69471,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/der-ascii",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/google/der-ascii/archive/refs/tags/v0.7.0.tar.gz",
-      "version": "0.7.0"
+      "sourceArchive": "https://github.com/google/der-ascii/archive/refs/tags/v0.8.0.tar.gz",
+      "version": "0.8.0"
     },
     "brew:derby": {
       "bottle": {
@@ -74245,8 +74249,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dnscrypt-proxy",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/DNSCrypt/dnscrypt-proxy/archive/refs/tags/2.1.15.tar.gz",
-      "version": "2.1.15"
+      "sourceArchive": "https://github.com/DNSCrypt/dnscrypt-proxy/archive/refs/tags/2.1.16.tar.gz",
+      "version": "2.1.16"
     },
     "brew:dnscrypt-wrapper": {
       "bottle": {
@@ -77167,6 +77171,7 @@
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
+          "sonoma",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
@@ -77192,11 +77197,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dotnet@8",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/dotnet/dotnet/archive/refs/tags/v8.0.125.tar.gz",
+      "sourceArchive": "https://github.com/dotnet/dotnet/archive/refs/tags/v8.0.127.tar.gz",
       "usesFromMacos": [
         "krb5"
       ],
-      "version": "8.0.125"
+      "version": "8.0.127"
     },
     "brew:dotnet@9": {
       "bottle": {
@@ -77234,11 +77239,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/dotnet@9",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/dotnet/dotnet/archive/refs/tags/v9.0.115.tar.gz",
+      "sourceArchive": "https://github.com/dotnet/dotnet/archive/refs/tags/v9.0.117.tar.gz",
       "usesFromMacos": [
         "krb5"
       ],
-      "version": "9.0.115"
+      "version": "9.0.117"
     },
     "brew:dotslash": {
       "bottle": {
@@ -92120,8 +92125,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/fallow",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/fallow-rs/fallow/archive/refs/tags/v2.79.0.tar.gz",
-      "version": "2.79.0"
+      "sourceArchive": "https://github.com/fallow-rs/fallow/archive/refs/tags/v2.80.0.tar.gz",
+      "version": "2.80.0"
     },
     "brew:fancy-cat": {
       "bottle": {
@@ -101226,9 +101231,7 @@
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
-          "arm64_ventura",
           "sonoma",
-          "ventura",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
@@ -101301,11 +101304,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/fontconfig",
         "provider": "brew"
       },
-      "sourceArchive": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.17.1/fontconfig-2.17.1.tar.gz",
+      "sourceArchive": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.18.0/fontconfig-2.18.0.tar.gz",
       "usesFromMacos": [
         "expat"
       ],
-      "version": "2.17.1"
+      "version": "2.18.0"
     },
     "brew:fontforge": {
       "bottle": {
@@ -124750,8 +124753,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/go-parquet-tools",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/hangxie/parquet-tools/archive/refs/tags/v1.49.2.tar.gz",
-      "version": "1.49.2"
+      "sourceArchive": "https://github.com/hangxie/parquet-tools/archive/refs/tags/v1.49.3.tar.gz",
+      "version": "1.49.3"
     },
     "brew:go-passbolt-cli": {
       "bottle": {
@@ -127143,7 +127146,7 @@
         "provider": "brew"
       },
       "sourceArchive": "https://github.com/goreleaser/goreleaser.git",
-      "version": "2.15.4"
+      "version": "2.16.0"
     },
     "brew:goreman": {
       "bottle": {
@@ -130441,8 +130444,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/graphqlite",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/colliery-io/graphqlite/archive/refs/tags/v0.5.0.tar.gz",
-      "version": "0.5.0"
+      "sourceArchive": "https://github.com/colliery-io/graphqlite/archive/refs/tags/v0.5.1.tar.gz",
+      "version": "0.5.1"
     },
     "brew:graphqlviz": {
       "bottle": {
@@ -130785,11 +130788,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/graphviz",
         "provider": "brew"
       },
-      "sourceArchive": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/14.1.5/graphviz-14.1.5.tar.xz",
+      "sourceArchive": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/15.0.0/graphviz-15.0.0.tar.xz",
       "usesFromMacos": [
         "expat"
       ],
-      "version": "14.1.5"
+      "version": "15.0.0"
     },
     "brew:graphviz2drawio": {
       "bottle": {
@@ -132904,9 +132907,7 @@
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
-          "arm64_ventura",
           "sonoma",
-          "ventura",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
@@ -132935,8 +132936,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/gssdp",
         "provider": "brew"
       },
-      "sourceArchive": "https://download.gnome.org/sources/gssdp/1.6/gssdp-1.6.4.tar.xz",
-      "version": "1.6.4"
+      "sourceArchive": "https://download.gnome.org/sources/gssdp/1.6/gssdp-1.6.5.tar.xz",
+      "version": "1.6.5"
     },
     "brew:gssh": {
       "bottle": {
@@ -135036,7 +135037,7 @@
           "name": "gupnp-binding-tool-1.6"
         }
       ],
-      "homepage": "https://wiki.gnome.org/Projects/GUPnP",
+      "homepage": "https://gitlab.gnome.org/GNOME/gupnp",
       "installBehavior": {
         "postInstallDefined": false
       },
@@ -135047,8 +135048,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/gupnp",
         "provider": "brew"
       },
-      "sourceArchive": "https://download.gnome.org/sources/gupnp/1.6/gupnp-1.6.9.tar.xz",
-      "version": "1.6.9"
+      "sourceArchive": "https://download.gnome.org/sources/gupnp/1.6/gupnp-1.6.10.tar.xz",
+      "version": "1.6.10"
     },
     "brew:gupnp-av": {
       "bottle": {
@@ -135086,11 +135087,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/gupnp-av",
         "provider": "brew"
       },
-      "sourceArchive": "https://download.gnome.org/sources/gupnp-av/0.14/gupnp-av-0.14.4.tar.xz",
+      "sourceArchive": "https://download.gnome.org/sources/gupnp-av/0.14/gupnp-av-0.14.5.tar.xz",
       "usesFromMacos": [
         "libxml2"
       ],
-      "version": "0.14.4"
+      "version": "0.14.5"
     },
     "brew:gupnp-tools": {
       "bottle": {
@@ -141228,8 +141229,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/highlight",
         "provider": "brew"
       },
-      "sourceArchive": "https://gitlab.com/saalen/highlight/-/archive/v4.19/highlight-v4.19.tar.gz",
-      "version": "4.19"
+      "sourceArchive": "https://gitlab.com/saalen/highlight/-/archive/v4.20/highlight-v4.20.tar.gz",
+      "version": "4.20"
     },
     "brew:highs": {
       "bottle": {
@@ -147668,7 +147669,7 @@
       "installBehavior": {
         "postInstallDefined": false
       },
-      "license": "ICU",
+      "license": "Unicode-3.0",
       "package": {
         "name": "icu4c@77",
         "packageManager": "Homebrew",
@@ -147695,7 +147696,7 @@
       "installBehavior": {
         "postInstallDefined": false
       },
-      "license": "ICU",
+      "license": "Unicode-3.0",
       "package": {
         "name": "icu4c@78",
         "packageManager": "Homebrew",
@@ -154717,6 +154718,7 @@
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
+          "sonoma",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
@@ -154743,8 +154745,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/jackett",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/Jackett/Jackett/archive/refs/tags/v0.24.1914.tar.gz",
-      "version": "0.24.1914"
+      "sourceArchive": "https://github.com/Jackett/Jackett/archive/refs/tags/v0.24.1926.tar.gz",
+      "version": "0.24.1926"
     },
     "brew:jadx": {
       "bottle": {
@@ -155503,27 +155505,15 @@
       "bottle": {
         "available": true,
         "platforms": [
-          "arm64_big_sur",
           "arm64_linux",
-          "arm64_monterey",
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
-          "arm64_ventura",
-          "big_sur",
-          "catalina",
-          "monterey",
           "sonoma",
-          "ventura",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
       },
-      "buildDependencies": [
-        "autoconf",
-        "automake",
-        "libtool"
-      ],
       "executables": [
         {
           "exposure": "global executable",
@@ -155547,8 +155537,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/jcal",
         "provider": "brew"
       },
-      "sourceArchive": "https://download.savannah.gnu.org/releases/jcal/jcal-0.4.1.tar.gz",
-      "version": "0.4.1"
+      "sourceArchive": "https://download.savannah.gnu.org/releases/jcal/jcal-0.6.0.tar.gz",
+      "version": "0.6.0"
     },
     "brew:jd": {
       "bottle": {
@@ -163765,8 +163755,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/keeper-commander",
         "provider": "brew"
       },
-      "sourceArchive": "https://files.pythonhosted.org/packages/e9/45/b62ea250bcd25c020ce4e4e917856cf5344084b509530f6f0beaa2358602/keepercommander-18.0.2.tar.gz",
-      "version": "18.0.2"
+      "sourceArchive": "https://files.pythonhosted.org/packages/e7/13/c9839da01b16e288e4444b39fee5677d1d00dccb59859b5bd1009a0980a8/keepercommander-18.0.3.tar.gz",
+      "version": "18.0.3"
     },
     "brew:keepkey-agent": {
       "bottle": {
@@ -169799,6 +169789,36 @@
       "sourceArchive": "https://github.com/lacework/go-sdk.git",
       "version": "2.13.0"
     },
+    "brew:ladder": {
+      "bottle": {
+        "available": true,
+        "platforms": [
+          "arm64_linux",
+          "arm64_sequoia",
+          "arm64_sonoma",
+          "arm64_tahoe",
+          "sonoma",
+          "x86_64_linux"
+        ],
+        "rootUrl": "https://ghcr.io/v2/homebrew/core"
+      },
+      "buildDependencies": [
+        "go"
+      ],
+      "homepage": "https://github.com/everywall/ladder",
+      "installBehavior": {
+        "postInstallDefined": false
+      },
+      "license": "GPL-3.0-only",
+      "package": {
+        "name": "ladder",
+        "packageManager": "Homebrew",
+        "packageManagerUrl": "https://formulae.brew.sh/formula/ladder",
+        "provider": "brew"
+      },
+      "sourceArchive": "https://github.com/everywall/ladder/archive/refs/tags/v0.0.23.tar.gz",
+      "version": "0.0.23"
+    },
     "brew:ladspa-sdk": {
       "bottle": {
         "available": true,
@@ -172558,8 +172578,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/leaf-md",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/RivoLink/leaf/archive/refs/tags/1.22.3.tar.gz",
-      "version": "1.22.3"
+      "sourceArchive": "https://github.com/RivoLink/leaf/archive/refs/tags/1.23.0.tar.gz",
+      "version": "1.23.0"
     },
     "brew:leaf-proxy": {
       "bottle": {
@@ -173647,8 +173667,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/letta-code",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/@letta-ai/letta-code/-/letta-code-0.26.0.tgz",
-      "version": "0.26.0"
+      "sourceArchive": "https://registry.npmjs.org/@letta-ai/letta-code/-/letta-code-0.26.1.tgz",
+      "version": "0.26.1"
     },
     "brew:levant": {
       "bottle": {
@@ -179068,6 +179088,15 @@
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
       },
+      "buildDependencies": [
+        "autoconf",
+        "automake",
+        "libtool",
+        "pkgconf"
+      ],
+      "dependencies": [
+        "openssl@3"
+      ],
       "executables": [
         {
           "exposure": "global executable",
@@ -179086,11 +179115,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/libetpan",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/dinhvh/libetpan/archive/refs/tags/1.9.4.tar.gz",
+      "sourceArchive": "https://github.com/dinhvh/libetpan/archive/refs/tags/1.10.tar.gz",
       "usesFromMacos": [
         "cyrus-sasl"
       ],
-      "version": "1.9.4"
+      "version": "1.10"
     },
     "brew:libev": {
       "bottle": {
@@ -183265,8 +183294,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/libisofs",
         "provider": "brew"
       },
-      "sourceArchive": "https://files.libburnia-project.org/releases/libisofs-1.5.8.pl01.tar.gz",
-      "version": "1.5.8.pl01"
+      "sourceArchive": "https://files.libburnia-project.org/releases/libisofs-1.5.8.pl02.tar.gz",
+      "version": "1.5.8.pl02"
     },
     "brew:libjcat": {
       "bottle": {
@@ -188594,8 +188623,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/libplctag",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/libplctag/libplctag/archive/refs/tags/v2.6.16.tar.gz",
-      "version": "2.6.16"
+      "sourceArchive": "https://github.com/libplctag/libplctag/archive/refs/tags/v2.7.0.tar.gz",
+      "version": "2.7.0"
     },
     "brew:libplist": {
       "bottle": {
@@ -190248,8 +190277,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/librealsense",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.57.7.tar.gz",
-      "version": "2.57.7"
+      "sourceArchive": "https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.58.1.tar.gz",
+      "version": "2.58.1"
     },
     "brew:libreplaygain": {
       "bottle": {
@@ -191650,8 +191679,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/libsidplayfp",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/libsidplayfp/libsidplayfp/releases/download/v3.0.0/libsidplayfp-3.0.0.tar.gz",
-      "version": "3.0.0"
+      "sourceArchive": "https://github.com/libsidplayfp/libsidplayfp/releases/download/v3.0.1/libsidplayfp-3.0.1.tar.gz",
+      "version": "3.0.1"
     },
     "brew:libsigc++": {
       "bottle": {
@@ -199522,8 +199551,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/limine",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/Limine-Bootloader/Limine/releases/download/v12.3.0/limine-12.3.0.tar.gz",
-      "version": "12.3.0"
+      "sourceArchive": "https://github.com/Limine-Bootloader/Limine/releases/download/v12.3.1/limine-12.3.1.tar.gz",
+      "version": "12.3.1"
     },
     "brew:link-grammar": {
       "bottle": {
@@ -204497,8 +204526,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/ls-hpack",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/litespeedtech/ls-hpack/archive/refs/tags/v2.3.4.tar.gz",
-      "version": "2.3.4"
+      "sourceArchive": "https://github.com/litespeedtech/ls-hpack/archive/refs/tags/v2.3.5.tar.gz",
+      "version": "2.3.5"
     },
     "brew:ls-lint": {
       "bottle": {
@@ -207351,8 +207380,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/mac",
         "provider": "brew"
       },
-      "sourceArchive": "https://monkeysaudio.com/files/MAC_1296_SDK.zip",
-      "version": "12.96"
+      "sourceArchive": "https://monkeysaudio.com/files/MAC_1297_SDK.zip",
+      "version": "12.97"
     },
     "brew:mac-cleanup-go": {
       "bottle": {
@@ -207791,7 +207820,8 @@
       ],
       "homepage": "https://github.com/metaspartan/mactop",
       "installBehavior": {
-        "postInstallDefined": false
+        "postInstallDefined": false,
+        "service": "declared"
       },
       "license": "MIT",
       "package": {
@@ -221464,8 +221494,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/mkvtoolnix",
         "provider": "brew"
       },
-      "sourceArchive": "https://mkvtoolnix.download/sources/mkvtoolnix-98.0.tar.xz",
-      "version": "98.0"
+      "sourceArchive": "https://mkvtoolnix.download/sources/mkvtoolnix-99.0.tar.xz",
+      "version": "99.0"
     },
     "brew:mlc": {
       "bottle": {
@@ -242100,8 +242130,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/noir",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/owasp-noir/noir/archive/refs/tags/v0.30.0.tar.gz",
-      "version": "0.30.0"
+      "sourceArchive": "https://github.com/owasp-noir/noir/archive/refs/tags/v1.0.0.tar.gz",
+      "usesFromMacos": [
+        "libxml2"
+      ],
+      "version": "1.0.0"
     },
     "brew:nom": {
       "bottle": {
@@ -245165,11 +245198,11 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/nushell",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/nushell/nushell/archive/refs/tags/0.112.2.tar.gz",
+      "sourceArchive": "https://github.com/nushell/nushell/archive/refs/tags/0.113.0.tar.gz",
       "usesFromMacos": [
         "curl"
       ],
-      "version": "0.112.2"
+      "version": "0.113.0"
     },
     "brew:nuspell": {
       "bottle": {
@@ -246151,8 +246184,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/nx",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/nx/-/nx-22.7.2.tgz",
-      "version": "22.7.2"
+      "sourceArchive": "https://registry.npmjs.org/nx/-/nx-22.7.3.tgz",
+      "version": "22.7.3"
     },
     "brew:nyan": {
       "bottle": {
@@ -252257,8 +252290,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/opencode",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.15.7.tgz",
-      "version": "1.15.7"
+      "sourceArchive": "https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.15.10.tgz",
+      "version": "1.15.10"
     },
     "brew:opencolorio": {
       "bottle": {
@@ -256886,8 +256919,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/orbiton",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/xyproto/orbiton/archive/refs/tags/v2.74.2.tar.gz",
-      "version": "2.74.2"
+      "sourceArchive": "https://github.com/xyproto/orbiton/archive/refs/tags/v2.74.3.tar.gz",
+      "version": "2.74.3"
     },
     "brew:orbuculum": {
       "bottle": {
@@ -269384,8 +269417,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/pi-coding-agent",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.75.4.tgz",
-      "version": "0.75.4"
+      "sourceArchive": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.75.5.tgz",
+      "version": "0.75.5"
     },
     "brew:pianobar": {
       "bottle": {
@@ -274312,8 +274345,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/pnpm",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/pnpm/-/pnpm-11.2.2.tgz",
-      "version": "11.2.2"
+      "sourceArchive": "https://registry.npmjs.org/pnpm/-/pnpm-11.3.0.tgz",
+      "version": "11.3.0"
     },
     "brew:pnpm@10": {
       "bottle": {
@@ -277089,6 +277122,7 @@
       },
       "sourceArchive": "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.bz2",
       "usesFromMacos": [
+        "curl",
         "libxml2",
         "libxslt",
         "openldap",
@@ -280613,8 +280647,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/proxelar",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/emanuele-em/proxelar/archive/refs/tags/v0.4.4.tar.gz",
-      "version": "0.4.4"
+      "sourceArchive": "https://github.com/emanuele-em/proxelar/archive/refs/tags/v0.4.5.tar.gz",
+      "version": "0.4.5"
     },
     "brew:proxify": {
       "bottle": {
@@ -283323,8 +283357,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/pvetui",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/devnullvoid/pvetui/archive/refs/tags/v1.3.3.tar.gz",
-      "version": "1.3.3"
+      "sourceArchive": "https://github.com/devnullvoid/pvetui/archive/refs/tags/v1.4.0.tar.gz",
+      "version": "1.4.0"
     },
     "brew:pwgen": {
       "bottle": {
@@ -285118,8 +285152,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/pyscn",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/ludo-technologies/pyscn/archive/refs/tags/v1.22.1.tar.gz",
-      "version": "1.22.1"
+      "sourceArchive": "https://github.com/ludo-technologies/pyscn/archive/refs/tags/v1.22.2.tar.gz",
+      "version": "1.22.2"
     },
     "brew:pyside": {
       "bottle": {
@@ -291657,8 +291691,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/qwen-code",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/@qwen-code/qwen-code/-/qwen-code-0.16.0.tgz",
-      "version": "0.16.0"
+      "sourceArchive": "https://registry.npmjs.org/@qwen-code/qwen-code/-/qwen-code-0.16.1.tgz",
+      "version": "0.16.1"
     },
     "brew:qwt": {
       "bottle": {
@@ -297952,8 +297986,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/remarshal",
         "provider": "brew"
       },
-      "sourceArchive": "https://files.pythonhosted.org/packages/16/0b/ad91623d00c9b362604ad9c4244143f706c48db6e768e2cd26d1fe56dd79/remarshal-2.0.0.tar.gz",
-      "version": "2.0.0"
+      "sourceArchive": "https://files.pythonhosted.org/packages/20/e5/e4ccfea50d705b6ca5984634da0ff27c9b4ccf83ed698642d2ee5bdbca94/remarshal-2.0.1.tar.gz",
+      "version": "2.0.1"
     },
     "brew:remctl": {
       "bottle": {
@@ -299643,8 +299677,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/rhai",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/rhaiscript/rhai/archive/refs/tags/v1.24.0.tar.gz",
-      "version": "1.24.0"
+      "sourceArchive": "https://github.com/rhaiscript/rhai/archive/refs/tags/v1.25.0.tar.gz",
+      "version": "1.25.0"
     },
     "brew:rhash": {
       "bottle": {
@@ -304717,8 +304751,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/rtk",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/rtk-ai/rtk/archive/refs/tags/v0.41.0.tar.gz",
-      "version": "0.41.0"
+      "sourceArchive": "https://github.com/rtk-ai/rtk/archive/refs/tags/v0.42.0.tar.gz",
+      "version": "0.42.0"
     },
     "brew:rtl_433": {
       "bottle": {
@@ -318496,8 +318530,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/signal-cli",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/AsamK/signal-cli/archive/refs/tags/v0.14.3.tar.gz",
-      "version": "0.14.3"
+      "sourceArchive": "https://github.com/AsamK/signal-cli/archive/refs/tags/v0.14.4.1.tar.gz",
+      "version": "0.14.4.1"
     },
     "brew:signalwire-client-c": {
       "bottle": {
@@ -320657,8 +320691,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/skillshare",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/runkids/skillshare/archive/refs/tags/v0.19.20.tar.gz",
-      "version": "0.19.20"
+      "sourceArchive": "https://github.com/runkids/skillshare/archive/refs/tags/v0.19.21.tar.gz",
+      "version": "0.19.21"
     },
     "brew:skinny": {
       "bottle": {
@@ -320728,12 +320762,12 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/skip",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/skiptools/skipstone/archive/refs/tags/1.8.18.tar.gz",
+      "sourceArchive": "https://github.com/skiptools/skipstone/archive/refs/tags/1.8.19.tar.gz",
       "usesFromMacos": [
         "curl",
         "libxml2"
       ],
-      "version": "1.8.18"
+      "version": "1.8.19"
     },
     "brew:skktools": {
       "bottle": {
@@ -320832,8 +320866,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/skm",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/TimothyYe/skm/archive/refs/tags/v0.9.2.tar.gz",
-      "version": "0.9.2"
+      "sourceArchive": "https://github.com/TimothyYe/skm/archive/refs/tags/v0.9.3.tar.gz",
+      "version": "0.9.3"
     },
     "brew:skopeo": {
       "bottle": {
@@ -322989,8 +323023,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/smug",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/ivaaaan/smug/archive/refs/tags/v0.3.17.tar.gz",
-      "version": "0.3.17"
+      "sourceArchive": "https://github.com/ivaaaan/smug/archive/refs/tags/v0.3.18.tar.gz",
+      "version": "0.3.18"
     },
     "brew:sn0int": {
       "bottle": {
@@ -332883,6 +332917,7 @@
           "arm64_sequoia",
           "arm64_sonoma",
           "arm64_tahoe",
+          "sonoma",
           "x86_64_linux"
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
@@ -332908,8 +332943,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/statesmith",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/StateSmith/StateSmith/archive/refs/tags/cli-v0.20.0.tar.gz",
-      "version": "0.20.0"
+      "sourceArchive": "https://github.com/StateSmith/StateSmith/archive/refs/tags/v0.22.2.tar.gz",
+      "version": "0.22.2"
     },
     "brew:static-web-apps-cli": {
       "bottle": {
@@ -335632,8 +335667,8 @@
         ],
         "rootUrl": "https://ghcr.io/v2/homebrew/core"
       },
-      "buildDependencies": [
-        "go"
+      "dependencies": [
+        "node"
       ],
       "executables": [
         {
@@ -335653,8 +335688,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/supabase",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/supabase/cli/archive/refs/tags/v2.98.2.tar.gz",
-      "version": "2.98.2"
+      "sourceArchive": "https://registry.npmjs.org/supabase/-/supabase-2.101.0.tgz",
+      "version": "2.101.0"
     },
     "brew:supabase-mcp-server": {
       "bottle": {
@@ -349039,7 +349074,7 @@
       "usesFromMacos": [
         "bzip2"
       ],
-      "version": "10.2.1"
+      "version": "10.2.3"
     },
     "brew:thorvg": {
       "bottle": {
@@ -349204,8 +349239,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/threatcl",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/threatcl/threatcl/archive/refs/tags/v0.4.10.tar.gz",
-      "version": "0.4.10"
+      "sourceArchive": "https://github.com/threatcl/threatcl/archive/refs/tags/v0.4.11.tar.gz",
+      "version": "0.4.11"
     },
     "brew:three-body": {
       "bottle": {
@@ -351040,8 +351075,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/tldx",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/brandonyoungdev/tldx/archive/refs/tags/v1.3.4.tar.gz",
-      "version": "1.3.4"
+      "sourceArchive": "https://github.com/brandonyoungdev/tldx/archive/refs/tags/v1.4.0.tar.gz",
+      "version": "1.4.0"
     },
     "brew:tllist": {
       "bottle": {
@@ -351570,8 +351605,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/tmux-sessionizer",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/jrmoulton/tmux-sessionizer/archive/refs/tags/v0.5.0.tar.gz",
-      "version": "0.5.0"
+      "sourceArchive": "https://github.com/jrmoulton/tmux-sessionizer/archive/refs/tags/v0.6.0.tar.gz",
+      "version": "0.6.0"
     },
     "brew:tmux-xpanes": {
       "bottle": {
@@ -351735,8 +351770,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/tmuxp",
         "provider": "brew"
       },
-      "sourceArchive": "https://files.pythonhosted.org/packages/e2/1b/b569e807b0e78918ebfbb3667237095fd847ce7280887de2ec93257445f9/tmuxp-1.68.0.tar.gz",
-      "version": "1.68.0"
+      "sourceArchive": "https://files.pythonhosted.org/packages/85/52/73b067221b0c790b7dc4da77f7f74d6171c9473c71f558ae67f69966cb1a/tmuxp-1.70.0.tar.gz",
+      "version": "1.70.0"
     },
     "brew:tmx": {
       "bottle": {
@@ -352022,8 +352057,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/todoist-cli",
         "provider": "brew"
       },
-      "sourceArchive": "https://registry.npmjs.org/@doist/todoist-cli/-/todoist-cli-1.67.0.tgz",
-      "version": "1.67.0"
+      "sourceArchive": "https://registry.npmjs.org/@doist/todoist-cli/-/todoist-cli-1.68.0.tgz",
+      "version": "1.68.0"
     },
     "brew:todoist-cli-go": {
       "bottle": {
@@ -356223,8 +356258,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/tronbyt-server",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/tronbyt/server/archive/refs/tags/v2.2.9.tar.gz",
-      "version": "2.2.9"
+      "sourceArchive": "https://github.com/tronbyt/server/archive/refs/tags/v2.3.0.tar.gz",
+      "version": "2.3.0"
     },
     "brew:truecrack": {
       "bottle": {
@@ -358782,8 +358817,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/ty",
         "provider": "brew"
       },
-      "sourceArchive": "https://files.pythonhosted.org/packages/33/3b/45be6b37d5060d6917bf7f1f234c00d360fc5f8b7486f8a96af640e25661/ty-0.0.38.tar.gz",
-      "version": "0.0.38"
+      "sourceArchive": "https://files.pythonhosted.org/packages/d0/8d/7b5c74dc287fbcb37bae9853cec13bf44717c1735298500e4aeba31579a9/ty-0.0.39.tar.gz",
+      "version": "0.0.39"
     },
     "brew:tygo": {
       "bottle": {
@@ -383705,8 +383740,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/xleak",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/bgreenwell/xleak/archive/refs/tags/v0.2.5.tar.gz",
-      "version": "0.2.5"
+      "sourceArchive": "https://github.com/bgreenwell/xleak/archive/refs/tags/v0.2.6.tar.gz",
+      "version": "0.2.6"
     },
     "brew:xlearn": {
       "bottle": {
@@ -384673,12 +384708,12 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/xmq",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/libxmq/xmq/archive/refs/tags/4.1.0.tar.gz",
+      "sourceArchive": "https://github.com/libxmq/xmq/archive/refs/tags/4.2.0.tar.gz",
       "usesFromMacos": [
         "libxml2",
         "libxslt"
       ],
-      "version": "4.1.0"
+      "version": "4.2.0"
     },
     "brew:xmrig": {
       "bottle": {
@@ -385066,8 +385101,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/xorriso",
         "provider": "brew"
       },
-      "sourceArchive": "https://ftpmirror.gnu.org/gnu/xorriso/xorriso-1.5.8.pl01.tar.gz",
-      "version": "1.5.8.pl01"
+      "sourceArchive": "https://ftpmirror.gnu.org/gnu/xorriso/xorriso-1.5.8.pl02.tar.gz",
+      "version": "1.5.8.pl02"
     },
     "brew:xpdf": {
       "bottle": {
@@ -388515,7 +388550,7 @@
         "provider": "brew"
       },
       "sourceArchive": "https://github.com/yokecd/yoke.git",
-      "version": "0.20.14"
+      "version": "0.20.15"
     },
     "brew:yor": {
       "bottle": {
@@ -388745,8 +388780,8 @@
         "packageManagerUrl": "https://formulae.brew.sh/formula/youplot",
         "provider": "brew"
       },
-      "sourceArchive": "https://github.com/red-data-tools/YouPlot/archive/refs/tags/v0.4.6.tar.gz",
-      "version": "0.4.6"
+      "sourceArchive": "https://github.com/red-data-tools/YouPlot/archive/refs/tags/v0.5.0.tar.gz",
+      "version": "0.5.0"
     },
     "brew:youtubedr": {
       "bottle": {

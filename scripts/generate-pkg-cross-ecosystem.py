@@ -1,0 +1,499 @@
+#!/usr/bin/env python3
+import argparse
+import datetime as dt
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+
+SCHEMA_VERSION = 1
+OUTPUT_PATH = Path("data/pkg-cross-ecosystem.json")
+ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
+
+
+class Terminal:
+    def __init__(self, json_mode: bool = False):
+        self.json_mode = json_mode
+
+    def log(self, message: str) -> None:
+        if not self.json_mode:
+            print(message, file=sys.stderr)
+
+    def ok(self, message: str) -> None:
+        self.log(f"OK {message}")
+
+    def error(self, message: str) -> None:
+        self.log(f"ERROR {message}")
+
+
+def ensure_cwd() -> Path:
+    scripts_dir = Path(__file__).resolve().parent
+    root = scripts_dir.parent
+    os.chdir(root)
+    return root
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def read_json(path: Path, default: Any = None) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if default is not None:
+            return default
+        raise
+
+
+def load_script(name: str, filename: str) -> Any:
+    path = Path(__file__).resolve().parent / filename
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    if spec.loader is None:
+        raise RuntimeError(f"Unable to load {path}")
+    spec.loader.exec_module(module)
+    return module
+
+
+def stable_hash(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def source_files() -> list[Path]:
+    files = [
+        Path("data/pkg-page-enrichment.json"),
+        Path("data/db.json"),
+        Path("data/npm.json"),
+        Path("data/pip.json"),
+        Path("scripts/generate-pkg-cross-ecosystem.py"),
+    ]
+    for root in (Path("data/pkg-pages"),):
+        if root.exists():
+            files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
+    return sorted(path for path in files if path.exists())
+
+
+def input_hash(files: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def normalize_name(value: str) -> str:
+    value = value.lower().strip().removeprefix("@")
+    value = re.sub(r"[@_/+.]+", "-", value)
+    value = re.sub(r"[^a-z0-9-]+", "-", value)
+    value = re.sub(r"-+", "-", value)
+    return value.strip("-")
+
+
+def package_manager_url(page: Any) -> str:
+    return str(getattr(page, "package_manager_url", "") or "")
+
+
+def executable_names(page: Any) -> list[str]:
+    names = set(str(alias) for alias in getattr(page, "aliases", set()))
+    for item in getattr(page, "executables", []) or []:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("target") or item.get("source") or "").strip()
+            if name:
+                names.add(name)
+    for item in getattr(page, "binaries", []) or []:
+        if isinstance(item, dict):
+            name = str(item.get("target") or item.get("source") or "").strip()
+            if name:
+                names.add(name)
+    return sorted(names)
+
+
+def page_facts(page: Any) -> dict[str, Any]:
+    return {
+        "key": page.key,
+        "provider": page.provider,
+        "name": page.name,
+        "summary": page.summary,
+        "homepage": page.homepage,
+        "repository": page.repository,
+        "packageManagerUrl": package_manager_url(page),
+        "version": page.version,
+        "license": page.license,
+        "executables": executable_names(page)[:24],
+        "dependencies": list(page.dependencies)[:32],
+        "keywords": list(page.keywords)[:32],
+        "classifiers": list(page.classifiers)[:16],
+    }
+
+
+def local_pages() -> dict[str, Any]:
+    pages_module = load_script("generate_pkg_pages_for_cross_ecosystem", "generate-pkg-pages.py")
+    sources = pages_module.load_sources()
+    # Avoid a freshness cycle: this artifact feeds the graph and page generator,
+    # so its package facts must not depend on generated graph or prior cross data.
+    sources["pkg_graph"] = {}
+    sources["pkg_cross_ecosystem"] = {}
+    return pages_module.package_pages_from_sources(sources)
+
+
+def local_candidates(pages: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    normalized: dict[str, list[Any]] = defaultdict(list)
+    for page in pages.values():
+        normalized[normalize_name(page.name)].append(page)
+    result: dict[str, list[dict[str, str]]] = {}
+    for page in pages.values():
+        candidates = []
+        for other in sorted(normalized.get(normalize_name(page.name), []), key=lambda item: (item.provider, item.name)):
+            if other.key == page.key:
+                continue
+            if page.provider in {"npm", "pip"} and other.provider != "brew":
+                continue
+            candidates.append({
+                "key": other.key,
+                "provider": other.provider,
+                "name": other.name,
+                "summary": other.summary,
+            })
+        result[page.key] = candidates
+    return result
+
+
+def command(platform: str, manager: str, value: str, confidence: float, evidence: str, kind: str = "package_manager") -> dict[str, Any]:
+    return {
+        "platform": platform,
+        "manager": manager,
+        "command": value,
+        "kind": kind,
+        "confidence": round(float(confidence), 2),
+        "evidence": evidence,
+    }
+
+
+def av_command(package_key: str) -> dict[str, Any]:
+    return command(
+        "portable",
+        "Automic Vault",
+        f"sudo av install {package_key}",
+        1.0,
+        "deterministic local package key",
+        "automic_vault",
+    )
+
+
+def native_commands(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    provider = facts["provider"]
+    name = facts["name"]
+    if provider == "brew":
+        return [
+            command("macos", "Homebrew", f"brew install {name}", 1.0, "local Homebrew formula metadata"),
+            command("linux", "Homebrew", f"brew install {name}", 0.9, "Homebrew formula metadata supports Linuxbrew where bottles or source builds are available"),
+        ]
+    if provider == "cask":
+        return [command("macos", "Homebrew Cask", f"brew install --cask {name}", 1.0, "local Homebrew cask metadata")]
+    if provider == "npm":
+        return [command("portable", "npm", f"npm install -g {name}", 1.0, "local npm package metadata")]
+    if provider == "pip":
+        return [command("portable", "pip", f"pip install {name}", 1.0, "local PyPI package metadata")]
+    return []
+
+
+def inferred_brew_commands(name: str) -> list[dict[str, Any]]:
+    evidence = "agent-inferred from package-name convention; verify availability with the package manager before use"
+    nix_attr = re.sub(r"[^A-Za-z0-9_.+-]", "-", name)
+    return [
+        command("macos", "MacPorts", f"sudo port install {name}", 0.42, evidence),
+        command("macos", "Nix", f"nix profile install nixpkgs#{nix_attr}", 0.42, evidence),
+        command("linux", "apt", f"sudo apt install {name}", 0.38, evidence),
+        command("linux", "dnf", f"sudo dnf install {name}", 0.38, evidence),
+        command("linux", "pacman", f"sudo pacman -S {name}", 0.38, evidence),
+        command("linux", "apk", f"sudo apk add {name}", 0.34, evidence),
+        command("linux", "zypper", f"sudo zypper install {name}", 0.34, evidence),
+        command("linux", "Nix", f"nix profile install nixpkgs#{nix_attr}", 0.42, evidence),
+        command("windows", "winget", f"winget install {name}", 0.34, evidence),
+        command("windows", "Chocolatey", f"choco install {name}", 0.34, evidence),
+        command("windows", "Scoop", f"scoop install {name}", 0.34, evidence),
+    ]
+
+
+def local_link(candidate: dict[str, str], reason: str, evidence: str, confidence: float = 0.78) -> dict[str, Any]:
+    return {
+        "provider": candidate["provider"],
+        "name": candidate["name"],
+        "label": candidate["name"],
+        "rel": "same_software_cross_ecosystem",
+        "reason": reason,
+        "confidence": confidence,
+        "evidence": evidence,
+    }
+
+
+def local_curate_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    target = packet["target"]
+    package_key = target["key"]
+    commands = [av_command(package_key)]
+    commands.extend(native_commands(target))
+    if target["provider"] == "brew":
+        commands.extend(inferred_brew_commands(target["name"]))
+    links = [
+        local_link(
+            candidate,
+            "Same normalized package name exists in another local package ecosystem.",
+            "normalized local package name",
+        )
+        for candidate in packet.get("localCandidates") or []
+    ]
+    return {"commands": dedupe_commands(commands), "localLinks": links}
+
+
+def dedupe_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = []
+    seen = set()
+    for item in commands:
+        key = (item.get("platform"), item.get("manager"), item.get("command"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def run_agent(agent_cmd: str, packet: dict[str, Any]) -> dict[str, Any]:
+    result = subprocess.run(
+        shlex.split(agent_cmd),
+        input=json.dumps(packet, sort_keys=True),
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    parsed = json.loads(result.stdout)
+    if not isinstance(parsed, dict):
+        raise ValueError("agent command did not return a JSON object")
+    return parsed
+
+
+def build_entry(
+    package_key: str,
+    facts: dict[str, Any],
+    candidates: list[dict[str, str]],
+    existing: dict[str, Any] | None,
+    agent_cmd: str,
+) -> dict[str, Any]:
+    facts_hash = stable_hash(facts)
+    candidate_hash = stable_hash(candidates)
+    if (
+        existing
+        and existing.get("facts_hash") == facts_hash
+        and existing.get("candidate_hash") == candidate_hash
+        and isinstance(existing.get("commands"), list)
+    ):
+        return existing
+    packet = {
+        "task": (
+            "Return install commands grouped by controlled platform keys and local cross-ecosystem links. "
+            "The first command must remain the supplied Automic Vault command. Use only supplied local link candidates."
+        ),
+        "allowedPlatforms": sorted(ALLOWED_PLATFORMS),
+        "target": facts,
+        "requiredFirstCommand": av_command(package_key),
+        "localCandidates": candidates,
+    }
+    curated = run_agent(agent_cmd, packet) if agent_cmd else local_curate_packet(packet)
+    commands = curated.get("commands") or []
+    if not commands or not isinstance(commands, list):
+        commands = [av_command(package_key)]
+    if not commands or commands[0].get("command") != av_command(package_key)["command"]:
+        commands = [av_command(package_key)] + [item for item in commands if isinstance(item, dict)]
+    return {
+        "target": package_key,
+        "facts_hash": facts_hash,
+        "candidate_hash": candidate_hash,
+        "curated_at": utc_now(),
+        "curator": "agent-cmd" if agent_cmd else "codex-local-cross-ecosystem",
+        "commands": dedupe_commands([item for item in commands if isinstance(item, dict)]),
+        "localLinks": curated.get("localLinks") or [],
+    }
+
+
+def validate_command(package_key: str, index: int, item: Any) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(item, dict):
+        return [f"{package_key}: command {index} is not an object"]
+    platform = str(item.get("platform") or "")
+    if platform not in ALLOWED_PLATFORMS:
+        failures.append(f"{package_key}: command {index} has invalid platform {platform!r}")
+    if not str(item.get("manager") or "").strip():
+        failures.append(f"{package_key}: command {index} is missing manager")
+    if not str(item.get("command") or "").strip():
+        failures.append(f"{package_key}: command {index} is missing command")
+    try:
+        confidence = float(item.get("confidence"))
+    except (TypeError, ValueError):
+        failures.append(f"{package_key}: command {index} has invalid confidence")
+    else:
+        if confidence < 0 or confidence > 1:
+            failures.append(f"{package_key}: command {index} has out-of-range confidence")
+    if index > 0 and not str(item.get("evidence") or "").strip():
+        failures.append(f"{package_key}: command {index} is missing evidence")
+    return failures
+
+
+def validate_artifact(artifact: dict[str, Any], page_keys: set[str]) -> list[str]:
+    failures: list[str] = []
+    if artifact.get("schema") != SCHEMA_VERSION:
+        failures.append(f"schema is {artifact.get('schema')!r}, expected {SCHEMA_VERSION}")
+    packages = artifact.get("packages")
+    if not isinstance(packages, dict):
+        return failures + ["packages must be an object"]
+    missing = sorted(page_keys - set(packages))
+    if missing:
+        failures.append(f"{len(missing):,} local package pages are missing cross-ecosystem entries: {', '.join(missing[:12])}")
+    extra = sorted(set(packages) - page_keys)
+    if extra:
+        failures.append(f"{len(extra):,} cross-ecosystem entries do not exist locally: {', '.join(extra[:12])}")
+    for package_key, entry in packages.items():
+        if not isinstance(entry, dict):
+            failures.append(f"{package_key}: entry must be an object")
+            continue
+        commands = entry.get("commands")
+        if not isinstance(commands, list) or not commands:
+            failures.append(f"{package_key}: commands must be a non-empty list")
+            continue
+        required = f"sudo av install {package_key}"
+        if commands[0].get("command") != required or commands[0].get("kind") != "automic_vault":
+            failures.append(f"{package_key}: first command must be {required!r}")
+        for index, item in enumerate(commands):
+            failures.extend(validate_command(package_key, index, item))
+        links = entry.get("localLinks") or []
+        if not isinstance(links, list):
+            failures.append(f"{package_key}: localLinks must be a list")
+            continue
+        for link in links:
+            if not isinstance(link, dict):
+                failures.append(f"{package_key}: localLinks contains non-object")
+                continue
+            target_key = f"{link.get('provider') or ''}:{link.get('name') or ''}"
+            if target_key not in page_keys:
+                failures.append(f"{package_key}: local link target does not exist locally: {target_key}")
+            if target_key == package_key:
+                failures.append(f"{package_key}: local link points at itself")
+            if not str(link.get("reason") or "").strip():
+                failures.append(f"{package_key}: local link to {target_key} is missing reason")
+            if not str(link.get("evidence") or "").strip():
+                failures.append(f"{package_key}: local link to {target_key} is missing evidence")
+    return failures
+
+
+def build_cross_ecosystem(agent_cmd: str = "", existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    existing = existing or read_json(OUTPUT_PATH, {})
+    pages = local_pages()
+    facts_by_key = {key: page_facts(page) for key, page in pages.items()}
+    candidates_by_key = local_candidates(pages)
+    existing_packages = existing.get("packages") if isinstance(existing, dict) else {}
+    packages: dict[str, Any] = {}
+    for package_key in sorted(pages):
+        packages[package_key] = build_entry(
+            package_key,
+            facts_by_key[package_key],
+            candidates_by_key.get(package_key, []),
+            (existing_packages or {}).get(package_key) if isinstance(existing_packages, dict) else None,
+            agent_cmd,
+        )
+    files = source_files()
+    artifact = {
+        "schema": SCHEMA_VERSION,
+        "generated_at": utc_now(),
+        "description": "Agent-oriented install command and cross-ecosystem package data for generated package pages.",
+        "input_hash": input_hash(files),
+        "input_files": [path.as_posix() for path in files],
+        "platform_definitions": {
+            "macos": "macOS package managers and install surfaces.",
+            "linux": "Linux package managers and install surfaces.",
+            "windows": "Windows package managers and install surfaces.",
+            "portable": "Automic Vault and language-level package managers that are not tied to one OS.",
+        },
+        "packages": packages,
+    }
+    failures = validate_artifact(artifact, set(pages))
+    if failures:
+        raise ValueError("; ".join(failures[:8]))
+    return artifact
+
+
+def comparable_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
+    result = json.loads(json.dumps(artifact))
+    result.pop("generated_at", None)
+    for entry in (result.get("packages") or {}).values():
+        if isinstance(entry, dict):
+            entry.pop("curated_at", None)
+    return result
+
+
+def check_current(path: Path, terminal: Terminal) -> int:
+    if not path.exists():
+        terminal.error(f"Missing {path}. Run scripts/generate-pkg-cross-ecosystem.py.")
+        return 1
+    try:
+        current = read_json(path)
+        pages = local_pages()
+        failures = validate_artifact(current, set(pages))
+        expected = build_cross_ecosystem(existing=current)
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
+        terminal.error(f"Unable to validate {path}: {err}")
+        return 1
+    if comparable_artifact(current) != comparable_artifact(expected):
+        failures.append("cross-ecosystem artifact does not match current package facts or candidate fingerprints")
+    if failures:
+        terminal.error("Package cross-ecosystem data is stale.")
+        for failure in failures[:24]:
+            terminal.log(f"  - {failure}")
+        terminal.log("Run scripts/generate-pkg-cross-ecosystem.py, regenerate the package graph, pages, and search index.")
+        return 1
+    terminal.ok(f"Package cross-ecosystem data is current ({len(current.get('packages') or {}):,} packages)")
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate cross-ecosystem install commands for package pages.")
+    parser.add_argument("--check", action="store_true", help="Validate the cross-ecosystem artifact without calling an agent.")
+    parser.add_argument("--output", default=str(OUTPUT_PATH), help=f"Path to write or validate. Defaults to {OUTPUT_PATH}.")
+    parser.add_argument("--agent-cmd", default=os.environ.get("PKG_CROSS_ECOSYSTEM_AGENT_CMD", ""), help="Optional command that reads a JSON packet on stdin and returns JSON commands and localLinks.")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable status.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    ensure_cwd()
+    terminal = Terminal(json_mode=args.json)
+    output_path = Path(args.output)
+    if args.check:
+        return check_current(output_path, terminal)
+    try:
+        existing = read_json(output_path, {})
+        artifact = build_cross_ecosystem(agent_cmd=args.agent_cmd, existing=existing)
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
+        terminal.error(f"Failed to build package cross-ecosystem data: {err}")
+        return 1
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    count = len(artifact.get("packages") or {})
+    terminal.ok(f"Wrote {count:,} package cross-ecosystem entries to {output_path}")
+    if args.json:
+        print(json.dumps({"ok": True, "output": str(output_path), "package_count": count}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

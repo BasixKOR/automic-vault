@@ -47,6 +47,7 @@ class PackagePage:
     build_dependencies: list[str] = field(default_factory=list)
     uses_from_macos: list[str] = field(default_factory=list)
     install: dict[str, Any] = field(default_factory=dict)
+    install_commands: list[dict[str, Any]] = field(default_factory=list)
     executables: list[dict[str, Any]] = field(default_factory=list)
     install_behavior: dict[str, Any] = field(default_factory=dict)
     bottle: dict[str, Any] = field(default_factory=dict)
@@ -366,6 +367,8 @@ def load_sources() -> dict[str, Any]:
                 sources["pkg_page_enrichment"] = read_json(Path("data/pkg-page-enrichment.json"), {})
             if Path("data/pkg-graph.json").exists():
                 sources["pkg_graph"] = read_json(Path("data/pkg-graph.json"), {})
+            if Path("data/pkg-cross-ecosystem.json").exists():
+                sources["pkg_cross_ecosystem"] = read_json(Path("data/pkg-cross-ecosystem.json"), {})
             return sources
 
     return {
@@ -375,6 +378,7 @@ def load_sources() -> dict[str, Any]:
         "isotopes": read_json(Path("data/isotopes.json"), {}),
         "npm": read_json(Path("data/npm.json"), {}),
         "pkg_graph": read_json(Path("data/pkg-graph.json"), {}),
+        "pkg_cross_ecosystem": read_json(Path("data/pkg-cross-ecosystem.json"), {}),
         "pkg_page_enrichment": read_json(Path("data/pkg-page-enrichment.json"), {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
@@ -496,6 +500,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
     apply_package_page_supplements(pages)
     apply_package_graph(pages, sources.get("pkg_graph") or {})
+    apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
 
     return pages
 
@@ -609,6 +614,27 @@ def apply_package_graph(pages: dict[str, PackagePage], graph: dict[str, Any]) ->
             intents.get("packageHubs") if isinstance(intents.get("packageHubs"), list) else [],
         )
         page.source_notes.append("package relationship graph")
+
+
+def apply_package_cross_ecosystem(pages: dict[str, PackagePage], cross_ecosystem: dict[str, Any]) -> None:
+    packages = cross_ecosystem.get("packages") if isinstance(cross_ecosystem, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key, entry in packages.items():
+        if not isinstance(package_key, str) or not isinstance(entry, dict):
+            continue
+        page = pages.get(package_key)
+        if page is None:
+            continue
+        commands = entry.get("commands")
+        if isinstance(commands, list):
+            page.install_commands = [item for item in commands if isinstance(item, dict)]
+        page.also_available_via = merge_related_links(
+            page.also_available_via,
+            entry.get("localLinks") if isinstance(entry.get("localLinks"), list) else [],
+            limit=12,
+        )
+        page.source_notes.append("cross-ecosystem install command graph")
 
 
 def merge_related_links(existing: list[dict[str, Any]], generated: list[Any], limit: int = 24) -> list[dict[str, Any]]:
@@ -1480,9 +1506,9 @@ def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
         install_command(page),
         "```",
         "",
-        "## Package Facts",
-        "",
     ]
+    lines.extend(md_install_command_groups(page))
+    lines.extend(["## Package Facts", ""])
     fact_rows = [
         ("Package key", page.key),
         ("Package manager", package_manager_label(page)),
@@ -1510,6 +1536,43 @@ def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
     lines.extend(md_related_section(page))
     lines.extend(md_section_list("Sources", page.source_notes))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def md_install_command_groups(page: PackagePage) -> list[str]:
+    commands = install_command_entries(page)[1:]
+    if not commands:
+        return []
+    labels = {
+        "macos": "macOS",
+        "linux": "Linux",
+        "windows": "Windows",
+        "portable": "Portable and language managers",
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {"macos": [], "linux": [], "windows": [], "portable": []}
+    for item in commands:
+        platform = str(item.get("platform") or "portable")
+        if platform not in grouped:
+            platform = "portable"
+        grouped[platform].append(item)
+    lines: list[str] = ["Additional install commands:", ""]
+    for platform in ("macos", "linux", "windows", "portable"):
+        items = grouped.get(platform) or []
+        if not items:
+            continue
+        lines.extend([f"### {labels[platform]}", ""])
+        for item in items:
+            manager = md_text(item.get("manager") or "shell")
+            command_text = md_text(item.get("command") or "")
+            try:
+                confidence_text = f"{float(item.get('confidence')):.0%}"
+            except (TypeError, ValueError):
+                confidence_text = "unknown confidence"
+            evidence = md_text(item.get("evidence") or "")
+            lines.extend([f"- {manager} ({confidence_text}):", "", "```sh", command_text, "```"])
+            if evidence:
+                lines.extend(["", f"  Evidence: {evidence}"])
+            lines.append("")
+    return lines
 
 
 def md_fact_lines(rows: list[tuple[str, Any]]) -> list[str]:
@@ -1729,9 +1792,13 @@ def package_manager_label(page: PackagePage) -> str:
 
 
 def install_command(page: PackagePage) -> str:
-    command = page.install.get("command")
-    if command:
-        return str(command)
+    commands = install_command_entries(page)
+    if commands:
+        return str(commands[0].get("command") or "")
+    return f"sudo av install {page.key}"
+
+
+def native_install_command(page: PackagePage) -> str:
     if page.provider == "brew":
         return f"brew install {page.name}"
     if page.provider == "cask":
@@ -1741,6 +1808,34 @@ def install_command(page: PackagePage) -> str:
     if page.provider == "pip":
         return f"pip install {page.name}"
     return ""
+
+
+def install_command_entries(page: PackagePage) -> list[dict[str, Any]]:
+    if page.install_commands:
+        return page.install_commands
+    entries = [
+        {
+            "platform": "portable",
+            "manager": "Automic Vault",
+            "command": f"sudo av install {page.key}",
+            "kind": "automic_vault",
+            "confidence": 1.0,
+            "evidence": "deterministic local package key",
+        }
+    ]
+    native = native_install_command(page)
+    if native:
+        platform = "macos" if page.provider in {"brew", "cask"} else "portable"
+        manager = package_manager_label(page)
+        entries.append({
+            "platform": platform,
+            "manager": manager,
+            "command": native,
+            "kind": "package_manager",
+            "confidence": 1.0,
+            "evidence": f"{manager} package metadata",
+        })
+    return entries
 
 
 def geiger_level_label(geiger: dict[str, Any]) -> str:
@@ -1754,7 +1849,15 @@ def geiger_confidence_label(geiger: dict[str, Any]) -> str:
 
 
 def render_install(page: PackagePage) -> str:
-    command = install_command(page)
+    commands = install_command_entries(page)
+    primary = commands[0] if commands else {
+        "command": f"sudo av install {page.key}",
+        "manager": "Automic Vault",
+        "platform": "portable",
+        "confidence": 1.0,
+        "evidence": "deterministic local package key",
+    }
+    command = str(primary.get("command") or "")
     notes = page.install.get("notes") or []
     note_items = "".join(f"<li>{html_escape(note)}</li>" for note in notes[:6])
     manager = page.package_manager_url
@@ -1763,20 +1866,22 @@ def render_install(page: PackagePage) -> str:
         if manager
         else f"{html_escape(package_manager_label(page))} metadata was not linked in local data."
     )
+    platform_html = render_platform_install_commands(commands[1:])
     return f"""
 <section id="install" class="pkg-section install-section" aria-labelledby="install-title">
   <div class="install-command-panel">
     <div>
       <p class="section-kicker">install</p>
-      <h2 id="install-title">Install command</h2>
+      <h2 id="install-title">Install with Automic Vault</h2>
     </div>
     <div class="terminal-block">
       <div class="terminal-head">
-        <span>shell</span>
+        <span>{html_escape(primary.get('manager') or 'shell')}</span>
         <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
       </div>
       <pre><code>{html_escape(command)}</code></pre>
     </div>
+    {platform_html}
   </div>
   <div class="install-notes-grid">
     <article>
@@ -1789,6 +1894,63 @@ def render_install(page: PackagePage) -> str:
     </article>
   </div>
 </section>
+"""
+
+
+def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
+    grouped: dict[str, list[dict[str, Any]]] = {"macos": [], "linux": [], "windows": [], "portable": []}
+    for item in commands:
+        platform = str(item.get("platform") or "portable")
+        if platform not in grouped:
+            platform = "portable"
+        grouped[platform].append(item)
+    labels = {
+        "macos": "macOS",
+        "linux": "Linux",
+        "windows": "Windows",
+        "portable": "Portable and language managers",
+    }
+    sections = []
+    for platform in ("macos", "linux", "windows", "portable"):
+        items = grouped.get(platform) or []
+        if not items:
+            continue
+        rows = "".join(install_command_row(item) for item in items)
+        sections.append(f"""
+<article>
+  <h3>{html_escape(labels[platform])}</h3>
+  <div class="install-command-list">{rows}</div>
+</article>
+""")
+    if not sections:
+        return ""
+    return f"""
+<div class="platform-install-grid" aria-label="Platform install commands">
+  {''.join(sections)}
+</div>
+"""
+
+
+def install_command_row(item: dict[str, Any]) -> str:
+    command_text = str(item.get("command") or "")
+    manager = str(item.get("manager") or "shell")
+    evidence = str(item.get("evidence") or "")
+    confidence = item.get("confidence")
+    try:
+        confidence_value = float(confidence)
+    except (TypeError, ValueError):
+        confidence_value = 0.0
+    confidence_label = "verified" if confidence_value >= 0.9 else "inferred"
+    return f"""
+<div class="install-command-row">
+  <div class="install-command-meta">
+    <strong>{html_escape(manager)}</strong>
+    <span>{html_escape(confidence_label)} · {html_escape(f'{confidence_value:.0%}')}</span>
+  </div>
+  <code>{html_escape(command_text)}</code>
+  <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager)} install command">Copy</button>
+  {f'<p>{html_escape(evidence)}</p>' if evidence else ''}
+</div>
 """
 
 
@@ -2260,11 +2422,16 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         "@type": "HowTo",
         "@id": f"{url}#install-howto",
         "name": f"Install {page.display_name}",
-        "step": [{
-            "@type": "HowToStep",
-            "name": "Run install command",
-            "text": install_command(page),
-        }],
+        "step": [
+            {
+                "@type": "HowToStep",
+                "position": index + 1,
+                "name": f"Run {item.get('manager') or 'install'} command",
+                "text": str(item.get("command") or ""),
+            }
+            for index, item in enumerate(install_command_entries(page)[:12])
+            if str(item.get("command") or "").strip()
+        ],
     }
     return {
         "@context": "https://schema.org",
@@ -2725,6 +2892,69 @@ h1 {
   font-size: clamp(1rem, 2vw, 1.25rem);
   line-height: 1.5;
 }
+.platform-install-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.platform-install-grid article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.platform-install-grid h3 {
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.install-command-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.install-command-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.install-command-row:first-child { border-top: 0; padding-top: 0; }
+.install-command-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.install-command-meta strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.1;
+}
+.install-command-meta span {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.install-command-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+}
+.install-command-row p {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  color: var(--dim);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
 .install-notes-grid,
 .signal-grid,
 .related-columns {
@@ -3038,7 +3268,7 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   .site-shell { width: min(calc(100% - 24px), var(--max)); margin: 12px auto; }
   .masthead, .site-footer { align-items: flex-start; flex-direction: column; }
   .nav { width: 100%; flex-wrap: wrap; gap: 12px 18px; }
-  .pkg-hero, .split-section, .security-section, .pkg-search-section, .install-section, .signal-grid, .related-columns { grid-template-columns: 1fr; }
+  .pkg-hero, .split-section, .security-section, .pkg-search-section, .install-section, .signal-grid, .related-columns, .platform-install-grid, .install-command-row { grid-template-columns: 1fr; }
   .pkg-hero { padding-top: 38px; }
   h1 { font-size: clamp(2.8rem, 15vw, 4.8rem); }
   .lede { font-size: 1.32rem; }

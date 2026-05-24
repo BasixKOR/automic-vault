@@ -1,16 +1,16 @@
 {
   "coverage": {
-    "curatedPackageCount": 1306,
-    "isolatedIndexablePackageCount": 1306,
+    "curatedPackageCount": 1265,
+    "isolatedIndexablePackageCount": 1265,
     "providerCounts": {
-      "brew": 903,
-      "cask": 53,
-      "npm": 348,
-      "pip": 2
+      "brew": 902,
+      "cask": 52,
+      "npm": 310,
+      "pip": 1
     }
   },
   "description": "Agent-curated package graph links for indexable package pages that lack deterministic internal navigation.",
-  "generated_at": "2026-05-24T21:05:20+00:00",
+  "generated_at": "2026-05-24T23:32:10+00:00",
   "hubs": {
     "archive-compression-tools": {
       "description": "Packages that create, inspect, extract, or transform archives and compressed files.",
@@ -30,28 +30,28 @@
       "description": "Packages that query, migrate, inspect, or operate databases and data files.",
       "kicker": "data stores",
       "label": "Database and data packages",
-      "packageCount": 36,
+      "packageCount": 34,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "desktop-app-packages": {
       "description": "Homebrew Cask and desktop-app packages that are still useful package-page navigation targets.",
       "kicker": "macOS applications",
       "label": "Desktop app packages",
-      "packageCount": 44,
+      "packageCount": 43,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "developer-build-tools": {
       "description": "Build systems, compilers, generators, and developer tools that influence local source trees and artifacts.",
       "kicker": "compilers and build steps",
       "label": "Developer build packages",
-      "packageCount": 106,
+      "packageCount": 103,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "documentation-tools": {
       "description": "Documentation generators, manual page tools, static site tools, and publishing helpers.",
       "kicker": "docs and publishing",
       "label": "Documentation packages",
-      "packageCount": 28,
+      "packageCount": 26,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "game-emulation-tools": {
@@ -65,7 +65,7 @@
       "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
       "kicker": "runtime surfaces",
       "label": "Language runtime packages",
-      "packageCount": 74,
+      "packageCount": 71,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "media-graphics-tools": {
@@ -79,21 +79,21 @@
       "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
       "kicker": "remote connections",
       "label": "Networking and protocol packages",
-      "packageCount": 36,
+      "packageCount": 33,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "npm-cli-packages": {
       "description": "npm packages with local package pages and command-line or developer workflow metadata.",
       "kicker": "Node package commands",
       "label": "npm command packages",
-      "packageCount": 46,
+      "packageCount": 38,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "package-ecosystem-tools": {
       "description": "Packages that install, publish, inspect, or automate other package ecosystems.",
       "kicker": "registries and installers",
       "label": "Package ecosystem packages",
-      "packageCount": 16,
+      "packageCount": 14,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "scientific-computing-tools": {
@@ -114,21 +114,21 @@
       "description": "Agent-curated command-line utilities with local package pages and install metadata.",
       "kicker": "command-line workflows",
       "label": "Terminal utility packages",
-      "packageCount": 108,
+      "packageCount": 107,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "text-processing-tools": {
       "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
       "kicker": "files and streams",
       "label": "Text processing packages",
-      "packageCount": 124,
+      "packageCount": 114,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "web-dev-tools": {
       "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
       "kicker": "frontend and web stacks",
       "label": "Web development packages",
-      "packageCount": 55,
+      "packageCount": 49,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     }
   },
@@ -165,7 +165,7 @@
     "data/pkg-pages/brew/awscli.json",
     "scripts/generate-pkg-graph-curation.py"
   ],
-  "input_hash": "cdf03408a6ef950e08e5dd4694eb68ba7e30d1f969ac300b4f2eebba5e5f0fcb",
+  "input_hash": "fcf81cbecd8a42c5ca42575cb5bbd36ebc7a71578effafa829dd7b46955fd9b6",
   "packages": {
     "brew:aamath": {
       "candidate_hash": "3c81a04e7e67a6ad27427251d98a359accafc8d58fc5ced2c164a8929ad82227",
@@ -1366,64 +1366,6 @@
         ]
       },
       "target": "brew:aoeui"
-    },
-    "brew:apidoc": {
-      "candidate_hash": "161b21e8b3271d9ffb2bdb0bdad9cd4c1f6a697b92c115f577a40a00aea65c6a",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "bd202ecfd5dca9e4741d295ebbeffaf4dd002407e0a9fa3cecf71025f73915a5",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "apidoc",
-            "name": "apidoc",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Documentation generators, manual page tools, static site tools, and publishing helpers.",
-            "kicker": "docs and publishing",
-            "label": "Documentation packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "documentation-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "apidoc",
-            "name": "apidoc",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: api, apidoc, documentation, generator, restful.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.62,
-            "evidence": "bounded local candidate similarity",
-            "label": "@openapitools/openapi-generator-cli",
-            "name": "@openapitools/openapi-generator-cli",
-            "provider": "npm",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: api, documentation, generator, restful.",
-            "rel": "adjacent_workflow"
-          },
-          {
-            "confidence": 0.6,
-            "evidence": "bounded local candidate similarity",
-            "label": "jsdoc3",
-            "name": "jsdoc3",
-            "provider": "brew",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: api, documentation, generator.",
-            "rel": "adjacent_workflow"
-          }
-        ]
-      },
-      "target": "brew:apidoc"
     },
     "brew:apm-bash-completion": {
       "candidate_hash": "e2c62e62edfb5df641c8fa6ffb6e6998752ba2312e32a019be62cac7b197a387",
@@ -18080,6 +18022,54 @@
         ]
       },
       "target": "brew:janet"
+    },
+    "brew:jcal": {
+      "candidate_hash": "8a2fbab5589ec0a04464cf034164c774f067f4e7d7d2045e812192b86dbec369",
+      "curated_at": "2026-05-24T23:32:10+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "62eab4351feb3d01212c7cb53d9dc6a89be1de02801d381ead16a1eef48ddaba",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.71,
+            "evidence": "bounded local candidate similarity",
+            "label": "lout",
+            "name": "lout",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: like.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.68,
+            "evidence": "bounded local candidate similarity",
+            "label": "acl",
+            "name": "acl",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.68,
+            "evidence": "bounded local candidate similarity",
+            "label": "atool",
+            "name": "atool",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:jcal"
     },
     "brew:jenv": {
       "candidate_hash": "6d75aa624381363fae544a0bde6492c3bb3db092a4d7e4b9e63f749f9727f9bb",
@@ -41025,64 +41015,6 @@
       },
       "target": "brew:wordplay"
     },
-    "brew:wrangler": {
-      "candidate_hash": "1da194dd06bcca2f0cc249aa7a2ecf5d430a7c1d5ef7a2967d5d9d662df339bd",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "6cb59ad5c8e8567412d877be9e93e829178d810d12ff465878c4b570bdbf77a3",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "wrangler",
-            "name": "wrangler",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
-            "kicker": "Homebrew long tail",
-            "label": "Homebrew utility packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "brew-utility-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "wrangler",
-            "name": "wrangler",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: wrangler.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.53,
-            "evidence": "bounded local candidate similarity",
-            "label": "apache-flink-cdc",
-            "name": "apache-flink-cdc",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: integration.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.53,
-            "evidence": "bounded local candidate similarity",
-            "label": "asdf",
-            "name": "asdf",
-            "provider": "brew",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: erlang.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "brew:wrangler"
-    },
     "brew:wtf": {
       "candidate_hash": "eb1ce89472c64091e51ad1fade67c4a053c1f065491af15b802e1cd40692e64e",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -44058,64 +43990,6 @@
         ]
       },
       "target": "cask:coderabbit"
-    },
-    "cask:codex": {
-      "candidate_hash": "8752e76ec1bda3eb77da2e3d49409ec8bd47a4e3e6ba946ce87eb5bed38e8f68",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "4953c689532aa45c445c0ba91fb774566a6bfcce098033f334c58297d330145a",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "codex",
-            "name": "codex",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Homebrew Cask and desktop-app packages that are still useful package-page navigation targets.",
-            "kicker": "macOS applications",
-            "label": "Desktop app packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "desktop-app-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "codex",
-            "name": "codex",
-            "provider": "npm",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: codex.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.84,
-            "evidence": "bounded local candidate similarity",
-            "label": "codex-acp",
-            "name": "codex-acp",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: codex.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.82,
-            "evidence": "bounded local candidate similarity",
-            "label": "vtcode",
-            "name": "vtcode",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: agent, coding, ripgrep.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "cask:codex"
     },
     "cask:confluent-cli": {
       "candidate_hash": "4777bb0466051ec89ad8c17ab8647d1904eac6f4ce206f311eb624a285acaee4",
@@ -49301,180 +49175,6 @@
       },
       "target": "npm:add-mcp"
     },
-    "npm:addons-linter": {
-      "candidate_hash": "266cf0eb3d2e10ea5fc85ed442798b2b5dd23af03190d88e2a4db8dfdb71802f",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "4b897eb1a62943b0fc8d27dab5fc25f23d44d5de3858a7e49cfbfe100ab7260e",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "addons-linter",
-            "name": "addons-linter",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "addons-linter",
-            "name": "addons-linter",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: add, add-ons, addons, addons-linter, linter.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "web-ext",
-            "name": "web-ext",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: add, add-ons, addons, addons-linter, browser.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mocha-webpack",
-            "name": "mocha-webpack",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: map, source, source-map-support, support, utils.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:addons-linter"
-    },
-    "npm:adr-tools": {
-      "candidate_hash": "40426f161084c042d811100831073ce686dffeebb582a6362f2a7a331fc4bb1f",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "a723830038004fb6a1004178cc3d250bed6f8132b09254c9fb8a82cde3dbf623",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "adr-tools",
-            "name": "adr-tools",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
-            "kicker": "runtime surfaces",
-            "label": "Language runtime packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "language-runtime-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "adr-tools",
-            "name": "adr-tools",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: adr, adr-tools, architecture, decision, records.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "adr-viewer",
-            "name": "adr-viewer",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: adr, architecture, decision, records.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ggit",
-            "name": "ggit",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: colors, commander, find, javascript, moment.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:adr-tools"
-    },
-    "npm:agent-browser": {
-      "candidate_hash": "5d2bc991212c018307eb827bb4c6ebf7885c7394af37bbc1ad791ff236110a03",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "88716cc104fa3c3ed96b53b17ab35b997e80f5345021e19daf0236ed07a9804d",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "agent-browser",
-            "name": "agent-browser",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "agent-browser",
-            "name": "agent-browser",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: agent, agent-browser, agents, ai, automation.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "@claude-flow/cli",
-            "name": "@claude-flow/cli",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: agent, agents, ai, automation.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "acpx",
-            "name": "acpx",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: agent, agents, ai, headless.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:agent-browser"
-    },
     "npm:alpic": {
       "candidate_hash": "51d3606a010fcb615a0231bfacba315943fd83011e3fdde343e08c15176f72a6",
       "curated_at": "2026-05-24T21:02:45+00:00",
@@ -49618,64 +49318,6 @@
         ]
       },
       "target": "npm:antora"
-    },
-    "npm:apidoc": {
-      "candidate_hash": "7d9667be99b1b38d2b088a2202618099ec6ee73f6c33f243a1d782e42c0c67f7",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "bc4810686b3d21fa2589a02035fda34b116dcb8dc79b0991b954e6beb6da2ffd",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "apidoc",
-            "name": "apidoc",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Documentation generators, manual page tools, static site tools, and publishing helpers.",
-            "kicker": "docs and publishing",
-            "label": "Documentation packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "documentation-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "apidoc",
-            "name": "apidoc",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: api, apidoc, documentation, generator, restful.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@openapitools/openapi-generator-cli",
-            "name": "@openapitools/openapi-generator-cli",
-            "provider": "npm",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: api, commander, documentation, extra, fs-extra.",
-            "rel": "adjacent_workflow"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@wonderwhy-er/desktop-commander",
-            "name": "@wonderwhy-er/desktop-commander",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: commander, diff, glob, markdown, markdown-it.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:apidoc"
     },
     "npm:apollo": {
       "candidate_hash": "0f8c6a07cc9bc1e2ad1f583d057f5095f83312cff73d4262c951f254a20b6ae1",
@@ -51463,64 +51105,6 @@
       },
       "target": "npm:csscomb"
     },
-    "npm:czg": {
-      "candidate_hash": "d9f39aa581127674b53c50a77415743b74eecf87bea84a66c57f9fe633b78ee5",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "a5502ef19ca2a2d349dff886992cc303129539557368a2b917dde02216a1f6b3",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "czg",
-            "name": "czg",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "czg",
-            "name": "czg",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: commit, commitizen, czg, generate, git.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-cliff",
-            "name": "git-cliff",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: commit, customizable, git, that.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.8,
-            "evidence": "bounded local candidate similarity",
-            "label": "aicommit2",
-            "name": "aicommit2",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: commit, git, that.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:czg"
-    },
     "npm:dgeni": {
       "candidate_hash": "50da20f7d7b74855169b70477ead2bcc715f9b75d468aa6f7dab9ddfd1d413a4",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -52385,64 +51969,6 @@
       },
       "target": "npm:esformatter"
     },
-    "npm:eslint": {
-      "candidate_hash": "520501471ee0441209ad65956cd8037647fb88fb0d9ffddd9d44a579d173f7b8",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "8b8ef0be9b277e87d755d238ad4d889d05abb159a90e1c2b09fa8ff54d820127",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "eslint",
-            "name": "eslint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Build systems, compilers, generators, and developer tools that influence local source trees and artifacts.",
-            "kicker": "compilers and build steps",
-            "label": "Developer build packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "developer-build-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "eslint",
-            "name": "eslint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: ast, ast-based, based, checker, eslint.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettierx",
-            "name": "prettierx",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: escape, escape-string-regexp, eslint, espree, estree.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "stylelint",
-            "name": "stylelint",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: cache, debug, entry, fast, file.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:eslint"
-    },
     "npm:eslint-doc-generator": {
       "candidate_hash": "f202a3b6d0d6cc92729ba3e50f951ebb85e909a0d59535279005ab4b884a1517",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -52778,64 +52304,6 @@
         ]
       },
       "target": "npm:formatly"
-    },
-    "npm:fx": {
-      "candidate_hash": "403642e629f50ffe486eae4f410b8bff0e042818898c419454066d38c44e0a1e",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "e6a7bf61a05930fd7ee40e8bbdc50c85a63ce1b4d8b64a309e62df5c893480d7",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "fx",
-            "name": "fx",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "fx",
-            "name": "fx",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: fx, json, viewer.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "fx-runner",
-            "name": "fx-runner",
-            "provider": "npm",
-            "reason": "Package names and metadata indicate a similar tool family.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.84,
-            "evidence": "bounded local candidate similarity",
-            "label": "fblog",
-            "name": "fblog",
-            "provider": "brew",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: command-line, json, line, viewer.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:fx"
     },
     "npm:fx-runner": {
       "candidate_hash": "f50ffb32bf3f45fdcef9e47c69c13930ba8ab232b077540329735f139ab15829",
@@ -53221,122 +52689,6 @@
       },
       "target": "npm:gherkin-lint-ts"
     },
-    "npm:git-cliff": {
-      "candidate_hash": "88a682f01f4780e35bf8d49388d8d2aa0fd5d1bd680d7bc1bbd17e2a6f2d75a5",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "7df70d8e74b667a66049b9b82b4812b13c2f33605a8045651d6644edabb216e4",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "git-cliff",
-            "name": "git-cliff",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Build systems, compilers, generators, and developer tools that influence local source trees and artifacts.",
-            "kicker": "compilers and build steps",
-            "label": "Developer build packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "developer-build-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-cliff",
-            "name": "git-cliff",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: changelog, cliff, customizable, generator, git.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "auto-changelog",
-            "name": "auto-changelog",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: change, changelog, commit, commits, generator.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-extras",
-            "name": "git-extras",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: changelog, commits, git.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:git-cliff"
-    },
-    "npm:git-format-staged": {
-      "candidate_hash": "03fe8db7111e84aadbf310aa8453470a3420abdc43f82c1dad87b5a7ed0661eb",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "ab1805d927c4d0fb90f7b26c2ded2a0810529bb5358a554d691d90788f8ef96b",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "git-format-staged",
-            "name": "git-format-staged",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-format-staged",
-            "name": "git-format-staged",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: files, format, git, git-format-staged, staged.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-cliff",
-            "name": "git-cliff",
-            "provider": "npm",
-            "reason": "Package names and metadata indicate a similar tool family. Shared terms: git, that.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "git-credential-oauth",
-            "name": "git-credential-oauth",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: git, that.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:git-format-staged"
-    },
     "npm:graphql-schema-linter": {
       "candidate_hash": "6b349cf4a35ec87ecfb165d2fff1c73e3e39f813c281ac89b6d9d692c721ee56",
       "curated_at": "2026-05-24T21:02:45+00:00",
@@ -53529,64 +52881,6 @@
       },
       "target": "npm:gt"
     },
-    "npm:gts": {
-      "candidate_hash": "950c3658b1b0fc8eb94d1c01de9f3124a01e65fb5b186a68aaeb056422534380",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "397c8b27fe89076b296756a8f73cb5516c7ccccea2aa4fed36bc91c6767beb13",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "gts",
-            "name": "gts",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "xo",
-            "name": "xo",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: config, eslint, eslint-config-prettier, eslint-plugin-n, eslint-plugin-prettier.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettierx",
-            "name": "prettierx",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: chalk, eslint, formatter, parser, prettier.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "checkly",
-            "name": "checkly",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: chalk, eslint, execa, json5, typescript.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:gts"
-    },
     "npm:gzipper": {
       "candidate_hash": "41a0d8c624869be2e84ac8b0ee9b758b0df6479baf04ad79185f06b6c6c0f7bb",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -53683,64 +52977,6 @@
       },
       "target": "npm:hereby"
     },
-    "npm:hexer": {
-      "candidate_hash": "ac1703e52dbfa85b64feb38bf6e2800942820ca72e0f5b304d9360fef2c87bc4",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "a37f6d51bf38fed123a2f02fc7bfb800a657af4a131274de021b6c4d03bd33aa",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "hexer",
-            "name": "hexer",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "hexer",
-            "name": "hexer",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: hex, hexer.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "esformatter",
-            "name": "esformatter",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: color, minimist.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "instant-cli",
-            "name": "instant-cli",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: ansi, minimist.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:hexer"
-    },
     "npm:hicat": {
       "candidate_hash": "e9b6d95bb9511152e8bccae23e6cb2fa4b131d7f6437b8303068d0625e0105da",
       "curated_at": "2026-05-24T21:02:45+00:00",
@@ -53836,64 +53072,6 @@
         ]
       },
       "target": "npm:html-validate"
-    },
-    "npm:http-server": {
-      "candidate_hash": "c189ebdb3ee9b97c2e543a1ddfe6f865bed9aaa7f1cde37d53c4b3bea18da21d",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "ec36252fb1abe53d793c1aa5165badfd56d066d36c6a3c21e9e03abbdb546de7",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "http-server",
-            "name": "http-server",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
-            "kicker": "remote connections",
-            "label": "Networking and protocol packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "networking-protocol-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "http-server",
-            "name": "http-server",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: command-line, configuration, http, http-server, line.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "http-server-rs",
-            "name": "http-server-rs",
-            "provider": "brew",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: command-line, http, line, server, simple.",
-            "rel": "adjacent_workflow"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@openapitools/openapi-generator-cli",
-            "name": "@openapitools/openapi-generator-cli",
-            "provider": "npm",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: chalk, compare, configuration, https, proxy.",
-            "rel": "adjacent_workflow"
-          }
-        ]
-      },
-      "target": "npm:http-server"
     },
     "npm:httpsnippet": {
       "candidate_hash": "c8a603febeb161372c6191d308d44b7607806113562111dac16d2d716eb9fa6d",
@@ -54134,122 +53312,6 @@
         ]
       },
       "target": "npm:instant-cli"
-    },
-    "npm:ios-deploy": {
-      "candidate_hash": "3bc5813ee5c22a2a199760e39e31dcea31bb0eebf19b4831d40aa12be74185cd",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "26713f946937d5dcec0ec0ef0190e8b66201cdf8f98dca9c5e21f043379f5edd",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "ios-deploy",
-            "name": "ios-deploy",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ios-deploy",
-            "name": "ios-deploy",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: apps, deploy, ios, ios-deploy, line.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ios-sim",
-            "name": "ios-sim",
-            "provider": "npm",
-            "reason": "Package names and metadata indicate a similar tool family. Shared terms: apps, ios, launch, line, xcode.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ios-sim",
-            "name": "ios-sim",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: ios, line.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:ios-deploy"
-    },
-    "npm:ios-sim": {
-      "candidate_hash": "7b455987400cc88d3487b191597b997d37270db7ff8ddf6c5dd4e41903a49711",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "d4f5daa3fa9f5e4848e3b41077ac59625d8c5962fc06854461bee5693988fc2a",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "ios-sim",
-            "name": "ios-sim",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ios-sim",
-            "name": "ios-sim",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: ios, ios-sim, line, sim, simulator.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ios-deploy",
-            "name": "ios-deploy",
-            "provider": "npm",
-            "reason": "Package names and metadata indicate a similar tool family. Shared terms: apps, ios, launch, line, xcode.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "native-run",
-            "name": "native-run",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: apps, bplist, bplist-parser, debug, ios.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:ios-sim"
     },
     "npm:isml-linter": {
       "candidate_hash": "e3daa4e4e94e71ebc890eea1c4adb425d5db0db81171d7ffd86ea91472c5384b",
@@ -55115,64 +54177,6 @@
       },
       "target": "npm:markdown-table-formatter"
     },
-    "npm:markdownlint-cli2": {
-      "candidate_hash": "e6b7e4d0075a590b0b406e8b4502f239add46cab691c2073dd709d72557d4085",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "e8fbf624709e8eeedae08770e9dd9b18b6270170340f70ab56275710a5fd0be2",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "markdownlint-cli2",
-            "name": "markdownlint-cli2",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "markdownlint-cli2",
-            "name": "markdownlint-cli2",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: based, cli2, commonmark, fast, files.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "markdownlint-cli",
-            "name": "markdownlint-cli",
-            "provider": "brew",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: files, lint, markdown, markdownlint.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "add-mcp",
-            "name": "add-mcp",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: js-yaml, jsonc, jsonc-parser, parser, toml.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:markdownlint-cli2"
-    },
     "npm:markuplint": {
       "candidate_hash": "780dd8659d314c2ce4b623814aa1396e1f1bb0f94e0bff50b168c0ef76e19c5f",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -55557,64 +54561,6 @@
       },
       "target": "npm:metalsmith"
     },
-    "npm:mint": {
-      "candidate_hash": "56cfc91fceade65db24c087ef90b1bf3fdd7fdfaed34cb7d75e7f0d6440d1d7e",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "2c1744512292a6117e75b501d8c2d1bee73fa31d9da64d7244243821d9391c66",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "mint",
-            "name": "mint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mint",
-            "name": "mint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: mint.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mintlify",
-            "name": "mintlify",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: mint, mintlify.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "0x",
-            "name": "0x",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:mint"
-    },
     "npm:mintlify": {
       "candidate_hash": "99c273e2a9f4127c9eef784567b56b3c0bc04820a92b4723718910aca7fcba36",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -55903,64 +54849,6 @@
       },
       "target": "npm:mongodb-runner"
     },
-    "npm:mongosh": {
-      "candidate_hash": "0345382d9529758725714263b1d21bf15b2129441bbef34cb719d2b44122a15f",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "b3c681f02d2bd773ce0a21e248be9b599f17ca49038a846fb6c7f5e57b47e5d3",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "mongosh",
-            "name": "mongosh",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Agent-curated command-line utilities with local package pages and install metadata.",
-            "kicker": "command-line workflows",
-            "label": "Terminal utility packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "terminal-utilities"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mongosh",
-            "name": "mongosh",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: mongodb, mongosh, shell.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mongo-c-driver",
-            "name": "mongo-c-driver",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: mongo, mongodb.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mongo-c-driver@1",
-            "name": "mongo-c-driver@1",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: mongo, mongodb.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:mongosh"
-    },
     "npm:nanoid": {
       "candidate_hash": "953efe5b40a38b80f048eace4a77c13120b1c541cb02dc84636ec953f96af616",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -56105,64 +54993,6 @@
       },
       "target": "npm:neo-blessed"
     },
-    "npm:neonctl": {
-      "candidate_hash": "946386b27798cb20ed9ba28ce8a17a4af25bd305323a5c6b2641e15887a7d5c1",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "3f4d3778e7d8c900181150fd30f518b81bd6b2ddd47861cd2d3cab429f3db768",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "neonctl",
-            "name": "neonctl",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "neonctl",
-            "name": "neonctl",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: neon, neonctl, node.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@openapitools/openapi-generator-cli",
-            "name": "@openapitools/openapi-generator-cli",
-            "provider": "npm",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: api, api-client, axios, chalk, client.",
-            "rel": "adjacent_workflow"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "storyblok",
-            "name": "storyblok",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: api, chalk, client, management, node.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:neonctl"
-    },
     "npm:nestia": {
       "candidate_hash": "eedaabf29b6536b88818f05232c41907c6a3160b7cba94812bb013b04c32d109",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -56258,64 +55088,6 @@
         ]
       },
       "target": "npm:nestjs-command"
-    },
-    "npm:newman": {
-      "candidate_hash": "1a3836f6b2ea6f8c3be5dc644ded4f3ff04eaeb4803df6270cb78e83ac5df9e7",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "46d123d56615f5f5ef8add1509acbeac08bf1bb8e837c9f1f7fcee3d68d51f80",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "newman",
-            "name": "newman",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "newman",
-            "name": "newman",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: collection, command-line, line, newman, postman.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "storyblok",
-            "name": "storyblok",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: api, async, cli-progress, client, commander.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "adr-tools",
-            "name": "adr-tools",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: async, colors, command-line, commander, line.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:newman"
     },
     "npm:next-sitemap": {
       "candidate_hash": "7ec49b49c415f66b19680375da786caf8d3d258df39892f8b74b164ea2e949a9",
@@ -56700,64 +55472,6 @@
         ]
       },
       "target": "npm:npmignore"
-    },
-    "npm:nuxi": {
-      "candidate_hash": "84e1a1dd3678cd9feb1d627e27c0f39439d3349f40b17b529a2fc9e2849f8b7a",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "0263ba6309ecb1db8565b4c32b33d456e7465a9c3b965a5803306d2af835c520",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "nuxi",
-            "name": "nuxi",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "nuxi",
-            "name": "nuxi",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: nuxi, nuxi-ng, nuxt, nuxt-cli.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "0x",
-            "name": "0x",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@apollo/rover",
-            "name": "@apollo/rover",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:nuxi"
     },
     "npm:nyc": {
       "candidate_hash": "e3518bd36c003cd9229ee4012386feb5dfe6b3dbd2f005d5d478ae51fc9da0ac",
@@ -57239,180 +55953,6 @@
       },
       "target": "npm:osls"
     },
-    "npm:ovsx": {
-      "candidate_hash": "bbf4ac3b43181b2300b8b66fc710bb7842c9a300bd11933d927658a6fad5f2b6",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "718289125d82bc1266adb4dfda9a414d87a31422d37c38295578a26fb3211a59",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "ovsx",
-            "name": "ovsx",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages that install, publish, inspect, or automate other package ecosystems.",
-            "kicker": "registries and installers",
-            "label": "Package ecosystem packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "package-ecosystem-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "ovsx",
-            "name": "ovsx",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: eclipse, interface, line, open, ovsx.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "web-ext",
-            "name": "web-ext",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: extensions, line, open, promise, tmp.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "alpic",
-            "name": "alpic",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: interface, line, open, semver.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:ovsx"
-    },
-    "npm:oxfmt": {
-      "candidate_hash": "20886cebb40470a19e7adc29d675ffa863f4dc8b596835361e2f5db9c986db05",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "8fd507e2225438e0fd07cd7e1dc9a82c73722d3727297aa3bb59e219b43de193",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "oxfmt",
-            "name": "oxfmt",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
-            "kicker": "runtime surfaces",
-            "label": "Language runtime packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "language-runtime-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "oxfmt",
-            "name": "oxfmt",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: javascript, oxfmt, typescript.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "oxlint",
-            "name": "oxlint",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: compiler, javascript, oxc, oxidation, typescript.",
-            "rel": "language_runtime_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "oxlint",
-            "name": "oxlint",
-            "provider": "brew",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: javascript, typescript.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:oxfmt"
-    },
-    "npm:oxlint": {
-      "candidate_hash": "935449a24230e4236b36a5fc00cf7667b92dcc2c006607cbbe36cdcdfedf0189",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "b247c4b2d7448c2a3142c001f0b988be7b52e51e9dfbe3f65c3a333196500c1e",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "oxlint",
-            "name": "oxlint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
-            "kicker": "runtime surfaces",
-            "label": "Language runtime packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "language-runtime-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "oxlint",
-            "name": "oxlint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: javascript, linter, oxlint, typescript.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "oxfmt",
-            "name": "oxfmt",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: compiler, javascript, oxc, oxidation, typescript.",
-            "rel": "language_runtime_peer"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "xo",
-            "name": "xo",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: eslint, javascript, linter, typescript.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:oxlint"
-    },
     "npm:pa11y-ci": {
       "candidate_hash": "4ab3c7b0c9c60c59f96fe3e95a440c6af79fb064d05356bc48a79d18e896e40b",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -57844,64 +56384,6 @@
         ]
       },
       "target": "npm:plop"
-    },
-    "npm:prettier": {
-      "candidate_hash": "6977ccf4f3e395ccf50230cc2d536594bacbaf044f0e7bac25e9c433092955dd",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "946388214b2297efb7fa13aaceeab3e331d5a4da48f2cb46450947731287ccb0",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "prettier",
-            "name": "prettier",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettier",
-            "name": "prettier",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: code, formatter, prettier.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettier-package-json",
-            "name": "prettier-package-json",
-            "provider": "npm",
-            "reason": "Package names and metadata indicate a similar tool family. Shared terms: formatter, prettier.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.85,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettierx",
-            "name": "prettierx",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: code, formatter, opinionated, prettier.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:prettier"
     },
     "npm:prettier-package-json": {
       "candidate_hash": "ad26fd9d32fbe46da36f40e27b1d1f25a7b0e067c611313d3d9a48f3f12d69ab",
@@ -58959,64 +57441,6 @@
       },
       "target": "npm:replace"
     },
-    "npm:rollup": {
-      "candidate_hash": "7c753f41303872c36035e6533ab25bd5b83da06bfc0977722f63ed1248dff37e",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "c305f1052c0a4ed0fd49551447016e15223eb68cefbe352e3700b1a0401b42ea",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "rollup",
-            "name": "rollup",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages that install, publish, inspect, or automate other package ecosystems.",
-            "kicker": "registries and installers",
-            "label": "Package ecosystem packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "package-ecosystem-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "rollup",
-            "name": "rollup",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: bundler, es, generation, module, next.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "eslint",
-            "name": "eslint",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: estree, module, types.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.82,
-            "evidence": "bounded local candidate similarity",
-            "label": "adr-tools",
-            "name": "adr-tools",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: es6, modules, rollup.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:rollup"
-    },
     "npm:rome": {
       "candidate_hash": "a5c9da415aff5b09f3703af8b8c231813005cb10ae5af18f34de38ece035331d",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -59545,64 +57969,6 @@
       },
       "target": "npm:sequelize-cli"
     },
-    "npm:serve": {
-      "candidate_hash": "c9231e6c9bc5b25456f2b1706a28a61d3201f736653a6bc0e7d1059f14fb7651",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "5d1b612c08d99508f0ebc9325d4524103a5168c40a5153c9113e26233e239c33",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "serve",
-            "name": "serve",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
-            "kicker": "remote connections",
-            "label": "Networking and protocol packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "networking-protocol-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "serve",
-            "name": "serve",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: http, serve, server, static.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "md-to-pdf",
-            "name": "md-to-pdf",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: arg, chalk, handler, port, serve.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "http-server",
-            "name": "http-server",
-            "provider": "npm",
-            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: chalk, http, http-server, server, static.",
-            "rel": "adjacent_workflow"
-          }
-        ]
-      },
-      "target": "npm:serve"
-    },
     "npm:sharkdown": {
       "candidate_hash": "4a2dd470b1126c5d6229dd56c78060429ac83a9dda791b1e09d899fd9ed0f57f",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -59650,64 +58016,6 @@
         ]
       },
       "target": "npm:sharkdown"
-    },
-    "npm:sherif": {
-      "candidate_hash": "7466bdfd7d9a9e1a2e637934ce128d4111caba3509c106ef99e97d63ace3f83e",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "8048fc1b98d3224ec3328ae464a8dbb28521436248c753a85404e81498c61f2d",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "sherif",
-            "name": "sherif",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "sherif",
-            "name": "sherif",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: config, javascript, linter, monorepos, opinionated.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "xo",
-            "name": "xo",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: config, javascript, linter, typescript.",
-            "rel": "language_runtime_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@ls-lint/ls-lint",
-            "name": "@ls-lint/ls-lint",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: javascript, linter, typescript.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:sherif"
     },
     "npm:shx": {
       "candidate_hash": "02a960ef148275c45486c441caf11bc080cae8e45a55dc1bde0441ef28de7c02",
@@ -60045,64 +58353,6 @@
       },
       "target": "npm:socket"
     },
-    "npm:solhint": {
-      "candidate_hash": "8dc894b31ddb220d5932642390af3cfddb9bceab8cebc600d916c12fa0620f62",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "d1afbdd47d97f04c3041617526bd8c5d4fcd6ad93bb6a26272e23b4bb5f273e6",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "solhint",
-            "name": "solhint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "solhint",
-            "name": "solhint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: code, linter, solhint, solidity.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "documentation",
-            "name": "documentation",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: chalk, diff, glob, js-yaml, lodash.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mega-linter-runner",
-            "name": "mega-linter-runner",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: chalk, code, glob, js-yaml, linter.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:solhint"
-    },
     "npm:speedcurve": {
       "candidate_hash": "ce704f7e4b2cab6fd5f217d0fee590f322f0e4740b2ce323a01d590ca29fb8d7",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -60150,64 +58400,6 @@
         ]
       },
       "target": "npm:speedcurve"
-    },
-    "npm:sql-formatter": {
-      "candidate_hash": "d593a9120237e1ab7e80c923921e22bbfc2fc83ee796c4a2b91131d975fdf446",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "c52593509b3ca75391657f49bcbbc54971035b0ed75e96e25ee9e7dbe6f4d4e3",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "sql-formatter",
-            "name": "sql-formatter",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages that query, migrate, inspect, or operate databases and data files.",
-            "kicker": "data stores",
-            "label": "Database and data packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "database-data-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@gethue/sql-formatter",
-            "name": "@gethue/sql-formatter",
-            "provider": "npm",
-            "reason": "Executable or command metadata overlaps with this package. Shared terms: argparse, db2, format, formatter, it.",
-            "rel": "command_surface_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "sql-formatter",
-            "name": "sql-formatter",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: formatter, query, sql, sql-formatter, whitespace.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "sql-translator",
-            "name": "sql-translator",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: more, sql.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:sql-formatter"
     },
     "npm:start-server-and-test": {
       "candidate_hash": "45163daabe4d73f89e480c4f520ad3eaf8205f1a3acbd1cf8bb6647dbcbfccb0",
@@ -60401,64 +58593,6 @@
       },
       "target": "npm:storyblok"
     },
-    "npm:stylelint": {
-      "candidate_hash": "cab44bc7edd2679ed3859dc1275a2f0fda7586ef923ecf4d78b1957bfc23cbce",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "9fd3dfc1eb9891ce708acf1f60a5f258c265714ae125c5ff93bfd55b2578a4e6",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "stylelint",
-            "name": "stylelint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-            "kicker": "files and streams",
-            "label": "Text processing packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "text-processing-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "stylelint",
-            "name": "stylelint",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: css, linter, stylelint.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "eslint",
-            "name": "eslint",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: cache, debug, entry, fast, file.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "prettierx",
-            "name": "prettierx",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: cosmiconfig, fast, fast-glob, glob, html.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:stylelint"
-    },
     "npm:stylint": {
       "candidate_hash": "28d4a59cbd608905a156743fcece563a7303409566d50324e4ffe9466e314525",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -60506,64 +58640,6 @@
         ]
       },
       "target": "npm:stylint"
-    },
-    "npm:supabase": {
-      "candidate_hash": "3db98fe57a8bf12fac522cc798adc2e38bf228297b595b012740ac7bc2d7a426",
-      "curated_at": "2026-05-24T21:02:45+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "944171065cebcd4282447b92dd92e5a1430661d3ce8d9524656fd6080af38578",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "supabase",
-            "name": "supabase",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "supabase",
-            "name": "supabase",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: supabase.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "@wonderwhy-er/desktop-commander",
-            "name": "@wonderwhy-er/desktop-commander",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: supabase.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "0x",
-            "name": "0x",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:supabase"
     },
     "npm:sv": {
       "candidate_hash": "15cac3c1d4333ffe7f558cac868ffa9e4da3a7f5eaa1e489b85096a7fb7393a3",
@@ -60804,64 +58880,6 @@
         ]
       },
       "target": "npm:svglint"
-    },
-    "npm:svgo": {
-      "candidate_hash": "3cbc2d513c73a4b3690ca48772b6b3cb50f9182a5a644efd6713fccc4a9e60a3",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "7088e41759c085eb498a755eb833d6b99dda897512c3f8b726d0c6bcd4e582df",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "svgo",
-            "name": "svgo",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "svgo",
-            "name": "svgo",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: node, optimizing, svg, svgo, vector.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "adr-tools",
-            "name": "adr-tools",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: command-line, commander, line, node, tree.",
-            "rel": "language_runtime_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "mastra",
-            "name": "mastra",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: command-line, commander, line, node, picocolors.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:svgo"
     },
     "npm:swagger-cli": {
       "candidate_hash": "16132068072702d11be29273f50738d3277f6f2a9ebb6036aa2e60efaff294b9",
@@ -62063,64 +60081,6 @@
       },
       "target": "npm:vercel"
     },
-    "npm:vite": {
-      "candidate_hash": "f505f665a53f9768fd7a694434e6507e319c3914bdb4000eb51b3605eec41935",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "9eef1e96a362dcd23ba51324734478bc66c320def175a1edecd5ea527551263a",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "vite",
-            "name": "vite",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "vite",
-            "name": "vite",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: frontend, vite.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "vitest",
-            "name": "vitest",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: framework, picomatch, powered, tinyglobby, vite.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "vite-plus",
-            "name": "vite-plus",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: vite, web.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:vite"
-    },
     "npm:vitepress": {
       "candidate_hash": "303c60295ae22f3acf731842228f91630eb6e519c933072acfb7228b369c2858",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -62361,64 +60321,6 @@
       },
       "target": "npm:vuepress"
     },
-    "npm:wait-on": {
-      "candidate_hash": "95db6779ed4b9151de20ec8cf9d3d8e6732757a562d89ecb4763285c9405bc6f",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "2d49474a8c8732bbb7798be89a2a2fac705306e7b2b0443a486940b8b4580b45",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "wait_on",
-            "name": "wait_on",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "selenium-standalone",
-            "name": "selenium-standalone",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: cross, http, line, lodash, minimist.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "wait_on",
-            "name": "wait_on",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: wait, wait-on.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "bestzip",
-            "name": "bestzip",
-            "provider": "npm",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: available, is, line, node, node-js.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "npm:wait-on"
-    },
     "npm:web-component-analyzer": {
       "candidate_hash": "259bd209b3cac03d24f6b2b728bc2d5e84789a6fdd35311c7d1cd2afae5d6966",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -62466,64 +60368,6 @@
         ]
       },
       "target": "npm:web-component-analyzer"
-    },
-    "npm:web-ext": {
-      "candidate_hash": "f613b4190f46064bf47ccd7f3696be245fe439d4a5a85c654590c250840a5da4",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "bb1300de6351931ae452cc7364c3f60ea35dc30420455ae9fa1d4fa0fadb2382",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "web-ext",
-            "name": "web-ext",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
-            "kicker": "remote connections",
-            "label": "Networking and protocol packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "networking-protocol-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "web-ext",
-            "name": "web-ext",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: build, ext, extensions, help, line.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "addons-linter",
-            "name": "addons-linter",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: add, add-ons, addons, addons-linter, browser.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "osls",
-            "name": "osls",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: agent, ext, google, https, https-proxy-agent.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:web-ext"
     },
     "npm:webpack-cli": {
       "candidate_hash": "17c487031df89c99f56b1e3dc68c4b77b29fa95a8cecda246b08a9ee61b86453",
@@ -62668,122 +60512,6 @@
         ]
       },
       "target": "npm:window-size"
-    },
-    "npm:wrangler": {
-      "candidate_hash": "34b2ded0f589bd9ebf56f64b447c3a2d0c060962507638db96f88cbc5aee2d99",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "6474c7723cbb45119e849d8d8c0b65191f75c731568330e0197ab3aa7d543907",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "wrangler",
-            "name": "wrangler",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-            "kicker": "frontend and web stacks",
-            "label": "Web development packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "web-dev-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "cloudflare-wrangler",
-            "name": "cloudflare-wrangler",
-            "provider": "brew",
-            "reason": "Executable or command metadata overlaps with this package. Shared terms: cloudflare, workers, wrangler, wrangler2.",
-            "rel": "command_surface_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "wrangler",
-            "name": "wrangler",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: wrangler.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "avo",
-            "name": "avo",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: command-line, http, interface, line, path.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:wrangler"
-    },
-    "npm:write-good": {
-      "candidate_hash": "57d32b722af2caf7be5785473368d6913e037174508e8ea5000cf5bb23e6e832",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "1fbbdb5353492f7cc53134aa290ead63937ae404d9144adfcce610657e309547",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "write-good",
-            "name": "write-good",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-            "kicker": "Node package commands",
-            "label": "npm command packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "npm-cli-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "write-good",
-            "name": "write-good",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: english, good, linter, naive, prose.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "gherkin-lint",
-            "name": "gherkin-lint",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: commander, linter.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "graphql-schema-linter",
-            "name": "graphql-schema-linter",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: commander, linter.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "npm:write-good"
     },
     "npm:xo": {
       "candidate_hash": "e050ee6dc555a6bf98c93f2b46b17f659ffe4e769179b91ceee16e398cc64d39",
@@ -63073,64 +60801,6 @@
       },
       "target": "npm:yeoman-character"
     },
-    "npm:yo": {
-      "candidate_hash": "902c011d0e02ab202946a3daffb5d81bc9179bb1c9e3d0dd89b4f088f390ede8",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "c476425cd9cda735387b2443b84848eec13bdce7241eb600532f2a5c171ccb53",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "yo",
-            "name": "yo",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Build systems, compilers, generators, and developer tools that influence local source trees and artifacts.",
-            "kicker": "compilers and build steps",
-            "label": "Developer build packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "developer-build-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "yo",
-            "name": "yo",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: generators, running, yeoman, yo.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "web-ext",
-            "name": "web-ext",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: agent, build, help, json, notifier.",
-            "rel": "format_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "can-npm-publish",
-            "name": "can-npm-publish",
-            "provider": "npm",
-            "reason": "Both packages work with overlapping file formats or content types. Shared terms: check, cross, cross-spawn, json, meow.",
-            "rel": "format_peer"
-          }
-        ]
-      },
-      "target": "npm:yo"
-    },
     "npm:zod-prisma": {
       "candidate_hash": "84e4db6fecc28d1163dffff3bfd0d0ef5ddc26bf89317b0597ed5d82ecf42521",
       "curated_at": "2026-05-24T20:59:17+00:00",
@@ -63178,64 +60848,6 @@
         ]
       },
       "target": "npm:zod-prisma"
-    },
-    "pip:pgcli": {
-      "candidate_hash": "3a359fc98bc0fea11beea20d864fb0657a837fb92489f5404abde197568e67e9",
-      "curated_at": "2026-05-24T20:59:17+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "c985242f7dcf68e1debc1360eea890ea987c8a25444ab2ef7f99e0d259e2af31",
-      "linkIntents": {
-        "alsoAvailableVia": [
-          {
-            "confidence": 0.78,
-            "evidence": "normalized package name",
-            "label": "pgcli",
-            "name": "pgcli",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem.",
-            "rel": "alternative"
-          }
-        ],
-        "packageHubs": [
-          {
-            "description": "Packages that query, migrate, inspect, or operate databases and data files.",
-            "kicker": "data stores",
-            "label": "Database and data packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "database-data-tools"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "pgcli",
-            "name": "pgcli",
-            "provider": "brew",
-            "reason": "Same normalized package name appears in another local ecosystem. Shared terms: auto, auto-completion, completion, highlighting, pgcli.",
-            "rel": "alternative"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "psycopg2",
-            "name": "psycopg2",
-            "provider": "pip",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: approved, audience, database, developers, intended.",
-            "rel": "language_runtime_peer"
-          },
-          {
-            "confidence": 0.69,
-            "evidence": "bounded local candidate similarity",
-            "label": "litecli",
-            "name": "litecli",
-            "provider": "brew",
-            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: auto, auto-completion, completion, highlighting, python.",
-            "rel": "language_runtime_peer"
-          }
-        ]
-      },
-      "target": "pip:pgcli"
     },
     "pip:psycopg2": {
       "candidate_hash": "cbb134018352b707cca3f27e512b5ad2ecf177623ba12129b95b44bea7acd730",

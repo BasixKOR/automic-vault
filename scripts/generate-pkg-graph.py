@@ -14,6 +14,7 @@ from typing import Any
 SCHEMA_VERSION = 1
 OUTPUT_PATH = Path("data/pkg-graph.json")
 CURATION_PATH = Path("data/pkg-graph-curation.json")
+CROSS_ECOSYSTEM_PATH = Path("data/pkg-cross-ecosystem.json")
 
 HUB_DEFINITIONS = {
     "cloud-clis": {
@@ -194,6 +195,7 @@ def term_matches(haystack: str, term: str) -> bool:
 def input_files() -> list[Path]:
     files = [
         Path("data/pkg-page-enrichment.json"),
+        Path("data/pkg-cross-ecosystem.json"),
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
         Path("data/isotopes.json"),
@@ -313,7 +315,13 @@ def db_section_for_provider(provider: str) -> str:
     return {"brew": "formulas", "cask": "casks", "npm": "npms"}.get(provider, "")
 
 
-def package_keys_from_sources(enrichment_packages: dict[str, Any], db: dict[str, Any], pip: dict[str, Any], curation: dict[str, Any]) -> set[str]:
+def package_keys_from_sources(
+    enrichment_packages: dict[str, Any],
+    db: dict[str, Any],
+    pip: dict[str, Any],
+    curation: dict[str, Any],
+    cross_ecosystem: dict[str, Any] | None = None,
+) -> set[str]:
     keys = set(enrichment_packages.keys())
     for provider, section in (("brew", "formulas"), ("cask", "casks"), ("npm", "npms")):
         values = db.get(section) or {}
@@ -332,6 +340,15 @@ def package_keys_from_sources(enrichment_packages: dict[str, Any], db: dict[str,
                 for item in intents.get(section) or []:
                     if isinstance(item, dict) and item.get("provider") and item.get("name"):
                         keys.add(f"{item['provider']}:{item['name']}")
+    cross_packages = cross_ecosystem.get("packages") if isinstance(cross_ecosystem, dict) else None
+    if isinstance(cross_packages, dict):
+        keys.update(cross_packages.keys())
+        for entry in cross_packages.values():
+            if not isinstance(entry, dict):
+                continue
+            for item in entry.get("localLinks") or []:
+                if isinstance(item, dict) and item.get("provider") and item.get("name"):
+                    keys.add(f"{item['provider']}:{item['name']}")
     return keys
 
 
@@ -465,6 +482,37 @@ def apply_curation(
                 })
 
 
+def apply_cross_ecosystem(
+    graph_packages: dict[str, Any],
+    cross_ecosystem: dict[str, Any],
+    page_keys: set[str],
+    enrichment_packages: dict[str, Any],
+    db: dict[str, Any],
+    geiger_packages: dict[str, Any],
+) -> None:
+    packages = cross_ecosystem.get("packages") if isinstance(cross_ecosystem, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key in sorted(packages):
+        if package_key not in page_keys:
+            continue
+        entry = packages[package_key]
+        if not isinstance(entry, dict):
+            continue
+        graph_entry = graph_packages.setdefault(package_key, empty_graph_entry(package_key, enrichment_packages, db, geiger_packages))
+        intents = graph_entry.setdefault("linkIntents", {})
+        for item in entry.get("localLinks") or []:
+            if isinstance(item, dict) and merge_unique_link(intents.setdefault("alsoAvailableVia", []), item, page_keys, 12):
+                graph_entry.setdefault("claims", []).append({
+                    "intent": "cross-ecosystem-link",
+                    "predicate": item.get("rel") or "same_software_cross_ecosystem",
+                    "target": curation_target_key(item),
+                    "why": item.get("reason") or "Agent-curated cross-ecosystem install relation.",
+                    "confidence": item.get("confidence") or 0.6,
+                    "evidence": item.get("evidence") or "pkg-cross-ecosystem.localLinks",
+                })
+
+
 def hub_catalog(curation: dict[str, Any]) -> dict[str, dict[str, Any]]:
     catalog = {
         slug: {
@@ -510,10 +558,11 @@ def build_graph() -> dict[str, Any]:
     npm = read_json(Path("data/npm.json"), {})
     pip = read_json(Path("data/pip.json"), {})
     curation = read_json(CURATION_PATH, {})
+    cross_ecosystem = read_json(CROSS_ECOSYSTEM_PATH, {})
     packages = enrichment.get("packages") if isinstance(enrichment, dict) else {}
     if not isinstance(packages, dict):
         raise ValueError("data/pkg-page-enrichment.json must contain packages")
-    page_keys = package_keys_from_sources(packages, db, pip, curation)
+    page_keys = package_keys_from_sources(packages, db, pip, curation, cross_ecosystem)
 
     provider_names = provider_packages(db, pip)
     normalized_by_provider: dict[str, dict[str, list[str]]] = {}
@@ -662,6 +711,7 @@ def build_graph() -> dict[str, Any]:
             "claims": claims[:40],
         }
 
+    apply_cross_ecosystem(graph_packages, cross_ecosystem, page_keys, packages, db, geiger_packages)
     apply_curation(graph_packages, curation, page_keys, packages, db, geiger_packages)
     hub_counts = count_hub_memberships(graph_packages)
     hubs = hub_catalog(curation)
