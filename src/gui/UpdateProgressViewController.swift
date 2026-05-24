@@ -569,6 +569,7 @@ final class UpdateProgressViewController: NSViewController {
     private var idleStatusText = "Nucleus idle"
     private var successOperationTitle = "Update Complete"
     private var failureOperationTitle = "Update Halted"
+    private var hasLoggedResolving = false
     private var operationAnimator: GlitchTextAnimator?
 
     override func loadView() {
@@ -614,7 +615,11 @@ final class UpdateProgressViewController: NSViewController {
         rootView.statusField.stringValue = idleStatus
     }
 
-    func begin(packages: [String], activationLog: String) {
+    func begin(
+        packages: [String],
+        activationLog: String,
+        initialOperation: String? = nil
+    ) {
         orderedPackages = packages
         visiblePackages = Set(packages)
         acceptsNewVisiblePackages = packages.isEmpty
@@ -622,8 +627,12 @@ final class UpdateProgressViewController: NSViewController {
             uniqueKeysWithValues: packages.map { ($0, PackageRuntimeState()) }
         )
         isTerminalState = false
+        hasLoggedResolving = false
         if let rootView = view as? RootView {
             rootView.logView.string = ""
+        }
+        if let initialOperation {
+            setOperation(initialOperation)
         }
         appendLog(activationLog)
         if packages.isEmpty {
@@ -638,7 +647,10 @@ final class UpdateProgressViewController: NSViewController {
         switch event {
         case .resolving:
             setOperation("Resolving package graph")
-            appendLog("Resolving package graph")
+            if !hasLoggedResolving {
+                appendLog("Resolving package graph")
+                hasLoggedResolving = true
+            }
             orderedPackages.forEach {
                 updateRow(
                     package: $0,

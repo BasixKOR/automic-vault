@@ -736,6 +736,9 @@ fn update_all_packages(
     require_root()?;
     let _lock = acquire_package_mutation_lock()?;
     let config = load_config()?;
+    if let Ok(mut callback) = progress_callback.lock() {
+        callback(ProgressEvent::Resolving);
+    }
     let outdated = resolve_outdated_package_statuses(&config, &PackageSelection::AllInstalled)?;
     let processed_packages = outdated
         .iter()

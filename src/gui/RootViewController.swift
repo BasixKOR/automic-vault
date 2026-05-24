@@ -3971,7 +3971,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let packageNames = outdatedPackagesByName.keys.sorted()
         overlay.begin(
             packages: packageNames,
-            activationLog: "Privilege gate cleared. Opening channel to nucleus."
+            activationLog: "Privilege gate cleared. Preparing update plan.",
+            initialOperation: "Preparing update plan"
         )
         helperBridge.updateAll(
             progress: { event in
