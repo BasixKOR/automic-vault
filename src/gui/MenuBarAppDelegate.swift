@@ -6,6 +6,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
     private let hazardEffect = MenuBarHazardEffect()
+    private let automaticSecretApprovalToast = MenuBarInlineNotification()
     private lazy var vaultDaemon = VaultDaemon(
         openMainWindow: { [weak self] in
             self?.openMainWindow(nil)
@@ -28,6 +29,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var refreshObserver: NSObjectProtocol?
     private var startAtLoginObserver: NSObjectProtocol?
     private var appUpdateObserver: NSObjectProtocol?
+    private var autoApprovedSecretObserver: NSObjectProtocol?
     private var refreshInFlight = false
     private var snapshot = NucleusStatusSnapshot.empty
     private var appUpdateSnapshot = AppUpdateSnapshot.empty
@@ -43,6 +45,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         installRefreshObserverIfNeeded()
         installStartAtLoginObserverIfNeeded()
         installAppUpdateObserverIfNeeded()
+        installAutoApprovedSecretObserverIfNeeded()
         refreshSnapshot(reason: "launch")
         startRefreshTimer()
         vaultDaemon.start()
@@ -58,6 +61,9 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         if let appUpdateObserver {
             DistributedNotificationCenter.default().removeObserver(appUpdateObserver)
+        }
+        if let autoApprovedSecretObserver {
+            DistributedNotificationCenter.default().removeObserver(autoApprovedSecretObserver)
         }
         vaultDaemon.stop()
         bridge.invalidate()
@@ -244,6 +250,25 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 hazardousCount: self.snapshot.hazardousPackageCount
             )
         }
+    }
+
+    private func installAutoApprovedSecretObserverIfNeeded() {
+        guard autoApprovedSecretObserver == nil else { return }
+        autoApprovedSecretObserver = DistributedNotificationCenter.default().addObserver(
+            forName: IsotopeNotification.automaticApprovalGranted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showAutomaticSecretApprovalNotification()
+        }
+    }
+
+    private func showAutomaticSecretApprovalNotification() {
+        guard let button = statusItem.button else { return }
+        automaticSecretApprovalToast.show(
+            message: "Secret auto-approved",
+            anchoredTo: button
+        )
     }
 
     private func mainApplicationIsRunning() -> Bool {
@@ -678,5 +703,102 @@ private final class PackageStatusMenuItemView: NSView {
 
     private static func measuredWidth(_ string: String, font: NSFont) -> CGFloat {
         (string as NSString).size(withAttributes: [.font: font]).width
+    }
+}
+
+private final class MenuBarInlineNotification {
+    private let panel: NSPanel
+    private let label = NSTextField(labelWithString: "")
+    private var hideWorkItem: DispatchWorkItem?
+
+    init() {
+        panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 178, height: 24),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+
+        let container = NSVisualEffectView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.material = .popover
+        container.blendingMode = .behindWindow
+        container.state = .active
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 6
+        container.layer?.masksToBounds = true
+        container.layer?.borderWidth = 1
+        container.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .labelColor
+        label.alignment = .center
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+
+        container.addSubview(label)
+        panel.contentView = container
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+    }
+
+    func show(message: String, anchoredTo button: NSStatusBarButton) {
+        guard let buttonWindow = button.window else { return }
+
+        hideWorkItem?.cancel()
+        label.stringValue = message
+
+        let anchorFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let height = max(22, min(28, NSStatusBar.system.thickness))
+        let width: CGFloat = 178
+        var frame = NSRect(
+            x: anchorFrame.midX - width / 2,
+            y: anchorFrame.minY - height - 5,
+            width: width,
+            height: height
+        )
+
+        if let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            frame.origin.x = min(
+                max(frame.minX, screenFrame.minX + 4),
+                screenFrame.maxX - width - 4
+            )
+            frame.origin.y = max(frame.minY, screenFrame.minY + 4)
+        }
+
+        panel.setFrame(frame, display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 1
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.hide()
+        }
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4, execute: workItem)
+    }
+
+    private func hide() {
+        NSAnimationContext.runAnimationGroup { [panel] context in
+            context.duration = 0.18
+            panel.animator().alphaValue = 0
+        } completionHandler: { [panel] in
+            panel.orderOut(nil)
+        }
     }
 }

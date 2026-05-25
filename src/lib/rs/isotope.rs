@@ -12,6 +12,8 @@ use std::os::unix::io::AsRawFd;
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
 const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-changed";
+const AUTOMATIC_APPROVAL_NOTIFICATION: &str =
+    "com.automicvault.isotope-approval.automatic-granted";
 const USER_APPROVAL_SUBDIR: &str = "isotope";
 const ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
@@ -480,15 +482,16 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
     );
     let can_always_allow = always_allow_scope.is_ok();
 
-    if !credential_keys.is_empty()
-        && !(can_always_allow
-            && always_allows_usage(
-                always_allow_scope
-                    .as_ref()
-                    .expect("validated always-allow scope"),
-                &credential_keys,
-            )?)
-    {
+    let automatically_approved = !credential_keys.is_empty()
+        && can_always_allow
+        && always_allows_usage(
+            always_allow_scope
+                .as_ref()
+                .expect("validated always-allow scope"),
+            &credential_keys,
+        )?;
+
+    if !credential_keys.is_empty() && !automatically_approved {
         request_isotope_approval(
             &resolved_target_string,
             always_allow_scope.as_ref().ok(),
@@ -499,6 +502,8 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
             script_root_controlled,
             can_always_allow,
         )?;
+    } else if automatically_approved {
+        let _ = post_distributed_notification(AUTOMATIC_APPROVAL_NOTIFICATION);
     }
 
     let mut env_map = env::vars_os().collect::<BTreeMap<_, _>>();
@@ -1319,6 +1324,11 @@ fn post_distributed_notification(name: &str) -> Result<(), String> {
     }
     Err(unsafe { take_bridge_string(error) }
         .unwrap_or_else(|| "failed to post isotope approval notification".to_string()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_distributed_notification(_name: &str) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

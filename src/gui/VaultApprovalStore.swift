@@ -97,6 +97,9 @@ enum IsotopeNotification {
     static let pendingApprovalChanged = Notification.Name(
         "com.automicvault.isotope-approval.pending-changed"
     )
+    static let automaticApprovalGranted = Notification.Name(
+        "com.automicvault.isotope-approval.automatic-granted"
+    )
 }
 
 struct GateApprovalRequestSnapshot: Codable, Equatable {
