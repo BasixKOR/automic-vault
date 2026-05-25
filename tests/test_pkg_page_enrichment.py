@@ -146,6 +146,35 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertEqual(entry["publishedAt"], "2026-03-18T19:02:50.186Z")
         self.assertEqual(entry["sourceArchive"], "https://registry.npmjs.org/@11ty/eleventy/-/eleventy-3.1.5.tgz")
 
+    def test_npm_enrichment_cleans_html_readme_summary(self):
+        module = load_module(ENRICHMENT_SCRIPT, "pkg_page_enrichment_npm_html_summary")
+        payload = {
+            "dist-tags": {"latest": "0.133.0"},
+            "versions": {
+                "0.133.0": {
+                    "name": "@openai/codex",
+                    "version": "0.133.0",
+                    "description": (
+                        '<p align="center"><code>npm i -g @openai/codex</code><br />'
+                        'or <code>brew install --cask codex</code></p> '
+                        '<p align="center"><strong>Codex CLI</strong> is a coding agent '
+                        'from OpenAI that runs locally on your computer. <p align="center"> '
+                        '<img src="https://'
+                    ),
+                    "bin": {"codex": "bin/codex.js"},
+                }
+            },
+        }
+
+        _, entry = module.npm_enrichment("@openai/codex", {}, payload)
+
+        self.assertEqual(
+            entry["summary"],
+            "Codex CLI is a coding agent from OpenAI that runs locally on your computer.",
+        )
+        self.assertNotIn("<", entry["summary"])
+        self.assertNotIn("https://", entry["summary"])
+
     def test_pypi_enrichment_extracts_project_metadata(self):
         module = load_module(ENRICHMENT_SCRIPT, "pkg_page_enrichment_pypi")
         payload = {
@@ -285,6 +314,27 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn("https://formulae.brew.sh/formula/ripgrep", markdown)
         self.assertIn("- pcre2", markdown)
         self.assertIn("Geiger risk", markdown)
+
+    def test_package_page_renderer_cleans_stale_html_summary(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_summary_cleanup_test")
+        page = module.PackagePage(provider="npm", name="@openai/codex")
+        page.version = "0.133.0"
+        page.install_commands = [{"command": "npm install -g @openai/codex"}]
+        page.summary = (
+            '<p align="center"><code>npm i -g @openai/codex</code><br />'
+            'or <code>brew install --cask codex</code></p> '
+            "<strong>Codex CLI</strong> is a coding agent from OpenAI "
+            'that runs locally on your computer. <img src="https://'
+        )
+
+        self.assertEqual(
+            module.hero_sentence(page),
+            "Codex CLI is a coding agent from OpenAI that runs locally on your computer. Version 0.133.0 via npm; verified from local package data.",
+        )
+        self.assertEqual(
+            module.clean_summary(page.summary),
+            "Codex CLI is a coding agent from OpenAI that runs locally on your computer.",
+        )
 
 
 if __name__ == "__main__":

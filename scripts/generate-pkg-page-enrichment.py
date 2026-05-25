@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import html
 import hashlib
 import json
 import os
@@ -202,6 +203,31 @@ def source_archive(formula: dict[str, Any]) -> str:
         return ""
     url = stable.get("url")
     return url if isinstance(url, str) else ""
+
+
+def clean_summary(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", text)
+    text = re.sub(r"(?is)<!--.*?-->", " ", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)
+    text = re.sub(r"(?i)<\s*(br|/p|/div|/li|/h[1-6])\b[^>]*>", ". ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"<[^>]*$", " ", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = text.replace("`", "")
+    text = re.sub(r"https?://\S*$", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(\.\s*){2,}", ". ", text).strip(" ,-")
+    match = re.search(
+        r"\b([A-Z][A-Za-z0-9 .+/_-]{1,80}\s+is\s+[A-Za-z0-9])",
+        text,
+    )
+    if match and re.search(r"^(npm|npx|pnpm|yarn|bun|brew|pip|uv)\s+", text, flags=re.IGNORECASE):
+        text = text[match.start():]
+    return text[:720].rsplit(" ", 1)[0].strip(" ,-") if len(text) > 720 else text
 
 
 def normalize_url(value: Any) -> str:
@@ -482,7 +508,7 @@ def npm_enrichment(name: str, db_info: dict[str, Any], payload: dict[str, Any]) 
             "packageManagerUrl": f"https://www.npmjs.com/package/{urllib.parse.quote(name, safe='@/')}",
         },
         "version": latest,
-        "summary": manifest.get("description") or payload.get("description") or db_info.get("summary") or "",
+        "summary": clean_summary(manifest.get("description") or payload.get("description") or db_info.get("summary") or ""),
         "homepage": homepage,
         "repository": repository,
         "upstreamDocs": homepage,
@@ -521,7 +547,7 @@ def pypi_enrichment(name: str, overlay: dict[str, Any], payload: dict[str, Any])
             "packageManagerUrl": f"https://pypi.org/project/{urllib.parse.quote(name, safe='')}/",
         },
         "version": version,
-        "summary": info.get("summary") if isinstance(info.get("summary"), str) else "",
+        "summary": clean_summary(info.get("summary") if isinstance(info.get("summary"), str) else ""),
         "homepage": homepage,
         "repository": repository,
         "upstreamDocs": docs,

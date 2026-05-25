@@ -333,6 +333,31 @@ def paragraph_text(value: Any, limit: int = 720) -> str:
     return cut.rstrip(".,;:") + "."
 
 
+def clean_summary(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", text)
+    text = re.sub(r"(?is)<!--.*?-->", " ", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", text)
+    text = re.sub(r"(?i)<\s*(br|/p|/div|/li|/h[1-6])\b[^>]*>", ". ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"<[^>]*$", " ", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = text.replace("`", "")
+    text = re.sub(r"https?://\S*$", " ", text)
+    text = normalize_space(text)
+    text = re.sub(r"(\.\s*){2,}", ". ", text).strip(" ,-")
+    match = re.search(
+        r"\b([A-Z][A-Za-z0-9 .+/_-]{1,80}\s+is\s+[A-Za-z0-9])",
+        text,
+    )
+    if match and re.search(r"^(npm|npx|pnpm|yarn|bun|brew|pip|uv)\s+", text, flags=re.IGNORECASE):
+        text = text[match.start():]
+    return paragraph_text(text, 720)
+
+
 def html_escape(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
@@ -408,7 +433,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
             if not isinstance(info, dict):
                 continue
             page = get_page(provider, name)
-            page.summary = info.get("summary") or page.summary
+            page.summary = clean_summary(info.get("summary") or page.summary)
             page.homepage = info.get("homepage") or page.homepage
             page.version = info.get("version") or page.version
             page.last_updated_at = info.get("last_updated_at") or page.last_updated_at
@@ -525,7 +550,7 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         if isinstance(package, dict):
             page.package_manager = package.get("packageManager") or page.package_manager
             page.package_manager_url = package.get("packageManagerUrl") or page.package_manager_url
-        page.summary = info.get("summary") or page.summary
+        page.summary = clean_summary(info.get("summary") or page.summary)
         page.homepage = info.get("homepage") or page.homepage
         page.repository = info.get("repository") or page.repository
         page.upstream_docs = info.get("upstreamDocs") or page.upstream_docs
@@ -575,7 +600,7 @@ def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
         if provider not in {"brew", "cask", "npm", "pip"} or not name:
             continue
         page = pages.setdefault(f"{provider}:{name}", PackagePage(provider=provider, name=name))
-        page.summary = supplement.get("summary") or page.summary
+        page.summary = clean_summary(supplement.get("summary") or page.summary)
         page.homepage = supplement.get("homepage") or page.homepage
         page.version = supplement.get("version") or page.version
         page.last_verified = supplement.get("lastVerified") or page.last_verified
@@ -1117,7 +1142,7 @@ def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
         str(value or "")
         for value in (
             page.name,
-            page.summary,
+            clean_summary(page.summary),
             " ".join(page.aliases),
         )
     ).lower()
@@ -1396,7 +1421,7 @@ def hub_package_reason(page: PackagePage) -> str:
         if reasons:
             return short_text(reasons[0], 140)
     if page.summary:
-        return short_text(page.summary, 140)
+        return short_text(clean_summary(page.summary), 140)
     aliases = sorted(page.aliases)
     if aliases:
         return f"Executable aliases include {', '.join(aliases[:4])}."
@@ -1620,7 +1645,7 @@ def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
         ("Package manager", package_manager_label(page)),
         ("Package manager URL", page.package_manager_url),
         ("Version", page.version),
-        ("Summary", page.summary),
+        ("Summary", clean_summary(page.summary)),
         ("Homepage", page.homepage),
         ("Repository", page.repository),
         ("Upstream docs", page.upstream_docs),
@@ -1832,15 +1857,16 @@ def md_text(value: Any) -> str:
 
 
 def hero_sentence(page: PackagePage) -> str:
-    if page.summary and install_command(page):
-        return f"{sentence_text(page.summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
+    summary = clean_summary(page.summary)
+    if summary and install_command(page):
+        return f"{sentence_text(summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
         return f"Automic Vault tracks {page.display_name} because {title.lower()} matters when AI agents run command-line tools on macOS."
     if page.approval_gate:
         return f"Automic Vault has approval-gate metadata for {page.display_name}, including high-risk commands and recommended human review points."
-    if page.summary:
-        return f"Nucleus can resolve {page.display_name}: {page.summary}"
+    if summary:
+        return f"Nucleus can resolve {page.display_name}: {summary}"
     return f"Nucleus package metadata for {page.display_name}, generated from local Automic Vault package sources."
 
 
@@ -1855,8 +1881,9 @@ def sentence_text(value: str) -> str:
 
 def meta_description(page: PackagePage) -> str:
     parts = [f"Install {page.display_name} with {package_manager_label(page)}."]
-    if page.summary:
-        parts.append(page.summary)
+    summary = clean_summary(page.summary)
+    if summary:
+        parts.append(summary)
     if page.executables or page.aliases:
         parts.append("View executables, metadata, and security notes.")
     if page.isotope:
@@ -2090,7 +2117,7 @@ def render_overview(page: PackagePage) -> str:
     alias_html = "".join(f"<li>{html_escape(alias)}</li>" for alias in aliases)
     alias_block = f"<ul class=\"chip-list\">{alias_html}</ul>" if aliases else "<p>No executable aliases were found in the local package database.</p>"
     homepage = f'<a href="{attr(page.homepage)}">{html_escape(page.homepage)}</a>' if page.homepage else "Not present in the local metadata."
-    summary = html_escape(page.summary or "This package is present in local Automic Vault package data. The page is generated so package-specific security metadata has a stable URL.")
+    summary = html_escape(clean_summary(page.summary) or "This package is present in local Automic Vault package data. The page is generated so package-specific security metadata has a stable URL.")
     return f"""
 <section class="pkg-section split-section">
   <div>
