@@ -10839,6 +10839,79 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
+    fn generated_isotope_integrations_tolerate_empty_home() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let missing_path = temp.path().join("missing");
+        let missing = missing_path.to_str().unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            ("AKAMAI_EDGERC", missing),
+            ("ARGOCD_CONFIG_DIR", missing),
+            ("AWS_SHARED_CREDENTIALS_FILE", missing),
+            ("BITWARDENCLI_APPDATA_DIR", missing),
+            ("CARGO_HOME", missing),
+            ("CAROOT", missing),
+            ("CIVO_CONFIG", missing),
+            ("COMPOSER_HOME", missing),
+            ("CX_CONFIG_FILE_PATH", missing),
+            ("DCOS_DIR", missing),
+            ("DIGITALOCEAN_CONFIG", missing),
+            ("DOCKER_CONFIG", missing),
+            ("GH_CONFIG_DIR", missing),
+            ("GLAB_CONFIG_DIR", missing),
+            ("HCLOUD_CONFIG", missing),
+            ("HELM_CONFIG_HOME", missing),
+            ("HELM_REPOSITORY_CONFIG", missing),
+            ("KUBECONFIG", missing),
+            ("MCP_REMOTE_CONFIG_DIR", missing),
+            ("NETRC", missing),
+            ("NPM_CONFIG_USERCONFIG", missing),
+            ("OCI_CLI_CONFIG_FILE", missing),
+            ("PULUMI_CREDENTIALS_PATH", missing),
+            ("PULUMI_HOME", missing),
+            ("RCLONE_CONFIG", missing),
+            ("REGISTRY_AUTH_FILE", missing),
+            ("SUPABASE_HOME", missing),
+            ("TALOSCONFIG", missing),
+            ("TALOS_HOME", missing),
+            ("UV_CREDENTIALS_DIR", missing),
+            ("VAGRANT_HOME", missing),
+            ("XDG_CACHE_HOME", missing),
+            ("XDG_CONFIG_HOME", missing),
+            ("XDG_RUNTIME_DIR", missing),
+            ("XDG_STATE_HOME", missing),
+        ]);
+
+        for integration in isotope_integrations::INTEGRATIONS {
+            if let Some(detect) = integration.detect {
+                assert!(
+                    !detect()
+                        .unwrap_or_else(|err| panic!("{} detect failed: {err}", integration.name)),
+                    "{} should not detect secrets in an empty home",
+                    integration.name
+                );
+            }
+            if let Some(detect_reasons) = integration.detect_reasons {
+                let reasons = detect_reasons().unwrap_or_else(|err| {
+                    panic!("{} detect reasons failed: {err}", integration.name)
+                });
+                assert!(
+                    reasons.is_empty(),
+                    "{} should not report reasons in an empty home: {reasons:?}",
+                    integration.name
+                );
+            }
+            if let Some(migrate) = integration.migrate {
+                migrate()
+                    .unwrap_or_else(|err| panic!("{} migrate failed: {err}", integration.name));
+            }
+        }
+    }
+
+    #[test]
     fn generated_isotope_helpers_return_none_without_compiled_integrations() {
         for name in ["gh", "aws-cli"] {
             let integration = isotope_integration(name);
