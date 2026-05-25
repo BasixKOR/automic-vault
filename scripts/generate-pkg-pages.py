@@ -56,6 +56,7 @@ class PackagePage:
     issue_tracker: str = ""
     classifiers: list[str] = field(default_factory=list)
     project_urls: dict[str, str] = field(default_factory=dict)
+    version_freshness: dict[str, Any] = field(default_factory=dict)
     geiger: dict[str, Any] | None = None
     related_packages: list[dict[str, Any]] = field(default_factory=list)
     also_available_via: list[dict[str, Any]] = field(default_factory=list)
@@ -365,6 +366,8 @@ def load_sources() -> dict[str, Any]:
                 sources["geiger"] = read_json(Path("data/geiger-counter.json"), {})
             if Path("data/pkg-page-enrichment.json").exists():
                 sources["pkg_page_enrichment"] = read_json(Path("data/pkg-page-enrichment.json"), {})
+            if Path("data/pkg-version-freshness.json").exists():
+                sources["pkg_version_freshness"] = read_json(Path("data/pkg-version-freshness.json"), {})
             if Path("data/pkg-graph.json").exists():
                 sources["pkg_graph"] = read_json(Path("data/pkg-graph.json"), {})
             if Path("data/pkg-cross-ecosystem.json").exists():
@@ -380,6 +383,7 @@ def load_sources() -> dict[str, Any]:
         "pkg_graph": read_json(Path("data/pkg-graph.json"), {}),
         "pkg_cross_ecosystem": read_json(Path("data/pkg-cross-ecosystem.json"), {}),
         "pkg_page_enrichment": read_json(Path("data/pkg-page-enrichment.json"), {}),
+        "pkg_version_freshness": read_json(Path("data/pkg-version-freshness.json"), {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
 
@@ -498,6 +502,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
         page.source_notes.append("approval-gate seed metadata")
 
     apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
+    apply_package_version_freshness(pages, sources.get("pkg_version_freshness") or {})
     apply_package_page_supplements(pages)
     apply_package_graph(pages, sources.get("pkg_graph") or {})
     apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
@@ -541,6 +546,21 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         page.extra["homebrewDeps"] = info.get("homebrewDependencies") or page.extra.get("homebrewDeps")
         page.extra["pythonFormula"] = info.get("pythonFormula") or page.extra.get("pythonFormula")
         page.source_notes.append("package-page enrichment")
+
+
+def apply_package_version_freshness(pages: dict[str, PackagePage], freshness: dict[str, Any]) -> None:
+    packages = freshness.get("packages") if isinstance(freshness, dict) else None
+    if not isinstance(packages, dict):
+        return
+    for package_key, info in packages.items():
+        if not isinstance(package_key, str) or ":" not in package_key or not isinstance(info, dict):
+            continue
+        provider, name = package_key.split(":", 1)
+        if provider not in {"brew", "cask", "npm", "pip"} or not name:
+            continue
+        page = pages.setdefault(package_key, PackagePage(provider=provider, name=name))
+        page.version_freshness = info
+        page.source_notes.append("package version freshness")
 
 
 def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
@@ -1442,6 +1462,7 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
         render_overview(page),
         render_security(page),
         render_executables(page),
+        render_freshness(page, manifest),
         render_install_metadata(page),
         render_related(page),
         render_sources(page),
@@ -1617,6 +1638,7 @@ def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
     lines.extend(md_section_list("Build Dependencies", [*page.build_dependencies]))
     lines.extend(md_section_list("macOS Provided Libraries", [*page.uses_from_macos]))
     lines.extend(md_install_behavior_section(page))
+    lines.extend(md_freshness_section(page, manifest))
     lines.extend(md_security_section(page))
     lines.extend(md_related_section(page))
     lines.extend(md_section_list("Sources", page.source_notes))
@@ -1728,6 +1750,30 @@ def md_install_behavior_section(page: PackagePage) -> list[str]:
             bottle_detail += f" on {', '.join(str(item) for item in platforms[:12])}"
         items.append(f"Bottle: {bottle_detail}")
     return md_section_list("Install Behavior", items)
+
+
+def md_freshness_section(page: PackagePage, manifest: dict[str, Any]) -> list[str]:
+    freshness = page.version_freshness or {}
+    manager = freshness.get("packageManager") if isinstance(freshness.get("packageManager"), dict) else {}
+    site = freshness.get("siteData") if isinstance(freshness.get("siteData"), dict) else {}
+    upstream = freshness.get("upstream") if isinstance(freshness.get("upstream"), dict) else {}
+    warnings = freshness.get("warnings") if isinstance(freshness.get("warnings"), list) else []
+    items = [
+        f"Page generated: {fmt_date(manifest.get('generated_at', '')) or 'unknown'}",
+        f"Package-manager version: {manager.get('version') or page.version or 'unknown'}",
+    ]
+    if manager.get("updatedAt"):
+        items.append(f"Package-manager updated: {fmt_date(manager.get('updatedAt')) or manager.get('updatedAt')}")
+    if site.get("status"):
+        items.append(f"Local data status: {site.get('status')}")
+    if upstream.get("repository"):
+        items.append(f"Upstream repository: {upstream.get('repository')}")
+    if upstream.get("latestVersion"):
+        items.append(f"Upstream latest detected: {upstream.get('latestVersion')} ({upstream.get('comparison') or 'unknown'})")
+    for item in warnings[:8]:
+        if isinstance(item, dict):
+            items.append(f"{item.get('severity', 'info')}: {item.get('message')}")
+    return md_section_list("Freshness", items)
 
 
 def md_security_section(page: PackagePage) -> list[str]:
@@ -2273,6 +2319,61 @@ def render_executables(page: PackagePage) -> str:
       <thead><tr><th>Command</th><th>Kind</th><th>Exposure</th><th>Note</th></tr></thead>
       <tbody>{body or '<tr><td colspan="4">No executable data was present.</td></tr>'}</tbody>
     </table>
+  </div>
+</section>
+"""
+
+
+def freshness_item(item: dict[str, Any]) -> str:
+    severity = str(item.get("severity") or "info")
+    kind = str(item.get("kind") or "freshness")
+    message = str(item.get("message") or "").strip()
+    evidence = str(item.get("evidence") or "").strip()
+    confidence = str(item.get("confidence") or "").strip()
+    evidence_html = link_value(evidence) if evidence else ""
+    return f"""
+<li class="freshness-item freshness-{attr(severity)}">
+  <strong>{html_escape(severity)}</strong>
+  <span>{html_escape(message or kind)}</span>
+  {f'<small>{evidence_html}</small>' if evidence_html else ''}
+  {f'<em>{html_escape(confidence)} confidence</em>' if confidence else ''}
+</li>
+"""
+
+
+def render_freshness(page: PackagePage, manifest: dict[str, Any]) -> str:
+    freshness = page.version_freshness or {}
+    manager = freshness.get("packageManager") if isinstance(freshness.get("packageManager"), dict) else {}
+    site = freshness.get("siteData") if isinstance(freshness.get("siteData"), dict) else {}
+    upstream = freshness.get("upstream") if isinstance(freshness.get("upstream"), dict) else {}
+    warnings = freshness.get("warnings") if isinstance(freshness.get("warnings"), list) else []
+    version = manager.get("version") or page.version or "unknown"
+    manager_updated = fmt_date(str(manager.get("updatedAt") or page.last_updated_at or ""))
+    site_status = site.get("status") or "unknown"
+    upstream_comparison = upstream.get("comparison") or "unknown"
+    upstream_latest = upstream.get("latestVersion") or "not detected"
+    repository = upstream.get("repository") or ""
+    warning_items = "".join(freshness_item(item) for item in warnings if isinstance(item, dict))
+    if not warning_items:
+        warning_items = '<li class="freshness-item freshness-info"><strong>ok</strong><span>No freshness warnings were generated.</span></li>'
+    return f"""
+<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title">
+  <div>
+    <p class="section-kicker">freshness</p>
+    <h2 id="freshness-title">Version and freshness</h2>
+    <p>These signals separate local generation age, package-manager activity, and upstream release comparison. Version lag is only warned when an evidence URL and comparable versions are present.</p>
+  </div>
+  <div>
+    <div class="freshness-metrics">
+      <div><span>page generated</span><strong>{html_escape(fmt_date(manifest.get("generated_at", "")) or "unknown")}</strong></div>
+      <div><span>manager version</span><strong>{html_escape(version)}</strong></div>
+      <div><span>manager updated</span><strong>{html_escape(manager_updated or "unknown")}</strong></div>
+      <div><span>local data</span><strong>{html_escape(site_status)}</strong></div>
+      <div><span>upstream</span><strong>{html_escape(upstream_comparison)}</strong></div>
+      <div><span>latest detected</span><strong>{html_escape(upstream_latest)}</strong></div>
+    </div>
+    {f'<p class="freshness-repo"><a href="{attr(repository)}">{html_escape(repository)}</a></p>' if repository else ''}
+    <ul class="freshness-list">{warning_items}</ul>
   </div>
 </section>
 """
@@ -3111,6 +3212,93 @@ h1 {
   font-family: var(--font-mono);
   font-weight: 700;
 }
+.freshness-section {
+  grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
+}
+.freshness-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  background: var(--line-strong);
+}
+.freshness-metrics div {
+  min-width: 0;
+  padding: 14px;
+  background: var(--surface-2);
+}
+.freshness-metrics span {
+  display: block;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.freshness-metrics strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.freshness-repo {
+  margin-top: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.freshness-repo a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
+}
+.freshness-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 0;
+  list-style: none;
+}
+.freshness-item {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  gap: 6px 12px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.freshness-item strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+.freshness-item span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.freshness-item small,
+.freshness-item em {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+.freshness-item small a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
+}
+.freshness-warning {
+  border-color: rgba(242, 178, 61, 0.58);
+  background: rgba(242, 178, 61, 0.08);
+}
+.freshness-notice {
+  border-color: rgba(242, 178, 61, 0.38);
+}
 .detail-stack { display: grid; gap: 12px; }
 .detail-stack article {
   padding: 18px;
@@ -3515,7 +3703,7 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   .site-shell { width: min(calc(100% - 24px), var(--max)); margin: 12px auto; }
   .masthead, .site-footer { align-items: flex-start; flex-direction: column; }
   .nav { width: 100%; flex-wrap: wrap; gap: 12px 18px; }
-  .pkg-hero, .split-section, .security-section, .pkg-search-section, .install-section, .signal-grid, .related-columns, .platform-install-grid, .install-command-row { grid-template-columns: 1fr; }
+  .pkg-hero, .split-section, .security-section, .pkg-search-section, .install-section, .signal-grid, .related-columns, .platform-install-grid, .install-command-row, .freshness-metrics { grid-template-columns: 1fr; }
   .pkg-concept-section-head,
   .pkg-concept-platform-grid,
   .pkg-concept-command-row {

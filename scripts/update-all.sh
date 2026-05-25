@@ -222,6 +222,8 @@ run_database_update() {
 run_daily_publish() {
   run_step "package-page enrichment refresh" \
     python3 "${script_dir}/generate-pkg-page-enrichment.py" --refresh || return 1
+  run_step "package version freshness generation" \
+    python3 "${script_dir}/generate-pkg-version-freshness.py" || return 1
   run_step "package-page generation" \
     python3 "${script_dir}/generate-pkg-pages.py" || return 1
   run_step "Pagefind search index generation" \

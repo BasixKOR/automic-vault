@@ -235,6 +235,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_for_enrichment_test")
         source_paths = {path.as_posix() for path in module.source_files()}
         self.assertIn("data/pkg-page-enrichment.json", source_paths)
+        self.assertIn("data/pkg-version-freshness.json", source_paths)
 
     def test_thin_package_pages_are_noindex_but_security_pages_remain_indexable(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_thin_policy_test")
