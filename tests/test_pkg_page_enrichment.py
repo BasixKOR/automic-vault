@@ -326,6 +326,10 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             "<strong>Codex CLI</strong> is a coding agent from OpenAI "
             'that runs locally on your computer. <img src="https://'
         )
+        page.install_commands = module.merge_install_command_entries(
+            page.install_commands,
+            module.install_commands_from_summary(page, page.summary),
+        )
 
         self.assertEqual(
             module.hero_sentence(page),
@@ -335,6 +339,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             module.clean_summary(page.summary),
             "Codex CLI is a coding agent from OpenAI that runs locally on your computer.",
         )
+        self.assertIn("brew install --cask codex", module.render_install(page))
 
 
 if __name__ == "__main__":

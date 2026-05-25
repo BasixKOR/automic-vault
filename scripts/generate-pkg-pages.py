@@ -550,7 +550,12 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         if isinstance(package, dict):
             page.package_manager = package.get("packageManager") or page.package_manager
             page.package_manager_url = package.get("packageManagerUrl") or page.package_manager_url
-        page.summary = clean_summary(info.get("summary") or page.summary)
+        raw_summary = info.get("summary") or page.summary
+        page.install_commands = merge_install_command_entries(
+            page.install_commands,
+            install_commands_from_summary(page, raw_summary),
+        )
+        page.summary = clean_summary(raw_summary)
         page.homepage = info.get("homepage") or page.homepage
         page.repository = info.get("repository") or page.repository
         page.upstream_docs = info.get("upstreamDocs") or page.upstream_docs
@@ -600,7 +605,12 @@ def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
         if provider not in {"brew", "cask", "npm", "pip"} or not name:
             continue
         page = pages.setdefault(f"{provider}:{name}", PackagePage(provider=provider, name=name))
-        page.summary = clean_summary(supplement.get("summary") or page.summary)
+        raw_summary = supplement.get("summary") or page.summary
+        page.install_commands = merge_install_command_entries(
+            page.install_commands,
+            install_commands_from_summary(page, raw_summary),
+        )
+        page.summary = clean_summary(raw_summary)
         page.homepage = supplement.get("homepage") or page.homepage
         page.version = supplement.get("version") or page.version
         page.last_verified = supplement.get("lastVerified") or page.last_verified
@@ -673,7 +683,10 @@ def apply_package_cross_ecosystem(pages: dict[str, PackagePage], cross_ecosystem
             continue
         commands = entry.get("commands")
         if isinstance(commands, list):
-            page.install_commands = [item for item in commands if isinstance(item, dict)]
+            page.install_commands = merge_install_command_entries(
+                [item for item in commands if isinstance(item, dict)],
+                page.install_commands,
+            )
         page.also_available_via = merge_related_links(
             page.also_available_via,
             entry.get("localLinks") if isinstance(entry.get("localLinks"), list) else [],
@@ -710,6 +723,52 @@ def merge_hub_links(existing: list[dict[str, Any]], generated: list[Any]) -> lis
         seen.add(slug)
         result.append(item)
     return result
+
+
+def merge_install_command_entries(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            command_text = normalize_space(item.get("command") or "")
+            if not command_text or command_text in seen:
+                continue
+            seen.add(command_text)
+            result.append({**item, "command": command_text})
+    return result
+
+
+def install_commands_from_summary(page: PackagePage, value: Any) -> list[dict[str, Any]]:
+    text = html.unescape(str(value or ""))
+    if not text:
+        return []
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = normalize_space(text)
+    commands: list[dict[str, Any]] = []
+
+    def add(platform: str, manager: str, command_text: str, provider: str) -> None:
+        if provider == page.provider:
+            return
+        commands.append({
+            "platform": platform,
+            "manager": manager,
+            "command": command_text,
+            "kind": "package_manager",
+            "confidence": 0.72,
+            "evidence": "package summary install note",
+        })
+
+    for match in re.finditer(r"(?<!\S)brew\s+install\s+--cask\s+([A-Za-z0-9@._/+~-]+)", text):
+        add("macos", "Homebrew Cask", f"brew install --cask {match.group(1)}", "cask")
+    for match in re.finditer(r"(?<!\S)brew\s+install\s+(?!--cask\b)([A-Za-z0-9@._/+~-]+)", text):
+        add("macos", "Homebrew", f"brew install {match.group(1)}", "brew")
+    for match in re.finditer(r"(?<!\S)(?:npm\s+(?:install|i)\s+-g|npm\s+-g\s+(?:install|i))\s+(@?[A-Za-z0-9._/+~-]+)", text):
+        add("portable", "npm", f"npm install -g {match.group(1)}", "npm")
+    for match in re.finditer(r"(?<!\S)pip\s+install\s+([A-Za-z0-9._/+~-]+)", text):
+        add("portable", "pip", f"pip install {match.group(1)}", "pip")
+    return merge_install_command_entries(commands)
 
 
 def isotope_metadata_by_package(isotopes: dict[str, Any]) -> dict[str, dict[str, Any]]:
