@@ -2094,7 +2094,10 @@ def render_install(page: PackagePage) -> str:
     <div class="terminal-block">
       <div class="terminal-head">
         <span>{html_escape(primary.get('manager') or 'shell')}</span>
-        <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
+        <div class="terminal-actions">
+          <a class="download-av-button" href="/download/" aria-label="Download Automic Vault">Download AV</a>
+          <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
+        </div>
       </div>
       <pre><code>{html_escape(command)}</code></pre>
     </div>
@@ -3047,6 +3050,35 @@ h1 {
 .copy-button:active { transform: translateY(1px) scale(0.98); }
 .copy-button[data-state="copied"] { border-color: rgba(114, 182, 97, 0.72); color: var(--green); }
 .copy-button[data-state="error"] { border-color: rgba(242, 109, 61, 0.72); color: var(--hot); }
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.download-av-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(242, 109, 61, 0.72);
+  border-radius: 7px;
+  background: rgba(242, 109, 61, 0.12);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.download-av-button:hover {
+  border-color: var(--hot);
+  background: rgba(242, 109, 61, 0.18);
+}
+.download-av-button:active { transform: translateY(1px) scale(0.98); }
 
 .hero-panel {
   display: grid;
