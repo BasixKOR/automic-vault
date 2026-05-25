@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-25T20:30:11+00:00",
+  "generated_at": "2026-05-25T20:48:34+00:00",
   "packages": {
     "brew:a2ps": {
       "bottle": {
@@ -395606,12 +395606,12 @@
         "packageManagerUrl": "https://www.npmjs.com/package/@bobfrankston/rmfmail",
         "provider": "npm"
       },
-      "publishedAt": "2026-05-25T19:18:20.753Z",
+      "publishedAt": "2026-05-25T20:37:04.734Z",
       "repository": "https://github.com/BobFrankston/mailx",
-      "sourceArchive": "https://registry.npmjs.org/@bobfrankston/rmfmail/-/rmfmail-1.1.148.tgz",
+      "sourceArchive": "https://registry.npmjs.org/@bobfrankston/rmfmail/-/rmfmail-1.1.150.tgz",
       "summary": "Local-first email client with IMAP sync and standalone native app",
       "upstreamDocs": "https://github.com/BobFrankston/mailx#readme",
-      "version": "1.1.148"
+      "version": "1.1.150"
     },
     "npm:@bomb.sh/tab": {
       "buildDependencies": [
@@ -396716,12 +396716,12 @@
         "packageManagerUrl": "https://www.npmjs.com/package/@dotenvx/dotenvx",
         "provider": "npm"
       },
-      "publishedAt": "2026-05-24T20:20:02.073Z",
+      "publishedAt": "2026-05-25T20:32:54.817Z",
       "repository": "https://github.com/dotenvx/dotenvx",
-      "sourceArchive": "https://registry.npmjs.org/@dotenvx/dotenvx/-/dotenvx-1.68.1.tgz",
+      "sourceArchive": "https://registry.npmjs.org/@dotenvx/dotenvx/-/dotenvx-1.69.0.tgz",
       "summary": "secrets for agents\u2013from the creator of `dotenv`",
       "upstreamDocs": "https://github.com/dotenvx/dotenvx",
-      "version": "1.68.1"
+      "version": "1.69.0"
     },
     "npm:@e2b/cli": {
       "buildDependencies": [
@@ -401741,11 +401741,11 @@
         "packageManagerUrl": "https://www.npmjs.com/package/@sourcegraph/amp",
         "provider": "npm"
       },
-      "publishedAt": "2026-05-25T17:22:21.282Z",
-      "sourceArchive": "https://registry.npmjs.org/@sourcegraph/amp/-/amp-0.0.1779729291-gfe2d7f.tgz",
+      "publishedAt": "2026-05-25T20:33:50.967Z",
+      "sourceArchive": "https://registry.npmjs.org/@sourcegraph/amp/-/amp-0.0.1779740790-ge97538.tgz",
       "summary": "Renamed to @ampcode/cli - see https://ampcode.com/news/npm-package-changes",
       "upstreamDocs": "https://ampcode.com/",
-      "version": "0.0.1779729291-gfe2d7f"
+      "version": "0.0.1779740790-ge97538"
     },
     "npm:@stacksjs/bunpress": {
       "buildDependencies": [
@@ -426438,12 +426438,12 @@
         "packageManagerUrl": "https://www.npmjs.com/package/tokenjuice",
         "provider": "npm"
       },
-      "publishedAt": "2026-05-17T01:24:29.906Z",
+      "publishedAt": "2026-05-25T20:38:22.892Z",
       "repository": "https://github.com/vincentkoc/tokenjuice",
-      "sourceArchive": "https://registry.npmjs.org/tokenjuice/-/tokenjuice-0.7.1.tgz",
+      "sourceArchive": "https://registry.npmjs.org/tokenjuice/-/tokenjuice-0.8.0.tgz",
       "summary": "Lean output compaction for terminal-heavy agent workflows.",
       "upstreamDocs": "https://github.com/vincentkoc/tokenjuice",
-      "version": "0.7.1"
+      "version": "0.8.0"
     },
     "npm:trigger.dev": {
       "buildDependencies": [

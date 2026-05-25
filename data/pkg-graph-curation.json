@@ -1,16 +1,16 @@
 {
   "coverage": {
-    "curatedPackageCount": 1478,
-    "isolatedIndexablePackageCount": 1478,
+    "curatedPackageCount": 1477,
+    "isolatedIndexablePackageCount": 1477,
     "providerCounts": {
-      "brew": 910,
+      "brew": 909,
       "cask": 52,
       "npm": 515,
       "pip": 1
     }
   },
   "description": "Agent-curated package graph links for indexable package pages that lack deterministic internal navigation.",
-  "generated_at": "2026-05-25T20:31:24+00:00",
+  "generated_at": "2026-05-25T20:49:48+00:00",
   "hubs": {
     "archive-compression-tools": {
       "description": "Packages that create, inspect, extract, or transform archives and compressed files.",
@@ -23,7 +23,7 @@
       "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
       "kicker": "Homebrew long tail",
       "label": "Homebrew utility packages",
-      "packageCount": 572,
+      "packageCount": 571,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "database-data-tools": {
@@ -165,7 +165,7 @@
     "data/pkg-pages/brew/awscli.json",
     "scripts/generate-pkg-graph-curation.py"
   ],
-  "input_hash": "6ade80f6b9993b05e307f757fa2a7109d054e52dfd975a408b22eb7ff1fb0b07",
+  "input_hash": "952921bf005788542c9e1b141495edc03bb0de5b6313cf0b49ea0a878f044de1",
   "packages": {
     "brew:aamath": {
       "candidate_hash": "3c81a04e7e67a6ad27427251d98a359accafc8d58fc5ced2c164a8929ad82227",
@@ -6214,54 +6214,6 @@
         ]
       },
       "target": "brew:cloudiscovery"
-    },
-    "brew:cloudmonkey": {
-      "candidate_hash": "2bf62dd9b6815e120b6fe258175e40e0305e46f865ea57093d7d3f8df6a41745",
-      "curated_at": "2026-05-25T20:31:24+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "c0ded6c36368b21d16544d15c967d5f9e73f82402d1dd09e7d8597c9a99931f1",
-      "linkIntents": {
-        "alsoAvailableVia": [],
-        "packageHubs": [
-          {
-            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
-            "kicker": "Homebrew long tail",
-            "label": "Homebrew utility packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "brew-utility-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.68,
-            "evidence": "bounded local candidate similarity",
-            "label": "ab-av1",
-            "name": "ab-av1",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.68,
-            "evidence": "bounded local candidate similarity",
-            "label": "abcl",
-            "name": "abcl",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.68,
-            "evidence": "bounded local candidate similarity",
-            "label": "abi-dumper",
-            "name": "abi-dumper",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "brew:cloudmonkey"
     },
     "brew:clozure-cl": {
       "candidate_hash": "3b74e8cd499764d249c7ab19f5f29db1c81027048c45eea00d8e80fc31ebdfad",
@@ -16486,54 +16438,6 @@
         ]
       },
       "target": "brew:hellwal"
-    },
-    "brew:herdr": {
-      "candidate_hash": "a5483ff46edca9257a9e8308367f9988aa3b636b9ac17962ab9ee1fecc87ec36",
-      "curated_at": "2026-05-25T20:31:24+00:00",
-      "curator": "codex-local-curator",
-      "facts_hash": "ac275a9977f89f95b798214c5df9b889737a19790a010ca61e39847650bfc01d",
-      "linkIntents": {
-        "alsoAvailableVia": [],
-        "packageHubs": [
-          {
-            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
-            "kicker": "Homebrew long tail",
-            "label": "Homebrew utility packages",
-            "reason": "Agent-curated fallback hub from local package facts.",
-            "slug": "brew-utility-packages"
-          }
-        ],
-        "relatedPackages": [
-          {
-            "confidence": 0.52,
-            "evidence": "bounded local candidate similarity",
-            "label": "a2ps",
-            "name": "a2ps",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.52,
-            "evidence": "bounded local candidate similarity",
-            "label": "a52dec",
-            "name": "a52dec",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.52,
-            "evidence": "bounded local candidate similarity",
-            "label": "aalib",
-            "name": "aalib",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          }
-        ]
-      },
-      "target": "brew:herdr"
     },
     "brew:heroku/brew/heroku": {
       "candidate_hash": "a967e92c370388c5f28d33c528cf464f8b108b67cf294b6849185d5ddd1c818f",
@@ -27478,6 +27382,54 @@
         ]
       },
       "target": "brew:opendetex"
+    },
+    "brew:openh264": {
+      "candidate_hash": "c50df85e9dc37761bb66b4d5a767770dd03a5aedc95ab2352ad81fc837530ca8",
+      "curated_at": "2026-05-25T20:49:48+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "917e4893a0816cb073c169c55b0f3aa737e69a62dace7588357e5cd8487ed28e",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.75,
+            "evidence": "bounded local candidate similarity",
+            "label": "basis_universal",
+            "name": "basis_universal",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: codec.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.75,
+            "evidence": "bounded local candidate similarity",
+            "label": "bgpq3",
+            "name": "bgpq3",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: cisco.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.75,
+            "evidence": "bounded local candidate similarity",
+            "label": "bgpq4",
+            "name": "bgpq4",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: cisco.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:openh264"
     },
     "brew:openhue/cli/openhue-cli": {
       "candidate_hash": "a5483ff46edca9257a9e8308367f9988aa3b636b9ac17962ab9ee1fecc87ec36",
@@ -47881,9 +47833,9 @@
     },
     "npm:@bobfrankston/rmfmail": {
       "candidate_hash": "ce5d8c8da6905ffcd9ced4614fd1070c3b4d0b1277de0e4fe9565e8d87ed3ce9",
-      "curated_at": "2026-05-25T20:31:24+00:00",
+      "curated_at": "2026-05-25T20:49:48+00:00",
       "curator": "codex-local-curator",
-      "facts_hash": "42877091d8713a1faaa47748ec2547fe1b7b8ea30f36be90840915fcdc0a0e8f",
+      "facts_hash": "29a37c271ecd3b91c6c98e808eaf63e2af1f52979fc4c489bb99fa4d66638adc",
       "linkIntents": {
         "alsoAvailableVia": [],
         "packageHubs": [
@@ -48697,9 +48649,9 @@
     },
     "npm:@dotenvx/dotenvx": {
       "candidate_hash": "c4f37d404234831f852415a0821dd0363f9aa354a531aa22394eb9325ccca6a6",
-      "curated_at": "2026-05-25T14:17:38+00:00",
+      "curated_at": "2026-05-25T20:49:48+00:00",
       "curator": "codex-local-curator",
-      "facts_hash": "516e62a804e76cba1500bc4550469d83518c5a02acf9098677e73bc35f2052a2",
+      "facts_hash": "78b955151f5c5a1f2b832ea7a205b43cdf56825c1b39d95bb2a0dfd9ca92e69d",
       "linkIntents": {
         "alsoAvailableVia": [],
         "packageHubs": [
@@ -52921,9 +52873,9 @@
     },
     "npm:@sourcegraph/amp": {
       "candidate_hash": "617def0854ce3d71c78f789bff45d021fe4cf507763af3e73260b0e25de8028d",
-      "curated_at": "2026-05-25T20:31:24+00:00",
+      "curated_at": "2026-05-25T20:49:48+00:00",
       "curator": "codex-local-curator",
-      "facts_hash": "f385f9fb29bdefabdfa49950c97ec01bede0f30c2c54a34892c3930fb533d3ab",
+      "facts_hash": "229fa8afcbbb7444b6c3250b6c6246ed4adc680ebf222d157d697277fb74d8d4",
       "linkIntents": {
         "alsoAvailableVia": [],
         "packageHubs": [
@@ -68963,9 +68915,9 @@
     },
     "npm:tokenjuice": {
       "candidate_hash": "12e5c605cd33f2fd4716db336d558f2f8a26250a4378e70ebad2f9b9fecb9c04",
-      "curated_at": "2026-05-25T20:31:24+00:00",
+      "curated_at": "2026-05-25T20:49:48+00:00",
       "curator": "codex-local-curator",
-      "facts_hash": "fe9ed38b3c3161b148c41ded01fa8db72eef13918afc63aa8ce08208803cde96",
+      "facts_hash": "e3578a588b02ae5a66d9614bb3ed01f19dc82b03a7d475848747f453cf4746f2",
       "linkIntents": {
         "alsoAvailableVia": [],
         "packageHubs": [
