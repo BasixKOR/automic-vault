@@ -7,7 +7,7 @@
 /cache
 /data/db.json
 /data/combined.json
-/data/isotopes.json
+/data/isotopes.json*
 /data/isotopes/
 /data/radioisotopes/
 /target
