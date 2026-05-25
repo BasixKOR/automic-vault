@@ -1,276 +1,168 @@
 # GEO Audit Report: Automic Vault
 
-**Audit Date:** 2026-05-24  
-**URL:** https://www.automicvault.com/  
-**Business Type:** Hybrid - open-source developer security software with package registry/content publisher surface  
-**Pages Analyzed:** 33 HTML pages plus `robots.txt`, `llms.txt`, `llms-full.txt`, `sitemap.xml`, `pkg/sitemap.xml`, and `pricing.md`
-
----
+**Audit date:** 2026-05-25  
+**Primary site:** https://www.automicvault.com/  
+**Primary focus:** current generated package pages under `/pkg/`  
+**Business type:** open-source macOS developer security tool with a large package intelligence/catalog surface
 
 ## Executive Summary
 
-**Overall GEO Score: 75/100 (Good)**
+**Overall GEO score: 77/100**
 
-Automic Vault now has a strong GEO foundation: the deployed site is static, indexable, schema-rich, AI-crawler friendly, and exposes both concise and full-text LLM entry points. The biggest constraints are no longer crawlability; they are authority depth, stale product version signals, and thin proof-oriented content on security, terms, privacy, and comparison pages.
+Automic Vault has a strong technical GEO foundation: the site is static, crawlable, schema-rich, and explicitly AI-crawler friendly. The new package catalog is the strongest surface: it publishes 9,008 package HTML pages, 9,006 markdown alternates, 22 category hubs, valid package sitemaps, canonical URLs, `SoftwareApplication` schema, `TechArticle` schema, `HowTo` install schema, breadcrumbs, Open Graph, and Twitter metadata.
 
-### Score Breakdown
+The main constraints are no longer basic crawlability. The highest-leverage fixes are trust and answer-engine precision: restore the missing `llms-full.txt`, replace the unresolved version placeholder in `llms.txt`, avoid putting inferred install commands into citation-grade HowTo schema, improve freshness signals, and build more third-party product authority so AI systems can disambiguate Automic Vault from unrelated "Automic" entities.
 
-| Category | Score | Weight | Weighted Score |
+## Score Breakdown
+
+| Category | Score | Weight | Weighted |
 |---|---:|---:|---:|
-| AI Citability | 78/100 | 25% | 19.50 |
-| Brand Authority | 63/100 | 20% | 12.60 |
-| Content E-E-A-T | 72/100 | 20% | 14.40 |
-| Technical GEO | 91/100 | 15% | 13.65 |
-| Schema & Structured Data | 88/100 | 10% | 8.80 |
-| Platform Optimization | 60/100 | 10% | 6.00 |
-| **Overall GEO Score** | | | **75/100** |
+| AI Citability and Visibility | 82/100 | 25% | 20.50 |
+| Brand Authority Signals | 58/100 | 20% | 11.60 |
+| Content Quality and E-E-A-T | 76/100 | 20% | 15.20 |
+| Technical Foundations | 90/100 | 15% | 13.50 |
+| Structured Data | 91/100 | 10% | 9.10 |
+| Platform Optimization | 69/100 | 10% | 6.90 |
+| **Overall GEO Score** | | | **76.80 -> 77/100** |
 
----
+## Audit Scope
 
-## Implementation Follow-Up (2026-05-24)
+Local generated files inspected:
 
-Implemented from this report with local source data:
+- `www/sitemap.xml`
+- `www/robots.txt`
+- `www/llms.txt`
+- `www/pkg/sitemap.xml`
+- all HTML pages under `www/pkg/`
+- package markdown alternates under `www/pkg/`
+- generated package manifest `www/pkg/.manifest.json`
 
-- Product version fields are now deploy-templated from `Cargo.toml`, so static schema and `llms.txt` stamp to the current app version during deploy.
-- `llms-full.txt` generation now excludes the full package corpus.
-- Added `/pricing/` as an HTML pricing page while retaining `pricing.md` as the markdown/plain-text variant.
-- Added `/.well-known/security.txt`.
-- Expanded `/security/`, `/privacy/`, and `/terms/` with direct-answer blocks and more trust/privacy detail.
-- Added semantic comparison tables to the HashiCorp Vault, secret-scanning, privacy, terms, pricing, and security pages.
-- Aligned visible freshness and sitemap lastmod values to May 24, 2026 for the touched top-level pages.
-- Added package category hubs for cloud CLIs, source-control tools, package publishers, MCP tools, and secret-risk packages.
-- Added reviewer metadata to static topic-page schema and generated package/hub schema.
-- Expanded generated package-page Twitter Card metadata with title, description, and image fields.
-- Added FAQ blocks and `FAQPage` schema to the strongest AI-agent secrets, API key, MCP, approval-gate, and comparison pages.
+External visibility checked through web search:
 
-Still not fully addressed:
+- `https://www.automicvault.com/`
+- `https://www.automicvault.com/pkg/`
+- `https://mxcl.dev/`
+- brand queries for `"Automic Vault"` and `automicvault.com`
 
-- Product-level third-party authority and platform presence remain external growth work.
-- npm/PyPI package-page enrichment parity remains a separate data-generation phase.
+## Package Catalog Findings
 
----
+Package generation is technically strong.
 
-## Critical Issues (Fix Immediately)
+| Check | Result |
+|---|---:|
+| Package HTML pages | 9,008 |
+| Package hub/index HTML pages | 23 |
+| Indexable package pages | 9,006 |
+| Noindex package pages | 2 |
+| Markdown package alternates | 9,006 |
+| Package sitemap URLs | 9,029 |
+| Missing package sitemap targets | 0 |
+| Missing package titles/descriptions/canonicals | 0 |
+| Package canonical mismatches | 0 |
+| Invalid JSON-LD blocks | 0 |
+| Duplicate package descriptions | 0 |
+| Duplicate package titles | 0 |
+| Missing asset references | 0 |
 
-No critical issues were found.
+Structured data coverage is broad:
 
-The deployed site is crawlable static HTML, has canonical tags, uses structured data, exposes sitemaps, and explicitly allows major AI crawlers in `robots.txt`.
+- 9,008 `SoftwareApplication` nodes
+- 9,008 `TechArticle` nodes
+- 9,008 `HowTo` nodes
+- 9,030 `BreadcrumbList` nodes
+- 23 `CollectionPage` nodes
+- 22 hub `ItemList` collections
 
 ## High Priority Issues
 
-1. **Product version signals were inconsistent in the deployed audit sample.**  
-   The audit found stale `1.6.0` values in `www/llms.txt` and homepage `SoftwareApplication` schema while `Cargo.toml` and public Git tags showed `1.9.0`. The worktree now templates these fields from `Cargo.toml` during deploy.
+1. **`llms-full.txt` is referenced but missing.**  
+   `www/sitemap.xml` and `www/llms.txt` both point to `https://www.automicvault.com/llms-full.txt`, but no `www/llms-full.txt` file exists locally. This is the clearest GEO defect because it advertises a high-value AI ingestion artifact that will resolve as missing after deploy unless generated elsewhere.
 
-2. **Brand authority is still founder-led rather than product-led.**  
-   The Max Howell/Homebrew graph is strong and useful, but third-party signals for Automic Vault itself are still sparse. Search results include the site, GitHub, and `mxcl.dev`, but also collide with unrelated Automic/Broadcom and Automic Group entities.
+2. **`llms.txt` still contains an unresolved version placeholder.**  
+   The file says `Current version: __AUTOMIC_VAULT_VERSION__`. LLM-facing facts should never contain deploy placeholders; it reduces citation confidence and can be copied into AI answers.
 
-3. **Trust pages are too thin for a security product.**  
-   `/security/` is 265 words, `/privacy/` is 237 words, and `/terms/` is 178 words in the deployed output. They are crawlable and well structured, but too brief to carry security, privacy, disclosure, notarization, signing, data handling, and open-source trust claims in AI answers.
+3. **Inferred install commands are present in `HowTo` schema on 8,385 package pages.**  
+   The visible UI labels these commands as inferred, but schema consumers may treat HowTo steps as verified instructions. For package pages, only source-backed install commands should be emitted in `HowTo`; inferred commands should remain visible as lower-confidence UI content outside citation-grade structured data.
 
-4. **Most non-package topic pages need more quotable direct-answer blocks.**  
-   The pages are clear, but many sit around 300-380 words. For competitive queries such as "secrets manager for AI agents" or "MCP secrets management", add 80-140 word answer blocks that define the problem, say who the page is for, state how Automic Vault works, and name concrete alternatives or complements.
+4. **All 9,008 package pages show unknown upstream freshness.**  
+   The freshness section consistently reports upstream release/tag data as unknown. This is transparent, but it weakens the package pages for AI answers that need current-version confidence. Prioritize upstream release/tag enrichment for high-risk and high-volume packages.
+
+5. **Brand authority remains founder-led instead of product-led.**  
+   Search finds Automic Vault on owned properties and `mxcl.dev`, but third-party product mentions are sparse. The Max Howell/Homebrew association is valuable, yet the product needs independent references on developer platforms to avoid blending with unrelated Automic/Broadcom and Automic Group results.
 
 ## Medium Priority Issues
 
-1. **`pricing.md` is a weaker citation target than `/pricing/`.**  
-   It is valid crawlable markdown and linked from `llms.txt`, but schema `Offer.url` and AI/search snippets would be stronger with an HTML `/pricing/` page that also links the markdown/plain-text variant.
+1. **386 descriptions end with a hard ellipsis.**  
+   Many generated meta/schema descriptions are truncated mid-thought. This is not a crawl blocker, but it makes snippets and JSON-LD descriptions feel less authoritative. Prefer sentence-boundary truncation for hub and package descriptions.
 
-2. **Package pages are strong for Homebrew but thinner for npm and PyPI.**  
-   Homebrew pages now include version, license, dependencies, bottle/source/install behavior, and richer security notes. npm/PyPI pages still frequently show "No radioisotope coverage found yet" and lack equivalent registry depth.
+2. **638 package pages explicitly say no radioisotope coverage was found.**  
+   That is honest and useful, but for high-risk packages it can read as a coverage gap. Prioritize radioisotope or approval-gate coverage for packages that also have postinstall hooks, cloud credentials, publishing authority, source-control authority, or secret access.
 
-3. **Schema is broad, but article authorship is under-modeled.**  
-   The site has Organization, Person, WebSite, SoftwareApplication, WebPage, Article, TechArticle, FAQPage, HowTo, and BreadcrumbList. Add explicit `author`, `reviewedBy`, `dateModified`, and `about` links on topic pages where the founder/security expertise is part of the trust argument.
+3. **566 npm package pages include postinstall risk signals.**  
+   These are exactly the pages that should receive deeper, package-specific security treatment: lifecycle script summary, executable surface, credential paths, registry authority, and recommended approval policies.
 
-4. **Comparison content is mostly prose, not extractable tables.**  
-   Pages comparing Automic Vault with HashiCorp Vault, secret scanning, agent controls, and package managers would be easier for AI systems to quote if the key distinctions were repeated in semantic tables.
+4. **Package pages are highly structured, but many are generated summaries rather than expert analyses.**  
+   The source trail is clear, which helps. Still, AI answers prefer pages that contain concise, direct guidance. Add short direct-answer blocks to the most important package pages, especially `awscli`, `gh`, `git`, `docker`, `uv`, `node`, `claude-code`, `codex`, `terraform`-family tools, and package publishers.
 
-5. **The package-page index is huge but not summarized by category hubs.**  
-   `pkg/sitemap.xml` lists 8,789 package URLs. Add crawlable hubs for high-value groups such as cloud CLIs, package publishers, source-control tools, MCP tools, and secret-risk packages.
+5. **External platform footprint is thin.**  
+   The site and GitHub are discoverable, but there is not enough third-party product context from Reddit, Hacker News, YouTube demos, Product Hunt, Wikidata/Wikipedia, or comparison articles.
 
-## Low Priority Issues
-
-1. **Package page Twitter Card metadata is lighter than top-level pages.**  
-   Package pages include `twitter:card` but not the fuller title/description/image set used on top-level pages.
-
-2. **Some pages could expose visible freshness.**  
-   The content has schema dates and `llms.txt` facts, but visible "Last updated" lines would improve citation confidence.
-
-3. **No dedicated `security.txt` was observed in the deployed artifact.**  
-   The `/security/` page has reporting guidance, but a root `/.well-known/security.txt` would be a useful trust signal.
-
----
-
-## Category Deep Dives
-
-### AI Citability (78/100)
-
-Strengths:
-
-- Homepage has concise, quotable lines: "A hardened package manager and secrets boundary for the tools AI agents run on your Mac."
-- `llms.txt` gives AI systems a clean product summary, use cases, exclusions, high-value links, and a pointer to `llms-full.txt`.
-- Package pages now provide consistent install commands, package metadata, security notes, and install behavior.
-- `llms-full.txt` is a strong ingestion artifact for non-browsing LLM workflows.
-
-Gaps:
-
-- Many topic pages are still short. They explain the idea but do not yet dominate the answer for broad category queries.
-- Some claims need explicit evidence blocks: "how it works", "what data stays local", "what an approved tool receives", "what the model cannot read".
-- Top pages should add short "answer box" sections that can stand alone when extracted.
-
-### Brand Authority (63/100)
-
-Strengths:
-
-- Public GitHub repo is discoverable, has Apache-2.0 licensing, release tags through `v1.9.0`, and a public source graph AI systems can corroborate.
-- `mxcl.dev` connects Max Howell, Homebrew, and Automic Vault in a coherent public identity graph.
-- Site schema connects Automic Vault to Organization, SoftwareApplication, WebSite, Person, and founder context.
-
-Gaps:
-
-- Product-level mentions outside owned properties are still limited.
-- Search results for "Automic Vault" include unrelated Automic/Broadcom/Automic Group results, so entity disambiguation matters.
-- No strong evidence found for Wikipedia/Wikidata/Product Hunt/Hacker News/Reddit/YouTube/LinkedIn company coverage for the product itself.
-
-### Content E-E-A-T (72/100)
-
-Strengths:
-
-- Founder authority is unusually strong for a developer tool because the Homebrew connection is explicit and externally verifiable.
-- Docs page is substantial at about 1,570 words and explains command surfaces, runtime boundaries, and operational trust notes.
-- Topic pages are focused and avoid generic SEO filler.
-
-Gaps:
-
-- Security and legal/trust pages are short for a security product.
-- Add explicit release verification, signing/notarization, disclosure, supported versions, threat model, and local-data statements.
-- Add author/reviewer attribution to technical articles.
-
-### Technical GEO (91/100)
-
-Strengths:
+## Strengths
 
 - `robots.txt` explicitly allows `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, and `Bingbot`.
-- `robots.txt` lists both `sitemap.xml` and `pkg/sitemap.xml`.
-- `sitemap.xml` has 21 top-level URLs; `pkg/sitemap.xml` has 8,789 package URLs.
-- The deploy config attaches HSTS, CSP, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, XSS protection, and a `Permissions-Policy`.
-- The site is static HTML with canonical URLs, Open Graph tags, and crawlable text.
+- `robots.txt` advertises both the main sitemap and package sitemap index.
+- The package sitemap index cleanly splits hubs, brew, cask, npm, and pip URLs.
+- Main sitemap has 24 URLs; the only missing local target is `llms-full.txt`.
+- All non-404 HTML pages have titles, meta descriptions, canonicals, and exactly one `h1`.
+- All checked JSON-LD parses cleanly.
+- Package pages provide markdown alternates, which is useful for AI ingestion.
+- Package pages disclose their generated source trail.
+- Package pages have strong internal linking through category hubs and related package sections.
+- Search pages, package hubs, and individual package pages create a large long-tail query surface around "install X safely", "X package security", and "AI agent package risk".
 
-Gaps:
+## Platform Notes
 
-- Direct header verification from this environment was blocked by local direct-curl policy, so header findings are based on deployed script configuration and deploy success output.
-- Consider adding `/.well-known/security.txt`.
+| Platform | Readiness | Notes |
+|---|---:|---|
+| ChatGPT / browsing LLMs | High | Static HTML, markdown alternates, `llms.txt`, package pages, strong schema. Missing `llms-full.txt` hurts. |
+| Perplexity | High | Good sitemap structure and direct package pages. Needs more third-party corroboration. |
+| Google AI Overviews | Medium-high | Strong technical SEO and topic pages. Needs stronger authority and direct-answer blocks on top package pages. |
+| Claude / ClaudeBot | High | Robots allowlist and markdown alternates are good. Fix unresolved LLM-facing placeholders. |
+| Bing Copilot | Medium-high | Crawlable and schema-rich. More external product mentions would help entity recognition. |
 
-### Schema & Structured Data (88/100)
+## Recommended Actions
 
-Strengths:
+### Fix Now
 
-- Homepage includes Organization, Person, WebSite, SoftwareApplication, WebPage, and BreadcrumbList.
-- Docs include FAQPage and TechArticle.
-- Package pages include WebSite, SoftwareApplication, TechArticle, BreadcrumbList, and HowTo.
-- Schema parsing found no invalid JSON-LD in the audited pages.
+1. Generate or remove `llms-full.txt` references so `www/sitemap.xml` and `www/llms.txt` do not point to a missing AI artifact.
+2. Replace `__AUTOMIC_VAULT_VERSION__` in `www/llms.txt` during generation or deployment.
+3. Restrict package `HowTo` schema to verified install commands only.
+4. Add a generation check that fails if sitemap URLs or `llms.txt` links point at missing local files.
 
-Gaps:
+### Package Page Sprint
 
-- Product version is stale in schema.
-- Article pages need richer author/reviewer/publisher relationships.
-- Package pages could add `softwareRequirements`, `programmingLanguage`, `codeRepository`, and stronger `sameAs` where known.
+1. Add package-specific direct-answer blocks for the top 50 security-sensitive packages.
+2. Add upstream release/tag enrichment to the freshness pipeline for high-volume packages.
+3. Sentence-truncate meta descriptions instead of ending mid-sentence with an ellipsis.
+4. Prioritize radioisotope or approval-gate coverage for postinstall packages and cloud/source-control/publisher tools.
+5. Add schema/UI separation for verified versus inferred install commands.
 
-### Platform Optimization (60/100)
+### Authority Sprint
 
-Strengths:
+1. Publish a technical launch post that demonstrates Automic Vault protecting real agent workflows.
+2. Create product profiles or launch pages on developer-visible platforms.
+3. Encourage third-party writeups around AI agent secrets, approval gates, and package install control.
+4. Add comparison pages for "Automic Vault vs secret scanning", "Automic Vault vs HashiCorp Vault for AI agents", and "Automic Vault vs package manager sandboxing" if not already indexed strongly enough.
 
-- GitHub repository and `mxcl.dev` are strong developer-platform signals.
-- X profile is linked in site schema.
-- Package pages cover high-intent install queries across Homebrew, npm, and PyPI.
+## Suggested Checks To Add
 
-Gaps:
+- `scripts/generate-llms-full.mjs` output existence check in deploy.
+- sitemap-to-local-file validation for `www/sitemap.xml` and all package sitemap files.
+- JSON-LD validation for generated pages.
+- package schema validation that rejects inferred install commands inside `HowTo`.
+- meta description test that avoids hard ellipsis endings.
+- high-risk package completeness report covering postinstall, executable, repository, homepage, freshness, approval-gate, and radioisotope fields.
 
-- No dedicated LinkedIn company page, YouTube demos, Product Hunt launch, Wikipedia/Wikidata entity, or strong Reddit/HN discussion surface was observed.
-- Product brand is still new relative to broader "Automic" entity collisions.
+## Bottom Line
 
----
-
-## Quick Wins (Implement This Week)
-
-1. Update all site/LLM/schema version facts from `1.6.0` to the current release, or automate version injection from release metadata.
-2. Add a `/pricing/` HTML page and keep `pricing.md` as the AI/plain-text variant.
-3. Expand `/security/` with disclosure, supported versions, signing/notarization, release verification, and local data handling.
-4. Add visible "Last updated" lines to homepage, docs, and topic pages.
-5. Add semantic comparison tables to HashiCorp Vault, secret scanning, approval gates, and package manager pages.
-
-## 30-Day Action Plan
-
-### Week 1: Freshness and Trust
-
-- [ ] Fix version drift across homepage schema, `llms.txt`, `llms-full.txt`, download page, and GitHub release references.
-- [ ] Add `/pricing/` HTML and update schema `Offer.url`.
-- [ ] Add `/.well-known/security.txt`.
-- [ ] Expand `/security/` to at least 700-1,000 words with concrete reporting and verification details.
-
-### Week 2: Citability Blocks
-
-- [ ] Add a direct-answer block to each top-level topic page.
-- [ ] Add "Automic Vault vs ..." comparison tables where the page already implies a comparison.
-- [ ] Add FAQ blocks to the strongest category pages and mirror them in FAQPage schema.
-- [ ] Add author/reviewer metadata to article schemas.
-
-### Week 3: Product Authority
-
-- [ ] Create or complete public product profiles on LinkedIn, YouTube, Product Hunt, and relevant developer directories.
-- [ ] Publish one technical launch/demo post that other sites can cite.
-- [ ] Add a concise press/about kit page with product facts, founder facts, screenshots, and canonical descriptions.
-- [ ] Disambiguate Automic Vault from unrelated Automic/Broadcom/Automic Group entities in schema and copy.
-
-### Week 4: Package Content Hubs
-
-- [ ] Add package hubs for cloud CLIs, source-control tools, package publishers, MCP tools, and secret-risk packages.
-- [ ] Add npm/PyPI enrichment parity planning pages or start an equivalent registry-depth pass.
-- [ ] Add "Top secured packages" and "Known risky command families" pages.
-- [ ] Add internal links from relevant topic pages into package hubs and high-risk package pages.
-
----
-
-## Appendix: Pages Analyzed
-
-| URL | Title | GEO Issues |
-|---|---|---:|
-| https://www.automicvault.com/ | Automic Vault | From the creator of Homebrew | 1 |
-| https://www.automicvault.com/docs/ | Automic Vault CLI Docs | 1 |
-| https://www.automicvault.com/about/ | About Automic Vault | From the creator of Homebrew | 1 |
-| https://www.automicvault.com/security/ | Security | Automic Vault | 3 |
-| https://www.automicvault.com/privacy/ | Privacy | Automic Vault | 2 |
-| https://www.automicvault.com/terms/ | Terms | Automic Vault | 2 |
-| https://www.automicvault.com/download/ | Download Automic Vault for macOS | 1 |
-| https://www.automicvault.com/secrets-manager-for-ai-agents/ | Secrets Manager for AI Agents | Automic Vault | 1 |
-| https://www.automicvault.com/stop-ai-agents-reading-env-files/ | Stop AI Agents Reading .env Files | Automic Vault | 1 |
-| https://www.automicvault.com/api-key-management-for-ai-agents/ | API Key Management for AI Coding Agents | Automic Vault | 1 |
-| https://www.automicvault.com/hashicorp-vault-for-ai-agents/ | HashiCorp Vault vs Automic Vault for AI Agent Security | 2 |
-| https://www.automicvault.com/mcp-secrets-management/ | MCP Secrets Management for AI Agents | Automic Vault | 1 |
-| https://www.automicvault.com/privileged-access-management-for-ai-agents/ | Privileged Access Management for AI Agents | Automic Vault | 1 |
-| https://www.automicvault.com/ai-agent-approval-gates/ | AI Agent Approval Gates | Automic Vault | 1 |
-| https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/ | Secure AWS CLI Credentials for AI Agents | Automic Vault | 1 |
-| https://www.automicvault.com/github-cli-token-security-ai-agents/ | GitHub CLI Token Security for AI Agents | Automic Vault | 1 |
-| https://www.automicvault.com/secret-scanner-for-ai-agents/ | AI Agent Secret Scanner | Automic Vault | 1 |
-| https://www.automicvault.com/av-trace/ | av trace | Trace Shell Installers Before AI Agents Run Them | 1 |
-| https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/ | Secret Scanning vs Agent Secret Protection | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/brew/awscli/ | Install awscli with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/curl/ | Install curl with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/docker/ | Install docker with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/gh/ | Install gh with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/git/ | Install git with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/node/ | Install node with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/openssh/ | Install openssh with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/brew/ripgrep/ | Install ripgrep with Homebrew | Automic Vault | 0 |
-| https://www.automicvault.com/pkg/npm/tsx/ | Install tsx with npm | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/npm/vercel/ | Install vercel with npm | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/npm/vite/ | Install vite with npm | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/npm/wrangler/ | Install wrangler with npm | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/pip/pgcli/ | Install pgcli with PyPI | Automic Vault | 1 |
-| https://www.automicvault.com/pkg/pip/psycopg2/ | Install psycopg2 with PyPI | Automic Vault | 1 |
-
-## Evidence Notes
-
-- Live homepage was fetched through web search/open and showed deployed copy with package count, guides, and product claims.
-- Live indexed search found Automic Vault topic pages, the public GitHub repository, and `mxcl.dev` founder/entity support.
-- Local deployed artifact analysis covered `www/` after deployment because direct `curl` is blocked by local policy in this workspace.
-- Generated asset counts observed locally: 8,808 `index.html` files, 21 top-level sitemap URLs, and 8,789 package sitemap URLs.
+The package catalog is already valuable for GEO: it is large, crawlable, well linked, schema-rich, and source-backed. The next gains come from trust precision. Fix the missing LLM artifact and placeholder version first, then tighten package schema so AI systems distinguish verified facts from inferred convenience commands. After that, build external product authority and add direct-answer treatment to the most important package pages.
