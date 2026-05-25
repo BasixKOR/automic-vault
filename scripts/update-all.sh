@@ -7,12 +7,13 @@ daily_hour=3
 color_mode="auto"
 skip_isotope_builds=false
 skip_daily=false
+run_website_now=false
 run_once=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/update-all [--skip-isotope-builds] [--skip-daily]
-                          [--once]
+                          [--website-now] [--once]
                           [--color auto|always|never] [--no-color]
 
 Run the full publishing cadence:
@@ -22,7 +23,8 @@ Run the full publishing cadence:
 
 Options:
   --skip-isotope-builds             Pass --skip-builds through to update-db.sh.
-  --skip-daily                      Only run the hourly database cadence.
+  --skip-daily                      Disable scheduled daily website publishes.
+  --website-now                     Run the website publish immediately on startup.
   --once                            Run the next scheduled hourly slot and exit.
   --color auto|always|never         Control terminal color output.
                                     Defaults to auto.
@@ -49,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-daily)
       skip_daily=true
+      shift
+      ;;
+    --website-now)
+      run_website_now=true
       shift
       ;;
     --once)
@@ -263,12 +269,23 @@ trap 'log WARN "Stopping update-all"; exit 130' INT TERM
 log INFO "${bold}Automic Vault publishing cadence${reset}"
 log INFO "Database updates at the top of every hour"
 if [[ "${skip_daily}" == "true" ]]; then
-  log WARN "Daily package-page deploy is disabled"
+  log WARN "Scheduled daily package-page deploy is disabled"
 else
   log INFO "Package-page deploy runs daily at 03:00 local time"
 fi
 
 last_daily_date=""
+
+if [[ "${run_website_now}" == "true" ]]; then
+  log INFO "Immediate website publish requested"
+  if run_daily_publish; then
+    last_daily_date="$(date '+%Y-%m-%d')"
+    log OK "Immediate website publish completed"
+  else
+    log ERROR "Immediate website publish failed"
+    exit 1
+  fi
+fi
 
 while true; do
   scheduled_epoch="$(wait_until_next_hour)"
