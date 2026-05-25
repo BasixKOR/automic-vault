@@ -679,12 +679,6 @@ fn interpreter_script_for_always_allow(
             sha256: None,
         }));
     }
-    if !script_operand.is_absolute() {
-        return Err(
-            "interpreter always-allow requires a root-owned script file or absolute script path"
-                .to_string(),
-        );
-    }
     let sha256 = sha256_file(&script_path)?;
     Ok(Some(IsotopeAlwaysAllowScript {
         path: script_path,
@@ -2216,7 +2210,7 @@ mod tests {
     }
 
     #[test]
-    fn isotopes_always_allow_rejects_relative_non_root_owned_interpreter_scripts() {
+    fn isotopes_always_allow_hashes_relative_non_root_interpreter_scripts() {
         if unsafe { libc::geteuid() } == 0 {
             return;
         }
@@ -2232,8 +2226,9 @@ mod tests {
             &[OsString::from("script.sh")],
         );
         env::set_current_dir(previous_cwd).unwrap();
-        let err = result.unwrap_err();
-        assert!(err.contains("root-owned script file or absolute script path"));
+        let detected = result.unwrap().unwrap();
+        assert_eq!(detected.path, fs::canonicalize(&script).unwrap());
+        assert_eq!(detected.sha256, Some(sha256_file(&script).unwrap()));
     }
 
     #[test]
