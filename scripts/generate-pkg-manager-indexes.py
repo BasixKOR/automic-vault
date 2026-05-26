@@ -6,11 +6,15 @@ import io
 import json
 import os
 import re
+import subprocess
+import sqlite3
 import tarfile
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -27,15 +31,15 @@ MANAGER_DEFINITIONS: dict[str, dict[str, Any]] = {
         "display_name": "MacPorts",
         "platform": "macos",
         "command_template": "sudo port install {id}",
-        "source_label": "MacPorts ports index",
-        "urls": ["https://ports.macports.org/ports.json"],
+        "source_label": "MacPorts ports tree",
+        "urls": ["https://api.github.com/repos/macports/macports-ports/git/trees/master?recursive=1"],
     },
     "nix": {
         "display_name": "Nix",
         "platform": "linux",
         "command_template": "nix profile install nixpkgs#{id}",
-        "source_label": "NixOS unstable package index",
-        "urls": ["https://channels.nixos.org/nixpkgs-unstable/packages.json"],
+        "source_label": "nixpkgs package tree",
+        "urls": ["https://api.github.com/repos/NixOS/nixpkgs/git/trees/master?recursive=1"],
     },
     "apt": {
         "display_name": "apt",
@@ -90,15 +94,16 @@ MANAGER_DEFINITIONS: dict[str, dict[str, Any]] = {
         "display_name": "winget",
         "platform": "windows",
         "command_template": "winget install --id {id} -e",
-        "source_label": "Windows Package Manager manifest tree",
-        "urls": ["https://api.github.com/repos/microsoft/winget-pkgs/git/trees/master?recursive=1"],
+        "source_label": "Windows Package Manager source index",
+        "urls": ["https://cdn.winget.microsoft.com/cache/source.msix"],
     },
     "chocolatey": {
         "display_name": "Chocolatey",
         "platform": "windows",
         "command_template": "choco install {id}",
         "source_label": "Chocolatey community package catalog",
-        "urls": ["https://community.chocolatey.org/api/v2/Packages()?$select=Id&$top=1000"],
+        "urls": ["https://community.chocolatey.org/api/v2/Packages()?$filter=IsLatestVersion&$select=Id&$top=1000"],
+        "max_pages": 80,
     },
     "scoop": {
         "display_name": "Scoop",
@@ -204,6 +209,14 @@ def fetch_bytes(url: str, *, force_refresh: bool = False) -> bytes:
 def maybe_gzip_decompress(data: bytes, url: str = "") -> bytes:
     if url.endswith(".gz") or data.startswith(b"\x1f\x8b"):
         return gzip.decompress(data)
+    return data
+
+
+def maybe_decompress(data: bytes, url: str = "") -> bytes:
+    data = maybe_gzip_decompress(data, url)
+    if url.endswith(".zst"):
+        result = subprocess.run(["zstd", "-dc"], input=data, capture_output=True, check=True)
+        return result.stdout
     return data
 
 
@@ -354,22 +367,28 @@ def parse_repomd_primary_location(data: bytes, base_url: str) -> str:
         location = item.find("repo:location", namespace)
         href = location.get("href") if location is not None else ""
         if href:
-            return urllib.parse.urljoin(base_url.rsplit("/", 1)[0] + "/", href)
+            repo_root = base_url.rsplit("/repodata/", 1)[0] + "/"
+            return urllib.parse.urljoin(repo_root, href)
     raise ValueError("repomd.xml did not contain primary metadata")
 
 
 def parse_rpm_primary(data: bytes, source_url: str) -> list[dict[str, Any]]:
-    text = maybe_gzip_decompress(data, source_url)
-    root = ET.fromstring(text)
-    namespace = {"common": "http://linux.duke.edu/metadata/common"}
+    text = maybe_decompress(data, source_url)
     records = []
-    for package in root.findall("common:package", namespace):
-        if package.get("type") not in {"rpm", None}:
+    for _event, element in ET.iterparse(io.BytesIO(text), events=("end",)):
+        if not element.tag.endswith("package"):
             continue
-        name_node = package.find("common:name", namespace)
-        name = name_node.text.strip() if name_node is not None and name_node.text else ""
+        if element.get("type") not in {"rpm", None}:
+            element.clear()
+            continue
+        name = ""
+        for child in element:
+            if child.tag.endswith("name") and child.text:
+                name = child.text.strip()
+                break
         if name:
             records.append(record(name, source_url=source_url))
+        element.clear()
     return dedupe_records(records)
 
 
@@ -381,7 +400,16 @@ def parse_github_tree(data: bytes, source_url: str, manager: str) -> list[dict[s
         if not isinstance(item, dict) or item.get("type") != "blob":
             continue
         path = str(item.get("path") or "")
-        if manager == "winget":
+        if manager == "macports":
+            if path.endswith("/Portfile") and path.count("/") >= 2:
+                port_name = path.rsplit("/", 2)[-2]
+                records.append(record(port_name, source_url=source_url, source_name=path))
+        elif manager == "nix":
+            match = re.fullmatch(r"pkgs/by-name/[^/]+/([^/]+)/package\.nix", path)
+            if match:
+                attr = match.group(1)
+                records.append(record(attr, source_url=source_url, source_name=path))
+        elif manager == "winget":
             match = re.search(r"/([^/]+)\.installer\.ya?ml$", path, flags=re.IGNORECASE)
             if match:
                 package_id = match.group(1)
@@ -392,6 +420,35 @@ def parse_github_tree(data: bytes, source_url: str, manager: str) -> list[dict[s
                 package_id = f"{bucket}/{Path(path).stem}"
                 records.append(record(package_id, match_names=[Path(path).stem], source_url=source_url, source_name=path))
     return dedupe_records(records)
+
+
+def parse_winget_source_msix(data: bytes, source_url: str) -> list[dict[str, Any]]:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        db_data = archive.read("Public/index.db")
+    with tempfile.NamedTemporaryFile(suffix=".db") as database:
+        database.write(db_data)
+        database.flush()
+        connection = sqlite3.connect(database.name)
+        try:
+            records = []
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ids.id, names.name, monikers.moniker
+                FROM manifest
+                JOIN ids ON ids.rowid = manifest.id
+                JOIN names ON names.rowid = manifest.name
+                JOIN monikers ON monikers.rowid = manifest.moniker
+                """
+            )
+            for package_id, name, moniker in rows:
+                package_id = str(package_id or "").strip()
+                if not package_id:
+                    continue
+                match_names = [str(name or ""), str(moniker or "")]
+                records.append(record(package_id, match_names=match_names, source_url=source_url, source_name=package_id))
+            return dedupe_records(records)
+        finally:
+            connection.close()
 
 
 def parse_chocolatey_atom(data: bytes, source_url: str) -> tuple[list[dict[str, Any]], str]:
@@ -415,16 +472,16 @@ def parse_chocolatey_atom(data: bytes, source_url: str) -> tuple[list[dict[str, 
     return dedupe_records(records), next_url
 
 
-def build_records_for_manager(manager: str, urls: list[str], *, force_refresh: bool = False) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def build_records_for_manager(manager: str, urls: list[str], *, force_refresh: bool = False, max_pages: int | None = None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     records: list[dict[str, Any]] = []
     source_fingerprints: list[dict[str, str]] = []
     for url in urls:
         data = fetch_bytes(url, force_refresh=force_refresh)
         source_fingerprints.append({"url": url, "sha256": stable_hash_bytes(data)})
         if manager == "macports":
-            records.extend(parse_macports_ports_json(data, url))
+            records.extend(parse_github_tree(data, url, manager))
         elif manager == "nix":
-            records.extend(parse_nix_packages_json(maybe_gzip_decompress(data, url), url))
+            records.extend(parse_github_tree(data, url, manager))
         elif manager == "apt":
             records.extend(parse_debian_packages(data, url))
         elif manager == "pacman":
@@ -436,12 +493,18 @@ def build_records_for_manager(manager: str, urls: list[str], *, force_refresh: b
             primary_data = fetch_bytes(primary_url, force_refresh=force_refresh)
             source_fingerprints.append({"url": primary_url, "sha256": stable_hash_bytes(primary_data)})
             records.extend(parse_rpm_primary(primary_data, primary_url))
-        elif manager in {"winget", "scoop"}:
+        elif manager == "winget":
+            records.extend(parse_winget_source_msix(data, url))
+        elif manager == "scoop":
             records.extend(parse_github_tree(data, url, manager))
         elif manager == "chocolatey":
             next_url = url
             seen_pages = set()
+            page_count = 0
             while next_url and next_url not in seen_pages:
+                if max_pages is not None and page_count >= max_pages:
+                    break
+                page_count += 1
                 seen_pages.add(next_url)
                 page_data = data if next_url == url else fetch_bytes(next_url, force_refresh=force_refresh)
                 if next_url != url:
@@ -469,7 +532,12 @@ def apply_alias_matches(managers: dict[str, Any]) -> None:
 def build_manager_indexes(*, force_refresh: bool = False) -> dict[str, Any]:
     managers: dict[str, Any] = {}
     for manager, definition in MANAGER_DEFINITIONS.items():
-        records, source_fingerprints = build_records_for_manager(manager, definition["urls"], force_refresh=force_refresh)
+        records, source_fingerprints = build_records_for_manager(
+            manager,
+            definition["urls"],
+            force_refresh=force_refresh,
+            max_pages=definition.get("max_pages"),
+        )
         managers[manager] = {
             "display_name": definition["display_name"],
             "platform": definition["platform"],

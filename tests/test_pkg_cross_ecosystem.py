@@ -187,16 +187,32 @@ class PackageCrossEcosystemTests(unittest.TestCase):
                 "manager": "apt",
                 "command": "sudo apt install ripgrep",
                 "kind": "package_manager",
-                "confidence": 0.38,
-                "evidence": "unit test",
+                "confidence": 0.92,
+                "evidence": "Ubuntu 24.04 LTS package indexes: ripgrep from unit test",
+                "source": {
+                    "type": "package_manager_index",
+                    "manager": "apt",
+                    "source_label": "Ubuntu 24.04 LTS package indexes",
+                    "package_id": "ripgrep",
+                    "package_name": "ripgrep",
+                    "source_url": "unit test",
+                },
             },
             {
                 "platform": "windows",
                 "manager": "winget",
-                "command": "winget install ripgrep",
+                "command": "winget install --id BurntSushi.ripgrep -e",
                 "kind": "package_manager",
-                "confidence": 0.34,
-                "evidence": "unit test",
+                "confidence": 0.92,
+                "evidence": "Windows Package Manager manifest tree: BurntSushi.ripgrep from unit test",
+                "source": {
+                    "type": "package_manager_index",
+                    "manager": "winget",
+                    "source_label": "Windows Package Manager manifest tree",
+                    "package_id": "BurntSushi.ripgrep",
+                    "package_name": "BurntSushi.ripgrep",
+                    "source_url": "unit test",
+                },
             },
         ]
 
@@ -212,6 +228,34 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         self.assertIn("brew install ripgrep", markdown)
         how_to = next(item for item in schema["@graph"] if item["@type"] == "HowTo")
         self.assertEqual(how_to["step"][0]["text"], "sudo av install brew:ripgrep")
+        self.assertIn("sudo apt install ripgrep", [step["text"] for step in how_to["step"]])
+
+    def test_howto_schema_excludes_inferred_or_low_confidence_commands(self):
+        module = load_module(PAGES_SCRIPT, "pkg_cross_pages_howto_filter")
+        page = module.PackagePage(provider="brew", name="alpha")
+        page.install_commands = [
+            {
+                "platform": "portable",
+                "manager": "Automic Vault",
+                "command": "sudo av install brew:alpha",
+                "kind": "automic_vault",
+                "confidence": 1,
+                "evidence": "deterministic local package key",
+            },
+            {
+                "platform": "linux",
+                "manager": "apt",
+                "command": "sudo apt install alpha",
+                "kind": "package_manager",
+                "confidence": 0.38,
+                "evidence": "agent-inferred from package-name convention",
+            },
+        ]
+
+        schema = module.schema_for_package(page, "Install alpha.", "2026-05-24")
+        how_to = next(item for item in schema["@graph"] if item["@type"] == "HowTo")
+
+        self.assertEqual([step["text"] for step in how_to["step"]], ["sudo av install brew:alpha"])
 
     def test_npm_page_renders_av_first_and_brew_only_when_linked(self):
         module = load_module(PAGES_SCRIPT, "pkg_cross_pages_npm")
@@ -250,6 +294,57 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         self.assertLess(html.index("sudo av install npm:alpha"), html.index("npm install -g alpha"))
         self.assertIn("brew install alpha", html)
         self.assertIn("../../brew/alpha/", related)
+
+    def test_local_curate_uses_source_backed_manager_index_matches(self):
+        module = load_module(CROSS_SCRIPT, "pkg_cross_source_backed")
+        manager_indexes = {
+            "managers": {
+                "apt": {
+                    "display_name": "apt",
+                    "platform": "linux",
+                    "command_template": "sudo apt install {id}",
+                    "source_label": "Ubuntu 24.04 LTS package indexes",
+                    "packages": {
+                        "nodejs": {
+                            "id": "nodejs",
+                            "match_names": ["node"],
+                            "source_name": "nodejs",
+                            "source_url": "unit test",
+                        }
+                    },
+                }
+            }
+        }
+        packet = {
+            "target": {
+                "key": "brew:node",
+                "provider": "brew",
+                "name": "node",
+            },
+            "localCandidates": [],
+        }
+
+        curated = module.local_curate_packet(packet, module.manager_matcher(manager_indexes))
+        commands = curated["commands"]
+
+        self.assertIn("sudo apt install nodejs", [item["command"] for item in commands])
+        apt = next(item for item in commands if item["manager"] == "apt")
+        self.assertEqual(apt["source"]["package_id"], "nodejs")
+        self.assertNotIn("agent-inferred", apt["evidence"])
+
+    def test_validation_rejects_inferred_command_evidence(self):
+        module = load_module(CROSS_SCRIPT, "pkg_cross_no_inferred_validation")
+        item = {
+            "platform": "linux",
+            "manager": "apt",
+            "command": "sudo apt install alpha",
+            "confidence": 0.38,
+            "evidence": "agent-inferred from package-name convention",
+        }
+
+        failures = module.validate_command("brew:alpha", 1, item)
+
+        self.assertTrue(any("inferred evidence" in failure for failure in failures))
 
     def test_current_cross_ecosystem_artifact_validates_when_present(self):
         path = ROOT / "data" / "pkg-cross-ecosystem.json"

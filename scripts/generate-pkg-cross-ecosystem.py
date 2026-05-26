@@ -14,9 +14,22 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 OUTPUT_PATH = Path("data/pkg-cross-ecosystem.json")
+PKG_MANAGER_INDEX_PATH = Path("data/pkg-manager-indexes.json")
 ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
+SOURCE_BACKED_MANAGER_CONFIDENCE = {
+    "macports": 0.94,
+    "nix": 0.92,
+    "apt": 0.92,
+    "dnf": 0.92,
+    "pacman": 0.92,
+    "apk": 0.92,
+    "zypper": 0.92,
+    "winget": 0.92,
+    "chocolatey": 0.92,
+    "scoop": 0.92,
+}
 
 
 class Terminal:
@@ -75,7 +88,9 @@ def source_files() -> list[Path]:
         Path("data/db.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
+        Path("data/pkg-manager-indexes.json"),
         Path("scripts/generate-pkg-cross-ecosystem.py"),
+        Path("scripts/generate-pkg-manager-indexes.py"),
     ]
     for root in (Path("data/pkg-pages"),):
         if root.exists():
@@ -209,22 +224,72 @@ def native_commands(facts: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def inferred_brew_commands(name: str) -> list[dict[str, Any]]:
-    evidence = "agent-inferred from package-name convention; verify availability with the package manager before use"
-    nix_attr = re.sub(r"[^A-Za-z0-9_.+-]", "-", name)
-    return [
-        command("macos", "MacPorts", f"sudo port install {name}", 0.42, evidence),
-        command("macos", "Nix", f"nix profile install nixpkgs#{nix_attr}", 0.42, evidence),
-        command("linux", "apt", f"sudo apt install {name}", 0.38, evidence),
-        command("linux", "dnf", f"sudo dnf install {name}", 0.38, evidence),
-        command("linux", "pacman", f"sudo pacman -S {name}", 0.38, evidence),
-        command("linux", "apk", f"sudo apk add {name}", 0.34, evidence),
-        command("linux", "zypper", f"sudo zypper install {name}", 0.34, evidence),
-        command("linux", "Nix", f"nix profile install nixpkgs#{nix_attr}", 0.42, evidence),
-        command("windows", "winget", f"winget install {name}", 0.34, evidence),
-        command("windows", "Chocolatey", f"choco install {name}", 0.34, evidence),
-        command("windows", "Scoop", f"scoop install {name}", 0.34, evidence),
-    ]
+def load_manager_indexes() -> dict[str, Any]:
+    return read_json(PKG_MANAGER_INDEX_PATH, {})
+
+
+def manager_matcher(manager_indexes: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    managers = manager_indexes.get("managers") if isinstance(manager_indexes, dict) else None
+    if not isinstance(managers, dict):
+        return {}
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for manager_key, definition in managers.items():
+        if not isinstance(definition, dict):
+            continue
+        packages = definition.get("packages")
+        if not isinstance(packages, dict):
+            continue
+        display_name = str(definition.get("display_name") or manager_key)
+        platform = str(definition.get("platform") or "")
+        command_template = str(definition.get("command_template") or "")
+        source_label = str(definition.get("source_label") or "")
+        if platform not in ALLOWED_PLATFORMS or "{id}" not in command_template:
+            continue
+        for package_id, package in packages.items():
+            if not isinstance(package, dict):
+                continue
+            install_id = str(package.get("id") or package_id).strip()
+            if not install_id:
+                continue
+            match_names = package.get("match_names")
+            if not isinstance(match_names, list):
+                continue
+            source_url = str(package.get("source_url") or "")
+            source_name = str(package.get("source_name") or install_id)
+            evidence = f"{source_label}: {source_name} from {source_url}" if source_url else f"{source_label}: {source_name}"
+            item = command(
+                platform,
+                display_name,
+                command_template.format(id=install_id),
+                SOURCE_BACKED_MANAGER_CONFIDENCE.get(str(manager_key), 0.9),
+                evidence,
+            )
+            item["source"] = {
+                "type": "package_manager_index",
+                "manager": str(manager_key),
+                "source_label": source_label,
+                "package_id": install_id,
+                "package_name": source_name,
+                "source_url": source_url,
+            }
+            for match_name in match_names:
+                normalized = normalize_name(str(match_name))
+                if normalized:
+                    result[normalized].append(item)
+    for normalized, items in result.items():
+        result[normalized] = dedupe_commands(items)
+    return result
+
+
+def source_backed_manager_commands(facts: dict[str, Any], matcher: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    # The previous implementation only added cross-manager guesses for Homebrew
+    # formula pages. Keep that surface, but now require a database-backed match.
+    if facts.get("provider") != "brew":
+        return []
+    normalized = normalize_name(str(facts.get("name") or ""))
+    if not normalized:
+        return []
+    return list(matcher.get(normalized) or [])
 
 
 def local_link(candidate: dict[str, str], reason: str, evidence: str, confidence: float = 0.78) -> dict[str, Any]:
@@ -239,13 +304,12 @@ def local_link(candidate: dict[str, str], reason: str, evidence: str, confidence
     }
 
 
-def local_curate_packet(packet: dict[str, Any]) -> dict[str, Any]:
+def local_curate_packet(packet: dict[str, Any], matcher: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     target = packet["target"]
     package_key = target["key"]
     commands = [av_command(package_key)]
     commands.extend(native_commands(target))
-    if target["provider"] == "brew":
-        commands.extend(inferred_brew_commands(target["name"]))
+    commands.extend(source_backed_manager_commands(target, matcher or {}))
     links = [
         local_link(
             candidate,
@@ -289,13 +353,17 @@ def build_entry(
     candidates: list[dict[str, str]],
     existing: dict[str, Any] | None,
     agent_cmd: str,
+    matcher: dict[str, list[dict[str, Any]]],
+    manager_index_hash: str,
 ) -> dict[str, Any]:
     facts_hash = stable_hash(facts)
     candidate_hash = stable_hash(candidates)
     if (
         existing
+        and existing.get("schema") == SCHEMA_VERSION
         and existing.get("facts_hash") == facts_hash
         and existing.get("candidate_hash") == candidate_hash
+        and existing.get("manager_index_hash") == manager_index_hash
         and isinstance(existing.get("commands"), list)
     ):
         return existing
@@ -309,7 +377,7 @@ def build_entry(
         "requiredFirstCommand": av_command(package_key),
         "localCandidates": candidates,
     }
-    curated = run_agent(agent_cmd, packet) if agent_cmd else local_curate_packet(packet)
+    curated = run_agent(agent_cmd, packet) if agent_cmd else local_curate_packet(packet, matcher)
     commands = curated.get("commands") or []
     if not commands or not isinstance(commands, list):
         commands = [av_command(package_key)]
@@ -317,8 +385,10 @@ def build_entry(
         commands = [av_command(package_key)] + [item for item in commands if isinstance(item, dict)]
     return {
         "target": package_key,
+        "schema": SCHEMA_VERSION,
         "facts_hash": facts_hash,
         "candidate_hash": candidate_hash,
+        "manager_index_hash": manager_index_hash,
         "curated_at": utc_now(),
         "curator": "agent-cmd" if agent_cmd else "codex-local-cross-ecosystem",
         "commands": dedupe_commands([item for item in commands if isinstance(item, dict)]),
@@ -346,6 +416,14 @@ def validate_command(package_key: str, index: int, item: Any) -> list[str]:
             failures.append(f"{package_key}: command {index} has out-of-range confidence")
     if index > 0 and not str(item.get("evidence") or "").strip():
         failures.append(f"{package_key}: command {index} is missing evidence")
+    if "agent-inferred" in str(item.get("evidence") or ""):
+        failures.append(f"{package_key}: command {index} uses inferred evidence")
+    source = item.get("source")
+    if source is not None:
+        if not isinstance(source, dict):
+            failures.append(f"{package_key}: command {index} source must be an object")
+        elif not str(source.get("source_label") or "").strip() or not str(source.get("package_id") or "").strip():
+            failures.append(f"{package_key}: command {index} source is missing package provenance")
     return failures
 
 
@@ -397,6 +475,9 @@ def validate_artifact(artifact: dict[str, Any], page_keys: set[str]) -> list[str
 
 def build_cross_ecosystem(agent_cmd: str = "", existing: dict[str, Any] | None = None) -> dict[str, Any]:
     existing = existing or read_json(OUTPUT_PATH, {})
+    manager_indexes = load_manager_indexes()
+    matcher = manager_matcher(manager_indexes)
+    manager_index_hash = stable_hash(manager_indexes)
     pages = local_pages()
     facts_by_key = {key: page_facts(page) for key, page in pages.items()}
     candidates_by_key = local_candidates(pages)
@@ -409,6 +490,8 @@ def build_cross_ecosystem(agent_cmd: str = "", existing: dict[str, Any] | None =
             candidates_by_key.get(package_key, []),
             (existing_packages or {}).get(package_key) if isinstance(existing_packages, dict) else None,
             agent_cmd,
+            matcher,
+            manager_index_hash,
         )
     files = source_files()
     artifact = {

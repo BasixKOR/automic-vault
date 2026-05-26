@@ -2055,6 +2055,23 @@ def install_command_entries(page: PackagePage) -> list[dict[str, Any]]:
     return entries
 
 
+def source_backed_schema_commands(page: PackagePage) -> list[dict[str, Any]]:
+    result = []
+    for item in install_command_entries(page):
+        command_text = str(item.get("command") or "").strip()
+        evidence = str(item.get("evidence") or "")
+        if not command_text or "agent-inferred" in evidence:
+            continue
+        try:
+            confidence = float(item.get("confidence"))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if confidence < 0.9:
+            continue
+        result.append(item)
+    return result
+
+
 def geiger_level_label(geiger: dict[str, Any]) -> str:
     level = geiger.get("level") or "unknown"
     return str(level)
@@ -2704,7 +2721,7 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
                 "name": f"Run {item.get('manager') or 'install'} command",
                 "text": str(item.get("command") or ""),
             }
-            for index, item in enumerate(install_command_entries(page)[:12])
+            for index, item in enumerate(source_backed_schema_commands(page)[:12])
             if str(item.get("command") or "").strip()
         ],
     }

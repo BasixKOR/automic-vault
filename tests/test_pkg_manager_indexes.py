@@ -2,8 +2,11 @@ import gzip
 import importlib.util
 import io
 import json
+import sqlite3
 import tarfile
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -102,6 +105,35 @@ class PackageManagerIndexTests(unittest.TestCase):
         self.assertEqual(winget[0]["id"], "BurntSushi.ripgrep")
         self.assertEqual(scoop[0]["id"], "main/ripgrep")
         self.assertIn("ripgrep", scoop[0]["match_names"])
+
+    def test_parse_winget_source_msix(self):
+        module = load_module(INDEX_SCRIPT, "pkg_manager_winget_msix")
+        with tempfile.NamedTemporaryFile(suffix=".db") as database:
+            connection = sqlite3.connect(database.name)
+            connection.executescript(
+                """
+                CREATE TABLE ids(rowid INTEGER PRIMARY KEY, id TEXT NOT NULL);
+                CREATE TABLE names(rowid INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                CREATE TABLE monikers(rowid INTEGER PRIMARY KEY, moniker TEXT NOT NULL);
+                CREATE TABLE manifest(rowid INTEGER PRIMARY KEY, id INT64 NOT NULL, name INT64 NOT NULL, moniker INT64 NOT NULL);
+                INSERT INTO ids(rowid, id) VALUES (1, 'BurntSushi.ripgrep');
+                INSERT INTO names(rowid, name) VALUES (1, 'ripgrep');
+                INSERT INTO monikers(rowid, moniker) VALUES (1, 'rg');
+                INSERT INTO manifest(rowid, id, name, moniker) VALUES (1, 1, 1, 1);
+                """
+            )
+            connection.commit()
+            connection.close()
+            db_data = Path(database.name).read_bytes()
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, mode="w") as archive:
+            archive.writestr("Public/index.db", db_data)
+
+        records = module.parse_winget_source_msix(payload.getvalue(), "https://winget.example/source.msix")
+
+        self.assertEqual(records[0]["id"], "BurntSushi.ripgrep")
+        self.assertIn("ripgrep", records[0]["match_names"])
+        self.assertIn("rg", records[0]["match_names"])
 
     def test_parse_chocolatey_atom(self):
         module = load_module(INDEX_SCRIPT, "pkg_manager_chocolatey")

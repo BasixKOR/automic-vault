@@ -224,6 +224,8 @@ run_daily_publish() {
     python3 "${script_dir}/generate-pkg-page-enrichment.py" --refresh || return 1
   run_step "package version freshness generation" \
     python3 "${script_dir}/generate-pkg-version-freshness.py" || return 1
+  run_step "package manager index generation" \
+    python3 "${script_dir}/generate-pkg-manager-indexes.py" || return 1
   run_step "package cross-ecosystem generation" \
     python3 "${script_dir}/generate-pkg-cross-ecosystem.py" || return 1
   run_step "package graph prepass generation" \

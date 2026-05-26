@@ -106,6 +106,7 @@ llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
 package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
 package_page_enrichment_generator="${repo_root}/scripts/generate-pkg-page-enrichment.py"
 package_version_freshness_generator="${repo_root}/scripts/generate-pkg-version-freshness.py"
+package_manager_indexes_generator="${repo_root}/scripts/generate-pkg-manager-indexes.py"
 package_cross_ecosystem_generator="${repo_root}/scripts/generate-pkg-cross-ecosystem.py"
 package_graph_curation_generator="${repo_root}/scripts/generate-pkg-graph-curation.py"
 package_graph_generator="${repo_root}/scripts/generate-pkg-graph.py"
@@ -292,6 +293,12 @@ assert_package_pages_current() {
     die "Missing package version freshness generator: ${package_version_freshness_generator}"
   fi
   python3 "${package_version_freshness_generator}" --check
+
+  log_step "Checking package manager indexes"
+  if [[ ! -x "${package_manager_indexes_generator}" && ! -f "${package_manager_indexes_generator}" ]]; then
+    die "Missing package manager index generator: ${package_manager_indexes_generator}"
+  fi
+  python3 "${package_manager_indexes_generator}" --check
 
   log_step "Checking package cross-ecosystem install commands"
   if [[ ! -x "${package_cross_ecosystem_generator}" && ! -f "${package_cross_ecosystem_generator}" ]]; then
