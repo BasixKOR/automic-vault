@@ -806,6 +806,36 @@ fn subs_list_and_outdated_commands_cover_requested_outputs() {
 }
 
 #[test]
+fn subs_outdated_human_output_reports_empty_result() {
+    let info_output = run_nuke(&["info", "cask:codex", "--json"]);
+    assert!(info_output.status.success(), "{}", stderr(&info_output));
+    let info: serde_json::Value = serde_json::from_slice(&info_output.stdout).unwrap();
+    let latest_version = info["latest_version"].as_str().unwrap();
+
+    let _installed = PackageRootGuard::install(
+        "codex",
+        latest_version,
+        serde_json::json!({
+            "kind": "cask",
+            "cask_name": "codex"
+        }),
+    );
+
+    let output = run_nuke(&["outdated", "codex"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(output.stdout.is_empty());
+    assert_eq!(stderr(&output), "No outdated packages.\n");
+
+    let output = run_nuke(&["outdated", "codex", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(stdout(&output), "[]\n");
+
+    let output = run_nuke(&["outdated", "codex", "--jsonl"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
 fn subs_help_fallback_and_non_utf8_arguments_report_errors() {
     let output = run_nuke(&["help", "wat"]);
     assert!(output.status.success());

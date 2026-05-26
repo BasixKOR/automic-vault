@@ -105,6 +105,10 @@ pub(crate) fn run_outdated(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     let packages = resolve_outdated_package_statuses(&config, &request.selection)?;
     match request.output {
         OutputMode::Human => {
+            if packages.is_empty() {
+                eprintln!("No outdated packages.");
+                return Ok(());
+            }
             for package in packages {
                 println!(
                     "{} {} -> {}",
