@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import datetime as dt
 import hashlib
 import html
@@ -19,6 +20,8 @@ SCHEMA_VERSION = 1
 SITE_ORIGIN = "https://www.automicvault.com"
 OUTPUT_DIR = Path("www/pkg")
 MANIFEST_NAME = ".manifest.json"
+I18N_LOCALES_PATH = Path("data/www-i18n/locales.json")
+I18N_PKG_TEMPLATES_PATH = Path("data/www-i18n/pkg/templates.json")
 INDEXABLE_MIN_SIGNAL_COUNT = 2
 GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
@@ -29,6 +32,71 @@ GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
 
     gtag('config', 'G-Y78QKG1T9Y');
   </script>"""
+
+_I18N_LOCALES_CACHE: list[dict[str, Any]] | None = None
+_I18N_PKG_TEMPLATES_CACHE: dict[str, dict[str, str]] | None = None
+
+
+def i18n_locales() -> list[dict[str, Any]]:
+    global _I18N_LOCALES_CACHE
+    if _I18N_LOCALES_CACHE is not None:
+        return _I18N_LOCALES_CACHE
+    try:
+        data = read_json(I18N_LOCALES_PATH)
+    except FileNotFoundError:
+        _I18N_LOCALES_CACHE = [{"code": "en", "slug": "", "htmlLang": "en", "hreflang": "en", "nativeName": "English"}]
+        return _I18N_LOCALES_CACHE
+    _I18N_LOCALES_CACHE = [
+        item
+        for item in data.get("locales", [])
+        if item.get("enabled") and item.get("code")
+    ]
+    return _I18N_LOCALES_CACHE
+
+
+def non_default_i18n_locales() -> list[dict[str, Any]]:
+    return [locale for locale in i18n_locales() if locale.get("code") != "en"]
+
+
+def i18n_pkg_templates() -> dict[str, dict[str, str]]:
+    global _I18N_PKG_TEMPLATES_CACHE
+    if _I18N_PKG_TEMPLATES_CACHE is not None:
+        return _I18N_PKG_TEMPLATES_CACHE
+    try:
+        _I18N_PKG_TEMPLATES_CACHE = read_json(I18N_PKG_TEMPLATES_PATH, {})
+    except FileNotFoundError:
+        _I18N_PKG_TEMPLATES_CACHE = {}
+    return _I18N_PKG_TEMPLATES_CACHE
+
+
+def locale_code(locale: dict[str, Any] | None) -> str:
+    return str((locale or {}).get("code") or "en")
+
+
+def locale_slug(locale: dict[str, Any] | None) -> str:
+    return str((locale or {}).get("slug") or "")
+
+
+def locale_path(path: str, locale: dict[str, Any] | None = None) -> str:
+    slug = locale_slug(locale)
+    if not slug:
+        return path
+    if path == "/":
+        return f"/{slug}/"
+    return f"/{slug}{path}"
+
+
+def locale_url(path: str, locale: dict[str, Any] | None = None) -> str:
+    return f"{SITE_ORIGIN}{locale_path(path, locale)}"
+
+
+def tx(locale: dict[str, Any] | None, key: str, default: str, **kwargs: Any) -> str:
+    code = locale_code(locale)
+    template = i18n_pkg_templates().get(code, {}).get(key, default)
+    try:
+        return template.format(**kwargs)
+    except (KeyError, ValueError):
+        return default.format(**kwargs)
 
 
 @dataclass
@@ -542,6 +610,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     pages = executable_package_pages(pages)
     apply_package_graph(pages, sources.get("pkg_graph") or {})
     apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
+    verify_local_install_commands(pages)
 
     return pages
 
@@ -734,6 +803,67 @@ def merge_hub_links(existing: list[dict[str, Any]], generated: list[Any]) -> lis
         seen.add(slug)
         result.append(item)
     return result
+
+
+def native_command_package_key(command_text: str) -> tuple[str, str] | None:
+    text = normalize_space(command_text)
+    patterns = (
+        (r"^brew\s+install\s+--cask\s+([A-Za-z0-9@._/+~-]+)$", "cask"),
+        (r"^brew\s+install\s+(?!--cask\b)([A-Za-z0-9@._/+~-]+)$", "brew"),
+        (r"^(?:npm\s+(?:install|i)\s+-g|npm\s+-g\s+(?:install|i))\s+(@?[A-Za-z0-9._/+~-]+)$", "npm"),
+        (r"^pip\s+install\s+([A-Za-z0-9._/+~-]+)$", "pip"),
+    )
+    for pattern, provider in patterns:
+        match = re.match(pattern, text)
+        if match:
+            return provider, match.group(1)
+    return None
+
+
+def verified_install_evidence(provider: str) -> str:
+    return {
+        "brew": "local Homebrew formula metadata",
+        "cask": "local Homebrew cask metadata",
+        "npm": "local npm package metadata",
+        "pip": "local PyPI package metadata",
+    }.get(provider, "local package metadata")
+
+
+def verify_local_install_commands(pages: dict[str, PackagePage]) -> None:
+    for page in pages.values():
+        verified_commands: list[dict[str, Any]] = []
+        verified_links: list[dict[str, Any]] = []
+        for item in page.install_commands:
+            if not isinstance(item, dict):
+                continue
+            command_key = native_command_package_key(str(item.get("command") or ""))
+            if command_key is None:
+                verified_commands.append(item)
+                continue
+            provider, name = command_key
+            target_key = f"{provider}:{name}"
+            target = pages.get(target_key)
+            if target is None or target.key == page.key:
+                verified_commands.append(item)
+                continue
+            verified_commands.append({
+                **item,
+                "confidence": 1.0,
+                "evidence": verified_install_evidence(provider),
+            })
+            verified_links.append({
+                "provider": provider,
+                "name": name,
+                "label": target.display_name,
+                "rel": "same_software_cross_ecosystem",
+                "reason": "Install command points at a matching local package page.",
+                "confidence": 1.0,
+                "evidence": verified_install_evidence(provider),
+            })
+        page.install_commands = merge_install_command_entries(verified_commands)
+        if verified_links:
+            page.also_available_via = merge_related_links(page.also_available_via, verified_links, limit=12)
+            page.source_notes.append("local install command verification")
 
 
 def merge_install_command_entries(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1069,6 +1199,9 @@ def source_files() -> list[Path]:
     supplement_root = Path("data/pkg-pages")
     if supplement_root.exists():
         files.extend(path for path in supplement_root.rglob("*.json") if path.is_file())
+    i18n_root = Path("data/www-i18n")
+    if i18n_root.exists():
+        files.extend(path for path in i18n_root.rglob("*.json") if path.is_file())
     isotope_root = Path("data/isotopes")
     if isotope_root.exists():
         files.extend(path for path in isotope_root.glob("*/README.md") if path.is_file())
@@ -1252,10 +1385,12 @@ def hub_sort_key(page: PackagePage) -> tuple[int, int, int, str, str]:
 
 
 def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_dir: Path) -> None:
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "styles.css").write_text(render_css(), encoding="utf-8")
+    locales = i18n_locales()
+    generated_dirs = [output_dir] + [output_dir.parent / locale_slug(locale) / "pkg" for locale in non_default_i18n_locales()]
+    for generated_dir in generated_dirs:
+        if generated_dir.exists():
+            shutil.rmtree(generated_dir)
+        generated_dir.mkdir(parents=True, exist_ok=True)
     ordered = sorted(pages.values(), key=lambda page: (page.provider, page.slug, page.name))
     hubs = package_hub_pages(ordered)
     indexable_pages = [page for page in ordered if is_indexable_package_page(page)]
@@ -1274,27 +1409,36 @@ def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_d
         for provider in ("brew", "cask", "npm", "pip")
         if any(page.provider == provider for page in indexable_pages)
     }
-    for page in ordered:
-        page_dir = output_dir / page.provider / page.slug
-        page_dir.mkdir(parents=True, exist_ok=True)
-        (page_dir / "index.html").write_text(render_package_page(page, manifest), encoding="utf-8")
-        if is_indexable_package_page(page):
-            (page_dir / "index.md").write_text(render_package_markdown(page, manifest), encoding="utf-8")
-    for hub, hub_pages in hubs:
-        hub_dir = output_dir / hub.slug
-        hub_dir.mkdir(parents=True, exist_ok=True)
-        (hub_dir / "index.html").write_text(render_hub_page(hub, hub_pages, manifest), encoding="utf-8")
-    (output_dir / "index.html").write_text(render_index(ordered, hubs, manifest), encoding="utf-8")
-    (output_dir / "sitemap.xml").write_text(render_sitemap_index(sitemap_names, manifest), encoding="utf-8")
-    (output_dir / "sitemap-hubs.xml").write_text(render_hub_sitemap(hubs, manifest), encoding="utf-8")
-    for provider in ("brew", "cask", "npm", "pip"):
-        provider_pages = [page for page in indexable_pages if page.provider == provider]
-        if provider_pages:
-            (output_dir / f"sitemap-{provider}.xml").write_text(render_package_sitemap(provider_pages, manifest), encoding="utf-8")
-    (output_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    for locale in locales:
+        localized_dir = output_dir if locale_code(locale) == "en" else output_dir.parent / locale_slug(locale) / "pkg"
+        (localized_dir / "styles.css").write_text(render_css(), encoding="utf-8")
+        for page in ordered:
+            page_dir = localized_dir / page.provider / page.slug
+            page_dir.mkdir(parents=True, exist_ok=True)
+            (page_dir / "index.html").write_text(render_package_page(page, manifest, locale), encoding="utf-8")
+            if is_indexable_package_page(page):
+                (page_dir / "index.md").write_text(render_package_markdown(page, manifest, locale), encoding="utf-8")
+        for hub, hub_pages in hubs:
+            hub_dir = localized_dir / hub.slug
+            hub_dir.mkdir(parents=True, exist_ok=True)
+            (hub_dir / "index.html").write_text(render_hub_page(hub, hub_pages, manifest, locale), encoding="utf-8")
+        (localized_dir / "index.html").write_text(render_index(ordered, hubs, manifest, locale), encoding="utf-8")
+        if locale_code(locale) == "en":
+            (localized_dir / "sitemap.xml").write_text(render_sitemap_index(sitemap_names, manifest), encoding="utf-8")
+            (localized_dir / "sitemap-hubs.xml").write_text(render_hub_sitemap(hubs, manifest), encoding="utf-8")
+            for provider in ("brew", "cask", "npm", "pip"):
+                provider_pages = [page for page in indexable_pages if page.provider == provider]
+                if provider_pages:
+                    (localized_dir / f"sitemap-{provider}.xml").write_text(render_package_sitemap(provider_pages, manifest), encoding="utf-8")
+        (localized_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
+def render_index(
+    pages: list[PackagePage],
+    hubs: list[tuple[PackageHub, list[PackagePage]]],
+    manifest: dict[str, Any],
+    locale: dict[str, Any] | None = None,
+) -> str:
     secured = [page for page in pages if page.isotope]
     gated = [page for page in pages if page.approval_gate]
     top_pages = sorted(
@@ -1302,40 +1446,43 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
         key=lambda page: int(page.popularity.get("rank") or 999999),
     )[:72]
     package_links = "\n".join(
-        f'<a class="package-row" href="{page.path}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page))}</small></a>'
+        f'<a class="package-row" href="{locale_path(page.path, locale)}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page))}</small></a>'
         for page in top_pages
     )
     hub_links = "\n".join(
-        f'<a class="hub-card" href="{hub.path}"><span>{html_escape(hub.title)}</span><strong>{fmt_int(len(hub_pages))}</strong><small>{html_escape(hub.kicker)}</small></a>'
+        f'<a class="hub-card" href="{locale_path(hub.path, locale)}"><span>{html_escape(hub.title)}</span><strong>{fmt_int(len(hub_pages))}</strong><small>{html_escape(hub.kicker)}</small></a>'
         for hub, hub_pages in hubs
     )
+    search_placeholder = json.dumps(tx(locale, "searchPlaceholder", "Search awscli, gh, .env, npm publish"), ensure_ascii=False)
     return html_doc(
-        title="Package security catalog | Automic Vault",
-        description=(
+        title=tx(locale, "packageCatalogTitle", "Package security catalog") + " | Automic Vault",
+        description=tx(locale, "packageCatalogDescription", (
             "Automic Vault package catalog for executable Nucleus packages, radioisotope "
             "secret handling, approval gates, install metadata, and agent security notes."
-        ),
-        canonical=f"{SITE_ORIGIN}/pkg/",
+        )),
+        canonical=locale_url("/pkg/", locale),
+        alternates_path="/pkg/",
+        locale=locale,
         body=f"""
-{nav('../')}
+{nav('../', locale)}
 <main>
   <section class="pkg-hero pkg-hero-index" aria-labelledby="pkg-title">
     <div class="hero-copy">
       <p class="eyebrow">Nucleus package intelligence</p>
-      <h1 id="pkg-title">Package security catalog</h1>
+      <h1 id="pkg-title">{html_escape(tx(locale, "packageCatalogTitle", "Package security catalog"))}</h1>
       <p class="lede">Generated pages for executable packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
     </div>
     <aside class="hero-panel" aria-label="Catalog counts">
-      {metric('packages', fmt_int(len(pages)))}
-      {metric('radioisotopes', fmt_int(len(secured)))}
-      {metric('approval gates', fmt_int(len(gated)))}
-      {metric('source files', fmt_int(manifest.get('source_file_count')))}
+      {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
+      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(len(secured)))}
+      {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
+      {metric(tx(locale, 'sourceFiles', 'source files'), fmt_int(manifest.get('source_file_count')))}
     </aside>
   </section>
   <section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title">
     <div class="search-copy">
-      <p class="section-kicker">site search</p>
-      <h2 id="pkg-search-title">Find package coverage</h2>
+      <p class="section-kicker">{html_escape(tx(locale, 'siteSearch', 'site search'))}</p>
+      <h2 id="pkg-search-title">{html_escape(tx(locale, 'findPackageCoverage', 'Find package coverage'))}</h2>
       <p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p>
     </div>
     <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
@@ -1359,39 +1506,44 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
     </div>
   </section>
 </main>
-{footer('../')}
+{footer('../', locale)}
 """,
-        stylesheet_href="./styles.css",
-        favicon_href="../favicon.ico",
-        extra_head='  <link rel="stylesheet" href="../pagefind/pagefind-ui.css">',
-        extra_body='''  <script src="../pagefind/pagefind-ui.js"></script>
+        stylesheet_href=locale_path("/pkg/styles.css", locale),
+        favicon_href="/favicon.ico",
+        extra_head='  <link rel="stylesheet" href="/pagefind/pagefind-ui.css">',
+        extra_body=f'''  <script src="/pagefind/pagefind-ui.js"></script>
   <script>
-    window.addEventListener("DOMContentLoaded", () => {
-      new PagefindUI({
+    window.addEventListener("DOMContentLoaded", () => {{
+      new PagefindUI({{
         element: "#pkg-search",
         showImages: false,
         showSubResults: true,
         pageSize: 8,
         excerptLength: 24,
         resetStyles: false,
-        translations: {
-          placeholder: "Search awscli, gh, .env, npm publish"
-        }
-      });
-    });
+        translations: {{
+          placeholder: {search_placeholder}
+        }}
+      }});
+    }});
   </script>''',
         schema={
             "@context": "https://schema.org",
             "@type": "CollectionPage",
             "name": "Automic Vault package security catalog",
-            "url": f"{SITE_ORIGIN}/pkg/",
+            "url": locale_url("/pkg/", locale),
             "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": SITE_ORIGIN + "/"},
             "about": "Nucleus packages, AI agent package security, approval gates, and secret migration metadata",
         },
     )
 
 
-def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[str, Any]) -> str:
+def render_hub_page(
+    hub: PackageHub,
+    pages: list[PackagePage],
+    manifest: dict[str, Any],
+    locale: dict[str, Any] | None = None,
+) -> str:
     updated = fmt_date(manifest.get("generated_at", ""))
     top = pages[:72]
     secured = [page for page in pages if page.isotope]
@@ -1404,14 +1556,16 @@ def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[st
     return html_doc(
         title=f"{hub.title} | Automic Vault package catalog",
         description=description,
-        canonical=f"{SITE_ORIGIN}{hub.path}",
+        canonical=locale_url(hub.path, locale),
+        alternates_path=hub.path,
+        locale=locale,
         body=f"""
-{nav('../../')}
+{nav('../../', locale)}
 <main>
   <nav class="breadcrumbs" aria-label="Breadcrumbs">
-    <a href="../../">Home</a>
+    <a href="../../">{html_escape(tx(locale, 'home', 'Home'))}</a>
     <span>/</span>
-    <a href="../">Packages</a>
+    <a href="../">{html_escape(tx(locale, 'packages', 'Packages'))}</a>
     <span>/</span>
     <span>{html_escape(hub.title)}</span>
   </nav>
@@ -1456,10 +1610,10 @@ def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[st
     </div>
   </section>
 </main>
-{footer('../../')}
+{footer('../../', locale)}
 """,
-        stylesheet_href="../styles.css",
-        favicon_href="../../favicon.ico",
+        stylesheet_href=locale_path("/pkg/styles.css", locale),
+        favicon_href="/favicon.ico",
         schema=schema_for_hub(hub, pages, description, updated),
     )
 
@@ -1562,9 +1716,25 @@ def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, 
     }
 
 
-def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
-    title = f"Install {page.display_name} with {package_manager_label(page)} | Automic Vault"
-    description = meta_description(page)
+def render_package_page(
+    page: PackagePage,
+    manifest: dict[str, Any],
+    locale: dict[str, Any] | None = None,
+) -> str:
+    title = tx(
+        locale,
+        "installTitle",
+        "Install {name} with {manager} | Automic Vault",
+        name=page.display_name,
+        manager=package_manager_label(page),
+    )
+    description = meta_description(page) if locale_code(locale) == "en" else tx(
+        locale,
+        "metaDescription",
+        "Install {name} with {manager}. View executables, metadata, and security notes.",
+        name=page.display_name,
+        manager=package_manager_label(page),
+    )
     updated = fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
     facts = package_facts(page)
     install_section = render_concept_install(page) if page.key == "brew:ripgrep" else render_install(page)
@@ -1580,9 +1750,9 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
     ]
     breadcrumbs = f"""
 <nav class="breadcrumbs" aria-label="Breadcrumbs">
-  <a href="../../../">Home</a>
+  <a href="../../../">{html_escape(tx(locale, 'home', 'Home'))}</a>
   <span>/</span>
-  <a href="../../">Packages</a>
+  <a href="../../">{html_escape(tx(locale, 'packages', 'Packages'))}</a>
   <span>/</span>
   <span>{html_escape(page.display_name)}</span>
 </nav>
@@ -1590,20 +1760,22 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
     return html_doc(
         title=title,
         description=description,
-        canonical=f"{SITE_ORIGIN}{page.path}",
+        canonical=locale_url(page.path, locale),
+        alternates_path=page.path,
+        locale=locale,
         robots="index,follow" if is_indexable_package_page(page) else "noindex,follow",
         body=f"""
-{nav('../../../')}
+{nav('../../../', locale)}
 <main>
   {breadcrumbs}
   <section class="pkg-hero" aria-labelledby="pkg-title">
     <div class="hero-copy">
-      <p class="eyebrow">{html_escape(page.provider)} package intelligence</p>
-      <h1 id="pkg-title">Install {html_escape(page.display_name)}</h1>
-      <p class="lede">{html_escape(hero_sentence(page))}</p>
+      <p class="eyebrow">{html_escape(tx(locale, 'packageIntelligence', '{provider} package intelligence', provider=page.provider))}</p>
+      <h1 id="pkg-title">{html_escape(tx(locale, 'installHeading', 'Install {name}', name=page.display_name))}</h1>
+      <p class="lede">{html_escape(hero_sentence(page) if locale_code(locale) == "en" else tx(locale, 'heroSentence', 'View install routes, executables, metadata, and security notes for {name}.', name=page.display_name))}</p>
       <div class="hero-actions">
-        <a class="button primary" href="#install">Install command</a>
-        <a class="button secondary" href="#security">Security notes</a>
+        <a class="button primary" href="#install">{html_escape(tx(locale, 'installAction', 'Install command'))}</a>
+        <a class="button secondary" href="#security">{html_escape(tx(locale, 'securityAction', 'Security notes'))}</a>
       </div>
     </div>
     <aside class="hero-panel" aria-label="Package facts">
@@ -1612,12 +1784,12 @@ def render_package_page(page: PackagePage, manifest: dict[str, Any]) -> str:
   </section>
   {''.join(sections)}
 </main>
-{footer('../../../')}
+{footer('../../../', locale)}
 """,
-        stylesheet_href="../../../pkg/styles.css",
-        favicon_href="../../../favicon.ico",
+        stylesheet_href=locale_path("/pkg/styles.css", locale),
+        favicon_href="/favicon.ico",
         schema=schema_for_package(page, description, updated),
-        extra_head=markdown_alternate_head(page) if is_indexable_package_page(page) else "",
+        extra_head=markdown_alternate_head(page, locale) if is_indexable_package_page(page) else "",
         extra_body=copy_script(),
     )
 
@@ -1706,14 +1878,18 @@ def render_concept_command_row(item: dict[str, Any]) -> str:
 """
 
 
-def markdown_alternate_head(page: PackagePage) -> str:
-    return f'  <link rel="alternate" type="text/markdown" href="{attr(f"{SITE_ORIGIN}{page.path}index.md")}">'
+def markdown_alternate_head(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    return f'  <link rel="alternate" type="text/markdown" href="{attr(f"{locale_url(page.path, locale)}index.md")}">'
 
 
-def render_package_markdown(page: PackagePage, manifest: dict[str, Any]) -> str:
+def render_package_markdown(
+    page: PackagePage,
+    manifest: dict[str, Any],
+    locale: dict[str, Any] | None = None,
+) -> str:
     updated = fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
     lines = [
-        f"# Install {md_text(page.display_name)}",
+        f"# {md_text(tx(locale, 'installHeading', 'Install {name}', name=page.display_name))}",
         "",
         md_text(hero_sentence(page)),
         "",
@@ -1945,7 +2121,9 @@ def md_text(value: Any) -> str:
 def hero_sentence(page: PackagePage) -> str:
     summary = clean_summary(page.summary)
     if summary and install_command(page):
-        return f"{sentence_text(summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
+        alternate = alternate_install_sentence(page)
+        alternate_text = f" {alternate}" if alternate else ""
+        return f"{sentence_text(summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}.{alternate_text}"
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
         return f"Automic Vault tracks {page.display_name} because {title.lower()} affects agent-run command-line tools on macOS."
@@ -1966,7 +2144,16 @@ def sentence_text(value: str) -> str:
 
 
 def meta_description(page: PackagePage) -> str:
-    parts = [f"Install {page.display_name} with {package_manager_label(page)}."]
+    alternate = alternate_install_command(page)
+    if alternate:
+        parts = [
+            (
+                f"Install {page.display_name} with {package_manager_label(page)} "
+                f"or {alternate.get('manager')}: {alternate.get('command')}."
+            )
+        ]
+    else:
+        parts = [f"Install {page.display_name} with {package_manager_label(page)}."]
     summary = clean_summary(page.summary)
     if summary:
         parts.append(summary)
@@ -1979,6 +2166,30 @@ def meta_description(page: PackagePage) -> str:
     if page.approval_gate:
         parts.append(f"Includes {page.approval_gate.get('rule_count')} approval-gate rules.")
     return short_text(" ".join(parts), 155)
+
+
+def alternate_install_command(page: PackagePage) -> dict[str, Any] | None:
+    for item in install_command_entries(page):
+        if not isinstance(item, dict) or item.get("kind") == "automic_vault":
+            continue
+        command_key = native_command_package_key(str(item.get("command") or ""))
+        if command_key is None:
+            continue
+        provider, _ = command_key
+        if provider != page.provider:
+            return item
+    return None
+
+
+def alternate_install_sentence(page: PackagePage) -> str:
+    alternate = alternate_install_command(page)
+    if not alternate:
+        return ""
+    manager = str(alternate.get("manager") or "another package manager")
+    command_text = str(alternate.get("command") or "").strip()
+    if not command_text:
+        return ""
+    return f"Also installable with {manager}: {command_text}."
 
 
 def label_for(page: PackagePage) -> str:
@@ -2509,7 +2720,7 @@ def render_freshness(page: PackagePage, manifest: dict[str, Any]) -> str:
     version = manager.get("version") or page.version or "unknown"
     manager_updated = fmt_date(str(manager.get("updatedAt") or page.last_updated_at or ""))
     site_status = site.get("status") or "unknown"
-    upstream_comparison = upstream.get("comparison") or "unknown"
+    upstream_comparison = upstream.get("comparison") or "not available"
     upstream_latest = upstream.get("latestVersion") or "not detected"
     repository = upstream.get("repository") or ""
     warning_items = "".join(freshness_item(item) for item in warnings if isinstance(item, dict))
@@ -2825,29 +3036,43 @@ def render_sitemap_index(sitemap_names: list[str], manifest: dict[str, Any]) -> 
 
 def render_hub_sitemap(hubs: list[tuple[PackageHub, list[PackagePage]]], manifest: dict[str, Any]) -> str:
     lastmod = fmt_date(manifest.get("generated_at", ""))
-    urls = [sitemap_url(f"{SITE_ORIGIN}/pkg/", lastmod)]
-    urls.extend(sitemap_url(f"{SITE_ORIGIN}{hub.path}", lastmod) for hub, _hub_pages in hubs)
+    urls = [sitemap_url(f"{SITE_ORIGIN}/pkg/", lastmod, "/pkg/")]
+    urls.extend(sitemap_url(f"{SITE_ORIGIN}{hub.path}", lastmod, hub.path) for hub, _hub_pages in hubs)
     return render_urlset(urls)
 
 
 def render_package_sitemap(pages: list[PackagePage], manifest: dict[str, Any]) -> str:
     lastmod = fmt_date(manifest.get("generated_at", ""))
     urls = [
-        sitemap_url(f"{SITE_ORIGIN}{page.path}", fmt_date(page.last_updated_at) or lastmod)
+        sitemap_url(f"{SITE_ORIGIN}{page.path}", fmt_date(page.last_updated_at) or lastmod, page.path)
         for page in pages
     ]
     return render_urlset(urls)
 
 
-def sitemap_url(loc: str, lastmod: str) -> str:
-    return f"  <url>\n    <loc>{loc}</loc>\n    <lastmod>{lastmod}</lastmod>\n  </url>"
+def sitemap_url(loc: str, lastmod: str, path: str | None = None) -> str:
+    lines = ["  <url>", f"    <loc>{loc}</loc>", f"    <lastmod>{lastmod}</lastmod>"]
+    if path:
+        lines.extend(sitemap_hreflang_lines(path))
+    lines.append("  </url>")
+    return "\n".join(lines)
 
 
 def render_urlset(urls: list[str]) -> str:
-    return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(urls) + "\n</urlset>\n"
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n' + "\n".join(urls) + "\n</urlset>\n"
 
 
-def nav(root: str) -> str:
+def sitemap_hreflang_lines(path: str) -> list[str]:
+    lines = [f'    <xhtml:link rel="alternate" hreflang="en" href="{SITE_ORIGIN}{path}" />']
+    for locale in non_default_i18n_locales():
+        lines.append(
+            f'    <xhtml:link rel="alternate" hreflang="{locale.get("hreflang")}" href="{locale_url(path, locale)}" />'
+        )
+    lines.append(f'    <xhtml:link rel="alternate" hreflang="x-default" href="{SITE_ORIGIN}{path}" />')
+    return lines
+
+
+def nav(root: str, locale: dict[str, Any] | None = None) -> str:
     return f"""
 <header class="masthead">
   <a class="brand" href="{root}" aria-label="Automic Vault home">
@@ -2855,26 +3080,44 @@ def nav(root: str) -> str:
     <span class="brand-type">Automic Vault</span>
   </a>
   <nav class="nav" aria-label="Main navigation">
-    <a href="{root}docs/">Docs</a>
-    <a href="{root}security/">Security</a>
-    <a href="{root}pkg/">Packages</a>
-    <a href="https://github.com/automic-vault/">GitHub</a>
+    <a href="{root}docs/">{html_escape(tx(locale, 'docs', 'Docs'))}</a>
+    <a href="{root}security/">{html_escape(tx(locale, 'security', 'Security'))}</a>
+    <a href="{root}pkg/">{html_escape(tx(locale, 'packages', 'Packages'))}</a>
+    <a href="https://github.com/automic-vault/">{html_escape(tx(locale, 'github', 'GitHub'))}</a>
   </nav>
 </header>
 """
 
 
-def footer(root: str) -> str:
+def footer(root: str, locale: dict[str, Any] | None = None) -> str:
     return f"""
 <footer class="site-footer">
-  <p>Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.</p>
+  <p>{html_escape(tx(locale, 'footer', 'Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.'))}</p>
   <div class="footer-links">
-    <a href="{root}privacy/">Privacy</a>
-    <a href="{root}terms/">Terms</a>
+    <a href="{root}privacy/">{html_escape(tx(locale, 'privacy', 'Privacy'))}</a>
+    <a href="{root}terms/">{html_escape(tx(locale, 'terms', 'Terms'))}</a>
     <a href="{root}llms.txt">llms.txt</a>
   </div>
 </footer>
 """
+
+
+def html_hreflang_links(path: str) -> str:
+    lines = [f'  <link rel="alternate" hreflang="en" href="{SITE_ORIGIN}{path}">']
+    for locale in non_default_i18n_locales():
+        lines.append(f'  <link rel="alternate" hreflang="{locale.get("hreflang")}" href="{locale_url(path, locale)}">')
+    lines.append(f'  <link rel="alternate" hreflang="x-default" href="{SITE_ORIGIN}{path}">')
+    return "\n".join(lines)
+
+
+def replace_schema_url(value: Any, source_url: str, target_url: str) -> Any:
+    if isinstance(value, str):
+        return value.replace(source_url, target_url)
+    if isinstance(value, list):
+        return [replace_schema_url(item, source_url, target_url) for item in value]
+    if isinstance(value, dict):
+        return {key: replace_schema_url(item, source_url, target_url) for key, item in value.items()}
+    return value
 
 
 def html_doc(
@@ -2888,10 +3131,16 @@ def html_doc(
     robots: str = "index,follow",
     extra_head: str = "",
     extra_body: str = "",
+    alternates_path: str | None = None,
+    locale: dict[str, Any] | None = None,
 ) -> str:
+    if alternates_path:
+        schema = replace_schema_url(copy.deepcopy(schema), f"{SITE_ORIGIN}{alternates_path}", canonical)
     schema_json = json.dumps(schema, indent=2, ensure_ascii=False)
+    hreflang_head = html_hreflang_links(alternates_path) if alternates_path else ""
+    html_lang = str((locale or {}).get("htmlLang") or "en")
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{attr(html_lang)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2909,6 +3158,7 @@ def html_doc(
   <meta name="twitter:description" content="{attr(description)}">
   <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
   <link rel="canonical" href="{attr(canonical)}">
+{hreflang_head}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
@@ -3969,6 +4219,30 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
         if (output_dir / page.provider / page.slug / "index.md").exists():
             failures.append(f"noindex package page has markdown alternate: {page.key}")
             break
+    for locale in non_default_i18n_locales():
+        localized_output_dir = output_dir.parent / locale_slug(locale) / "pkg"
+        if not (localized_output_dir / "index.html").exists():
+            failures.append(f"missing localized package index: {localized_output_dir / 'index.html'}")
+            continue
+        if not (localized_output_dir / "styles.css").exists():
+            failures.append(f"missing localized package stylesheet: {localized_output_dir / 'styles.css'}")
+        for page in indexable_pages[:12]:
+            localized_page = localized_output_dir / page.provider / page.slug / "index.html"
+            localized_markdown = localized_output_dir / page.provider / page.slug / "index.md"
+            if not localized_page.exists():
+                failures.append(f"missing localized package page: {localized_page}")
+                break
+            page_text = localized_page.read_text(encoding="utf-8")
+            expected_canonical = locale_url(page.path, locale)
+            if f'<html lang="{locale.get("htmlLang")}"' not in page_text:
+                failures.append(f"localized page has wrong html lang: {localized_page}")
+                break
+            if f'<link rel="canonical" href="{expected_canonical}">' not in page_text:
+                failures.append(f"localized page has wrong canonical: {localized_page}")
+                break
+            if not localized_markdown.exists():
+                failures.append(f"missing localized package markdown alternate: {localized_markdown}")
+                break
     sitemap_path = output_dir / "sitemap.xml"
     expected_sitemap_names = ["sitemap-hubs.xml"] + [
         f"sitemap-{provider}.xml"
@@ -3999,6 +4273,13 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
             if f"{SITE_ORIGIN}/pkg/{name}" not in sitemap:
                 failures.append(f"package sitemap index does not reference {name}")
             provider_sitemap_text = provider_sitemap.read_text(encoding="utf-8")
+            if 'xmlns:xhtml="http://www.w3.org/1999/xhtml"' not in provider_sitemap_text:
+                failures.append(f"package sitemap lacks xhtml namespace: {provider_sitemap}")
+            for locale in non_default_i18n_locales():
+                sample = next((page for page in indexable_pages if page.provider in name), None)
+                if sample and locale_url(sample.path, locale) not in provider_sitemap_text:
+                    failures.append(f"package sitemap lacks {locale_code(locale)} alternate: {provider_sitemap}")
+                    break
             for page in noindex_pages:
                 if f"{SITE_ORIGIN}{page.path}" in provider_sitemap_text:
                     failures.append(f"noindex package page is present in sitemap: {page.key}")

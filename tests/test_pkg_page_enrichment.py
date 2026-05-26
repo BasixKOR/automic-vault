@@ -376,6 +376,27 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         package_sitemap = module.render_package_sitemap([brew], manifest)
         self.assertIn("<urlset", package_sitemap)
         self.assertIn("https://www.automicvault.com/pkg/brew/ripgrep/", package_sitemap)
+        self.assertIn('xmlns:xhtml="http://www.w3.org/1999/xhtml"', package_sitemap)
+        self.assertIn('hreflang="ja" href="https://www.automicvault.com/ja/pkg/brew/ripgrep/"', package_sitemap)
+        self.assertIn('hreflang="x-default" href="https://www.automicvault.com/pkg/brew/ripgrep/"', package_sitemap)
+
+    def test_localized_package_page_uses_locale_urls_and_markdown(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_i18n_test")
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        page.package_manager = "Homebrew"
+        page.package_manager_url = "https://formulae.brew.sh/formula/ripgrep"
+        locale = next(item for item in module.i18n_locales() if item["code"] == "ja")
+
+        html = module.render_package_page(page, {"generated_at": "2026-05-24T12:00:00+00:00"}, locale)
+        markdown = module.render_package_markdown(page, {"generated_at": "2026-05-24T12:00:00+00:00"}, locale)
+
+        self.assertIn('<html lang="ja">', html)
+        self.assertIn('<link rel="canonical" href="https://www.automicvault.com/ja/pkg/brew/ripgrep/">', html)
+        self.assertIn('hreflang="de" href="https://www.automicvault.com/de/pkg/brew/ripgrep/"', html)
+        self.assertIn("ripgrep を Homebrew でインストール", html)
+        self.assertIn("# ripgrep をインストール", markdown)
 
     def test_package_markdown_alternate_contains_agent_facts(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_markdown_test")
@@ -415,13 +436,64 @@ class PackagePageEnrichmentTests(unittest.TestCase):
 
         self.assertEqual(
             module.hero_sentence(page),
-            "Codex CLI is a coding agent from OpenAI that runs locally on your computer. Version 0.133.0 via npm; verified from local package data.",
+            (
+                "Codex CLI is a coding agent from OpenAI that runs locally on your computer. "
+                "Version 0.133.0 via npm; verified from local package data. "
+                "Also installable with Homebrew Cask: brew install --cask codex."
+            ),
         )
         self.assertEqual(
             module.clean_summary(page.summary),
             "Codex CLI is a coding agent from OpenAI that runs locally on your computer.",
         )
         self.assertIn("brew install --cask codex", module.render_install(page))
+
+    def test_package_page_promotes_summary_install_command_when_local_package_exists(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_verified_summary_command_test")
+        sources = {
+            "db": {
+                "casks": {
+                    "codex": {
+                        "summary": "OpenAI Codex CLI.",
+                        "binaries": [{"target": "codex"}],
+                    }
+                },
+                "npms": {},
+                "entries": {},
+            },
+            "pkg_page_enrichment": {
+                "packages": {
+                    "npm:@openai/codex": {
+                        "package": {
+                            "provider": "npm",
+                            "name": "@openai/codex",
+                            "packageManager": "npm",
+                        },
+                        "version": "0.133.0",
+                        "summary": (
+                            '<p><code>npm i -g @openai/codex</code><br />'
+                            'or <code>brew install --cask codex</code></p>'
+                            "<p><strong>Codex CLI</strong> is a coding agent from OpenAI.</p>"
+                        ),
+                        "executables": [{"name": "codex", "source": "bin/codex.js"}],
+                    }
+                }
+            },
+        }
+
+        pages = module.package_pages_from_sources(sources)
+        page = pages["npm:@openai/codex"]
+        commands = module.install_command_entries(page)
+        brew = next(item for item in commands if item["command"] == "brew install --cask codex")
+        schema = module.schema_for_package(page, module.meta_description(page), "2026-05-26")
+        how_to = next(item for item in schema["@graph"] if item["@type"] == "HowTo")
+
+        self.assertEqual(brew["confidence"], 1.0)
+        self.assertEqual(brew["evidence"], "local Homebrew cask metadata")
+        self.assertIn("Also installable with Homebrew Cask: brew install --cask codex.", module.hero_sentence(page))
+        self.assertIn("brew install --cask codex", module.meta_description(page))
+        self.assertIn("../../cask/codex/", module.render_related(page))
+        self.assertIn("brew install --cask codex", [step["text"] for step in how_to["step"]])
 
 
 if __name__ == "__main__":

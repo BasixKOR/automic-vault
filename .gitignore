@@ -16,5 +16,9 @@
 /dist/
 /www/llms-full.txt
 /www/pkg/
+/www/de/pkg/
+/www/fr/pkg/
+/www/ja/pkg/
+/www/zh-hans/pkg/
 /www/pagefind/
 __pycache__

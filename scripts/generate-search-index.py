@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,12 @@ def source_files(site_dir: Path, index_dir: Path) -> list[Path]:
             if path.suffix.lower() in {".html", ".htm"}:
                 files.append(path)
     files.append(Path("scripts/generate-search-index.py"))
+    i18n_root = Path("data/www-i18n")
+    if i18n_root.exists():
+        files.extend(path for path in i18n_root.rglob("*.json") if path.is_file())
+    i18n_generator = Path("scripts/generate-www-i18n.py")
+    if i18n_generator.exists():
+        files.append(i18n_generator)
     return sorted(set(files), key=lambda path: path.as_posix())
 
 
@@ -161,11 +168,23 @@ def generate(site_dir: Path, index_dir: Path, pagefind_bin: str, terminal: Termi
         shutil.rmtree(index_dir)
 
     terminal.step_log("Running Pagefind")
-    subprocess.run(
-        command + ["--site", str(site_dir), "--output-subdir", index_dir.name],
-        check=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="pagefind-") as temp_dir:
+        temp_root = Path(temp_dir)
+        temp_site = temp_root / "site"
+        temp_index = temp_root / index_dir.name
+        shutil.copytree(
+            site_dir,
+            temp_site,
+            ignore=shutil.ignore_patterns(index_dir.name, ".DS_Store"),
+        )
+        subprocess.run(
+            command + ["--site", "site", "--output-path", index_dir.name],
+            check=True,
+            cwd=temp_root,
+        )
+        shutil.copytree(temp_index, index_dir)
 
+    files = source_files(site_dir, index_dir)
     manifest = build_manifest(files, version)
     index_dir.mkdir(parents=True, exist_ok=True)
     (index_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

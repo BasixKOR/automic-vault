@@ -1,28 +1,1004 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://www.automicvault.com/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/docs/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/docs/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/docs/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/docs/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/docs/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/docs/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/docs/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/docs/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/docs/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/docs/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/docs/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/docs/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/docs/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/docs/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/docs/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/docs/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/docs/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/docs/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/docs/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/docs/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/docs/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/docs/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/docs/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/docs/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/docs/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/docs/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/docs/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/docs/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/docs/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/docs/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/docs/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/docs/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/docs/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/docs/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/docs/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/about/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/about/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/about/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/about/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/about/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/about/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/about/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/about/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/about/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/about/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/about/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/about/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/about/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/about/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/about/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/about/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/about/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/about/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/about/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/about/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/about/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/about/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/about/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/about/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/about/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/about/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/about/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/about/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/about/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/about/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/about/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/about/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/about/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/about/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/about/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/security/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/security/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/security/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/security/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/security/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/privacy/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privacy/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privacy/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privacy/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privacy/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/privacy/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privacy/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privacy/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privacy/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privacy/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/privacy/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privacy/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privacy/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privacy/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privacy/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/privacy/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privacy/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privacy/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privacy/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privacy/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/privacy/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privacy/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privacy/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privacy/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privacy/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privacy/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privacy/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/terms/</loc>
     <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/terms/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/terms/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/terms/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/terms/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/terms/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/terms/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/terms/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/terms/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/terms/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/terms/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/terms/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/terms/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/terms/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/terms/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/pricing/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/pricing/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/pricing/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/pricing/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/pricing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/pricing/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/pricing/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/pricing/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/pricing/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/pricing/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/pricing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/pricing/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/pricing/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/pricing/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/pricing/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/pricing/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/pricing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/pricing/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/pricing/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/pricing/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/pricing/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/pricing/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/pricing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/pricing/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/pricing/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/pricing/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/pricing/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/pricing/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/pricing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/pricing/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/download/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/download/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/download/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/download/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/download/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/download/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/download/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/download/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/download/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/download/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/download/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/download/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/download/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/download/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/download/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/download/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/download/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/download/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/download/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/download/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/download/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/download/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/download/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/download/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/download/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secrets-manager-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/secrets-manager-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/secrets-manager-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/secrets-manager-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secrets-manager-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secrets-manager-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/stop-ai-agents-reading-env-files/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/stop-ai-agents-reading-env-files/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/api-key-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/api-key-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/api-key-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/api-key-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/api-key-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/api-key-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/hashicorp-vault-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/hashicorp-vault-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/hashicorp-vault-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/mcp-secrets-management/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/mcp-secrets-management/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/mcp-secrets-management/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/mcp-secrets-management/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/mcp-secrets-management/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/mcp-secrets-management/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/mcp-secrets-management/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/mcp-secrets-management/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/mcp-secrets-management/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/mcp-secrets-management/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/mcp-secrets-management/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/privileged-access-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/privileged-access-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/privileged-access-management-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/privileged-access-management-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ai-agent-approval-gates/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/ai-agent-approval-gates/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/ai-agent-approval-gates/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/ai-agent-approval-gates/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/ai-agent-approval-gates/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secure-aws-cli-credentials-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/github-cli-token-security-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/github-cli-token-security-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/github-cli-token-security-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/github-cli-token-security-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/github-cli-token-security-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/github-cli-token-security-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secret-scanner-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/secret-scanner-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/secret-scanner-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/secret-scanner-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanner-for-ai-agents/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanner-for-ai-agents/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/av-trace/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/av-trace/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/av-trace/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/av-trace/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/av-trace/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/av-trace/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/av-trace/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/av-trace/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/av-trace/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/av-trace/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/av-trace/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/</loc>
+    <lastmod>2026-05-24</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/secret-scanning-vs-agent-secret-protection/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
   </url>
   <url>
     <loc>https://www.automicvault.com/llms.txt</loc>
@@ -33,67 +1009,11 @@
     <lastmod>2026-05-24</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/pricing/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
     <loc>https://www.automicvault.com/pricing.md</loc>
     <lastmod>2026-05-24</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/download/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
     <loc>https://www.automicvault.com/.well-known/security.txt</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/secrets-manager-for-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/stop-ai-agents-reading-env-files/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/api-key-management-for-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/hashicorp-vault-for-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/mcp-secrets-management/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/privileged-access-management-for-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/ai-agent-approval-gates/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/github-cli-token-security-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/secret-scanner-for-ai-agents/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/av-trace/</loc>
-    <lastmod>2026-05-24</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/</loc>
     <lastmod>2026-05-24</lastmod>
   </url>
 </urlset>

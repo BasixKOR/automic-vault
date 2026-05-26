@@ -900,6 +900,58 @@ h1 {
   color: var(--ink);
 }
 
+.language-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 28px clamp(20px, 3vw, 44px);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.language-links a {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
+.i18n-suggestion {
+  align-items: center;
+  background: var(--ink);
+  border-radius: 8px;
+  bottom: 16px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.22);
+  color: white;
+  display: flex;
+  gap: 12px;
+  left: 16px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  position: fixed;
+  z-index: 30;
+}
+
+.i18n-suggestion a {
+  color: white;
+  font-weight: 700;
+}
+
+.i18n-suggestion button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
 .reveal-ready .feature-section,
 .reveal-ready .highlight-card,
 .reveal-ready .final-cta {

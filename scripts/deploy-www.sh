@@ -111,6 +111,7 @@ package_cross_ecosystem_generator="${repo_root}/scripts/generate-pkg-cross-ecosy
 package_graph_curation_generator="${repo_root}/scripts/generate-pkg-graph-curation.py"
 package_graph_generator="${repo_root}/scripts/generate-pkg-graph.py"
 search_index_generator="${repo_root}/scripts/generate-search-index.py"
+www_i18n_generator="${repo_root}/scripts/generate-www-i18n.py"
 product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
 db_cache_control="public, max-age=3600"
@@ -330,6 +331,14 @@ assert_search_index_current() {
     die "Missing search index generator: ${search_index_generator}"
   fi
   python3 "${search_index_generator}" --check
+}
+
+assert_www_i18n_current() {
+  log_step "Checking localized website pages"
+  if [[ ! -x "${www_i18n_generator}" && ! -f "${www_i18n_generator}" ]]; then
+    die "Missing website i18n generator: ${www_i18n_generator}"
+  fi
+  python3 "${www_i18n_generator}" --check
 }
 
 ensure_bucket() {
@@ -1163,6 +1172,7 @@ ensure_certificate_issued() {
 }
 
 log_header
+assert_www_i18n_current
 assert_package_pages_current
 assert_search_index_current
 prepare_site_for_upload

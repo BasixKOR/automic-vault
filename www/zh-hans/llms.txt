@@ -1,0 +1,8 @@
+# Automic Vault
+
+Automic Vault 是 macOS 上面向 AI 代理的本地安全层。
+
+密钥不再保存在明文文件中，只会传递给已批准的工具。
+
+- Website: https://www.automicvault.com/zh-hans/
+- Packages: https://www.automicvault.com/zh-hans/pkg/
