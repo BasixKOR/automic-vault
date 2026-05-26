@@ -125,7 +125,7 @@ class PackageGraphCurationTests(unittest.TestCase):
 
     def test_current_curation_artifact_validates_against_local_pages(self):
         module = load_module(CURATION_SCRIPT, "pkg_graph_curation_current")
-        artifact = json.loads((ROOT / "data" / "pkg-graph-curation.json").read_text(encoding="utf-8"))
+        artifact = json.loads((ROOT / "cache" / "pkg-graph-curation.json").read_text(encoding="utf-8"))
         pages_module, pages = module.load_base_pages(artifact)
 
         failures = module.validate_curation(artifact, pages_module, pages)

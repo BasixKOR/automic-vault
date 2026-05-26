@@ -20,13 +20,14 @@ FORMULA_URL = "https://formulae.brew.sh/api/formula.json"
 NPM_PACKAGE_URL = "https://registry.npmjs.org/{name}"
 PYPI_PACKAGE_URL = "https://pypi.org/pypi/{name}/json"
 CACHE_DIR = Path("cache")
+GENERATED_DATA_DIR = Path("cache")
 ECOSYSTEM = "brew.sh"
 META_KEY = "__pkgdb_meta__"
 PAYLOAD_KEY = "__pkgdb_payload__"
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 DEFAULT_TIMEOUT = 60
 USER_AGENT = "nucleus/0.1"
-OUTPUT_PATH = Path("data/pkg-page-enrichment.json")
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
 
 
 class Terminal:

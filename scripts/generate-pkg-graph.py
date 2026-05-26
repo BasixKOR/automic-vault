@@ -13,9 +13,12 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
-OUTPUT_PATH = Path("data/pkg-graph.json")
-CURATION_PATH = Path("data/pkg-graph-curation.json")
-CROSS_ECOSYSTEM_PATH = Path("data/pkg-cross-ecosystem.json")
+GENERATED_DATA_DIR = Path("cache")
+PKG_PAGE_ENRICHMENT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
+PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
+CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
+CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 
 HUB_DEFINITIONS = {
     "cloud-clis": {
@@ -205,8 +208,8 @@ def term_matches(haystack: str, term: str) -> bool:
 
 def input_files() -> list[Path]:
     files = [
-        Path("data/pkg-page-enrichment.json"),
-        Path("data/pkg-cross-ecosystem.json"),
+        PKG_PAGE_ENRICHMENT_PATH,
+        CROSS_ECOSYSTEM_PATH,
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
         Path("data/isotopes.json"),
@@ -588,18 +591,18 @@ def count_hub_memberships(graph_packages: dict[str, Any]) -> dict[str, int]:
 
 
 def build_graph() -> dict[str, Any]:
-    enrichment = read_json(Path("data/pkg-page-enrichment.json"))
+    enrichment = read_json(PKG_PAGE_ENRICHMENT_PATH)
     db = read_json(Path("data/db.json"))
     geiger_data = read_json(Path("data/geiger-counter.json"), {})
     isotopes = read_json(Path("data/isotopes.json"), {})
     npm = read_json(Path("data/npm.json"), {})
     pip = read_json(Path("data/pip.json"), {})
-    freshness = read_json(Path("data/pkg-version-freshness.json"), {})
+    freshness = read_json(PKG_VERSION_FRESHNESS_PATH, {})
     curation = read_json(CURATION_PATH, {})
     cross_ecosystem = read_json(CROSS_ECOSYSTEM_PATH, {})
     packages = enrichment.get("packages") if isinstance(enrichment, dict) else {}
     if not isinstance(packages, dict):
-        raise ValueError("data/pkg-page-enrichment.json must contain packages")
+        raise ValueError(f"{PKG_PAGE_ENRICHMENT_PATH} must contain packages")
     page_keys = page_keys_from_filtered_pages(db, geiger_data, isotopes, npm, pip, enrichment, freshness)
 
     provider_names = provider_packages(db, pip)

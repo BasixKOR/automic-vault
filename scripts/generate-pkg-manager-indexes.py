@@ -21,7 +21,8 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
-OUTPUT_PATH = Path("data/pkg-manager-indexes.json.gz")
+GENERATED_DATA_DIR = Path("cache")
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-manager-indexes.json.gz"
 CACHE_DIR = Path("cache/pkg-manager-indexes")
 DEFAULT_TIMEOUT = 90
 USER_AGENT = "AutomicVaultPkgManagerIndexes/1.0"

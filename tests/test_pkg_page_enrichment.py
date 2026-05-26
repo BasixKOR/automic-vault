@@ -263,8 +263,8 @@ class PackagePageEnrichmentTests(unittest.TestCase):
     def test_package_page_sources_include_enrichment_artifact(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_for_enrichment_test")
         source_paths = {path.as_posix() for path in module.source_files()}
-        self.assertIn("data/pkg-page-enrichment.json", source_paths)
-        self.assertIn("data/pkg-version-freshness.json", source_paths)
+        self.assertIn("cache/pkg-page-enrichment.json", source_paths)
+        self.assertIn("cache/pkg-version-freshness.json", source_paths)
 
     def test_package_page_scope_requires_executable_surface(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")

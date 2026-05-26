@@ -15,7 +15,8 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
-OUTPUT_PATH = Path("data/pkg-graph-curation.json")
+GENERATED_DATA_DIR = Path("cache")
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 CONTROLLED_RELS = {
     "alternative",
     "adjacent_workflow",
@@ -244,7 +245,7 @@ def stable_hash(value: Any) -> str:
 
 def source_files() -> list[Path]:
     files = [
-        Path("data/pkg-page-enrichment.json"),
+        GENERATED_DATA_DIR / "pkg-page-enrichment.json",
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
         Path("data/isotopes.json"),

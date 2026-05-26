@@ -9,7 +9,13 @@
 /data/combined.json
 /data/isotopes.json*
 /data/isotopes/
+/data/pkg-cross-ecosystem.json
+/data/pkg-graph-curation.json
+/data/pkg-graph.json
+/data/pkg-manager-indexes.json.gz
 /data/pkg-manager-indexes.json
+/data/pkg-page-enrichment.json
+/data/pkg-version-freshness.json
 /data/radioisotopes/
 /target
 /src/target

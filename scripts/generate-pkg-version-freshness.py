@@ -15,7 +15,9 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
-OUTPUT_PATH = Path("data/pkg-version-freshness.json")
+GENERATED_DATA_DIR = Path("cache")
+PKG_PAGE_ENRICHMENT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
 CACHE_DIR = Path("cache/github.com")
 META_KEY = "__pkgdb_meta__"
 PAYLOAD_KEY = "__pkgdb_payload__"
@@ -108,7 +110,7 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def source_files() -> list[Path]:
-    return [Path("data/pkg-page-enrichment.json"), Path("data/db.json")]
+    return [PKG_PAGE_ENRICHMENT_PATH, Path("data/db.json")]
 
 
 def source_digest(files: list[Path]) -> str:
@@ -431,7 +433,7 @@ def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh:
 
 def input_generated_at(enrichment: dict[str, Any], db: dict[str, Any]) -> dict[str, str]:
     return {
-        "data/pkg-page-enrichment.json": str(enrichment.get("generated_at") or ""),
+        PKG_PAGE_ENRICHMENT_PATH.as_posix(): str(enrichment.get("generated_at") or ""),
         "data/db.json": str(db.get("generated_at") or ""),
     }
 
@@ -619,7 +621,7 @@ def build_freshness(
 
 
 def expected_freshness(*, force_refresh: bool = False, cache_only: bool = True, upstream_limit: int | None = None) -> dict[str, Any]:
-    enrichment = read_json(Path("data/pkg-page-enrichment.json"), {})
+    enrichment = read_json(PKG_PAGE_ENRICHMENT_PATH, {})
     db = read_json(Path("data/db.json"), {})
     if not isinstance(enrichment, dict) or not isinstance(db, dict):
         raise ValueError("freshness inputs must be JSON objects")

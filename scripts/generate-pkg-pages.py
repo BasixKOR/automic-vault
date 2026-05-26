@@ -20,6 +20,12 @@ SCHEMA_VERSION = 1
 SITE_ORIGIN = "https://www.automicvault.com"
 OUTPUT_DIR = Path("www/pkg")
 MANIFEST_NAME = ".manifest.json"
+GENERATED_DATA_DIR = Path("cache")
+PKG_PAGE_ENRICHMENT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
+PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
+PKG_GRAPH_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
+PKG_GRAPH_CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
+PKG_CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 I18N_LOCALES_PATH = Path("data/www-i18n/locales.json")
 I18N_PKG_TEMPLATES_PATH = Path("data/www-i18n/pkg/templates.json")
 INDEXABLE_MIN_SIGNAL_COUNT = 2
@@ -653,14 +659,14 @@ def load_sources() -> dict[str, Any]:
         if isinstance(sources, dict):
             if Path("data/geiger-counter.json").exists():
                 sources["geiger"] = read_json(Path("data/geiger-counter.json"), {})
-            if Path("data/pkg-page-enrichment.json").exists():
-                sources["pkg_page_enrichment"] = read_json(Path("data/pkg-page-enrichment.json"), {})
-            if Path("data/pkg-version-freshness.json").exists():
-                sources["pkg_version_freshness"] = read_json(Path("data/pkg-version-freshness.json"), {})
-            if Path("data/pkg-graph.json").exists():
-                sources["pkg_graph"] = read_json(Path("data/pkg-graph.json"), {})
-            if Path("data/pkg-cross-ecosystem.json").exists():
-                sources["pkg_cross_ecosystem"] = read_json(Path("data/pkg-cross-ecosystem.json"), {})
+            if PKG_PAGE_ENRICHMENT_PATH.exists():
+                sources["pkg_page_enrichment"] = read_json(PKG_PAGE_ENRICHMENT_PATH, {})
+            if PKG_VERSION_FRESHNESS_PATH.exists():
+                sources["pkg_version_freshness"] = read_json(PKG_VERSION_FRESHNESS_PATH, {})
+            if PKG_GRAPH_PATH.exists():
+                sources["pkg_graph"] = read_json(PKG_GRAPH_PATH, {})
+            if PKG_CROSS_ECOSYSTEM_PATH.exists():
+                sources["pkg_cross_ecosystem"] = read_json(PKG_CROSS_ECOSYSTEM_PATH, {})
             return sources
 
     return {
@@ -669,10 +675,10 @@ def load_sources() -> dict[str, Any]:
         "geiger": read_json(Path("data/geiger-counter.json"), {}),
         "isotopes": read_json(Path("data/isotopes.json"), {}),
         "npm": read_json(Path("data/npm.json"), {}),
-        "pkg_graph": read_json(Path("data/pkg-graph.json"), {}),
-        "pkg_cross_ecosystem": read_json(Path("data/pkg-cross-ecosystem.json"), {}),
-        "pkg_page_enrichment": read_json(Path("data/pkg-page-enrichment.json"), {}),
-        "pkg_version_freshness": read_json(Path("data/pkg-version-freshness.json"), {}),
+        "pkg_graph": read_json(PKG_GRAPH_PATH, {}),
+        "pkg_cross_ecosystem": read_json(PKG_CROSS_ECOSYSTEM_PATH, {}),
+        "pkg_page_enrichment": read_json(PKG_PAGE_ENRICHMENT_PATH, {}),
+        "pkg_version_freshness": read_json(PKG_VERSION_FRESHNESS_PATH, {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
 
@@ -1368,6 +1374,17 @@ def is_public_url(url: str) -> bool:
 
 def source_files() -> list[Path]:
     files: list[Path] = []
+    files.extend(
+        path
+        for path in (
+            PKG_PAGE_ENRICHMENT_PATH,
+            PKG_VERSION_FRESHNESS_PATH,
+            PKG_GRAPH_PATH,
+            PKG_GRAPH_CURATION_PATH,
+            PKG_CROSS_ECOSYSTEM_PATH,
+        )
+        if path.exists()
+    )
     data = Path("data")
     for path in data.iterdir() if data.exists() else []:
         if path.is_file() and path.suffix in {".json", ".jsonc", ".md"}:

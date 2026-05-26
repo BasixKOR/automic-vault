@@ -547,7 +547,7 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         self.assertTrue(any("inferred evidence" in failure for failure in failures))
 
     def test_current_cross_ecosystem_artifact_validates_when_present(self):
-        path = ROOT / "data" / "pkg-cross-ecosystem.json"
+        path = ROOT / "cache" / "pkg-cross-ecosystem.json"
         if not path.exists():
             self.skipTest("cross-ecosystem artifact has not been generated yet")
         module = load_module(CROSS_SCRIPT, "pkg_cross_current")

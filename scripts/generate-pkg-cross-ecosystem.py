@@ -16,8 +16,9 @@ from typing import Any
 
 
 SCHEMA_VERSION = 3
-OUTPUT_PATH = Path("data/pkg-cross-ecosystem.json")
-PKG_MANAGER_INDEX_PATH = Path("data/pkg-manager-indexes.json.gz")
+GENERATED_DATA_DIR = Path("cache")
+OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
+PKG_MANAGER_INDEX_PATH = GENERATED_DATA_DIR / "pkg-manager-indexes.json.gz"
 ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
 SOURCE_BACKED_MANAGER_CONFIDENCE = {
     "macports": 0.94,
@@ -89,11 +90,11 @@ def stable_hash(value: Any) -> str:
 
 def source_files() -> list[Path]:
     files = [
-        Path("data/pkg-page-enrichment.json"),
+        GENERATED_DATA_DIR / "pkg-page-enrichment.json",
         Path("data/db.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
-        Path("data/pkg-manager-indexes.json.gz"),
+        PKG_MANAGER_INDEX_PATH,
         Path("scripts/generate-pkg-cross-ecosystem.py"),
         Path("scripts/generate-pkg-manager-indexes.py"),
     ]
