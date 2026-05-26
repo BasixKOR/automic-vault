@@ -93,8 +93,19 @@ void isotope_free_c_string(char *value) {
   }
 }
 
+bool isotope_post_distributed_notification_with_object(const char *name_cstr,
+                                                       const char *object_cstr,
+                                                       char **error_cstr);
+
 bool isotope_post_distributed_notification(const char *name_cstr,
                                            char **error_cstr) {
+  return isotope_post_distributed_notification_with_object(name_cstr, NULL,
+                                                          error_cstr);
+}
+
+bool isotope_post_distributed_notification_with_object(const char *name_cstr,
+                                                       const char *object_cstr,
+                                                       char **error_cstr) {
   @autoreleasepool {
     if (error_cstr != NULL) {
       *error_cstr = NULL;
@@ -115,9 +126,20 @@ bool isotope_post_distributed_notification(const char *name_cstr,
       return false;
     }
 
+    NSString *object = nil;
+    if (object_cstr != NULL) {
+      object = [NSString stringWithUTF8String:object_cstr];
+      if (object.length == 0) {
+        if (error_cstr != NULL) {
+          *error_cstr = strdup("distributed notification object must be UTF-8");
+        }
+        return false;
+      }
+    }
+
     [[NSDistributedNotificationCenter defaultCenter]
         postNotificationName:name
-                      object:nil
+                      object:object
                     userInfo:nil
           deliverImmediately:YES];
     return true;

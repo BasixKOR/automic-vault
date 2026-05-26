@@ -269,15 +269,25 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func autoApprovedSecretNotification(_ notification: Notification) {
-        showAutomaticSecretApprovalNotification()
+        showAutomaticSecretApprovalNotification(secretNames: notification.object as? String)
     }
 
-    private func showAutomaticSecretApprovalNotification() {
+    private func showAutomaticSecretApprovalNotification(secretNames: String?) {
         guard let button = statusItem.button else { return }
         automaticSecretApprovalToast.show(
-            message: "Secret auto-approved",
+            message: automaticSecretApprovalMessage(secretNames: secretNames),
             anchoredTo: button
         )
+    }
+
+    private func automaticSecretApprovalMessage(secretNames: String?) -> String {
+        let names = secretNames?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard names.isEmpty == false else {
+            return "Secret auto-approved"
+        }
+        return names.contains(",")
+            ? "Secrets auto-approved: \(names)"
+            : "Secret auto-approved: \(names)"
     }
 
     private func mainApplicationIsRunning() -> Bool {
@@ -722,7 +732,7 @@ private final class MenuBarInlineNotification {
 
     init() {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 178, height: 24),
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 24),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -735,7 +745,7 @@ private final class MenuBarInlineNotification {
         panel.ignoresMouseEvents = true
 
         let container = NSVisualEffectView()
-        container.frame = NSRect(x: 0, y: 0, width: 178, height: 24)
+        container.frame = NSRect(x: 0, y: 0, width: 220, height: 24)
         container.autoresizingMask = [.width, .height]
         container.material = .popover
         container.blendingMode = .behindWindow
@@ -771,7 +781,7 @@ private final class MenuBarInlineNotification {
 
         let anchorFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let height = max(22, min(28, NSStatusBar.system.thickness))
-        let width: CGFloat = 178
+        let width = preferredWidth(for: message)
         let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         let preferredY = screenFrame.map { $0.maxY - height - 8 }
             ?? anchorFrame.minY - height - 8
@@ -813,5 +823,11 @@ private final class MenuBarInlineNotification {
         } completionHandler: { [panel] in
             panel.orderOut(nil)
         }
+    }
+
+    private func preferredWidth(for message: String) -> CGFloat {
+        let font = label.font ?? .systemFont(ofSize: 12, weight: .semibold)
+        let measured = (message as NSString).size(withAttributes: [.font: font]).width
+        return min(max(ceil(measured) + 24, 178), 340)
     }
 }

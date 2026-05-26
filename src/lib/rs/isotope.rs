@@ -503,7 +503,10 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
             can_always_allow,
         )?;
     } else if automatically_approved {
-        let _ = post_distributed_notification(AUTOMATIC_APPROVAL_NOTIFICATION);
+        let _ = post_distributed_notification_with_object(
+            AUTOMATIC_APPROVAL_NOTIFICATION,
+            &credential_keys.join(", "),
+        );
     }
 
     let mut env_map = env::vars_os().collect::<BTreeMap<_, _>>();
@@ -1326,8 +1329,41 @@ fn post_distributed_notification(name: &str) -> Result<(), String> {
         .unwrap_or_else(|| "failed to post isotope approval notification".to_string()))
 }
 
+#[cfg(target_os = "macos")]
+fn post_distributed_notification_with_object(name: &str, object: &str) -> Result<(), String> {
+    unsafe extern "C" {
+        fn isotope_post_distributed_notification_with_object(
+            name_cstr: *const c_char,
+            object_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> bool;
+    }
+
+    let name_cstr =
+        CString::new(name).map_err(|_| "invalid distributed notification name".to_string())?;
+    let object_cstr =
+        CString::new(object).map_err(|_| "invalid distributed notification object".to_string())?;
+    let mut error = std::ptr::null_mut();
+    if unsafe {
+        isotope_post_distributed_notification_with_object(
+            name_cstr.as_ptr(),
+            object_cstr.as_ptr(),
+            &mut error,
+        )
+    } {
+        return Ok(());
+    }
+    Err(unsafe { take_bridge_string(error) }
+        .unwrap_or_else(|| "failed to post isotope approval notification".to_string()))
+}
+
 #[cfg(not(target_os = "macos"))]
 fn post_distributed_notification(_name: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_distributed_notification_with_object(_name: &str, _object: &str) -> Result<(), String> {
     Ok(())
 }
 
