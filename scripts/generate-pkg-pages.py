@@ -3831,6 +3831,11 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   .pkg-concept-platform:nth-child(2) { grid-row: auto; }
   .pkg-concept-command-row p { grid-column: 1 / -1; }
   .pkg-hero { padding-top: 38px; }
+  .terminal-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .terminal-actions { justify-content: flex-start; }
   h1 { font-size: clamp(2.8rem, 15vw, 4.8rem); }
   .lede { font-size: 1.32rem; }
   .package-list { grid-template-columns: 1fr; }
