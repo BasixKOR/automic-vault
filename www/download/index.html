@@ -100,17 +100,17 @@
   <style>
     .download-hero {
       display: grid;
-      grid-template-columns: minmax(0, 0.88fr) minmax(320px, 0.52fr);
-      gap: clamp(28px, 5vw, 72px);
-      align-items: center;
-      padding: clamp(42px, 7vw, 98px) clamp(20px, 3vw, 44px);
+      grid-template-columns: minmax(0, 0.72fr) minmax(380px, 0.78fr);
+      gap: clamp(32px, 5vw, 78px);
+      align-items: end;
+      padding: clamp(42px, 7vw, 92px) clamp(20px, 3vw, 44px) clamp(34px, 6vw, 76px);
       border-bottom: 1px solid var(--line);
     }
 
     .download-hero h1 {
-      max-width: 920px;
-      font-size: clamp(4.2rem, 11vw, 9.6rem);
-      line-height: 0.86;
+      max-width: 7.2ch;
+      font-size: clamp(4.05rem, 7vw, 7.4rem);
+      line-height: 0.84;
       text-transform: uppercase;
     }
 
@@ -120,26 +120,28 @@
     }
 
     .download-copy .lede {
-      max-width: 770px;
+      max-width: 100%;
+      font-size: clamp(1.42rem, 2.3vw, 2.05rem);
+    }
+
+    .download-visual {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
     }
 
     .download-panel {
       display: grid;
-      gap: 18px;
-      padding: clamp(18px, 3vw, 28px);
-      border: 1px solid var(--line-strong);
-      background: var(--surface-2);
-    }
-
-    .download-panel img {
-      width: 58px;
-      height: 58px;
-      border-radius: 13px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px 20px;
+      align-items: center;
+      padding-top: 16px;
+      border-top: 1px solid var(--line-strong);
     }
 
     .download-panel h2 {
       color: var(--ink);
-      font-size: 1.45rem;
+      font-size: clamp(1.12rem, 2vw, 1.45rem);
       line-height: 1.05;
       text-transform: uppercase;
     }
@@ -153,13 +155,14 @@
     }
 
     .download-panel .button {
-      width: 100%;
+      white-space: nowrap;
     }
 
     .download-note {
       display: grid;
       gap: 10px;
-      padding-top: 8px;
+      grid-column: 1 / -1;
+      padding-top: 14px;
       border-top: 1px solid var(--line);
     }
 
@@ -221,8 +224,8 @@
 
     .download-shot {
       display: block;
-      padding: clamp(28px, 4vw, 52px) clamp(20px, 3vw, 44px);
-      border-bottom: 1px solid var(--line);
+      min-width: 0;
+      transform: translateY(6px);
     }
 
     .download-shot img {
@@ -231,7 +234,9 @@
       height: auto;
       aspect-ratio: 1693 / 929;
       border: 1px solid var(--line-strong);
+      border-radius: 10px;
       background: var(--surface-2);
+      box-shadow: 0 26px 54px rgba(0, 0, 0, 0.26);
     }
 
     @media (max-width: 1060px) {
@@ -241,11 +246,20 @@
       }
     }
 
+    @media (max-width: 760px) {
+      .download-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .download-panel .button {
+        width: 100%;
+      }
+    }
+
     @media (max-width: 520px) {
       .download-hero,
       .download-section,
-      .download-terminal,
-      .download-shot {
+      .download-terminal {
         padding-inline: 18px;
       }
 
@@ -302,18 +316,30 @@
           </div>
         </div>
 
-        <aside class="download-panel" aria-label="Download details">
-          <img src="../assets/icon@2x.webp" alt="" width="116" height="116">
-          <h2>Automic Vault for macOS</h2>
-          <p>
-            Includes the native app, the <code>av</code> command-line tool, and Nucleus package controls.
-          </p>
-          <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
-          <div class="download-note">
-            <span>Install roots</span>
-            <p>Release builds install packages under <code>/opt</code> and command stubs under <code>/usr/local/bin</code>.</p>
-          </div>
-        </aside>
+        <div class="download-visual">
+          <figure class="download-shot">
+            <img
+              src="../assets/gui-screenshot.webp"
+              alt="Automic Vault app showing package search and package details"
+              width="1693"
+              height="929"
+            >
+          </figure>
+
+          <aside class="download-panel" aria-label="Download details">
+            <div>
+              <h2>Automic Vault for macOS</h2>
+              <p>
+                Includes the native app, the <code>av</code> command-line tool, and Nucleus package controls.
+              </p>
+            </div>
+            <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
+            <div class="download-note">
+              <span>Install roots</span>
+              <p>Release builds install packages under <code>/opt</code> and command stubs under <code>/usr/local/bin</code>.</p>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <section class="download-section" aria-labelledby="included-title">
@@ -348,14 +374,6 @@
         <pre class="command-line"><code>/usr/bin/curl -fsSL https://www.automicvault.com/install.sh | /bin/bash</code></pre>
       </section>
 
-      <figure class="download-shot">
-        <img
-          src="../assets/gui-screenshot.webp"
-          alt="Automic Vault app showing package search and package details"
-          width="1693"
-          height="929"
-        >
-      </figure>
     </main>
 
     <footer class="site-footer">
