@@ -10912,6 +10912,375 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
+    fn generated_isotope_detectors_report_seeded_secret_files() {
+        let _lock = test_env_lock().lock().unwrap();
+        if isotope_integrations::INTEGRATIONS
+            .iter()
+            .all(|integration| integration.detect_reasons.is_none())
+        {
+            return;
+        }
+
+        fn write_fixture(path: &Path, contents: impl AsRef<[u8]>) {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, contents).unwrap();
+        }
+
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let xdg_config = temp.path().join("xdg-config");
+        let xdg_cache = temp.path().join("xdg-cache");
+        let xdg_state = temp.path().join("xdg-state");
+        let xdg_runtime = temp.path().join("xdg-runtime");
+        let missing = temp.path().join("missing");
+        let akamai_edgerc = temp.path().join("akamai.edgerc");
+        let argocd_config = temp.path().join("argocd");
+        let aws_credentials = temp.path().join("aws-credentials");
+        let bitwarden_appdata = temp.path().join("bitwarden");
+        let cargo_home = temp.path().join("cargo");
+        let caroot = temp.path().join("mkcert");
+        let civo_config = temp.path().join("civo.json");
+        let composer_home = temp.path().join("composer");
+        let checkmarx_config = temp.path().join("checkmarx.yaml");
+        let dcos_dir = temp.path().join("dcos");
+        let doctl_config = temp.path().join("doctl.yaml");
+        let docker_config = temp.path().join("docker");
+        let gh_config = temp.path().join("gh");
+        let glab_config = temp.path().join("glab");
+        let hcloud_config = temp.path().join("hcloud.toml");
+        let helm_config_home = temp.path().join("helm");
+        let helm_repository_config = temp.path().join("repositories.yaml");
+        let kubeconfig = temp.path().join("kubeconfig");
+        let netrc = temp.path().join("netrc");
+        let npmrc = temp.path().join("npmrc");
+        let oci_config = temp.path().join("oci-config");
+        let pulumi_credentials = temp.path().join("pulumi-credentials.json");
+        let pulumi_home = temp.path().join("pulumi-home");
+        let rclone_config = temp.path().join("rclone.conf");
+        let registry_auth = temp.path().join("containers-auth.json");
+        let supabase_home = temp.path().join("supabase");
+        let talosconfig = temp.path().join("talosconfig");
+        let talos_home = temp.path().join("talos");
+        let uv_credentials_dir = temp.path().join("uv");
+        let vagrant_home = temp.path().join("vagrant");
+
+        write_fixture(
+            &home.join(".config/acli/jira_config.yaml"),
+            "token: atlassian\n",
+        );
+        write_fixture(
+            &akamai_edgerc,
+            "[default]\nclient_token = tok\nclient_secret = sec\naccess_token = acc\n",
+        );
+        write_fixture(
+            &xdg_config.join("algolia/config.toml"),
+            "api_key = \"algolia\"\n",
+        );
+        write_fixture(
+            &home.join(".aliyun/config.json"),
+            r#"{"profiles":[{"access_key_secret":"aliyun-secret"}]}"#,
+        );
+        write_fixture(
+            &argocd_config.join("config"),
+            "users:\n- auth-token: argocd\n",
+        );
+        write_fixture(&checkmarx_config, "cx_apikey: ast-secret\n");
+        write_fixture(
+            &bitwarden_appdata.join("data.json"),
+            r#"{"accessToken":"bw"}"#,
+        );
+        write_fixture(&home.join(".bridgecrew/credentials"), "bridgecrew-token\n");
+        write_fixture(&home.join(".circleci/cli.yml"), "token: circleci-token\n");
+        write_fixture(&civo_config, r#"{"apikey":"civo-token"}"#);
+        write_fixture(
+            &composer_home.join("auth.json"),
+            r#"{"github-oauth":{"github.com":"composer-token"}}"#,
+        );
+        write_fixture(
+            &dcos_dir.join("clusters/prod/dcos.toml"),
+            "dcos_acs_token = \"dcos-token\"\n",
+        );
+        write_fixture(&doctl_config, "auth-contexts:\n  prod: doctl-token\n");
+        write_fixture(
+            &docker_config.join("config.json"),
+            r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}},"credsStore":"osxkeychain","credHelpers":{"ghcr.io":"desktop"}}"#,
+        );
+        write_fixture(
+            &xdg_config.join("fastly/config.toml"),
+            "token = \"fastly\"\n",
+        );
+        write_fixture(&home.join(".fly/config.yml"), "access_token: FlyV1 token\n");
+        write_fixture(
+            &gh_config.join("hosts.yml"),
+            "github.com:\n  oauth_token: ghp_secret\n",
+        );
+        write_fixture(
+            &glab_config.join("config.yml"),
+            "hosts:\n  gitlab.com:\n    token: glpat\n",
+        );
+        write_fixture(&xdg_config.join("gotify/cli.json"), r#"{"token":"gotify"}"#);
+        write_fixture(
+            &xdg_config.join("graphite/auth"),
+            r#"{"authToken":"graphite"}"#,
+        );
+        write_fixture(&hcloud_config, "token = \"hcloud\"\n");
+        write_fixture(&xdg_cache.join("huggingface/token"), "hf_secret\n");
+        write_fixture(&kubeconfig, "users:\n- token: kube-token\n");
+        write_fixture(
+            &home.join("Library/Preferences/netlify/config.json"),
+            r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
+        );
+        write_fixture(
+            &xdg_config.join("NuGet/NuGet.Config"),
+            r#"<configuration><apikeys><add key="feed" value="nuget-secret" /></apikeys></configuration>"#,
+        );
+        write_fixture(&npmrc, "_authToken=npm-token\n");
+        write_fixture(
+            &xdg_config.join("containers/auth.json"),
+            r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}}}"#,
+        );
+        write_fixture(
+            &registry_auth,
+            r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}}}"#,
+        );
+        write_fixture(
+            &pulumi_credentials,
+            r#"{"accessTokens":{"https://api.pulumi.com":"pulumi-token"}}"#,
+        );
+        write_fixture(
+            &rclone_config,
+            "[remote]\ntoken = {\"access_token\":\"rclone\"}\n",
+        );
+        write_fixture(
+            &xdg_config.join("sentry/sentrycli.conf"),
+            "token=sentry-token\n",
+        );
+        write_fixture(&home.join(".shodan/api_key"), "shodan-key\n");
+        write_fixture(
+            &xdg_config.join("configstore/snyk.json"),
+            r#"{"api":"snyk-token"}"#,
+        );
+        write_fixture(
+            &supabase_home.join("access-token"),
+            format!("sbp_{}\n", "a".repeat(40)),
+        );
+        write_fixture(
+            &home.join(".terraform.d/credentials.tfrc.json"),
+            r#"{"credentials":{"app.terraform.io":{"token":"tf-token"}}}"#,
+        );
+        write_fixture(
+            &xdg_config.join("todoist/config.json"),
+            r#"{"token":"todoist"}"#,
+        );
+        write_fixture(
+            &home.join(".travis/config.yml"),
+            "access_token: travis-token\n",
+        );
+        write_fixture(&home.join(".pypirc"), "[pypi]\npassword = twine-token\n");
+        write_fixture(
+            &vagrant_home.join("data/vagrant_login_token"),
+            "vagrant-token\n",
+        );
+        write_fixture(&home.join(".vault-token"), "hvs.secret\n");
+        write_fixture(&home.join(".vt.toml"), "apikey=\"vt-key\"\n");
+        write_fixture(&home.join(".vultr-cli.yaml"), "api-key: vultr-key\n");
+        write_fixture(
+            &home.join(".wakatime.cfg"),
+            "[settings]\napi_key = wakatime\n",
+        );
+        write_fixture(&home.join(".wskprops"), "AUTH=fake-uuid:fake-secret\n");
+        write_fixture(
+            &talosconfig,
+            "contexts:\n  prod:\n    endpoints: []\n    ca: talos-ca\n",
+        );
+
+        let netrc_contents = "\
+machine buf.build login alice password buf-token
+machine api.heroku.com login user password heroku-token
+machine example.com login user password netrc-token
+";
+        write_fixture(&home.join(".netrc"), netrc_contents);
+        write_fixture(&netrc, netrc_contents);
+
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            ("XDG_CONFIG_HOME", xdg_config.to_str().unwrap()),
+            ("XDG_CACHE_HOME", xdg_cache.to_str().unwrap()),
+            ("XDG_STATE_HOME", xdg_state.to_str().unwrap()),
+            ("XDG_RUNTIME_DIR", xdg_runtime.to_str().unwrap()),
+            ("AKAMAI_EDGERC", akamai_edgerc.to_str().unwrap()),
+            ("ARGOCD_CONFIG_DIR", argocd_config.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            (
+                "BITWARDENCLI_APPDATA_DIR",
+                bitwarden_appdata.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("CIVO_CONFIG", civo_config.to_str().unwrap()),
+            ("COMPOSER_HOME", composer_home.to_str().unwrap()),
+            ("CX_CONFIG_FILE_PATH", checkmarx_config.to_str().unwrap()),
+            ("DCOS_DIR", dcos_dir.to_str().unwrap()),
+            ("DIGITALOCEAN_CONFIG", doctl_config.to_str().unwrap()),
+            ("DOCKER_CONFIG", docker_config.to_str().unwrap()),
+            ("GH_CONFIG_DIR", gh_config.to_str().unwrap()),
+            ("GLAB_CONFIG_DIR", glab_config.to_str().unwrap()),
+            ("HCLOUD_CONFIG", hcloud_config.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("MCP_REMOTE_CONFIG_DIR", missing.to_str().unwrap()),
+            ("NETRC", netrc.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npmrc.to_str().unwrap()),
+            ("OCI_CLI_CONFIG_FILE", oci_config.to_str().unwrap()),
+            (
+                "PULUMI_CREDENTIALS_PATH",
+                pulumi_credentials.to_str().unwrap(),
+            ),
+            ("PULUMI_HOME", pulumi_home.to_str().unwrap()),
+            ("RCLONE_CONFIG", rclone_config.to_str().unwrap()),
+            ("REGISTRY_AUTH_FILE", registry_auth.to_str().unwrap()),
+            ("SUPABASE_HOME", supabase_home.to_str().unwrap()),
+            ("TALOSCONFIG", talosconfig.to_str().unwrap()),
+            ("TALOS_HOME", talos_home.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+            ("VAGRANT_HOME", vagrant_home.to_str().unwrap()),
+        ]);
+
+        let mut triggered = Vec::new();
+        for integration in isotope_integrations::INTEGRATIONS {
+            let Some(detect_reasons) = integration.detect_reasons else {
+                continue;
+            };
+            let reasons = detect_reasons()
+                .unwrap_or_else(|err| panic!("{} detect reasons failed: {err}", integration.name));
+            if !reasons.is_empty() {
+                triggered.push(integration.name);
+            }
+        }
+
+        for expected in [
+            "acli",
+            "akamai",
+            "algolia",
+            "argocd",
+            "bitwarden-cli",
+            "docker",
+            "gh",
+            "kubernetes-cli",
+            "supabase-cli",
+            "terraform",
+        ] {
+            assert!(
+                triggered.contains(&expected),
+                "expected {expected} to report seeded secrets, got {triggered:?}"
+            );
+        }
+        assert!(
+            triggered.len() >= 30,
+            "expected broad generated detector coverage, got {triggered:?}"
+        );
+    }
+
+    #[test]
+    fn generated_credential_helpers_cover_help_and_reject_bad_tokens() {
+        struct MissingCredentialStore;
+
+        impl isotope::CredentialHelperSecretStore for MissingCredentialStore {
+            fn load_secret(&self, key: &str) -> Result<String, String> {
+                Err(format!("missing stub credential {key}"))
+            }
+
+            fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+                Ok(())
+            }
+        }
+
+        fn helper_args(name: &str) -> Vec<std::ffi::OsString> {
+            match name {
+                "aws" => Vec::new(),
+                "cargo" => vec![std::ffi::OsString::from("--cargo-plugin")],
+                "kubernetes" => vec![std::ffi::OsString::from("prod")],
+                "nuget" => vec![
+                    std::ffi::OsString::from("-Uri"),
+                    std::ffi::OsString::from("https://api.nuget.org/v3/index.json"),
+                ],
+                "opentofu" | "terraform" => vec![
+                    std::ffi::OsString::from("get"),
+                    std::ffi::OsString::from("app.terraform.io"),
+                ],
+                "podman" | "skopeo" => vec![std::ffi::OsString::from("list")],
+                other => panic!("unexpected credential helper {other}"),
+            }
+        }
+
+        fn invocation<'a>(
+            args: Vec<std::ffi::OsString>,
+            token: Option<&str>,
+            store: &'a MissingCredentialStore,
+        ) -> isotope::CredentialHelperInvocation<'a> {
+            isotope::CredentialHelperInvocation {
+                args,
+                caller: isotope::CredentialHelperCallerContext {
+                    token: token.map(str::to_string),
+                    parent_executable_path: None,
+                    parent_command: None,
+                },
+                store,
+            }
+        }
+
+        let store = MissingCredentialStore;
+        let helpers = isotope_integrations::INTEGRATIONS
+            .iter()
+            .filter_map(|integration| {
+                Some((
+                    integration.credential_helper_name?,
+                    integration.credential_helper?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        if helpers.is_empty() {
+            return;
+        }
+
+        for (name, helper) in &helpers {
+            helper(invocation(
+                vec![std::ffi::OsString::from("--help")],
+                None,
+                &store,
+            ))
+            .unwrap();
+            helper(invocation(
+                vec![std::ffi::OsString::from("--version")],
+                None,
+                &store,
+            ))
+            .unwrap();
+
+            let missing = helper(invocation(helper_args(name), None, &store)).unwrap_err();
+            assert!(
+                missing.to_ascii_lowercase().contains("token"),
+                "expected missing token error for {name}, got {missing}"
+            );
+            let invalid = helper(invocation(helper_args(name), Some("short"), &store)).unwrap_err();
+            assert!(
+                invalid.to_ascii_lowercase().contains("token"),
+                "expected invalid token error for {name}, got {invalid}"
+            );
+        }
+        assert_eq!(helpers.len(), 8);
+    }
+
+    #[test]
     fn generated_isotope_helpers_return_none_without_compiled_integrations() {
         for name in ["gh", "aws-cli"] {
             let integration = isotope_integration(name);
