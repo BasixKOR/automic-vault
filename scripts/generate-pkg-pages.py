@@ -125,8 +125,8 @@ PACKAGE_HUBS = (
         title="Cloud CLI packages",
         kicker="cloud command surfaces",
         description=(
-            "Cloud CLIs are high-value package targets because they often broker access to "
-            "accounts, deploys, registries, state, and production infrastructure from a local shell."
+            "Cloud CLIs often hold access to accounts, deploys, registries, state, "
+            "and production infrastructure from a local shell."
         ),
         package_names=(
             "awscli",
@@ -177,7 +177,7 @@ PACKAGE_HUBS = (
         kicker="repository authority",
         description=(
             "Source-control tools can read private repositories, move release tags, push commits, "
-            "and publish code changes that AI agents should not perform without review."
+            "and publish code changes. Agent runs should not do that work without review."
         ),
         package_names=(
             "fossil",
@@ -199,8 +199,8 @@ PACKAGE_HUBS = (
         title="Package publisher tools",
         kicker="publishing authority",
         description=(
-            "Package publishing tools are sensitive because registry tokens can release new artifacts, "
-            "overwrite distribution metadata, and turn a local AI-agent run into a supply-chain event."
+            "Package publishing tools can use registry tokens to release new artifacts, "
+            "overwrite distribution metadata, and push a local agent run into the supply chain."
         ),
         package_names=(
             "cargo",
@@ -224,8 +224,8 @@ PACKAGE_HUBS = (
         title="MCP tool packages",
         kicker="agent tool servers",
         description=(
-            "Model Context Protocol tools are important package targets because they sit between "
-            "AI agents and local credentials, files, APIs, or command execution."
+            "Model Context Protocol tools sit between AI agents and local credentials, "
+            "files, APIs, or command execution."
         ),
         query_terms=("mcp", "model context protocol"),
     ),
@@ -235,7 +235,7 @@ PACKAGE_HUBS = (
         kicker="credential exposure",
         description=(
             "Secret-risk package pages group tools with radioisotope coverage, approval gates, or "
-            "Geiger classifier findings that matter when an AI agent can invoke local executables."
+            "Geiger classifier findings for tools an AI agent can invoke locally."
         ),
         risk_hub=True,
     ),
@@ -1172,7 +1172,7 @@ def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[P
             dynamic_hubs.setdefault(slug, {
                 "title": str(item.get("label") or slug.replace("-", " ").title()),
                 "kicker": str(item.get("kicker") or "package graph cluster"),
-                "description": str(item.get("description") or item.get("reason") or "Agent-curated package graph hub generated from local package facts."),
+                "description": str(item.get("description") or item.get("reason") or "Package graph hub generated from local package facts."),
             })
     for slug, info in sorted(dynamic_hubs.items(), key=lambda item: item[1]["title"].lower()):
         hub = PackageHub(
@@ -1295,7 +1295,7 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
         title="Package security catalog | Automic Vault",
         description=(
             "Automic Vault package catalog for Nucleus packages, radioisotope "
-            "secret handling, approval gates, install metadata, and AI agent security notes."
+            "secret handling, approval gates, install metadata, and agent security notes."
         ),
         canonical=f"{SITE_ORIGIN}/pkg/",
         body=f"""
@@ -1305,7 +1305,7 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
     <div class="hero-copy">
       <p class="eyebrow">Nucleus package intelligence</p>
       <h1 id="pkg-title">Package security catalog</h1>
-      <p class="lede">Generated pages for packages Nucleus knows about, enriched with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
+      <p class="lede">Generated pages for packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
     </div>
     <aside class="hero-panel" aria-label="Catalog counts">
       {metric('packages', fmt_int(len(pages)))}
@@ -1324,8 +1324,8 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
   </section>
   <section class="pkg-section" aria-labelledby="pkg-hubs-title">
     <p class="section-kicker">package hubs</p>
-    <h2 id="pkg-hubs-title">High-value package groups</h2>
-    <p>These crawlable hubs summarize package families that matter for AI-agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p>
+    <h2 id="pkg-hubs-title">Package groups with security signals</h2>
+    <p>These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p>
     <div class="hub-grid" aria-label="Package category hubs">
       {hub_links}
     </div>
@@ -1333,8 +1333,8 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
   <section class="pkg-section split-section">
     <div>
       <p class="section-kicker">crawlable catalog</p>
-      <h2>Package pages built from local source data</h2>
-      <p>Nucleus package metadata, generated package inventories, radioisotope READMEs, secret migration manifests, and approval-gate seeds are folded into static HTML so search engines and AI answer engines can find specific tool security coverage.</p>
+      <h2>Package pages from local source data</h2>
+      <p>Nucleus package metadata, generated package inventories, radioisotope READMEs, secret migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.</p>
     </div>
     <div class="package-list" aria-label="Popular packages">
       {package_links}
@@ -1380,7 +1380,7 @@ def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[st
     gated = [page for page in pages if page.approval_gate]
     rows = "\n".join(hub_package_row(page) for page in top)
     description = short_text(
-        f"{hub.description} Browse {len(pages)} generated package pages with install commands, metadata, and Automic Vault security notes.",
+        f"{hub.description} Browse {len(pages)} package pages with install commands, metadata, and Automic Vault security notes.",
         155,
     )
     return html_doc(
@@ -1412,18 +1412,18 @@ def render_hub_page(hub: PackageHub, pages: list[PackagePage], manifest: dict[st
   </section>
   <section class="pkg-section split-section">
     <div>
-      <p class="section-kicker">GEO summary</p>
-      <h2>Why this package group matters</h2>
+      <p class="section-kicker">summary</p>
+      <h2>Why this package group is here</h2>
       <p>{html_escape(hub_description_detail(hub, pages))}</p>
     </div>
     <div class="detail-stack">
       <article>
         <h3>Generated source</h3>
-        <p>This hub is built from the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.</p>
+        <p>This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.</p>
       </article>
       <article>
         <h3>Review model</h3>
-        <p>Use the hub to find command families that should receive tighter runtime secret injection, approval gates, or manual review before AI agents execute them.</p>
+        <p>Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.</p>
       </article>
     </div>
   </section>
@@ -1454,7 +1454,7 @@ def hub_description_detail(hub: PackageHub, pages: list[PackagePage]) -> str:
         f"{hub.title} currently includes {len(pages)} generated package pages. "
         f"{secured} have radioisotope coverage, {gated} have approval-gate metadata, "
         f"and {risked} have non-low Geiger classifier findings. "
-        "The grouping is generated, not curated prose, so it can stay current as package metadata changes."
+        "The grouping comes from package metadata, so it can stay current as that metadata changes."
     )
 
 
@@ -1493,7 +1493,7 @@ def hub_package_reason(page: PackagePage) -> str:
     aliases = sorted(page.aliases)
     if aliases:
         return f"Executable aliases include {', '.join(aliases[:4])}."
-    return "Matched generated package metadata for this hub."
+    return "Matched package metadata for this hub."
 
 
 def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, updated: str) -> dict[str, Any]:
@@ -1930,12 +1930,12 @@ def hero_sentence(page: PackagePage) -> str:
         return f"{sentence_text(summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}."
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
-        return f"Automic Vault tracks {page.display_name} because {title.lower()} matters when AI agents run command-line tools on macOS."
+        return f"Automic Vault tracks {page.display_name} because {title.lower()} affects agent-run command-line tools on macOS."
     if page.approval_gate:
         return f"Automic Vault has approval-gate metadata for {page.display_name}, including high-risk commands and recommended human review points."
     if summary:
         return f"Nucleus can resolve {page.display_name}: {summary}"
-    return f"Nucleus package metadata for {page.display_name}, generated from local Automic Vault package sources."
+    return f"Nucleus package metadata for {page.display_name}, from local Automic Vault package sources."
 
 
 def sentence_text(value: str) -> str:
@@ -2205,7 +2205,7 @@ def render_overview(page: PackagePage) -> str:
     alias_html = "".join(f"<li>{html_escape(alias)}</li>" for alias in aliases)
     alias_block = f"<ul class=\"chip-list\">{alias_html}</ul>" if aliases else "<p>No executable aliases were found in the local package database.</p>"
     homepage = f'<a href="{attr(page.homepage)}">{html_escape(page.homepage)}</a>' if page.homepage else "Not present in the local metadata."
-    summary = html_escape(clean_summary(page.summary) or "This package is present in local Automic Vault package data. The page is generated so package-specific security metadata has a stable URL.")
+    summary = html_escape(clean_summary(page.summary) or "This package is present in local Automic Vault package data. This page gives package-specific security metadata a stable URL.")
     return f"""
 <section class="pkg-section split-section">
   <div>
@@ -2274,7 +2274,7 @@ def render_security(page: PackagePage) -> str:
   <div class="detail-stack">
     <article>
       <h3>Recommended review</h3>
-      <p>For AI agent use, inspect whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins before allowing unattended execution.</p>
+      <p>Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins.</p>
     </article>
   </div>
 </section>
@@ -2292,7 +2292,7 @@ def security_summary(page: PackagePage) -> str:
         reasons = page.geiger.get("reasons") or []
         if reasons:
             return " ".join(str(reason).rstrip(".") + "." for reason in reasons[:2])
-    return f"This generated page did not find a matching local radioisotope manifest for {page.display_name}. Nucleus package metadata is still published here so future coverage has a stable package URL."
+    return f"No matching local radioisotope manifest was found for {page.display_name}. Nucleus package metadata is still published here so future coverage has a stable package URL."
 
 
 def render_geiger(page: PackagePage) -> str:
@@ -2391,7 +2391,7 @@ def render_gate(page: PackagePage) -> str:
   <div>
     <p class="section-kicker">approval gates</p>
     <h2>Human review metadata for risky commands</h2>
-    <p>The local approval-gate seed includes {html_escape(gate.get('rule_count'))} rules for {html_escape(page.display_name)}. Covered entrypoints: {html_escape(entrypoints)}. Severity labels: {html_escape(severities)}. Coverage is {html_escape(coverage)}{html_escape(f', reviewed {reviewed}' if reviewed else '')}.</p>
+    <p>The local approval-gate seed includes {html_escape(gate.get('rule_count'))} rules for {html_escape(page.display_name)}. Covered entrypoints: {html_escape(entrypoints)}. Severity labels: {html_escape(severities)}. Coverage: {html_escape(coverage)}{html_escape(f', reviewed {reviewed}' if reviewed else '')}.</p>
   </div>
   <div class="detail-stack">
     <article>
@@ -2476,7 +2476,7 @@ def render_freshness(page: PackagePage, manifest: dict[str, Any]) -> str:
   <div>
     <p class="section-kicker">freshness</p>
     <h2 id="freshness-title">Version and freshness</h2>
-    <p>These signals separate local generation age, package-manager activity, and upstream release comparison. Version lag is only warned when an evidence URL and comparable versions are present.</p>
+    <p>These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present.</p>
   </div>
   <div>
     <div class="freshness-metrics">
@@ -2586,7 +2586,7 @@ def render_related(page: PackagePage) -> str:
   <div>
     <p class="section-kicker">package graph</p>
     <h2 id="related-title">Related packages</h2>
-    <p>Links come from the local package relationship graph, curated supplements, dependency edges, ecosystem matches, and package hub membership.</p>
+    <p>Links come from the local package relationship graph, supplements, dependency edges, ecosystem matches, and package hub membership.</p>
   </div>
   <div class="related-columns">
     <article>
@@ -2663,7 +2663,7 @@ def render_sources(page: PackagePage) -> str:
   <div>
     <p class="section-kicker">source trail</p>
     <h2>Generated from repository data</h2>
-    <p>This page is regenerated by <code>scripts/generate-pkg-pages.py</code>. Deployments refuse to publish if <code>www/pkg/</code> is stale relative to local package data.</p>
+    <p>This page is written by <code>scripts/generate-pkg-pages.py</code>. Deployments refuse to publish if <code>www/pkg/</code> is stale relative to local package data.</p>
   </div>
   <div class="detail-stack">
     <article>
@@ -3975,7 +3975,7 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate crawlable SEO pages for Nucleus packages.")
+    parser = argparse.ArgumentParser(description="Generate crawlable pages for Nucleus packages.")
     parser.add_argument("--check", action="store_true", help="Validate that generated package pages match local data sources.")
     parser.add_argument("--output", default=str(OUTPUT_DIR), help=f"Output directory. Defaults to {OUTPUT_DIR}.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable status and disable terminal styling.")
