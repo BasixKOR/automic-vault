@@ -820,21 +820,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
-    private struct LocalHazardTarget {
-        let lookupName: String
-        let displayName: String
-    }
-
-    private static let localHazardTargets = [
-        LocalHazardTarget(lookupName: "brew:git", displayName: "sys:git"),
-        LocalHazardTarget(lookupName: "brew:openssh", displayName: "sys:openssh"),
-        LocalHazardTarget(lookupName: "brew:curl", displayName: "sys:curl"),
-        LocalHazardTarget(lookupName: "brew:rsync", displayName: "sys:rsync"),
-        LocalHazardTarget(lookupName: "brew:ruby", displayName: "sys:ruby"),
-        LocalHazardTarget(lookupName: "brew:perl", displayName: "sys:perl"),
-        LocalHazardTarget(lookupName: "brew:openssl@3", displayName: "sys:openssl@3"),
-        LocalHazardTarget(lookupName: "brew:hf", displayName: "gone:hf"),
-    ]
 
     private enum MastheadTab: Int, CaseIterable {
         case clis
@@ -1765,10 +1750,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.installedRecords = records
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
-                    self.loadLocalDetectorHazards(
-                        requestID: requestID,
-                        excluding: self.installedRecommendationPackageNames()
-                    )
                     self.statusStore.requestRefresh()
                     if self.finishPackageReload() {
                         self.revealRecommendationsAfterInstalledLoad(requestID: requestID)
@@ -1807,8 +1788,21 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             guard self.isReloadingPackages == false else { return }
             self.areRecommendationsVisibleInInstalledList = true
             self.refreshRecommendations()
+            self.loadInitialInstalledPulsePageIfNeeded()
             self.loadNextSearchPageIfNeeded()
         }
+    }
+
+    private func loadInitialInstalledPulsePageIfNeeded() {
+        guard isAppsTabActive == false,
+              isSkillsTabActive == false,
+              isLoadingInstalledPulseResults == false,
+              installedPulseResults.isEmpty,
+              installedPulseNextOffset == 0 else {
+            return
+        }
+        isLoadingInstalledPulseResults = true
+        requestInstalledPulsePage(offset: 0, requestID: installedPulseRequestID)
     }
 
     private func resetInstalledPulseResults() {
@@ -1846,63 +1840,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     self.refreshInstalledPackages()
                     self.refreshRecommendations()
                 }
-            }
-        }
-    }
-
-    private func loadLocalDetectorHazards(
-        requestID: Int,
-        excluding installedPackageNames: Set<String>
-    ) {
-        DispatchQueue.global(qos: .utility).async {
-            let hazards = Self.localHazardTargets.compactMap { target -> (
-                detail: PackageDetail,
-                presentation: PackagePresentation
-            )? in
-                guard let detail = try? self.bridge.fetchDetail(packageName: target.lookupName),
-                      detail.securityState?.installIsInsecure == true,
-                      installedPackageNames.contains(detail.packageName) == false,
-                      installedPackageNames.contains(detail.qualifiedName) == false,
-                      installedPackageNames.contains(target.lookupName) == false,
-                      installedPackageNames.contains(target.displayName) == false else {
-                    return nil
-                }
-                let displayDetail = detail.withPackageIdentity(
-                    packageName: target.displayName,
-                    installPackageNames: [target.lookupName]
-                )
-                let record = PackageRecord(
-                    name: target.displayName,
-                    source: displayDetail.source,
-                    version: displayDetail.installedVersion ?? displayDetail.latestVersion ?? "detected",
-                    description: displayDetail.homebrewInfo?.description,
-                    latestVersion: displayDetail.latestVersion,
-                    securityState: displayDetail.securityState,
-                    installRoot: displayDetail.installRoot,
-                    installPackageNames: [target.lookupName],
-                    managementBackend: displayDetail.managementBackend
-                )
-                return (
-                    displayDetail,
-                    PackagePresentation(
-                        item: .installed(record),
-                        detail: displayDetail,
-                        freshness: self.freshness(for: target.displayName)
-                    )
-                )
-            }
-
-            DispatchQueue.main.async {
-                guard self.reloadRequestID == requestID else { return }
-                for target in Self.localHazardTargets {
-                    self.detailsByPackageName.removeValue(forKey: target.lookupName)
-                    self.detailsByPackageName.removeValue(forKey: target.displayName)
-                }
-                self.localHazardPackages = hazards.map(\.presentation)
-                for hazard in hazards {
-                    self.detailsByPackageName[hazard.presentation.selectionID] = hazard.detail
-                }
-                self.refreshInstalledPackages()
             }
         }
     }
@@ -2064,7 +2001,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         case .installed:
             applyVisiblePackages(installedPalettePackages)
         case .search(let query):
-            matchingInstalledPackages = installedPackages.filter {
+            matchingInstalledPackages = sortedInstalledPalettePrimaryPackages.filter {
                 ($0.packageName ?? "").localizedCaseInsensitiveContains(query)
             }
             applyVisiblePackages(matchingInstalledPackages + searchResults)
@@ -2155,6 +2092,36 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             .sorted(by: PackagePresentation.sortsByPackageSearchOrder)
     }
 
+    private func mergeDetectedLocalHazards(_ hazards: [PackageDetectedLocalHazard]) {
+        guard hazards.isEmpty == false else {
+            return
+        }
+        let installedPackageNames = installedRecommendationPackageNames()
+        var knownPackageNames = Set(localHazardPackages.compactMap(\.packageName))
+        var knownLookupNames = Set(
+            localHazardPackages.flatMap { package -> [String] in
+                guard case .installed(let record) = package.item else {
+                    return []
+                }
+                return record.installPackageNames ?? []
+            }
+        )
+        for hazard in hazards {
+            let selectionID = hazard.presentation.selectionID
+            guard installedPackageNames.contains(hazard.lookupName) == false,
+                  installedPackageNames.contains(selectionID) == false,
+                  knownPackageNames.contains(selectionID) == false,
+                  knownLookupNames.contains(hazard.lookupName) == false else {
+                continue
+            }
+            localHazardPackages.append(hazard.presentation)
+            detailsByPackageName[selectionID] = hazard.detail
+            detailsByPackageName[hazard.lookupName] = hazard.detail
+            knownPackageNames.insert(selectionID)
+            knownLookupNames.insert(hazard.lookupName)
+        }
+    }
+
     private var appPalettePackages: [PackagePresentation] {
         appInstalledPackages + appPulseResults
     }
@@ -2187,6 +2154,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private func installedRecommendationPackageNames() -> Set<String> {
         Set(installedRecords.flatMap { record in
             var names = [record.name]
+            names.append(contentsOf: record.installPackageNames ?? [])
             if let source = record.source, case .formula(let rootFormula) = source {
                 names.append(rootFormula)
             }
@@ -2649,10 +2617,12 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             commandTotalCount = 0
             isLoadingCommandResults = false
             isLoadingMoreCommandResults = false
-            matchingInstalledPackages = installedPackages.filter {
+            matchingInstalledPackages = sortedInstalledPalettePrimaryPackages.filter {
                 ($0.packageName ?? "").localizedCaseInsensitiveContains(query)
             }
-            searchExcludedPackageNames = Set(installedPackages.compactMap(\.packageName))
+            searchExcludedPackageNames = Set(
+                sortedInstalledPalettePrimaryPackages.compactMap(\.packageName)
+            )
             searchResults = retainedSearchResults
             searchResultsQuery = retainedSearchResults.isEmpty ? nil : query
             totalDiscoveryCount = 0
@@ -3173,21 +3143,33 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     offset: offset,
                     limit: Self.searchPageSize
                 )
-                let results = page.packages
-                    .filter { result in
-                        excludedPackageNames.contains(result.name) == false
+                var detectedHazards: [PackageDetectedLocalHazard] = []
+                var results: [PackagePresentation] = []
+                for result in page.packages {
+                    if excludedPackageNames.contains(result.name) {
+                        continue
                     }
-                    .map { result in
-                        PackagePresentation(
-                            item: .available(result),
-                            detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
-                            freshness: self.freshness(for: result.name)
-                        )
+                    if let hazard = result.detectedLocalHazardPresentation(
+                        freshness: self.freshness(for: result.detailLookupName)
+                    ) {
+                        detectedHazards.append(hazard)
+                        continue
                     }
+                    results.append(PackagePresentation(
+                        item: .available(result),
+                        detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
+                        freshness: self.freshness(for: result.name)
+                    ))
+                }
 
                 DispatchQueue.main.async {
                     guard self.searchRequestID == requestID else { return }
                     guard self.paletteMode == .search(query: query) else { return }
+                    self.mergeDetectedLocalHazards(detectedHazards)
+                    self.matchingInstalledPackages =
+                        self.sortedInstalledPalettePrimaryPackages.filter {
+                            ($0.packageName ?? "").localizedCaseInsensitiveContains(query)
+                        }
                     self.totalDiscoveryCount = max(
                         page.totalCount - self.matchingInstalledPackages.count,
                         0
@@ -3291,19 +3273,28 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                     offset: offset,
                     limit: Self.searchPageSize
                 )
-                let results = page.packages.map { result in
-                    PackagePresentation(
+                var detectedHazards: [PackageDetectedLocalHazard] = []
+                var results: [PackagePresentation] = []
+                for result in page.packages {
+                    if let hazard = result.detectedLocalHazardPresentation(
+                        freshness: self.freshness(for: result.detailLookupName)
+                    ) {
+                        detectedHazards.append(hazard)
+                        continue
+                    }
+                    results.append(PackagePresentation(
                         item: .available(result),
                         detail: cachedDetailsByPackageName[result.name],
                         freshness: self.freshness(for: result.name),
                         presentationID: "pulse:\(result.name)"
-                    )
+                    ))
                 }
 
                 DispatchQueue.main.async {
                     guard self.installedPulseRequestID == requestID else { return }
                     self.isLoadingInstalledPulseResults = false
                     self.installedPulseTotalCount = page.totalCount
+                    self.mergeDetectedLocalHazards(detectedHazards)
                     if offset == 0 {
                         self.installedPulseResults = results
                     } else {

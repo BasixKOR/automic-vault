@@ -219,6 +219,41 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testHazardousPulseResultBecomesInstalledLocalDetection() throws {
+        let result = PackageSearchResult(
+            name: "flyctl",
+            source: .formula(rootFormula: "flyctl"),
+            version: "0.4.54",
+            description: "Command-line tools for fly.io services",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "flyctl",
+                installIsInsecure: true,
+                remediationAvailable: true,
+                reasons: ["flyctl config file contains a plaintext access token"],
+                error: nil
+            ),
+            pulseKind: "updated"
+        )
+
+        let hazard = try XCTUnwrap(result.detectedLocalHazardPresentation(freshness: 0.4))
+
+        XCTAssertEqual(hazard.lookupName, "brew:flyctl")
+        XCTAssertEqual(hazard.detail.packageName, "gone:flyctl")
+        XCTAssertEqual(hazard.detail.qualifiedName, "gone:flyctl")
+        XCTAssertEqual(hazard.detail.installPackageNames, ["brew:flyctl"])
+        XCTAssertEqual(hazard.presentation.selectionID, "gone:flyctl")
+        XCTAssertEqual(hazard.presentation.packageName, "gone:flyctl")
+        XCTAssertTrue(hazard.presentation.hasActivePlainTextSecretAlert)
+        XCTAssertFalse(hazard.presentation.plainTextSecretAlertIsGhosted)
+        guard case .installed(let record) = hazard.presentation.item else {
+            return XCTFail("hazardous pulse results should be rendered as installed rows")
+        }
+        XCTAssertEqual(record.name, "gone:flyctl")
+        XCTAssertEqual(record.installPackageNames, ["brew:flyctl"])
+    }
+
     func testGoneRadioisotopeHazardUsesInstallPathInsteadOfConversion() throws {
         let detail = try decodePackageDetail(
             packageName: "gone:hf",

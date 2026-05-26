@@ -15327,6 +15327,11 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn search_packages_paginates_results() {
         let _env_lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("GH_CONFIG_DIR", temp.path().to_str().unwrap()),
+        ]);
         let formula_index = formula_index_entries().unwrap();
         let query = (1..=3)
             .find_map(|prefix_length| {
@@ -15439,6 +15444,11 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn list_pulse_packages_paginates_recent_results() {
         let _env_lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("GH_CONFIG_DIR", temp.path().to_str().unwrap()),
+        ]);
         let db = crate::cli::load_db().unwrap();
         crate::cli::ensure_db_schema(&db).unwrap();
         let pulse_reference_time = OffsetDateTime::parse(&db.generated_at, &Rfc3339).unwrap();
@@ -15533,6 +15543,36 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             .find(|package| package.name == "portable-libffi")
             .expect("coverage fixture should include a stale new formula");
         assert_eq!(stale_new.pulse_kind.as_deref(), Some("updated"));
+    }
+
+    #[test]
+    fn list_pulse_packages_promotes_active_security_hazards() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let fly_dir = temp.path().join(".fly");
+        fs::create_dir_all(&fly_dir).unwrap();
+        fs::write(fly_dir.join("config.yml"), "access_token: FlyV1 secret\n").unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("GH_CONFIG_DIR", temp.path().to_str().unwrap()),
+        ]);
+
+        let Some(state) = package_security_state_for_identifiers(["brew:flyctl".to_string()])
+        else {
+            return;
+        };
+        assert!(state.install_is_insecure);
+
+        let page = ops::list_pulse_packages(0, 1).unwrap();
+        assert_eq!(page.packages.len(), 1);
+        assert_eq!(page.packages[0].name, "flyctl");
+        assert_eq!(
+            page.packages[0]
+                .security_state
+                .as_ref()
+                .map(|state| (state.isotope_name.as_str(), state.install_is_insecure)),
+            Some(("flyctl", true))
+        );
     }
 
     #[test]

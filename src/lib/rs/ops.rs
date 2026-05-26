@@ -280,20 +280,7 @@ pub(crate) fn list_available_packages(
     let packages = resolve_available_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    let limit = search_page_size(limit);
-    let total_count = packages.len();
-    let next_offset = packages.get(offset + limit).map(|_| offset + limit);
-    let packages = packages
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .map(search_package_summary)
-        .collect();
-    Ok(core::SearchPackagesResponse {
-        packages,
-        total_count,
-        next_offset,
-    })
+    Ok(search_packages_response(packages, offset, limit, false))
 }
 
 pub(crate) fn list_pulse_packages(
@@ -303,20 +290,7 @@ pub(crate) fn list_pulse_packages(
     let packages = resolve_pulse_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    let limit = search_page_size(limit);
-    let total_count = packages.len();
-    let next_offset = packages.get(offset + limit).map(|_| offset + limit);
-    let packages = packages
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .map(search_package_summary)
-        .collect();
-    Ok(core::SearchPackagesResponse {
-        packages,
-        total_count,
-        next_offset,
-    })
+    Ok(search_packages_response(packages, offset, limit, true))
 }
 
 pub(crate) fn search_packages(
@@ -330,20 +304,35 @@ pub(crate) fn search_packages(
         },
         query,
     )?;
+    Ok(search_packages_response(packages, offset, limit, true))
+}
+
+fn search_packages_response(
+    packages: Vec<PackageSearchResult>,
+    offset: usize,
+    limit: usize,
+    promote_hazards: bool,
+) -> core::SearchPackagesResponse {
     let limit = search_page_size(limit);
     let total_count = packages.len();
-    let next_offset = packages.get(offset + limit).map(|_| offset + limit);
-    let packages = packages
+    let mut packages = packages
         .into_iter()
-        .skip(offset)
-        .take(limit)
         .map(search_package_summary)
-        .collect();
-    Ok(core::SearchPackagesResponse {
+        .collect::<Vec<_>>();
+    if promote_hazards {
+        let (hazards, rest): (Vec<_>, Vec<_>) = packages
+            .into_iter()
+            .partition(search_package_has_active_hazard);
+        packages = hazards.into_iter().chain(rest).collect();
+    }
+    let next_offset_value = offset.saturating_add(limit);
+    let next_offset = packages.get(next_offset_value).map(|_| next_offset_value);
+    let packages = packages.into_iter().skip(offset).take(limit).collect();
+    core::SearchPackagesResponse {
         packages,
         total_count,
         next_offset,
-    })
+    }
 }
 
 fn search_page_size(limit: usize) -> usize {
@@ -351,6 +340,13 @@ fn search_page_size(limit: usize) -> usize {
         0 => DEFAULT_SEARCH_PAGE_SIZE,
         _ => limit.min(MAX_SEARCH_PAGE_SIZE),
     }
+}
+
+fn search_package_has_active_hazard(package: &core::SearchPackageSummary) -> bool {
+    package
+        .security_state
+        .as_ref()
+        .is_some_and(|state| state.install_is_insecure)
 }
 
 fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSummary {

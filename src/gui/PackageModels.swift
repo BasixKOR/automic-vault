@@ -1084,12 +1084,64 @@ struct PackageSearchResult: Decodable, Equatable {
             return name
         }
     }
+
+    func detectedLocalHazardPresentation(freshness: CGFloat) -> PackageDetectedLocalHazard? {
+        guard securityState?.installIsInsecure == true else {
+            return nil
+        }
+
+        let lookupName = detailLookupName
+        let displayName = Self.localHazardDisplayName(for: lookupName)
+        let displayDetail = fallbackDetail.withPackageIdentity(
+            packageName: displayName,
+            installPackageNames: [lookupName]
+        )
+        let record = PackageRecord(
+            name: displayName,
+            source: displayDetail.source,
+            version: displayDetail.installedVersion
+                ?? displayDetail.latestVersion
+                ?? version
+                ?? "detected",
+            description: displayDetail.homebrewInfo?.description ?? description,
+            latestVersion: displayDetail.latestVersion,
+            securityState: displayDetail.securityState,
+            installRoot: displayDetail.installRoot,
+            installPackageNames: [lookupName],
+            managementBackend: displayDetail.managementBackend
+        )
+        return PackageDetectedLocalHazard(
+            lookupName: lookupName,
+            detail: displayDetail,
+            presentation: PackagePresentation(
+                item: .installed(record),
+                detail: displayDetail,
+                freshness: freshness
+            )
+        )
+    }
+
+    private static func localHazardDisplayName(for lookupName: String) -> String {
+        if let formula = lookupName.strippingPrefix("brew:"), !formula.isEmpty {
+            return "gone:\(formula)"
+        }
+        if let caskName = lookupName.strippingPrefix("cask:"), !caskName.isEmpty {
+            return "gone:\(caskName)"
+        }
+        return "gone:\(lookupName.packageSearchOrderName)"
+    }
 }
 
 struct PackageSearchPage: Decodable, Equatable {
     let packages: [PackageSearchResult]
     let totalCount: Int
     let nextOffset: Int?
+}
+
+struct PackageDetectedLocalHazard: Equatable {
+    let lookupName: String
+    let detail: PackageDetail
+    let presentation: PackagePresentation
 }
 
 private extension URL {
