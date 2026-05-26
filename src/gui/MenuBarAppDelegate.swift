@@ -726,7 +726,8 @@ private final class MenuBarInlineNotification {
         panel.ignoresMouseEvents = true
 
         let container = NSVisualEffectView()
-        container.translatesAutoresizingMaskIntoConstraints = false
+        container.frame = NSRect(x: 0, y: 0, width: 178, height: 24)
+        container.autoresizingMask = [.width, .height]
         container.material = .popover
         container.blendingMode = .behindWindow
         container.state = .active
@@ -762,14 +763,17 @@ private final class MenuBarInlineNotification {
         let anchorFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let height = max(22, min(28, NSStatusBar.system.thickness))
         let width: CGFloat = 178
+        let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        let preferredY = screenFrame.map { $0.maxY - height - 8 }
+            ?? anchorFrame.minY - height - 8
         var frame = NSRect(
             x: anchorFrame.midX - width / 2,
-            y: anchorFrame.minY - height - 5,
+            y: min(anchorFrame.minY - height - 8, preferredY),
             width: width,
             height: height
         )
 
-        if let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+        if let screenFrame {
             frame.origin.x = min(
                 max(frame.minX, screenFrame.minX + 4),
                 screenFrame.maxX - width - 4
