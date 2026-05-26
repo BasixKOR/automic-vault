@@ -398,6 +398,69 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn("ripgrep を Homebrew でインストール", html)
         self.assertIn("# ripgrep をインストール", markdown)
 
+    def test_localized_package_page_translates_site_owned_body_copy(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_fr_body_i18n_test")
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        page.package_manager = "Homebrew"
+        page.package_manager_url = "https://formulae.brew.sh/formula/ripgrep"
+        page.homepage = "https://github.com/BurntSushi/ripgrep"
+        page.repository = "https://github.com/BurntSushi/ripgrep"
+        page.executables = [{"name": "rg", "kind": "binary"}]
+        page.dependencies = ["pcre2"]
+        page.related_packages = [{"provider": "brew", "name": "fd", "label": "fd", "reason": "Search adjacent."}]
+        page.geiger = {"level": "green", "confidence": "high", "reasons": ["No service hooks."]}
+        locale = next(item for item in module.i18n_locales() if item["code"] == "fr")
+
+        html = module.render_package_page(page, {"generated_at": "2026-05-24T12:00:00+00:00"}, locale)
+        markdown = module.render_package_markdown(page, {"generated_at": "2026-05-24T12:00:00+00:00"}, locale)
+
+        self.assertIn("Résumé du paquet", html)
+        self.assertIn("Commencez avec Vault", html)
+        self.assertIn("Exécutables installés", html)
+        self.assertIn("Version et fraîcheur", html)
+        self.assertIn("Métadonnées du paquet", html)
+        self.assertIn("Paquets liés", html)
+        self.assertIn("Généré depuis les données du dépôt", html)
+        for phrase in (
+            ">Package summary<",
+            ">Start with Vault",
+            ">Installed executables<",
+            ">Version and freshness<",
+            ">Package metadata<",
+            ">Related packages<",
+            ">Generated from repository data<",
+        ):
+            self.assertNotIn(phrase, html)
+        self.assertIn("## Faits du paquet", markdown)
+        self.assertIn("## Notes de sécurité", markdown)
+        self.assertIn("## Liens liés", markdown)
+
+    def test_localized_package_schema_uses_locale_text(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_schema_i18n_test")
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        locale = next(item for item in module.i18n_locales() if item["code"] == "fr")
+
+        schema = module.schema_for_package(
+            page,
+            module.tx(locale, "metaDescription", "Install {name} with {manager}.", name=page.display_name, manager="Homebrew"),
+            "2026-05-26",
+            locale,
+        )
+        article = next(item for item in schema["@graph"] if item["@type"] == "TechArticle")
+        breadcrumbs = next(item for item in schema["@graph"] if item["@type"] == "BreadcrumbList")
+        how_to = next(item for item in schema["@graph"] if item["@type"] == "HowTo")
+
+        self.assertEqual(article["headline"], "Installer ripgrep avec Homebrew")
+        self.assertEqual(article["inLanguage"], "fr")
+        self.assertEqual(breadcrumbs["itemListElement"][0]["name"], "Accueil")
+        self.assertEqual(breadcrumbs["itemListElement"][1]["name"], "Paquets")
+        self.assertEqual(how_to["name"], "Installer ripgrep")
+        self.assertEqual(how_to["step"][0]["name"], "Exécuter la commande Automic Vault")
+
     def test_package_markdown_alternate_contains_agent_facts(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_markdown_test")
         page = module.PackagePage(provider="brew", name="ripgrep")

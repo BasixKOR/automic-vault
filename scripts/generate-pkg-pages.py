@@ -36,6 +36,156 @@ GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
 _I18N_LOCALES_CACHE: list[dict[str, Any]] | None = None
 _I18N_PKG_TEMPLATES_CACHE: dict[str, dict[str, str]] | None = None
 
+REQUIRED_I18N_PKG_KEYS = {
+    "additionalInstallCommands",
+    "alsoAvailableVia",
+    "approvalGatesKicker",
+    "approvalRules",
+    "automicVaultInstallHeading",
+    "binaries",
+    "bottle",
+    "buildDependencies",
+    "catalogCounts",
+    "catalogEyebrow",
+    "catalogHubsAria",
+    "catalogHubsCopy",
+    "catalogHubsKicker",
+    "catalogHubsTitle",
+    "catalogListAria",
+    "catalogPagesCopy",
+    "catalogPagesKicker",
+    "catalogPagesTitle",
+    "catalogSearchCopy",
+    "classifierConfidence",
+    "classifiers",
+    "command",
+    "commandsAndAliases",
+    "copy",
+    "copyInstallCommand",
+    "copyManagerInstallCommand",
+    "coverageSource",
+    "crawlableCatalog",
+    "dependencies",
+    "downloadAV",
+    "executableDataMissing",
+    "executables",
+    "executablesTitle",
+    "exposure",
+    "freshness",
+    "freshnessCopy",
+    "freshnessTitle",
+    "generatedFromRepositoryData",
+    "generatedSource",
+    "generatedSourceCopy",
+    "geigerRisk",
+    "heroPanelAria",
+    "homepage",
+    "homepageMissing",
+    "hubCounts",
+    "hubDescription",
+    "hubIndexedPagesTitle",
+    "hubPackageReasonAlias",
+    "hubPackageReasonApproval",
+    "hubPackageReasonDefault",
+    "hubReviewCopy",
+    "hubReviewModel",
+    "hubSchemaDescription",
+    "hubSummaryTitle",
+    "install",
+    "installBehavior",
+    "installBehaviorTitle",
+    "installCommand",
+    "installRoutes",
+    "installSourceMissing",
+    "installSourcePrefix",
+    "installTitleConcept",
+    "installTitleConceptCopy",
+    "issueTracker",
+    "kind",
+    "keywords",
+    "license",
+    "localData",
+    "localReadmeExcerpt",
+    "manager",
+    "managerUpdated",
+    "managerVersion",
+    "markdownEvidence",
+    "metadataEmpty",
+    "metadataTitle",
+    "noAliases",
+    "noApprovalRules",
+    "noCaveats",
+    "noClassifierReasons",
+    "noClassifierSignals",
+    "noCrossEcosystem",
+    "noFreshnessWarnings",
+    "noHubMembership",
+    "noPlatformNotes",
+    "noRelated",
+    "note",
+    "overview",
+    "packageCatalogTitle",
+    "packageFacts",
+    "packageGraph",
+    "packageGraphCopy",
+    "packageHubs",
+    "packageKey",
+    "packageManager",
+    "packageManagerPage",
+    "packageManagerSource",
+    "packageMetadata",
+    "packageMetadataKicker",
+    "packageSummary",
+    "pageGenerated",
+    "platformInstallCommands",
+    "platformNotes",
+    "popularPackages",
+    "published",
+    "pythonFormula",
+    "pythonRequires",
+    "radioisotopeCoverage",
+    "radioisotopeKicker",
+    "radioisotopeMissingHeading",
+    "radioisotopeMissingSummary",
+    "recommendedReview",
+    "recommendedReviewCopy",
+    "related",
+    "relatedLinks",
+    "relatedPackages",
+    "repository",
+    "reviewed",
+    "risk",
+    "riskClassifier",
+    "riskLevel",
+    "schemaHowToName",
+    "schemaHowToStep",
+    "schemaTechArticleHeadline",
+    "securityNotes",
+    "securityPosture",
+    "service",
+    "serviceNone",
+    "signals",
+    "source",
+    "sourceArchive",
+    "sourceDatabaseAria",
+    "sourceExcerpt",
+    "sourceSummary",
+    "sourceTrail",
+    "sources",
+    "sourcesCopy",
+    "status",
+    "summaryFallback",
+    "upstream",
+    "upstreamDocs",
+    "upstreamLatestDetected",
+    "usedSources",
+    "usesFromMacos",
+    "verified",
+    "version",
+    "versionAndFreshness",
+    "why",
+}
+
 
 def i18n_locales() -> list[dict[str, Any]]:
     global _I18N_LOCALES_CACHE
@@ -92,11 +242,47 @@ def locale_url(path: str, locale: dict[str, Any] | None = None) -> str:
 
 def tx(locale: dict[str, Any] | None, key: str, default: str, **kwargs: Any) -> str:
     code = locale_code(locale)
-    template = i18n_pkg_templates().get(code, {}).get(key, default)
+    templates = i18n_pkg_templates().get(code, {})
+    if code != "en" and key in REQUIRED_I18N_PKG_KEYS and key not in templates:
+        raise KeyError(f"missing package i18n template: {code}.{key}")
+    template = templates.get(key, default)
     try:
         return template.format(**kwargs)
     except (KeyError, ValueError):
         return default.format(**kwargs)
+
+
+def validate_i18n_pkg_templates() -> list[str]:
+    failures: list[str] = []
+    templates = i18n_pkg_templates()
+    for locale in non_default_i18n_locales():
+        code = locale_code(locale)
+        locale_templates = templates.get(code)
+        if not isinstance(locale_templates, dict):
+            failures.append(f"missing package i18n templates for {code}")
+            continue
+        missing = sorted(REQUIRED_I18N_PKG_KEYS - set(locale_templates))
+        if missing:
+            failures.append(f"{code} package i18n templates are missing keys: {', '.join(missing[:24])}")
+    return failures
+
+
+LOCALIZED_UI_ENGLISH_SNIPPETS = (
+    ">Package summary<",
+    ">Install with Automic Vault<",
+    ">Start with Vault",
+    ">Installed executables<",
+    ">Version and freshness<",
+    ">Package metadata<",
+    ">Related packages<",
+    ">Generated from repository data<",
+    ">Security Notes<",
+    ">Package Facts<",
+)
+
+
+def localized_package_ui_leaks(html_text: str) -> list[str]:
+    return [snippet for snippet in LOCALIZED_UI_ENGLISH_SNIPPETS if snippet in html_text]
 
 
 @dataclass
@@ -1446,7 +1632,7 @@ def render_index(
         key=lambda page: int(page.popularity.get("rank") or 999999),
     )[:72]
     package_links = "\n".join(
-        f'<a class="package-row" href="{locale_path(page.path, locale)}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page))}</small></a>'
+        f'<a class="package-row" href="{locale_path(page.path, locale)}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page, locale))}</small></a>'
         for page in top_pages
     )
     hub_links = "\n".join(
@@ -1468,11 +1654,11 @@ def render_index(
 <main>
   <section class="pkg-hero pkg-hero-index" aria-labelledby="pkg-title">
     <div class="hero-copy">
-      <p class="eyebrow">Nucleus package intelligence</p>
+      <p class="eyebrow">{html_escape(tx(locale, 'catalogEyebrow', 'Nucleus package intelligence'))}</p>
       <h1 id="pkg-title">{html_escape(tx(locale, "packageCatalogTitle", "Package security catalog"))}</h1>
-      <p class="lede">Generated pages for executable packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
+      <p class="lede">{html_escape(tx(locale, 'catalogPagesCopy', 'Generated pages for executable packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.'))}</p>
     </div>
-    <aside class="hero-panel" aria-label="Catalog counts">
+    <aside class="hero-panel" aria-label="{attr(tx(locale, 'catalogCounts', 'Catalog counts'))}">
       {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
       {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(len(secured)))}
       {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
@@ -1483,25 +1669,25 @@ def render_index(
     <div class="search-copy">
       <p class="section-kicker">{html_escape(tx(locale, 'siteSearch', 'site search'))}</p>
       <h2 id="pkg-search-title">{html_escape(tx(locale, 'findPackageCoverage', 'Find package coverage'))}</h2>
-      <p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p>
+      <p>{html_escape(tx(locale, 'catalogSearchCopy', 'Search generated package pages, security guides, documentation, and source-backed metadata from one index.'))}</p>
     </div>
     <div id="pkg-search" class="pkg-search" data-pagefind-ui></div>
   </section>
   <section class="pkg-section" aria-labelledby="pkg-hubs-title">
-    <p class="section-kicker">package hubs</p>
-    <h2 id="pkg-hubs-title">Package groups with security signals</h2>
-    <p>These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p>
-    <div class="hub-grid" aria-label="Package category hubs">
+    <p class="section-kicker">{html_escape(tx(locale, 'catalogHubsKicker', 'package hubs'))}</p>
+    <h2 id="pkg-hubs-title">{html_escape(tx(locale, 'catalogHubsTitle', 'Package groups with security signals'))}</h2>
+    <p>{html_escape(tx(locale, 'catalogHubsCopy', 'These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.'))}</p>
+    <div class="hub-grid" aria-label="{attr(tx(locale, 'catalogHubsAria', 'Package category hubs'))}">
       {hub_links}
     </div>
   </section>
   <section class="pkg-section split-section">
     <div>
-      <p class="section-kicker">crawlable catalog</p>
-      <h2>Package pages from local source data</h2>
-      <p>Nucleus package metadata, generated package inventories, radioisotope READMEs, secret migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.</p>
+      <p class="section-kicker">{html_escape(tx(locale, 'catalogPagesKicker', 'crawlable catalog'))}</p>
+      <h2>{html_escape(tx(locale, 'catalogPagesTitle', 'Package pages from local source data'))}</h2>
+      <p>{html_escape(tx(locale, 'crawlableCatalog', 'Nucleus package metadata, generated package inventories, radioisotope READMEs, secret migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.'))}</p>
     </div>
-    <div class="package-list" aria-label="Popular packages">
+    <div class="package-list" aria-label="{attr(tx(locale, 'popularPackages', 'Popular packages'))}">
       {package_links}
     </div>
   </section>
@@ -1530,10 +1716,11 @@ def render_index(
         schema={
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            "name": "Automic Vault package security catalog",
+            "name": tx(locale, "packageCatalogTitle", "Automic Vault package security catalog"),
             "url": locale_url("/pkg/", locale),
+            "inLanguage": (locale or {}).get("htmlLang") or "en",
             "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": SITE_ORIGIN + "/"},
-            "about": "Nucleus packages, AI agent package security, approval gates, and secret migration metadata",
+            "about": tx(locale, "packageCatalogDescription", "Nucleus packages, AI agent package security, approval gates, and secret migration metadata"),
         },
     )
 
@@ -1548,9 +1735,9 @@ def render_hub_page(
     top = pages[:72]
     secured = [page for page in pages if page.isotope]
     gated = [page for page in pages if page.approval_gate]
-    rows = "\n".join(hub_package_row(page) for page in top)
+    rows = "\n".join(hub_package_row(page, locale) for page in top)
     description = short_text(
-        f"{hub.description} Browse {len(pages)} package pages with install commands, metadata, and Automic Vault security notes.",
+        tx(locale, "hubSchemaDescription", "{description} Browse {count} package pages with install commands, metadata, and Automic Vault security notes.", description=hub.description, count=len(pages)),
         155,
     )
     return html_doc(
@@ -1575,36 +1762,36 @@ def render_hub_page(
       <h1 id="hub-title">{html_escape(hub.title)}</h1>
       <p class="lede">{html_escape(hub.description)}</p>
     </div>
-    <aside class="hero-panel" aria-label="Hub counts">
-      {metric('packages', fmt_int(len(pages)))}
-      {metric('radioisotopes', fmt_int(len(secured)))}
-      {metric('approval gates', fmt_int(len(gated)))}
-      {metric('updated', updated)}
+    <aside class="hero-panel" aria-label="{attr(tx(locale, 'hubCounts', 'Hub counts'))}">
+      {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
+      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(len(secured)))}
+      {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
+      {metric(tx(locale, 'updated', 'updated'), updated)}
     </aside>
   </section>
   <section class="pkg-section split-section">
     <div>
-      <p class="section-kicker">summary</p>
-      <h2>Why this package group is here</h2>
-      <p>{html_escape(hub_description_detail(hub, pages))}</p>
+      <p class="section-kicker">{html_escape(tx(locale, 'packageSummary', 'summary'))}</p>
+      <h2>{html_escape(tx(locale, 'hubSummaryTitle', 'Why this package group is here'))}</h2>
+      <p>{html_escape(hub_description_detail(hub, pages, locale))}</p>
     </div>
     <div class="detail-stack">
       <article>
-        <h3>Generated source</h3>
-        <p>This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.</p>
+        <h3>{html_escape(tx(locale, 'generatedSource', 'Generated source'))}</h3>
+        <p>{html_escape(tx(locale, 'generatedSourceCopy', 'This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.'))}</p>
       </article>
       <article>
-        <h3>Review model</h3>
-        <p>Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.</p>
+        <h3>{html_escape(tx(locale, 'hubReviewModel', 'Review model'))}</h3>
+        <p>{html_escape(tx(locale, 'hubReviewCopy', 'Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.'))}</p>
       </article>
     </div>
   </section>
   <section class="pkg-section">
-    <p class="section-kicker">packages</p>
-    <h2>Indexed package pages</h2>
+    <p class="section-kicker">{html_escape(tx(locale, 'packages', 'packages'))}</p>
+    <h2>{html_escape(tx(locale, 'hubIndexedPagesTitle', 'Indexed package pages'))}</h2>
     <div class="table-wrap hub-table">
       <table>
-        <thead><tr><th>Package</th><th>Manager</th><th>Signals</th><th>Why it appears here</th></tr></thead>
+        <thead><tr><th>{html_escape(tx(locale, 'package', 'Package'))}</th><th>{html_escape(tx(locale, 'manager', 'Manager'))}</th><th>{html_escape(tx(locale, 'signals', 'Signals'))}</th><th>{html_escape(tx(locale, 'why', 'Why it appears here'))}</th></tr></thead>
         <tbody>{rows}</tbody>
       </table>
     </div>
@@ -1614,48 +1801,52 @@ def render_hub_page(
 """,
         stylesheet_href=locale_path("/pkg/styles.css", locale),
         favicon_href="/favicon.ico",
-        schema=schema_for_hub(hub, pages, description, updated),
+        schema=schema_for_hub(hub, pages, description, updated, locale),
     )
 
 
-def hub_description_detail(hub: PackageHub, pages: list[PackagePage]) -> str:
+def hub_description_detail(hub: PackageHub, pages: list[PackagePage], locale: dict[str, Any] | None = None) -> str:
     secured = sum(1 for page in pages if page.isotope)
     gated = sum(1 for page in pages if page.approval_gate)
     risked = sum(1 for page in pages if page.geiger and str(page.geiger.get("level") or "").lower() not in {"", "green", "low", "unknown"})
-    return (
-        f"{hub.title} currently includes {len(pages)} generated package pages. "
-        f"{secured} have radioisotope coverage, {gated} have approval-gate metadata, "
-        f"and {risked} have non-low Geiger classifier findings. "
-        "The grouping comes from package metadata, so it can stay current as that metadata changes."
+    return tx(
+        locale,
+        "hubDescription",
+        "{title} currently includes {count} generated package pages. {secured} have radioisotope coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+        title=hub.title,
+        count=len(pages),
+        secured=secured,
+        gated=gated,
+        risked=risked,
     )
 
 
-def hub_package_row(page: PackagePage) -> str:
+def hub_package_row(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     signals = []
     if page.isotope:
         signals.append("radioisotope")
     if page.approval_gate:
-        signals.append("approval gate")
+        signals.append(tx(locale, "approvalGatesKicker", "approval gate"))
     if page.geiger:
-        signals.append(f"{geiger_level_label(page.geiger)} risk")
+        signals.append(tx(locale, "riskLevel", "{level} risk", level=geiger_level_label(page.geiger)))
     if page.version:
         signals.append(f"v{page.version}")
-    reason = hub_package_reason(page)
+    reason = hub_package_reason(page, locale)
     return (
         f'<tr><td><a href="{attr(page.path)}">{html_escape(page.display_name)}</a></td>'
         f"<td>{html_escape(package_manager_label(page))}</td>"
-        f"<td>{html_escape(', '.join(signals) or label_for(page))}</td>"
+        f"<td>{html_escape(', '.join(signals) or label_for(page, locale))}</td>"
         f"<td>{html_escape(reason)}</td></tr>"
     )
 
 
-def hub_package_reason(page: PackagePage) -> str:
+def hub_package_reason(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if page.isotope:
         title = (page.isotope.get("justification") or {}).get("title")
         if title:
             return str(title)
     if page.approval_gate:
-        return f"{page.approval_gate.get('rule_count') or 'Local'} approval-gate rules are present."
+        return tx(locale, "hubPackageReasonApproval", "{count} approval-gate rules are present.", count=page.approval_gate.get("rule_count") or "Local")
     if page.geiger:
         reasons = page.geiger.get("reasons") or []
         if reasons:
@@ -1664,12 +1855,12 @@ def hub_package_reason(page: PackagePage) -> str:
         return short_text(clean_summary(page.summary), 140)
     aliases = sorted(page.aliases)
     if aliases:
-        return f"Executable aliases include {', '.join(aliases[:4])}."
-    return "Matched package metadata for this hub."
+        return tx(locale, "hubPackageReasonAlias", "Executable aliases include {aliases}.", aliases=", ".join(aliases[:4]))
+    return tx(locale, "hubPackageReasonDefault", "Matched package metadata for this hub.")
 
 
-def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, updated: str) -> dict[str, Any]:
-    url = f"{SITE_ORIGIN}{hub.path}"
+def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, updated: str, locale: dict[str, Any] | None = None) -> dict[str, Any]:
+    url = locale_url(hub.path, locale)
     return {
         "@context": "https://schema.org",
         "@graph": [
@@ -1683,6 +1874,7 @@ def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, 
                 "headline": hub.title,
                 "url": url,
                 "description": description,
+                "inLanguage": (locale or {}).get("htmlLang") or "en",
                 "dateModified": updated,
                 "isPartOf": {"@id": f"{SITE_ORIGIN}/#website"},
                 "about": {"@id": f"{SITE_ORIGIN}/#software"},
@@ -1707,8 +1899,8 @@ def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, 
                 "@type": "BreadcrumbList",
                 "@id": f"{url}#breadcrumbs",
                 "itemListElement": [
-                    {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
-                    {"@type": "ListItem", "position": 2, "name": "Packages", "item": f"{SITE_ORIGIN}/pkg/"},
+                    {"@type": "ListItem", "position": 1, "name": tx(locale, "home", "Home"), "item": locale_url("/", locale)},
+                    {"@type": "ListItem", "position": 2, "name": tx(locale, "packages", "Packages"), "item": locale_url("/pkg/", locale)},
                     {"@type": "ListItem", "position": 3, "name": hub.title, "item": url},
                 ],
             },
@@ -1736,17 +1928,17 @@ def render_package_page(
         manager=package_manager_label(page),
     )
     updated = fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or fmt_date(manifest.get("generated_at", ""))
-    facts = package_facts(page)
-    install_section = render_concept_install(page) if page.key == "brew:ripgrep" else render_install(page)
+    facts = package_facts(page, locale)
+    install_section = render_concept_install(page, locale) if page.key == "brew:ripgrep" else render_install(page, locale)
     sections = [
         install_section,
-        render_overview(page),
-        render_security(page),
-        render_executables(page),
-        render_freshness(page, manifest),
-        render_install_metadata(page),
-        render_related(page),
-        render_sources(page),
+        render_overview(page, locale),
+        render_security(page, locale),
+        render_executables(page, locale),
+        render_freshness(page, manifest, locale),
+        render_install_metadata(page, locale),
+        render_related(page, locale),
+        render_sources(page, locale),
     ]
     breadcrumbs = f"""
 <nav class="breadcrumbs" aria-label="Breadcrumbs">
@@ -1772,13 +1964,13 @@ def render_package_page(
     <div class="hero-copy">
       <p class="eyebrow">{html_escape(tx(locale, 'packageIntelligence', '{provider} package intelligence', provider=page.provider))}</p>
       <h1 id="pkg-title">{html_escape(tx(locale, 'installHeading', 'Install {name}', name=page.display_name))}</h1>
-      <p class="lede">{html_escape(hero_sentence(page) if locale_code(locale) == "en" else tx(locale, 'heroSentence', 'View install routes, executables, metadata, and security notes for {name}.', name=page.display_name))}</p>
+      <p class="lede">{html_escape(localized_hero_sentence(page, locale))}</p>
       <div class="hero-actions">
         <a class="button primary" href="#install">{html_escape(tx(locale, 'installAction', 'Install command'))}</a>
         <a class="button secondary" href="#security">{html_escape(tx(locale, 'securityAction', 'Security notes'))}</a>
       </div>
     </div>
-    <aside class="hero-panel" aria-label="Package facts">
+    <aside class="hero-panel" aria-label="{attr(tx(locale, 'packageFacts', 'Package facts'))}">
       {facts}
     </aside>
   </section>
@@ -1788,13 +1980,13 @@ def render_package_page(
 """,
         stylesheet_href=locale_path("/pkg/styles.css", locale),
         favicon_href="/favicon.ico",
-        schema=schema_for_package(page, description, updated),
+        schema=schema_for_package(page, description, updated, locale),
         extra_head=markdown_alternate_head(page, locale) if is_indexable_package_page(page) else "",
-        extra_body=copy_script(),
+        extra_body=copy_script(locale),
     )
 
 
-def render_concept_install(page: PackagePage) -> str:
+def render_concept_install(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     commands = install_command_entries(page)
     primary = commands[0] if commands else {
         "command": f"sudo av install {page.key}",
@@ -1807,23 +1999,23 @@ def render_concept_install(page: PackagePage) -> str:
     return f"""
 <section id="install" class="pkg-section pkg-concept-install" aria-labelledby="install-title">
   <div class="pkg-concept-section-head">
-    <p class="section-kicker">install routes</p>
-    <h2 id="install-title">Start with Vault, then choose the host package manager.</h2>
-    <p>The page keeps the Automic Vault command first, then separates package-manager commands by operating system so the copy target is unambiguous.</p>
+      <p class="section-kicker">{html_escape(tx(locale, 'installRoutes', 'install routes'))}</p>
+      <h2 id="install-title">{html_escape(tx(locale, 'installTitleConcept', 'Start with Vault, then choose the host package manager.'))}</h2>
+      <p>{html_escape(tx(locale, 'installTitleConceptCopy', 'The page keeps the Automic Vault command first, then separates package-manager commands by operating system so the copy target is unambiguous.'))}</p>
   </div>
   <div class="pkg-concept-primary-command">
     <div class="pkg-concept-primary-head">
       <span>{html_escape(primary.get('manager') or 'Automic Vault')}</span>
-      <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
+      <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="{attr(tx(locale, 'copyInstallCommand', 'Copy install command'))}">{html_escape(tx(locale, 'copy', 'Copy'))}</button>
     </div>
     <pre><code>{html_escape(command)}</code></pre>
   </div>
-  {render_concept_platforms(commands[1:])}
+  {render_concept_platforms(commands[1:], locale)}
 </section>
 """
 
 
-def render_concept_platforms(commands: list[dict[str, Any]]) -> str:
+def render_concept_platforms(commands: list[dict[str, Any]], locale: dict[str, Any] | None = None) -> str:
     grouped: dict[str, list[dict[str, Any]]] = {"macos": [], "linux": [], "windows": [], "portable": []}
     for item in commands:
         platform = str(item.get("platform") or "portable")
@@ -1841,31 +2033,32 @@ def render_concept_platforms(commands: list[dict[str, Any]]) -> str:
         items = grouped.get(platform) or []
         if not items:
             continue
-        rows = "".join(render_concept_command_row(item) for item in items)
+        rows = "".join(render_concept_command_row(item, locale) for item in items)
+        count_label = tx(locale, "commandCount", "{count} commands", count=fmt_int(len(items)))
         sections.append(f"""
 <article class="pkg-concept-platform" style="--i: {index}">
   <div class="pkg-concept-platform-head">
     <h3>{html_escape(labels[platform])}</h3>
-    <span>{fmt_int(len(items))} commands</span>
+    <span>{html_escape(count_label)}</span>
   </div>
   <div class="pkg-concept-command-list">{rows}</div>
 </article>
 """)
     if not sections:
-        return "<p>No additional platform commands were present.</p>"
-    return f'<div class="pkg-concept-platform-grid" aria-label="Platform install commands">{"".join(sections)}</div>'
+        return f"<p>{html_escape(tx(locale, 'noPlatformCommands', 'No additional platform commands were present.'))}</p>"
+    return f'<div class="pkg-concept-platform-grid" aria-label="{attr(tx(locale, "platformInstallCommands", "Platform install commands"))}">{"".join(sections)}</div>'
 
 
-def render_concept_command_row(item: dict[str, Any]) -> str:
+def render_concept_command_row(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
     manager_label = install_command_manager_label(item)
-    source_html = install_command_source_html(item)
+    source_html = install_command_source_html(item, locale)
     try:
         confidence_value = float(item.get("confidence"))
     except (TypeError, ValueError):
         confidence_value = 0.0
-    confidence_label = "verified" if confidence_value >= 0.9 else "inferred"
+    confidence_label = tx(locale, "verified", "verified") if confidence_value >= 0.9 else tx(locale, "inferred", "inferred")
     return f"""
 <div class="pkg-concept-command-row">
   <div class="install-command-head">
@@ -1874,7 +2067,7 @@ def render_concept_command_row(item: dict[str, Any]) -> str:
   </div>
   <div class="install-command-shell">
     <code>{html_escape(command_text)}</code>
-    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager_label)} install command">Copy</button>
+    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="{attr(tx(locale, 'copyManagerInstallCommand', 'Copy {manager} install command', manager=manager_label))}">{html_escape(tx(locale, 'copy', 'Copy'))}</button>
   </div>
   {source_html}
 </div>
@@ -1894,48 +2087,48 @@ def render_package_markdown(
     lines = [
         f"# {md_text(tx(locale, 'installHeading', 'Install {name}', name=page.display_name))}",
         "",
-        md_text(hero_sentence(page)),
+        md_text(localized_hero_sentence(page, locale)),
         "",
-        "## Install",
+        f"## {md_text(tx(locale, 'install', 'Install'))}",
         "",
         "```sh",
         install_command(page),
         "```",
         "",
     ]
-    lines.extend(md_install_command_groups(page))
-    lines.extend(["## Package Facts", ""])
+    lines.extend(md_install_command_groups(page, locale))
+    lines.extend([f"## {md_text(tx(locale, 'packageFacts', 'Package Facts'))}", ""])
     fact_rows = [
-        ("Package key", page.key),
-        ("Package manager", package_manager_label(page)),
-        ("Package manager URL", page.package_manager_url),
-        ("Version", page.version),
-        ("Summary", clean_summary(page.summary)),
-        ("Homepage", page.homepage),
-        ("Repository", page.repository),
-        ("Upstream docs", page.upstream_docs),
-        ("License", page.license),
-        ("Source archive", page.source_archive),
-        ("Issue tracker", page.issue_tracker),
-        ("Published", page.published_at),
-        ("Last verified", page.last_verified),
-        ("Last updated", page.last_updated_at),
-        ("Generated", manifest.get("generated_at")),
+        (tx(locale, "packageKey", "Package key"), page.key),
+        (tx(locale, "packageManager", "Package manager"), package_manager_label(page)),
+        (tx(locale, "packageManagerPage", "Package manager URL"), page.package_manager_url),
+        (tx(locale, "version", "Version"), page.version),
+        (tx(locale, "sourceSummary", "Source summary"), clean_summary(page.summary)),
+        (tx(locale, "homepage", "Homepage"), page.homepage),
+        (tx(locale, "repository", "Repository"), page.repository),
+        (tx(locale, "upstreamDocs", "Upstream docs"), page.upstream_docs),
+        (tx(locale, "license", "License"), page.license),
+        (tx(locale, "sourceArchive", "Source archive"), page.source_archive),
+        (tx(locale, "issueTracker", "Issue tracker"), page.issue_tracker),
+        (tx(locale, "published", "Published"), page.published_at),
+        (tx(locale, "verified", "Last verified"), page.last_verified),
+        (tx(locale, "updated", "Last updated"), page.last_updated_at),
+        (tx(locale, "generatedSource", "Generated"), manifest.get("generated_at")),
     ]
     lines.extend(md_fact_lines(fact_rows))
-    lines.extend(md_section_list("Executables", executable_markdown_items(page)))
-    lines.extend(md_section_list("Dependencies", [*page.dependencies]))
-    lines.extend(md_section_list("Build Dependencies", [*page.build_dependencies]))
-    lines.extend(md_section_list("macOS Provided Libraries", [*page.uses_from_macos]))
-    lines.extend(md_install_behavior_section(page))
-    lines.extend(md_freshness_section(page, manifest))
-    lines.extend(md_security_section(page))
-    lines.extend(md_related_section(page))
-    lines.extend(md_section_list("Sources", page.source_notes))
+    lines.extend(md_section_list(tx(locale, "executables", "Executables"), executable_markdown_items(page, locale)))
+    lines.extend(md_section_list(tx(locale, "dependencies", "Dependencies"), [*page.dependencies]))
+    lines.extend(md_section_list(tx(locale, "buildDependencies", "Build Dependencies"), [*page.build_dependencies]))
+    lines.extend(md_section_list(tx(locale, "usesFromMacos", "macOS Provided Libraries"), [*page.uses_from_macos]))
+    lines.extend(md_install_behavior_section(page, locale))
+    lines.extend(md_freshness_section(page, manifest, locale))
+    lines.extend(md_security_section(page, locale))
+    lines.extend(md_related_section(page, locale))
+    lines.extend(md_section_list(tx(locale, "sources", "Sources"), page.source_notes))
     return "\n".join(lines).rstrip() + "\n"
 
 
-def md_install_command_groups(page: PackagePage) -> list[str]:
+def md_install_command_groups(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
     commands = install_command_entries(page)[1:]
     if not commands:
         return []
@@ -1951,7 +2144,7 @@ def md_install_command_groups(page: PackagePage) -> list[str]:
         if platform not in grouped:
             platform = "portable"
         grouped[platform].append(item)
-    lines: list[str] = ["Additional install commands:", ""]
+    lines: list[str] = [f"{md_text(tx(locale, 'additionalInstallCommands', 'Additional install commands'))}:", ""]
     for platform in ("macos", "linux", "windows", "portable"):
         items = grouped.get(platform) or []
         if not items:
@@ -1963,11 +2156,11 @@ def md_install_command_groups(page: PackagePage) -> list[str]:
             try:
                 confidence_text = f"{float(item.get('confidence')):.0%}"
             except (TypeError, ValueError):
-                confidence_text = "unknown confidence"
+                confidence_text = tx(locale, "unknownConfidence", "unknown confidence")
             evidence = md_text(item.get("evidence") or "")
             lines.extend([f"- {manager} ({confidence_text}):", "", "```sh", command_text, "```"])
             if evidence:
-                lines.extend(["", f"  Evidence: {evidence}"])
+                lines.extend(["", f"  {md_text(tx(locale, 'markdownEvidence', 'Evidence'))}: {evidence}"])
             lines.append("")
     return lines
 
@@ -1991,7 +2184,7 @@ def md_section_list(title: str, items: list[Any]) -> list[str]:
     return lines
 
 
-def executable_markdown_items(page: PackagePage) -> list[str]:
+def executable_markdown_items(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
     items: list[str] = []
     for item in page.executables:
         if not isinstance(item, dict):
@@ -1999,7 +2192,7 @@ def executable_markdown_items(page: PackagePage) -> list[str]:
         name = str(item.get("name") or item.get("target") or item.get("source") or "").strip()
         if not name:
             continue
-        kind = str(item.get("kind") or item.get("type") or "executable").strip()
+        kind = str(item.get("kind") or item.get("type") or tx(locale, "executable", "executable")).strip()
         note = str(item.get("note") or item.get("source") or "").strip()
         detail = f"{name} ({kind})"
         if note:
@@ -2010,83 +2203,83 @@ def executable_markdown_items(page: PackagePage) -> list[str]:
             continue
         name = str(binary.get("target") or binary.get("source") or "").strip()
         if name:
-            items.append(f"{name} (binary)")
+            items.append(f"{name} ({tx(locale, 'binary', 'binary')})")
     for alias_name in sorted(page.aliases):
-        items.append(f"{alias_name} (alias)")
+        items.append(f"{alias_name} ({tx(locale, 'alias', 'alias')})")
     return items
 
 
-def md_install_behavior_section(page: PackagePage) -> list[str]:
+def md_install_behavior_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
     behavior = page.install_behavior or {}
     items: list[str] = []
     if behavior.get("postInstallDefined") is not None:
-        items.append(f"Post-install hook: {'defined' if behavior.get('postInstallDefined') else 'not defined'}")
+        items.append(f"{tx(locale, 'postInstallHook', 'Post-install hook')}: {tx(locale, 'defined', 'defined') if behavior.get('postInstallDefined') else tx(locale, 'notDefined', 'not defined')}")
     if behavior.get("service"):
-        items.append(f"Service: {behavior.get('service')}")
+        items.append(f"{tx(locale, 'service', 'Service')}: {behavior.get('service')}")
     if behavior.get("caveats"):
-        items.append(f"Caveats: {behavior.get('caveats')}")
+        items.append(f"{tx(locale, 'caveats', 'Caveats')}: {behavior.get('caveats')}")
     if behavior.get("lifecycleScripts"):
-        items.append(f"Lifecycle scripts: {', '.join(str(item) for item in behavior.get('lifecycleScripts') or [])}")
+        items.append(f"{tx(locale, 'lifecycleScripts', 'Lifecycle scripts')}: {', '.join(str(item) for item in behavior.get('lifecycleScripts') or [])}")
     if behavior.get("pythonRequires"):
-        items.append(f"Python requires: {behavior.get('pythonRequires')}")
+        items.append(f"{tx(locale, 'pythonRequires', 'Python requires')}: {behavior.get('pythonRequires')}")
     if behavior.get("requiresDistCount") is not None:
-        items.append(f"PyPI dependency specs: {behavior.get('requiresDistCount')}")
+        items.append(f"{tx(locale, 'pypiDependencySpecs', 'PyPI dependency specs')}: {behavior.get('requiresDistCount')}")
     bottle = page.bottle or {}
     if bottle:
         available = bottle.get("available")
-        bottle_detail = "available" if available else "not available"
+        bottle_detail = tx(locale, "available", "available") if available else tx(locale, "notAvailable", "not available")
         platforms = bottle.get("platforms") or []
         if platforms:
-            bottle_detail += f" on {', '.join(str(item) for item in platforms[:12])}"
-        items.append(f"Bottle: {bottle_detail}")
-    return md_section_list("Install Behavior", items)
+            bottle_detail += f" {tx(locale, 'onPlatforms', 'on')} {', '.join(str(item) for item in platforms[:12])}"
+        items.append(f"{tx(locale, 'bottle', 'Bottle')}: {bottle_detail}")
+    return md_section_list(tx(locale, "installBehavior", "Install Behavior"), items)
 
 
-def md_freshness_section(page: PackagePage, manifest: dict[str, Any]) -> list[str]:
+def md_freshness_section(page: PackagePage, manifest: dict[str, Any], locale: dict[str, Any] | None = None) -> list[str]:
     freshness = page.version_freshness or {}
     manager = freshness.get("packageManager") if isinstance(freshness.get("packageManager"), dict) else {}
     site = freshness.get("siteData") if isinstance(freshness.get("siteData"), dict) else {}
     upstream = freshness.get("upstream") if isinstance(freshness.get("upstream"), dict) else {}
     warnings = freshness.get("warnings") if isinstance(freshness.get("warnings"), list) else []
     items = [
-        f"Page generated: {fmt_date(manifest.get('generated_at', '')) or 'unknown'}",
-        f"Package-manager version: {manager.get('version') or page.version or 'unknown'}",
+        f"{tx(locale, 'pageGenerated', 'Page generated')}: {fmt_date(manifest.get('generated_at', '')) or tx(locale, 'unknown', 'unknown')}",
+        f"{tx(locale, 'managerVersion', 'Package-manager version')}: {manager.get('version') or page.version or tx(locale, 'unknown', 'unknown')}",
     ]
     if manager.get("updatedAt"):
-        items.append(f"Package-manager updated: {fmt_date(manager.get('updatedAt')) or manager.get('updatedAt')}")
+        items.append(f"{tx(locale, 'managerUpdated', 'Package-manager updated')}: {fmt_date(manager.get('updatedAt')) or manager.get('updatedAt')}")
     if site.get("status"):
-        items.append(f"Local data status: {site.get('status')}")
+        items.append(f"{tx(locale, 'localData', 'Local data status')}: {site.get('status')}")
     if upstream.get("repository"):
-        items.append(f"Upstream repository: {upstream.get('repository')}")
+        items.append(f"{tx(locale, 'upstreamRepository', 'Upstream repository')}: {upstream.get('repository')}")
     if upstream.get("latestVersion"):
-        items.append(f"Upstream latest detected: {upstream.get('latestVersion')} ({upstream.get('comparison') or 'unknown'})")
+        items.append(f"{tx(locale, 'upstreamLatestDetected', 'Upstream latest detected')}: {upstream.get('latestVersion')} ({upstream.get('comparison') or tx(locale, 'unknown', 'unknown')})")
     for item in warnings[:8]:
         if isinstance(item, dict):
             items.append(f"{item.get('severity', 'info')}: {item.get('message')}")
-    return md_section_list("Freshness", items)
+    return md_section_list(tx(locale, "freshness", "Freshness"), items)
 
 
-def md_security_section(page: PackagePage) -> list[str]:
-    lines = ["## Security Notes", "", md_text(security_summary(page)), ""]
+def md_security_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
+    lines = [f"## {md_text(tx(locale, 'securityNotes', 'Security Notes'))}", "", md_text(security_summary(page, locale)), ""]
     if page.geiger:
-        lines.append(f"- **Geiger risk:** {md_text(geiger_level_label(page.geiger))} / {md_text(geiger_confidence_label(page.geiger))}")
+        lines.append(f"- **{md_text(tx(locale, 'geigerRisk', 'Geiger risk'))}:** {md_text(geiger_level_label(page.geiger))} / {md_text(geiger_confidence_label(page.geiger))}")
         for reason in (page.geiger.get("reasons") or [])[:5]:
             lines.append(f"- {md_value(reason)}")
     if page.isotope:
         justification = page.isotope.get("justification") or {}
-        title = justification.get("title") or "Radioisotope coverage"
-        lines.append(f"- **Radioisotope:** {md_value(title)}")
+        title = justification.get("title") or tx(locale, "radioisotopeCoverage", "Radioisotope coverage")
+        lines.append(f"- **{md_text(tx(locale, 'radioisotopeKicker', 'Radioisotope'))}:** {md_value(title)}")
     if page.approval_gate:
-        lines.append(f"- **Approval gate rules:** {md_value(page.approval_gate.get('rule_count'))}")
+        lines.append(f"- **{md_text(tx(locale, 'approvalRules', 'Approval gate rules'))}:** {md_value(page.approval_gate.get('rule_count'))}")
     lines.append("")
     return lines
 
 
-def md_related_section(page: PackagePage) -> list[str]:
+def md_related_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
     related = list(page.related_packages) + list(page.also_available_via)
     if not related and not page.package_hubs:
         return []
-    lines = ["## Related Links", ""]
+    lines = [f"## {md_text(tx(locale, 'relatedLinks', 'Related Links'))}", ""]
     for item in related[:24]:
         if not isinstance(item, dict):
             continue
@@ -2135,6 +2328,17 @@ def hero_sentence(page: PackagePage) -> str:
     if summary:
         return f"Nucleus can resolve {page.display_name}: {summary}"
     return f"Nucleus package metadata for {page.display_name}, from local Automic Vault package sources."
+
+
+def localized_hero_sentence(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    if locale_code(locale) == "en":
+        return hero_sentence(page)
+    return tx(
+        locale,
+        "heroSentence",
+        "View install routes, executables, metadata, and security notes for {name}.",
+        name=page.display_name,
+    )
 
 
 def sentence_text(value: str) -> str:
@@ -2195,42 +2399,42 @@ def alternate_install_sentence(page: PackagePage) -> str:
     return f"Also installable with {manager}: {command_text}."
 
 
-def label_for(page: PackagePage) -> str:
+def label_for(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     labels = [page.provider]
     if page.isotope:
-        labels.append("radioisotope")
+        labels.append(tx(locale, "radioisotopeKicker", "radioisotope"))
     if page.approval_gate:
-        labels.append("gated")
+        labels.append(tx(locale, "approvalGatesKicker", "approval gates"))
     rank = page.popularity.get("rank")
     if rank:
-        labels.append(f"rank {rank}")
+        labels.append(f"{tx(locale, 'rank', 'rank')} {rank}")
     return " / ".join(labels)
 
 
-def package_facts(page: PackagePage) -> str:
-    facts = [metric("manager", package_manager_label(page))]
+def package_facts(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    facts = [metric(tx(locale, "manager", "manager"), package_manager_label(page))]
     if page.version:
-        facts.append(metric("version", page.version))
+        facts.append(metric(tx(locale, "version", "version"), page.version))
     if page.license:
-        facts.append(metric("license", page.license))
+        facts.append(metric(tx(locale, "license", "license"), page.license))
     if page.geiger:
-        facts.append(metric("risk", geiger_level_label(page.geiger)))
-        facts.append(metric("classifier confidence", geiger_confidence_label(page.geiger)))
+        facts.append(metric(tx(locale, "risk", "risk"), geiger_level_label(page.geiger)))
+        facts.append(metric(tx(locale, "classifierConfidence", "classifier confidence"), geiger_confidence_label(page.geiger)))
     rank = page.popularity.get("rank")
     if rank:
-        facts.append(metric("rank", fmt_int(rank)))
+        facts.append(metric(tx(locale, "rank", "rank"), fmt_int(rank)))
     installs = page.popularity.get("installs_per_365_days") or page.popularity.get("downloads_per_30_days")
     if installs:
-        label = "365d installs" if page.popularity.get("installs_per_365_days") else "30d downloads"
+        label = tx(locale, "installs365d", "365d installs") if page.popularity.get("installs_per_365_days") else tx(locale, "downloads30d", "30d downloads")
         facts.append(metric(label, fmt_int(installs)))
     if page.isotope:
-        facts.append(metric("radioisotope", "covered"))
+        facts.append(metric(tx(locale, "radioisotopeKicker", "radioisotope"), tx(locale, "covered", "covered")))
     if page.approval_gate:
-        facts.append(metric("approval rules", fmt_int(page.approval_gate.get("rule_count"))))
+        facts.append(metric(tx(locale, "approvalRules", "approval rules"), fmt_int(page.approval_gate.get("rule_count"))))
     if page.last_verified:
-        facts.append(metric("verified", fmt_date(page.last_verified)))
+        facts.append(metric(tx(locale, "verified", "verified"), fmt_date(page.last_verified)))
     elif page.last_updated_at:
-        facts.append(metric("updated", fmt_date(page.last_updated_at)))
+        facts.append(metric(tx(locale, "updated", "updated"), fmt_date(page.last_updated_at)))
     return "".join(facts)
 
 
@@ -2323,7 +2527,7 @@ def geiger_confidence_label(geiger: dict[str, Any]) -> str:
     return str(confidence or "unknown")
 
 
-def render_install(page: PackagePage) -> str:
+def render_install(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     commands = install_command_entries(page)
     primary = commands[0] if commands else {
         "command": f"sudo av install {page.key}",
@@ -2339,22 +2543,22 @@ def render_install(page: PackagePage) -> str:
     manager_link = (
         f'<a href="{attr(manager)}">{html_escape(manager)}</a>'
         if manager
-        else f"{html_escape(package_manager_label(page))} metadata was not linked in local data."
+        else html_escape(tx(locale, "installSourceMissing", "{manager} metadata was not linked in local data.", manager=package_manager_label(page)))
     )
-    platform_html = render_platform_install_commands(commands[1:])
+    platform_html = render_platform_install_commands(commands[1:], locale)
     return f"""
 <section id="install" class="pkg-section install-section" aria-labelledby="install-title">
   <div class="install-command-panel">
     <div>
-      <p class="section-kicker">install</p>
-      <h2 id="install-title">Install with Automic Vault</h2>
+      <p class="section-kicker">{html_escape(tx(locale, 'install', 'install'))}</p>
+      <h2 id="install-title">{html_escape(tx(locale, 'automicVaultInstallHeading', 'Install with Automic Vault'))}</h2>
     </div>
     <div class="terminal-block">
       <div class="terminal-head">
         <span>{html_escape(primary.get('manager') or 'shell')}</span>
         <div class="terminal-actions">
-          <a class="download-av-button" href="/download/" aria-label="Download Automic Vault">Download AV</a>
-          <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="Copy install command">Copy</button>
+          <a class="download-av-button" href="/download/" aria-label="{attr(tx(locale, 'downloadAV', 'Download Automic Vault'))}">{html_escape(tx(locale, 'downloadAV', 'Download AV'))}</a>
+          <button class="copy-button" type="button" data-copy="{attr(command)}" aria-label="{attr(tx(locale, 'copyInstallCommand', 'Copy install command'))}">{html_escape(tx(locale, 'copy', 'Copy'))}</button>
         </div>
       </div>
       <pre><code>{html_escape(command)}</code></pre>
@@ -2363,19 +2567,19 @@ def render_install(page: PackagePage) -> str:
   </div>
   <div class="install-notes-grid">
     <article>
-      <h3>Package manager source</h3>
+      <h3>{html_escape(tx(locale, 'packageManagerSource', 'Package manager source'))}</h3>
       <p>{manager_link}</p>
     </article>
     <article>
-      <h3>Platform notes</h3>
-      <ul>{note_items or '<li>No package-specific platform notes were present.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'platformNotes', 'Platform notes'))}</h3>
+      <ul>{note_items or f'<li>{html_escape(tx(locale, "noPlatformNotes", "No package-specific platform notes were present."))}</li>'}</ul>
     </article>
   </div>
 </section>
 """
 
 
-def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
+def render_platform_install_commands(commands: list[dict[str, Any]], locale: dict[str, Any] | None = None) -> str:
     grouped: dict[str, list[dict[str, Any]]] = {"macos": [], "linux": [], "windows": [], "portable": []}
     for item in commands:
         platform = str(item.get("platform") or "portable")
@@ -2393,7 +2597,7 @@ def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
         items = grouped.get(platform) or []
         if not items:
             continue
-        rows = "".join(install_command_row(item) for item in items)
+        rows = "".join(install_command_row(item, locale) for item in items)
         sections.append(f"""
 <article>
   <h3>{html_escape(labels[platform])}</h3>
@@ -2403,23 +2607,23 @@ def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
     if not sections:
         return ""
     return f"""
-<div class="platform-install-grid" aria-label="Platform install commands">
+<div class="platform-install-grid" aria-label="{attr(tx(locale, 'platformInstallCommands', 'Platform install commands'))}">
   {''.join(sections)}
 </div>
 """
 
 
-def install_command_row(item: dict[str, Any]) -> str:
+def install_command_row(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
     manager_label = install_command_manager_label(item)
-    source_html = install_command_source_html(item)
+    source_html = install_command_source_html(item, locale)
     confidence = item.get("confidence")
     try:
         confidence_value = float(confidence)
     except (TypeError, ValueError):
         confidence_value = 0.0
-    confidence_label = "verified" if confidence_value >= 0.9 else "inferred"
+    confidence_label = tx(locale, "verified", "verified") if confidence_value >= 0.9 else tx(locale, "inferred", "inferred")
     return f"""
 <div class="install-command-row">
   <div class="install-command-head">
@@ -2428,7 +2632,7 @@ def install_command_row(item: dict[str, Any]) -> str:
   </div>
   <div class="install-command-shell">
     <code>{html_escape(command_text)}</code>
-    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager_label)} install command">Copy</button>
+    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="{attr(tx(locale, 'copyManagerInstallCommand', 'Copy {manager} install command', manager=manager_label))}">{html_escape(tx(locale, 'copy', 'Copy'))}</button>
   </div>
   {source_html}
 </div>
@@ -2459,7 +2663,7 @@ def install_command_manager_label(item: dict[str, Any]) -> str:
     return labels.get(manager_key, manager or "shell")
 
 
-def install_command_source_html(item: dict[str, Any]) -> str:
+def install_command_source_html(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     source = item.get("source")
     if isinstance(source, dict):
         label = str(source.get("source_label") or "").strip()
@@ -2469,10 +2673,13 @@ def install_command_source_html(item: dict[str, Any]) -> str:
         text = " · ".join(pieces)
         if source_url:
             link_label = source_host_label(source_url)
-            link = f'<a href="{attr(source_url)}" aria-label="Open source database on {attr(link_label)}">source: {html_escape(link_label)}</a>'
+            link = f'<a href="{attr(source_url)}" aria-label="{attr(tx(locale, "sourceDatabaseAria", "Open source database on {host}", host=link_label))}">{html_escape(tx(locale, "installSourcePrefix", "source"))}: {html_escape(link_label)}</a>'
             text = f"{text} · {link}" if text else link
         return f'<p class="install-command-source">{text}</p>' if text else ""
     evidence = str(item.get("evidence") or "").strip()
+    manager = str(item.get("manager") or "").strip()
+    if evidence == f"{manager} package metadata":
+        evidence = tx(locale, "managerPackageMetadata", "{manager} package metadata", manager=manager)
     return f'<p class="install-command-source">{html_escape(evidence)}</p>' if evidence else ""
 
 
@@ -2485,49 +2692,59 @@ def source_host_label(url: str) -> str:
     return host or "source"
 
 
-def render_overview(page: PackagePage) -> str:
+def render_overview(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     aliases = sorted(page.aliases)[:32]
     alias_html = "".join(f"<li>{html_escape(alias)}</li>" for alias in aliases)
-    alias_block = f"<ul class=\"chip-list\">{alias_html}</ul>" if aliases else "<p>No executable aliases were found in the local package database.</p>"
-    homepage = f'<a href="{attr(page.homepage)}">{html_escape(page.homepage)}</a>' if page.homepage else "Not present in the local metadata."
-    summary = html_escape(clean_summary(page.summary) or "This package is present in local Automic Vault package data. This page gives package-specific security metadata a stable URL.")
+    alias_block = f"<ul class=\"chip-list\">{alias_html}</ul>" if aliases else f"<p>{html_escape(tx(locale, 'noAliases', 'No executable aliases were found in the local package database.'))}</p>"
+    homepage = f'<a href="{attr(page.homepage)}">{html_escape(page.homepage)}</a>' if page.homepage else html_escape(tx(locale, "homepageMissing", "Not present in the local metadata."))
+    source_summary = clean_summary(page.summary)
+    summary = html_escape(source_summary if locale_code(locale) == "en" else tx(locale, "summaryFallback", "Automic Vault publishes package-specific install routes, executable facts, and security metadata for {name} from local package data.", name=page.display_name))
+    source_summary_html = ""
+    if locale_code(locale) != "en" and source_summary:
+        source_summary_html = f"""
+    <article>
+      <h3>{html_escape(tx(locale, 'sourceSummary', 'Source summary'))}</h3>
+      <p>{html_escape(source_summary)}</p>
+    </article>
+"""
     return f"""
 <section class="pkg-section split-section">
   <div>
-    <p class="section-kicker">overview</p>
-    <h2>Package summary</h2>
+    <p class="section-kicker">{html_escape(tx(locale, 'overview', 'overview'))}</p>
+    <h2>{html_escape(tx(locale, 'packageSummary', 'Package summary'))}</h2>
     <p>{summary}</p>
   </div>
   <div class="detail-stack">
     <article>
-      <h3>Homepage</h3>
+      <h3>{html_escape(tx(locale, 'homepage', 'Homepage'))}</h3>
       <p>{homepage}</p>
     </article>
     <article>
-      <h3>Commands and aliases</h3>
+      <h3>{html_escape(tx(locale, 'commandsAndAliases', 'Commands and aliases'))}</h3>
       {alias_block}
     </article>
+    {source_summary_html}
   </div>
 </section>
 """
 
 
-def render_security(page: PackagePage) -> str:
-    geiger = render_geiger(page)
-    install_signals = render_install_behavior_signals(page)
+def render_security(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    geiger = render_geiger(page, locale)
+    install_signals = render_install_behavior_signals(page, locale)
     if page.isotope:
         justification = page.isotope.get("justification") or {}
-        title = html_escape(justification.get("title") or "Radioisotope coverage")
-        detail = html_escape(paragraph_text(justification.get("detail") or page.isotope_readme or "Automic Vault has a local radioisotope manifest for this package."))
+        title = html_escape(justification.get("title") or tx(locale, "radioisotopeCoverage", "Radioisotope coverage"))
+        detail = html_escape(paragraph_text(justification.get("detail") or page.isotope_readme or tx(locale, "radioisotopeManifestFallback", "Automic Vault has a local radioisotope manifest for this package.")))
         caveats = page.isotope.get("caveats") or []
         caveat_items = "".join(f"<li>{html_escape(item)}</li>" for item in caveats[:8])
-        readme = render_readme_excerpt(page)
+        readme = render_readme_excerpt(page, locale)
         release = page.isotope.get("releaseUrl") or ""
-        release_html = f'<a href="{attr(release)}">{html_escape(release)}</a>' if release else "Local radioisotope manifest"
+        release_html = f'<a href="{attr(release)}">{html_escape(release)}</a>' if release else html_escape(tx(locale, "localRadioisotopeManifest", "Local radioisotope manifest"))
         return f"""
 <section id="security" class="pkg-section security-section">
   <div>
-    <p class="section-kicker">radioisotope</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'radioisotopeKicker', 'radioisotope'))}</p>
     <h2>{title}</h2>
     <p>{detail}</p>
     {geiger}
@@ -2536,159 +2753,164 @@ def render_security(page: PackagePage) -> str:
   </div>
   <div class="detail-stack">
     <article>
-      <h3>Coverage source</h3>
+      <h3>{html_escape(tx(locale, 'coverageSource', 'Coverage source'))}</h3>
       <p>{release_html}</p>
     </article>
     <article>
-      <h3>Caveats</h3>
-      <ul>{caveat_items or '<li>No caveats were listed in the local manifest.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'caveats', 'Caveats'))}</h3>
+      <ul>{caveat_items or f'<li>{html_escape(tx(locale, "noCaveats", "No caveats were listed in the local manifest."))}</li>'}</ul>
     </article>
   </div>
 </section>
-{render_gate(page)}
+{render_gate(page, locale)}
 """
-    return render_gate(page) or f"""
+    return render_gate(page, locale) or f"""
 <section id="security" class="pkg-section security-section">
   <div>
-    <p class="section-kicker">security posture</p>
-    <h2>{html_escape(security_heading(page))}</h2>
-    <p>{html_escape(security_summary(page))}</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'securityPosture', 'security posture'))}</p>
+    <h2>{html_escape(security_heading(page, locale))}</h2>
+    <p>{html_escape(security_summary(page, locale))}</p>
     {geiger}
     {install_signals}
   </div>
   <div class="detail-stack">
     <article>
-      <h3>Recommended review</h3>
-      <p>Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins.</p>
+      <h3>{html_escape(tx(locale, 'recommendedReview', 'Recommended review'))}</h3>
+      <p>{html_escape(tx(locale, 'recommendedReviewCopy', 'Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins.'))}</p>
     </article>
   </div>
 </section>
 """
 
 
-def security_heading(page: PackagePage) -> str:
+def security_heading(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if page.geiger:
-        return f"Risk level: {geiger_level_label(page.geiger)}"
-    return "No radioisotope coverage found yet"
+        return tx(locale, "riskLevel", "Risk level: {level}", level=geiger_level_label(page.geiger))
+    return tx(locale, "radioisotopeMissingHeading", "No radioisotope coverage found yet")
 
 
-def security_summary(page: PackagePage) -> str:
+def security_summary(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if page.geiger:
         reasons = page.geiger.get("reasons") or []
         if reasons:
             return " ".join(str(reason).rstrip(".") + "." for reason in reasons[:2])
-    return f"No matching local radioisotope manifest was found for {page.display_name}. Nucleus package metadata is still published here so future coverage has a stable package URL."
+    return tx(
+        locale,
+        "radioisotopeMissingSummary",
+        "No matching local radioisotope manifest was found for {name}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
+        name=page.display_name,
+    )
 
 
-def render_geiger(page: PackagePage) -> str:
+def render_geiger(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if not page.geiger:
         return ""
     reasons = "".join(f"<li>{html_escape(reason)}</li>" for reason in (page.geiger.get("reasons") or [])[:5])
     signals = "".join(f"<li>{html_escape(signal)}</li>" for signal in (page.geiger.get("signals") or [])[:5])
     return f"""
-<div class="signal-grid" aria-label="Geiger classifier signals">
+<div class="signal-grid" aria-label="{attr(tx(locale, 'geigerSignalsAria', 'Geiger classifier signals'))}">
   <article>
-    <h3>Risk classifier</h3>
-    <p><strong>{html_escape(geiger_level_label(page.geiger))}</strong> risk · {html_escape(geiger_confidence_label(page.geiger))} confidence · {html_escape(page.geiger.get('category') or 'uncategorized')}</p>
+    <h3>{html_escape(tx(locale, 'riskClassifier', 'Risk classifier'))}</h3>
+    <p><strong>{html_escape(geiger_level_label(page.geiger))}</strong> {html_escape(tx(locale, 'risk', 'risk'))} · {html_escape(geiger_confidence_label(page.geiger))} {html_escape(tx(locale, 'confidence', 'confidence'))} · {html_escape(page.geiger.get('category') or tx(locale, 'uncategorized', 'uncategorized'))}</p>
   </article>
   <article>
-    <h3>Why</h3>
-    <ul>{reasons or '<li>No classifier reasons were present.</li>'}</ul>
+    <h3>{html_escape(tx(locale, 'why', 'Why'))}</h3>
+    <ul>{reasons or f'<li>{html_escape(tx(locale, "noClassifierReasons", "No classifier reasons were present."))}</li>'}</ul>
   </article>
   <article>
-    <h3>Signals</h3>
-    <ul>{signals or '<li>No classifier signals were present.</li>'}</ul>
+    <h3>{html_escape(tx(locale, 'signals', 'Signals'))}</h3>
+    <ul>{signals or f'<li>{html_escape(tx(locale, "noClassifierSignals", "No classifier signals were present."))}</li>'}</ul>
   </article>
 </div>
 """
 
 
-def render_install_behavior_signals(page: PackagePage) -> str:
+def render_install_behavior_signals(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     signals: list[str] = []
     behavior = page.install_behavior or {}
     lifecycle = behavior.get("lifecycleScripts") or []
     if lifecycle:
-        signals.append(f"npm lifecycle scripts are declared: {', '.join(str(item) for item in lifecycle[:5])}.")
+        signals.append(tx(locale, "signalNpmLifecycle", "npm lifecycle scripts are declared: {scripts}.", scripts=", ".join(str(item) for item in lifecycle[:5])))
     if behavior.get("postInstallDefined") is True:
-        label = "npm package metadata declares a postinstall script." if page.provider == "npm" else "Homebrew declares a post-install hook for this formula."
+        label = tx(locale, "signalNpmPostinstall", "npm package metadata declares a postinstall script.") if page.provider == "npm" else tx(locale, "signalHomebrewPostinstall", "Homebrew declares a post-install hook for this formula.")
         signals.append(label)
     elif behavior.get("postInstallDefined") is False:
-        label = "No npm postinstall script is recorded in package metadata." if page.provider == "npm" else "No Homebrew post-install hook is recorded in formula metadata."
+        label = tx(locale, "signalNoNpmPostinstall", "No npm postinstall script is recorded in package metadata.") if page.provider == "npm" else tx(locale, "signalNoHomebrewPostinstall", "No Homebrew post-install hook is recorded in formula metadata.")
         signals.append(label)
     if behavior.get("prepareDefined") is True:
-        signals.append("npm package metadata declares a prepare script.")
+        signals.append(tx(locale, "signalNpmPrepare", "npm package metadata declares a prepare script."))
     if behavior.get("pythonRequires"):
-        signals.append(f"PyPI metadata requires Python {behavior.get('pythonRequires')}.")
+        signals.append(tx(locale, "signalPythonRequires", "PyPI metadata requires Python {version}.", version=behavior.get("pythonRequires")))
     if behavior.get("requiresDistCount"):
-        signals.append(f"PyPI metadata lists {behavior.get('requiresDistCount')} dependency specifications.")
+        signals.append(tx(locale, "signalRequiresDistCount", "PyPI metadata lists {count} dependency specifications.", count=behavior.get("requiresDistCount")))
     if behavior.get("service"):
-        signals.append("Formula metadata declares a service or daemon block.")
+        signals.append(tx(locale, "signalService", "Formula metadata declares a service or daemon block."))
     if page.bottle:
         if page.bottle.get("available"):
             platforms = page.bottle.get("platforms") or []
             if platforms:
-                signals.append(f"Homebrew bottle metadata is available for {len(platforms)} platform targets.")
+                signals.append(tx(locale, "signalBottlePlatforms", "Homebrew bottle metadata is available for {count} platform targets.", count=len(platforms)))
             else:
-                signals.append("Homebrew bottle metadata is available.")
+                signals.append(tx(locale, "signalBottleAvailable", "Homebrew bottle metadata is available."))
         else:
-            signals.append("No Homebrew bottle metadata was recorded.")
+            signals.append(tx(locale, "signalNoBottle", "No Homebrew bottle metadata was recorded."))
     if page.dependencies:
-        signals.append(f"Installs with {len(page.dependencies)} runtime dependencies.")
+        signals.append(tx(locale, "signalDependencies", "Installs with {count} runtime dependencies.", count=len(page.dependencies)))
     if page.build_dependencies:
-        signals.append(f"Build metadata lists {len(page.build_dependencies)} build dependencies.")
+        signals.append(tx(locale, "signalBuildDependencies", "Build metadata lists {count} build dependencies.", count=len(page.build_dependencies)))
     if not signals:
         return ""
     items = "".join(f"<li>{html_escape(signal)}</li>" for signal in signals[:6])
     return f"""
-<div class="signal-grid install-signal-grid" aria-label="Install behavior signals">
+<div class="signal-grid install-signal-grid" aria-label="{attr(tx(locale, 'installBehaviorSignals', 'Install behavior signals'))}">
   <article>
-    <h3>Install behavior</h3>
+    <h3>{html_escape(tx(locale, 'installBehaviorTitle', 'Install behavior'))}</h3>
     <ul>{items}</ul>
   </article>
 </div>
 """
 
 
-def render_readme_excerpt(page: PackagePage) -> str:
+def render_readme_excerpt(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if not page.isotope_readme_html:
         return ""
-    source = f"<p class=\"readme-source\">Source: <code>{html_escape(page.isotope_readme_source)}</code></p>" if page.isotope_readme_source else ""
+    source = f"<p class=\"readme-source\">{html_escape(tx(locale, 'source', 'Source'))}: <code>{html_escape(page.isotope_readme_source)}</code></p>" if page.isotope_readme_source else ""
     return f"""
 <div class="readme-excerpt">
-  <p class="readme-label">Local README excerpt</p>
+  <p class="readme-label">{html_escape(tx(locale, 'localReadmeExcerpt', 'Local README excerpt'))}</p>
   {page.isotope_readme_html}
   {source}
 </div>
 """
 
 
-def render_gate(page: PackagePage) -> str:
+def render_gate(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     gate = page.approval_gate
     if not gate:
         return ""
     rules = "".join(f"<li>{html_escape(rule)}</li>" for rule in gate.get("rules", []))
-    severities = ", ".join(gate.get("severities") or []) or "not specified"
+    severities = ", ".join(gate.get("severities") or []) or tx(locale, "notSpecified", "not specified")
     entrypoints = ", ".join(gate.get("entrypoints") or []) or page.display_name
-    coverage = gate.get("coverage_status") or "unknown"
+    coverage = gate.get("coverage_status") or tx(locale, "unknown", "unknown")
     reviewed = gate.get("reviewed_at") or ""
     return f"""
 <section class="pkg-section split-section gate-section">
   <div>
-    <p class="section-kicker">approval gates</p>
-    <h2>Human review metadata for risky commands</h2>
-    <p>The local approval-gate seed includes {html_escape(gate.get('rule_count'))} rules for {html_escape(page.display_name)}. Covered entrypoints: {html_escape(entrypoints)}. Severity labels: {html_escape(severities)}. Coverage: {html_escape(coverage)}{html_escape(f', reviewed {reviewed}' if reviewed else '')}.</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'approvalGatesKicker', 'approval gates'))}</p>
+    <h2>{html_escape(tx(locale, 'approvalGateHeading', 'Human review metadata for risky commands'))}</h2>
+    <p>{html_escape(tx(locale, 'approvalGateCopy', 'The local approval-gate seed includes {count} rules for {name}. Covered entrypoints: {entrypoints}. Severity labels: {severities}. Coverage: {coverage}{reviewed}.', count=gate.get('rule_count'), name=page.display_name, entrypoints=entrypoints, severities=severities, coverage=coverage, reviewed=(f', {tx(locale, "reviewed", "reviewed")} {reviewed}' if reviewed else '')))}</p>
   </div>
   <div class="detail-stack">
     <article>
-      <h3>Example gated actions</h3>
-      <ul>{rules or '<li>No rule descriptions were present.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'exampleGatedActions', 'Example gated actions'))}</h3>
+      <ul>{rules or f'<li>{html_escape(tx(locale, "noApprovalRules", "No rule descriptions were present."))}</li>'}</ul>
     </article>
   </div>
 </section>
 """
 
 
-def render_executables(page: PackagePage) -> str:
+def render_executables(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     executable_rows: list[str] = []
     seen: set[str] = set()
     for item in page.executables:
@@ -2696,35 +2918,35 @@ def render_executables(page: PackagePage) -> str:
         if not name or name in seen:
             continue
         seen.add(name)
-        executable_rows.append(executable_row(name, item.get("kind") or "executable", item.get("exposure") or "global executable", item.get("note") or ""))
+        executable_rows.append(executable_row(name, item.get("kind") or tx(locale, "executable", "executable"), item.get("exposure") or tx(locale, "globalExecutable", "global executable"), item.get("note") or ""))
     for item in page.binaries:
         if not isinstance(item, dict):
             continue
         name = str(item.get("target") or item.get("source") or "").strip()
         if name and name not in seen:
             seen.add(name)
-            executable_rows.append(executable_row(name, "binary", "Homebrew cask binary", str(item.get("source") or "")))
+            executable_rows.append(executable_row(name, tx(locale, "binary", "binary"), tx(locale, "homebrewCaskBinary", "Homebrew cask binary"), str(item.get("source") or "")))
     for alias in sorted(page.aliases):
         if alias not in seen:
             seen.add(alias)
-            exposure = "Automic Vault stub excluded" if alias in page.extra.get("stub_exclusions", []) else "indexed executable"
-            executable_rows.append(executable_row(alias, "executable", exposure, "Discovered from the local executable index."))
+            exposure = tx(locale, "stubExcluded", "Automic Vault stub excluded") if alias in page.extra.get("stub_exclusions", []) else tx(locale, "indexedExecutable", "indexed executable")
+            executable_rows.append(executable_row(alias, tx(locale, "executable", "executable"), exposure, tx(locale, "localExecutableIndex", "Discovered from the local executable index.")))
     body = "".join(executable_rows)
     return f"""
 <section class="pkg-section" aria-labelledby="executables-title">
-  <p class="section-kicker">executables</p>
-  <h2 id="executables-title">Installed executables</h2>
+  <p class="section-kicker">{html_escape(tx(locale, 'executables', 'executables'))}</p>
+  <h2 id="executables-title">{html_escape(tx(locale, 'executablesTitle', 'Installed executables'))}</h2>
   <div class="table-wrap executable-table">
     <table>
-      <thead><tr><th>Command</th><th>Kind</th><th>Exposure</th><th>Note</th></tr></thead>
-      <tbody>{body or '<tr><td colspan="4">No executable data was present.</td></tr>'}</tbody>
+      <thead><tr><th>{html_escape(tx(locale, 'command', 'Command'))}</th><th>{html_escape(tx(locale, 'kind', 'Kind'))}</th><th>{html_escape(tx(locale, 'exposure', 'Exposure'))}</th><th>{html_escape(tx(locale, 'note', 'Note'))}</th></tr></thead>
+      <tbody>{body or f'<tr><td colspan="4">{html_escape(tx(locale, "executableDataMissing", "No executable data was present."))}</td></tr>'}</tbody>
     </table>
   </div>
 </section>
 """
 
 
-def freshness_item(item: dict[str, Any]) -> str:
+def freshness_item(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     severity = str(item.get("severity") or "info")
     kind = str(item.get("kind") or "freshness")
     message = str(item.get("message") or "").strip()
@@ -2736,41 +2958,41 @@ def freshness_item(item: dict[str, Any]) -> str:
   <strong>{html_escape(severity)}</strong>
   <span>{html_escape(message or kind)}</span>
   {f'<small>{evidence_html}</small>' if evidence_html else ''}
-  {f'<em>{html_escape(confidence)} confidence</em>' if confidence else ''}
+  {f'<em>{html_escape(confidence)} {html_escape(tx(locale, "confidence", "confidence"))}</em>' if confidence else ''}
 </li>
 """
 
 
-def render_freshness(page: PackagePage, manifest: dict[str, Any]) -> str:
+def render_freshness(page: PackagePage, manifest: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     freshness = page.version_freshness or {}
     manager = freshness.get("packageManager") if isinstance(freshness.get("packageManager"), dict) else {}
     site = freshness.get("siteData") if isinstance(freshness.get("siteData"), dict) else {}
     upstream = freshness.get("upstream") if isinstance(freshness.get("upstream"), dict) else {}
     warnings = freshness.get("warnings") if isinstance(freshness.get("warnings"), list) else []
-    version = manager.get("version") or page.version or "unknown"
+    version = manager.get("version") or page.version or tx(locale, "unknown", "unknown")
     manager_updated = fmt_date(str(manager.get("updatedAt") or page.last_updated_at or ""))
-    site_status = site.get("status") or "unknown"
-    upstream_comparison = upstream.get("comparison") or "not available"
-    upstream_latest = upstream.get("latestVersion") or "not detected"
+    site_status = site.get("status") or tx(locale, "unknown", "unknown")
+    upstream_comparison = upstream.get("comparison") or tx(locale, "notAvailable", "not available")
+    upstream_latest = upstream.get("latestVersion") or tx(locale, "notDetected", "not detected")
     repository = upstream.get("repository") or ""
-    warning_items = "".join(freshness_item(item) for item in warnings if isinstance(item, dict))
+    warning_items = "".join(freshness_item(item, locale) for item in warnings if isinstance(item, dict))
     if not warning_items:
-        warning_items = '<li class="freshness-item freshness-info"><strong>ok</strong><span>No freshness warnings were generated.</span></li>'
+        warning_items = f'<li class="freshness-item freshness-info"><strong>ok</strong><span>{html_escape(tx(locale, "noFreshnessWarnings", "No freshness warnings were generated."))}</span></li>'
     return f"""
 <section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title">
   <div>
-    <p class="section-kicker">freshness</p>
-    <h2 id="freshness-title">Version and freshness</h2>
-    <p>These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present.</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'freshness', 'freshness'))}</p>
+    <h2 id="freshness-title">{html_escape(tx(locale, 'freshnessTitle', 'Version and freshness'))}</h2>
+    <p>{html_escape(tx(locale, 'freshnessCopy', 'These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present.'))}</p>
   </div>
   <div>
     <div class="freshness-metrics">
-      <div><span>page generated</span><strong>{html_escape(fmt_date(manifest.get("generated_at", "")) or "unknown")}</strong></div>
-      <div><span>manager version</span><strong>{html_escape(version)}</strong></div>
-      <div><span>manager updated</span><strong>{html_escape(manager_updated or "unknown")}</strong></div>
-      <div><span>local data</span><strong>{html_escape(site_status)}</strong></div>
-      <div><span>upstream</span><strong>{html_escape(upstream_comparison)}</strong></div>
-      <div><span>latest detected</span><strong>{html_escape(upstream_latest)}</strong></div>
+      <div><span>{html_escape(tx(locale, 'pageGenerated', 'page generated'))}</span><strong>{html_escape(fmt_date(manifest.get("generated_at", "")) or tx(locale, "unknown", "unknown"))}</strong></div>
+      <div><span>{html_escape(tx(locale, 'managerVersion', 'manager version'))}</span><strong>{html_escape(version)}</strong></div>
+      <div><span>{html_escape(tx(locale, 'managerUpdated', 'manager updated'))}</span><strong>{html_escape(manager_updated or tx(locale, "unknown", "unknown"))}</strong></div>
+      <div><span>{html_escape(tx(locale, 'localData', 'local data'))}</span><strong>{html_escape(site_status)}</strong></div>
+      <div><span>{html_escape(tx(locale, 'upstream', 'upstream'))}</span><strong>{html_escape(upstream_comparison)}</strong></div>
+      <div><span>{html_escape(tx(locale, 'upstreamLatestDetected', 'latest detected'))}</span><strong>{html_escape(upstream_latest)}</strong></div>
     </div>
     {f'<p class="freshness-repo"><a href="{attr(repository)}">{html_escape(repository)}</a></p>' if repository else ''}
     <ul class="freshness-list">{warning_items}</ul>
@@ -2783,115 +3005,115 @@ def executable_row(name: str, kind: Any, exposure: Any, note: Any) -> str:
     return f"<tr><td><code>{html_escape(name)}</code></td><td>{html_escape(kind)}</td><td>{html_escape(exposure)}</td><td>{html_escape(note)}</td></tr>"
 
 
-def render_install_metadata(page: PackagePage) -> str:
+def render_install_metadata(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     rows: list[tuple[str, str]] = []
     for label, value in (
-        ("Package key", page.key),
-        ("Version", page.version),
-        ("Package manager", package_manager_label(page)),
-        ("Package manager page", page.package_manager_url),
-        ("Homepage", page.homepage),
-        ("Repository", page.repository),
-        ("Upstream docs", page.upstream_docs),
-        ("License", page.license),
-        ("Source archive", page.source_archive),
-        ("Issue tracker", page.issue_tracker),
-        ("Last updated", page.last_updated_at),
-        ("Last verified", page.last_verified),
-        ("Published", page.published_at),
+        (tx(locale, "packageKey", "Package key"), page.key),
+        (tx(locale, "version", "Version"), page.version),
+        (tx(locale, "packageManager", "Package manager"), package_manager_label(page)),
+        (tx(locale, "packageManagerPage", "Package manager page"), page.package_manager_url),
+        (tx(locale, "homepage", "Homepage"), page.homepage),
+        (tx(locale, "repository", "Repository"), page.repository),
+        (tx(locale, "upstreamDocs", "Upstream docs"), page.upstream_docs),
+        (tx(locale, "license", "License"), page.license),
+        (tx(locale, "sourceArchive", "Source archive"), page.source_archive),
+        (tx(locale, "issueTracker", "Issue tracker"), page.issue_tracker),
+        (tx(locale, "updated", "Last updated"), page.last_updated_at),
+        (tx(locale, "verified", "Last verified"), page.last_verified),
+        (tx(locale, "published", "Published"), page.published_at),
         ("Pulse", page.pulse_kind),
         ("SHA-256", page.sha256),
-        ("Download URL", page.url),
+        (tx(locale, "downloadUrl", "Download URL"), page.url),
     ):
         if value:
             rows.append((label, value))
     if page.binaries:
-        rows.append(("Binaries", ", ".join(sorted({item.get("target") or item.get("source") or "" for item in page.binaries if isinstance(item, dict)}))))
+        rows.append((tx(locale, "binaries", "Binaries"), ", ".join(sorted({item.get("target") or item.get("source") or "" for item in page.binaries if isinstance(item, dict)}))))
     if page.dependencies:
-        rows.append(("Dependencies", ", ".join(page.dependencies)))
+        rows.append((tx(locale, "dependencies", "Dependencies"), ", ".join(page.dependencies)))
     if page.build_dependencies:
-        rows.append(("Build dependencies", ", ".join(page.build_dependencies)))
+        rows.append((tx(locale, "buildDependencies", "Build dependencies"), ", ".join(page.build_dependencies)))
     if page.uses_from_macos:
-        rows.append(("Uses from macOS", ", ".join(page.uses_from_macos)))
+        rows.append((tx(locale, "usesFromMacos", "Uses from macOS"), ", ".join(page.uses_from_macos)))
     if page.bottle:
-        bottle = "available" if page.bottle.get("available") else "not recorded"
+        bottle = tx(locale, "available", "available") if page.bottle.get("available") else tx(locale, "notRecorded", "not recorded")
         platforms = ", ".join(page.bottle.get("platforms") or [])
-        rows.append(("Bottle", f"{bottle}{f' ({platforms})' if platforms else ''}"))
+        rows.append((tx(locale, "bottle", "Bottle"), f"{bottle}{f' ({platforms})' if platforms else ''}"))
     if page.install_behavior:
         post_install = page.install_behavior.get("postInstallDefined")
         if post_install is not None:
-            label = "npm postinstall" if page.provider == "npm" else "Homebrew post-install"
-            rows.append((label, "defined" if post_install else "not defined"))
+            label = tx(locale, "npmPostinstall", "npm postinstall") if page.provider == "npm" else tx(locale, "homebrewPostinstall", "Homebrew post-install")
+            rows.append((label, tx(locale, "defined", "defined") if post_install else tx(locale, "notDefined", "not defined")))
         service = page.install_behavior.get("service")
-        rows.append(("Service", service if service else "none declared"))
+        rows.append((tx(locale, "service", "Service"), service if service else tx(locale, "serviceNone", "none declared")))
         caveats = page.install_behavior.get("caveats")
         if caveats:
-            rows.append(("Caveats", caveats))
+            rows.append((tx(locale, "caveats", "Caveats"), caveats))
         lifecycle = page.install_behavior.get("lifecycleScripts")
         if lifecycle:
-            rows.append(("npm lifecycle scripts", ", ".join(str(item) for item in lifecycle)))
+            rows.append((tx(locale, "lifecycleScripts", "npm lifecycle scripts"), ", ".join(str(item) for item in lifecycle)))
         python_requires = page.install_behavior.get("pythonRequires")
         if python_requires:
-            rows.append(("Python requires", str(python_requires)))
+            rows.append((tx(locale, "pythonRequires", "Python requires"), str(python_requires)))
         requires_dist_count = page.install_behavior.get("requiresDistCount")
         if requires_dist_count:
-            rows.append(("PyPI dependency specs", fmt_int(requires_dist_count)))
+            rows.append((tx(locale, "pypiDependencySpecs", "PyPI dependency specs"), fmt_int(requires_dist_count)))
     if page.keywords:
-        rows.append(("Keywords", ", ".join(page.keywords[:16])))
+        rows.append((tx(locale, "keywords", "Keywords"), ", ".join(page.keywords[:16])))
     if page.classifiers:
-        rows.append(("Classifiers", ", ".join(page.classifiers[:12])))
+        rows.append((tx(locale, "classifiers", "Classifiers"), ", ".join(page.classifiers[:12])))
     deps = page.extra.get("homebrewDeps") or page.extra.get("npm_homebrewDeps")
     if deps:
-        rows.append(("Homebrew dependencies", ", ".join(deps)))
+        rows.append((tx(locale, "homebrewDependencies", "Homebrew dependencies"), ", ".join(deps)))
     python_formula = page.extra.get("pythonFormula")
     if python_formula:
-        rows.append(("Python formula", python_formula))
+        rows.append((tx(locale, "pythonFormula", "Python formula"), python_formula))
     row_html = "".join(f"<tr><th>{html_escape(label)}</th><td>{link_value(value)}</td></tr>" for label, value in rows)
     return f"""
 <section class="pkg-section">
-  <p class="section-kicker">install metadata</p>
-  <h2>Package metadata</h2>
+  <p class="section-kicker">{html_escape(tx(locale, 'packageMetadataKicker', 'install metadata'))}</p>
+  <h2>{html_escape(tx(locale, 'metadataTitle', 'Package metadata'))}</h2>
   <div class="table-wrap">
     <table>
-      <tbody>{row_html or '<tr><th>Status</th><td>No resolver details were present.</td></tr>'}</tbody>
+      <tbody>{row_html or f'<tr><th>{html_escape(tx(locale, "status", "Status"))}</th><td>{html_escape(tx(locale, "metadataEmpty", "No resolver details were present."))}</td></tr>'}</tbody>
     </table>
   </div>
 </section>
 """
 
 
-def render_related(page: PackagePage) -> str:
-    related = [related_link(item) for item in page.related_packages]
-    also = [related_link(item) for item in page.also_available_via]
-    hubs = [hub_link(item) for item in page.package_hubs]
+def render_related(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    related = [related_link(item, locale) for item in page.related_packages]
+    also = [related_link(item, locale) for item in page.also_available_via]
+    hubs = [hub_link(item, locale) for item in page.package_hubs]
     if not related and not also:
-        related = inferred_related_links(page)
+        related = inferred_related_links(page, locale)
     return f"""
 <section class="pkg-section split-section related-section" aria-labelledby="related-title">
   <div>
-    <p class="section-kicker">package graph</p>
-    <h2 id="related-title">Related packages</h2>
-    <p>Links come from the local package relationship graph, supplements, dependency edges, ecosystem matches, and package hub membership.</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'packageGraph', 'package graph'))}</p>
+    <h2 id="related-title">{html_escape(tx(locale, 'relatedPackages', 'Related packages'))}</h2>
+    <p>{html_escape(tx(locale, 'packageGraphCopy', 'Links come from the local package relationship graph, supplements, dependency edges, ecosystem matches, and package hub membership.'))}</p>
   </div>
   <div class="related-columns">
     <article>
-      <h3>Related</h3>
-      <ul>{''.join(related) or '<li>No related package links were present.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'related', 'Related'))}</h3>
+      <ul>{''.join(related) or f'<li>{html_escape(tx(locale, "noRelated", "No related package links were present."))}</li>'}</ul>
     </article>
     <article>
-      <h3>Also available via</h3>
-      <ul>{''.join(also) or '<li>No cross-ecosystem equivalent was recorded.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'alsoAvailableVia', 'Also available via'))}</h3>
+      <ul>{''.join(also) or f'<li>{html_escape(tx(locale, "noCrossEcosystem", "No cross-ecosystem equivalent was recorded."))}</li>'}</ul>
     </article>
     <article>
-      <h3>Package hubs</h3>
-      <ul>{''.join(hubs) or '<li>No package hub membership was generated.</li>'}</ul>
+      <h3>{html_escape(tx(locale, 'packageHubs', 'Package hubs'))}</h3>
+      <ul>{''.join(hubs) or f'<li>{html_escape(tx(locale, "noHubMembership", "No package hub membership was generated."))}</li>'}</ul>
     </article>
   </div>
 </section>
 """
 
 
-def inferred_related_links(page: PackagePage) -> list[str]:
+def inferred_related_links(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
     links: list[str] = []
     if page.provider != "brew":
         return links
@@ -2901,7 +3123,7 @@ def inferred_related_links(page: PackagePage) -> list[str]:
             "name": dependency,
             "label": dependency,
             "reason": f"{package_manager_label(page)} dependency.",
-        }))
+        }, locale))
     return links
 
 
@@ -2914,7 +3136,7 @@ def has_internal_package_navigation(page: PackagePage) -> bool:
     )
 
 
-def related_link(item: dict[str, Any]) -> str:
+def related_link(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     provider = str(item.get("provider") or "").strip()
     name = str(item.get("name") or "").strip()
     label = str(item.get("label") or name).strip()
@@ -2925,7 +3147,7 @@ def related_link(item: dict[str, Any]) -> str:
     return f'<li><a href="{href}">{html_escape(label)}</a>{f"<span>{html_escape(reason)}</span>" if reason else ""}</li>'
 
 
-def hub_link(item: dict[str, Any]) -> str:
+def hub_link(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
     slug = str(item.get("slug") or "").strip()
     label = str(item.get("label") or slug).strip()
     reason = str(item.get("reason") or "").strip()
@@ -2940,19 +3162,19 @@ def link_value(value: str) -> str:
     return html_escape(value)
 
 
-def render_sources(page: PackagePage) -> str:
-    notes = sorted(set(page.source_notes)) or ["local package generator"]
+def render_sources(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    notes = sorted(set(page.source_notes)) or [tx(locale, "localPackageGenerator", "local package generator")]
     note_html = "".join(f"<li>{html_escape(note)}</li>" for note in notes)
     return f"""
 <section class="pkg-section split-section sources-section">
   <div>
-    <p class="section-kicker">source trail</p>
-    <h2>Generated from repository data</h2>
-    <p>This page is written by <code>scripts/generate-pkg-pages.py</code>. Deployments refuse to publish if <code>www/pkg/</code> is stale relative to local package data.</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'sourceTrail', 'source trail'))}</p>
+    <h2>{html_escape(tx(locale, 'generatedFromRepositoryData', 'Generated from repository data'))}</h2>
+    <p>{tx(locale, 'sourcesCopy', 'This page is written by <code>scripts/generate-pkg-pages.py</code>. Deployments refuse to publish if <code>www/pkg/</code> is stale relative to local package data.')}</p>
   </div>
   <div class="detail-stack">
     <article>
-      <h3>Used sources</h3>
+      <h3>{html_escape(tx(locale, 'usedSources', 'Used sources'))}</h3>
       <ul>{note_html}</ul>
     </article>
   </div>
@@ -2960,8 +3182,8 @@ def render_sources(page: PackagePage) -> str:
 """
 
 
-def schema_for_package(page: PackagePage, description: str, updated: str) -> dict[str, Any]:
-    url = f"{SITE_ORIGIN}{page.path}"
+def schema_for_package(page: PackagePage, description: str, updated: str, locale: dict[str, Any] | None = None) -> dict[str, Any]:
+    url = locale_url(page.path, locale)
     software: dict[str, Any] = {
         "@type": "SoftwareApplication",
         "@id": f"{url}#software",
@@ -2971,6 +3193,7 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         "url": url,
         "description": description,
         "dateModified": updated,
+        "inLanguage": (locale or {}).get("htmlLang") or "en",
         "isPartOf": {"@id": f"{SITE_ORIGIN}/#website"},
     }
     if page.homepage:
@@ -2987,9 +3210,10 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
     article = {
         "@type": "TechArticle",
         "@id": f"{url}#article",
-        "headline": f"Install {page.display_name} with {package_manager_label(page)}",
+        "headline": tx(locale, "schemaTechArticleHeadline", "Install {name} with {manager}", name=page.display_name, manager=package_manager_label(page)),
         "description": description,
         "dateModified": updated,
+        "inLanguage": (locale or {}).get("htmlLang") or "en",
         "author": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
         "reviewedBy": {"@id": f"{SITE_ORIGIN}/about/#max-howell"},
         "publisher": {"@id": f"{SITE_ORIGIN}/#organization"},
@@ -2999,20 +3223,20 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
         "@type": "BreadcrumbList",
         "@id": f"{url}#breadcrumbs",
         "itemListElement": [
-            {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_ORIGIN}/"},
-            {"@type": "ListItem", "position": 2, "name": "Packages", "item": f"{SITE_ORIGIN}/pkg/"},
+            {"@type": "ListItem", "position": 1, "name": tx(locale, "home", "Home"), "item": locale_url("/", locale)},
+            {"@type": "ListItem", "position": 2, "name": tx(locale, "packages", "Packages"), "item": locale_url("/pkg/", locale)},
             {"@type": "ListItem", "position": 3, "name": page.display_name, "item": url},
         ],
     }
     how_to = {
         "@type": "HowTo",
         "@id": f"{url}#install-howto",
-        "name": f"Install {page.display_name}",
+        "name": tx(locale, "schemaHowToName", "Install {name}", name=page.display_name),
         "step": [
             {
                 "@type": "HowToStep",
                 "position": index + 1,
-                "name": f"Run {item.get('manager') or 'install'} command",
+                "name": tx(locale, "schemaHowToStep", "Run {manager} command", manager=item.get("manager") or tx(locale, "install", "install")),
                 "text": str(item.get("command") or ""),
             }
             for index, item in enumerate(source_backed_schema_commands(page)[:12])
@@ -3033,25 +3257,27 @@ def schema_for_package(page: PackagePage, description: str, updated: str) -> dic
     }
 
 
-def copy_script() -> str:
-    return """  <script>
-    document.addEventListener("click", async (event) => {
+def copy_script(locale: dict[str, Any] | None = None) -> str:
+    copied = json.dumps(tx(locale, "copied", "Copied"), ensure_ascii=False)
+    failed = json.dumps(tx(locale, "copyFailed", "Copy failed"), ensure_ascii=False)
+    return f"""  <script>
+    document.addEventListener("click", async (event) => {{
       const button = event.target.closest("[data-copy]");
       if (!button) return;
-      try {
+      try {{
         await navigator.clipboard.writeText(button.getAttribute("data-copy"));
         const previous = button.textContent;
-        button.textContent = "Copied";
+        button.textContent = {copied};
         button.setAttribute("data-state", "copied");
-        window.setTimeout(() => {
+        window.setTimeout(() => {{
           button.textContent = previous;
           button.removeAttribute("data-state");
-        }, 1600);
-      } catch (_error) {
-        button.textContent = "Copy failed";
+        }}, 1600);
+      }} catch (_error) {{
+        button.textContent = {failed};
         button.setAttribute("data-state", "error");
-      }
-    });
+      }}
+    }});
   </script>"""
 
 
@@ -4204,7 +4430,7 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
         return 1
     files = source_files()
     expected_hash, latest = source_digest(files)
-    failures = []
+    failures = validate_i18n_pkg_templates()
     if manifest.get("schema") != SCHEMA_VERSION:
         failures.append(f"schema is {manifest.get('schema')!r}, expected {SCHEMA_VERSION}")
     if manifest.get("source_hash") != expected_hash:
@@ -4264,6 +4490,10 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
                 break
             if f'<link rel="canonical" href="{expected_canonical}">' not in page_text:
                 failures.append(f"localized page has wrong canonical: {localized_page}")
+                break
+            leaks = localized_package_ui_leaks(page_text)
+            if leaks:
+                failures.append(f"localized page has English package UI copy: {localized_page} ({', '.join(leaks[:4])})")
                 break
             if not localized_markdown.exists():
                 failures.append(f"missing localized package markdown alternate: {localized_markdown}")
