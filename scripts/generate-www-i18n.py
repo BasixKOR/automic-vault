@@ -562,7 +562,7 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
   <div class="site-shell" id="top">
     <header class="masthead">
-      <a class="brand" href="#top" aria-label="Automic Vault home">
+      <a class="brand" href="{locale_path('/', locale)}" aria-label="Automic Vault home">
         <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
