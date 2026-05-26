@@ -19,6 +19,15 @@ SITE_ORIGIN = "https://www.automicvault.com"
 OUTPUT_DIR = Path("www/pkg")
 MANIFEST_NAME = ".manifest.json"
 INDEXABLE_MIN_SIGNAL_COUNT = 2
+GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-Y78QKG1T9Y');
+  </script>"""
 
 
 @dataclass
@@ -2861,6 +2870,7 @@ def html_doc(
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="{favicon_href}" sizes="16x16 32x32 48x48">
   <link rel="stylesheet" href="{stylesheet_href}">
+{GOOGLE_TAG}
 {extra_head}
   <script type="application/ld+json">
 {schema_json}
