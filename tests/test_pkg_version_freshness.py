@@ -94,7 +94,7 @@ class PackageVersionFreshnessTests(unittest.TestCase):
                 {
                     "package": {"name": "tool"},
                     "version": "1.2.0",
-                    "sourceArchive": "https://github.com/acme/tool/archive/refs/tags/v1.2.0.tar.gz",
+                    "repository": "https://github.com/acme/tool",
                 },
                 force_refresh=False,
                 cache_only=True,
@@ -102,6 +102,68 @@ class PackageVersionFreshnessTests(unittest.TestCase):
 
         self.assertEqual(upstream["latestSource"], "github_tag")
         self.assertEqual(upstream["comparison"], "current")
+
+    def test_non_github_upstream_keeps_repository_without_unknown_comparison(self):
+        module = load_module(FRESHNESS_SCRIPT, "pkg_version_freshness_non_github")
+
+        upstream = module.upstream_metadata(
+            "npm:atob",
+            {
+                "package": {"name": "atob"},
+                "version": "2.1.2",
+                "repository": "git://git.coolaj86.com/coolaj86/atob.js",
+                "homepage": "https://git.coolaj86.com/coolaj86/atob.js.git",
+                "sourceArchive": "https://registry.npmjs.org/atob/-/atob-2.1.2.tgz",
+            },
+            force_refresh=False,
+            cache_only=True,
+        )
+
+        self.assertEqual(upstream["repository"], "https://git.coolaj86.com/coolaj86/atob.js")
+        self.assertEqual(upstream["comparison"], "not checked")
+        self.assertEqual(upstream["note"], "Release/tag comparison is only available for GitHub repositories.")
+
+    def test_missing_cached_github_data_is_not_checked(self):
+        module = load_module(FRESHNESS_SCRIPT, "pkg_version_freshness_missing_github")
+
+        with mock.patch.object(module, "fetch_github_json", return_value=None):
+            upstream = module.upstream_metadata(
+                "brew:tool",
+                {
+                    "package": {"name": "tool"},
+                    "version": "1.0.0",
+                    "repository": "https://github.com/acme/tool",
+                },
+                force_refresh=False,
+                cache_only=True,
+            )
+
+        self.assertEqual(upstream["repository"], "https://github.com/acme/tool")
+        self.assertEqual(upstream["comparison"], "not checked")
+        self.assertEqual(upstream["note"], "No cached GitHub release or tag data was available.")
+
+    def test_noisy_upstream_version_is_not_comparable(self):
+        module = load_module(FRESHNESS_SCRIPT, "pkg_version_freshness_noisy")
+
+        def fake_fetch(url, **_kwargs):
+            if url.endswith("/releases/latest"):
+                return {"tag_name": "release-candidate"}
+            return []
+
+        with mock.patch.object(module, "fetch_github_json", side_effect=fake_fetch):
+            upstream = module.upstream_metadata(
+                "brew:tool",
+                {
+                    "package": {"name": "tool"},
+                    "version": "1.0.0",
+                    "repository": "https://github.com/acme/tool",
+                },
+                force_refresh=False,
+                cache_only=True,
+            )
+
+        self.assertEqual(upstream["latestVersion"], "release-candidate")
+        self.assertEqual(upstream["comparison"], "not comparable")
 
     def test_build_freshness_records_unknown_for_noisy_or_missing_upstream(self):
         module = load_module(FRESHNESS_SCRIPT, "pkg_version_freshness_build")
@@ -125,8 +187,8 @@ class PackageVersionFreshnessTests(unittest.TestCase):
 
         self.assertEqual(entry["siteData"]["status"], "ok")
         self.assertEqual(entry["packageManager"]["activity"], "fresh")
-        self.assertEqual(entry["upstream"]["comparison"], "unknown")
-        self.assertEqual(entry["warnings"][0]["kind"], "upstream_unknown")
+        self.assertEqual(entry["upstream"]["comparison"], "not available")
+        self.assertEqual(entry["warnings"][0]["kind"], "upstream_not_checked")
 
     def test_check_fails_when_artifact_is_missing_or_stale(self):
         module = load_module(FRESHNESS_SCRIPT, "pkg_version_freshness_check")

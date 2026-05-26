@@ -224,6 +224,21 @@ def normalize_github_repo(url: Any) -> str:
     return f"https://github.com/{owner}/{repo}"
 
 
+def normalize_upstream_url(url: Any) -> str:
+    if not isinstance(url, str) or not url.strip():
+        return ""
+    text = url.strip()
+    text = re.sub(r"^git\+", "", text)
+    text = re.sub(r"^git://", "https://", text)
+    text = re.sub(r"^ssh://git@", "https://", text)
+    text = re.sub(r"^git@([^:]+):", r"https://\1/", text)
+    text = re.sub(r"\.git$", "", text)
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return text
+    return ""
+
+
 def github_source_archive_tag(url: Any) -> str:
     if not isinstance(url, str) or "github.com" not in url:
         return ""
@@ -367,25 +382,34 @@ def apply_upstream_comparison(upstream: dict[str, Any], latest: dict[str, Any], 
     elif comparison == "current":
         upstream["comparison"] = "current"
     else:
-        upstream["comparison"] = "unknown"
+        upstream["comparison"] = "not comparable"
     upstream["confidence"] = confidence
 
 
 def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh: bool, cache_only: bool) -> dict[str, Any]:
     package = entry.get("package") if isinstance(entry.get("package"), dict) else {}
     package_name = str(package.get("name") or package_key.split(":", 1)[-1])
-    repository = (
+    github_repository = (
         normalize_github_repo(entry.get("repository"))
         or normalize_github_repo(entry.get("sourceArchive"))
         or normalize_github_repo(entry.get("homepage"))
     )
+    repository = (
+        github_repository
+        or normalize_upstream_url(entry.get("repository"))
+        or normalize_upstream_url(entry.get("homepage"))
+    )
     upstream: dict[str, Any] = {
         "repository": repository,
-        "comparison": "unknown",
+        "comparison": "unknown" if github_repository else "not available",
         "confidence": "none",
     }
-    if not repository:
-        upstream["note"] = "No GitHub repository was available in local package data."
+    if not github_repository:
+        if repository:
+            upstream["comparison"] = "not checked"
+            upstream["note"] = "Release/tag comparison is only available for GitHub repositories."
+        else:
+            upstream["note"] = "No upstream repository was available in local package data."
         return upstream
 
     latest = latest_source_archive_tag(entry, package_name)
@@ -393,10 +417,11 @@ def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh:
         apply_upstream_comparison(upstream, latest, entry.get("version"), package_name)
         return upstream
 
-    latest = latest_github_release(repository, force_refresh=force_refresh, cache_only=cache_only)
+    latest = latest_github_release(github_repository, force_refresh=force_refresh, cache_only=cache_only)
     if latest is None:
-        latest = latest_github_tag(repository, package_name, force_refresh=force_refresh, cache_only=cache_only)
+        latest = latest_github_tag(github_repository, package_name, force_refresh=force_refresh, cache_only=cache_only)
     if latest is None:
+        upstream["comparison"] = "not checked"
         upstream["note"] = "No cached GitHub release or tag data was available."
         return upstream
 
@@ -523,7 +548,9 @@ def warnings_for(site: dict[str, Any], manager: dict[str, Any], upstream: dict[s
             str(upstream.get("evidence") or ""),
             str(upstream.get("confidence") or "low"),
         ))
-    elif comparison == "unknown":
+    elif comparison in {"not checked", "not available"}:
+        warnings.append(warning("upstream_not_checked", "info", str(upstream.get("note") or "No upstream release/tag comparison was available."), str(upstream.get("repository") or ""), str(upstream.get("confidence") or "low")))
+    elif comparison == "not comparable":
         warnings.append(warning("upstream_unknown", "info", str(upstream.get("note") or "No reliable upstream version comparison was available."), str(upstream.get("evidence") or upstream.get("repository") or ""), str(upstream.get("confidence") or "low")))
     return warnings
 
