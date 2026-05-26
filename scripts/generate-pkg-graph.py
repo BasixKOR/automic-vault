@@ -2,6 +2,7 @@
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -187,6 +188,16 @@ def source_host(value: str) -> str:
     return match.group(1).lower() if match else ""
 
 
+def load_script(name: str, filename: str) -> Any:
+    path = Path(__file__).resolve().parent / filename
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    if spec.loader is None:
+        raise RuntimeError(f"Unable to load {path}")
+    spec.loader.exec_module(module)
+    return module
+
+
 def term_matches(haystack: str, term: str) -> bool:
     escaped = re.escape(term.lower())
     return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", haystack) is not None
@@ -201,6 +212,7 @@ def input_files() -> list[Path]:
         Path("data/isotopes.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
+        Path("scripts/generate-pkg-pages.py"),
     ]
     if CURATION_PATH.exists():
         files.append(CURATION_PATH)
@@ -350,6 +362,31 @@ def package_keys_from_sources(
                 if isinstance(item, dict) and item.get("provider") and item.get("name"):
                     keys.add(f"{item['provider']}:{item['name']}")
     return keys
+
+
+def page_keys_from_filtered_pages(
+    db: dict[str, Any],
+    geiger_data: dict[str, Any],
+    isotopes: dict[str, Any],
+    npm: dict[str, Any],
+    pip: dict[str, Any],
+    enrichment: dict[str, Any],
+    freshness: dict[str, Any],
+) -> set[str]:
+    pages_module = load_script("generate_pkg_pages_for_graph_scope", "generate-pkg-pages.py")
+    pages = pages_module.package_pages_from_sources({
+        "aliases": read_json(Path("data/aliases.json"), {}),
+        "db": db,
+        "geiger": geiger_data,
+        "isotopes": isotopes,
+        "npm": npm,
+        "pip": pip,
+        "pkg_graph": {},
+        "pkg_cross_ecosystem": {},
+        "pkg_page_enrichment": enrichment,
+        "pkg_version_freshness": freshness,
+    })
+    return set(pages)
 
 
 def package_info_for_key(package_key: str, enrichment_packages: dict[str, Any], db: dict[str, Any], geiger_packages: dict[str, Any]) -> dict[str, Any]:
@@ -557,12 +594,13 @@ def build_graph() -> dict[str, Any]:
     isotopes = read_json(Path("data/isotopes.json"), {})
     npm = read_json(Path("data/npm.json"), {})
     pip = read_json(Path("data/pip.json"), {})
+    freshness = read_json(Path("data/pkg-version-freshness.json"), {})
     curation = read_json(CURATION_PATH, {})
     cross_ecosystem = read_json(CROSS_ECOSYSTEM_PATH, {})
     packages = enrichment.get("packages") if isinstance(enrichment, dict) else {}
     if not isinstance(packages, dict):
         raise ValueError("data/pkg-page-enrichment.json must contain packages")
-    page_keys = package_keys_from_sources(packages, db, pip, curation, cross_ecosystem)
+    page_keys = page_keys_from_filtered_pages(db, geiger_data, isotopes, npm, pip, enrichment, freshness)
 
     provider_names = provider_packages(db, pip)
     normalized_by_provider: dict[str, dict[str, list[str]]] = {}
@@ -604,6 +642,8 @@ def build_graph() -> dict[str, Any]:
 
     for key in sorted(packages):
         if not key.startswith("brew:"):
+            continue
+        if key not in page_keys:
             continue
         info = packages[key]
         if not isinstance(info, dict):

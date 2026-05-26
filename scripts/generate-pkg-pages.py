@@ -539,6 +539,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
     apply_package_version_freshness(pages, sources.get("pkg_version_freshness") or {})
     apply_package_page_supplements(pages)
+    pages = executable_package_pages(pages)
     apply_package_graph(pages, sources.get("pkg_graph") or {})
     apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
 
@@ -1152,6 +1153,18 @@ def is_indexable_package_page(page: PackagePage) -> bool:
     return len(package_index_signals(page)) >= INDEXABLE_MIN_SIGNAL_COUNT
 
 
+def has_executable_surface(page: PackagePage) -> bool:
+    return bool(page.aliases or page.executables or page.binaries)
+
+
+def executable_package_pages(pages: dict[str, PackagePage]) -> dict[str, PackagePage]:
+    return {
+        key: page
+        for key, page in pages.items()
+        if has_executable_surface(page)
+    }
+
+
 def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[PackagePage]]]:
     hubs: list[tuple[PackageHub, list[PackagePage]]] = []
     static_slugs = {hub.slug for hub in PACKAGE_HUBS}
@@ -1295,7 +1308,7 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
     return html_doc(
         title="Package security catalog | Automic Vault",
         description=(
-            "Automic Vault package catalog for Nucleus packages, radioisotope "
+            "Automic Vault package catalog for executable Nucleus packages, radioisotope "
             "secret handling, approval gates, install metadata, and agent security notes."
         ),
         canonical=f"{SITE_ORIGIN}/pkg/",
@@ -1306,7 +1319,7 @@ def render_index(pages: list[PackagePage], hubs: list[tuple[PackageHub, list[Pac
     <div class="hero-copy">
       <p class="eyebrow">Nucleus package intelligence</p>
       <h1 id="pkg-title">Package security catalog</h1>
-      <p class="lede">Generated pages for packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
+      <p class="lede">Generated pages for executable packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p>
     </div>
     <aside class="hero-panel" aria-label="Catalog counts">
       {metric('packages', fmt_int(len(pages)))}

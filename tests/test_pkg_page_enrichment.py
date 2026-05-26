@@ -266,6 +266,64 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn("data/pkg-page-enrichment.json", source_paths)
         self.assertIn("data/pkg-version-freshness.json", source_paths)
 
+    def test_package_page_scope_requires_executable_surface(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")
+
+        alias = module.PackagePage(provider="brew", name="ripgrep")
+        alias.aliases.add("rg")
+        self.assertTrue(module.has_executable_surface(alias))
+
+        executable = module.PackagePage(provider="npm", name="eslint")
+        executable.executables = [{"name": "eslint", "source": "test"}]
+        self.assertTrue(module.has_executable_surface(executable))
+
+        binary = module.PackagePage(provider="cask", name="iterm2")
+        binary.binaries = [{"target": "iTerm"}]
+        self.assertTrue(module.has_executable_surface(binary))
+
+        security_only = module.PackagePage(provider="brew", name="vault")
+        security_only.isotope = {"name": "isotope:vault"}
+        self.assertFalse(module.has_executable_surface(security_only))
+
+    def test_package_pages_from_sources_prunes_non_executable_packages(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_filter_test")
+
+        sources = {
+            "db": {
+                "formulas": {
+                    "abseil": {"summary": "Metadata-only library."},
+                    "ripgrep": {"summary": "Search tool."},
+                },
+                "casks": {
+                    "iterm2": {
+                        "summary": "Terminal app.",
+                        "binaries": [{"target": "iTerm"}],
+                    }
+                },
+                "npms": {
+                    "qmd": {"summary": "No bin package."},
+                },
+                "entries": {"rg": "brew:ripgrep"},
+            },
+            "pkg_page_enrichment": {
+                "packages": {
+                    "npm:eslint": {
+                        "package": {"provider": "npm", "name": "eslint"},
+                        "executables": [{"name": "eslint", "source": "unit test"}],
+                    }
+                }
+            },
+            "geiger": {"packages": {"abseil": {"level": "yellow"}}},
+        }
+
+        pages = module.package_pages_from_sources(sources)
+
+        self.assertIn("brew:ripgrep", pages)
+        self.assertIn("cask:iterm2", pages)
+        self.assertIn("npm:eslint", pages)
+        self.assertNotIn("brew:abseil", pages)
+        self.assertNotIn("npm:qmd", pages)
+
     def test_thin_package_pages_are_noindex_but_security_pages_remain_indexable(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_thin_policy_test")
 

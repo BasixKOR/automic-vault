@@ -44,6 +44,9 @@ class PackageGraphTests(unittest.TestCase):
         self.assertIn("same_software_cross_ecosystem", self.graph["relation_definitions"])
         self.assertGreater(self.graph["hubs"]["cloud-clis"]["packageCount"], 0)
 
+    def test_graph_excludes_non_executable_packages(self):
+        self.assertNotIn("brew:abseil", self.graph["packages"])
+
 
 if __name__ == "__main__":
     unittest.main()
