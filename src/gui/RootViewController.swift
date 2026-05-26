@@ -476,165 +476,6 @@ private final class MastheadButton: NSButton {
     }
 }
 
-private final class MastheadTabButton: NSButton {
-    private enum Divider {
-        static let leadingLayerName = "MastheadTabLeadingDivider"
-        static let trailingLayerName = "MastheadTabTrailingDivider"
-    }
-
-    var isActive = false {
-        didSet { updateAppearance() }
-    }
-
-    var showsLeadingDivider = false {
-        didSet { updateDividerVisibility() }
-    }
-
-    private var trackingArea: NSTrackingArea?
-    private var isHovering = false {
-        didSet { updateAppearance() }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        configure()
-    }
-
-    convenience init(title: String, target: AnyObject?, action: Selector?) {
-        self.init(frame: .zero)
-        self.title = title
-        self.target = target
-        self.action = action
-        updateAppearance()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        self.trackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isHovering = true
-        super.mouseEntered(with: event)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isHovering = false
-        super.mouseExited(with: event)
-    }
-
-    override func layout() {
-        super.layout()
-        layoutDividers()
-    }
-
-    private func configure() {
-        wantsLayer = true
-        layer = CALayer()
-        isBordered = false
-        alignment = .center
-        cell?.alignment = .center
-        focusRingType = .none
-        setButtonType(.momentaryChange)
-        font = UIStyle.monoFont(size: 10, weight: .medium)
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-        updateAppearance()
-    }
-
-    private func updateAppearance() {
-        let contentColor: NSColor
-        let backgroundColor: NSColor
-
-        if isActive {
-            contentColor = UIStyle.text.withAlphaComponent(0.92)
-            backgroundColor = UIStyle.accent.withAlphaComponent(0.16)
-        } else if isHovering {
-            contentColor = UIStyle.accent.withAlphaComponent(0.94)
-            backgroundColor = UIStyle.accent.withAlphaComponent(0.06)
-        } else {
-            contentColor = UIStyle.text.withAlphaComponent(0.42)
-            backgroundColor = .clear
-        }
-
-        layer?.cornerRadius = 0
-        layer?.borderWidth = 0
-        layer?.backgroundColor = backgroundColor.cgColor
-        attributedTitle = centeredTitle(color: contentColor)
-        updateDividerVisibility()
-    }
-
-    private func centeredTitle(color: NSColor) -> NSAttributedString {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        paragraphStyle.lineBreakMode = .byTruncatingTail
-        return NSAttributedString(
-            string: title,
-            attributes: [
-                .font: UIStyle.monoFont(size: 10, weight: .medium),
-                .foregroundColor: color,
-                .kern: 0.9,
-                .paragraphStyle: paragraphStyle
-            ]
-        )
-    }
-
-    private func updateDividerVisibility() {
-        let dividerColor = UIStyle.accent.withAlphaComponent(isActive ? 0.58 : 0.22).cgColor
-        let leadingDivider = ensureDividerLayer(named: Divider.leadingLayerName)
-        leadingDivider.backgroundColor = dividerColor
-        leadingDivider.isHidden = !showsLeadingDivider
-
-        let trailingDivider = ensureDividerLayer(named: Divider.trailingLayerName)
-        trailingDivider.backgroundColor = dividerColor
-        trailingDivider.isHidden = false
-        layoutDividers()
-    }
-
-    private func layoutDividers() {
-        guard let layer else { return }
-        let dividerWidth: CGFloat = 1
-        layer.sublayers?.forEach { sublayer in
-            switch sublayer.name {
-            case Divider.leadingLayerName:
-                sublayer.frame = CGRect(x: 0, y: 0, width: dividerWidth, height: layer.bounds.height)
-            case Divider.trailingLayerName:
-                sublayer.frame = CGRect(
-                    x: max(layer.bounds.width - dividerWidth, 0),
-                    y: 0,
-                    width: dividerWidth,
-                    height: layer.bounds.height
-                )
-            default:
-                break
-            }
-        }
-    }
-
-    private func ensureDividerLayer(named name: String) -> CALayer {
-        if let existing = layer?.sublayers?.first(where: { $0.name == name }) {
-            return existing
-        }
-        let dividerLayer = CALayer()
-        dividerLayer.name = name
-        layer?.addSublayer(dividerLayer)
-        return dividerLayer
-    }
-}
-
 private final class CommandPaletteTextField: NSTextField {
     var onActivate: (() -> Void)?
 
@@ -814,29 +655,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     // title cluster can stay fixed while the status/search/button baselines
     // are adjusted together.
     private static let leftMastheadTitleYOffset: CGFloat = 2
-    private static let mastheadTabsLeadingGap: CGFloat = 16
-    private static let mastheadTabGap: CGFloat = 0
-    private static let mastheadTabMeasurementHeight: CGFloat = 22
     private static let rightMastheadSearchYOffset: CGFloat = 2
     private static let rightMastheadStatusYOffset: CGFloat = 2
     private static let rightMastheadUpdateButtonYOffset: CGFloat = -3
-
-    private enum MastheadTab: Int, CaseIterable {
-        case clis
-        case apps
-        case skills
-
-        var title: String {
-            switch self {
-            case .clis:
-                return "CLIS"
-            case .apps:
-                return "APPS"
-            case .skills:
-                return "SKILLS"
-            }
-        }
-    }
 
     private enum PaletteCommand: String, CaseIterable, Equatable {
         case all
@@ -927,9 +748,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private final class RootView: NSView {
         let headerLayer = CATextLayer()
-        let clisTabButton = MastheadTabButton(title: MastheadTab.clis.title, target: nil, action: nil)
-        let appsTabButton = MastheadTabButton(title: MastheadTab.apps.title, target: nil, action: nil)
-        let skillsTabButton = MastheadTabButton(title: MastheadTab.skills.title, target: nil, action: nil)
         let commandPalette = CommandPaletteView(frame: .zero)
         let separatorLayer = CALayer()
         let statusLabel = NSTextField(labelWithString: "")
@@ -952,12 +770,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             separatorLayer.backgroundColor = UIStyle.separator.cgColor
             layer?.addSublayer(separatorLayer)
 
-            clisTabButton.tag = MastheadTab.clis.rawValue
-            appsTabButton.tag = MastheadTab.apps.rawValue
-            skillsTabButton.tag = MastheadTab.skills.rawValue
-
             configureLabel(statusLabel)
-            mastheadTabButtons.forEach(addSubview)
             addSubview(commandPalette)
             addSubview(statusLabel)
 
@@ -1022,21 +835,10 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             label.allowsDefaultTighteningForTruncation = true
         }
 
-        var mastheadTabButtons: [MastheadTabButton] {
-            [clisTabButton, appsTabButton, skillsTabButton]
-        }
-
-        func setActiveMastheadTab(_ activeTab: MastheadTab) {
-            mastheadTabButtons.forEach { button in
-                button.isActive = button.tag == activeTab.rawValue
-            }
-        }
     }
 
     private let bridge = NucleusBridge()
     private let helperBridge = NukeHelperBridge()
-    private let homebrewCaskCatalog = HomebrewCaskCatalog()
-    private let skillsCatalog = SkillsCatalog()
     private let statusStore = NucleusStatusStore()
     private lazy var appUpdateCoordinator = AppUpdateCoordinator(statusStore: statusStore)
     private let packageScrollView = NSScrollView()
@@ -1064,30 +866,14 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var commandResults: [PackagePresentation] = []
     private var commandResultsCommand: PaletteCommand?
     private var installedPulseResults: [PackagePresentation] = []
-    private var appInstalledPackages: [PackagePresentation] = []
-    private var appPulseResults: [PackagePresentation] = []
-    private var appSearchResults: [PackagePresentation] = []
-    private var skillInstalledPackages: [PackagePresentation] = []
-    private var skillPulseResults: [PackagePresentation] = []
-    private var skillSearchResults: [PackagePresentation] = []
     private var visiblePackages: [PackagePresentation] = []
     private var detailsByPackageName: [String: PackageDetail] = [:]
-    private var activeMastheadTab: MastheadTab = .clis {
-        didSet {
-            updateMastheadTabs()
-            reloadVisiblePackagesForSearch()
-            loadHomebrewCasksIfNeeded()
-            loadSkillsIfNeeded()
-        }
-    }
     private var selectedItemID: String?
     private var reloadRequestID = 0
     private var searchRequestID = 0
     private var detailRequestID = 0
     private var homebrewMigrationRequestID = 0
     private var installedPulseRequestID = 0
-    private var appCaskRequestID = 0
-    private var skillRequestID = 0
     private var loadingDetailItemID: String?
     private var activeOverlayOperationID = 0
     private var snapshotObserver: NSObjectProtocol?
@@ -1100,23 +886,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private var searchNextOffset: Int?
     private var commandNextOffset: Int?
     private var installedPulseNextOffset: Int? = 0
-    private var appPulseNextOffset: Int? = 0
-    private var appSearchNextOffset: Int?
-    private var skillPulseNextOffset: Int? = 0
-    private var skillSearchNextOffset: Int?
     private var commandTotalCount = 0
     private var installedPulseTotalCount = 0
-    private var appPulseTotalCount = 0
-    private var appSearchTotalCount = 0
-    private var skillPulseTotalCount = 0
-    private var skillSearchTotalCount = 0
-    private var appSearchResultsQuery: String?
-    private var skillSearchResultsQuery: String?
-    private var isHomebrewCaskCatalogAvailable: Bool?
-    private var hasLoadedHomebrewCasks = false
-    private var isSkillsCatalogAvailable: Bool?
-    private var skillsUnavailableMessage: String?
-    private var hasLoadedSkills = false
     private var isSearching = false {
         didSet {
             updateHeader()
@@ -1147,54 +918,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             updatePaneLoadingIndicators()
         }
     }
-    private var isLoadingAppCasks = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isLoadingAppPulseResults = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isSearchingAppCasks = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isLoadingMoreAppCaskSearchResults = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isLoadingSkills = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isLoadingSkillPulseResults = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isSearchingSkills = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
-    private var isLoadingMoreSkillSearchResults = false {
-        didSet {
-            updateHeader()
-            updatePaneLoadingIndicators()
-        }
-    }
     private var isRunningPrivilegedUpdate = false {
         didSet {
             updateHeader()
@@ -1215,21 +938,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             updateDossierActionInFlight()
         }
     }
-    private var isRunningHomebrewCaskOperation = false {
-        didSet {
-            updateHeader()
-            updateUpdateButtonVisibility()
-            updateDossierActionInFlight()
-        }
-    }
     private var isRunningHomebrewPackageOperation = false {
-        didSet {
-            updateHeader()
-            updateUpdateButtonVisibility()
-            updateDossierActionInFlight()
-        }
-    }
-    private var isRunningSkillsOperation = false {
         didSet {
             updateHeader()
             updateUpdateButtonVisibility()
@@ -1278,10 +987,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             self?.setCommandPaletteFocused(true)
         }
         rootView.commandPalette.field.delegate = self
-        rootView.mastheadTabButtons.forEach { button in
-            button.target = self
-            button.action = #selector(handleMastheadTabClick)
-        }
         rootView.updateButton.target = self
         rootView.updateButton.action = #selector(beginUpdateFlow)
         appUpdateCoordinator.onStateChange = { [weak self] in
@@ -1326,7 +1031,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             )
         }
         updatePaneLoadingIndicators()
-        updateMastheadTabs()
         updateHeader()
         refreshRecommendations()
         installSnapshotObserverIfNeeded()
@@ -1431,9 +1135,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let searchPreferredWidth: CGFloat = 340
         let searchMinWidth: CGFloat = 156
         let leftClusterX = titlebarLeadingInset
-        let mastheadTabWidths = rootView.mastheadTabButtons.map { mastheadTabWidth(for: $0.title) }
-        let mastheadTabsWidth = mastheadTabWidths.reduce(0, +)
-            + Self.mastheadTabGap * CGFloat(max(mastheadTabWidths.count - 1, 0))
         let rightClusterWidth = max(
             searchMinWidth,
             searchPreferredWidth
@@ -1452,10 +1153,9 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         )
         let resolvedHeaderWidth = min(
             measuredHeaderWidth,
-            max(leftClusterAvailableWidth - Self.mastheadTabsLeadingGap - mastheadTabsWidth, 0)
+            leftClusterAvailableWidth
         )
-        let tabRowX = leftClusterX + resolvedHeaderWidth + Self.mastheadTabsLeadingGap
-        let leftClusterMaxX = tabRowX + mastheadTabsWidth
+        let leftClusterMaxX = leftClusterX + resolvedHeaderWidth
         let statusText = activityStatusText()
         let statusMeasuredWidth = statusText.map(statusTextWidth) ?? 0
         let rightControlsWidth = updateButtonWidth
@@ -1484,8 +1184,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         let searchRowY = headerY + Self.rightMastheadSearchYOffset
         let statusRowY = headerY + Self.rightMastheadStatusYOffset
         let updateButtonY = headerY + Self.rightMastheadUpdateButtonYOffset
-        let mastheadTabY = separatorY
-        let mastheadTabHeight = max(bounds.height - separatorY, topLabelHeight)
         let usableWidth = max(bounds.width - gutter * 2, 0)
         let leftWidth = floor(usableWidth * 0.46)
         let middleWidth = floor(usableWidth * 0.22)
@@ -1524,18 +1222,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             width: resolvedHeaderWidth,
             height: topLabelHeight
         )
-        var nextTabX = tabRowX
-        for (index, pair) in zip(rootView.mastheadTabButtons, mastheadTabWidths).enumerated() {
-            let (button, width) = pair
-            button.showsLeadingDivider = index == 0
-            button.frame = CGRect(
-                x: nextTabX,
-                y: mastheadTabY,
-                width: width,
-                height: mastheadTabHeight
-            )
-            nextTabX += width + Self.mastheadTabGap
-        }
         rootView.commandPalette.frame = CGRect(
             x: searchX,
             y: searchRowY - 5,
@@ -1692,9 +1378,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     @objc func runDebugFakeUpdate() {
         guard !isRunningPackageOperation,
               !isRunningPrivilegedUpdate,
-              !isRunningHomebrewCaskOperation,
               !isRunningHomebrewPackageOperation,
-              !isRunningSkillsOperation,
               !isInstallingAv else {
             return
         }
@@ -1727,12 +1411,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         refreshRecommendations()
         applyStatusSnapshot(statusStore.loadSnapshot())
         reloadVisiblePackagesForSearch()
-        if isAppsTabActive {
-            reloadHomebrewCasks()
-        }
-        if isSkillsTabActive {
-            reloadSkills()
-        }
         loadHomebrewMigrationRecommendation(requestID: requestID)
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -1794,9 +1472,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func loadInitialInstalledPulsePageIfNeeded() {
-        guard isAppsTabActive == false,
-              isSkillsTabActive == false,
-              isLoadingInstalledPulseResults == false,
+        guard isLoadingInstalledPulseResults == false,
               installedPulseResults.isEmpty,
               installedPulseNextOffset == 0 else {
             return
@@ -1951,48 +1627,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func refreshCurrentVisiblePackageDetails() {
-        if isAppsTabActive {
-            appInstalledPackages = appInstalledPackages.map(packagePresentationWithCachedDetail)
-            appPulseResults = appPulseResults.map(packagePresentationWithCachedDetail)
-            appSearchResults = appSearchResults.map(packagePresentationWithCachedDetail)
-            switch paletteMode {
-            case .installed:
-                applyVisiblePackages(appPalettePackages)
-            case .search(let query):
-                matchingInstalledPackages = appInstalledPackages.filter {
-                    ($0.packageName ?? "").localizedCaseInsensitiveContains(query)
-                        || $0.displayName.localizedCaseInsensitiveContains(query)
-                        || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
-                }
-                applyVisiblePackages(matchingInstalledPackages + appSearchResults)
-            case .commandBrowser(let filter):
-                applyVisiblePackages(commandPaletteItems(filter: filter))
-            case .command:
-                applyVisiblePackages([])
-            }
-            return
-        }
-        if isSkillsTabActive {
-            skillInstalledPackages = skillInstalledPackages.map(packagePresentationWithCachedDetail)
-            skillPulseResults = skillPulseResults.map(packagePresentationWithCachedDetail)
-            skillSearchResults = skillSearchResults.map(packagePresentationWithCachedDetail)
-            switch paletteMode {
-            case .installed:
-                applyVisiblePackages(skillsPalettePackages)
-            case .search(let query):
-                matchingInstalledPackages = skillInstalledPackages.filter {
-                    $0.displayName.localizedCaseInsensitiveContains(query)
-                        || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
-                }
-                applyVisiblePackages(matchingInstalledPackages + skillSearchResults)
-            case .commandBrowser(let filter):
-                applyVisiblePackages(commandPaletteItems(filter: filter))
-            case .command:
-                applyVisiblePackages([])
-            }
-            return
-        }
-
         rebuildInstalledPackages()
         searchResults = searchResults.map(packagePresentationWithCachedDetail)
         commandResults = commandResults.map(packagePresentationWithCachedDetail)
@@ -2122,31 +1756,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
-    private var appPalettePackages: [PackagePresentation] {
-        appInstalledPackages + appPulseResults
-    }
-
-    private var skillsPalettePackages: [PackagePresentation] {
-        guard isSkillsCatalogAvailable != false else {
-            return skillsUnavailablePackages
-        }
-        return skillInstalledPackages + skillPulseResults
-    }
-
-    private var skillsUnavailablePackages: [PackagePresentation] {
-        let message = skillsUnavailableMessage ?? skillsCatalog.unavailableMessage()
-        return [
-            PackagePresentation(
-                item: .command(CommandPaletteItem(
-                    token: "skills unavailable",
-                    description: message
-                )),
-                detail: nil,
-                freshness: freshness(for: "npm:skills")
-            )
-        ]
-    }
-
     private var installedPaletteSecondaryPackages: [PackagePresentation] {
         recommendations + installedPulseResults
     }
@@ -2172,10 +1781,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             [name, name.strippingPrefix("brew:"), name.strippingPrefix("cask:")]
                 .compactMap { $0 }
         })
-    }
-
-    private func installedSkillDisplayNames() -> Set<String> {
-        Set(skillInstalledPackages.map { $0.displayName.lowercased() })
     }
 
     private func select(
@@ -2251,23 +1856,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             animated: !lazyLoadOnly,
             loading: !lazyLoadOnly || isAwaitingSelectedDetail
         )
-
-        if fallbackDetail.isHomebrewCaskManaged || fallbackDetail.isNpmSkillsManaged {
-            detailsByPackageName[itemID] = fallbackDetail
-            loadingDetailItemID = nil
-            isLoadingSelectedPackageDetail = false
-            if lazyLoadOnly == false {
-                dossierView.render(
-                    detail: fallbackDetail,
-                    animation: .incremental
-                )
-                externalSurfaceView.render(
-                    detail: fallbackDetail,
-                    animated: true
-                )
-            }
-            return
-        }
 
         if lazyLoadOnly {
             if isAwaitingSelectedDetail == false {
@@ -2353,14 +1941,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         )
     }
 
-    private var isAppsTabActive: Bool {
-        activeMastheadTab == .apps
-    }
-
-    private var isSkillsTabActive: Bool {
-        activeMastheadTab == .skills
-    }
-
     private var commandPaletteHelpText: NSAttributedString? {
         guard isCommandPaletteFocused,
               searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -2413,36 +1993,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var packagePanelHeaderTitle: String {
-        if isAppsTabActive {
-            if isHomebrewCaskCatalogAvailable == false {
-                return "HOMEBREW UNAVAILABLE"
-            }
-            switch paletteMode {
-            case .installed:
-                return "INSTALLED"
-            case .search:
-                return matchingInstalledPackages.isEmpty ? "DISCOVERY" : "INSTALLED"
-            case .commandBrowser:
-                return isShowingEmptyCommandPaletteHelp ? "COMMAND PALETTE" : "AVAILABLE COMMANDS"
-            case .command(let command):
-                return command.panelHeaderTitle
-            }
-        }
-        if isSkillsTabActive {
-            if isSkillsCatalogAvailable == false {
-                return "SKILLS UNAVAILABLE"
-            }
-            switch paletteMode {
-            case .installed:
-                return "INSTALLED"
-            case .search:
-                return matchingInstalledPackages.isEmpty ? "INSTALL" : "INSTALLED"
-            case .commandBrowser:
-                return isShowingEmptyCommandPaletteHelp ? "COMMAND PALETTE" : "AVAILABLE COMMANDS"
-            case .command(let command):
-                return command.panelHeaderTitle
-            }
-        }
         switch paletteMode {
         case .installed:
             return "INSTALLED"
@@ -2459,26 +2009,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var packagePanelHeaderCount: Int? {
-        if isAppsTabActive {
-            switch paletteMode {
-            case .installed:
-                return nil
-            case .search:
-                return matchingInstalledPackages.isEmpty ? appSearchTotalCount : nil
-            case .commandBrowser:
-                return nil
-            case .command:
-                return commandTotalCount
-            }
-        }
-        if isSkillsTabActive {
-            switch paletteMode {
-            case .installed, .commandBrowser, .command:
-                return nil
-            case .search:
-                return matchingInstalledPackages.isEmpty ? skillSearchTotalCount : nil
-            }
-        }
         switch paletteMode {
         case .installed:
             return nil
@@ -2492,24 +2022,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var packageSecondarySectionTitle: String {
-        if isAppsTabActive {
-            switch paletteMode {
-            case .installed:
-                return "RECOMMENDATIONS"
-            case .search, .command, .commandBrowser:
-                return "DISCOVERY"
-            }
-        }
-        if isSkillsTabActive {
-            switch paletteMode {
-            case .installed:
-                return "RECOMMENDATIONS"
-            case .search:
-                return "DISCOVERY"
-            case .command, .commandBrowser:
-                return "DISCOVERY"
-            }
-        }
         switch paletteMode {
         case .installed:
             return "RECOMMENDATIONS"
@@ -2519,24 +2031,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var packageSecondarySectionCount: Int? {
-        if isAppsTabActive {
-            switch paletteMode {
-            case .installed:
-                return nil
-            case .search:
-                return appSearchTotalCount
-            case .command, .commandBrowser:
-                return nil
-            }
-        }
-        if isSkillsTabActive {
-            switch paletteMode {
-            case .installed, .command, .commandBrowser:
-                return nil
-            case .search:
-                return skillSearchTotalCount
-            }
-        }
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
@@ -2549,24 +2043,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private var packagePulseSectionCount: Int? {
-        if isAppsTabActive {
-            switch paletteMode {
-            case .installed:
-                let count = max(appPulseTotalCount, appPulseResults.count)
-                return count == 0 ? nil : count
-            case .search, .command, .commandBrowser:
-                return nil
-            }
-        }
-        if isSkillsTabActive {
-            switch paletteMode {
-            case .installed:
-                let count = max(skillPulseTotalCount, skillPulseResults.count)
-                return count == 0 ? nil : count
-            case .search, .command, .commandBrowser:
-                return nil
-            }
-        }
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList else { return nil }
@@ -2581,15 +2057,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     }
 
     private func reloadVisiblePackagesForSearch() {
-        if isAppsTabActive {
-            reloadVisibleAppCasksForSearch()
-            return
-        }
-        if isSkillsTabActive {
-            reloadVisibleSkillsForSearch()
-            return
-        }
-
         let requestID = searchRequestID + 1
         searchRequestID = requestID
         switch paletteMode {
@@ -2669,467 +2136,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
             scrollPackageListToTop()
             applyVisiblePackages(retainedCommandResults)
             requestCommandPage(command: command, offset: 0, requestID: requestID)
-        }
-    }
-
-    private func loadHomebrewCasksIfNeeded() {
-        guard isAppsTabActive,
-              !hasLoadedHomebrewCasks,
-              !isLoadingAppCasks else {
-            return
-        }
-        reloadHomebrewCasks()
-    }
-
-    private func reloadHomebrewCasks() {
-        let requestID = appCaskRequestID + 1
-        appCaskRequestID = requestID
-        hasLoadedHomebrewCasks = false
-        isHomebrewCaskCatalogAvailable = homebrewCaskCatalog.isHomebrewAvailable()
-        appInstalledPackages = []
-        appPulseResults = []
-        appPulseNextOffset = 0
-        appPulseTotalCount = 0
-        appSearchResults = []
-        appSearchResultsQuery = nil
-        appSearchNextOffset = nil
-        appSearchTotalCount = 0
-        isSearchingAppCasks = false
-        isLoadingMoreAppCaskSearchResults = false
-        reloadVisibleAppCasksForSearch()
-
-        guard isHomebrewCaskCatalogAvailable == true else {
-            hasLoadedHomebrewCasks = true
-            return
-        }
-
-        isLoadingAppCasks = true
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let packages = try await self.homebrewCaskCatalog.fetchInstalledPackages()
-                await MainActor.run {
-                    guard self.appCaskRequestID == requestID else { return }
-                    self.isLoadingAppCasks = false
-                    self.hasLoadedHomebrewCasks = true
-                    self.isHomebrewCaskCatalogAvailable = true
-                    self.appInstalledPackages = packages
-                    for package in packages {
-                        if let detail = package.detail {
-                            self.detailsByPackageName[package.selectionID] = detail
-                        }
-                    }
-                    if self.isAppsTabActive {
-                        self.reloadVisibleAppCasksForSearch()
-                        self.loadNextSearchPageIfNeeded()
-                    }
-                }
-            } catch HomebrewCaskCatalogError.homebrewUnavailable {
-                await MainActor.run {
-                    guard self.appCaskRequestID == requestID else { return }
-                    self.isLoadingAppCasks = false
-                    self.hasLoadedHomebrewCasks = true
-                    self.isHomebrewCaskCatalogAvailable = false
-                    self.reloadVisibleAppCasksForSearch()
-                }
-            } catch {
-                await MainActor.run {
-                    guard self.appCaskRequestID == requestID else { return }
-                    self.isLoadingAppCasks = false
-                    self.hasLoadedHomebrewCasks = true
-                    self.isHomebrewCaskCatalogAvailable = true
-                    if self.isAppsTabActive {
-                        self.reloadVisibleAppCasksForSearch()
-                    }
-                }
-            }
-        }
-    }
-
-    private func reloadVisibleAppCasksForSearch() {
-        let requestID = searchRequestID + 1
-        searchRequestID = requestID
-        switch paletteMode {
-        case .installed:
-            appSearchResults = []
-            appSearchResultsQuery = nil
-            appSearchNextOffset = nil
-            appSearchTotalCount = 0
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            isSearchingAppCasks = false
-            isLoadingMoreAppCaskSearchResults = false
-            applyVisiblePackages(appPalettePackages)
-        case .search(let query):
-            let retainedResults = appSearchResultsQuery == query ? appSearchResults : []
-            matchingInstalledPackages = appInstalledPackages.filter {
-                ($0.packageName ?? "").localizedCaseInsensitiveContains(query)
-                    || $0.displayName.localizedCaseInsensitiveContains(query)
-                    || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
-            }
-            searchExcludedPackageNames = Set(appInstalledPackages.compactMap(\.packageName))
-            appSearchResults = retainedResults
-            appSearchResultsQuery = retainedResults.isEmpty ? nil : query
-            appSearchNextOffset = nil
-            appSearchTotalCount = 0
-            isSearchingAppCasks = true
-            isLoadingMoreAppCaskSearchResults = false
-            scrollPackageListToTop()
-            applyVisiblePackages(matchingInstalledPackages + retainedResults)
-            guard isHomebrewCaskCatalogAvailable != false else {
-                isSearchingAppCasks = false
-                applyVisiblePackages(matchingInstalledPackages)
-                return
-            }
-            requestAppCaskSearchPage(query: query, offset: 0, requestID: requestID)
-        case .commandBrowser(let filter):
-            appSearchResults = []
-            appSearchResultsQuery = nil
-            appSearchNextOffset = nil
-            appSearchTotalCount = 0
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            isSearchingAppCasks = false
-            isLoadingMoreAppCaskSearchResults = false
-            scrollPackageListToTop()
-            applyVisiblePackages(commandPaletteItems(filter: filter))
-        case .command:
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            isSearchingAppCasks = false
-            isLoadingMoreAppCaskSearchResults = false
-            applyVisiblePackages([])
-        }
-    }
-
-    private func requestAppCaskSearchPage(query: String, offset: Int, requestID: Int) {
-        let excludedPackageNames = searchExcludedPackageNames
-        let cachedDetailsByPackageName = detailsByPackageName
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let page = try await self.homebrewCaskCatalog.searchPackages(
-                    query: query,
-                    offset: offset,
-                    limit: Self.searchPageSize
-                )
-                let results = page.packages
-                    .filter { result in
-                        excludedPackageNames.contains(result.name) == false
-                    }
-                    .map { result in
-                        PackagePresentation(
-                            item: .available(result),
-                            detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
-                            freshness: self.freshness(for: result.name)
-                        )
-                    }
-
-                await MainActor.run {
-                    guard self.searchRequestID == requestID else { return }
-                    guard self.isAppsTabActive,
-                          self.paletteMode == .search(query: query) else { return }
-                    self.isSearchingAppCasks = false
-                    self.isLoadingMoreAppCaskSearchResults = false
-                    self.appSearchTotalCount = max(
-                        page.totalCount - self.matchingInstalledPackages.count,
-                        0
-                    )
-                    if offset == 0 {
-                        self.appSearchResults = results
-                        self.appSearchResultsQuery = query
-                    } else {
-                        self.appSearchResults.append(contentsOf: results)
-                    }
-                    self.appSearchNextOffset = page.nextOffset
-                    self.applyVisiblePackages(self.matchingInstalledPackages + self.appSearchResults)
-                    self.loadNextSearchPageIfNeeded()
-                }
-            } catch {
-                await MainActor.run {
-                    guard self.searchRequestID == requestID else { return }
-                    guard self.isAppsTabActive,
-                          self.paletteMode == .search(query: query) else { return }
-                    self.isSearchingAppCasks = false
-                    self.isLoadingMoreAppCaskSearchResults = false
-                    if offset == 0 {
-                        self.appSearchResults = []
-                        self.appSearchResultsQuery = nil
-                        self.appSearchTotalCount = 0
-                        self.appSearchNextOffset = nil
-                        self.applyVisiblePackages(self.matchingInstalledPackages)
-                    }
-                }
-            }
-        }
-    }
-
-    private func requestAppPulsePage(offset: Int, requestID: Int) {
-        let cachedDetailsByPackageName = detailsByPackageName
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let page = try await self.homebrewCaskCatalog.fetchPulsePackages(
-                    offset: offset,
-                    limit: Self.searchPageSize
-                )
-                let results = page.packages.map { result in
-                    PackagePresentation(
-                        item: .available(result),
-                        detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
-                        freshness: self.freshness(for: result.name),
-                        presentationID: "app-pulse:\(result.name)"
-                    )
-                }
-                await MainActor.run {
-                    guard self.appCaskRequestID == requestID else { return }
-                    self.isLoadingAppPulseResults = false
-                    self.appPulseTotalCount = page.totalCount
-                    if offset == 0 {
-                        self.appPulseResults = results
-                    } else {
-                        self.appPulseResults.append(contentsOf: results)
-                    }
-                    self.appPulseNextOffset = page.nextOffset
-                    if self.isAppsTabActive, self.paletteMode == .installed {
-                        self.applyVisiblePackages(self.appPalettePackages)
-                        self.loadNextSearchPageIfNeeded()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    guard self.appCaskRequestID == requestID else { return }
-                    self.isLoadingAppPulseResults = false
-                    if offset == 0 {
-                        self.appPulseResults = []
-                        self.appPulseTotalCount = 0
-                        self.appPulseNextOffset = nil
-                        if self.isAppsTabActive, self.paletteMode == .installed {
-                            self.applyVisiblePackages(self.appPalettePackages)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func loadSkillsIfNeeded() {
-        guard isSkillsTabActive,
-              !hasLoadedSkills,
-              !isLoadingSkills else {
-            return
-        }
-        reloadSkills()
-    }
-
-    private func reloadSkills() {
-        let requestID = skillRequestID + 1
-        skillRequestID = requestID
-        hasLoadedSkills = false
-        isSkillsCatalogAvailable = skillsCatalog.isAvailable()
-        skillsUnavailableMessage = isSkillsCatalogAvailable == true
-            ? nil
-            : skillsCatalog.unavailableMessage()
-        skillInstalledPackages = []
-        skillPulseResults = []
-        skillPulseNextOffset = 0
-        skillPulseTotalCount = 0
-        skillSearchResults = []
-        skillSearchResultsQuery = nil
-        skillSearchNextOffset = nil
-        skillSearchTotalCount = 0
-        isLoadingSkillPulseResults = false
-        isSearchingSkills = false
-        isLoadingMoreSkillSearchResults = false
-        reloadVisibleSkillsForSearch()
-
-        guard isSkillsCatalogAvailable == true else {
-            hasLoadedSkills = true
-            return
-        }
-
-        isLoadingSkills = true
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let packages = try await self.skillsCatalog.fetchInstalledPackages()
-                await MainActor.run {
-                    guard self.skillRequestID == requestID else { return }
-                    self.isLoadingSkills = false
-                    self.hasLoadedSkills = true
-                    self.isSkillsCatalogAvailable = true
-                    self.skillsUnavailableMessage = nil
-                    self.skillInstalledPackages = packages
-                    for package in packages {
-                        if let detail = package.detail {
-                            self.detailsByPackageName[package.selectionID] = detail
-                        }
-                    }
-                    if self.isSkillsTabActive {
-                        self.reloadVisibleSkillsForSearch()
-                        self.loadNextSearchPageIfNeeded()
-                    }
-                }
-            } catch SkillsCatalogError.unavailable {
-                await MainActor.run {
-                    guard self.skillRequestID == requestID else { return }
-                    self.isLoadingSkills = false
-                    self.hasLoadedSkills = true
-                    self.isSkillsCatalogAvailable = false
-                    self.skillsUnavailableMessage = self.skillsCatalog.unavailableMessage()
-                    self.reloadVisibleSkillsForSearch()
-                }
-            } catch {
-                await MainActor.run {
-                    guard self.skillRequestID == requestID else { return }
-                    self.isLoadingSkills = false
-                    self.hasLoadedSkills = true
-                    self.isSkillsCatalogAvailable = true
-                    self.skillsUnavailableMessage = error.localizedDescription
-                    if self.isSkillsTabActive {
-                        self.reloadVisibleSkillsForSearch()
-                    }
-                }
-            }
-        }
-    }
-
-    private func reloadVisibleSkillsForSearch() {
-        let requestID = searchRequestID + 1
-        searchRequestID = requestID
-        guard isSkillsCatalogAvailable != false else {
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            skillSearchResults = []
-            skillSearchResultsQuery = nil
-            skillSearchNextOffset = nil
-            skillSearchTotalCount = 0
-            isSearchingSkills = false
-            isLoadingMoreSkillSearchResults = false
-            applyVisiblePackages(skillsUnavailablePackages)
-            return
-        }
-        switch paletteMode {
-        case .installed:
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            skillSearchResults = []
-            skillSearchResultsQuery = nil
-            skillSearchNextOffset = nil
-            skillSearchTotalCount = 0
-            isSearchingSkills = false
-            isLoadingMoreSkillSearchResults = false
-            applyVisiblePackages(skillsPalettePackages)
-        case .search(let query):
-            let retainedResults = skillSearchResultsQuery == query ? skillSearchResults : []
-            matchingInstalledPackages = skillInstalledPackages.filter {
-                $0.displayName.localizedCaseInsensitiveContains(query)
-                    || $0.listSecondaryText.localizedCaseInsensitiveContains(query)
-            }
-            skillSearchResults = retainedResults
-            skillSearchResultsQuery = retainedResults.isEmpty ? nil : query
-            skillSearchNextOffset = nil
-            skillSearchTotalCount = 0
-            isSearchingSkills = true
-            isLoadingMoreSkillSearchResults = false
-            scrollPackageListToTop()
-            applyVisiblePackages(matchingInstalledPackages + retainedResults)
-            requestSkillSearchPage(query: query, offset: 0, requestID: requestID)
-        case .commandBrowser(let filter):
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            skillSearchResults = []
-            skillSearchResultsQuery = nil
-            skillSearchNextOffset = nil
-            skillSearchTotalCount = 0
-            isSearchingSkills = false
-            isLoadingMoreSkillSearchResults = false
-            scrollPackageListToTop()
-            applyVisiblePackages(commandPaletteItems(filter: filter))
-        case .command:
-            matchingInstalledPackages = []
-            searchExcludedPackageNames = []
-            skillSearchResults = []
-            skillSearchResultsQuery = nil
-            skillSearchNextOffset = nil
-            skillSearchTotalCount = 0
-            isSearchingSkills = false
-            isLoadingMoreSkillSearchResults = false
-            applyVisiblePackages([])
-        }
-    }
-
-    private func requestSkillSearchPage(query: String, offset: Int, requestID: Int) {
-        let installedSkillNames = installedSkillDisplayNames()
-        let cachedDetailsByPackageName = detailsByPackageName
-        Task { [weak self] in
-            guard let self else { return }
-            let page = await self.skillsCatalog.searchPackages(
-                query: query,
-                offset: offset,
-                limit: Self.searchPageSize,
-                excludingInstalledSkillNames: installedSkillNames
-            )
-            let results = page.packages.map { result in
-                PackagePresentation(
-                    item: .available(result),
-                    detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
-                    freshness: self.freshness(for: result.name)
-                )
-            }
-            await MainActor.run {
-                guard self.searchRequestID == requestID else { return }
-                guard self.isSkillsTabActive,
-                      self.paletteMode == .search(query: query) else { return }
-                self.isSearchingSkills = false
-                self.isLoadingMoreSkillSearchResults = false
-                self.skillSearchTotalCount = page.totalCount
-                if offset == 0 {
-                    self.skillSearchResults = results
-                    self.skillSearchResultsQuery = query
-                } else {
-                    self.skillSearchResults.append(contentsOf: results)
-                }
-                self.skillSearchNextOffset = page.nextOffset
-                self.applyVisiblePackages(self.matchingInstalledPackages + self.skillSearchResults)
-                self.loadNextSearchPageIfNeeded()
-            }
-        }
-    }
-
-    private func requestSkillPulsePage(offset: Int, requestID: Int) {
-        let installedSkillNames = installedSkillDisplayNames()
-        let cachedDetailsByPackageName = detailsByPackageName
-        Task { [weak self] in
-            guard let self else { return }
-            let page = await self.skillsCatalog.fetchPulsePackages(
-                offset: offset,
-                limit: Self.searchPageSize,
-                excludingInstalledSkillNames: installedSkillNames
-            )
-            let results = page.packages.map { result in
-                PackagePresentation(
-                    item: .available(result),
-                    detail: cachedDetailsByPackageName[result.name] ?? result.fallbackDetail,
-                    freshness: self.freshness(for: result.name),
-                    presentationID: "skill-pulse:\(result.name)"
-                )
-            }
-            await MainActor.run {
-                guard self.skillRequestID == requestID else { return }
-                self.isLoadingSkillPulseResults = false
-                self.skillPulseTotalCount = page.totalCount
-                if offset == 0 {
-                    self.skillPulseResults = results
-                } else {
-                    self.skillPulseResults.append(contentsOf: results)
-                }
-                self.skillPulseNextOffset = page.nextOffset
-                if self.isSkillsTabActive, self.paletteMode == .installed {
-                    self.applyVisiblePackages(self.skillsPalettePackages)
-                    self.loadNextSearchPageIfNeeded()
-                }
-            }
         }
     }
 
@@ -3325,83 +2331,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
 
     private func loadNextSearchPageIfNeeded() {
         let nextOffset: Int
-        if isAppsTabActive {
-            switch paletteMode {
-            case .installed:
-                guard isHomebrewCaskCatalogAvailable == true,
-                      isLoadingAppCasks == false,
-                      isLoadingAppPulseResults == false else {
-                    return
-                }
-                guard let offset = appPulseNextOffset else { return }
-                let visibleRect = packageScrollView.contentView.bounds
-                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
-                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
-                isLoadingAppPulseResults = true
-                requestAppPulsePage(offset: offset, requestID: appCaskRequestID)
-                return
-            case .search(let query):
-                guard isSearchingAppCasks == false,
-                      isLoadingMoreAppCaskSearchResults == false else {
-                    return
-                }
-                guard let offset = appSearchNextOffset,
-                      !query.isEmpty else {
-                    return
-                }
-                nextOffset = offset
-                let visibleRect = packageScrollView.contentView.bounds
-                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
-                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
-                isLoadingMoreAppCaskSearchResults = true
-                requestAppCaskSearchPage(
-                    query: query,
-                    offset: nextOffset,
-                    requestID: searchRequestID
-                )
-                return
-            case .command, .commandBrowser:
-                return
-            }
-        }
-        if isSkillsTabActive {
-            switch paletteMode {
-            case .installed:
-                guard isSkillsCatalogAvailable == true,
-                      isLoadingSkills == false,
-                      isLoadingSkillPulseResults == false else {
-                    return
-                }
-                guard let offset = skillPulseNextOffset else { return }
-                let visibleRect = packageScrollView.contentView.bounds
-                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
-                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
-                isLoadingSkillPulseResults = true
-                requestSkillPulsePage(offset: offset, requestID: skillRequestID)
-                return
-            case .search(let query):
-                guard isSearchingSkills == false,
-                      isLoadingMoreSkillSearchResults == false else {
-                    return
-                }
-                guard let offset = skillSearchNextOffset,
-                      !query.isEmpty else {
-                    return
-                }
-                let visibleRect = packageScrollView.contentView.bounds
-                let remainingDistance = packageFieldView.frame.height - visibleRect.maxY
-                guard remainingDistance <= Self.searchLoadMoreThreshold else { return }
-                isLoadingMoreSkillSearchResults = true
-                requestSkillSearchPage(
-                    query: query,
-                    offset: offset,
-                    requestID: searchRequestID
-                )
-                return
-            case .command, .commandBrowser:
-                return
-            }
-        }
         switch paletteMode {
         case .installed:
             guard areRecommendationsVisibleInInstalledList,
@@ -3584,16 +2513,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         packageScrollView.reflectScrolledClipView(packageScrollView.contentView)
     }
 
-    private func updateMastheadTabs() {
-        guard let rootView = view as? RootView else { return }
-        rootView.setActiveMastheadTab(activeMastheadTab)
-    }
-
-    @objc private func handleMastheadTabClick(_ sender: NSButton) {
-        guard let tab = MastheadTab(rawValue: sender.tag) else { return }
-        activeMastheadTab = tab
-    }
-
     private func updateHeader() {
         guard let rootView = view as? RootView else { return }
         rootView.headerLayer.string = mastheadAttributedText()
@@ -3620,14 +2539,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 || isLoadingCommandResults
                 || isLoadingMoreCommandResults
                 || (paletteMode == .installed && isLoadingInstalledPulseResults)
-                || (isAppsTabActive && isLoadingAppCasks)
-                || (isAppsTabActive && isLoadingAppPulseResults)
-                || (isAppsTabActive && isSearchingAppCasks)
-                || (isAppsTabActive && isLoadingMoreAppCaskSearchResults)
-                || (isSkillsTabActive && isLoadingSkills)
-                || (isSkillsTabActive && isLoadingSkillPulseResults)
-                || (isSkillsTabActive && isSearchingSkills)
-                || (isSkillsTabActive && isLoadingMoreSkillSearchResults)
         )
         dossierView.setEyebrowLoading(isLoadingSelectedPackageDetail)
         externalSurfaceView.setEyebrowLoading(isLoadingSelectedPackageDetail)
@@ -3636,9 +2547,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     private func updateDossierActionInFlight() {
         dossierView.setActionInFlight(
             isRunningPackageOperation
-                || isRunningHomebrewCaskOperation
                 || isRunningHomebrewPackageOperation
-                || isRunningSkillsOperation
         )
     }
 
@@ -3701,21 +2610,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         return ceil(bounds.width)
     }
 
-    private func mastheadTabWidth(for title: String) -> CGFloat {
-        let attributed = UIStyle.attributedMonoText(
-            title,
-            size: 10,
-            color: UIStyle.text,
-            weight: .medium,
-            tracking: 0.9
-        )
-        let bounds = attributed.boundingRect(
-            with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: Self.mastheadTabMeasurementHeight),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return ceil(bounds.width) + 18
-    }
-
     private static func abbreviatedCodeSignatureHash() -> String? {
         var currentCode: SecCode?
         let copyStatus = SecCodeCopySelf(SecCSFlags(), &currentCode)
@@ -3767,14 +2661,8 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         if isRunningPackageOperation {
             return "nucleus package channel active"
         }
-        if isRunningHomebrewCaskOperation {
-            return "homebrew cask channel active"
-        }
         if isRunningHomebrewPackageOperation {
             return "homebrew package channel active"
-        }
-        if isRunningSkillsOperation {
-            return "npm:skills channel active"
         }
         if isInstallingAv {
             return "nucleus av install channel active"
@@ -3856,9 +2744,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         rootView.updateButton.isEnabled = hasAppUpdate
             || (!isRunningPrivilegedUpdate
                 && !isRunningPackageOperation
-                && !isRunningHomebrewCaskOperation
                 && !isRunningHomebrewPackageOperation
-                && !isRunningSkillsOperation
                 && !isInstallingAv)
         view.needsLayout = true
     }
@@ -3904,7 +2790,6 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
                 }
                 if self.isRunningPackageOperation
                     || self.isRunningPrivilegedUpdate
-                    || self.isRunningHomebrewCaskOperation
                     || self.isRunningHomebrewPackageOperation
                     || self.isInstallingAv {
                     return .busy("Wait for active operations to finish before updating Automic Vault.")
@@ -4289,9 +3174,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
     ) {
         guard isRunningPackageOperation == false,
               isRunningPrivilegedUpdate == false,
-              isRunningHomebrewCaskOperation == false,
               isRunningHomebrewPackageOperation == false,
-              isRunningSkillsOperation == false,
               isInstallingAv == false else {
             return
         }
@@ -4347,151 +3230,7 @@ final class RootViewController: NSViewController, DossierViewDelegate, PackageFi
         }
     }
 
-    private func startHomebrewCaskMutation(for detail: PackageDetail) {
-        guard let token = detail.caskName, !token.isEmpty else { return }
-        guard isRunningHomebrewCaskOperation == false,
-              isRunningHomebrewPackageOperation == false else {
-            return
-        }
-
-        let operationID = beginOverlayOperation()
-        isRunningHomebrewCaskOperation = true
-        let overlay = presentUpdateOverlay()
-        overlay.onRetry = { [weak self] in
-            self?.startHomebrewCaskMutation(for: detail)
-        }
-        overlay.onDismiss = { [weak self] in
-            self?.dismissUpdateOverlay()
-        }
-
-        let isInstall = !detail.installed
-        overlay.configure(
-            title: isInstall ? "HOMEBREW CASK INSTALL" : "HOMEBREW CASK UNINSTALL",
-            awaitingClearance: isInstall ? "Preparing cask install" : "Preparing cask uninstall",
-            idleStatus: "Homebrew cask channel ready",
-            successOperation: isInstall ? "Install Complete" : "Uninstall Complete",
-            failureOperation: isInstall ? "Install Halted" : "Uninstall Halted"
-        )
-        overlay.begin(
-            packages: [detail.packageName],
-            activationLog: isInstall
-                ? "Opening Homebrew cask install for \(detail.packageName)."
-                : "Opening Homebrew cask uninstall for \(detail.packageName)."
-        )
-
-        let progress: (NukeHelperProgressEvent) -> Void = { [weak self, weak overlay] event in
-            DispatchQueue.main.async {
-                guard let self,
-                      let overlay,
-                      self.activeOverlayOperationID == operationID else {
-                    return
-                }
-                overlay.handle(event: event)
-            }
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            let result = isInstall
-                ? await self.homebrewCaskCatalog.installCask(token: token, progress: progress)
-                : await self.homebrewCaskCatalog.uninstallCask(token: token, progress: progress)
-            await MainActor.run {
-                guard self.activeOverlayOperationID == operationID else { return }
-                self.isRunningHomebrewCaskOperation = false
-                self.detailsByPackageName.removeValue(forKey: detail.packageName)
-                switch result {
-                case .success(let summary):
-                    overlay.succeed(
-                        message: summary.message,
-                        packages: [summary.packageName]
-                    )
-                    self.hasLoadedHomebrewCasks = false
-                    self.reloadHomebrewCasks()
-                case .failure(let error):
-                    overlay.fail(message: error.localizedDescription)
-                    self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
-                }
-            }
-        }
-    }
-
-    private func startSkillsMutation(for detail: PackageDetail) {
-        guard let skillName = detail.skillName, !skillName.isEmpty else { return }
-        guard isRunningSkillsOperation == false,
-              isRunningHomebrewPackageOperation == false else {
-            return
-        }
-
-        let operationID = beginOverlayOperation()
-        isRunningSkillsOperation = true
-        let overlay = presentUpdateOverlay()
-        overlay.onRetry = { [weak self] in
-            self?.startSkillsMutation(for: detail)
-        }
-        overlay.onDismiss = { [weak self] in
-            self?.dismissUpdateOverlay()
-        }
-
-        let isInstall = !detail.installed
-        overlay.configure(
-            title: isInstall ? "SKILL INSTALL" : "SKILL UNINSTALL",
-            awaitingClearance: isInstall ? "Preparing skill install" : "Preparing skill uninstall",
-            idleStatus: "npm:skills channel ready",
-            successOperation: isInstall ? "Install Complete" : "Uninstall Complete",
-            failureOperation: isInstall ? "Install Halted" : "Uninstall Halted"
-        )
-        overlay.begin(
-            packages: [detail.packageName],
-            activationLog: isInstall
-                ? "Opening npm:skills install for \(skillName)."
-                : "Opening npm:skills uninstall for \(skillName)."
-        )
-
-        let progress: (NukeHelperProgressEvent) -> Void = { [weak self, weak overlay] event in
-            DispatchQueue.main.async {
-                guard let self,
-                      let overlay,
-                      self.activeOverlayOperationID == operationID else {
-                    return
-                }
-                overlay.handle(event: event)
-            }
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            let result = isInstall
-                ? await self.skillsCatalog.installSkill(name: skillName, progress: progress)
-                : await self.skillsCatalog.removeSkill(name: skillName, progress: progress)
-            await MainActor.run {
-                guard self.activeOverlayOperationID == operationID else { return }
-                self.isRunningSkillsOperation = false
-                self.detailsByPackageName.removeValue(forKey: detail.packageName)
-                switch result {
-                case .success(let summary):
-                    overlay.succeed(
-                        message: summary.message,
-                        packages: [summary.packageName]
-                    )
-                    self.hasLoadedSkills = false
-                    self.reloadSkills()
-                case .failure(let error):
-                    overlay.fail(message: error.localizedDescription)
-                    self.presentHelperError(error, suppressAlertWhenOverlayVisible: true)
-                }
-            }
-        }
-    }
-
     private func beginPackageMutation(for detail: PackageDetail) {
-        if detail.isHomebrewCaskManaged {
-            startHomebrewCaskMutation(for: detail)
-            return
-        }
-        if detail.isNpmSkillsManaged {
-            startSkillsMutation(for: detail)
-            return
-        }
         if detail.isHomebrewInstall, detail.installed {
             startHomebrewPackageMutation(.uninstall, for: detail)
             return

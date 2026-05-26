@@ -36,8 +36,6 @@ let package = Package(
                 "NucleusBridge.swift",
                 "NukeHelperBridge.swift",
                 "HomebrewUpdateChecker.swift",
-                "HomebrewCaskCatalog.swift",
-                "SkillsCatalog.swift",
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
@@ -63,9 +61,7 @@ let package = Package(
             path: "Tests",
             sources: [
                 "HomebrewUpdateCheckerTests.swift",
-                "HomebrewCaskCatalogTests.swift",
                 "PackageSecurityStateTests.swift",
-                "SkillsCatalogTests.swift",
             ]
         ),
     ],

@@ -46,12 +46,6 @@ extension String {
     }
 }
 
-enum PackageManagementBackend: String, Decodable, Equatable {
-    case nucleus
-    case homebrewCask
-    case npmSkills
-}
-
 struct PackageRecord: Decodable, Equatable {
     let name: String
     let source: PackageSource?
@@ -64,7 +58,6 @@ struct PackageRecord: Decodable, Equatable {
     let installedVersions: [String]
     let isHomebrewMigrationCandidate: Bool
     let isUnsupportedHomebrewInstall: Bool
-    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -78,7 +71,6 @@ struct PackageRecord: Decodable, Equatable {
         case installedVersions
         case isHomebrewMigrationCandidate
         case isUnsupportedHomebrewInstall
-        case managementBackend
     }
 
     init(
@@ -92,8 +84,7 @@ struct PackageRecord: Decodable, Equatable {
         installPackageNames: [String]? = nil,
         installedVersions: [String] = [],
         isHomebrewMigrationCandidate: Bool = false,
-        isUnsupportedHomebrewInstall: Bool = false,
-        managementBackend: PackageManagementBackend = .nucleus
+        isUnsupportedHomebrewInstall: Bool = false
     ) {
         self.name = name
         self.source = source
@@ -106,7 +97,6 @@ struct PackageRecord: Decodable, Equatable {
         self.installedVersions = installedVersions
         self.isHomebrewMigrationCandidate = isHomebrewMigrationCandidate
         self.isUnsupportedHomebrewInstall = isUnsupportedHomebrewInstall
-        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -134,10 +124,6 @@ struct PackageRecord: Decodable, Equatable {
             Bool.self,
             forKey: .isUnsupportedHomebrewInstall
         ) ?? false
-        managementBackend = try container.decodeIfPresent(
-            PackageManagementBackend.self,
-            forKey: .managementBackend
-        ) ?? .nucleus
     }
 
     var isOutdated: Bool {
@@ -159,8 +145,7 @@ struct PackageRecord: Decodable, Equatable {
             installPackageNames: installPackageNames,
             installedVersions: installedVersions,
             isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
-            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall,
-            managementBackend: managementBackend
+            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
         )
     }
 
@@ -193,8 +178,7 @@ struct PackageRecord: Decodable, Equatable {
             npmPackageInfoError: nil,
             securityState: securityState,
             installPackageNames: installPackageNames,
-            homebrewMigration: nil,
-            managementBackend: managementBackend
+            homebrewMigration: nil
         )
     }
 }
@@ -271,7 +255,6 @@ struct PackageDetail: Decodable, Equatable {
     let installPackageNames: [String]?
     let homebrewMigration: HomebrewMigrationRecommendation?
     let versionOptions: [PackageVersionOption]
-    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case packageName
@@ -297,7 +280,6 @@ struct PackageDetail: Decodable, Equatable {
         case installPackageNames
         case homebrewMigration
         case versionOptions
-        case managementBackend
     }
 
     init(
@@ -323,8 +305,7 @@ struct PackageDetail: Decodable, Equatable {
         securityState: PackageSecurityState?,
         installPackageNames: [String]?,
         homebrewMigration: HomebrewMigrationRecommendation?,
-        versionOptions: [PackageVersionOption] = [],
-        managementBackend: PackageManagementBackend = .nucleus
+        versionOptions: [PackageVersionOption] = []
     ) {
         self.packageName = packageName
         self.qualifiedName = qualifiedName
@@ -349,7 +330,6 @@ struct PackageDetail: Decodable, Equatable {
         self.installPackageNames = installPackageNames
         self.homebrewMigration = homebrewMigration
         self.versionOptions = versionOptions
-        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -398,10 +378,6 @@ struct PackageDetail: Decodable, Equatable {
             [PackageVersionOption].self,
             forKey: .versionOptions
         ) ?? []
-        managementBackend = try container.decodeIfPresent(
-            PackageManagementBackend.self,
-            forKey: .managementBackend
-        ) ?? .nucleus
     }
 
     var primaryDescription: String {
@@ -477,18 +453,6 @@ struct PackageDetail: Decodable, Equatable {
         if isXcodeCLT {
             return "xcode-select --install"
         }
-        if isHomebrewCaskManaged {
-            guard let caskName else {
-                return "brew install --cask"
-            }
-            return "brew install --cask \(caskName)"
-        }
-        if isNpmSkillsManaged {
-            guard let skillName else {
-                return "skills add -g"
-            }
-            return installed ? "skills remove -g \(skillName)" : "skills add -g \(skillName)"
-        }
         return "av install \(helperPackageNames.joined(separator: " "))"
     }
 
@@ -562,8 +526,7 @@ struct PackageDetail: Decodable, Equatable {
             securityState: securityState,
             installPackageNames: [option.installPackageName],
             homebrewMigration: homebrewMigration,
-            versionOptions: versionOptions,
-            managementBackend: managementBackend
+            versionOptions: versionOptions
         )
     }
 
@@ -606,8 +569,7 @@ struct PackageDetail: Decodable, Equatable {
             securityState: securityState,
             installPackageNames: installPackageNames,
             homebrewMigration: homebrewMigration,
-            versionOptions: versionOptions,
-            managementBackend: managementBackend
+            versionOptions: versionOptions
         )
     }
 
@@ -638,8 +600,7 @@ struct PackageDetail: Decodable, Equatable {
             securityState: securityState,
             installPackageNames: displayInstallPackageNames,
             homebrewMigration: homebrewMigration,
-            versionOptions: versionOptions,
-            managementBackend: managementBackend
+            versionOptions: versionOptions
         )
     }
 
@@ -655,37 +616,7 @@ struct PackageDetail: Decodable, Equatable {
         packageName == PackageRecommendation.xcodeCLTName
     }
 
-    var isHomebrewCaskManaged: Bool {
-        managementBackend == .homebrewCask
-    }
-
-    var isNpmSkillsManaged: Bool {
-        managementBackend == .npmSkills
-    }
-
-    var caskName: String? {
-        if case .cask(let caskName) = source {
-            return caskName
-        }
-        return packageName.strippingPrefix("cask:")
-    }
-
-    var skillName: String? {
-        if let skillName = packageName.strippingPrefix("npm:skills:"),
-           skillName.isEmpty == false {
-            return skillName
-        }
-        if let packageName = installPackageNames?.first,
-           packageName.isEmpty == false {
-            return packageName
-        }
-        return nil
-    }
-
     var isHomebrewMigrationCandidate: Bool {
-        guard managementBackend == .nucleus else {
-            return false
-        }
         return installRoot.hasPrefix("/opt/homebrew/")
             && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
             && installPackageNames?.isEmpty == false
@@ -693,9 +624,6 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var isUnsupportedHomebrewInstall: Bool {
-        guard managementBackend == .nucleus else {
-            return false
-        }
         return installRoot.hasPrefix("/opt/homebrew/")
             && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
             && !isHomebrewMigrationCandidate
@@ -972,7 +900,6 @@ struct PackageSearchResult: Decodable, Equatable {
     let dependencies: [String]
     let securityState: PackageSecurityState?
     let pulseKind: String?
-    let managementBackend: PackageManagementBackend
 
     enum CodingKeys: String, CodingKey {
         case name = "packageName"
@@ -986,7 +913,6 @@ struct PackageSearchResult: Decodable, Equatable {
         case dependencies
         case securityState
         case pulseKind
-        case managementBackend
     }
 
     init(
@@ -997,8 +923,7 @@ struct PackageSearchResult: Decodable, Equatable {
         homepage: String?,
         dependencies: [String],
         securityState: PackageSecurityState?,
-        pulseKind: String?,
-        managementBackend: PackageManagementBackend = .nucleus
+        pulseKind: String?
     ) {
         self.name = name
         self.source = source
@@ -1008,7 +933,6 @@ struct PackageSearchResult: Decodable, Equatable {
         self.dependencies = dependencies
         self.securityState = securityState
         self.pulseKind = pulseKind
-        self.managementBackend = managementBackend
     }
 
     init(from decoder: Decoder) throws {
@@ -1032,21 +956,14 @@ struct PackageSearchResult: Decodable, Equatable {
             forKey: .securityState
         )
         pulseKind = try container.decodeIfPresent(String.self, forKey: .pulseKind)
-        managementBackend = try container.decodeIfPresent(
-            PackageManagementBackend.self,
-            forKey: .managementBackend
-        ) ?? .nucleus
     }
 
     var fallbackDetail: PackageDetail {
         let fallbackSource = source ?? .formula(rootFormula: name)
-        let fallbackInstallRoot = managementBackend == .npmSkills
-            ? "\(NSHomeDirectory())/.codex/skills"
-            : "/opt"
         return PackageDetail(
             packageName: name,
             qualifiedName: name,
-            installRoot: fallbackInstallRoot,
+            installRoot: "/opt",
             installed: false,
             source: fallbackSource,
             sourceError: nil,
@@ -1070,9 +987,8 @@ struct PackageSearchResult: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: managementBackend == .npmSkills ? [name] : nil,
-            homebrewMigration: nil,
-            managementBackend: managementBackend
+            installPackageNames: nil,
+            homebrewMigration: nil
         )
     }
 
@@ -1117,8 +1033,7 @@ struct PackageSearchResult: Decodable, Equatable {
             latestVersion: displayDetail.latestVersion,
             securityState: displayDetail.securityState,
             installRoot: displayDetail.installRoot,
-            installPackageNames: [lookupName],
-            managementBackend: displayDetail.managementBackend
+            installPackageNames: [lookupName]
         )
         return PackageDetectedLocalHazard(
             lookupName: lookupName,
@@ -1683,28 +1598,6 @@ struct PackagePresentation: Equatable {
         }
     }
 
-    var isHomebrewCaskManaged: Bool {
-        switch item {
-        case .installed(let record):
-            return record.managementBackend == .homebrewCask
-        case .available(let result):
-            return result.managementBackend == .homebrewCask
-        case .recommendation, .command:
-            return false
-        }
-    }
-
-    var isNpmSkillsManaged: Bool {
-        switch item {
-        case .installed(let record):
-            return record.managementBackend == .npmSkills
-        case .available(let result):
-            return result.managementBackend == .npmSkills
-        case .recommendation, .command:
-            return false
-        }
-    }
-
     var hasPlainTextSecretAlert: Bool {
         plainTextSecretAlertSource != nil
     }
@@ -1782,11 +1675,11 @@ struct PackagePresentation: Equatable {
     var displayName: String {
         switch item {
         case .installed(let record):
-            return Self.displayName(for: record.name, backend: record.managementBackend)
+            return record.name
         case .recommendation(let recommendation):
             return recommendation.detail.packageName
         case .available(let result):
-            return Self.displayName(for: result.name, backend: result.managementBackend)
+            return result.name
         case .command(let command):
             return command.displayName
         }
@@ -1823,22 +1716,6 @@ struct PackagePresentation: Equatable {
 
     private static func versionLabel(_ version: String) -> String {
         version.hasPrefix("v") ? version : "v\(version)"
-    }
-
-    private static func displayName(
-        for packageName: String,
-        backend: PackageManagementBackend
-    ) -> String {
-        guard backend == .npmSkills,
-              let skillName = packageName.strippingPrefix("npm:skills:"),
-              skillName.isEmpty == false else {
-            return packageName
-        }
-        if let remoteSkillName = skillName.split(separator: "@").last.map(String.init),
-           remoteSkillName.isEmpty == false {
-            return remoteSkillName
-        }
-        return skillName
     }
 
     var listSecondaryText: String {

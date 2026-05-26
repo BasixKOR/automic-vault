@@ -529,7 +529,6 @@ final class PackageSecurityStateTests: XCTestCase {
           "installPackageNames": null,
           "homebrewMigration": null,
           "versionOptions": [],
-          "managementBackend": "nucleus"
         }
         """
         return try JSONDecoder().decode(PackageDetail.self, from: Data(json.utf8))
