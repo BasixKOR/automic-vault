@@ -224,6 +224,18 @@ def normalize_github_repo(url: Any) -> str:
     return f"https://github.com/{owner}/{repo}"
 
 
+def github_source_archive_tag(url: Any) -> str:
+    if not isinstance(url, str) or "github.com" not in url:
+        return ""
+    text = url.strip()
+    match = re.search(r"github\.com[:/]+[^/\s]+/[^/\s?#]+/archive/(?:refs/tags/)?([^?#]+)", text)
+    if not match:
+        return ""
+    tag = urllib.parse.unquote(match.group(1)).strip("/")
+    tag = re.sub(r"\.(?:tar\.gz|tgz|zip)$", "", tag)
+    return tag
+
+
 SEMVER_RE = re.compile(
     r"(?P<version>\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)"
 )
@@ -332,6 +344,33 @@ def latest_github_tag(repository: str, package_name: str, *, force_refresh: bool
     }
 
 
+def latest_source_archive_tag(entry: dict[str, Any], package_name: str) -> dict[str, Any] | None:
+    source_archive = entry.get("sourceArchive")
+    tag = github_source_archive_tag(source_archive)
+    if not tag or version_confidence(tag, package_name) == "none":
+        return None
+    return {
+        "latestVersion": tag,
+        "latestSource": "source_archive_tag",
+        "evidence": str(source_archive),
+    }
+
+
+def apply_upstream_comparison(upstream: dict[str, Any], latest: dict[str, Any], current_version: Any, package_name: str) -> None:
+    upstream.update(latest)
+    comparison = compare_versions(current_version, latest["latestVersion"], package_name)
+    confidence = version_confidence(str(latest["latestVersion"]), package_name)
+    if comparison == "behind" and confidence == "high":
+        upstream["comparison"] = "likely_lag"
+    elif comparison == "behind":
+        upstream["comparison"] = "maybe_lag"
+    elif comparison == "current":
+        upstream["comparison"] = "current"
+    else:
+        upstream["comparison"] = "unknown"
+    upstream["confidence"] = confidence
+
+
 def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh: bool, cache_only: bool) -> dict[str, Any]:
     package = entry.get("package") if isinstance(entry.get("package"), dict) else {}
     package_name = str(package.get("name") or package_key.split(":", 1)[-1])
@@ -349,6 +388,11 @@ def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh:
         upstream["note"] = "No GitHub repository was available in local package data."
         return upstream
 
+    latest = latest_source_archive_tag(entry, package_name)
+    if latest is not None:
+        apply_upstream_comparison(upstream, latest, entry.get("version"), package_name)
+        return upstream
+
     latest = latest_github_release(repository, force_refresh=force_refresh, cache_only=cache_only)
     if latest is None:
         latest = latest_github_tag(repository, package_name, force_refresh=force_refresh, cache_only=cache_only)
@@ -356,19 +400,7 @@ def upstream_metadata(package_key: str, entry: dict[str, Any], *, force_refresh:
         upstream["note"] = "No cached GitHub release or tag data was available."
         return upstream
 
-    upstream.update(latest)
-    current_version = entry.get("version")
-    comparison = compare_versions(current_version, latest["latestVersion"], package_name)
-    confidence = version_confidence(str(latest["latestVersion"]), package_name)
-    if comparison == "behind" and confidence == "high":
-        upstream["comparison"] = "likely_lag"
-    elif comparison == "behind":
-        upstream["comparison"] = "maybe_lag"
-    elif comparison == "current":
-        upstream["comparison"] = "current"
-    else:
-        upstream["comparison"] = "unknown"
-    upstream["confidence"] = confidence
+    apply_upstream_comparison(upstream, latest, entry.get("version"), package_name)
     return upstream
 
 
