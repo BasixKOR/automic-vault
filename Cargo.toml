@@ -21,7 +21,11 @@ name = "nuke-helper"
 path = "src/helper/main.rs"
 
 [dependencies]
+base64 = "0.22"
+dotenvy = "0.15"
+ecies = { version = "0.2.11", default-features = false, features = ["pure", "std"] }
 flate2 = "1"
+hex = "0.4"
 indicatif = "0.17"
 json5 = "0.4"
 libc = "0.2"
