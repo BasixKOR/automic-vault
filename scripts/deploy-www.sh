@@ -274,6 +274,7 @@ prepare_site_for_upload() {
   ' "${index_path}"
 
   node "${llms_full_generator}" "${prepared_site_dir}" "${prepared_site_dir}/llms-full.txt"
+  stamp_product_version "${product_version}"
 
   log_ok "Stamped Automic Vault ${product_version}"
   log_ok "Stamped ${secured_package_display_count} secured packages"

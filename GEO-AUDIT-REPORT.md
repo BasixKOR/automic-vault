@@ -11,7 +11,7 @@
 
 Automic Vault has a strong technical GEO foundation: the site is static, crawlable, schema-rich, and explicitly AI-crawler friendly. The new package catalog is the strongest surface: it publishes 9,008 package HTML pages, 9,006 markdown alternates, 22 category hubs, valid package sitemaps, canonical URLs, `SoftwareApplication` schema, `TechArticle` schema, `HowTo` install schema, breadcrumbs, Open Graph, and Twitter metadata.
 
-The main constraints are no longer basic crawlability. The highest-leverage fixes are trust and answer-engine precision: restore the missing `llms-full.txt`, replace the unresolved version placeholder in `llms.txt`, avoid putting inferred install commands into citation-grade HowTo schema, improve freshness signals, and build more third-party product authority so AI systems can disambiguate Automic Vault from unrelated "Automic" entities.
+The main constraints are no longer basic crawlability. The highest-leverage fixes are trust and answer-engine precision: make deploy-time LLM artifacts reproducible from the checked-in site tree, replace the unresolved version placeholder in `llms.txt`, avoid putting inferred install commands into citation-grade HowTo schema, improve freshness signals, and build more third-party product authority so AI systems can disambiguate Automic Vault from unrelated "Automic" entities.
 
 ## Score Breakdown
 
@@ -75,8 +75,8 @@ Structured data coverage is broad:
 
 ## High Priority Issues
 
-1. **`llms-full.txt` is referenced but missing.**  
-   `www/sitemap.xml` and `www/llms.txt` both point to `https://www.automicvault.com/llms-full.txt`, but no `www/llms-full.txt` file exists locally. This is the clearest GEO defect because it advertises a high-value AI ingestion artifact that will resolve as missing after deploy unless generated elsewhere.
+1. **`llms-full.txt` is a deploy-time artifact, not a checked-in artifact.**  
+   `www/sitemap.xml` and `www/llms.txt` both point to `https://www.automicvault.com/llms-full.txt`, but no `www/llms-full.txt` file exists in the local `www` tree. If deploy generation creates it, the live URL can resolve correctly; the remaining risk is that local static audits and pre-deploy checks need to understand that generation step.
 
 2. **`llms.txt` still contains an unresolved version placeholder.**  
    The file says `Current version: __AUTOMIC_VAULT_VERSION__`. LLM-facing facts should never contain deploy placeholders; it reduces citation confidence and can be copied into AI answers.
@@ -112,7 +112,7 @@ Structured data coverage is broad:
 - `robots.txt` explicitly allows `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, and `Bingbot`.
 - `robots.txt` advertises both the main sitemap and package sitemap index.
 - The package sitemap index cleanly splits hubs, brew, cask, npm, and pip URLs.
-- Main sitemap has 24 URLs; the only missing local target is `llms-full.txt`.
+- Main sitemap has 24 URLs; the only missing local target is deploy-generated `llms-full.txt`.
 - All non-404 HTML pages have titles, meta descriptions, canonicals, and exactly one `h1`.
 - All checked JSON-LD parses cleanly.
 - Package pages provide markdown alternates, which is useful for AI ingestion.
@@ -124,7 +124,7 @@ Structured data coverage is broad:
 
 | Platform | Readiness | Notes |
 |---|---:|---|
-| ChatGPT / browsing LLMs | High | Static HTML, markdown alternates, `llms.txt`, package pages, strong schema. Missing `llms-full.txt` hurts. |
+| ChatGPT / browsing LLMs | High | Static HTML, markdown alternates, `llms.txt`, package pages, strong schema. Deploy-generated `llms-full.txt` should be checked before upload. |
 | Perplexity | High | Good sitemap structure and direct package pages. Needs more third-party corroboration. |
 | Google AI Overviews | Medium-high | Strong technical SEO and topic pages. Needs stronger authority and direct-answer blocks on top package pages. |
 | Claude / ClaudeBot | High | Robots allowlist and markdown alternates are good. Fix unresolved LLM-facing placeholders. |
@@ -134,7 +134,7 @@ Structured data coverage is broad:
 
 ### Fix Now
 
-1. Generate or remove `llms-full.txt` references so `www/sitemap.xml` and `www/llms.txt` do not point to a missing AI artifact.
+1. Ensure deploy generation writes `llms-full.txt` before upload and validates the generated file.
 2. Replace `__AUTOMIC_VAULT_VERSION__` in `www/llms.txt` during generation or deployment.
 3. Restrict package `HowTo` schema to verified install commands only.
 4. Add a generation check that fails if sitemap URLs or `llms.txt` links point at missing local files.
