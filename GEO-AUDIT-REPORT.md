@@ -84,8 +84,8 @@ Structured data coverage is broad:
 3. **Inferred install commands are present in `HowTo` schema on 8,385 package pages.**  
    The visible UI labels these commands as inferred, but schema consumers may treat HowTo steps as verified instructions. For package pages, only source-backed install commands should be emitted in `HowTo`; inferred commands should remain visible as lower-confidence UI content outside citation-grade structured data.
 
-4. **All 9,008 package pages show unknown upstream freshness.**  
-   The freshness section consistently reports upstream release/tag data as unknown. This is transparent, but it weakens the package pages for AI answers that need current-version confidence. Prioritize upstream release/tag enrichment for high-risk and high-volume packages.
+4. **5,025 package freshness records still show unknown upstream freshness.**
+   Source-archive tag evidence now marks 3,806 records current and 1 likely lagging, but packages without local comparable tag evidence still report unknown. This is transparent, but it weakens the remaining package pages for AI answers that need current-version confidence. Prioritize upstream release/tag enrichment for high-risk and high-volume packages.
 
 5. **Brand authority remains founder-led instead of product-led.**  
    Search finds Automic Vault on owned properties and `mxcl.dev`, but third-party product mentions are sparse. The Max Howell/Homebrew association is valuable, yet the product needs independent references on developer platforms to avoid blending with unrelated Automic/Broadcom and Automic Group results.
