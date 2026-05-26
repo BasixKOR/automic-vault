@@ -319,6 +319,7 @@ class NpmIndexTests(unittest.TestCase):
         build_db = load_build_db()
         state = build_db._default_npm_index_state()
         state["last_seq"] = "10"
+        state["last_full_scan_at"] = "2026-01-01T00:00:00+00:00"
         state["packages"] = {
             "example-cli": {
                 "executable": "example-cli",
@@ -343,6 +344,51 @@ class NpmIndexTests(unittest.TestCase):
 
         self.assertEqual(list(packages), ["example-cli"])
         self.assertEqual(packages["example-cli"]["popularity"]["rank"], 1)
+
+    def test_npm_collect_runs_full_scan_until_one_has_completed(self):
+        build_db = load_build_db()
+        state = build_db._default_npm_index_state()
+        state["last_seq"] = "10"
+        state["packages"] = {
+            "seed-cli": {
+                "executable": "seed-cli",
+                "homepage": "",
+                "last_updated_at": "2026-01-01T00:00:00.000Z",
+                "popularity": {"downloads_per_30_days": 60000, "rank": 99},
+                "summary": "seed",
+                "version": "1.0.0",
+            }
+        }
+
+        def full_scan(scan_state):
+            scan_state["packages"]["openclaw"] = {
+                "executable": "openclaw",
+                "homepage": "https://github.com/openclaw/openclaw#readme",
+                "last_updated_at": "2026-05-24T03:20:32.592Z",
+                "popularity": {"downloads_per_30_days": 4247894, "rank": 0},
+                "summary": "Multi-channel AI gateway",
+                "version": "2026.5.22",
+            }
+            scan_state["last_full_scan_at"] = "2026-05-26T00:00:00+00:00"
+
+        with (
+            mock.patch.object(build_db, "_read_npm_index_state", return_value=state),
+            mock.patch.object(build_db, "_run_npm_full_scan", side_effect=full_scan) as scan,
+            mock.patch.object(
+                build_db,
+                "_fetch_npm_changes_since",
+                return_value=(set(), set(), "11", False),
+            ),
+            mock.patch.object(build_db, "_write_npm_index_state"),
+        ):
+            packages = build_db._collect_npm_metadata()
+
+        scan.assert_called_once()
+        self.assertIn("openclaw", packages)
+        self.assertLess(
+            packages["openclaw"]["popularity"]["rank"],
+            packages["seed-cli"]["popularity"]["rank"],
+        )
 
     def test_npm_changes_stop_at_refresh_limit_and_return_processed_sequence(self):
         build_db = load_build_db()

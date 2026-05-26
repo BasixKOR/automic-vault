@@ -1273,7 +1273,12 @@ def _collect_npm_metadata():
     )
 
     try:
-        if NPM_FULL_SCAN or not packages or state.get("full_scan_cursor"):
+        if (
+            NPM_FULL_SCAN
+            or not packages
+            or state.get("full_scan_cursor")
+            or not state.get("last_full_scan_at")
+        ):
             print("Starting npm full metadata scan...", file=sys.stderr)
             _run_npm_full_scan(state)
 
