@@ -15,14 +15,15 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 OUTPUT_PATH = Path("data/pkg-cross-ecosystem.json")
 PKG_MANAGER_INDEX_PATH = Path("data/pkg-manager-indexes.json.gz")
 ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
 SOURCE_BACKED_MANAGER_CONFIDENCE = {
     "macports": 0.94,
     "nix": 0.92,
-    "apt": 0.92,
+    "ubuntu": 0.92,
+    "debian": 0.92,
     "dnf": 0.92,
     "pacman": 0.92,
     "apk": 0.92,
@@ -118,6 +119,52 @@ def normalize_name(value: str) -> str:
     value = re.sub(r"[^a-z0-9-]+", "-", value)
     value = re.sub(r"-+", "-", value)
     return value.strip("-")
+
+
+def match_name(value: Any) -> str:
+    return normalize_name(str(value or ""))
+
+
+def versioned_name_tiers(name: str) -> list[list[str]]:
+    if "@" not in name:
+        return []
+    base, version = name.split("@", 1)
+    base = base.strip()
+    version = version.strip()
+    if not base or not version:
+        return []
+    version_digits = re.sub(r"[^0-9]+", "", version)
+    version_hyphen = re.sub(r"[^0-9]+", "-", version).strip("-")
+    specific = [
+        name,
+        f"{base}{version_digits}" if version_digits else "",
+        f"{base}{version_hyphen}" if version_hyphen else "",
+        f"{base}-{version_hyphen}" if version_hyphen else "",
+    ]
+    if base == "python" and version_hyphen:
+        specific.extend([
+            f"python{version_digits}" if version_digits else "",
+            f"python3{version_digits[1:]}" if version_digits.startswith("3") else "",
+            f"python3-{version_hyphen[2:]}" if version_hyphen.startswith("3-") else "",
+        ])
+    if base == "openssl" and version_digits:
+        specific.extend([f"openssl{version_digits}", f"openssl-{version_digits}", f"libssl{version_digits}"])
+    fallback = [base]
+    if base == "python":
+        fallback.extend(["python3", "python"])
+    return [dedupe_match_names(specific), dedupe_match_names(fallback)]
+
+
+def dedupe_match_names(values: list[Any]) -> list[str]:
+    result = []
+    seen = set()
+    for value in values:
+        normalized = match_name(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
 
 
 def package_manager_url(page: Any) -> str:
@@ -285,15 +332,33 @@ def manager_matcher(manager_indexes: dict[str, Any]) -> dict[str, list[dict[str,
     return result
 
 
+def package_match_tiers(facts: dict[str, Any]) -> list[list[str]]:
+    name = str(facts.get("name") or "")
+    version_tiers = versioned_name_tiers(name)
+    executable_tier = dedupe_match_names([name, *(facts.get("executables") or [])])
+    if version_tiers:
+        return [tier for tier in [version_tiers[0], executable_tier, *version_tiers[1:]] if tier]
+    return [executable_tier] if executable_tier else []
+
+
 def source_backed_manager_commands(facts: dict[str, Any], matcher: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     # The previous implementation only added cross-manager guesses for Homebrew
     # formula pages. Keep that surface, but now require a database-backed match.
     if facts.get("provider") != "brew":
         return []
-    normalized = normalize_name(str(facts.get("name") or ""))
-    if not normalized:
-        return []
-    return list(matcher.get(normalized) or [])
+    result = []
+    seen_managers = set()
+    for tier in package_match_tiers(facts):
+        for normalized in tier:
+            for item in matcher.get(normalized) or []:
+                source = item.get("source") if isinstance(item, dict) else {}
+                manager = source.get("manager") if isinstance(source, dict) else item.get("manager")
+                command_text = item.get("command")
+                if not manager or manager in seen_managers or not command_text:
+                    continue
+                seen_managers.add(manager)
+                result.append(item)
+    return result
 
 
 def local_link(candidate: dict[str, str], reason: str, evidence: str, confidence: float = 0.78) -> dict[str, Any]:

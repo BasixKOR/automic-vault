@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import io
 import json
+import lzma
 import os
 import re
 import subprocess
@@ -38,11 +39,14 @@ MANAGER_DEFINITIONS: dict[str, dict[str, Any]] = {
         "display_name": "Nix",
         "platform": "linux",
         "command_template": "nix profile install nixpkgs#{id}",
-        "source_label": "nixpkgs package tree",
-        "urls": ["https://api.github.com/repos/NixOS/nixpkgs/git/trees/master?recursive=1"],
+        "source_label": "nixpkgs package indexes",
+        "urls": [
+            "https://api.github.com/repos/NixOS/nixpkgs/git/trees/master?recursive=1",
+            "https://raw.githubusercontent.com/NixOS/nixpkgs/master/pkgs/top-level/all-packages.nix",
+        ],
     },
-    "apt": {
-        "display_name": "apt",
+    "ubuntu": {
+        "display_name": "Ubuntu apt",
         "platform": "linux",
         "command_template": "sudo apt install {id}",
         "source_label": "Ubuntu 24.04 LTS package indexes",
@@ -51,6 +55,18 @@ MANAGER_DEFINITIONS: dict[str, dict[str, Any]] = {
             "https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz",
             "https://archive.ubuntu.com/ubuntu/dists/noble/multiverse/binary-amd64/Packages.gz",
             "https://archive.ubuntu.com/ubuntu/dists/noble/restricted/binary-amd64/Packages.gz",
+        ],
+    },
+    "debian": {
+        "display_name": "Debian apt",
+        "platform": "linux",
+        "command_template": "sudo apt install {id}",
+        "source_label": "Debian stable package indexes",
+        "urls": [
+            "https://deb.debian.org/debian/dists/stable/main/binary-amd64/Packages.xz",
+            "https://deb.debian.org/debian/dists/stable/contrib/binary-amd64/Packages.xz",
+            "https://deb.debian.org/debian/dists/stable/non-free/binary-amd64/Packages.xz",
+            "https://deb.debian.org/debian/dists/stable/non-free-firmware/binary-amd64/Packages.xz",
         ],
     },
     "dnf": {
@@ -121,16 +137,27 @@ MANAGER_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 PACKAGE_ALIAS_MATCHES: dict[str, dict[str, list[str]]] = {
     "node": {
-        "apt": ["nodejs"],
-        "dnf": ["nodejs"],
+        "ubuntu": ["nodejs"],
+        "debian": ["nodejs"],
+        "dnf": ["nodejs", "nodejs24"],
         "pacman": ["nodejs"],
         "apk": ["nodejs"],
-        "zypper": ["nodejs"],
+        "zypper": ["nodejs", "nodejs24"],
         "nix": ["nodejs"],
+        "macports": ["nodejs24"],
+        "winget": ["OpenJS.NodeJS"],
+        "chocolatey": ["nodejs"],
+        "scoop": ["main/nodejs"],
     },
     "postgresql": {
-        "apt": ["postgresql-client"],
+        "ubuntu": ["postgresql-client"],
+        "debian": ["postgresql-client"],
         "apk": ["postgresql-client"],
+    },
+    "openssl@3": {
+        "apk": ["libssl3"],
+        "macports": ["openssl3"],
+        "zypper": ["openssl-3"],
     },
 }
 
@@ -226,6 +253,8 @@ def maybe_gzip_decompress(data: bytes, url: str = "") -> bytes:
 
 def maybe_decompress(data: bytes, url: str = "") -> bytes:
     data = maybe_gzip_decompress(data, url)
+    if url.endswith(".xz") or data.startswith(b"\xfd7zXZ\x00"):
+        return lzma.decompress(data)
     if url.endswith(".zst"):
         result = subprocess.run(["zstd", "-dc"], input=data, capture_output=True, check=True)
         return result.stdout
@@ -324,8 +353,19 @@ def parse_nix_packages_json(data: bytes, source_url: str) -> list[dict[str, Any]
     return dedupe_records(records)
 
 
+def parse_nix_all_packages(data: bytes, source_url: str) -> list[dict[str, Any]]:
+    text = data.decode("utf-8", errors="replace")
+    records = []
+    for match in re.finditer(r"^\s{2}([A-Za-z0-9_+.-]+)\s*=", text, flags=re.MULTILINE):
+        attr = match.group(1)
+        if attr.startswith("_"):
+            continue
+        records.append(record(attr, source_url=source_url, source_name=attr))
+    return dedupe_records(records)
+
+
 def parse_debian_packages(data: bytes, source_url: str) -> list[dict[str, Any]]:
-    text = maybe_gzip_decompress(data, source_url).decode("utf-8", errors="replace")
+    text = maybe_decompress(data, source_url).decode("utf-8", errors="replace")
     records = []
     for stanza in package_stanzas(text):
         name = stanza.get("Package", "").strip()
@@ -493,8 +533,11 @@ def build_records_for_manager(manager: str, urls: list[str], *, force_refresh: b
         if manager == "macports":
             records.extend(parse_github_tree(data, url, manager))
         elif manager == "nix":
-            records.extend(parse_github_tree(data, url, manager))
-        elif manager == "apt":
+            if url.endswith("all-packages.nix"):
+                records.extend(parse_nix_all_packages(data, url))
+            else:
+                records.extend(parse_github_tree(data, url, manager))
+        elif manager in {"ubuntu", "debian"}:
             records.extend(parse_debian_packages(data, url))
         elif manager == "pacman":
             records.extend(parse_pacman_db(data, url))

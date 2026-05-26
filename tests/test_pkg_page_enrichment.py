@@ -324,6 +324,30 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertNotIn("brew:abseil", pages)
         self.assertNotIn("npm:qmd", pages)
 
+    def test_package_pages_keep_install_behavior_packages_without_executables(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_install_behavior_scope_test")
+
+        sources = {
+            "db": {
+                "formulas": {
+                    "openssl@3": {"summary": "Cryptography toolkit."},
+                },
+                "entries": {},
+            },
+            "pkg_page_enrichment": {
+                "packages": {
+                    "brew:openssl@3": {
+                        "package": {"provider": "brew", "name": "openssl@3"},
+                        "installBehavior": {"postInstallDefined": True},
+                    }
+                }
+            },
+        }
+
+        pages = module.package_pages_from_sources(sources)
+
+        self.assertIn("brew:openssl@3", pages)
+
     def test_thin_package_pages_are_noindex_but_security_pages_remain_indexable(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_thin_policy_test")
 

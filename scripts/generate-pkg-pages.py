@@ -1157,11 +1157,15 @@ def has_executable_surface(page: PackagePage) -> bool:
     return bool(page.aliases or page.executables or page.binaries)
 
 
+def has_package_page_surface(page: PackagePage) -> bool:
+    return has_executable_surface(page) or any(value for value in page.install_behavior.values())
+
+
 def executable_package_pages(pages: dict[str, PackagePage]) -> dict[str, PackagePage]:
     return {
         key: page
         for key, page in pages.items()
-        if has_executable_surface(page)
+        if has_package_page_surface(page)
     }
 
 

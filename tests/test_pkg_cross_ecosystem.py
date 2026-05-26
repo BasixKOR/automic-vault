@@ -185,14 +185,14 @@ class PackageCrossEcosystemTests(unittest.TestCase):
             },
             {
                 "platform": "linux",
-                "manager": "apt",
+                "manager": "Ubuntu apt",
                 "command": "sudo apt install ripgrep",
                 "kind": "package_manager",
                 "confidence": 0.92,
                 "evidence": "Ubuntu 24.04 LTS package indexes: ripgrep from unit test",
                 "source": {
                     "type": "package_manager_index",
-                    "manager": "apt",
+                    "manager": "ubuntu",
                     "source_label": "Ubuntu 24.04 LTS package indexes",
                     "package_id": "ripgrep",
                     "package_name": "ripgrep",
@@ -277,7 +277,7 @@ class PackageCrossEcosystemTests(unittest.TestCase):
             },
             {
                 "platform": "linux",
-                "manager": "apt",
+                "manager": "Ubuntu apt",
                 "command": "sudo apt install alpha",
                 "kind": "package_manager",
                 "confidence": 0.38,
@@ -332,8 +332,8 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         module = load_module(CROSS_SCRIPT, "pkg_cross_source_backed")
         manager_indexes = {
             "managers": {
-                "apt": {
-                    "display_name": "apt",
+                "ubuntu": {
+                    "display_name": "Ubuntu apt",
                     "platform": "linux",
                     "command_template": "sudo apt install {id}",
                     "source_label": "Ubuntu 24.04 LTS package indexes",
@@ -361,9 +361,173 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         commands = curated["commands"]
 
         self.assertIn("sudo apt install nodejs", [item["command"] for item in commands])
-        apt = next(item for item in commands if item["manager"] == "apt")
+        apt = next(item for item in commands if item["manager"] == "Ubuntu apt")
         self.assertEqual(apt["source"]["package_id"], "nodejs")
         self.assertNotIn("agent-inferred", apt["evidence"])
+
+    def test_local_curate_matches_executable_aliases_and_skips_duplicate_managers(self):
+        module = load_module(CROSS_SCRIPT, "pkg_cross_executable_aliases")
+        manager_indexes = {
+            "managers": {
+                "macports": {
+                    "display_name": "MacPorts",
+                    "platform": "macos",
+                    "command_template": "sudo port install {id}",
+                    "source_label": "MacPorts ports tree",
+                    "packages": {
+                        "sqlite3": {
+                            "id": "sqlite3",
+                            "match_names": ["sqlite3"],
+                            "source_name": "databases/sqlite3/Portfile",
+                            "source_url": "unit test",
+                        }
+                    },
+                },
+                "ubuntu": {
+                    "display_name": "Ubuntu apt",
+                    "platform": "linux",
+                    "command_template": "sudo apt install {id}",
+                    "source_label": "Ubuntu package indexes",
+                    "packages": {
+                        "sqlite": {
+                            "id": "sqlite",
+                            "match_names": ["sqlite"],
+                            "source_name": "sqlite",
+                            "source_url": "unit test",
+                        },
+                        "sqlite3": {
+                            "id": "sqlite3",
+                            "match_names": ["sqlite3"],
+                            "source_name": "sqlite3",
+                            "source_url": "unit test",
+                        },
+                    },
+                },
+            }
+        }
+        packet = {
+            "target": {
+                "key": "brew:sqlite",
+                "provider": "brew",
+                "name": "sqlite",
+                "executables": ["sqlite3"],
+            },
+            "localCandidates": [],
+        }
+
+        curated = module.local_curate_packet(packet, module.manager_matcher(manager_indexes))
+        commands = [item["command"] for item in curated["commands"]]
+
+        self.assertIn("sudo port install sqlite3", commands)
+        self.assertIn("sudo apt install sqlite", commands)
+        self.assertNotIn("sudo apt install sqlite3", commands)
+
+    def test_local_curate_prefers_version_specific_matches_before_generic_fallback(self):
+        module = load_module(CROSS_SCRIPT, "pkg_cross_versioned_matches")
+        manager_indexes = {
+            "managers": {
+                "macports": {
+                    "display_name": "MacPorts",
+                    "platform": "macos",
+                    "command_template": "sudo port install {id}",
+                    "source_label": "MacPorts ports tree",
+                    "packages": {
+                        "openssl": {
+                            "id": "openssl",
+                            "match_names": ["openssl"],
+                            "source_name": "openssl",
+                            "source_url": "unit test",
+                        },
+                        "openssl3": {
+                            "id": "openssl3",
+                            "match_names": ["openssl3"],
+                            "source_name": "openssl3",
+                            "source_url": "unit test",
+                        },
+                    },
+                },
+                "winget": {
+                    "display_name": "winget",
+                    "platform": "windows",
+                    "command_template": "winget install --id {id} -e",
+                    "source_label": "Windows Package Manager source index",
+                    "packages": {
+                        "ShiningLight.OpenSSL.Dev": {
+                            "id": "ShiningLight.OpenSSL.Dev",
+                            "match_names": ["openssl"],
+                            "source_name": "ShiningLight.OpenSSL.Dev",
+                            "source_url": "unit test",
+                        }
+                    },
+                },
+            }
+        }
+        packet = {
+            "target": {
+                "key": "brew:openssl@3",
+                "provider": "brew",
+                "name": "openssl@3",
+                "executables": [],
+            },
+            "localCandidates": [],
+        }
+
+        curated = module.local_curate_packet(packet, module.manager_matcher(manager_indexes))
+        commands = [item["command"] for item in curated["commands"]]
+
+        self.assertIn("sudo port install openssl3", commands)
+        self.assertNotIn("sudo port install openssl", commands)
+        self.assertIn("winget install --id ShiningLight.OpenSSL.Dev -e", commands)
+
+    def test_local_curate_finds_windows_node_commands_from_alias_table(self):
+        module = load_module(CROSS_SCRIPT, "pkg_cross_node_windows")
+        manager_indexes = {
+            "managers": {
+                "winget": {
+                    "display_name": "winget",
+                    "platform": "windows",
+                    "command_template": "winget install --id {id} -e",
+                    "source_label": "Windows Package Manager source index",
+                    "packages": {
+                        "OpenJS.NodeJS": {
+                            "id": "OpenJS.NodeJS",
+                            "match_names": ["node"],
+                            "source_name": "OpenJS.NodeJS",
+                            "source_url": "unit test",
+                        }
+                    },
+                },
+                "scoop": {
+                    "display_name": "Scoop",
+                    "platform": "windows",
+                    "command_template": "scoop install {id}",
+                    "source_label": "Scoop bucket tree",
+                    "packages": {
+                        "main/nodejs": {
+                            "id": "main/nodejs",
+                            "match_names": ["node"],
+                            "source_name": "bucket/nodejs.json",
+                            "source_url": "unit test",
+                        }
+                    },
+                },
+            }
+        }
+        packet = {
+            "target": {
+                "key": "brew:node",
+                "provider": "brew",
+                "name": "node",
+                "executables": ["node", "npm", "npx"],
+            },
+            "localCandidates": [],
+        }
+
+        curated = module.local_curate_packet(packet, module.manager_matcher(manager_indexes))
+        commands = [item["command"] for item in curated["commands"]]
+
+        self.assertIn("winget install --id OpenJS.NodeJS -e", commands)
+        self.assertIn("scoop install main/nodejs", commands)
 
     def test_validation_rejects_inferred_command_evidence(self):
         module = load_module(CROSS_SCRIPT, "pkg_cross_no_inferred_validation")

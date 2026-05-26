@@ -1,15 +1,16 @@
 {
   "coverage": {
-    "curatedPackageCount": 1277,
-    "isolatedIndexablePackageCount": 1277,
+    "curatedPackageCount": 1302,
+    "isolatedIndexablePackageCount": 1302,
     "providerCounts": {
-      "brew": 709,
+      "brew": 733,
       "cask": 52,
-      "npm": 516
+      "npm": 516,
+      "pip": 1
     }
   },
   "description": "Agent-curated package graph links for indexable package pages that lack deterministic internal navigation.",
-  "generated_at": "2026-05-26T14:11:23+00:00",
+  "generated_at": "2026-05-26T14:41:53+00:00",
   "hubs": {
     "archive-compression-tools": {
       "description": "Packages that create, inspect, extract, or transform archives and compressed files.",
@@ -22,14 +23,14 @@
       "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
       "kicker": "Homebrew long tail",
       "label": "Homebrew utility packages",
-      "packageCount": 434,
+      "packageCount": 455,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "database-data-tools": {
       "description": "Packages that query, migrate, inspect, or operate databases and data files.",
       "kicker": "data stores",
       "label": "Database and data packages",
-      "packageCount": 34,
+      "packageCount": 35,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "desktop-app-packages": {
@@ -64,7 +65,7 @@
       "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
       "kicker": "runtime surfaces",
       "label": "Language runtime packages",
-      "packageCount": 65,
+      "packageCount": 67,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "media-graphics-tools": {
@@ -78,7 +79,7 @@
       "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
       "kicker": "remote connections",
       "label": "Networking and protocol packages",
-      "packageCount": 41,
+      "packageCount": 42,
       "reason": "Agent-curated topical fallback for packages without deterministic package graph links."
     },
     "npm-cli-packages": {
@@ -599,8 +600,8 @@
       "target": "brew:admesh"
     },
     "brew:advancescan": {
-      "candidate_hash": "cdd949418ebbc46af6a7e9813f52e3c433e8fd6e2f9394288c3bfc388d04ed8d",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "54889fb73f1961983b9a5c888882cc81ecaa9fdb2789b3f309dd697e06b9d89b",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "8cfa80a88fc03fe88d56b1af2b65dc33f964001bb3b95130075edc856117ae2b",
       "linkIntents": {
@@ -636,8 +637,8 @@
           {
             "confidence": 0.75,
             "evidence": "bounded local candidate similarity",
-            "label": "aoe",
-            "name": "aoe",
+            "label": "antidote",
+            "name": "antidote",
             "provider": "brew",
             "reason": "Local package facts share a topical domain. Shared terms: manager.",
             "rel": "domain_peer"
@@ -885,6 +886,102 @@
         ]
       },
       "target": "brew:ansiweather"
+    },
+    "brew:antidote": {
+      "candidate_hash": "58d9fbaa3f20e945eb086c787622d83963471f60a46ad7b0b9514fc5519d2eb6",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "61acbed15013642593f0ba7bbc015da98065645c9478663f0bda6d5f23adee91",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.85,
+            "evidence": "bounded local candidate similarity",
+            "label": "antigen",
+            "name": "antigen",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: antigen, inspired, manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "tfenv",
+            "name": "tfenv",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: inspired, manager.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "tgenv",
+            "name": "tgenv",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: inspired, manager.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:antidote"
+    },
+    "brew:antigen": {
+      "candidate_hash": "9bab20f400111da429608c23742c5174186a848a6ac695281aee003a792f366f",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "485696dddeac95bd0c853861ec46c105733931378a2b6719fb6ed6acff9fa4aa",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "tfenv",
+            "name": "tfenv",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: inspired, manager.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "tgenv",
+            "name": "tgenv",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: inspired, manager.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "wally",
+            "name": "wally",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: inspired, manager.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:antigen"
     },
     "brew:antiword": {
       "candidate_hash": "ee69d4f30efdf2daf5a16302d56341655fa1d8cfbe9b739818532547d6c59ae3",
@@ -1463,8 +1560,8 @@
       "target": "brew:attr"
     },
     "brew:autopsy": {
-      "candidate_hash": "538087d3694cf89120c41a3eafca5c4c0ce317818e9e42aeddf1e19c1071b044",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "2fbbeb3171fff993aea8125e4f539b0b7c3e567d94795d0dac5e5fae2b4cac23",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "904363947578dcdd80b8ef99c1fc8d4bfeab70e80c0193464a5d4f29d7ce96e9",
       "linkIntents": {
@@ -1846,9 +1943,105 @@
       },
       "target": "brew:bartycrouch"
     },
+    "brew:bash-git-prompt": {
+      "candidate_hash": "b8a661e7e0936122aef52e82d0c83840f90de312f4e910c2176e1840d77cf4f1",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "735632a28f2b7fde103898bac1958a3526cf9d4ce4b7c0c87afed2dc0062baa1",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-snippets",
+            "name": "bash-snippets",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash, users.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-completion@2",
+            "name": "bash-completion@2",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-language-server",
+            "name": "bash-language-server",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:bash-git-prompt"
+    },
+    "brew:bash-preexec": {
+      "candidate_hash": "59e8454bf6cf2c14d4dc9c57b434ec352f7b53b07ef0c4a2bd9e6bd5711c0002",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "24931baba88b8cded003029b72fb744ae25128db3acdf8c28901927e9666c93c",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-completion@2",
+            "name": "bash-completion@2",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-git-prompt",
+            "name": "bash-git-prompt",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-language-server",
+            "name": "bash-language-server",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:bash-preexec"
+    },
     "brew:bash_unit": {
-      "candidate_hash": "8033e52a79a3700214b46e7681aa20bbf74aa8327e97367a048238dd5b307e85",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "6935f71f63e52905a73cc16a911491a8b93279648f753fcabecb910034de8fa4",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "ccae0f26578c3d07bfd1eeed81ba5433b5c7e574d9892e65ecf39e2a0d45d1c1",
       "linkIntents": {
@@ -1866,29 +2059,29 @@
           {
             "confidence": 0.86,
             "evidence": "bounded local candidate similarity",
+            "label": "bash-completion@2",
+            "name": "bash-completion@2",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-git-prompt",
+            "name": "bash-git-prompt",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
             "label": "bash-language-server",
             "name": "bash-language-server",
             "provider": "brew",
             "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
             "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "bash-snippets",
-            "name": "bash-snippets",
-            "provider": "brew",
-            "reason": "Package names and metadata indicate a similar tool family. Shared terms: bash.",
-            "rel": "similar_tool"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "cutter-cli",
-            "name": "cutter-cli",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: framework, testing, unit.",
-            "rel": "domain_peer"
           }
         ]
       },
@@ -1943,8 +2136,8 @@
       "target": "brew:bashunit"
     },
     "brew:bats-core": {
-      "candidate_hash": "a7dc030dd6eefcfdc4723b68031f447c817461c5cefc7a73a50f5da11b2c1e06",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "79278e4845188632c1dc886df6e312f431ae0eff796c98a05eea908919148424",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "cf04b59a4050ff88c1a93113f39198a6a5c29f86ac6a22b9b46dd4e2136898f9",
       "linkIntents": {
@@ -2231,8 +2424,8 @@
       "target": "brew:betty"
     },
     "brew:bgrep": {
-      "candidate_hash": "70081ccf901cb49c6516ba345fff13ae377c544f8965a97a8632a7f8bf9d378b",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "311fcf6305b54fb95b32099f1eedb4c8d4abf4782cbe3414630e2e9263fad554",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "f80d5d21546a327a56dcde219652aa8fef7ea5268e06d3591945191c566e8bd3",
       "linkIntents": {
@@ -2903,8 +3096,8 @@
       "target": "brew:bootterm"
     },
     "brew:bork": {
-      "candidate_hash": "c01ba94cc3f7d4d2cce18fd6868494b31fd50101c2e9dc07d0a4956551e10491",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "f362ca8dff9cdb83b76d8c9be24b70df73917e8c1556fc3c34afe88420b8aa9a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "1d77c3e70c8becb8df676cd1f2e8537dca76fcc7c2552d7e234e0e99d064efaf",
       "linkIntents": {
@@ -3095,8 +3288,8 @@
       "target": "brew:brightness"
     },
     "brew:bsdconv": {
-      "candidate_hash": "33ea8625f7fdba623ef3bcfd23e0d514bd5fc8db9843a8459dbac718e5640394",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "8a3bcc20bb270bd4f78110ab19a3821d499e0858e464a3552c341dbdb27aac80",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "2b72815b314d11cbb78e3d48b7f3c7a6b464374f63a0b7a5a1e5199a6ec60b8b",
       "linkIntents": {
@@ -4199,8 +4392,8 @@
       "target": "brew:chibi-scheme"
     },
     "brew:chinadns-c": {
-      "candidate_hash": "984e6ddaf3997174ddc73a44726db17310505532b7feb597c9818bd29e2719a6",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "34667c27179d020b8d97001c421e506cfd9eb3e089f419551e45d587fd02a494",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "6af4e9e47daaba84fcdf0425ecd497d436002a98aaac7d9d00718b9974416595",
       "linkIntents": {
@@ -4227,24 +4420,72 @@
           {
             "confidence": 0.86,
             "evidence": "bounded local candidate similarity",
-            "label": "codespell",
-            "name": "codespell",
+            "label": "clearlooks-phenix",
+            "name": "clearlooks-phenix",
             "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: fix.",
+            "reason": "Local package facts share a topical domain. Shared terms: port.",
             "rel": "domain_peer"
           },
           {
             "confidence": 0.86,
             "evidence": "bounded local candidate similarity",
-            "label": "crispy-doom",
-            "name": "crispy-doom",
+            "label": "codespell",
+            "name": "codespell",
             "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: port.",
+            "reason": "Local package facts share a topical domain. Shared terms: fix.",
             "rel": "domain_peer"
           }
         ]
       },
       "target": "brew:chinadns-c"
+    },
+    "brew:chisel": {
+      "candidate_hash": "3e04cc2b6c69d5a88c2a989d0130d707e6a3d6e3005eb031fbac3614e56c02c8",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "219a50464ea2ad0991e64ea457d71ae21cd8eeabfaaf9378313af8439e54a52d",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "llnode",
+            "name": "llnode",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: apps, debugging, lldb.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "ios-deploy",
+            "name": "ios-deploy",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: apps, ios.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "kubergrunt",
+            "name": "kubergrunt",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: collection, commands.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:chisel"
     },
     "brew:chkrootkit": {
       "candidate_hash": "e1e45b4c76d1cfeeab2cbdd1e509c214f8dac3f429d8794d0f038500d5ccd05d",
@@ -4631,8 +4872,8 @@
       "target": "brew:clac"
     },
     "brew:clean": {
-      "candidate_hash": "dfc577564ebc04711643b656a622bfa17723b77cebada7e0805104da3451753a",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "3d3c897cc312018a0a9c2060a8581903dab7c14996f8b40af31dec27e093c62e",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "bcedf9d8302be432090949d5e511a310924559c44b0a61152b14d2e97df03b06",
       "linkIntents": {
@@ -4679,8 +4920,8 @@
       "target": "brew:clean"
     },
     "brew:cliclick": {
-      "candidate_hash": "9a93e7bf28745f17530677401e08f39980927f4230220ab25895959b57f36d8a",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "9d6ab162ed5723cc4c9c9fe224915e067db0d5718bf8ec7e9c77c2cf4bdac2e6",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "2ac8be3921e6882d19dcd4d77b65e0140d4816d331a369d5b1986c1c47572812",
       "linkIntents": {
@@ -4775,8 +5016,8 @@
       "target": "brew:clinfo"
     },
     "brew:clipsafe": {
-      "candidate_hash": "a0f84628894888c16149440363229bcfb95ec61816eb3f3557eab08b8df2dcfe",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "e4237427c21d3d6b3f82704a06fd7ea54f15df55fe82ad72409b2eda816a24b2",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "966a7d9015560ed58a5ff831cd9249860d7cc3a75d033e46ff3efce53b08e114",
       "linkIntents": {
@@ -5159,8 +5400,8 @@
       "target": "brew:cocot"
     },
     "brew:coda-cli": {
-      "candidate_hash": "199edebcbe01f8af5faf9444da04e26fbebd8c32e61395c0fe6e7b6c8ebeca08",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "352eb84bf7db503728428cbe5f10998b5a76f0068ca3b71603eb6cd9bc11cbec",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "9c586b20bdd66a59e637ac8fb8e3938b2596ec9adcaab56dffd107e70585db0b",
       "linkIntents": {
@@ -5303,8 +5544,8 @@
       "target": "brew:colortail"
     },
     "brew:condure": {
-      "candidate_hash": "017d77cb5581983ab1d181d974c61949c3c9bb23d965d4cb7e2277ccb1896fd5",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "1f0ecf41867621701e22cf6df850d0bced24dde2fe2fb374a145d8a216ed9113",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "a522725d775e8840684f0e7f5d60b621ad7ceb4466b2c83f7406b9c410bcf486",
       "linkIntents": {
@@ -5447,8 +5688,8 @@
       "target": "brew:convmv"
     },
     "brew:cowsay": {
-      "candidate_hash": "5eaaa088b8252ac03378191ba8db41873f267d7b5286393ad0fa2e4746065991",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "6fe12b910ced229055e6f48e814a2e536cc124c5e0502e9fe3b16d7755fc5b90",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "0b67e48a03e4c4208c87d8180c1f39f5e1fc8d635443b5a77ce10e1aee507fc6",
       "linkIntents": {
@@ -5475,19 +5716,19 @@
           {
             "confidence": 0.75,
             "evidence": "bounded local candidate similarity",
-            "label": "basedpyright",
-            "name": "basedpyright",
+            "label": "autoenv",
+            "name": "autoenv",
             "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: fork.",
+            "reason": "Local package facts share a topical domain. Shared terms: project.",
             "rel": "domain_peer"
           },
           {
             "confidence": 0.75,
             "evidence": "bounded local candidate similarity",
-            "label": "cargo-features-manager",
-            "name": "cargo-features-manager",
+            "label": "basedpyright",
+            "name": "basedpyright",
             "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: project.",
+            "reason": "Local package facts share a topical domain. Shared terms: fork.",
             "rel": "domain_peer"
           }
         ]
@@ -6166,6 +6407,54 @@
       },
       "target": "brew:csvtomd"
     },
+    "brew:ctags": {
+      "candidate_hash": "40b49781c7213a1f1a0264ceaa205ce5742db6878b98d3d5c009680189388916",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "f10cd0efd12f5c88a76a9104ef4d3d753ad4fe863c9382771349c256805c2746",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.68,
+            "evidence": "bounded local candidate similarity",
+            "label": "ctags-lsp",
+            "name": "ctags-lsp",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: ctags.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.53,
+            "evidence": "bounded local candidate similarity",
+            "label": "abi-dumper",
+            "name": "abi-dumper",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: ctags.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.53,
+            "evidence": "bounded local candidate similarity",
+            "label": "global",
+            "name": "global",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: ctags.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:ctags"
+    },
     "brew:curseofwar": {
       "candidate_hash": "36ffe814582e005982c0b30bceee2cf3933df0b0586a5fe34fff0d375c08d4c3",
       "curated_at": "2026-05-26T14:11:23+00:00",
@@ -6599,8 +6888,8 @@
       "target": "brew:dbacl"
     },
     "brew:dbhash": {
-      "candidate_hash": "b28f24fa1166216e1d7843fe14416c5b3edaa68a1f13ce76debbfc374e41fff2",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "6b13aad1859050adc35fed068e4a40da81fc7e5d828e61d2b54325d7ee944e70",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "50d877ea9f237847b593a7226aeb3fa94013e1118ff03d36563789232db9b52c",
       "linkIntents": {
@@ -6647,8 +6936,8 @@
       "target": "brew:dbhash"
     },
     "brew:dcos-cli": {
-      "candidate_hash": "6cba66d80770aaa9b790484aa9d33704d54f0fc11b37d635be7c6db29248a2e1",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "c7727f9e58629338c54becc43e68d3aac191bfe186b2bfa27f5b02b9bb409f55",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "4247d414d8576a0f663b94c6e07a90604b3a1f0f698419603a3cb34745e14473",
       "linkIntents": {
@@ -6983,8 +7272,8 @@
       "target": "brew:defaultbrowser"
     },
     "brew:deja-gnu": {
-      "candidate_hash": "7f1e9ec727e28c02817b7291d0740ef6d3a1da0c3fadef9732c4b3200265e0ab",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "56bdcc15dd28772bcf7ce719d389f8521f0a76fb0a7dd8b4913eef0cbd477f2b",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "eb7e61f1b79dfe3b972268e07160190f1faee868c101b40a5b140a630e26edaa",
       "linkIntents": {
@@ -7127,8 +7416,8 @@
       "target": "brew:detach"
     },
     "brew:dhcpdump": {
-      "candidate_hash": "ef4cf772d6d49b78734eb38c1061cceafb460d1adf7f5e14ba4c91d4a352de9a",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "6f1cb50d51a9090d8386b88a8114623a004f696f1904c20f276b8d9a23ece688",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "1362ed35dc2925869378951a43ceee6433316f57c59b6501bf419a3f755365ab",
       "linkIntents": {
@@ -7223,8 +7512,8 @@
       "target": "brew:dhex"
     },
     "brew:diction": {
-      "candidate_hash": "15925ee71f63e791c2d14ebde343032b4dcc441cb4e3577b1a467983eae367a4",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "2991107ab3760c9eb265b01df93a239a4423d1478a6bf084efee09f04c02c6ee",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "bd6ed755472c1c947c859d7a9d99b46f73a0801a2e496c762b3674aa53777747",
       "linkIntents": {
@@ -7271,8 +7560,8 @@
       "target": "brew:diction"
     },
     "brew:diff-so-fancy": {
-      "candidate_hash": "e2eca8802b2299f632f4d8d26e8ba0c62abc41664358be8e5acce969005d8066",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "d6471c9410869d051f2cda97482da8135396b3f525f07b38ee153cb3254592a2",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "df13fa10840d5592890232099427de71266e781725cd8c092f796a2bf2cf89dd",
       "linkIntents": {
@@ -7559,8 +7848,8 @@
       "target": "brew:distrobox"
     },
     "brew:dmalloc": {
-      "candidate_hash": "fb9df6743b997b5e879121694e1c45862c4fa05c53431c0bb4c679ab2decd7dc",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "8bd4c5b96d6547e6f85e5cba4d63a64eeb01ecc27fc8c801c4e4a0f31d9c2add",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "26cda8c211a84bc3d932df95a5dd2dbb8f73697a04130c67f43bbc446ecf6901",
       "linkIntents": {
@@ -7895,8 +8184,8 @@
       "target": "brew:dos2unix"
     },
     "brew:doublecpp": {
-      "candidate_hash": "924b33e9a2fd3b13484ab3ad0fec934de0e8ff5a3baa44147f2ee609c343080f",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "d786acb98eb23a94c979e01e0e089ce1e56f7777b04f3664cc0299520ef51a97",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "37a6757d242852c3ed25b468b4a9e6f058aeec31b1cfc21166c9a10b98e2b57b",
       "linkIntents": {
@@ -9047,8 +9336,8 @@
       "target": "brew:etsh"
     },
     "brew:ex-vi": {
-      "candidate_hash": "06062ed73d50701c32c837ee3fb369a86d99b69a2953399c484640b8438232a7",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "a6e8f450365cc37da3286bd3334e249e98eddacbfb1d9215c72f17f0fbb94704",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "ffbb19c882c6db137984306dde372519b3ae794006c5e0f1c3f934befd0d4c34",
       "linkIntents": {
@@ -9064,6 +9353,15 @@
         ],
         "relatedPackages": [
           {
+            "confidence": 0.57,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-vi-mode",
+            "name": "zsh-vi-mode",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: friendly, vi.",
+            "rel": "domain_peer"
+          },
+          {
             "confidence": 0.53,
             "evidence": "bounded local candidate similarity",
             "label": "ad",
@@ -9077,15 +9375,6 @@
             "evidence": "bounded local candidate similarity",
             "label": "airspy",
             "name": "airspy",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: version.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.53,
-            "evidence": "bounded local candidate similarity",
-            "label": "airspyhf",
-            "name": "airspyhf",
             "provider": "brew",
             "reason": "Local package facts share a topical domain. Shared terms: version.",
             "rel": "domain_peer"
@@ -9238,6 +9527,54 @@
       },
       "target": "brew:extract_url"
     },
+    "brew:fabric-completion": {
+      "candidate_hash": "bdc3fe3421391f064f9c213bab55b70abe2ff6c866990fa780c0be1ff83c3e09",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "ff7ac6233032f4216051788364b5a3ddced051fa7d62076648ac6873299fcd58",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "fabric-ai",
+            "name": "fabric-ai",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: fabric.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "bash-completion@2",
+            "name": "bash-completion@2",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: bash, completion.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "ry",
+            "name": "ry",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: bash, completion.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:fabric-completion"
+    },
     "brew:fairy-stockfish": {
       "candidate_hash": "a003e06e626e213a5c3aa974657de4df51b022d1e5adefecbc642ebf41b3574d",
       "curated_at": "2026-05-26T14:11:23+00:00",
@@ -9287,8 +9624,8 @@
       "target": "brew:fairy-stockfish"
     },
     "brew:fakesteak": {
-      "candidate_hash": "6c41f70e5b2cdd7e2c28a6b573a86859be905f193a6c3d2f0785c1f4346f8ce2",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "32a8d8585657cee230226e0a183efb75c9d1d68ec49a473431b807701748c79c",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "af8d9acc41c75eeb64bc52da2631ca8fa0a7a06824c8c3943ea5872b932d07ff",
       "linkIntents": {
@@ -9623,8 +9960,8 @@
       "target": "brew:fcitx-remote-for-osx"
     },
     "brew:fetch-crl": {
-      "candidate_hash": "a2417661c65f002c9ef99468319d794e388d8b3bed8dfa289eb53d1ccc678933",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "cfc41ef08f76aa0422b5f0abb69643c5039fe0aa5f0513888e140d9d9c12acfa",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "300c2bc8aa6b119ea0c5a67052b79a2a5f004843ed421c22c19b4ba3a72cde64",
       "linkIntents": {
@@ -10295,8 +10632,8 @@
       "target": "brew:foremost"
     },
     "brew:format-udf": {
-      "candidate_hash": "4970c0fad118aeacc6faeace1d6ccb33b14512ad5af0cd37ea1c663b1a7d0c28",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "dbf6dc037b3b984cf0935896ae2f371b4dabc48e42cec544ce6f83b2dd96a219",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "e06f5c8b3a9e232194f8e6cfae6b732c3d1306232871077533f2766876e212da",
       "linkIntents": {
@@ -10535,8 +10872,8 @@
       "target": "brew:fprobe"
     },
     "brew:fsw": {
-      "candidate_hash": "21ba6833ce403e3d2f3aef586cc7ae3cdc0b4e5277131bdc7cc8efba6ec19b63",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "d4f7c5b1cac6bc331092c3ac86effe2d985fa202478770cbdc5041f9fc087cb2",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "28a9b52e7f4fe79effd73a81198ab5e35e795cdcf46cca16d2d0b7bd9c86e9b3",
       "linkIntents": {
@@ -10678,9 +11015,57 @@
       },
       "target": "brew:fzy"
     },
+    "brew:g2": {
+      "candidate_hash": "bc4006c6a46bdc4949b5ced054c0e7e7a58701791e6ceb2255d0623410fefbe4",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "b2d311f4bce59392d330421b53f2ba306be68654828e407b0c3cccefdff7a0a7",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
+            "kicker": "remote connections",
+            "label": "Networking and protocol packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "networking-protocol-tools"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "git-ftp",
+            "name": "git-ftp",
+            "provider": "brew",
+            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: client, git.",
+            "rel": "adjacent_workflow"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "gitingest",
+            "name": "gitingest",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: friendly, git.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "gitu",
+            "name": "gitu",
+            "provider": "brew",
+            "reason": "Local metadata places this package in an adjacent workflow. Shared terms: client, git.",
+            "rel": "adjacent_workflow"
+          }
+        ]
+      },
+      "target": "brew:g2"
+    },
     "brew:gel": {
-      "candidate_hash": "3db435dc2de86e7b4d217ea46d4a018bbdd7782716e6a1b9ea6c25d39dfd54da",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "2253e6ad4d0c8763c42c828b5d4b7c9bed393357e34f121b27b9ef2a5e8a2321",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "6fd1fd62ba66294961bcbbee67c583a75c22c796651f067da1091291b4416502",
       "linkIntents": {
@@ -12599,8 +12984,8 @@
       "target": "brew:gplcver"
     },
     "brew:gpp": {
-      "candidate_hash": "8d894cca58d3fd89dafd080e98f09e00fc40426b5108f15e03e44a9e9fbbdd76",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "f081160f97021e6ce52937b934917c3c7765b93045244e8494975ccc7f244f8a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "d74f4589f1cbf9cae6718643ec207240108a3b1c4e7625f41d394bd254b90f0b",
       "linkIntents": {
@@ -12839,8 +13224,8 @@
       "target": "brew:greed"
     },
     "brew:gti": {
-      "candidate_hash": "a336006cc7be9f8c0b2c9e98359771d7ff32c890f86dbd83b24f9b54e4bd6540",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "20a83a26d148c518e41ee6b609d4c7a735818577d0ee23a6de1f0e4c5f5a0b98",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "58c1c40ff49c2238f9d5b4bbc78ad8342f349a29cfe04bf3c7b96abb7f9c0410",
       "linkIntents": {
@@ -13175,8 +13560,8 @@
       "target": "brew:haste-client"
     },
     "brew:hasura-cli": {
-      "candidate_hash": "4d3e9dbc8f1d9d74037d4f90d185c55a08912a40804851731e6b6c62e6bbccee",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "1c60568e90783ff6a56420514d1155471524a0fcb54dd4131895754634987b44",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "04919cd5d1fcb7ea78c144ee857ab7c4f7918a586ff70b53b96442afbd382bca",
       "linkIntents": {
@@ -13895,8 +14280,8 @@
       "target": "brew:iblinter"
     },
     "brew:icdiff": {
-      "candidate_hash": "3db21120b47ec259fdc22733ff20b7e4caf270d11176f68b34b243e0d10cdfd0",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "0d2a315901f95bd6996a644a2596ff9bf0217bdacfc6d1114c1c1bc6c32ffbb9",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "472bc99389143fae1d085be182ab45af78e546bb00c746c4d64ba647577ea6c4",
       "linkIntents": {
@@ -13943,8 +14328,8 @@
       "target": "brew:icdiff"
     },
     "brew:id3tool": {
-      "candidate_hash": "1e66f976229715c2f2f02e0b1b88055605673965bf185de66c867813b2fc4994",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "5006b93f54ad17b2c538e7a853aef74e3ce2dd994f8af04847bdc575819f8a6a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "3f4dd93f864d15c6134cec0961e78ddb454e58c5f6adeaa9f7e1be4511a96694",
       "linkIntents": {
@@ -14327,8 +14712,8 @@
       "target": "brew:inxi"
     },
     "brew:ioping": {
-      "candidate_hash": "ed4716819c35d9ae3382136483abf27fa014d021b87162a5e6d88680cfccce19",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "3b37fe25893678277f1d1f36caa85581822f9cba609271e697d662a7033ee25c",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "0da447e590519469ddf645a05c8ee24fc394ceedba6193739b143ea48e7b77a8",
       "linkIntents": {
@@ -14375,8 +14760,8 @@
       "target": "brew:ioping"
     },
     "brew:ios-class-guard": {
-      "candidate_hash": "21d4e1e7ec12883cba2ede5bf52c6de057dc40f1ed190b6758c793dae8deb9e4",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "650f77205dda6a794ce981b7bb3b90d1db85bcaeba3eb99e1e887b8398117742",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "9fb7e7e4a9d0eb88894b19ed48eef85b5d80e453829f1bbee6cb3b8658f3a5c5",
       "linkIntents": {
@@ -14423,8 +14808,8 @@
       "target": "brew:ios-class-guard"
     },
     "brew:ip_relay": {
-      "candidate_hash": "523dfb4af1e9f49cdd50ac6e805fa0487aa97df8faf181006a562831299389f5",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "750d9a0f3b39f58b2c02f9494ff72cd0bbcfbc704822372dd818ecf2db4c9b81",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "b8c54f5c9069c3841799d18b2b6f6fa26690bf7463498035acb3a0e5b0bcc58c",
       "linkIntents": {
@@ -16343,8 +16728,8 @@
       "target": "brew:libart"
     },
     "brew:libcmph": {
-      "candidate_hash": "6950eff765c170f7b4d45141a359384fed8e0069a356ae185fa7eead7254de02",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "dd671766193e2695129755502234abc334c80e762a6bdc8e22e9fa811ca750a7",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "3d7ca54ce299e14f7466eed397e494a64e7109ca9f49e0b5ef1591fb65fa766d",
       "linkIntents": {
@@ -16583,8 +16968,8 @@
       "target": "brew:libhdhomerun"
     },
     "brew:liblockfile": {
-      "candidate_hash": "695c97c83f12ae5afde9a985009738eef60f7f895e66ee6dc88445fdd9813226",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "70bcafb63bf8ef0a495aaf3cf628cb56c5d6622472bbb80c9de0cf25e648eb67",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "67783f70e190c55c005a727828fb358d4724ae8e770c6a39ebd235653293dddd",
       "linkIntents": {
@@ -16679,8 +17064,8 @@
       "target": "brew:liblzf"
     },
     "brew:libmobi": {
-      "candidate_hash": "58fc3fd94fb9f58813dfa119763cb4f02fd2467f06c0ff3f2957179b95668336",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "46e5ad74f5ca311790e0b1c6d052cbfcc510899f952eb20d0e7d5b5bbb03b437",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "abcdd3f59bc902bc76c28e94f2e9263540951bb80cfc2e860e3a1b08c20a6706",
       "linkIntents": {
@@ -17591,8 +17976,8 @@
       "target": "brew:lsof"
     },
     "brew:lsusb": {
-      "candidate_hash": "bfca8044950f635fcb8d5c1bda0edee8dbece806a5cd322d9412045f1b01b019",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "24051ced23b6b7c11ba49595ecaf4745ac6201dfff225bd08bbe98689014cc16",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "941bbc4be06466520a1954d5bf134ba32590b1808f48e77c4b4f04f41ec5c3bc",
       "linkIntents": {
@@ -18791,8 +19176,8 @@
       "target": "brew:mentat"
     },
     "brew:mg": {
-      "candidate_hash": "3bda8e446d38311f04948d028c5f72eae629d3bd967e24bbcc4b258aa0fb7851",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "ed2b273caae3665b22d51a45b24510ece3f3afea6b714a4ff7b67d8346faead1",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "f64f2311d40e1dd3fbd30e76c7758be1996ee4325cae3fea3916562df14620b2",
       "linkIntents": {
@@ -20183,8 +20568,8 @@
       "target": "brew:nasm"
     },
     "brew:nave": {
-      "candidate_hash": "31e0c00f90f22aa7a0847babbb86184d1b376244c4d6a77f18f1a774bbc09947",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "d2ad812579a5aac469df0ba2a0e10cbd2b14d6b38a9dad38af907f1e3b15c710",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "5fa768140630daf741293dd9c7bb26f3e74077bc5b02cbfcd55f6aa2a0c1a8a7",
       "linkIntents": {
@@ -20567,8 +20952,8 @@
       "target": "brew:nerdfetch"
     },
     "brew:nethogs": {
-      "candidate_hash": "d7b73ba85427f21933590a795d84f7a1691d34ec0db5183283c4484f12df9029",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "7aa954142b8477d8c24461b8eb6bc777bcec2863048661fbb7a0c9e98480a526",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "1f5410960c9a0fa186ab353026d9801e6771e0051d38a26e84d9ddae3b4fddd9",
       "linkIntents": {
@@ -20615,8 +21000,8 @@
       "target": "brew:nethogs"
     },
     "brew:nettoe": {
-      "candidate_hash": "442fcaddfba537f57f41a8bf88ddba08c2e75907bce2bef67a7b9ad4c93f2c44",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "64d5096b1bbcbc80ba02f66f60805e55c1ffa4baaa4d1ce896acd85f4430dfa7",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "39b786c24e46929fe1c18f6d3df9ad77b7bd35d6c75d94dcc52272dafcaee991",
       "linkIntents": {
@@ -20759,8 +21144,8 @@
       "target": "brew:no-more-secrets"
     },
     "brew:nodeenv": {
-      "candidate_hash": "afca3ee06c150b1f11fd2f3d0ed9993774724b67f4d0b28ac46dfc724adbface",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "aa086f1a92fa0a3ca62aad99fabbea59f367aa234122369fede098f8d9080bb2",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "1ab6c52110a62a1feba15fb88511e5883002a5217e524b8ec7cb40de2cbb47d4",
       "linkIntents": {
@@ -21093,6 +21478,54 @@
         ]
       },
       "target": "brew:nuvie"
+    },
+    "brew:nvm": {
+      "candidate_hash": "a06f1ce226e4618b646096a91373e6e7e87a9f923c475d485650379241b16eee",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "ddc2e65848160ddb8067b530b8052de98ec3fbe21013ec4954d2992553f4d5b1",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
+            "kicker": "runtime surfaces",
+            "label": "Language runtime packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "language-runtime-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "solc-select",
+            "name": "solc-select",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manage, multiple, versions.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "window-size",
+            "name": "window-size",
+            "provider": "npm",
+            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: node, node-js, versions.",
+            "rel": "language_runtime_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "actions-up",
+            "name": "actions-up",
+            "provider": "brew",
+            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: node, versions.",
+            "rel": "language_runtime_peer"
+          }
+        ]
+      },
+      "target": "brew:nvm"
     },
     "brew:nyancat": {
       "candidate_hash": "b8d67627deddfb042fb626eaec9debe335f851c09cd4beb7f3080c4c8896073e",
@@ -21431,8 +21864,8 @@
       "target": "brew:open-jtalk"
     },
     "brew:opendetex": {
-      "candidate_hash": "b223cee165e41c156632b005ca0073faeb41340a1a4ac74215d6ae8b6e04f246",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "b9a943df751d9053ecbfdec9c68cec5f0a5a8ff2edcbd02bca64383ec1133cfb",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "f7e0063be4ca89a0eae7024b768cbf0d95ab6b8d4f7128a48fe3f905c9041d3c",
       "linkIntents": {
@@ -21719,8 +22152,8 @@
       "target": "brew:pacparser"
     },
     "brew:pacvim": {
-      "candidate_hash": "ce9a6a98242150024b87693896c33ab21104f6688a5cccd0e1dd98a9ea2b16db",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "e839289eed2d86ed25853d5ad9e48ad7890f3a695f1be89708880caee3beefb2",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "12c0e57a90b0fbb4c707f9b20f901546f62220cbc5ea13b7b0889b2c36b87c93",
       "linkIntents": {
@@ -22534,6 +22967,54 @@
       },
       "target": "brew:phpmd"
     },
+    "brew:phpmyadmin": {
+      "candidate_hash": "2a53fe4fcda49a8e2abcec63d41b17bb686bca36a30ba96fe3571e3b4a3b00bc",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "82f6838cbeeb88131e50f2d07a00c7c21f9d4efc8b6a9f485ffc978874e162c3",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Packages that query, migrate, inspect, or operate databases and data files.",
+            "kicker": "data stores",
+            "label": "Database and data packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "database-data-tools"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.57,
+            "evidence": "bounded local candidate similarity",
+            "label": "fava",
+            "name": "fava",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: interface, web.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.57,
+            "evidence": "bounded local candidate similarity",
+            "label": "ghz-web",
+            "name": "ghz-web",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: interface, web.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.57,
+            "evidence": "bounded local candidate similarity",
+            "label": "kitchen-sync",
+            "name": "kitchen-sync",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: mariadb, mysql.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:phpmyadmin"
+    },
     "brew:phpstan": {
       "candidate_hash": "c5317b1c45f292dfa8cc6b76209b5c975aed12acba408da346b4a681cf474ea4",
       "curated_at": "2026-05-26T14:11:23+00:00",
@@ -23015,8 +23496,8 @@
       "target": "brew:pipemeter"
     },
     "brew:pit": {
-      "candidate_hash": "cf13eca398bbc15ccc6dab17a6b54d2d0f95dbfbbdf53241ab67578e7a3d3279",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "2edc33023db66a781a2b91c105dabb4a1128e7e6e93a0065408b134a9ec6e426",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "958a56d629e84d62c9a6cc08f83c208861abf2c35427df8b4ff6f6511a0db819",
       "linkIntents": {
@@ -23445,6 +23926,54 @@
         ]
       },
       "target": "brew:poster"
+    },
+    "brew:powerlevel10k": {
+      "candidate_hash": "894240993818a72662f612ad24b75c10c4644b7c6eeee30ca9db859685999b4b",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "2f695894a1a481a251029222c8eff1828d8181478cd9eb098bb1b82bdbf98360",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "geometry",
+            "name": "geometry",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: theme, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "antigen",
+            "name": "antigen",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "aravis",
+            "name": "aravis",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: theme.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:powerlevel10k"
     },
     "brew:prettyping": {
       "candidate_hash": "b66bd223b9a3694f5dbd0733eb3b7c0d73bb400593c90318f45cb43d4d3bb896",
@@ -24887,8 +25416,8 @@
       "target": "brew:recutils"
     },
     "brew:redir": {
-      "candidate_hash": "02f2378cbcdea442e9d70ce6181176def0e77b0563738412c1f1ead5c5369d42",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "1388b16738f3a74da170dac120bf170c842942ebaf8f6ed7f7a8edffefdd1638",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "d63665a83af36ffc443b276754941bf55f8c4d9f74ef17fc1b12f28b8bf28e73",
       "linkIntents": {
@@ -25319,8 +25848,8 @@
       "target": "brew:retry"
     },
     "brew:rfcstrip": {
-      "candidate_hash": "bbc850ff3f8e2a285887f9d68d4422252219b55d5c3512a59eb9d82bbcc173f0",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "99d7be136765ed1d83c8bd22f6cbc22b85d7bf900c66600ffed520c9a08e1437",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "37cb2659852bae2c8c1e2024220622f486d11b6f46d3bcdeb8075365e920bba5",
       "linkIntents": {
@@ -26567,8 +27096,8 @@
       "target": "brew:sersniff"
     },
     "brew:serverless": {
-      "candidate_hash": "c564b5ff3774c15f5481b9430ad475c5f71d48fa2a2f3e06ee59031cee0bc4fb",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "ca89fc31cc461c04d42d380538d8bf83e7823e6f69be682834700e6fb234030a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "a94250bb01481f9da6dc0d9b26c14cd26f2861754407c2a277b3adc9f97ed6b2",
       "linkIntents": {
@@ -26807,8 +27336,8 @@
       "target": "brew:sfk"
     },
     "brew:sfst": {
-      "candidate_hash": "9fb3198112dfdcc429e33ada109933ea3242c96d1dfa21141f41af556f0ab2dd",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "5fb867736fd8992dbb4ef0a0623efcd7ec1f124f516bc9816eb08b42d1fcab73",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "2445b526a97289ddbf5d536d2130a444e85b338611d6d53fff9e06762f17db57",
       "linkIntents": {
@@ -27671,8 +28200,8 @@
       "target": "brew:smenu"
     },
     "brew:smu": {
-      "candidate_hash": "0e01459f2b7b5753601cd4535962482bf1b567a6da25b5a284625acf31baa273",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "44bcab796d7aeb19e6a4d03b3fd08985232052bd71dbe580e3bcd98ee5da489f",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "97e6ee4aaddb9f4bff519ad9711be124627e5da8ed7aa50d6184ba458141d0bf",
       "linkIntents": {
@@ -28535,8 +29064,8 @@
       "target": "brew:stress-ng"
     },
     "brew:strip-nondeterminism": {
-      "candidate_hash": "89bd7dd2efa28c2c7d328b596f25673b5845c2396669d080f1162b56e6e07be2",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "ee4251939c8976abc31620a4f788c73675c7ae992b286aaadbb482652b8a26ad",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "47e1c6801481cfa3fe01c747c249a734f6d9416791365ba21b0d23964b56fc59",
       "linkIntents": {
@@ -28554,6 +29083,15 @@
           {
             "confidence": 0.68,
             "evidence": "bounded local candidate similarity",
+            "label": "bash-completion",
+            "name": "bash-completion",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.68,
+            "evidence": "bounded local candidate similarity",
             "label": "lv",
             "name": "lv",
             "provider": "brew",
@@ -28565,15 +29103,6 @@
             "evidence": "bounded local candidate similarity",
             "label": "posh",
             "name": "posh",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.68,
-            "evidence": "bounded local candidate similarity",
-            "label": "reprepro",
-            "name": "reprepro",
             "provider": "brew",
             "reason": "Local package facts share a topical domain.",
             "rel": "domain_peer"
@@ -29495,8 +30024,8 @@
       "target": "brew:taskd"
     },
     "brew:tcping": {
-      "candidate_hash": "6b22fad46882822d25eb7392dce45a2d2ef3b647dc1cceac98f1a4598d5d98c1",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "e566fbf7d2fc478905f0c11f32b5a2061734a93c53e3acd0debb55f7407a55eb",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "069f58deed90720842b11479cd4e6a83752153292e2296bf5c5d032f5d010eaa",
       "linkIntents": {
@@ -29543,8 +30072,8 @@
       "target": "brew:tcping"
     },
     "brew:tcpkali": {
-      "candidate_hash": "1a1e274b6dd584fd4077b3358c265e09fa279877459693c1249b7ad06f5d2053",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "9835195342f8796ec0c45f3e4fa5763a05ed4f749f4bdd4ce8c3d53e2c3fa8f6",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "7f5cf2e5d18b5f30cc2f6c83fcb37d22358b9ecc7fee849deb5e526b1c783741",
       "linkIntents": {
@@ -29569,21 +30098,21 @@
             "rel": "domain_peer"
           },
           {
+            "confidence": 0.64,
+            "evidence": "bounded local candidate similarity",
+            "label": "haproxy@2.8",
+            "name": "haproxy@2.8",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: high, load, performance, tcp.",
+            "rel": "domain_peer"
+          },
+          {
             "confidence": 0.6,
             "evidence": "bounded local candidate similarity",
             "label": "berkeley-db",
             "name": "berkeley-db",
             "provider": "brew",
             "reason": "Local package facts share a topical domain. Shared terms: high, load, performance.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.6,
-            "evidence": "bounded local candidate similarity",
-            "label": "code-minimap",
-            "name": "code-minimap",
-            "provider": "brew",
-            "reason": "Local package facts share a topical domain. Shared terms: generator, high, performance.",
             "rel": "domain_peer"
           }
         ]
@@ -29687,8 +30216,8 @@
       "target": "brew:tcpstat"
     },
     "brew:tcptunnel": {
-      "candidate_hash": "14d8bcb8d9645a8da4277106200272195e1c77eca97da1feedd6f92be329bbca",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "abb54d358468f774f1257a0d584359bce7ad47ad9df92f12b818bc2f8e835622",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "fd7593b18e2aa233e64ddb80dd343f49023becf00643417f3b84d3f3bc55f18f",
       "linkIntents": {
@@ -30311,8 +30840,8 @@
       "target": "brew:tmpwatch"
     },
     "brew:todo-txt": {
-      "candidate_hash": "715674e0461122332fd60dc70fa6b9982e17dc5c10570cac6ad1666da0409889",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "a1c01a790dce23b91169dc8efa64926648a5f997467b06c2f2fab306bd9d0bac",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "bdf1bab3a722b3cbec965a642d9bbc4dcee80664c8106e54a2617cdc11733a1e",
       "linkIntents": {
@@ -30407,8 +30936,8 @@
       "target": "brew:tofrodos"
     },
     "brew:topgit": {
-      "candidate_hash": "df89b6c553e0c01318207e9856e3632d15e6a4ec5b2dbc31150f37c5091dad25",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "4a502af6d5166996fb5b68c1f50ce7a312af9accafef6b6571eba76fb699ce0a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "3346fb0afed6bc3af712805cb267f31088d0042d44e0ec6ef80b9f5c9f3386c1",
       "linkIntents": {
@@ -32327,8 +32856,8 @@
       "target": "brew:wiggle"
     },
     "brew:willgit": {
-      "candidate_hash": "0cfc5ad2e46c4e95b1f310ef3ab00838d2060ae366e343822208c6d8e72b2b48",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "fbe191701e47e34032bad3c21d41e805550236d83ab5f1496a2c887b74ecea79",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "cd4db2141c622addc949c4798006d77ecb7a07debdc54da839f301845549fb50",
       "linkIntents": {
@@ -33047,8 +33576,8 @@
       "target": "brew:xcsift"
     },
     "brew:xctesthtmlreport": {
-      "candidate_hash": "acd980daf055a78cea8784d3bbe731e99c86e0cfcef36f17b0e7c4f361f1c687",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "348ed53da5d2e9122be7ac7ca3388bc6fa1d24a232ee22a066d74ddfd9766ddc",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "cda88f3f74e6c1da2e7a0fe0e90014c899f5e21988a02388f4e70dbbb90ae267",
       "linkIntents": {
@@ -33095,8 +33624,8 @@
       "target": "brew:xctesthtmlreport"
     },
     "brew:xcv": {
-      "candidate_hash": "b70c3c549852123582ab9a4c5aab059a0c3a9788cd1c950da45410c36dac4649",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "0da04188148d28dc82cefd2130eb58e35e0e5c13c179b1190b25ab887f3d2461",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "08fe1bae165b1e46fdd81fbadcbb0d274a81d5c549c7be1d10e1a683687b5c56",
       "linkIntents": {
@@ -33191,8 +33720,8 @@
       "target": "brew:xmake"
     },
     "brew:xmlcatmgr": {
-      "candidate_hash": "1048ab205d3ba3feb6e8e934ff5c5fbe0f6bdf81e70a7bcfe22da30ab5251da5",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "910cd61a4760253e6551e3701f899afa11ea6cb9a949b0aec0e607541a2825e1",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "e9d3c309eeb73b8cae14bb5c730bf04b8020bcc91d743d787a8302dd65043dce",
       "linkIntents": {
@@ -33479,8 +34008,8 @@
       "target": "brew:xtitle"
     },
     "brew:yadm": {
-      "candidate_hash": "3ddb2f4284b05f1cd555a41039b1b47f372f79546a11421f698059b06cdb086f",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "799747255dbef476c90ff7a2b3c1601eb9499ee8857cf34b0022f2a7803cd49a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "cf949c1d0ae56fd57e6229a90e42030d2a5ae4e47c388fc5cbd512847a07c264",
       "linkIntents": {
@@ -33623,8 +34152,8 @@
       "target": "brew:yank"
     },
     "brew:yasm": {
-      "candidate_hash": "5193f16b0fe5d5e6a516da3809824810cf1d119c76ce6408d283db62d2e95a10",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "353daae27d8e7bf0ac307194b7c107de036eecadc012ad33110181612fb8d80c",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "6dbf8c213c9c2817cba46fa7533aede3601bf4b244d94d5f94515886f17b7bf8",
       "linkIntents": {
@@ -33910,6 +34439,102 @@
       },
       "target": "brew:z80dasm"
     },
+    "brew:zimfw": {
+      "candidate_hash": "5ca33c32d02dc3c3855dfbda3e5175c3f4f750969ba06180f711120b7294ebbf",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "60b77c0c3af350ce3c72c0c0ae7c4f991b78b88318c102a5330ac6aa1d6326ef",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "antidote",
+            "name": "antidote",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "antigen",
+            "name": "antigen",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "zinit",
+            "name": "zinit",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:zimfw"
+    },
+    "brew:zinit": {
+      "candidate_hash": "6f97b9300c116f9ae8db0c2e4db0c33d788a788042aebe3b9a94f048f116c814",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "cfe3805166c001d305d5db03e7eb24c7586fc0721d90bd356170d6d09b00506d",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "antidote",
+            "name": "antidote",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "antigen",
+            "name": "antigen",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.78,
+            "evidence": "bounded local candidate similarity",
+            "label": "fnm",
+            "name": "fnm",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: fast, manager.",
+            "rel": "domain_peer"
+          }
+        ]
+      },
+      "target": "brew:zinit"
+    },
     "brew:zlog": {
       "candidate_hash": "c6dcacc580af0fd34285b6e5cdf9937da7f726f8c0e9cce864d79520351fe7f7",
       "curated_at": "2026-05-26T14:11:23+00:00",
@@ -34007,8 +34632,8 @@
       "target": "brew:zork"
     },
     "brew:zplug": {
-      "candidate_hash": "ce7ee943da483a8d93857801051e53586da5808c713bcbd2930c5aa87be64dee",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "d8a72ff5189543677d6f0054a4b55262ee2452ab53d5e3a3d146fb43e583722c",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "ee993461ffc818b813cd22c4096feabc113e4220d07149a5f0c18089effa576e",
       "linkIntents": {
@@ -34026,6 +34651,15 @@
           {
             "confidence": 0.86,
             "evidence": "bounded local candidate similarity",
+            "label": "antigen",
+            "name": "antigen",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: manager, zsh.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
             "label": "apngasm",
             "name": "apngasm",
             "provider": "brew",
@@ -34040,19 +34674,538 @@
             "provider": "npm",
             "reason": "Local package facts share a topical domain. Shared terms: env, manager.",
             "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "graphql-let",
-            "name": "graphql-let",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: env, manager.",
-            "rel": "domain_peer"
           }
         ]
       },
       "target": "brew:zplug"
+    },
+    "brew:zsh-autocomplete": {
+      "candidate_hash": "b48d90d7d171ebfeb133ecf9bc879d280ac258c773d0712b5603c01bee30b008",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "eba440ce90780b28bc0b2fef2ce6880ba72b3bf42da1a2cab6e5adb23efb7072",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-completions",
+            "name": "zsh-completions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: completion, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-autocomplete"
+    },
+    "brew:zsh-autopair": {
+      "candidate_hash": "921953c37956b3060dfcee85de28ad62b4a7f179e52b2ec5860eaecdd1f3b8b9",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "5196a482c988ced023e66b8ccd57a9f933649e789759d4048e5a5e2ff52f30c9",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-completions",
+            "name": "zsh-completions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-autopair"
+    },
+    "brew:zsh-autosuggestions": {
+      "candidate_hash": "2cab3ae94b102c8a13b6efb8848d1e7a0e75bbe252824b64061058ed33d2b4fa",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "ed4fcac68bccaa4abf5c159b8acc13293dc66987db14165199101f8a2af4ee31",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-syntax-highlighting",
+            "name": "zsh-syntax-highlighting",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: fish, like, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-fast-syntax-highlighting",
+            "name": "zsh-fast-syntax-highlighting",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: fast, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-history-substring-search",
+            "name": "zsh-history-substring-search",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: fish, zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-autosuggestions"
+    },
+    "brew:zsh-completions": {
+      "candidate_hash": "a426d7c0a41aa8c89ab9c6a1c9d9045da9cb719d6b20ff42e4c9ac8cf2fb92ec",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "e4a2dd5c1eaf30e3e697c585ce20bb3360ab9f1536feb020c71c80ade2cd1594",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: completion, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-completions"
+    },
+    "brew:zsh-f-sy-h": {
+      "candidate_hash": "780f5b1999338cdcac2d3498aa2f3fd360a9679f589e64729e994185b2423291",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "03691933e373b1f2cfa399de5971359c432ef8a9df91e9c8f402372e41b67324",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-fast-syntax-highlighting",
+            "name": "zsh-fast-syntax-highlighting",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: feature, feature-rich, highlighting, rich, syntax.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-navigation-tools",
+            "name": "zsh-navigation-tools",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-syntax-highlighting",
+            "name": "zsh-syntax-highlighting",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: highlighting, syntax, zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-f-sy-h"
+    },
+    "brew:zsh-fast-syntax-highlighting": {
+      "candidate_hash": "6c17c78b48234bbc01936e534164722ae1f498c395603e6f2b79de5c35f542ec",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "9bae243fa91872c7a44daf5fdf96a92be88206fe7c17b90ca111c79fc83c33c0",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-syntax-highlighting",
+            "name": "zsh-syntax-highlighting",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: highlighting, syntax, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: fast, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-fast-syntax-highlighting"
+    },
+    "brew:zsh-git-prompt": {
+      "candidate_hash": "b4ec4616462fb1608e9b6db0457fdebd35e3dc490ca946498cf5bc634853fa6f",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "bc585aab4de1a18cdb6f19fb0e195baa634bd9e7c0ea2ebec25d3d345f579d10",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-git-prompt"
+    },
+    "brew:zsh-navigation-tools": {
+      "candidate_hash": "be38ccacd5d635847adf208e37ca7f4173fe993fc501393bd0a1d770bad00022",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "ff67d443268eb14efb8c69eb129a51da36f33c49a17945136aa72380e601b4dc",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-f-sy-h",
+            "name": "zsh-f-sy-h",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-history-substring-search",
+            "name": "zsh-history-substring-search",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: history, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-navigation-tools"
+    },
+    "brew:zsh-system-clipboard": {
+      "candidate_hash": "4047696d310a051b07dc7eba564ee2c04df2ddcedb406d1b7a4339df80404c26",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "4d20b79b0f02da7f571f5f93f5d1b4d28c899b774614ec1e300d9d19e1c2d6e3",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-vi-mode",
+            "name": "zsh-vi-mode",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: mode, vi, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-system-clipboard"
+    },
+    "brew:zsh-vi-mode": {
+      "candidate_hash": "f042edcdfdbbcbf91c52681dc36ecee945633628ce887a97731a5c71b2284d12",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "e4949afe465b3fb8f12363c6dd4de90ecc9f58aafb0beb6584909a437578cfa3",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-system-clipboard",
+            "name": "zsh-system-clipboard",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: mode, vi, zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-vi-mode"
+    },
+    "brew:zsh-you-should-use": {
+      "candidate_hash": "133135e54312e6d1fe0bdd4fd400c26b2244d8277051ada9047661c69f2ee8a1",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "11b4bcb79ae1131eaf11a40c976610c79875ad47cf35858bc991cf7a2e789802",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
+            "kicker": "Homebrew long tail",
+            "label": "Homebrew utility packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "brew-utility-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autopair",
+            "name": "zsh-autopair",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autosuggestions",
+            "name": "zsh-autosuggestions",
+            "provider": "brew",
+            "reason": "Package names and metadata indicate a similar tool family. Shared terms: zsh.",
+            "rel": "similar_tool"
+          }
+        ]
+      },
+      "target": "brew:zsh-you-should-use"
     },
     "brew:zxcc": {
       "candidate_hash": "62eab452ac654176d597a7b459ee683f0890d8a48e9252820328008f03064dc8",
@@ -34199,8 +35352,8 @@
       "target": "brew:zzz"
     },
     "cask:1password-cli": {
-      "candidate_hash": "6fc42055bd3b9c6805d9108e896d8982a20432b14b542fe45d2d1c7d1718c739",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "172e645dcf5932f6a9b5624581b3d59cd7cdbcda1a917f113e7e5ed4f9bd5425",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "3485a8d47d0e263f9f49dacdca9c49a41cade49847144f1e3ed9c007da0bb8d1",
       "linkIntents": {
@@ -34727,8 +35880,8 @@
       "target": "cask:coderabbit"
     },
     "cask:confluent-cli": {
-      "candidate_hash": "db09066d9fd2f69c8bf757d34772287ea884e495ea6bbe123fb0f4d318284791",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "44c2839185a8ab610a1e6291ae0209018edeefc40a05368cbd4372bf97acc797",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "09f65222c96606cc67d0c9077040fb9329643a846c45af2437b2b1b1fd516c77",
       "linkIntents": {
@@ -35831,8 +36984,8 @@
       "target": "cask:liquibase-community"
     },
     "cask:liquibase-secure": {
-      "candidate_hash": "4bb491f856ad031179f1a1c2f6e3dbfb6932c949471baf05bf5ba89bd718d547",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "28b47b2aef0f9fc97e4cf9712fbaa34a0201e34d88e57991486d490e83ecff39",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "5f295e6395a32de6c4e83f2dabe65b73e0c6bd78a9498093e2ac1e593e98e879",
       "linkIntents": {
@@ -35879,8 +37032,8 @@
       "target": "cask:liquibase-secure"
     },
     "cask:localxpose": {
-      "candidate_hash": "5c74a85e08648d5771589417ab4672717e96ca472566c0553aa63eefb6bd1667",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "b9c946082db37b0e0f52bdeb33bf9907760f96b56a783019e83fae90e29ee6cd",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "39adcdc2257689e877c7dc8ed43d9c19c3101b1960a7a954dd74db6a86677d6a",
       "linkIntents": {
@@ -35975,8 +37128,8 @@
       "target": "cask:mitmproxy"
     },
     "cask:notion-cli": {
-      "candidate_hash": "7fb2d5d258310ae43b178b5f3d9ca5b2796fe4aa8b521959343ddf412927ba1a",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "3b845bf613f8907a59e001228cd752a70634fde13b759f00e950872c4da35942",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "53fd6a4030f57dc58d3a00481151bb16f6bc35aa1fa4ba199957c093ab6af87e",
       "linkIntents": {
@@ -38279,8 +39432,8 @@
       "target": "npm:@bobfrankston/rmfmail"
     },
     "npm:@bomb.sh/tab": {
-      "candidate_hash": "3cfd6798eef1438158b5f498cbd0e507a0c1a97f95d791fdb5dd4575a408f86e",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "c1e37a73c4002e25f371511c56e23712807bcc645bbc213aade55792eab07d18",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "f01418336e60d874108db999d233aa585f6cd7dbc50d9e5e8d84b3d68d577bdf",
       "linkIntents": {
@@ -38298,26 +39451,26 @@
           {
             "confidence": 0.86,
             "evidence": "bounded local candidate similarity",
+            "label": "fzf-tab",
+            "name": "fzf-tab",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: completion, tab.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "zsh-autocomplete",
+            "name": "zsh-autocomplete",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: autocomplete, completion.",
+            "rel": "domain_peer"
+          },
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
             "label": "@graphprotocol/graph-cli",
             "name": "@graphprotocol/graph-cli",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: autocomplete.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "apollo",
-            "name": "apollo",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: autocomplete.",
-            "rel": "domain_peer"
-          },
-          {
-            "confidence": 0.86,
-            "evidence": "bounded local candidate similarity",
-            "label": "rdme",
-            "name": "rdme",
             "provider": "npm",
             "reason": "Local package facts share a topical domain. Shared terms: autocomplete.",
             "rel": "domain_peer"
@@ -39287,8 +40440,8 @@
       "target": "npm:@elastic/makelogs"
     },
     "npm:@esri/calcite-ui-icons": {
-      "candidate_hash": "4199ce239fc4e9c0d8c6e368ce0b0220382ff352c21a3effbc2e4897f92e90ed",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "4f3b46c037c42724705bece886dfaa02f0e5edc979703bd8125f2263c6ba1a6a",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "b342c31255882600cb73686411ec7d66cfd5e8965417dd37bc1b24b0fdd3ae95",
       "linkIntents": {
@@ -43271,8 +44424,8 @@
       "target": "npm:@softeria/ms-365-mcp-server"
     },
     "npm:@sourcegraph/amp": {
-      "candidate_hash": "01e864e96f8d762688870df551698f2feae232445b523e2f37b1263ad0261324",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "99250cb305784cc423c335efac9396c3e434632811c84159d222d6d8ba429919",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "d53af5441c2b80b5ce2e2ac8c33c6851885aa9e517a2793618619e371b20f49c",
       "linkIntents": {
@@ -56337,8 +57490,8 @@
       "target": "npm:prismic-ts-codegen"
     },
     "npm:proj-track": {
-      "candidate_hash": "e0d549827b3d966068c3c5b65d61baf76f0697b013b431ed99db45e7134c8d6f",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "14dfaf1e6f36ec6e5bcc7ed67828edc94c986d7f3ee0f18e0cfb9b3848ec96aa",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "8f90c7b23d23501c152d4a4c1605f24ab450b51d95a083af92385ffe05fde894",
       "linkIntents": {
@@ -57153,8 +58306,8 @@
       "target": "npm:regenerator"
     },
     "npm:relay-compiler": {
-      "candidate_hash": "420db8cc8d50fb2c30c97997e62c3febc6a2554a848a0b3589c8442fadd904b7",
-      "curated_at": "2026-05-26T14:11:23+00:00",
+      "candidate_hash": "f3b208d0d2f5098ddc81b7c9fd07743f28c89843b133e646d352a1ff90038faa",
+      "curated_at": "2026-05-26T14:31:22+00:00",
       "curator": "codex-local-curator",
       "facts_hash": "42856dd68a7083750b5f2f544fa8c61d285496187ef9e30b19476a51d13fbe81",
       "linkIntents": {
@@ -57188,12 +58341,12 @@
             "rel": "domain_peer"
           },
           {
-            "confidence": 0.75,
+            "confidence": 0.77,
             "evidence": "bounded local candidate similarity",
-            "label": "@apollo/rover",
-            "name": "@apollo/rover",
-            "provider": "npm",
-            "reason": "Local package facts share a topical domain. Shared terms: graphql.",
+            "label": "wildfly-as",
+            "name": "wildfly-as",
+            "provider": "brew",
+            "reason": "Local package facts share a topical domain. Shared terms: applications, building.",
             "rel": "domain_peer"
           }
         ]
@@ -61471,6 +62624,54 @@
         ]
       },
       "target": "npm:zod-prisma"
+    },
+    "pip:psycopg2": {
+      "candidate_hash": "09946d06f625fa65f90b834f49869589bb66569684b0f564ef37242cea36a1a5",
+      "curated_at": "2026-05-26T14:31:22+00:00",
+      "curator": "codex-local-curator",
+      "facts_hash": "dcbeef8e7a37604b3a8425cedb75af8de5a5a8da207d1af198a54367299b3474",
+      "linkIntents": {
+        "alsoAvailableVia": [],
+        "packageHubs": [
+          {
+            "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
+            "kicker": "runtime surfaces",
+            "label": "Language runtime packages",
+            "reason": "Agent-curated fallback hub from local package facts.",
+            "slug": "language-runtime-packages"
+          }
+        ],
+        "relatedPackages": [
+          {
+            "confidence": 0.86,
+            "evidence": "bounded local candidate similarity",
+            "label": "pgcli",
+            "name": "pgcli",
+            "provider": "pip",
+            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: approved, audience, database, developers, intended.",
+            "rel": "language_runtime_peer"
+          },
+          {
+            "confidence": 0.84,
+            "evidence": "bounded local candidate similarity",
+            "label": "swift",
+            "name": "swift",
+            "provider": "brew",
+            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: language, programming, python, system.",
+            "rel": "language_runtime_peer"
+          },
+          {
+            "confidence": 0.8,
+            "evidence": "bounded local candidate similarity",
+            "label": "chapel",
+            "name": "chapel",
+            "provider": "brew",
+            "reason": "Both packages touch the same language runtime or ecosystem. Shared terms: language, programming, python.",
+            "rel": "language_runtime_peer"
+          }
+        ]
+      },
+      "target": "pip:psycopg2"
     }
   },
   "relation_definitions": {

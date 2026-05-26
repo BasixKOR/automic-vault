@@ -2,6 +2,7 @@ import gzip
 import importlib.util
 import io
 import json
+import lzma
 import sqlite3
 import tarfile
 import tempfile
@@ -53,12 +54,32 @@ class PackageManagerIndexTests(unittest.TestCase):
         self.assertEqual(records[0]["id"], "legacyPackages.x86_64-linux.nodejs")
         self.assertIn("nodejs", records[0]["match_names"])
 
+    def test_parse_nix_all_packages_extracts_top_level_attrs(self):
+        module = load_module(INDEX_SCRIPT, "pkg_manager_nix_all_packages")
+        data = b"""
+  sqlite = callPackage ../applications/misc/sqlite { };
+  nodejs = callPackage ../development/web/nodejs { };
+  _internal = callPackage ../internal { };
+"""
+
+        records = module.parse_nix_all_packages(data, "https://nix.example/all-packages.nix")
+
+        self.assertEqual([item["id"] for item in records], ["nodejs", "sqlite"])
+
     def test_parse_debian_packages(self):
-        module = load_module(INDEX_SCRIPT, "pkg_manager_apt")
+        module = load_module(INDEX_SCRIPT, "pkg_manager_debian")
         data = gzip.compress(b"Package: ripgrep\nVersion: 1\n\nPackage: nodejs\nVersion: 2\n")
         records = module.parse_debian_packages(data, "https://ubuntu.example/Packages.gz")
 
         self.assertEqual([item["id"] for item in records], ["nodejs", "ripgrep"])
+
+    def test_parse_debian_packages_accepts_xz(self):
+        module = load_module(INDEX_SCRIPT, "pkg_manager_debian_xz")
+        data = lzma.compress(b"Package: sqlite3\nVersion: 1\n")
+
+        records = module.parse_debian_packages(data, "https://debian.example/Packages.xz")
+
+        self.assertEqual(records[0]["id"], "sqlite3")
 
     def test_parse_pacman_db(self):
         module = load_module(INDEX_SCRIPT, "pkg_manager_pacman")
@@ -153,7 +174,7 @@ class PackageManagerIndexTests(unittest.TestCase):
     def test_alias_matches_add_source_backed_external_id(self):
         module = load_module(INDEX_SCRIPT, "pkg_manager_aliases")
         managers = {
-            "apt": {
+            "ubuntu": {
                 "packages": {
                     "nodejs": {
                         "id": "nodejs",
@@ -166,7 +187,7 @@ class PackageManagerIndexTests(unittest.TestCase):
 
         module.apply_alias_matches(managers)
 
-        self.assertIn("node", managers["apt"]["packages"]["nodejs"]["match_names"])
+        self.assertIn("node", managers["ubuntu"]["packages"]["nodejs"]["match_names"])
 
     def test_validate_artifact_rejects_missing_source_url(self):
         module = load_module(INDEX_SCRIPT, "pkg_manager_validation")
