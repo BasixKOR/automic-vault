@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -229,6 +230,38 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         how_to = next(item for item in schema["@graph"] if item["@type"] == "HowTo")
         self.assertEqual(how_to["step"][0]["text"], "sudo av install brew:ripgrep")
         self.assertIn("sudo apt install ripgrep", [step["text"] for step in how_to["step"]])
+
+    def test_source_backed_install_rows_hide_full_source_urls(self):
+        module = load_module(PAGES_SCRIPT, "pkg_cross_pages_source_display")
+        item = {
+            "platform": "linux",
+            "manager": "dnf",
+            "command": "sudo dnf install sqlite",
+            "kind": "package_manager",
+            "confidence": 0.92,
+            "evidence": (
+                "Fedora Rawhide package metadata: sqlite from "
+                "https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/repodata/primary.xml.zst"
+            ),
+            "source": {
+                "type": "package_manager_index",
+                "manager": "dnf",
+                "source_label": "Fedora Rawhide package metadata",
+                "package_id": "sqlite",
+                "package_name": "sqlite",
+                "source_url": "https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/repodata/primary.xml.zst",
+            },
+        }
+
+        html = module.install_command_row(item)
+
+        self.assertIn("Fedora Rawhide package metadata", html)
+        self.assertIn("sqlite", html)
+        self.assertIn("source: dl.fedoraproject.org", html)
+        self.assertIn("href=\"https://dl.fedoraproject.org/", html)
+        visible_text = re.sub(r"<[^>]+>", "", html)
+        self.assertNotIn("https://dl.fedoraproject.org/", visible_text)
+        self.assertNotIn("/pub/fedora/linux/development/rawhide/Everything", visible_text)
 
     def test_howto_schema_excludes_inferred_or_low_confidence_commands(self):
         module = load_module(PAGES_SCRIPT, "pkg_cross_pages_howto_filter")

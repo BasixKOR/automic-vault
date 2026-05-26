@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import textwrap
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1669,7 +1670,7 @@ def render_concept_platforms(commands: list[dict[str, Any]]) -> str:
 def render_concept_command_row(item: dict[str, Any]) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
-    evidence = str(item.get("evidence") or "")
+    source_html = install_command_source_html(item)
     try:
         confidence_value = float(item.get("confidence"))
     except (TypeError, ValueError):
@@ -1683,7 +1684,7 @@ def render_concept_command_row(item: dict[str, Any]) -> str:
   </div>
   <code>{html_escape(command_text)}</code>
   <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager)} install command">Copy</button>
-  {f'<p>{html_escape(evidence)}</p>' if evidence else ''}
+  {source_html}
 </div>
 """
 
@@ -2180,7 +2181,7 @@ def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
 def install_command_row(item: dict[str, Any]) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
-    evidence = str(item.get("evidence") or "")
+    source_html = install_command_source_html(item)
     confidence = item.get("confidence")
     try:
         confidence_value = float(confidence)
@@ -2195,9 +2196,35 @@ def install_command_row(item: dict[str, Any]) -> str:
   </div>
   <code>{html_escape(command_text)}</code>
   <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager)} install command">Copy</button>
-  {f'<p>{html_escape(evidence)}</p>' if evidence else ''}
+  {source_html}
 </div>
 """
+
+
+def install_command_source_html(item: dict[str, Any]) -> str:
+    source = item.get("source")
+    if isinstance(source, dict):
+        label = str(source.get("source_label") or "").strip()
+        package_name = str(source.get("package_name") or source.get("package_id") or "").strip()
+        source_url = str(source.get("source_url") or "").strip()
+        pieces = [html_escape(piece) for piece in (label, package_name) if piece]
+        text = " · ".join(pieces)
+        if source_url:
+            link_label = source_host_label(source_url)
+            link = f'<a href="{attr(source_url)}" aria-label="Open source database on {attr(link_label)}">source: {html_escape(link_label)}</a>'
+            text = f"{text} · {link}" if text else link
+        return f"<p>{text}</p>" if text else ""
+    evidence = str(item.get("evidence") or "").strip()
+    return f"<p>{html_escape(evidence)}</p>" if evidence else ""
+
+
+def source_host_label(url: str) -> str:
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return "source"
+    host = parsed.netloc.strip()
+    return host or "source"
 
 
 def render_overview(page: PackagePage) -> str:
