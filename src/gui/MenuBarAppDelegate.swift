@@ -29,7 +29,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var refreshObserver: NSObjectProtocol?
     private var startAtLoginObserver: NSObjectProtocol?
     private var appUpdateObserver: NSObjectProtocol?
-    private var autoApprovedSecretObserver: NSObjectProtocol?
+    private var autoApprovedSecretObserverInstalled = false
     private var refreshInFlight = false
     private var snapshot = NucleusStatusSnapshot.empty
     private var appUpdateSnapshot = AppUpdateSnapshot.empty
@@ -62,8 +62,12 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         if let appUpdateObserver {
             DistributedNotificationCenter.default().removeObserver(appUpdateObserver)
         }
-        if let autoApprovedSecretObserver {
-            DistributedNotificationCenter.default().removeObserver(autoApprovedSecretObserver)
+        if autoApprovedSecretObserverInstalled {
+            DistributedNotificationCenter.default().removeObserver(
+                self,
+                name: IsotopeNotification.automaticApprovalGranted,
+                object: nil
+            )
         }
         vaultDaemon.stop()
         bridge.invalidate()
@@ -253,14 +257,19 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     private func installAutoApprovedSecretObserverIfNeeded() {
-        guard autoApprovedSecretObserver == nil else { return }
-        autoApprovedSecretObserver = DistributedNotificationCenter.default().addObserver(
-            forName: IsotopeNotification.automaticApprovalGranted,
+        guard autoApprovedSecretObserverInstalled == false else { return }
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(autoApprovedSecretNotification(_:)),
+            name: IsotopeNotification.automaticApprovalGranted,
             object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.showAutomaticSecretApprovalNotification()
-        }
+            suspensionBehavior: .deliverImmediately
+        )
+        autoApprovedSecretObserverInstalled = true
+    }
+
+    @objc private func autoApprovedSecretNotification(_ notification: Notification) {
+        showAutomaticSecretApprovalNotification()
     }
 
     private func showAutomaticSecretApprovalNotification() {
