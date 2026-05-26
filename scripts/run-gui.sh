@@ -40,6 +40,37 @@ terminate_existing_app() {
   rm -f "${HOME}/Library/Application Support/Automic Vault/nucleus.sock"
 }
 
+refresh_local_cli() {
+  local app_path="$1"
+  local bundled_av="${app_path}/Contents/Resources/av"
+  local target="/usr/local/bin/av"
+  local target_dir
+
+  [[ -x "${bundled_av}" ]] || return
+
+  if [[ -e "${target}" ]]; then
+    if [[ ! -w "${target}" ]]; then
+      cli_warn "Skipping ${target}; file is not writable"
+      return
+    fi
+  else
+    target_dir="$(dirname "${target}")"
+    if [[ ! -w "${target_dir}" ]]; then
+      cli_warn "Skipping ${target}; ${target_dir} is not writable"
+      return
+    fi
+  fi
+
+  if cmp -s "${bundled_av}" "${target}" 2>/dev/null; then
+    return
+  fi
+
+  cli_step "Refreshing local av CLI"
+  cp -f "${bundled_av}" "${target}"
+  chmod 755 "${target}"
+  cli_info "Updated ${target}"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --background)
@@ -63,6 +94,7 @@ terminate_existing_app
 cli_step "Preparing local app bundle"
 app_path="$("${repo_root}/scripts/build-app.sh")"
 cli_info "App: ${app_path}"
+refresh_local_cli "${app_path}"
 
 if [[ "${background}" == "true" ]]; then
   cli_step "Launching app"
