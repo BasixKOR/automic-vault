@@ -12,6 +12,16 @@ private let packageSearchOrderPrefixes = [
     "pip:"
 ]
 
+private let macOSSystemDetectorPackageNames: Set<String> = [
+    "curl",
+    "git",
+    "openssh",
+    "openssl@3",
+    "perl",
+    "rsync",
+    "ruby",
+]
+
 extension String {
     func strippingPrefix(_ prefix: String) -> String? {
         guard hasPrefix(prefix) else {
@@ -1123,12 +1133,15 @@ struct PackageSearchResult: Decodable, Equatable {
 
     private static func localHazardDisplayName(for lookupName: String) -> String {
         if let formula = lookupName.strippingPrefix("brew:"), !formula.isEmpty {
-            return "gone:\(formula)"
+            let prefix = macOSSystemDetectorPackageNames.contains(formula) ? "sys:" : "gone:"
+            return "\(prefix)\(formula)"
         }
         if let caskName = lookupName.strippingPrefix("cask:"), !caskName.isEmpty {
             return "gone:\(caskName)"
         }
-        return "gone:\(lookupName.packageSearchOrderName)"
+        let packageName = lookupName.packageSearchOrderName
+        let prefix = macOSSystemDetectorPackageNames.contains(packageName) ? "sys:" : "gone:"
+        return "\(prefix)\(packageName)"
     }
 }
 

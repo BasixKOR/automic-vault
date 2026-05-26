@@ -254,6 +254,87 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.installPackageNames, ["brew:flyctl"])
     }
 
+    func testMacOSSystemHazardUsesSystemPrefixEvenWhenRemediable() throws {
+        let result = PackageSearchResult(
+            name: "curl",
+            source: .formula(rootFormula: "curl"),
+            version: "8.20.0",
+            description: "Get a file from an HTTP, HTTPS or FTP server",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "curl",
+                installIsInsecure: true,
+                remediationAvailable: true,
+                reasons: ["curl netrc file contains plaintext credentials"],
+                error: nil
+            ),
+            pulseKind: "updated"
+        )
+
+        let hazard = try XCTUnwrap(result.detectedLocalHazardPresentation(freshness: 0.4))
+
+        XCTAssertEqual(hazard.lookupName, "brew:curl")
+        XCTAssertEqual(hazard.detail.packageName, "sys:curl")
+        XCTAssertEqual(hazard.detail.qualifiedName, "sys:curl")
+        XCTAssertEqual(hazard.presentation.selectionID, "sys:curl")
+        guard case .installed(let record) = hazard.presentation.item else {
+            return XCTFail("hazardous system results should be rendered as installed rows")
+        }
+        XCTAssertEqual(record.name, "sys:curl")
+        XCTAssertEqual(record.installPackageNames, ["brew:curl"])
+    }
+
+    func testInstalledAutomicVaultCurlKeepsUnprefixedName() {
+        let presentation = PackagePresentation(
+            item: .installed(PackageRecord(
+                name: "curl",
+                source: .formula(rootFormula: "curl"),
+                version: "8.20.0",
+                description: "Get a file from an HTTP, HTTPS or FTP server",
+                securityState: PackageSecurityState(
+                    isotopeName: "curl",
+                    installIsInsecure: true,
+                    remediationAvailable: true,
+                    reasons: ["curl netrc file contains plaintext credentials"],
+                    error: nil
+                )
+            )),
+            detail: nil,
+            freshness: 0
+        )
+
+        XCTAssertEqual(presentation.selectionID, "curl")
+        XCTAssertEqual(presentation.packageName, "curl")
+        XCTAssertEqual(presentation.displayName, "curl")
+    }
+
+    func testInstalledHomebrewCurlKeepsBrewPrefix() {
+        let package = HomebrewMigrationPackage(
+            name: "brew:curl",
+            version: "8.20.0",
+            description: "Get a file from an HTTP, HTTPS or FTP server",
+            tap: "homebrew/core",
+            isMigratable: true,
+            securityState: PackageSecurityState(
+                isotopeName: "curl",
+                installIsInsecure: true,
+                remediationAvailable: true,
+                reasons: ["curl netrc file contains plaintext credentials"],
+                error: nil
+            )
+        )
+        let presentation = PackagePresentation(
+            item: .installed(package.record),
+            detail: nil,
+            freshness: 0
+        )
+
+        XCTAssertEqual(presentation.selectionID, "brew:curl")
+        XCTAssertEqual(presentation.packageName, "brew:curl")
+        XCTAssertEqual(presentation.displayName, "brew:curl")
+    }
+
     func testGoneRadioisotopeHazardUsesInstallPathInsteadOfConversion() throws {
         let detail = try decodePackageDetail(
             packageName: "gone:hf",
