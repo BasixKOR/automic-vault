@@ -52,6 +52,157 @@ TOPICS: dict[str, dict[str, dict[str, Any]]] = {
     },
 }
 
+HOME_DETAIL: dict[str, dict[str, Any]] = {
+    "ja": {
+        "meta": ["macOS", "ローカル優先", "エージェント実行時セキュリティ", "2026年5月24日更新"],
+        "brief": [
+            "シークレットは、承認されたツールが必要とするまで Keychain-backed storage に残ります。",
+            "危険なツール操作は、実行時に人間の承認を要求できます。",
+            "リリース版のインストールは /opt に入り、/usr/local/bin のスタブから起動します。",
+        ],
+        "nav": ["境界", "シークレット", "承認", "Nucleus", "パッケージ", "ドキュメント", "ダウンロード"],
+        "actions": ["Download .dmg", "ドキュメントを読む", "スキャナーを実行"],
+        "highlights": [
+            ["01 / secrets", "エージェントが読み取れる平文の認証情報ファイルをなくします。"],
+            ["02 / approval", "機密性の高いツール操作が実行される場所に承認を置きます。"],
+            ["03 / packages", "エージェントのツールチェーンに強化された root と依存スタックを与えます。"],
+            ["04 / trace", "curl-pipe-shell インストーラーがファイルを書き込む前に調べます。"],
+        ],
+        "storiesTitle": "主要な境界",
+        "storiesLede": "エージェントが Mac 上でツールを実行できるときに変わること。",
+        "stories": [
+            ["Keychain-backed secrets", "ツールはシークレットを受け取る。エージェントは受け取らない。", "Automic Vault は重要なツールに境界を追加し、認証情報を平文ファイルからローカルの保護ストレージへ移します。ツールは動き続け、エージェントは簡単な読み取り経路を失います。"],
+            ["Human approval gates", "承認はエージェントの内側ではなく下に置く。", "モデル内の制御も役立ちますが、侵害されたエージェントは自分のポリシー面を操作できます。Automic Vault はトークン出力、パッケージ公開、その他の機密操作が実行されるローカルツール層にゲートを置きます。"],
+            ["Nucleus package manager", "エージェントのツールを、書き換えられない root にインストール。", "Nucleus は Homebrew、npm、PyPI パッケージを強化された root にインストールします。エージェントは承認済みツールを実行できますが、開発環境を自由に書き換えられる状態にはしません。"],
+            ["Plaintext exposure scan", "実行前にエージェントから見えるものを探す。", "av secret-scanner は、ローカルファイルにすでに露出している認証情報を検索します。自律実行に広いファイルアクセスを渡す前の高速な事前確認に使えます。"],
+            ["Automic Vault.app", "パッケージ制御のためのネイティブ Mac 画面。", "パッケージ検索、メタデータ確認、Touch ID での承認、アップデート確認を行い、端末が適した場面では av CLI を使えます。"],
+        ],
+        "fitTitle": "位置づけ",
+        "fitKicker": "単なるラッパーではありません",
+        "fit": [
+            ["Homebrew", "パッケージマネージャー", "Automic Vault は馴染みのあるパッケージをインストールし、その下をエージェントが書き換えられる範囲を制限します。"],
+            ["1Password", "シークレットマネージャー", "中央の vault はシークレットを管理します。Automic Vault は、ローカルツールがそのシークレットを受け取れるかを制御します。"],
+            ["Agent controls", "実行ポリシー", "エージェント側の制御は有用です。ツール層の制御は、モデルとプロンプトの下で残ります。"],
+        ],
+        "guidesTitle": "ガイド",
+        "guidesKicker": "詳しい読み物",
+        "radarTitle": "既知の Homebrew シークレット逃げ道を閉じる、または見える化する。",
+        "radarText": "17,450 件の formula と tap 候補を確認済み。残る既知リスクは GUI の hazard として表示されます。",
+        "final": "次の自律実行の前に、ツール層を保護する。",
+    },
+    "de": {
+        "meta": ["macOS", "lokal zuerst", "Agent-Laufzeitsicherheit", "aktualisiert am 24. Mai 2026"],
+        "brief": [
+            "Secrets bleiben im Keychain-gestützten Speicher, bis ein genehmigtes Tool sie benötigt.",
+            "Riskante Tool-Aktionen können zur Laufzeit menschliche Freigabe verlangen.",
+            "Release-Installationen liegen unter /opt, mit stabilen Stubs in /usr/local/bin.",
+        ],
+        "nav": ["Grenzen", "Secrets", "Freigabe", "Nucleus", "Pakete", "Docs", "Download"],
+        "actions": ["Download .dmg", "Docs lesen", "Scanner starten"],
+        "highlights": [
+            ["01 / secrets", "Keine Klartext-Credential-Datei, die Agents auslesen können."],
+            ["02 / approval", "Freigaben sitzen dort, wo sensitive Tool-Aktionen ausgeführt werden."],
+            ["03 / packages", "Agent-Toolchains erhalten gehärtete Roots und transitive Stacks."],
+            ["04 / trace", "Prüfe curl-pipe-shell-Installer, bevor sie Dateien schreiben."],
+        ],
+        "storiesTitle": "Wichtige Grenzen",
+        "storiesLede": "Was sich ändert, wenn ein Agent Tools auf deinem Mac ausführen kann.",
+        "stories": [
+            ["Keychain-backed secrets", "Tools bekommen Secrets. Agents nicht.", "Automic Vault ergänzt kritische Tools, damit Credentials aus Klartextdateien in lokalen geschützten Speicher wandern. Das Tool funktioniert weiter; der Agent verliert den einfachen Lesepfad."],
+            ["Human approval gates", "Freigabe gehört unter den Agent, nicht in ihn hinein.", "Agent-interne Kontrollen helfen, aber ein kompromittierter Agent kontrolliert seine eigene Policy-Fläche. Automic Vault setzt Gates an die lokale Tool-Schicht, wo Token-Export, Paketveröffentlichung und andere sensitive Aktionen laufen."],
+            ["Nucleus package manager", "Installiere Agent-Tools in eine Root, die er nicht umschreiben kann.", "Nucleus installiert Homebrew-, npm- und PyPI-Pakete in gehärtete Roots. Agents können genehmigte Tools ausführen, ohne die Entwicklerumgebung in beschreibbaren Umgebungszustand zu verwandeln."],
+            ["Plaintext exposure scan", "Finde, was ein Agent sehen kann, bevor du den Lauf startest.", "av secret-scanner sucht Credentials, die bereits in lokalen Dateien liegen. Nutze ihn als schnellen Preflight, bevor ein autonomer Lauf breiten Dateizugriff bekommt."],
+            ["Automic Vault.app", "Eine native Mac-Oberfläche für Paketkontrolle.", "Suche Pakete, prüfe Metadaten, genehmige Installationen mit Touch ID, verfolge Updates und nutze die av CLI, wenn das Terminal die richtige Oberfläche ist."],
+        ],
+        "fitTitle": "Einordnung",
+        "fitKicker": "nicht noch ein Wrapper",
+        "fit": [
+            ["Homebrew", "Paketmanager", "Automic Vault installiert bekannte Pakete und begrenzt danach, was Agents darunter umschreiben können."],
+            ["1Password", "Secrets Manager", "Zentrale Vaults verwalten Secrets. Automic Vault kontrolliert, ob ein lokales Tool eines erhalten darf."],
+            ["Agent controls", "Ausführungsrichtlinie", "Agent-Kontrollen sind nützlich. Tool-Layer-Kontrollen bleiben unter Modell und Prompt bestehen."],
+        ],
+        "guidesTitle": "Guides",
+        "guidesKicker": "Vertiefung",
+        "radarTitle": "Bekannte Homebrew-Secret-Auswege, geschlossen oder sichtbar gemacht.",
+        "radarText": "17.450 Formula- und Tap-Kandidaten geprüft; verbleibende bekannte Risiken erscheinen als GUI-Hazards.",
+        "final": "Sichere die Tool-Schicht vor dem nächsten autonomen Lauf.",
+    },
+    "fr": {
+        "meta": ["macOS", "local d'abord", "sécurité d'exécution des agents", "mis à jour le 24 mai 2026"],
+        "brief": [
+            "Les secrets restent dans un stockage adossé au trousseau jusqu'à ce que l'outil approuvé en ait besoin.",
+            "Les actions dangereuses des outils peuvent exiger une approbation humaine au moment de l'exécution.",
+            "Les installations de release vivent sous /opt, avec des stubs stables dans /usr/local/bin.",
+        ],
+        "nav": ["Limites", "Secrets", "Approbation", "Nucleus", "Paquets", "Docs", "Télécharger"],
+        "actions": ["Télécharger le .dmg", "Lire la doc", "Lancer le scanner"],
+        "highlights": [
+            ["01 / secrets", "Plus de fichier d'identifiants en clair que les agents peuvent aspirer."],
+            ["02 / approval", "Les validations vivent là où les actions sensibles s'exécutent."],
+            ["03 / packages", "Les toolchains d'agents obtiennent des racines durcies et des piles transitives."],
+            ["04 / trace", "Inspectez les installateurs curl-pipe-shell avant qu'ils écrivent des fichiers."],
+        ],
+        "storiesTitle": "Limites principales",
+        "storiesLede": "Ce qui change quand un agent peut exécuter des outils sur votre Mac.",
+        "stories": [
+            ["Secrets adossés au trousseau", "Les outils reçoivent les secrets. Les agents, non.", "Automic Vault ajoute une frontière aux outils critiques pour déplacer les identifiants hors des fichiers en clair vers un stockage local protégé. L'outil continue de fonctionner; l'agent perd le chemin de lecture facile."],
+            ["Portes d'approbation humaines", "L'approbation doit vivre sous l'agent, pas en lui.", "Les contrôles intégrés aux agents aident, mais un agent compromis contrôle sa propre surface de politique. Automic Vault place les portes dans la couche locale des outils, là où s'exécutent l'export de jetons, la publication de paquets et les autres actions sensibles."],
+            ["Gestionnaire de paquets Nucleus", "Installez les outils de l'agent dans une racine qu'il ne peut pas réécrire.", "Nucleus installe les paquets Homebrew, npm et PyPI dans des racines durcies. Les agents peuvent lancer les outils approuvés sans transformer l'environnement développeur en état ambiant modifiable."],
+            ["Scan d'exposition en clair", "Trouvez ce qu'un agent peut voir avant de lancer l'exécution.", "av secret-scanner recherche les identifiants déjà exposés dans les fichiers locaux. Utilisez-le comme préflight rapide avant de donner un large accès au système de fichiers à une exécution autonome."],
+            ["Automic Vault.app", "Une surface Mac native pour contrôler les paquets.", "Recherchez des paquets, inspectez les métadonnées, approuvez les installations avec Touch ID, suivez les mises à jour et utilisez la CLI av quand le terminal est la bonne interface."],
+        ],
+        "fitTitle": "Positionnement",
+        "fitKicker": "pas un wrapper de plus",
+        "fit": [
+            ["Homebrew", "Gestionnaire de paquets", "Automic Vault installe des paquets familiers, puis limite ce que les agents peuvent réécrire sous eux."],
+            ["1Password", "Gestionnaire de secrets", "Les coffres centraux gèrent les secrets. Automic Vault contrôle si un outil local peut en recevoir un."],
+            ["Contrôles d'agent", "Politique d'exécution", "Les contrôles au niveau de l'agent sont utiles. Les contrôles au niveau outil survivent sous le modèle et son prompt."],
+        ],
+        "guidesTitle": "Guides",
+        "guidesKicker": "lectures approfondies",
+        "radarTitle": "Échappements de secrets Homebrew connus, fermés ou rendus visibles.",
+        "radarText": "17 450 formules et taps candidats examinés; les risques connus restants apparaissent comme dangers dans l'interface.",
+        "final": "Sécurisez la couche outil avant la prochaine exécution autonome.",
+    },
+    "zh-Hans": {
+        "meta": ["macOS", "本地优先", "代理运行时安全", "2026 年 5 月 24 日更新"],
+        "brief": [
+            "密钥会留在 Keychain 支持的存储中，直到已批准的工具需要它们。",
+            "危险工具操作可以在执行时要求人工审批。",
+            "发布版安装位于 /opt，并通过 /usr/local/bin 中的稳定 stub 入口运行。",
+        ],
+        "nav": ["边界", "密钥", "审批", "Nucleus", "软件包", "文档", "下载"],
+        "actions": ["下载 .dmg", "阅读文档", "运行扫描器"],
+        "highlights": [
+            ["01 / secrets", "不再有可被代理抓取的明文凭据文件。"],
+            ["02 / approval", "审批位于敏感工具操作实际执行的位置。"],
+            ["03 / packages", "代理工具链获得加固的 root 和传递依赖栈。"],
+            ["04 / trace", "在 curl-pipe-shell 安装器写入文件前进行检查。"],
+        ],
+        "storiesTitle": "核心边界",
+        "storiesLede": "当代理可以在你的 Mac 上运行工具时，真正改变的部分。",
+        "stories": [
+            ["Keychain-backed secrets", "工具获得密钥。代理不会。", "Automic Vault 为关键工具加入边界，让凭据离开明文文件并进入本地受保护存储。工具继续工作，代理失去简单读取路径。"],
+            ["Human approval gates", "审批应位于代理之下，而不是代理内部。", "代理内置控制有帮助，但被攻破的代理会控制自己的策略面。Automic Vault 将门放在本地工具层，也就是令牌导出、软件包发布和其他敏感操作实际运行的位置。"],
+            ["Nucleus package manager", "把代理工具安装到它无法重写的 root 中。", "Nucleus 将 Homebrew、npm 和 PyPI 软件包安装到加固 root。代理可以运行已批准工具，但不会把开发环境变成可随意写入的环境状态。"],
+            ["Plaintext exposure scan", "运行前找出代理能看到什么。", "av secret-scanner 会搜索已经暴露在本地文件中的凭据。在给自主运行授予广泛文件访问前，可用它做快速预检。"],
+            ["Automic Vault.app", "用于软件包控制的原生 Mac 界面。", "搜索软件包、检查元数据、用 Touch ID 批准安装、跟踪更新；当终端更合适时使用 av CLI。"],
+        ],
+        "fitTitle": "定位",
+        "fitKicker": "不是又一个包装器",
+        "fit": [
+            ["Homebrew", "软件包管理器", "Automic Vault 安装熟悉的软件包，然后限制代理能在其下方重写什么。"],
+            ["1Password", "密钥管理器", "中心化 vault 管理密钥。Automic Vault 控制本地工具是否能接收某个密钥。"],
+            ["Agent controls", "执行策略", "代理层控制很有用。工具层控制位于模型和提示词下方，仍然存在。"],
+        ],
+        "guidesTitle": "指南",
+        "guidesKicker": "深入阅读",
+        "radarTitle": "已知 Homebrew 密钥逃逸路径，已关闭或已显现。",
+        "radarText": "已审查 17,450 个 formula 和 tap 候选；剩余已知风险会作为 GUI hazard 显示。",
+        "final": "在下一次自主运行前保护工具层。",
+    },
+}
+
 ALIASED_TOPIC = {
     "pricing": {"ja": ("Automic Vault 価格", "Automic Vault は無料のオープンソースソフトウェアです。"), "de": ("Automic Vault Preise", "Automic Vault ist freie Open-Source-Software."), "fr": ("Tarifs Automic Vault", "Automic Vault est un logiciel open source gratuit."), "zh-Hans": ("Automic Vault 定价", "Automic Vault 是免费的开源软件。")},
     "download": {"ja": ("Automic Vault ダウンロード", "macOS 用 Automic Vault を入手し、ローカルの AI エージェント実行を保護します。"), "de": ("Automic Vault Download", "Lade Automic Vault für macOS herunter und schütze lokale AI-Agent-Läufe."), "fr": ("Télécharger Automic Vault", "Téléchargez Automic Vault pour macOS et protégez les exécutions locales d'agents IA."), "zh-Hans": ("下载 Automic Vault", "获取 macOS 版 Automic Vault，保护本地 AI 代理运行。")},
@@ -318,6 +469,190 @@ def render_i18n_js(locales: list[Locale]) -> str:
 """
 
 
+def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
+    t = record["translations"][locale.code]
+    detail = HOME_DETAIL[locale.code]
+    canonical = href("/", locale)
+    meta = "".join(f"<span>{html.escape(item)}</span>" for item in detail["meta"])
+    brief = "\n".join(
+        f"""            <div>
+              <span class="tiny-icon{icon_class}" aria-hidden="true"></span>
+              <p>{html.escape(text)}</p>
+            </div>"""
+        for text, icon_class in zip(detail["brief"], ["", " square", " triangle"])
+    )
+    highlights = "\n".join(
+        f"""          <a class="highlight-card {accent}" href="{target}">
+            <span>{html.escape(label)}</span>
+            <strong>{html.escape(body)}</strong>
+          </a>"""
+        for (label, body), accent, target in zip(
+            detail["highlights"],
+            ["accent-hot", "accent-blue", "accent-green", "accent-gold"],
+            ["#secrets", "#approval", "#nucleus", locale_path("/av-trace/", locale)],
+        )
+    )
+    story_extras = [
+        '<ul class="story-tags" aria-label="Secret boundary details"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>',
+        '<div class="inline-prompt" aria-label="Example approval request"><span>Automic Vault</span><strong>Agent wants to run <code>npm publish</code>. Approve?</strong><i>Deny</i><i>Approve</i></div>',
+        '<div class="source-strip" aria-label="Package sources"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>',
+        "<!-- no extra content -->",
+        '<figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="Automic Vault app showing package search and package details" width="1693" height="929"></figure>',
+    ]
+    stories = "\n".join(
+        f"""          <article class="ranked-story feature-section" id="{story_id}">
+            <span class="rank">{index}</span>
+            <div>
+              <p class="story-kicker">{html.escape(kicker)}</p>
+              <h3>{html.escape(title)}</h3>
+              <p>{html.escape(body)}</p>
+              {extra}
+            </div>
+          </article>"""
+        for index, ((kicker, title, body), story_id, extra) in enumerate(
+            zip(detail["stories"], ["secrets", "approval", "nucleus", "scanner", "app"], story_extras),
+            start=1,
+        )
+    )
+    fit_cards = "\n".join(
+        f"""          <article>
+            <span>{html.escape(label)}</span>
+            <h3>{html.escape(title)}</h3>
+            <p>{html.escape(body)}</p>
+          </article>"""
+        for label, title, body in detail["fit"]
+    )
+    nav_labels = detail["nav"]
+    return f"""<!DOCTYPE html>
+<html lang="{html.escape(locale.html_lang)}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(t["title"])}</title>
+  <meta name="description" content="{html.escape(t["description"], quote=True)}">
+  <meta name="robots" content="index,follow">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="{html.escape(t["title"], quote=True)}">
+  <meta property="og:description" content="{html.escape(t["description"], quote=True)}">
+  <meta property="og:url" content="{html.escape(canonical, quote=True)}">
+  <meta property="og:image" content="{SITE_ORIGIN}/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{html.escape(t["title"], quote=True)}">
+  <meta name="twitter:description" content="{html.escape(t["description"], quote=True)}">
+  <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
+  <link rel="canonical" href="{html.escape(canonical, quote=True)}">
+{alternate_link_block("/", locales)}
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css?v=25">
+  <script type="application/ld+json">
+  {{
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "url": "{canonical}",
+    "name": {json.dumps(t["title"], ensure_ascii=False)},
+    "description": {json.dumps(t["description"], ensure_ascii=False)},
+    "inLanguage": "{locale.html_lang}",
+    "isPartOf": {{"@type": "WebSite", "name": "Automic Vault", "url": "{SITE_ORIGIN}/"}}
+  }}
+  </script>
+</head>
+<body>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <div class="site-shell" id="top">
+    <header class="masthead">
+      <a class="brand" href="#top" aria-label="Automic Vault home">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <span class="brand-type">Automic Vault</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span></button>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="#ranked">{html.escape(nav_labels[0])}</a>
+        <a href="#secrets">{html.escape(nav_labels[1])}</a>
+        <a href="#approval">{html.escape(nav_labels[2])}</a>
+        <a href="#nucleus">{html.escape(nav_labels[3])}</a>
+        <a href="{locale_path('/pkg/', locale)}">{html.escape(nav_labels[4])}</a>
+        <a href="{locale_path('/docs/', locale)}">{html.escape(nav_labels[5])}</a>
+        <a href="{locale_path('/download/', locale)}">{html.escape(nav_labels[6])}</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-meta">{meta}</div>
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">{html.escape(t["kicker"])}</p>
+            <h1 id="hero-title">Automic Vault</h1>
+            <p class="lede">{html.escape(t["lede"])}</p>
+          </div>
+          <aside class="hero-brief" aria-label="Current security posture">
+{brief}
+          </aside>
+        </div>
+        <div class="hero-actions">
+          <a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(detail["actions"][1])}</a>
+          <a class="button text" href="{locale_path('/secret-scanner-for-ai-agents/', locale)}">{html.escape(detail["actions"][2])}</a>
+        </div>
+      </section>
+      <section class="highlights" aria-labelledby="highlights-title">
+        <div class="section-label"><h2 id="highlights-title">Highlights</h2><span>security map</span></div>
+        <div class="highlight-grid">
+{highlights}
+        </div>
+      </section>
+      <section class="story-layout" id="ranked" aria-label="Automic Vault ranked features">
+        <div class="story-main">
+          <div class="list-heading"><div><h2>{html.escape(detail["storiesTitle"])}</h2><p>{html.escape(detail["storiesLede"])}</p></div><span>v0 surface</span></div>
+{stories}
+        </div>
+        <aside class="side-rail" aria-label="Operational notes">
+          <section>
+            <h2>Runtime</h2>
+            <article><span>release</span><strong>/opt</strong><p>Root-owned package installs.</p></article>
+            <article><span>stubs</span><strong>/usr/local/bin</strong><p>Stable command entrypoints.</p></article>
+          </section>
+          <section>
+            <h2>Case Files</h2>
+            <a class="rail-link" href="{locale_path('/github-cli-token-security-ai-agents/', locale)}"><span>gh</span><strong>GitHub CLI token security</strong></a>
+            <a class="rail-link" href="{locale_path('/secure-aws-cli-credentials-ai-agents/', locale)}"><span>aws</span><strong>Secure AWS CLI credentials</strong></a>
+            <a class="rail-link" href="{locale_path('/ai-agent-approval-gates/', locale)}"><span>gate</span><strong>AI agent approval gates</strong></a>
+          </section>
+        </aside>
+      </section>
+      <section class="compare feature-section" aria-labelledby="compare-title">
+        <div class="section-label"><h2 id="compare-title">{html.escape(detail["fitTitle"])}</h2><span>{html.escape(detail["fitKicker"])}</span></div>
+        <div class="compare-grid">
+{fit_cards}
+        </div>
+      </section>
+      <section class="final-cta" aria-labelledby="final-title">
+        <p class="eyebrow">Free and open source</p>
+        <h2 id="final-title">{html.escape(detail["final"])}</h2>
+        <div><a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">View source</a></div>
+      </section>
+      {language_links("/", locale, locales)}
+    </main>
+    <footer class="site-footer">
+      <p>&copy; 2026 Automic Vault.</p>
+      <div class="footer-links">
+        <a href="{locale_path('/about/', locale)}">About</a>
+        <a href="{locale_path('/security/', locale)}">Security</a>
+        <a href="{locale_path('/privacy/', locale)}">Privacy</a>
+        <a href="{locale_path('/terms/', locale)}">Terms</a>
+        <a href="https://x.com/AutomicVault">X</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </div>
+    </footer>
+  </div>
+  <script src="/app.js?v=17"></script>
+</body>
+</html>
+"""
+
+
 def patch_english_page(path: str, locales: list[Locale], check: bool, failures: list[str]) -> None:
     file = route_file(path, Locale("en", "", "en", "en", "English", "English", ("en",), True))
     if not file.exists():
@@ -390,7 +725,7 @@ def generate(check: bool = False) -> int:
         patch_english_page(record["path"], locales, check, failures)
         for locale in non_default_locales():
             output = route_file(record["path"], locale)
-            expected = render_page(record, locale, locales)
+            expected = render_home_page(record, locale, locales) if record["path"] == "/" else render_page(record, locale, locales)
             if check:
                 if not output.exists() or output.read_text(encoding="utf-8") != expected:
                     failures.append(f"stale localized page: {output}")

@@ -46,6 +46,22 @@ class WebsiteI18nTests(unittest.TestCase):
         self.assertIn('hreflang="fr" href="https://www.automicvault.com/fr/docs/"', sitemap)
         self.assertIn('hreflang="x-default" href="https://www.automicvault.com/docs/"', sitemap)
 
+    def test_localized_homepage_uses_homepage_layout(self):
+        module = load_module(I18N_SCRIPT, "generate_www_i18n_home_test")
+        locales = module.enabled_locales()
+        fr = next(locale for locale in locales if locale.code == "fr")
+        record = next(item for item in module.translated_page_records() if item["path"] == "/")
+
+        html = module.render_home_page(record, fr, locales)
+
+        self.assertIn('<link rel="stylesheet" href="/styles.css?v=25">', html)
+        self.assertNotIn("seo.css", html)
+        self.assertNotIn("i18n-section", html)
+        self.assertIn('class="hero-grid"', html)
+        self.assertIn('class="highlight-grid"', html)
+        self.assertIn('class="ranked-story feature-section"', html)
+        self.assertIn("Limites principales", html)
+
 
 if __name__ == "__main__":
     unittest.main()

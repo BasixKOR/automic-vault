@@ -182,6 +182,8 @@ def generate(site_dir: Path, index_dir: Path, pagefind_bin: str, terminal: Termi
             check=True,
             cwd=temp_root,
         )
+        if index_dir.exists():
+            shutil.rmtree(index_dir)
         shutil.copytree(temp_index, index_dir)
 
     files = source_files(site_dir, index_dir)
