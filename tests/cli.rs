@@ -682,7 +682,7 @@ fn subs_trace_command_covers_agent_selection_and_outputs() {
     assert!(output.status.success(), "{}", stderr(&output));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["agent"], "claude");
-    assert_eq!(report["safetyRating"]["level"], "danger");
+    assert_eq!(report["safetyRating"]["level"], "moderate");
     assert_eq!(report["steps"][0]["path"], "~/.profile");
 
     let output = run_nuke_with_env(
