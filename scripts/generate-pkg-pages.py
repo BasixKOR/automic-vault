@@ -1859,6 +1859,7 @@ def render_concept_platforms(commands: list[dict[str, Any]]) -> str:
 def render_concept_command_row(item: dict[str, Any]) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
+    manager_label = install_command_manager_label(item)
     source_html = install_command_source_html(item)
     try:
         confidence_value = float(item.get("confidence"))
@@ -1867,12 +1868,14 @@ def render_concept_command_row(item: dict[str, Any]) -> str:
     confidence_label = "verified" if confidence_value >= 0.9 else "inferred"
     return f"""
 <div class="pkg-concept-command-row">
-  <div>
-    <strong>{html_escape(manager)}</strong>
+  <div class="install-command-head">
+    <strong class="install-command-eyebrow">{html_escape(manager_label)}</strong>
     <span>{html_escape(confidence_label)} / {html_escape(f'{confidence_value:.0%}')}</span>
   </div>
-  <code>{html_escape(command_text)}</code>
-  <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager)} install command">Copy</button>
+  <div class="install-command-shell">
+    <code>{html_escape(command_text)}</code>
+    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager_label)} install command">Copy</button>
+  </div>
   {source_html}
 </div>
 """
@@ -2409,6 +2412,7 @@ def render_platform_install_commands(commands: list[dict[str, Any]]) -> str:
 def install_command_row(item: dict[str, Any]) -> str:
     command_text = str(item.get("command") or "")
     manager = str(item.get("manager") or "shell")
+    manager_label = install_command_manager_label(item)
     source_html = install_command_source_html(item)
     confidence = item.get("confidence")
     try:
@@ -2418,15 +2422,41 @@ def install_command_row(item: dict[str, Any]) -> str:
     confidence_label = "verified" if confidence_value >= 0.9 else "inferred"
     return f"""
 <div class="install-command-row">
-  <div class="install-command-meta">
-    <strong>{html_escape(manager)}</strong>
+  <div class="install-command-head">
+    <strong class="install-command-eyebrow">{html_escape(manager_label)}</strong>
     <span>{html_escape(confidence_label)} · {html_escape(f'{confidence_value:.0%}')}</span>
   </div>
-  <code>{html_escape(command_text)}</code>
-  <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager)} install command">Copy</button>
+  <div class="install-command-shell">
+    <code>{html_escape(command_text)}</code>
+    <button class="copy-button" type="button" data-copy="{attr(command_text)}" aria-label="Copy {attr(manager_label)} install command">Copy</button>
+  </div>
   {source_html}
 </div>
 """
+
+
+def install_command_manager_label(item: dict[str, Any]) -> str:
+    manager = str(item.get("manager") or "shell").strip()
+    source = item.get("source")
+    source_manager = ""
+    if isinstance(source, dict):
+        source_manager = str(source.get("manager") or "").strip()
+    manager_key = (source_manager or manager).lower()
+    labels = {
+        "apk": "Alpine Linux apk",
+        "apt": "Debian apt",
+        "chocolatey": "Chocolatey",
+        "dnf": "Fedora dnf",
+        "macports": "MacPorts",
+        "nix": "Nix",
+        "pacman": "Arch Linux pacman",
+        "scoop": "Scoop",
+        "winget": "Windows Package Manager",
+        "zypper": "openSUSE zypper",
+        "npm": "npm",
+        "pip": "Python pip",
+    }
+    return labels.get(manager_key, manager or "shell")
 
 
 def install_command_source_html(item: dict[str, Any]) -> str:
@@ -2441,9 +2471,9 @@ def install_command_source_html(item: dict[str, Any]) -> str:
             link_label = source_host_label(source_url)
             link = f'<a href="{attr(source_url)}" aria-label="Open source database on {attr(link_label)}">source: {html_escape(link_label)}</a>'
             text = f"{text} · {link}" if text else link
-        return f"<p>{text}</p>" if text else ""
+        return f'<p class="install-command-source">{text}</p>' if text else ""
     evidence = str(item.get("evidence") or "").strip()
-    return f"<p>{html_escape(evidence)}</p>" if evidence else ""
+    return f'<p class="install-command-source">{html_escape(evidence)}</p>' if evidence else ""
 
 
 def source_host_label(url: str) -> str:
@@ -3536,50 +3566,71 @@ h1 {
 }
 .install-command-list {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 12px;
+  margin-top: 14px;
 }
 .install-command-row {
-  display: grid;
-  grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
+  display: block;
   min-width: 0;
-  padding-top: 10px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 .install-command-row:first-child { border-top: 0; padding-top: 0; }
-.install-command-meta {
-  display: grid;
-  gap: 4px;
+.install-command-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
+  margin-bottom: 6px;
 }
-.install-command-meta strong {
+.install-command-eyebrow {
   color: var(--ink);
-  font-size: 0.82rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   line-height: 1.1;
+  text-transform: uppercase;
 }
-.install-command-meta span {
+.install-command-head span {
+  flex: 0 0 auto;
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
 }
-.install-command-row code {
+.install-command-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 48px;
+  padding: 13px 88px 13px 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.026);
+}
+.install-command-shell code {
+  display: block;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
-.install-command-row p {
-  grid-column: 1 / -1;
-  margin-top: 0;
+.install-command-shell .copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-height: 32px;
+}
+.install-command-source {
+  margin: 8px 0 0;
   color: var(--dim);
   font-size: 0.82rem;
   line-height: 1.35;
 }
+.install-command-source a { color: var(--muted); }
+.install-command-source a:hover { color: var(--ink); }
 .install-notes-grid,
 .signal-grid,
 .related-columns {
@@ -4078,44 +4129,18 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   display: grid;
 }
 .pkg-concept-command-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 0.26fr) minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
+  display: block;
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
 }
 .pkg-concept-command-row:last-child {
   border-bottom: 0;
 }
-.pkg-concept-command-row strong {
-  display: block;
-  color: var(--ink);
-  font-size: 0.9rem;
-  line-height: 1.1;
+.pkg-concept-command-row .install-command-shell {
+  background: rgba(255, 255, 255, 0.032);
 }
-.pkg-concept-command-row span {
-  display: block;
-  margin-top: 5px;
-  color: var(--dim);
-  font-family: var(--font-mono);
-  font-size: 0.67rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-.pkg-concept-command-row code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink);
-  font-size: 0.9rem;
-}
-.pkg-concept-command-row p {
-  grid-column: 2 / -1;
+.pkg-concept-command-row .install-command-source {
   max-width: 58rem;
-  margin: -4px 0 0;
-  color: var(--dim);
-  font-size: 0.82rem;
-  line-height: 1.38;
 }
 @keyframes pkg-scanline {
   0%, 38% { transform: translateY(-100%); }

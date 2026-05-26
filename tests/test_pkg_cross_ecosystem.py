@@ -255,9 +255,12 @@ class PackageCrossEcosystemTests(unittest.TestCase):
 
         html = module.install_command_row(item)
 
+        self.assertIn("Fedora dnf", html)
+        self.assertIn("class=\"install-command-shell\"", html)
         self.assertIn("Fedora Rawhide package metadata", html)
         self.assertIn("sqlite", html)
         self.assertIn("source: dl.fedoraproject.org", html)
+        self.assertIn("aria-label=\"Copy Fedora dnf install command\"", html)
         self.assertIn("href=\"https://dl.fedoraproject.org/", html)
         visible_text = re.sub(r"<[^>]+>", "", html)
         self.assertNotIn("https://dl.fedoraproject.org/", visible_text)
