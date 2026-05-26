@@ -848,7 +848,7 @@ fn trace_safety_signals(step: &TraceStep, level: &mut TraceSafetyLevel, reasons:
         push_trace_safety_signal(
             level,
             reasons,
-            TraceSafetyLevel::Danger,
+            TraceSafetyLevel::Moderate,
             "modifies shell startup files",
         );
     }
@@ -994,11 +994,7 @@ fn is_trace_command_path(path: &str) -> bool {
         || path.contains("/bin/")
 }
 
-fn trace_step_is_expected_install(
-    path: Option<&str>,
-    operation: &str,
-    description: &str,
-) -> bool {
+fn trace_step_is_expected_install(path: Option<&str>, operation: &str, description: &str) -> bool {
     if path.is_some_and(is_privileged_configuration_trace_path) {
         return false;
     }
@@ -2163,7 +2159,10 @@ mod tests {
             r#"{"steps":[{"description":"Touches","operation":"modify","path":"~/.zshrc","network":null}]}"#,
         )
         .unwrap();
-        assert_eq!(from_direct_envelope.steps[0].path.as_deref(), Some("~/.zshrc"));
+        assert_eq!(
+            from_direct_envelope.steps[0].path.as_deref(),
+            Some("~/.zshrc")
+        );
 
         let embedded = parse_trace_agent_embedded_json(
             "prefix {\"steps\":[{\"description\":\"broken\"}]} suffix {\"steps\":[{\"description\":\"Downloads\",\"operation\":\"download\",\"path\":null,\"network\":\"https://example.test\"}]} trailing",
@@ -2620,6 +2619,18 @@ mod tests {
                 None,
             ),
             trace_step_with(
+                "Writes package configuration.",
+                "modify",
+                Some("~/.config/example/config.toml"),
+                None,
+            ),
+        ]);
+        assert_eq!(rating.level, "moderate");
+        assert_trace_safety_reason(&rating, "modifies shell startup files");
+        assert_trace_safety_reason(&rating, "changes user files");
+
+        let rating = trace_safety_rating(&[
+            trace_step_with(
                 "Installs and starts a background service.",
                 "install",
                 Some("~/.config/systemd/user/example.service"),
@@ -2633,7 +2644,6 @@ mod tests {
             ),
         ]);
         assert_eq!(rating.level, "danger");
-        assert_trace_safety_reason(&rating, "modifies shell startup files");
         assert_trace_safety_reason(&rating, "changes services or background agents");
         assert_trace_safety_reason(&rating, "performs destructive file operations");
 

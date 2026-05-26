@@ -195,12 +195,21 @@ mod tests {
     #[test]
     fn parse_recognizes_supported_methods() {
         let cases = [
-            ("packages.listInstalled", ProtocolMethod::PackagesListInstalled),
-            ("packages.listAvailable", ProtocolMethod::PackagesListAvailable),
+            (
+                "packages.listInstalled",
+                ProtocolMethod::PackagesListInstalled,
+            ),
+            (
+                "packages.listAvailable",
+                ProtocolMethod::PackagesListAvailable,
+            ),
             ("packages.listPulse", ProtocolMethod::PackagesListPulse),
             ("packages.info", ProtocolMethod::PackagesInfo),
             ("packages.search", ProtocolMethod::PackagesSearch),
-            ("packages.listOutdated", ProtocolMethod::PackagesListOutdated),
+            (
+                "packages.listOutdated",
+                ProtocolMethod::PackagesListOutdated,
+            ),
             (
                 "packages.homebrewMigrationRecommendation",
                 ProtocolMethod::PackagesHomebrewMigrationRecommendation,
@@ -209,7 +218,10 @@ mod tests {
                 "packages.isotopeMigrationPlan",
                 ProtocolMethod::PackagesIsotopeMigrationPlan,
             ),
-            ("packages.migrateIsotope", ProtocolMethod::PackagesMigrateIsotope),
+            (
+                "packages.migrateIsotope",
+                ProtocolMethod::PackagesMigrateIsotope,
+            ),
             ("packages.makeDefault", ProtocolMethod::PackagesMakeDefault),
             ("system.info", ProtocolMethod::SystemInfo),
         ];

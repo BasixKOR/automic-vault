@@ -75,7 +75,10 @@ struct DotenvSecretRequest {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum DotenvDaemonResponse {
-    SecretResponse { id: String, value: String },
+    SecretResponse {
+        id: String,
+        value: String,
+    },
     Error {
         id: Option<String>,
         code: i32,
@@ -198,8 +201,12 @@ where
         }
         match arg.to_str() {
             Some("--json") => json = true,
-            Some(value) if value.starts_with('-') => return Err(format!("unknown argument '{value}'")),
-            Some(_) if root.is_some() => return Err("dotenv ingest path specified more than once".to_string()),
+            Some(value) if value.starts_with('-') => {
+                return Err(format!("unknown argument '{value}'"));
+            }
+            Some(_) if root.is_some() => {
+                return Err("dotenv ingest path specified more than once".to_string());
+            }
             Some(value) => root = Some(PathBuf::from(value)),
             None => return Err("dotenv ingest path must be valid UTF-8".to_string()),
         }
@@ -223,8 +230,12 @@ where
         }
         match arg.to_str() {
             Some("--json") => json = true,
-            Some(value) if value.starts_with('-') => return Err(format!("unknown argument '{value}'")),
-            Some(_) if root.is_some() => return Err("dotenv info path specified more than once".to_string()),
+            Some(value) if value.starts_with('-') => {
+                return Err(format!("unknown argument '{value}'"));
+            }
+            Some(_) if root.is_some() => {
+                return Err("dotenv info path specified more than once".to_string());
+            }
             Some(value) => root = Some(PathBuf::from(value)),
             None => return Err("dotenv info path must be valid UTF-8".to_string()),
         }
@@ -256,8 +267,12 @@ where
                 root = PathBuf::from(value);
                 expect_path = false;
             }
-            Some(value) if value.starts_with('-') => return Err(format!("unknown argument '{value}'")),
-            Some(_) if secret.is_some() => return Err("dotenv revoke secret specified more than once".to_string()),
+            Some(value) if value.starts_with('-') => {
+                return Err(format!("unknown argument '{value}'"));
+            }
+            Some(_) if secret.is_some() => {
+                return Err("dotenv revoke secret specified more than once".to_string());
+            }
             Some(value) => secret = Some(value.to_string()),
             None => return Err("dotenv revoke argument must be valid UTF-8".to_string()),
         }
@@ -382,7 +397,10 @@ fn revoke_dotenv(options: &DotenvRevokeOptions) -> Result<(), String> {
     }
     let removed = before.saturating_sub(metadata.expected_callsites.len());
     save_metadata_at(&path, &metadata)?;
-    println!("revoked {removed} dotenv approval{}", if removed == 1 { "" } else { "s" });
+    println!(
+        "revoked {removed} dotenv approval{}",
+        if removed == 1 { "" } else { "s" }
+    );
     Ok(())
 }
 
@@ -432,20 +450,31 @@ fn handle_dotenv_stream_result(
     let request: DotenvSecretRequest = serde_json::from_str(line.trim_end())
         .map_err(|err| (None, 400, format!("invalid dotenv request: {err}")))?;
     if request.kind != "secret_request" {
-        return Err((Some(request.id), 400, "invalid dotenv request type".to_string()));
+        return Err((
+            Some(request.id),
+            400,
+            "invalid dotenv request type".to_string(),
+        ));
     }
 
     let cwd = PathBuf::from(&request.cwd);
-    let project_root = find_metadata_root(&cwd)
-        .map_err(|err| (Some(request.id.clone()), 404, err))?;
+    let project_root =
+        find_metadata_root(&cwd).map_err(|err| (Some(request.id.clone()), 404, err))?;
     let metadata_path = metadata_path(&project_root);
-    let mut metadata = load_metadata_at(&metadata_path)
-        .map_err(|err| (Some(request.id.clone()), 500, err))?;
-    if !metadata.known_secrets.iter().any(|key| key == &request.secret) {
+    let mut metadata =
+        load_metadata_at(&metadata_path).map_err(|err| (Some(request.id.clone()), 500, err))?;
+    if !metadata
+        .known_secrets
+        .iter()
+        .any(|key| key == &request.secret)
+    {
         return Err((
             Some(request.id),
             404,
-            format!("dotenv secret {} is not managed by this project", request.secret),
+            format!(
+                "dotenv secret {} is not managed by this project",
+                request.secret
+            ),
         ));
     }
 
@@ -456,13 +485,21 @@ fn handle_dotenv_stream_result(
         .iter()
         .any(|callsite| callsite.fingerprint == fingerprint);
     if !approved {
-        let approval = request_dotenv_approval(&request, &project_root, &metadata, &normalized, &fingerprint)
-            .map_err(|err| (Some(request.id.clone()), 500, err))?;
+        let approval = request_dotenv_approval(
+            &request,
+            &project_root,
+            &metadata,
+            &normalized,
+            &fingerprint,
+        )
+        .map_err(|err| (Some(request.id.clone()), 500, err))?;
         if !approval.approved {
             return Err((
                 Some(request.id),
                 403,
-                approval.reason.unwrap_or_else(|| "secret access denied".to_string()),
+                approval
+                    .reason
+                    .unwrap_or_else(|| "secret access denied".to_string()),
             ));
         }
         if approval.always_allow {
@@ -510,7 +547,9 @@ fn decrypt_managed_secret(
             }
         }
     }
-    Err(format!("dotenv secret {secret} was not found in managed files"))
+    Err(format!(
+        "dotenv secret {secret} was not found in managed files"
+    ))
 }
 
 fn request_dotenv_approval(
@@ -564,9 +603,13 @@ struct DotenvAssignment<'a> {
     value: &'a str,
 }
 
-fn rewrite_dotenv_file(path: &Path, root: &Path, public_key: &str) -> Result<RewriteOutcome, String> {
-    let contents =
-        fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+fn rewrite_dotenv_file(
+    path: &Path,
+    root: &Path,
+    public_key: &str,
+) -> Result<RewriteOutcome, String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     let mut keys = Vec::new();
     let mut encrypted_values = 0;
     let mut out = String::new();
@@ -649,7 +692,8 @@ fn prepend_public_key(public_key: &str, filename: &str) -> String {
 }
 
 fn encrypt_dotenv_value(value: &str, public_key: &str) -> Result<String, String> {
-    let public = hex::decode(public_key).map_err(|err| format!("invalid dotenv public key: {err}"))?;
+    let public =
+        hex::decode(public_key).map_err(|err| format!("invalid dotenv public key: {err}"))?;
     let encrypted = ecies::encrypt(&public, value.as_bytes())
         .map_err(|err| format!("failed to encrypt dotenv value: {err}"))?;
     Ok(format!(
@@ -659,7 +703,8 @@ fn encrypt_dotenv_value(value: &str, public_key: &str) -> Result<String, String>
 }
 
 fn decrypt_dotenv_value(value: &str, private_key: &str) -> Result<String, String> {
-    let private = hex::decode(private_key).map_err(|err| format!("invalid dotenv private key: {err}"))?;
+    let private =
+        hex::decode(private_key).map_err(|err| format!("invalid dotenv private key: {err}"))?;
     let encrypted = base64::engine::general_purpose::STANDARD
         .decode(value)
         .map_err(|err| format!("invalid encrypted dotenv value: {err}"))?;
@@ -721,8 +766,8 @@ fn load_metadata_from_root(root: &Path) -> Result<DotenvProjectMetadata, String>
 }
 
 fn load_metadata_at(path: &Path) -> Result<DotenvProjectMetadata, String> {
-    let contents =
-        fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&contents)
         .map_err(|err| format!("failed to decode {}: {err}", path.display()))
 }
@@ -821,7 +866,9 @@ fn dotenv_pending_approval_path() -> Result<PathBuf, String> {
 }
 
 fn dotenv_decision_path(id: &str) -> Result<PathBuf, String> {
-    Ok(dotenv_approval_root()?.join("decisions").join(format!("{id}.json")))
+    Ok(dotenv_approval_root()?
+        .join("decisions")
+        .join(format!("{id}.json")))
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
@@ -830,8 +877,8 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
         .ok_or_else(|| format!("invalid path {}", path.display()))?;
     fs::create_dir_all(parent)
         .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
-    let encoded = serde_json::to_vec_pretty(value)
-        .map_err(|err| format!("failed to encode JSON: {err}"))?;
+    let encoded =
+        serde_json::to_vec_pretty(value).map_err(|err| format!("failed to encode JSON: {err}"))?;
     fs::write(path, encoded).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
@@ -993,15 +1040,25 @@ fn keychain_write_dotenv_secret(service: &str, account: &str, value: &str) -> Re
     let value = CString::new(value).map_err(|_| "invalid keychain secret value".to_string())?;
     let mut error = std::ptr::null_mut();
     if unsafe {
-        isotope_store_generic_password_json(service.as_ptr(), account.as_ptr(), value.as_ptr(), &mut error)
+        isotope_store_generic_password_json(
+            service.as_ptr(),
+            account.as_ptr(),
+            value.as_ptr(),
+            &mut error,
+        )
     } {
         return Ok(());
     }
-    Err(unsafe { take_dotenv_bridge_string(error) }.unwrap_or_else(|| "keychain write failed".to_string()))
+    Err(unsafe { take_dotenv_bridge_string(error) }
+        .unwrap_or_else(|| "keychain write failed".to_string()))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_write_dotenv_secret(_service: &str, _account: &str, _value: &str) -> Result<(), String> {
+fn keychain_write_dotenv_secret(
+    _service: &str,
+    _account: &str,
+    _value: &str,
+) -> Result<(), String> {
     Err("dotenv keychain integration is only available on macOS".to_string())
 }
 
@@ -1014,7 +1071,8 @@ fn post_dotenv_distributed_notification(name: &str) -> Result<(), String> {
         ) -> bool;
     }
 
-    let name = CString::new(name).map_err(|_| "invalid distributed notification name".to_string())?;
+    let name =
+        CString::new(name).map_err(|_| "invalid distributed notification name".to_string())?;
     let mut error = std::ptr::null_mut();
     if unsafe { isotope_post_distributed_notification(name.as_ptr(), &mut error) } {
         return Ok(());
@@ -1072,7 +1130,10 @@ mod tests {
         let (private, public) = generate_dotenv_keypair();
         let encrypted = encrypt_dotenv_value("secret-value", &public).unwrap();
         let payload = encrypted.strip_prefix(DOTENV_ENCRYPTED_PREFIX).unwrap();
-        assert_eq!(decrypt_dotenv_value(payload, &private).unwrap(), "secret-value");
+        assert_eq!(
+            decrypt_dotenv_value(payload, &private).unwrap(),
+            "secret-value"
+        );
     }
 
     #[test]
@@ -1094,7 +1155,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.encrypted_values, 2);
-        assert_eq!(summary.known_secrets, vec!["DATABASE_URL", "EMPTY", "OPENAI_API_KEY"]);
+        assert_eq!(
+            summary.known_secrets,
+            vec!["DATABASE_URL", "EMPTY", "OPENAI_API_KEY"]
+        );
         let rewritten = fs::read_to_string(temp.path().join(".env")).unwrap();
         assert!(rewritten.contains("DOTENV_PUBLIC_KEY"));
         assert!(rewritten.contains("OPENAI_API_KEY=\"encrypted:"));

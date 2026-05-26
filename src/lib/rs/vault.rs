@@ -899,9 +899,9 @@ fn is_executable_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::net::UnixListener;
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::net::UnixListener;
 
     struct EnvGuard {
         previous: Vec<(&'static str, Option<OsString>)>,
@@ -1105,7 +1105,8 @@ mod tests {
 
         #[cfg(unix)]
         assert_eq!(
-            run_internal_exec("vault", vec![OsString::from_vec(vec![0xff])].into_iter()).unwrap_err(),
+            run_internal_exec("vault", vec![OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
             "internal-exec arguments must be valid UTF-8"
         );
     }
@@ -1178,10 +1179,7 @@ mod tests {
         );
 
         unsafe { env::remove_var("HOME") };
-        assert_eq!(
-            resolve_vault_socket_path().unwrap_err(),
-            "HOME is not set"
-        );
+        assert_eq!(resolve_vault_socket_path().unwrap_err(), "HOME is not set");
     }
 
     #[test]
@@ -1528,8 +1526,16 @@ mod tests {
 
         let _env = EnvGuard::set(&[("PATH", bin.to_str().unwrap())]);
         let aliases = collect_vault_aliases();
-        assert!(aliases.iter().any(|(name, path)| name == "demo-tool" && path == &demo_tool));
-        assert!(!aliases.iter().any(|(name, _)| name == ".hidden-tool" || name == "vault"));
+        assert!(
+            aliases
+                .iter()
+                .any(|(name, path)| name == "demo-tool" && path == &demo_tool)
+        );
+        assert!(
+            !aliases
+                .iter()
+                .any(|(name, _)| name == ".hidden-tool" || name == "vault")
+        );
 
         let staged_vault = temp.path().join("staged-vault");
         write_executable(&staged_vault);
@@ -1569,12 +1575,9 @@ mod tests {
         write_executable(&vault_binary);
         let socket = temp.path().join("vault.sock");
 
-        let manifest = build_vault_toolchain_for_launch(
-            &vault_binary,
-            &socket,
-            Some(Path::new("/bin/sh")),
-        )
-        .unwrap();
+        let manifest =
+            build_vault_toolchain_for_launch(&vault_binary, &socket, Some(Path::new("/bin/sh")))
+                .unwrap();
 
         assert_eq!(
             manifest.environment.initial_executable_path.as_deref(),

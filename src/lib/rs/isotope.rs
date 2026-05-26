@@ -1,9 +1,9 @@
 use super::*;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::CString;
 #[cfg(target_os = "macos")]
 use std::ffi::c_char;
-use std::ffi::CString;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
@@ -12,8 +12,7 @@ use std::os::unix::io::AsRawFd;
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
 const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-changed";
-const AUTOMATIC_APPROVAL_NOTIFICATION: &str =
-    "com.automicvault.isotope-approval.automatic-granted";
+const AUTOMATIC_APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.automatic-granted";
 const USER_APPROVAL_SUBDIR: &str = "isotope";
 const ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
@@ -919,11 +918,7 @@ fn parent_process_path(pid: i32) -> Option<String> {
         return None;
     }
     let path = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
-    }
+    if path.is_empty() { None } else { Some(path) }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1528,7 +1523,8 @@ mod tests {
             saved_stdin,
         };
 
-        let write_result = unsafe { libc::write(write_fd.raw(), input.as_ptr().cast(), input.len()) };
+        let write_result =
+            unsafe { libc::write(write_fd.raw(), input.as_ptr().cast(), input.len()) };
         assert_eq!(write_result, input.len() as isize);
         write_fd.close();
         assert_eq!(unsafe { libc::dup2(read_fd.raw(), stdin_fd) }, stdin_fd);
@@ -1571,7 +1567,8 @@ mod tests {
         assert!(writer_fd >= 0);
         let input = input.to_vec();
         let writer = std::thread::spawn(move || {
-            let write_result = unsafe { libc::write(writer_fd, input.as_ptr().cast(), input.len()) };
+            let write_result =
+                unsafe { libc::write(writer_fd, input.as_ptr().cast(), input.len()) };
             assert_eq!(write_result, input.len() as isize);
             unsafe { libc::close(writer_fd) };
         });
@@ -1763,36 +1760,44 @@ mod tests {
     fn isotopes_dispatch_cli_paths_cover_help_version_and_save_stdin() {
         let save_store = StubCredentialStore::default();
 
-        assert!(dispatch_isotope(
-            "av inject",
-            vec![OsString::from("--help")].into_iter(),
-            &save_store,
-        )
-        .is_ok());
-        assert!(dispatch_isotope(
-            "av inject",
-            vec![OsString::from("--version")].into_iter(),
-            &save_store,
-        )
-        .is_ok());
+        assert!(
+            dispatch_isotope(
+                "av inject",
+                vec![OsString::from("--help")].into_iter(),
+                &save_store,
+            )
+            .is_ok()
+        );
+        assert!(
+            dispatch_isotope(
+                "av inject",
+                vec![OsString::from("--version")].into_iter(),
+                &save_store,
+            )
+            .is_ok()
+        );
         assert_eq!(
             dispatch_isotope("av inject", Vec::<OsString>::new().into_iter(), &save_store)
                 .unwrap_err(),
             "missing key and target binary"
         );
 
-        assert!(dispatch_save(
-            "av save",
-            vec![OsString::from("--help")].into_iter(),
-            &save_store,
-        )
-        .is_ok());
-        assert!(dispatch_save(
-            "av save",
-            vec![OsString::from("--version")].into_iter(),
-            &save_store,
-        )
-        .is_ok());
+        assert!(
+            dispatch_save(
+                "av save",
+                vec![OsString::from("--help")].into_iter(),
+                &save_store,
+            )
+            .is_ok()
+        );
+        assert!(
+            dispatch_save(
+                "av save",
+                vec![OsString::from("--version")].into_iter(),
+                &save_store,
+            )
+            .is_ok()
+        );
 
         let _guard = crate::global_test_env_lock().lock().unwrap();
         with_fake_stdin(b"  secret-value  \n", || {
@@ -1815,12 +1820,14 @@ mod tests {
         let store = StubCredentialStore::default();
         assert!(credential_helper_names().contains(&"aws"));
 
-        assert!(dispatch_credential_helper(
-            "av credential-helper",
-            vec![OsString::from("--help")].into_iter(),
-            &store,
-        )
-        .is_ok());
+        assert!(
+            dispatch_credential_helper(
+                "av credential-helper",
+                vec![OsString::from("--help")].into_iter(),
+                &store,
+            )
+            .is_ok()
+        );
         assert_eq!(
             dispatch_credential_helper(
                 "av credential-helper",
@@ -1839,12 +1846,14 @@ mod tests {
             .unwrap_err(),
             "unknown credential helper protocol 'git'"
         );
-        assert!(dispatch_credential_helper(
-            "av credential-helper",
-            vec![OsString::from("aws"), OsString::from("--help")].into_iter(),
-            &store,
-        )
-        .is_ok());
+        assert!(
+            dispatch_credential_helper(
+                "av credential-helper",
+                vec![OsString::from("aws"), OsString::from("--help")].into_iter(),
+                &store,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -2037,9 +2046,11 @@ mod tests {
     #[test]
     fn isotopes_exec_environment_and_zeroize_helpers_cover_errors() {
         assert!(build_exec_cstrings(&[OsString::from("ok")]).is_ok());
-        assert!(build_exec_cstrings(&[OsString::from("bad\0arg")])
-            .unwrap_err()
-            .contains("interior NUL"));
+        assert!(
+            build_exec_cstrings(&[OsString::from("bad\0arg")])
+                .unwrap_err()
+                .contains("interior NUL")
+        );
 
         let mut env_map = BTreeMap::new();
         env_map.insert(OsString::from("GOOD"), OsString::from("value"));
@@ -2051,14 +2062,18 @@ mod tests {
             OsString::from_vec(b"/tmp/v\xffrp/script".to_vec()),
         );
         let built = build_exec_environment(&env_map).unwrap();
-        assert!(built
-            .iter()
-            .any(|entry| entry.as_bytes() == b"RAW=/tmp/v\xffrp/script"));
+        assert!(
+            built
+                .iter()
+                .any(|entry| entry.as_bytes() == b"RAW=/tmp/v\xffrp/script")
+        );
 
         env_map.insert(OsString::from("BAD"), OsString::from("bad\0value"));
-        assert!(build_exec_environment(&env_map)
-            .unwrap_err()
-            .contains("environment entry"));
+        assert!(
+            build_exec_environment(&env_map)
+                .unwrap_err()
+                .contains("environment entry")
+        );
 
         let mut credentials = BTreeMap::new();
         credentials.insert("TOKEN".to_string(), "secret".to_string());
@@ -2129,9 +2144,11 @@ mod tests {
             parse_save_key("av save", &[OsString::from(" TOKEN ")]).unwrap(),
             "TOKEN"
         );
-        assert!(parse_save_key("av save", &[])
-            .unwrap_err()
-            .contains("missing"));
+        assert!(
+            parse_save_key("av save", &[])
+                .unwrap_err()
+                .contains("missing")
+        );
     }
 
     #[test]
@@ -2397,13 +2414,8 @@ mod tests {
     fn isotopes_always_allow_scope_and_path_helpers_cover_expected_paths() {
         let executable = Path::new("/bin/sh");
         let file = File::open(executable).unwrap();
-        let scope = always_allow_scope(
-            "/bin/sh",
-            executable,
-            &file,
-            &[OsString::from("/bin/sh")],
-        )
-        .unwrap();
+        let scope =
+            always_allow_scope("/bin/sh", executable, &file, &[OsString::from("/bin/sh")]).unwrap();
         assert_eq!(scope.executable_path, "/bin/sh");
         assert_eq!(scope.script_path.as_deref(), Some("/bin/sh"));
 
@@ -2430,15 +2442,8 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert!(always_allows_usage_at_path(
-            &store_path,
-            &scope,
-            &["TOKEN".to_string()]
-        )
-        .unwrap());
-        assert!(
-            !always_allows_usage_at_path(&store_path, &scope, &["OTHER".to_string()]).unwrap()
-        );
+        assert!(always_allows_usage_at_path(&store_path, &scope, &["TOKEN".to_string()]).unwrap());
+        assert!(!always_allows_usage_at_path(&store_path, &scope, &["OTHER".to_string()]).unwrap());
         assert_eq!(
             load_always_allow_store_at_path(&temp.path().join("missing.json")).unwrap(),
             IsotopeAlwaysAllowStore::default()
