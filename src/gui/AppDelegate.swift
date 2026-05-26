@@ -430,7 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Deny")
         if approval.canAlwaysAllow {
-            alert.addButton(withTitle: "Always Allow")
+            alert.addButton(withTitle: isotopeAlwaysAllowButtonTitle(for: approval))
         }
         alert.accessoryView = isotopeApprovalAccessoryView(for: approval)
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -446,6 +446,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 reason: response == .alertFirstButtonReturn ? nil : "Denied by operator"
             )
         }
+    }
+
+    private func isotopeAlwaysAllowButtonTitle(for approval: IsotopeApprovalRequestSnapshot) -> String {
+        approval.scriptSha256 == nil ? "Always Allow" : "Always Allow for Script SHA"
     }
 
     private func presentPendingDotenvApprovalIfNeeded() {
