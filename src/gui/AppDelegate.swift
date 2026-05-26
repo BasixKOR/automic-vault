@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let vaultApprovalStore = VaultApprovalStore()
     private let containmentLogStore = ContainmentLogStore()
     private let isotopeApprovalStore = IsotopeApprovalStore()
-    private let dotenvApprovalStore = DotenvApprovalStore()
     private let gateApprovalStore = GateApprovalStore()
     private let helperBridge = NukeHelperBridge()
     #if !DEBUG
@@ -20,11 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var containmentLogObserver: NSObjectProtocol?
     private var pendingApprovalObserver: NSObjectProtocol?
     private var pendingIsotopeApprovalObserver: NSObjectProtocol?
-    private var pendingDotenvApprovalObserver: NSObjectProtocol?
     private var pendingGateApprovalObserver: NSObjectProtocol?
     private var activeApprovalID: String?
     private var activeIsotopeApprovalID: String?
-    private var activeDotenvApprovalID: String?
     private var activeGateApprovalID: String?
     private var containmentWindowControllers: [String: ContainmentLogWindowController] = [:]
     private var remoteDatabaseRefreshTimer: Timer?
@@ -44,13 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installContainmentLogObserverIfNeeded()
         installVaultApprovalObserverIfNeeded()
         installIsotopeApprovalObserverIfNeeded()
-        installDotenvApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
         startRemoteDatabaseRefreshTimer()
         showMainWindow()
         presentPendingVaultApprovalIfNeeded()
         presentPendingIsotopeApprovalIfNeeded()
-        presentPendingDotenvApprovalIfNeeded()
         presentPendingGateApprovalIfNeeded()
     }
 
@@ -69,9 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let pendingIsotopeApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingIsotopeApprovalObserver)
-        }
-        if let pendingDotenvApprovalObserver {
-            DistributedNotificationCenter.default().removeObserver(pendingDotenvApprovalObserver)
         }
         if let pendingGateApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingGateApprovalObserver)
@@ -299,13 +291,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installDotenvApprovalObserverIfNeeded() {
-        guard pendingDotenvApprovalObserver == nil else { return }
-        pendingDotenvApprovalObserver = dotenvApprovalStore.observePendingApprovalChanges { [weak self] _ in
-            self?.presentPendingDotenvApprovalIfNeeded()
-        }
-    }
-
     private func installGateApprovalObserverIfNeeded() {
         guard pendingGateApprovalObserver == nil else { return }
         pendingGateApprovalObserver = gateApprovalStore.observePendingApprovalChanges { [weak self] _ in
@@ -452,45 +437,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         approval.scriptSha256 == nil ? "Always Allow" : "Always Allow for Script SHA"
     }
 
-    private func presentPendingDotenvApprovalIfNeeded() {
-        guard let approval = dotenvApprovalStore.loadPendingApproval() else {
-            activeDotenvApprovalID = nil
-            return
-        }
-        guard activeDotenvApprovalID != approval.id else { return }
-        activeDotenvApprovalID = approval.id
-
-        let window = makeOrRestoreMainWindow()
-        if NSApp.isActive == false || window.isKeyWindow == false {
-            _ = NSApp.requestUserAttention(.criticalRequest)
-        }
-        showMainWindow()
-
-        let alert = NSAlert()
-        alert.messageText = "Approve Secret Access"
-        alert.informativeText = "Application code requested \(approval.secret)."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Allow Once")
-        alert.addButton(withTitle: "Deny")
-        alert.addButton(withTitle: "Always Allow")
-        alert.accessoryView = dotenvApprovalAccessoryView(for: approval)
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self else { return }
-            try? self.dotenvApprovalStore.saveDecision(
-                DotenvApprovalDecision(
-                    id: approval.id,
-                    approved: response == .alertFirstButtonReturn || response == .alertThirdButtonReturn,
-                    alwaysAllow: response == .alertThirdButtonReturn,
-                    reason: response == .alertSecondButtonReturn ? "Denied by operator" : nil
-                )
-            )
-            self.activeDotenvApprovalID = nil
-            DispatchQueue.main.async {
-                self.presentPendingDotenvApprovalIfNeeded()
-            }
-        }
-    }
-
     private func presentPendingGateApprovalIfNeeded() {
         guard let approval = gateApprovalStore.loadPendingApproval() else {
             activeGateApprovalID = nil
@@ -589,48 +535,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func isotopeApprovalAccessoryView(for approval: IsotopeApprovalRequestSnapshot) -> NSView {
         IsotopeApprovalView(approval: approval)
-    }
-
-    private func dotenvApprovalAccessoryView(for approval: DotenvApprovalRequestSnapshot) -> NSView {
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 260))
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isRichText = false
-        textView.font = UIStyle.monoFont(size: 11, weight: .regular)
-        textView.string = dotenvApprovalDetailText(for: approval)
-        scrollView.documentView = textView
-        return scrollView
-    }
-
-    private func dotenvApprovalDetailText(for approval: DotenvApprovalRequestSnapshot) -> String {
-        [
-            "Secret",
-            approval.secret,
-            "",
-            "Runtime",
-            "\(approval.runtime) / \(approval.mode)",
-            "",
-            "Process",
-            "pid \(approval.pid)",
-            approval.executablePath ?? "unknown executable",
-            "",
-            "Project",
-            approval.projectRoot,
-            "",
-            "Working Directory",
-            approval.cwd,
-            "",
-            "Fingerprint",
-            approval.fingerprint,
-            "",
-            "Backtrace",
-            approval.normalizedBacktrace.isEmpty
-                ? "<none>"
-                : approval.normalizedBacktrace.joined(separator: "\n")
-        ].joined(separator: "\n")
     }
 
     private func isotopeParentProcessSummary(

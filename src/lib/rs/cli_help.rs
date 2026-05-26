@@ -262,12 +262,6 @@ impl<'a> HelpScreen<'a> {
                 None,
                 "Run an approved credential helper adapter.",
             ),
-            command_line(
-                "dotenv",
-                None,
-                "Manage encrypted dotenv secret capabilities.",
-            ),
-            HelpLine::plain(""),
             section_line("EXECUTION CONTROL"),
             command_line(
                 "contain",
