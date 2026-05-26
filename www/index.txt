@@ -1,7 +1,7 @@
 Automic Vault is a local macOS security layer for AI coding agents. It keeps
 developer secrets out of plaintext files and model context, injects approved
 credentials only into trusted command-line tools, and adds human approval gates
-at the runtime layer where tools actually execute.
+where those tools run.
 
 Key pages:
 - Documentation: https://www.automicvault.com/docs/

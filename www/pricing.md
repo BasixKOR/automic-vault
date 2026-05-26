@@ -35,6 +35,6 @@ https://github.com/automic-vault/automic-vault
 
 ## Positioning for Buyers
 
-Automic Vault is best evaluated as a local runtime security layer for AI coding
-agents. It complements central secret managers by controlling what local agents
-can read, which commands can execute, and when approved tools receive secrets.
+Automic Vault is local runtime security for AI coding agents. It complements
+central secret managers by controlling what local agents can read, which
+commands can execute, and when approved tools receive secrets.

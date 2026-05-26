@@ -3,7 +3,7 @@
 Automic Vault is a macOS package manager, secrets manager, and execution control
 plane for AI agents. It protects local developer machines at the runtime layer:
 packages install under controlled roots, secrets stay out of plaintext files,
-and sensitive commands can require human approval before execution.
+and sensitive commands can require human approval before they run.
 
 ## Core Product Facts
 
@@ -27,7 +27,7 @@ and sensitive commands can require human approval before execution.
 Automic Vault helps developers run AI coding agents without exposing local
 credentials or uncontrolled tool authority. It moves secrets away from files
 that agents can read, injects approved credentials only into trusted tools, and
-adds command approval gates where local tools actually execute.
+adds command approval gates where local tools run.
 
 ## Primary Use Cases
 
@@ -50,7 +50,7 @@ and credentials already present on a developer machine.
 
 - [Homepage](https://www.automicvault.com/) — product overview and primary positioning.
 - [Documentation](https://www.automicvault.com/docs/) — CLI commands, runtime boundaries, and examples.
-- [Full site text](https://www.automicvault.com/llms-full.txt) — concatenated text for non-browsing LLM ingestion.
+- [Full site text](https://www.automicvault.com/llms-full.txt) — checked-in site text in one file.
 - [About and founder context](https://www.automicvault.com/about/) — Max Howell and Homebrew context.
 - [Security model](https://www.automicvault.com/security/) — local runtime threat model and disclosure path.
 - [Privacy boundary](https://www.automicvault.com/privacy/) — local data and website privacy notes.
@@ -77,8 +77,8 @@ on macOS.
 Full description: From the creator of Homebrew, Automic Vault is a macOS package
 manager, secrets manager, and approval gate system for AI agents. It protects
 developer credentials by keeping secrets out of plaintext files and model
-context while approved command-line tools still receive the access they need at
-runtime.
+context while approved command-line tools still receive the access they need
+for that run.
 
 Founder context: From the creator of Homebrew, Automic Vault applies Max
 Howell's package-management background to local package roots, command stubs,

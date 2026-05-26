@@ -273,7 +273,7 @@
           <div class="list-heading">
             <div>
               <h2>Top Boundaries</h2>
-              <p>What changes when the agent moves from chat into your local runtime.</p>
+              <p>What changes when an agent can run tools on your Mac.</p>
             </div>
             <span>v0 surface</span>
           </div>
@@ -284,7 +284,7 @@
               <p class="story-kicker">Keychain-backed secrets</p>
               <h3>Tools get secrets. Agents do not.</h3>
               <p>
-                Automic Vault patches critical tools so credentials can move out of plaintext files and into local protected storage. The tool can still do its job; the agent loses the easy read path.
+                Automic Vault patches critical tools so credentials can move out of plaintext files and into local protected storage. The tool still works; the agent loses the easy read path.
               </p>
               <ul class="story-tags" aria-label="Secret boundary details">
                 <li>gh</li>
@@ -301,7 +301,7 @@
               <p class="story-kicker">Human approval gates</p>
               <h3>Approval belongs beneath the agent, not inside it.</h3>
               <p>
-                Built-in agent controls help, but a compromised agent controls its own policy surface. Automic Vault places gates at the local tool layer, where token export, package publishing, and other sensitive actions actually happen.
+                Built-in agent controls help, but a compromised agent controls its own policy surface. Automic Vault places gates at the local tool layer, where token export, package publishing, and other sensitive actions run.
               </p>
               <div class="inline-prompt" aria-label="Example approval request">
                 <span>Automic Vault</span>
@@ -318,7 +318,7 @@
               <p class="story-kicker">Nucleus package manager</p>
               <h3>Install the agent's tools into a root it cannot rewrite.</h3>
               <p>
-                Nucleus installs Homebrew, npm, and PyPI packages with hardened roots. Agents can run approved tools without turning the whole developer environment into writable ambient state.
+                Nucleus installs Homebrew, npm, and PyPI packages with hardened roots. Agents can run approved tools without turning the developer environment into writable ambient state.
               </p>
               <div class="source-strip" aria-label="Package sources">
                 <span>Homebrew</span>
@@ -402,7 +402,7 @@
           <article>
             <span>Homebrew</span>
             <h3>Package manager</h3>
-            <p>Automic Vault installs familiar packages, then tightens what agents can mutate underneath them.</p>
+            <p>Automic Vault installs familiar packages, then limits what agents can rewrite underneath them.</p>
           </article>
           <article>
             <span>1Password</span>

@@ -178,7 +178,7 @@
                               "name": "Can they work together?",
                               "acceptedAnswer": {
                                     "@type": "Answer",
-                                    "text": "Yes. A central vault can remain the source of truth while Automic Vault controls local injection and command approval."
+                                    "text": "Yes. A central vault can remain the primary secret system while Automic Vault controls local injection and command approval."
                               }
                         },
                         {
@@ -223,7 +223,7 @@
           <h1>HashiCorp Vault and Automic Vault solve different parts of agent security</h1>
           <p class="lede">HashiCorp Vault is built for central secrets infrastructure. Automic Vault is built for the local moment when an AI agent can read files, run CLIs, and act with developer credentials.</p>
           <p class="updated">Last updated: May 24, 2026</p>
-          <div class="answer-box"><p>HashiCorp Vault and Automic Vault solve different layers of agent security. HashiCorp Vault centralizes secret policy; Automic Vault controls the final local macOS runtime step where an AI agent can read files, call CLIs, or expose credentials.</p></div>
+          <div class="answer-box"><p>HashiCorp Vault and Automic Vault solve different layers of agent security. HashiCorp Vault centralizes secret policy; Automic Vault controls the local macOS step where an AI agent can read files, call CLIs, or expose credentials.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#contain">Read containment docs <span aria-hidden="true">›</span></a>
             <a class="button" href="../secrets-manager-for-ai-agents/">See agent secrets <span aria-hidden="true">›</span></a>
@@ -240,8 +240,8 @@
           <p>A credential can come from a strong vault and still end up in an env var, config file, shell, or tool output that an agent can read.</p>
         </div>
         <div class="proof-list">
-          <article><span>Central vault</span><h3>Keep enterprise policy where it belongs</h3><p>Use HashiCorp Vault for service identity, dynamic credentials, leases, audit, and central access rules.</p></article>
-          <article><span>Local runtime</span><h3>Control the last mile</h3><p>Use Automic Vault where agent sessions touch local tools, local files, and developer credentials.</p></article>
+          <article><span>Central vault</span><h3>Keep central policy central</h3><p>Use HashiCorp Vault for service identity, dynamic credentials, leases, audit, and central access rules.</p></article>
+          <article><span>Local runtime</span><h3>Control local handoff</h3><p>Use Automic Vault where agent sessions touch local tools, local files, and developer credentials.</p></article>
           <article><span>Command context</span><h3>Approve the action</h3><p>The risky decision is often which command is about to run, not whether a secret exists in a central store.</p></article>
           <article><span>Tool integrity</span><h3>Keep the toolchain stable</h3><p>Root-owned installs reduce the chance that an agent rewrites the binary that receives a credential.</p></article>
         </div>
@@ -280,7 +280,7 @@
         </div>
         <div class="faq-list">
           <article><h3>Does Automic Vault replace HashiCorp Vault?</h3><p>No. HashiCorp Vault is a central secret and policy system; Automic Vault focuses on the local Mac where an AI agent runs tools.</p></article>
-          <article><h3>Can they work together?</h3><p>Yes. A central vault can remain the source of truth while Automic Vault controls local injection and command approval.</p></article>
+          <article><h3>Can they work together?</h3><p>Yes. A central vault can remain the primary secret system while Automic Vault controls local injection and command approval.</p></article>
           <article><h3>What problem is different for AI agents?</h3><p>AI agents can read files and run tools locally, so the final credential handoff needs protection even when upstream storage is strong.</p></article>
         </div>
       </section>

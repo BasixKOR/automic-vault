@@ -186,10 +186,10 @@
       <section class="seo-hero">
         <div>
           <p class="kicker">Privacy</p>
-          <h1>Automic Vault is designed around local control</h1>
+          <h1>Automic Vault keeps agent credentials local</h1>
           <p class="lede">Automic Vault protects local developer credentials. The product is open-source software for macOS, not a hosted secrets platform that stores your agent credentials in a remote account.</p>
           <p class="updated">Last updated: May 24, 2026</p>
-          <div class="answer-box"><p>Automic Vault is designed so agent credentials remain local to the developer's Mac. The public website is static product information; the app's core privacy boundary is local keychain-backed storage, approved command execution, and avoiding raw secret handoff to AI model context.</p></div>
+          <div class="answer-box"><p>Automic Vault keeps agent credentials on the developer's Mac. The public website is static product information; the app's privacy boundary is local keychain-backed storage, approved command execution, and no raw secret handoff to AI model context.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Read documentation <span aria-hidden="true">›</span></a>
             <a class="button" href="../security/">Security notes <span aria-hidden="true">›</span></a>
@@ -245,7 +245,7 @@
         <div class="section-heading">
           <p class="kicker">Practical rule</p>
           <h2>Do not make AI transcripts a secret store.</h2>
-          <p>The privacy risk Automic Vault targets is not only remote collection. It is also local over-sharing: dotenv files, shell profiles, cloud credentials, package tokens, and debug output can all become model-visible text. The product boundary is designed to reduce those local text surfaces before an agent run starts.</p>
+          <p>Automic Vault targets local over-sharing: dotenv files, shell profiles, cloud credentials, package tokens, and debug output can all become model-visible text. The product reduces those text surfaces before an agent run starts.</p>
         </div>
         <div class="proof-list">
           <article><span>Before</span><h3>Move ambient secrets</h3><p>Replace readable local secret files with named values stored behind the local runtime boundary.</p></article>

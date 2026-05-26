@@ -13,18 +13,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Agent Approval Gates | Automic Vault</title>
-  <meta name="description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs actually execute.">
+  <meta name="description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs run.">
   <link rel="canonical" href="https://www.automicvault.com/ai-agent-approval-gates/">
   <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="AI Agent Approval Gates">
-  <meta property="og:description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs actually execute.">
+  <meta property="og:description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs run.">
   <meta property="og:url" content="https://www.automicvault.com/ai-agent-approval-gates/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
-  <meta name="twitter:description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs actually execute.">
+  <meta name="twitter:description" content="Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs run.">
   <meta name="twitter:title" content="AI Agent Approval Gates | Automic Vault">
   <script type="application/ld+json">
 {
@@ -116,7 +116,7 @@
                   "url": "https://www.automicvault.com/ai-agent-approval-gates/",
                   "name": "AI Agent Approval Gates | Automic Vault",
                   "headline": "AI Agent Approval Gates",
-                  "description": "Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs actually execute.",
+                  "description": "Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs run.",
                   "datePublished": "2026-05-15",
                   "dateModified": "2026-05-24",
                   "image": "https://www.automicvault.com/preview.jpg",
@@ -220,8 +220,8 @@
       <section class="seo-hero">
         <div>
           <p class="kicker">Human approval for agent commands</p>
-          <h1>Approval gates for the commands AI agents actually run</h1>
-          <p class="lede">Agent-side prompts are useful, but they live inside the agent. Automic Vault adds approval beneath the agent, at the tool and secret layer where the action happens.</p>
+          <h1>Approval gates for the commands AI agents run</h1>
+          <p class="lede">Agent-side prompts are useful, but they live inside the agent. Automic Vault adds approval beneath the agent, at the tool and secret layer.</p>
           <p class="updated">Last updated: May 24, 2026</p>
           <div class="answer-box"><p>AI agent approval gates are strongest when they run at the tool layer. Automic Vault shows the sensitive command before execution so approval is tied to the executable, command path, and requested capability.</p></div>
           <div class="hero-actions">
@@ -236,7 +236,7 @@
       <section class="seo-section seo-split">
         <div class="section-heading">
           <p class="kicker">Wrong layer</p>
-          <h2>If the agent is the control plane, the control can fail with the agent.</h2>
+          <h2>Controls should survive a bad agent session.</h2>
           <p>Allowlists and model prompts help, but they depend on the same session making the plan. Risky tool use needs a checkpoint below that layer.</p>
         </div>
         <div class="proof-list">
@@ -265,7 +265,7 @@
         <div class="link-grid">
           <a href="../secrets-manager-for-ai-agents/"><span>Secrets</span><strong>Secrets manager for AI agents</strong><p>Keep raw values out of agent context.</p></a>
           <a href="../stop-ai-agents-reading-env-files/"><span>Dotenv</span><strong>Stop agents reading .env files</strong><p>Remove the easiest local secret source.</p></a>
-          <a href="../mcp-secrets-management/"><span>MCP</span><strong>MCP secrets management</strong><p>Keep tool access separate from model access.</p></a>
+          <a href="../mcp-secrets-management/"><span>MCP</span><strong>MCP secrets management</strong><p>Keep tool credentials separate from model access.</p></a>
         </div>
       </section>
       <section id="faq" class="seo-section">

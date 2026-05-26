@@ -203,13 +203,13 @@
         <div class="section-heading">
           <p class="kicker">GitHub risk</p>
           <h2>A GitHub token is source and release authority.</h2>
-          <p>For agent workflows, <code>gh</code> is not just a convenience CLI. It can expose tokens, mutate repositories, publish releases, and start automation.</p>
+          <p>For agent workflows, <code>gh</code> can expose tokens, mutate repositories, publish releases, and start automation.</p>
         </div>
         <div class="proof-list">
           <article><span>Token reveal</span><h3>Stop direct token printing</h3><p>Commands that reveal stored auth should require explicit approval.</p></article>
-          <article><span>Mutation</span><h3>Gate repo-changing commands</h3><p>Release, package, and repository operations deserve a tool-layer checkpoint.</p></article>
+          <article><span>Mutation</span><h3>Gate repo-changing commands</h3><p>Release, package, and repository operations need a tool-layer checkpoint.</p></article>
           <article><span>Storage</span><h3>Seal the credential</h3><p>Keep auth material in the keychain instead of plaintext locations agents can read.</p></article>
-          <article><span>Tool patches</span><h3>Harden the actual CLI</h3><p>Protect high-value commands in the tool itself, not only in agent configuration.</p></article>
+          <article><span>Tool patches</span><h3>Harden the CLI</h3><p>Protect high-value commands in the tool itself, beyond agent configuration.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">

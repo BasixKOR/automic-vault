@@ -3,7 +3,7 @@
 Automic Vault is a local macOS security layer for AI coding agents. It keeps
 developer secrets out of plaintext files and model context, injects approved
 credentials only into trusted command-line tools, and adds human approval gates
-at the runtime layer where tools actually execute.
+where those tools run.
 
 Automic Vault includes Nucleus, a package manager for Homebrew, npm, and PyPI
 packages that installs under controlled roots. It is free open-source software
@@ -16,7 +16,7 @@ under the Apache License 2.0.
 - [Pricing](/pricing/) — free open-source software pricing.
 - [security.txt](/.well-known/security.txt) — machine-readable security disclosure policy.
 - [llms.txt](/llms.txt) — concise AI system navigation.
-- [llms-full.txt](/llms-full.txt) — full concatenated site text.
+- [llms-full.txt](/llms-full.txt) — all checked-in site text in one file.
 
 ## Core Use Cases
 
