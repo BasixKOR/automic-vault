@@ -5,5 +5,5 @@
   --team-id "${team_id}" \
   --password "${APPLE_PASSWORD}" \
   --wait \
-  "${final_dmg}" \
+  "$1" \
   >&2

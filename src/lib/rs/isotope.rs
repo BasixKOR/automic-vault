@@ -466,19 +466,31 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
         .map_err(|err| format!("failed to open {}: {err}", resolved_target.display()))?;
     validate_regular_target(&resolved_target, &file)?;
     validate_parent_directories(&options.target)?;
-    let executable_root_controlled =
-        validate_target_root_installation(&resolved_target, &file).is_ok();
-    let requested_script_path =
-        interpreter_script_path_for_display(&resolved_target, &options.args);
-    let script_root_controlled = requested_script_path
-        .as_deref()
-        .map(|path| validate_root_controlled_path(path).is_ok());
     let always_allow_scope = always_allow_scope(
         &resolved_target_string,
         &resolved_target,
         &file,
         &options.args,
     );
+    let executable_path_for_approval = always_allow_scope
+        .as_ref()
+        .ok()
+        .map(|scope| scope.executable_path.as_str())
+        .unwrap_or(&resolved_target_string);
+    let executable_root_controlled = if executable_path_for_approval == resolved_target_string {
+        validate_target_root_installation(&resolved_target, &file).is_ok()
+    } else {
+        true
+    };
+    let requested_script_path = script_path_for_display(
+        &resolved_target,
+        &file,
+        always_allow_scope.as_ref().ok(),
+        &options.args,
+    );
+    let script_root_controlled = requested_script_path
+        .as_deref()
+        .map(|path| validate_root_controlled_path(path).is_ok());
     let can_always_allow = always_allow_scope.is_ok();
 
     let automatically_approved = !credential_keys.is_empty()
@@ -492,7 +504,7 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
 
     if !credential_keys.is_empty() && !automatically_approved {
         request_isotope_approval(
-            &resolved_target_string,
+            executable_path_for_approval,
             always_allow_scope.as_ref().ok(),
             options,
             &credential_keys,

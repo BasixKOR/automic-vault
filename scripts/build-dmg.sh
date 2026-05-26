@@ -439,7 +439,7 @@ if [[ "${notarize}" == "true" ]]; then
   fi
 
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
-    team_id="${BASH_REMATCH[1]}"
+    export team_id="${BASH_REMATCH[1]}"
   else
     cli_error "Unable to extract Apple team ID from CODESIGN_IDENTITY"
     cli_die "Expected an identity like: Developer ID Application: Name (TEAMID)"
