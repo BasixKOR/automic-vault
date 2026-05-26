@@ -1,0 +1,14 @@
+{
+  "name": "@automic/av",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automic Vault runtime secret capability SDK for Node.js",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
