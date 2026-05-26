@@ -20,7 +20,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
-OUTPUT_PATH = Path("data/pkg-manager-indexes.json")
+OUTPUT_PATH = Path("data/pkg-manager-indexes.json.gz")
 CACHE_DIR = Path("cache/pkg-manager-indexes")
 DEFAULT_TIMEOUT = 90
 USER_AGENT = "AutomicVaultPkgManagerIndexes/1.0"
@@ -164,7 +164,19 @@ def utc_now() -> str:
 
 
 def read_json(path: Path) -> Any:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return json.load(handle)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path: Path, value: Any) -> None:
+    if path.suffix == ".gz":
+        with gzip.open(path, "wt", encoding="utf-8", compresslevel=9) as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        return
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def stable_hash_bytes(value: bytes) -> str:
@@ -645,7 +657,7 @@ def main() -> int:
         terminal.error(f"Failed to build package manager indexes: {err}")
         return 1
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(output_path, artifact)
     count = sum(len(manager.get("packages") or {}) for manager in (artifact.get("managers") or {}).values() if isinstance(manager, dict))
     terminal.ok(f"Wrote {count:,} package manager records to {output_path}")
     if args.json:

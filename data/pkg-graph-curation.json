@@ -10,7 +10,7 @@
     }
   },
   "description": "Agent-curated package graph links for indexable package pages that lack deterministic internal navigation.",
-  "generated_at": "2026-05-26T01:05:17+00:00",
+  "generated_at": "2026-05-26T02:03:44+00:00",
   "hubs": {
     "archive-compression-tools": {
       "description": "Packages that create, inspect, extract, or transform archives and compressed files.",

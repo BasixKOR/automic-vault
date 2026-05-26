@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -16,7 +17,7 @@ from typing import Any
 
 SCHEMA_VERSION = 2
 OUTPUT_PATH = Path("data/pkg-cross-ecosystem.json")
-PKG_MANAGER_INDEX_PATH = Path("data/pkg-manager-indexes.json")
+PKG_MANAGER_INDEX_PATH = Path("data/pkg-manager-indexes.json.gz")
 ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
 SOURCE_BACKED_MANAGER_CONFIDENCE = {
     "macports": 0.94,
@@ -60,6 +61,9 @@ def utc_now() -> str:
 
 def read_json(path: Path, default: Any = None) -> Any:
     try:
+        if path.suffix == ".gz":
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                return json.load(handle)
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         if default is not None:
@@ -88,7 +92,7 @@ def source_files() -> list[Path]:
         Path("data/db.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
-        Path("data/pkg-manager-indexes.json"),
+        Path("data/pkg-manager-indexes.json.gz"),
         Path("scripts/generate-pkg-cross-ecosystem.py"),
         Path("scripts/generate-pkg-manager-indexes.py"),
     ]

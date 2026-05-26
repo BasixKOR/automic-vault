@@ -9,6 +9,7 @@
 /data/combined.json
 /data/isotopes.json*
 /data/isotopes/
+/data/pkg-manager-indexes.json
 /data/radioisotopes/
 /target
 /src/target
