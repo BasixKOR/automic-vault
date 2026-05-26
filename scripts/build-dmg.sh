@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +APPLE_PASSWORD /usr/local/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -434,10 +434,6 @@ if [[ "${notarize}" == "true" ]]; then
     cli_die "APPLE_USERNAME is required for notarization"
   fi
 
-  if [[ -z "${APPLE_PASSWORD:-}" ]]; then
-    cli_die "APPLE_PASSWORD is required for notarization"
-  fi
-
   if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
     cli_die "CODESIGN_IDENTITY is required for notarization"
   fi
@@ -449,13 +445,7 @@ if [[ "${notarize}" == "true" ]]; then
     cli_die "Expected an identity like: Developer ID Application: Name (TEAMID)"
   fi
 
-  xcrun notarytool submit \
-    --apple-id "${APPLE_USERNAME}" \
-    --team-id "${team_id}" \
-    --password "${APPLE_PASSWORD}" \
-    --wait \
-    "${final_dmg}" \
-    >&2
+  av inject +APPLE_PASSWORD $repo_root/scripts/notarize.sh "${final_dmg}"
 
   cli_step "Stapling notarization ticket"
   xcrun stapler staple "${final_dmg}" >&2

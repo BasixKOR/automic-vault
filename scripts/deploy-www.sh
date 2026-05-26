@@ -86,7 +86,6 @@ done
 
 for env_name in \
   AWS_REGION \
-  AWS_ACCOUNT_ID \
   WWW_DOMAIN \
   WWW_WWW_DOMAIN \
   WWW_CANONICAL_HOST \

@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +AV_POSTHOG_API_KEY /usr/local/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
