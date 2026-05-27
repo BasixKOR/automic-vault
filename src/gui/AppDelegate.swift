@@ -5,7 +5,6 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let toggleStartAtLoginArgument = "--toggle-start-at-login"
     private static let remoteDatabaseRefreshInterval: TimeInterval = 60 * 60
-    private static let mainToolbarHeight: CGFloat = 52
     private var window: NSWindow?
     private let statusStore = NucleusStatusStore()
     private let vaultApprovalStore = VaultApprovalStore()
@@ -311,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               resizedWindow === window else {
             return
         }
+        applyMainWindowShape(to: resizedWindow)
         centerTrafficLights(in: resizedWindow)
     }
 
@@ -319,6 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               keyWindow === window else {
             return
         }
+        applyMainWindowShape(to: keyWindow)
         centerTrafficLights(in: keyWindow)
     }
 
@@ -691,13 +692,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         window.contentViewController = controller
         window.makeFirstResponder(controller.view)
+        applyMainWindowShape(to: window)
         centerTrafficLights(in: window)
         DispatchQueue.main.async { [weak self, weak window] in
             guard let self, let window else { return }
+            self.applyMainWindowShape(to: window)
             self.centerTrafficLights(in: window)
         }
         self.window = window
         return window
+    }
+
+    private func applyMainWindowShape(to window: NSWindow) {
+        guard let contentView = window.contentView else {
+            return
+        }
+        contentView.wantsLayer = true
+        contentView.layer?.cornerRadius = MainWindowChrome.cornerRadius
+        contentView.layer?.cornerCurve = .continuous
+        contentView.layer?.masksToBounds = true
     }
 
     private func centerTrafficLights(in window: NSWindow) {
@@ -716,7 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        let toolbarHeight = Self.mainToolbarHeight
+        let toolbarHeight = MainWindowChrome.toolbarHeight
         let originY: CGFloat
         if container.isFlipped {
             originY = (toolbarHeight - buttonGroupHeight) / 2
