@@ -168,6 +168,11 @@ fn dispatch_request(
                 ops::list_pulse_packages(params.offset, params.limit)
             })
         }
+        core::ProtocolMethod::PackagesListGeiger => {
+            respond(request.id, request.params, |params: PageParams| {
+                ops::list_geiger_packages(params.offset, params.limit)
+            })
+        }
         core::ProtocolMethod::PackagesInfo => {
             respond(request.id, request.params, |params: PackageInfoParams| {
                 ops::package_info(&params.package)
@@ -507,6 +512,15 @@ mod tests {
         })
         .unwrap();
         assert_eq!(pulse["id"], 3);
+
+        let geiger = dispatch_request(core::ProtocolRequest {
+            id: 30,
+            method: "packages.listGeiger".to_string(),
+            params: serde_json::json!({"offset": 0, "limit": 2}),
+        })
+        .unwrap();
+        assert_eq!(geiger["id"], 30);
+        assert!(geiger["result"]["packages"].is_array());
 
         let plan = dispatch_request(core::ProtocolRequest {
             id: 4,

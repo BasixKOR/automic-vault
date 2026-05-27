@@ -16095,10 +16095,36 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn list_geiger_packages_returns_actionable_detector_hits() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join("hosts.yml"),
+            "github.com:\n    user: monalisa\n    oauth_token: ghp_secret\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("GH_CONFIG_DIR", temp.path().to_str().unwrap()),
+        ]);
+
+        let page = ops::list_geiger_packages(0, 25).unwrap();
+        assert!(page.packages.iter().any(|package| {
+            package.security_state.as_ref().is_some_and(|state| {
+                state.isotope_name == "gh" && (state.install_is_insecure || state.error.is_some())
+            })
+        }));
+    }
+
+    #[test]
     fn protocol_method_parses_list_pulse() {
         assert_eq!(
             core::ProtocolMethod::parse("packages.listPulse"),
             Some(core::ProtocolMethod::PackagesListPulse)
+        );
+        assert_eq!(
+            core::ProtocolMethod::parse("packages.listGeiger"),
+            Some(core::ProtocolMethod::PackagesListGeiger)
         );
     }
 

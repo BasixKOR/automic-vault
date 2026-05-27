@@ -4,6 +4,7 @@ import Foundation
 
 enum MainWindowSection: String, CaseIterable, Identifiable {
     case installed
+    case geigerCounter
     case newUpdated
     case outdated
     case allPackages
@@ -21,6 +22,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     static let librarySections: [MainWindowSection] = [
         .installed,
+        .geigerCounter,
         .newUpdated,
         .outdated,
         .allPackages
@@ -45,6 +47,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return "Installed"
+        case .geigerCounter:
+            return "Geiger Counter"
         case .newUpdated:
             return "New / Updated"
         case .outdated:
@@ -76,6 +80,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return "shippingbox"
+        case .geigerCounter:
+            return "dot.radiowaves.left.and.right"
         case .newUpdated:
             return "sparkles"
         case .outdated:
@@ -141,6 +147,7 @@ final class MainWindowModel: ObservableObject {
         }
     }
     @Published private(set) var packages: [PackagePresentation] = []
+    @Published private(set) var geigerPackages: [PackagePresentation] = []
     @Published private(set) var catalogPackages: [PackagePresentation] = []
     @Published private(set) var pulsePackages: [PackagePresentation] = []
     @Published private(set) var searchResults: [PackagePresentation] = []
@@ -167,6 +174,7 @@ final class MainWindowModel: ObservableObject {
     private var sectionPageRequestID = 0
     private var detailRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
+    private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
@@ -271,6 +279,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             return installedCount
+        case .geigerCounter:
+            return geigerCounterCount
         case .newUpdated:
             return pulseTotalCount ?? (pulsePackages.isEmpty ? nil : pulsePackages.count)
         case .outdated:
@@ -302,6 +312,8 @@ final class MainWindowModel: ObservableObject {
     private func needsHardening(_ package: PackagePresentation) -> Bool {
         let detail = detailsByPackageName[package.selectionID] ?? package.detail
         if detail?.securityState?.installIsInsecure == true
+            || detail?.securityState?.error?
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             || detail?.securityNotice != nil
             || package.hasActivePlainTextSecretAlert {
             return true
@@ -380,7 +392,7 @@ final class MainWindowModel: ObservableObject {
     private var allKnownPackages: [PackagePresentation] {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
-        for package in packages + catalogPackages + pulsePackages + searchResults {
+        for package in packages + geigerPackages + catalogPackages + pulsePackages + searchResults {
             if seen.insert(package.selectionID).inserted {
                 result.append(package)
             }
@@ -388,8 +400,30 @@ final class MainWindowModel: ObservableObject {
         return result
     }
 
+    private var geigerCounterCount: Int? {
+        let knownActionableCount = geigerActionPackages.count
+        if let geigerTotalCount {
+            return max(geigerTotalCount, knownActionableCount)
+        }
+        let fallbackCount = max(snapshot.hazardousPackageCount, knownActionableCount)
+        return fallbackCount > 0 ? fallbackCount : nil
+    }
+
+    private var geigerActionPackages: [PackagePresentation] {
+        uniquePackages(packages.filter(isGeigerActionPackage) + geigerPackages)
+    }
+
     private var catalogSourcePackages: [PackagePresentation] {
         catalogPackages
+    }
+
+    private func uniquePackages(_ source: [PackagePresentation]) -> [PackagePresentation] {
+        var seen = Set<String>()
+        var result: [PackagePresentation] = []
+        for package in source where seen.insert(package.selectionID).inserted {
+            result.append(package)
+        }
+        return result
     }
 
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {
@@ -405,6 +439,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             source = packages
+        case .geigerCounter:
+            source = geigerActionPackages
         case .newUpdated:
             source = pulsePackages
         case .outdated:
@@ -440,6 +476,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed, .allPackages:
             return true
+        case .geigerCounter:
+            return isGeigerActionPackage(package)
         case .newUpdated:
             return true
         case .outdated:
@@ -472,6 +510,10 @@ final class MainWindowModel: ObservableObject {
         case .settings, .about:
             return false
         }
+    }
+
+    private func isGeigerActionPackage(_ package: PackagePresentation) -> Bool {
+        packageBadge(for: package) == .vulnerable
     }
 
     private func packageMatchesQuery(
@@ -685,6 +727,10 @@ final class MainWindowModel: ObservableObject {
                 normalized,
                 for: package.selectionID
             )
+            geigerPackages = geigerPackages.updatingDetail(
+                normalized,
+                for: package.selectionID
+            )
             pulsePackages = pulsePackages.updatingDetail(
                 normalized,
                 for: package.selectionID
@@ -789,6 +835,8 @@ final class MainWindowModel: ObservableObject {
             return
         }
         switch selectedSection {
+        case .geigerCounter:
+            loadGeigerPageIfNeeded()
         case .newUpdated:
             loadPulsePageIfNeeded()
         case .allPackages,
@@ -803,6 +851,13 @@ final class MainWindowModel: ObservableObject {
         case .installed, .outdated, .settings, .about:
             break
         }
+    }
+
+    private func loadGeigerPageIfNeeded() {
+        guard geigerPackages.isEmpty, geigerTotalCount == nil else {
+            return
+        }
+        loadSectionPage(kind: .geiger)
     }
 
     private func loadCatalogPageIfNeeded() {
@@ -820,6 +875,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private enum SectionPageKind: Sendable, Equatable {
+        case geiger
         case catalog
         case pulse
     }
@@ -861,6 +917,13 @@ final class MainWindowModel: ObservableObject {
         switch result {
         case .success(let page):
             switch kind {
+            case .geiger:
+                geigerTotalCount = page.totalCount
+                geigerPackages = page.packages.map { result in
+                    result.detectedLocalHazardPresentation(
+                        freshness: Self.freshness(for: result.detailLookupName)
+                    )?.presentation ?? presentation(for: result, prefix: "geiger")
+                }
             case .catalog:
                 catalogTotalCount = page.totalCount
                 catalogPackages = page.packages.map {
@@ -957,6 +1020,8 @@ final class MainWindowModel: ObservableObject {
     ) throws -> PackageSearchPage {
         let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
         switch kind {
+        case .geiger:
+            return try bridge.fetchGeigerPackages(offset: 0, limit: pageSize)
         case .catalog:
             return try bridge.fetchAvailablePackages(offset: 0, limit: pageSize)
         case .pulse:

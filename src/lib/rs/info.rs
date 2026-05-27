@@ -604,6 +604,87 @@ pub(crate) fn resolve_pulse_package_results(
     Ok(results)
 }
 
+pub(crate) fn resolve_geiger_package_results(
+    _config: &Config,
+) -> Result<Vec<PackageSearchResult>, String> {
+    let mut results = isotope_integrations::INTEGRATIONS
+        .iter()
+        .filter_map(geiger_package_result_for_integration)
+        .collect::<Vec<_>>();
+    results.sort_by(|left, right| {
+        compare_package_names_for_search_order(&left.package_name, &right.package_name)
+    });
+    results.dedup_by(|left, right| left.package_name == right.package_name);
+    Ok(results)
+}
+
+fn geiger_package_result_for_integration(
+    integration: &isotope_integrations::IsotopeIntegration,
+) -> Option<PackageSearchResult> {
+    let state = package_security_state_for_isotope(integration.name)?;
+    if !package_security_state_needs_geiger_action(&state) {
+        return None;
+    }
+
+    let isotope = embedded_isotope_data().get(&isotope_qualified_name(integration.name));
+    let target = isotope
+        .and_then(|record| {
+            isotope_modified_or_replaced_package_name(record)
+                .ok()
+                .flatten()
+        })
+        .map(|target| {
+            if target.contains(':') {
+                target
+            } else {
+                format!("{BREW_PACKAGE_PREFIX}{target}")
+            }
+        })
+        .unwrap_or_else(|| format!("{BREW_PACKAGE_PREFIX}{}", integration.name));
+    let target = parse_package_alias_target(&target).ok()?;
+    let source = match target {
+        PackageAliasTarget::HomebrewFormula(formula) => PackageReceiptSource::Formula {
+            root_formula: formula,
+        },
+        PackageAliasTarget::HomebrewCask(cask_name) => PackageReceiptSource::Cask { cask_name },
+        PackageAliasTarget::VendorPackage(vendor_name) => {
+            PackageReceiptSource::Vendor { vendor_name }
+        }
+        PackageAliasTarget::NpmPackage(package_name) => PackageReceiptSource::Npm { package_name },
+        PackageAliasTarget::PipPackage(package_name) => PackageReceiptSource::Pip { package_name },
+    };
+    Some(PackageSearchResult {
+        package_name: package_source_qualified_name(&source),
+        source,
+        summary: Some(geiger_package_summary(&state)),
+        latest_version: None,
+        homepage: isotope.and_then(|record| record.release_url.clone()),
+        dependencies: Vec::new(),
+        rank: None,
+        last_updated_at: isotope.and_then(|record| record.published_at.clone()),
+        pulse_kind: None,
+    })
+}
+
+fn package_security_state_needs_geiger_action(state: &PackageSecurityState) -> bool {
+    state.install_is_insecure
+        || state
+            .error
+            .as_ref()
+            .is_some_and(|error| !error.trim().is_empty())
+}
+
+fn geiger_package_summary(state: &PackageSecurityState) -> String {
+    if state
+        .error
+        .as_ref()
+        .is_some_and(|error| !error.trim().is_empty())
+    {
+        return format!("Detector for isotope:{} needs review", state.isotope_name);
+    }
+    "Detector flagged local plaintext credential exposure".to_string()
+}
+
 fn pulse_kind_for_timestamp(
     pulse_kind: Option<String>,
     last_updated_at: &str,

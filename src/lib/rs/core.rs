@@ -1,12 +1,13 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.8";
+pub(crate) const PROTOCOL_VERSION: &str = "1.9";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
     PackagesListInstalled,
     PackagesListAvailable,
     PackagesListPulse,
+    PackagesListGeiger,
     PackagesInfo,
     PackagesSearch,
     PackagesListOutdated,
@@ -23,6 +24,7 @@ impl ProtocolMethod {
             "packages.listInstalled" => Some(Self::PackagesListInstalled),
             "packages.listAvailable" => Some(Self::PackagesListAvailable),
             "packages.listPulse" => Some(Self::PackagesListPulse),
+            "packages.listGeiger" => Some(Self::PackagesListGeiger),
             "packages.info" => Some(Self::PackagesInfo),
             "packages.search" => Some(Self::PackagesSearch),
             "packages.listOutdated" => Some(Self::PackagesListOutdated),
@@ -204,6 +206,7 @@ mod tests {
                 ProtocolMethod::PackagesListAvailable,
             ),
             ("packages.listPulse", ProtocolMethod::PackagesListPulse),
+            ("packages.listGeiger", ProtocolMethod::PackagesListGeiger),
             ("packages.info", ProtocolMethod::PackagesInfo),
             ("packages.search", ProtocolMethod::PackagesSearch),
             (

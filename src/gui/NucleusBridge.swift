@@ -219,6 +219,17 @@ final class NucleusBridge {
         )
     }
 
+    func fetchGeigerPackages(
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
+        try performProtocolRequest(
+            method: "packages.listGeiger",
+            params: PageParams(offset: offset, limit: limit),
+            as: PackageSearchPage.self
+        )
+    }
+
     func fetchOutdatedPackages() throws -> [OutdatedPackageRecord] {
         try performProtocolRequest(
             method: "packages.listOutdated",

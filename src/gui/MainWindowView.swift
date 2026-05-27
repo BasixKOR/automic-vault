@@ -104,7 +104,10 @@ struct MainWindowView: View {
                     .layoutPriority(1)
                 Spacer(minLength: 6)
                 if let count = model.count(for: section) {
-                    CountPill(count: count)
+                    CountPill(
+                        count: count,
+                        prominence: section == .geigerCounter && count > 0 ? .critical : .normal
+                    )
                         .fixedSize()
                 }
             }
@@ -522,15 +525,68 @@ private struct PackageWebView: NSViewRepresentable {
 }
 
 private struct CountPill: View {
+    enum Prominence {
+        case normal
+        case critical
+    }
+
     let count: Int
+    let prominence: Prominence
 
     var body: some View {
         Text(count.formatted())
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(AVGlassPalette.secondaryText)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(AVGlassPalette.controlFill, in: Capsule())
+            .background(background, in: Capsule())
+            .overlay(Capsule().stroke(border, lineWidth: borderWidth))
+            .shadow(color: shadow, radius: 5)
+    }
+
+    private var foreground: Color {
+        switch prominence {
+        case .normal:
+            return AVGlassPalette.secondaryText
+        case .critical:
+            return .white
+        }
+    }
+
+    private var background: Color {
+        switch prominence {
+        case .normal:
+            return AVGlassPalette.controlFill
+        case .critical:
+            return AVGlassPalette.vulnerableRed.opacity(0.96)
+        }
+    }
+
+    private var border: Color {
+        switch prominence {
+        case .normal:
+            return .clear
+        case .critical:
+            return AVGlassPalette.vulnerableRing
+        }
+    }
+
+    private var borderWidth: CGFloat {
+        switch prominence {
+        case .normal:
+            return 0
+        case .critical:
+            return 1.35
+        }
+    }
+
+    private var shadow: Color {
+        switch prominence {
+        case .normal:
+            return .clear
+        case .critical:
+            return AVGlassPalette.vulnerableRing.opacity(0.38)
+        }
     }
 }
 
@@ -621,7 +677,7 @@ private struct PackageBadgePill: View {
     private var border: Color {
         switch badge {
         case .vulnerable:
-            return Color.white.opacity(0.18)
+            return AVGlassPalette.vulnerableRing
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
         }
@@ -695,7 +751,7 @@ private struct PackageBadgeBanner: View {
     private var border: Color {
         switch badge {
         case .vulnerable:
-            return Color.white.opacity(0.18)
+            return AVGlassPalette.vulnerableRing
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
         }
@@ -783,6 +839,7 @@ private enum AVGlassPalette {
     static let orange = Color(red: 0.95, green: 0.58, blue: 0.25)
     static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
     static let vulnerableRed = Color(red: 1.00, green: 0.13, blue: 0.18)
+    static let vulnerableRing = Color(red: 1.00, green: 0.00, blue: 0.04)
     static let blue = Color(red: 0.55, green: 0.67, blue: 0.82)
     static let cyan = Color(red: 0.10, green: 0.52, blue: 1.00)
     static let purple = Color(red: 0.44, green: 0.10, blue: 0.48)

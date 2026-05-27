@@ -293,6 +293,16 @@ pub(crate) fn list_pulse_packages(
     Ok(search_packages_response(packages, offset, limit, true))
 }
 
+pub(crate) fn list_geiger_packages(
+    offset: usize,
+    limit: usize,
+) -> Result<core::SearchPackagesResponse, String> {
+    let packages = resolve_geiger_package_results(&Config {
+        bottle_tag: String::new(),
+    })?;
+    Ok(search_packages_response(packages, offset, limit, false))
+}
+
 pub(crate) fn search_packages(
     query: &str,
     offset: usize,
@@ -1947,6 +1957,10 @@ mod tests {
         let pulse = list_pulse_packages(0, 1).unwrap();
         assert_eq!(pulse.packages.len(), 1);
         assert!(pulse.next_offset.is_some());
+
+        let geiger = list_geiger_packages(0, 1).unwrap();
+        assert!(geiger.total_count >= geiger.packages.len());
+        assert!(geiger.packages.len() <= 1);
     }
 
     #[test]
