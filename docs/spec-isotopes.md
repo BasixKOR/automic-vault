@@ -1,5 +1,8 @@
 # Isotopes
 
+> [!IMPORTANT]
+> This document is outdated.
+
 Isotopes are forks of open source projects with explicit approval gates added.
 Since these forks must be comprehensive and maintained it is not feasible for
 humans to maintain them.
