@@ -201,7 +201,7 @@ struct MainWindowView: View {
                             title: model.displayName(for: package),
                             description: model.packageDescription(for: package),
                             version: packageRowVersion(for: package),
-                            badges: model.packageListBadges(for: package),
+                            badges: packageRowBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
                             model.select(package)
@@ -224,19 +224,31 @@ struct MainWindowView: View {
     private func packageRowVersion(for package: PackagePresentation) -> String {
         if model.selectedSection == .newUpdated,
            case .available(let result) = package.item {
+            if isNewPulseResult(result) {
+                return ""
+            }
             return pulseVersionText(for: result)
         }
         return model.versionText(for: package)
     }
 
-    private func pulseVersionText(for result: PackageSearchResult) -> String {
+    private func packageRowBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
+        var badges = model.packageListBadges(for: package)
+        if model.selectedSection == .newUpdated,
+           case .available(let result) = package.item,
+           isNewPulseResult(result) {
+            badges.append(.new)
+        }
+        return badges
+    }
+
+    private func isNewPulseResult(_ result: PackageSearchResult) -> Bool {
         let pulseKind = result.pulseKind?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let pulseKind,
-           pulseKind.localizedCaseInsensitiveCompare("new") == .orderedSame {
-            return "New"
-        }
+        return pulseKind?.localizedCaseInsensitiveCompare("new") == .orderedSame
+    }
 
+    private func pulseVersionText(for result: PackageSearchResult) -> String {
         guard let raw = result.lastUpdatedAt,
               let date = Self.pulseDateFormatter.date(from: raw) else {
             return "Updated recently"
@@ -694,11 +706,13 @@ private struct PackageRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .layoutPriority(1)
-                        Text(version)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        if version.isEmpty == false {
+                            Text(version)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                     Text(description)
                         .font(.system(size: 12, weight: .regular))
@@ -742,6 +756,8 @@ private struct PackageBadgePill: View {
 
     private var title: String {
         switch badge {
+        case .new:
+            return "New"
         case .vulnerable:
             return "Vulnerable"
         case .hardened:
@@ -755,6 +771,8 @@ private struct PackageBadgePill: View {
 
     private var foreground: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange
         case .vulnerable:
             return AVGlassPalette.vulnerableText
         case .hardened:
@@ -768,6 +786,8 @@ private struct PackageBadgePill: View {
 
     private var background: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange.opacity(0.14)
         case .vulnerable:
             return AVGlassPalette.vulnerableFill
         case .hardened:
@@ -781,6 +801,8 @@ private struct PackageBadgePill: View {
 
     private var border: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange.opacity(0.28)
         case .vulnerable:
             return AVGlassPalette.vulnerableBorder
         case .hardened:
@@ -823,6 +845,8 @@ private struct PackageBadgeBanner: View {
 
     private var title: String {
         switch badge {
+        case .new:
+            return "New"
         case .vulnerable:
             return "Vulnerable"
         case .hardened:
@@ -836,6 +860,8 @@ private struct PackageBadgeBanner: View {
 
     private var systemImage: String {
         switch badge {
+        case .new:
+            return "sparkles"
         case .vulnerable:
             return "exclamationmark.shield.fill"
         case .hardened:
@@ -849,6 +875,8 @@ private struct PackageBadgeBanner: View {
 
     private var foreground: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange
         case .vulnerable:
             return AVGlassPalette.vulnerableText
         case .hardened:
@@ -862,6 +890,8 @@ private struct PackageBadgeBanner: View {
 
     private var background: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange.opacity(0.14)
         case .vulnerable:
             return AVGlassPalette.vulnerableFill
         case .hardened:
@@ -875,6 +905,8 @@ private struct PackageBadgeBanner: View {
 
     private var border: Color {
         switch badge {
+        case .new:
+            return AVGlassPalette.orange.opacity(0.28)
         case .vulnerable:
             return AVGlassPalette.vulnerableBorder
         case .hardened:

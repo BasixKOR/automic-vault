@@ -130,6 +130,7 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
 }
 
 enum MainWindowPackageBadge: Hashable {
+    case new
     case vulnerable
     case hardened
     case immutable
