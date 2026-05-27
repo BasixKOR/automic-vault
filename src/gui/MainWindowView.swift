@@ -843,8 +843,8 @@ private struct PackagePreviewCard: View {
         }
         .padding(14)
         .frame(maxWidth: 340)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .background(AVGlassPalette.previewTint, in: RoundedRectangle(cornerRadius: 10))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
