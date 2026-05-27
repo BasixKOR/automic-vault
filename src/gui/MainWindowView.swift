@@ -646,18 +646,23 @@ private struct PackageRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AVGlassPalette.primaryText)
-                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AVGlassPalette.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(1)
+                        Text(version)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     Text(description)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(AVGlassPalette.quietText)
-                        .lineLimit(1)
-                    Text(version)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
 
                 Spacer(minLength: 8)
@@ -668,7 +673,7 @@ private struct PackageRow: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 11)
-            .frame(minHeight: 68)
+            .frame(minHeight: 76)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? AVGlassPalette.selectedFill : .clear)
             .contentShape(Rectangle())
