@@ -254,7 +254,10 @@ prepare_site_for_upload() {
   secured_package_count="$(count_scan_log_entries)"
   secured_package_display_count="$(format_count_for_display "${secured_package_count}")"
   prepared_site_dir="$(mktemp -d)"
-  rsync -a "${site_dir}/" "${prepared_site_dir}/"
+  rsync -a \
+    --exclude '/pkg/' \
+    --exclude '/*/pkg/' \
+    "${site_dir}/" "${prepared_site_dir}/"
   stamp_product_version "${product_version}"
 
   index_path="${prepared_site_dir}/index.html"
@@ -1179,47 +1182,6 @@ sync_package_tree() {
     --delete \
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
-    --exclude "*.html" \
-    --exclude "*.xml" \
-    --exclude "*.txt" \
-    --exclude "*.md" \
-    --exclude "*.json" \
-    --cache-control "${WWW_ASSET_CACHE_CONTROL}"
-
-  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include "*.html" \
-    --include "*.xml" \
-    --cache-control "${WWW_HTML_CACHE_CONTROL}"
-
-  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include "*.txt" \
-    --content-type "text/plain; charset=utf-8" \
-    --cache-control "${WWW_HTML_CACHE_CONTROL}"
-
-  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include "*.md" \
-    --content-type "text/markdown; charset=utf-8" \
-    --cache-control "${WWW_HTML_CACHE_CONTROL}"
-
-  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include "*.json" \
-    --content-type "application/json; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 }
 
