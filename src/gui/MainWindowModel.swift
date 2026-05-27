@@ -161,7 +161,6 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var searchFocusRequestID = 0
-    @Published private(set) var packageFocusRequestID = 0
 
     private struct InitialDaemonData {
         let installed: [PackageRecord]
@@ -244,16 +243,6 @@ final class MainWindowModel: ObservableObject {
 
     func requestSearchFocus() {
         searchFocusRequestID += 1
-    }
-
-    @discardableResult
-    func requestFirstPackageFocus() -> Bool {
-        guard let package = displayedPackages.first else {
-            return false
-        }
-        select(package)
-        packageFocusRequestID += 1
-        return true
     }
 
     func selectedURL(for tab: MainWindowLinkTab) -> URL? {
