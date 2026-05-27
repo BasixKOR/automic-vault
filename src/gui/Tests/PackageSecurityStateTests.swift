@@ -357,7 +357,7 @@ final class PackageSecurityStateTests: XCTestCase {
             hasMigration: true
         )
 
-        XCTAssertFalse(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
+        XCTAssertFalse(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
     func testManagedModifiedPackageUsesRadioisotopeConversion() throws {
@@ -384,7 +384,7 @@ final class PackageSecurityStateTests: XCTestCase {
             hasMigration: true
         )
 
-        XCTAssertTrue(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
+        XCTAssertTrue(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
     func testHomebrewModifiedPackageUsesInstallPathInsteadOfConversion() throws {
@@ -411,90 +411,7 @@ final class PackageSecurityStateTests: XCTestCase {
             hasMigration: true
         )
 
-        XCTAssertFalse(RootViewController.shouldConvertRadioisotope(detail: detail, plan: plan))
-    }
-
-    @MainActor
-    func testSystemDetectorOnlyDossierHidesPackageActions() throws {
-        let lookupDetail = try decodePackageDetail(
-            packageName: "brew:curl",
-            formula: "curl",
-            securityState: """
-            {
-              "isotopeName": "curl",
-              "installIsInsecure": true,
-              "remediationAvailable": false,
-              "reasons": ["curl netrc file contains plaintext credentials"],
-              "error": null
-            }
-            """
-        )
-        let detail = lookupDetail.withPackageIdentity(
-            packageName: "sys:curl",
-            installPackageNames: ["brew:curl"]
-        )
-
-        let view = DossierView(frame: NSRect(x: 0, y: 0, width: 290, height: 800))
-        view.render(detail: detail, animation: .none)
-        view.layoutSubtreeIfNeeded()
-
-        let visibleButtonTitles = view.subviews
-            .compactMap { $0 as? NSButton }
-            .filter { !$0.isHidden }
-            .map(\.title)
-
-        XCTAssertEqual(visibleButtonTitles, ["LEARN MORE"])
-    }
-
-    @MainActor
-    func testDossierSecurityNoticeUsesWrappedTextFields() throws {
-        let detail = try decodePackageDetail(
-            packageName: "brew:curl",
-            formula: "curl",
-            securityState: """
-            {
-              "isotopeName": "curl",
-              "installIsInsecure": true,
-              "remediationAvailable": false,
-              "reasons": ["curl netrc file contains plaintext credentials: /Users/test/.netrc"],
-              "error": null
-            }
-            """
-        )
-
-        XCTAssertNotNil(detail.securityNotice)
-
-        let view = DossierView(frame: NSRect(x: 0, y: 0, width: 290, height: 800))
-        view.render(detail: detail, animation: .none)
-        view.layoutSubtreeIfNeeded()
-
-        let noticeFields = view.subviews.compactMap { $0 as? NSTextField }
-            .filter { $0.attributedStringValue.length > 0 }
-        let bodyField = try XCTUnwrap(
-            noticeFields.first {
-                $0.attributedStringValue.string.contains("Automic Vault")
-            }
-        )
-
-        XCTAssertEqual(bodyField.lineBreakMode, .byWordWrapping)
-        let paragraphStyle = bodyField.attributedStringValue.attribute(
-            .paragraphStyle,
-            at: 0,
-            effectiveRange: nil
-        ) as? NSParagraphStyle
-        XCTAssertEqual(paragraphStyle?.lineBreakMode, .byWordWrapping)
-        XCTAssertTrue(bodyField.cell?.wraps == true)
-        XCTAssertGreaterThan(bodyField.frame.height, 34)
-        XCTAssertLessThanOrEqual(bodyField.frame.maxX, view.bounds.maxX)
-        for field in noticeFields {
-            let cellHeight = field.cell?.cellSize(forBounds: NSRect(
-                x: 0,
-                y: 0,
-                width: field.frame.width,
-                height: .greatestFiniteMagnitude
-            )).height ?? 0
-            XCTAssertGreaterThanOrEqual(field.frame.height, ceil(cellHeight))
-        }
+        XCTAssertFalse(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
     private func decodePackageDetail(

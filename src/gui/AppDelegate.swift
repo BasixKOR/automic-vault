@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let toggleStartAtLoginArgument = "--toggle-start-at-login"
     private static let remoteDatabaseRefreshInterval: TimeInterval = 60 * 60
@@ -69,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DistributedNotificationCenter.default().removeObserver(pendingGateApprovalObserver)
         }
         remoteDatabaseRefreshTimer?.invalidate()
-        (window?.contentViewController as? RootViewController)?
+        (window?.contentViewController as? MainWindowController)?
             .applicationWillTerminate()
     }
 
@@ -220,7 +221,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             timeInterval: Self.remoteDatabaseRefreshInterval,
             repeats: true
         ) { [weak self] _ in
-            self?.refreshRemoteDatabase()
+            Task { @MainActor in
+                self?.refreshRemoteDatabase()
+            }
         }
         remoteDatabaseRefreshTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -299,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func refreshPackages(_ sender: Any?) {
-        (window?.contentViewController as? RootViewController)?.requestRefresh()
+        (window?.contentViewController as? MainWindowController)?.requestRefresh()
     }
 
     #if DEBUG
@@ -307,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = makeOrRestoreMainWindow()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        (window.contentViewController as? RootViewController)?.runDebugFakeUpdate()
+        (window.contentViewController as? MainWindowController)?.runDebugFakeUpdate()
     }
     #endif
 
@@ -647,7 +650,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return window
         }
 
-        let controller = RootViewController()
+        let controller = MainWindowController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1380, height: 860),
             styleMask: [
@@ -662,8 +665,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.center()
         window.title = "Automic Vault"
-        window.backgroundColor = UIStyle.background
-        window.isOpaque = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
         window.isReleasedWhenClosed = false
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true

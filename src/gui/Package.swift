@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "AutomicVaultGUI",
     platforms: [
-        .macOS(.v13),
+        .macOS("26.0"),
     ],
     products: [
         .executable(name: "AutomicVaultApp", targets: ["AutomicVaultApp"]),
@@ -42,14 +42,13 @@ let package = Package(
                 "PostHogTelemetry.swift",
                 "AppMain.swift",
                 "AppDelegate.swift",
+                "MainWindowController.swift",
+                "MainWindowModel.swift",
+                "MainWindowView.swift",
                 "CommandExecutionApprovalView.swift",
                 "IsotopeApprovalView.swift",
                 "AppUpdateCoordinator.swift",
-                "PackageNodeHazardEffect.swift",
-                "RootViewController.swift",
-                "PackageFieldView.swift",
-                "DossierView.swift",
-                "ExternalSurfaceView.swift",
+                "PackageSecurityRules.swift",
                 "UpdateProgressViewController.swift",
                 "ContainmentLogWindowController.swift",
                 "UIStyle.swift",
