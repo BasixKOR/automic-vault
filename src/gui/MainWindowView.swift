@@ -5,6 +5,7 @@ struct MainWindowView: View {
     @ObservedObject var model: MainWindowModel
     @State private var linkTab: MainWindowLinkTab = .homepage
     @State private var browserCommand: BrowserCommand?
+    @FocusState private var focusedPackageID: String?
 
     var body: some View {
         ZStack {
@@ -150,25 +151,44 @@ struct MainWindowView: View {
 
             hairline
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(model.displayedPackages, id: \.selectionID) { package in
-                        PackageRow(
-                            package: package,
-                            title: model.displayName(for: package),
-                            description: model.packageDescription(for: package),
-                            version: model.versionText(for: package),
-                            badge: model.packageBadge(for: package),
-                            selected: model.selectedItemID == package.selectionID
-                        ) {
-                            model.select(package)
+            ScrollViewReader { packageScrollProxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(model.displayedPackages, id: \.selectionID) { package in
+                            let isFirstPackage = package.selectionID
+                                == model.displayedPackages.first?.selectionID
+                            PackageRow(
+                                package: package,
+                                title: model.displayName(for: package),
+                                description: model.packageDescription(for: package),
+                                version: model.versionText(for: package),
+                                badge: model.packageBadge(for: package),
+                                selected: model.selectedItemID == package.selectionID
+                            ) {
+                                model.select(package)
+                            }
+                            .id(package.selectionID)
+                            .focusable()
+                            .focused($focusedPackageID, equals: package.selectionID)
+                            .onMoveCommand { direction in
+                                guard direction == .up, isFirstPackage else {
+                                    return
+                                }
+                                focusedPackageID = nil
+                                model.requestSearchFocus()
+                            }
+                            hairline
                         }
-                        hairline
                     }
-
+                }
+                .scrollIndicators(.visible)
+                .onChange(of: model.packageFocusRequestID) { _, _ in
+                    focusFirstPackage(using: packageScrollProxy)
                 }
             }
-            .scrollIndicators(.visible)
+            .onChange(of: model.searchFocusRequestID) { _, _ in
+                focusedPackageID = nil
+            }
         }
         .background {
             LiquidGlassSurface(
@@ -176,6 +196,14 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
+    }
+
+    private func focusFirstPackage(using proxy: ScrollViewProxy) {
+        guard let package = model.displayedPackages.first else {
+            return
+        }
+        proxy.scrollTo(package.selectionID, anchor: .top)
+        focusedPackageID = package.selectionID
     }
 
     private var dossierPanel: some View {

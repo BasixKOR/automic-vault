@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -8,6 +9,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private let model: MainWindowModel
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
+    private var cancellables: Set<AnyCancellable> = []
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
 
@@ -15,12 +17,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let model = MainWindowModel()
         self.model = model
         super.init(rootView: MainWindowView(model: model))
+        observeModelFocusRequests()
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
         let model = MainWindowModel()
         self.model = model
         super.init(coder: coder, rootView: MainWindowView(model: model))
+        observeModelFocusRequests()
     }
 
     override func viewDidLoad() {
@@ -56,7 +60,6 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
-        searchToolbarItem?.beginSearchInteraction()
     }
 
     @objc private func searchToolbarItemChanged(_ sender: NSSearchField) {
@@ -121,6 +124,21 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
         NSEvent.removeMonitor(searchShortcutMonitor)
         self.searchShortcutMonitor = nil
+    }
+
+    private func observeModelFocusRequests() {
+        model.$searchFocusRequestID
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.focusSearchToolbarItem()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func focusSearchToolbarItem() {
+        searchToolbarItem?.beginSearchInteraction()
     }
 
     private func isSearchShortcut(_ event: NSEvent) -> Bool {
@@ -218,12 +236,17 @@ extension MainWindowController: NSSearchFieldDelegate {
         textView: NSTextView,
         doCommandBy commandSelector: Selector
     ) -> Bool {
-        guard commandSelector == #selector(NSResponder.cancelOperation(_:)),
-              let searchField = control as? NSSearchField else {
+        guard let searchField = control as? NSSearchField else {
             return false
         }
-        clearAndDeactivateSearch(searchField, fieldEditor: textView)
-        return true
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            clearAndDeactivateSearch(searchField, fieldEditor: textView)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            return focusFirstPackage(searchField)
+        }
+        return false
     }
 
     private func clearAndDeactivateSearch(
@@ -235,6 +258,15 @@ extension MainWindowController: NSSearchFieldDelegate {
         updateSearchText("")
         searchField.abortEditing()
         searchField.window?.makeFirstResponder(nil)
+    }
+
+    private func focusFirstPackage(_ searchField: NSSearchField) -> Bool {
+        guard model.requestFirstPackageFocus() else {
+            return false
+        }
+        searchField.abortEditing()
+        searchField.window?.makeFirstResponder(nil)
+        return true
     }
 }
 
