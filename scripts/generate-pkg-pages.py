@@ -1364,6 +1364,20 @@ def is_public_url(url: str) -> bool:
     return url.startswith("https://") or url.startswith("http://")
 
 
+def manifest_count(root: Path) -> int:
+    if not root.exists():
+        return 0
+    return sum(1 for path in root.glob("*/automic-vault.yml") if path.is_file())
+
+
+def local_radioisotope_manifest_count() -> int:
+    return manifest_count(Path("data/radioisotopes"))
+
+
+def local_full_isotope_manifest_count() -> int:
+    return manifest_count(Path("data/isotopes"))
+
+
 def source_files() -> list[Path]:
     files: list[Path] = []
     files.extend(
@@ -1400,6 +1414,7 @@ def source_files() -> list[Path]:
     isotope_root = Path("data/isotopes")
     if isotope_root.exists():
         files.extend(path for path in isotope_root.glob("*/README.md") if path.is_file())
+        files.extend(path for path in isotope_root.glob("*/automic-vault.yml") if path.is_file())
     return sorted(set(files))
 
 
@@ -1420,6 +1435,8 @@ def source_digest(files: list[Path]) -> tuple[str, int]:
 def build_manifest(page_count: int, files: list[Path]) -> dict[str, Any]:
     digest, latest = source_digest(files)
     latest_dt = dt.datetime.fromtimestamp(latest / 1_000_000_000, dt.timezone.utc)
+    radioisotope_count = local_radioisotope_manifest_count()
+    full_isotope_count = local_full_isotope_manifest_count()
     return {
         "schema": SCHEMA_VERSION,
         "generated_at": utc_now(),
@@ -1428,6 +1445,9 @@ def build_manifest(page_count: int, files: list[Path]) -> dict[str, Any]:
         "latest_source_mtime_ns": latest,
         "latest_source_mtime": latest_dt.replace(microsecond=0).isoformat(),
         "page_count": page_count,
+        "radioisotope_manifest_count": radioisotope_count,
+        "full_isotope_manifest_count": full_isotope_count,
+        "isotope_manifest_count": radioisotope_count + full_isotope_count,
     }
 
 
@@ -1635,6 +1655,7 @@ def render_index(
     locale: dict[str, Any] | None = None,
 ) -> str:
     secured = [page for page in pages if page.isotope]
+    radioisotope_count = int(manifest.get("radioisotope_manifest_count") or len(secured))
     gated = [page for page in pages if page.approval_gate]
     top_pages = sorted(
         pages,
@@ -1669,7 +1690,7 @@ def render_index(
     </div>
     <aside class="hero-panel" aria-label="{attr(tx(locale, 'catalogCounts', 'Catalog counts'))}">
       {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
-      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(len(secured)))}
+      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(radioisotope_count))}
       {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
       {metric(tx(locale, 'sourceFiles', 'source files'), fmt_int(manifest.get('source_file_count')))}
     </aside>
@@ -4450,6 +4471,20 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
     actual_pages = sum(1 for path in output_dir.glob("*/*/index.html"))
     if actual_pages != page_count:
         failures.append(f"manifest page count is {page_count}, but found {actual_pages} pages")
+    radioisotope_count = local_radioisotope_manifest_count()
+    full_isotope_count = local_full_isotope_manifest_count()
+    if int(manifest.get("radioisotope_manifest_count") or 0) != radioisotope_count:
+        failures.append(
+            f"manifest radioisotope count is {manifest.get('radioisotope_manifest_count')}, but current data yields {radioisotope_count}"
+        )
+    if int(manifest.get("full_isotope_manifest_count") or 0) != full_isotope_count:
+        failures.append(
+            f"manifest full isotope count is {manifest.get('full_isotope_manifest_count')}, but current data yields {full_isotope_count}"
+        )
+    if int(manifest.get("isotope_manifest_count") or 0) != radioisotope_count + full_isotope_count:
+        failures.append(
+            f"manifest isotope count is {manifest.get('isotope_manifest_count')}, but current data yields {radioisotope_count + full_isotope_count}"
+        )
     pages = sorted(package_pages_from_sources(load_sources()).values(), key=lambda page: (page.provider, page.slug, page.name))
     hubs = package_hub_pages(pages)
     indexable_pages = [page for page in pages if is_indexable_package_page(page)]

@@ -265,6 +265,42 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         source_paths = {path.as_posix() for path in module.source_files()}
         self.assertIn("cache/pkg-page-enrichment.json", source_paths)
         self.assertIn("cache/pkg-version-freshness.json", source_paths)
+        self.assertIn("data/isotopes/gh-cli/automic-vault.yml", source_paths)
+
+    def test_package_index_reports_manifest_radioisotope_count(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_manifest_count_test")
+        radioisotope_count = module.local_radioisotope_manifest_count()
+        full_isotope_count = module.local_full_isotope_manifest_count()
+        pages = [module.PackagePage(provider="brew", name="ripgrep")]
+        manifest = {
+            "source_file_count": 0,
+            "radioisotope_manifest_count": radioisotope_count,
+            "full_isotope_manifest_count": full_isotope_count,
+            "isotope_manifest_count": radioisotope_count + full_isotope_count,
+        }
+
+        html = module.render_index(pages, [], manifest)
+
+        self.assertEqual(radioisotope_count, len(list((ROOT / "data/radioisotopes").glob("*/automic-vault.yml"))))
+        self.assertEqual(full_isotope_count, len(list((ROOT / "data/isotopes").glob("*/automic-vault.yml"))))
+        self.assertIn(
+            f"<div class=\"metric\"><span>radioisotopes</span><strong>{radioisotope_count:,}</strong></div>",
+            html,
+        )
+        self.assertNotIn("<span>radioisotopes</span><strong>1</strong>", html)
+
+    def test_tracked_radioisotope_inventory_copy_matches_manifest_counts(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_tracked_inventory_copy_test")
+        radioisotope_count = module.local_radioisotope_manifest_count()
+        isotope_count = radioisotope_count + module.local_full_isotope_manifest_count()
+
+        main_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        radio_readme = (ROOT / "data/radioisotopes/README.md").read_text(encoding="utf-8")
+        homepage = (ROOT / "www/index.html").read_text(encoding="utf-8")
+
+        self.assertIn(f"- {radioisotope_count} radioisotope manifests", main_readme)
+        self.assertIn(f"- Total radioisotope manifests: {radioisotope_count}", radio_readme)
+        self.assertIn(f"<span>{isotope_count} secured or detected packages</span>", homepage)
 
     def test_package_page_scope_requires_executable_surface(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")
