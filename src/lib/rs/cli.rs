@@ -1036,14 +1036,6 @@ pub(crate) fn parse_package_name(value: &OsString) -> Result<RequestedPackage, S
     if package.contains('/') {
         return Err("package name must not contain path separators".to_string());
     }
-    if vendor::get(&package).is_none() {
-        if let Some(target) = package_alias_target(&package) {
-            return Ok(RequestedPackage::Alias {
-                alias: package,
-                target: target.clone(),
-            });
-        }
-    }
     Ok(RequestedPackage::Auto(package))
 }
 
@@ -1122,9 +1114,6 @@ pub(crate) fn parse_uninstall_package_name(value: &OsString) -> Result<String, S
         return Ok(installed_package);
     }
     if vendor::get(package).is_none() {
-        if let Some(target) = package_alias_target(package) {
-            return Ok(target.display_name());
-        }
         if let Some(provider_name) = embedded_provider_install_package_name(package)? {
             return Ok(provider_name);
         }
@@ -1141,17 +1130,16 @@ fn resolve_installed_uninstall_package_name(package: &str) -> Result<Option<Stri
     let mut candidates = Vec::new();
 
     for installed in installed_package_refs(&opt_pkg_root())? {
-        let receipt = match load_or_resolve_package_receipt(
-            &installed.package_name,
-            &installed.install_root,
-        ) {
-            Ok(receipt) => receipt,
-            Err(_) if installed.package_name == package => {
-                push_unique_string(&mut candidates, installed.package_name);
-                continue;
-            }
-            Err(_) => continue,
-        };
+        let receipt =
+            match load_or_resolve_package_receipt(&installed.package_name, &installed.install_root)
+            {
+                Ok(receipt) => receipt,
+                Err(_) if installed.package_name == package => {
+                    push_unique_string(&mut candidates, installed.package_name);
+                    continue;
+                }
+                Err(_) => continue,
+            };
         if installed_package_matches_uninstall_name(
             package,
             provider_install_name.as_deref(),
@@ -1358,39 +1346,6 @@ impl PackageAliasTarget {
             Self::PipPackage(package) => pip_package_display_name(package),
         }
     }
-
-    pub(crate) fn into_requested_package(self) -> RequestedPackage {
-        match self {
-            Self::HomebrewFormula(formula) => RequestedPackage::HomebrewFormula(formula),
-            Self::HomebrewCask(cask) => RequestedPackage::HomebrewCask(cask),
-            Self::VendorPackage(package) => RequestedPackage::Auto(package),
-            Self::NpmPackage(package) => RequestedPackage::NpmPackage {
-                package,
-                version: None,
-            },
-            Self::PipPackage(package) => RequestedPackage::PipPackage(package),
-        }
-    }
-}
-
-pub(crate) fn embedded_package_aliases() -> &'static HashMap<String, PackageAliasTarget> {
-    PACKAGE_ALIASES.get_or_init(|| {
-        embedded_combined_data()
-            .sources
-            .aliases
-            .clone()
-            .into_iter()
-            .map(|(alias, target)| {
-                let parsed = parse_package_alias_target(&target)
-                    .unwrap_or_else(|err| panic!("invalid alias target {target}: {err}"));
-                (alias, parsed)
-            })
-            .collect()
-    })
-}
-
-pub(crate) fn package_alias_target(package: &str) -> Option<&'static PackageAliasTarget> {
-    embedded_package_aliases().get(package)
 }
 
 pub(crate) fn parse_package_alias_target(value: &str) -> Result<PackageAliasTarget, String> {
@@ -1433,7 +1388,9 @@ pub(crate) fn parse_package_alias_target(value: &str) -> Result<PackageAliasTarg
         }
         vendor::get(vendor_package)
             .ok_or_else(|| format!("vendor package {vendor_package} is not registered"))?;
-        return Ok(PackageAliasTarget::VendorPackage(vendor_package.to_string()));
+        return Ok(PackageAliasTarget::VendorPackage(
+            vendor_package.to_string(),
+        ));
     }
     if let Some(npm_package) = value.strip_prefix("npm:") {
         validate_npm_package_name(npm_package)?;
@@ -1509,15 +1466,6 @@ pub(crate) fn resolve_i_root_package(package: &str) -> Result<EmbeddedPackage, S
     resolve_i_root_package_with_db(package, &db, formula_metadata_exists)
 }
 
-pub(crate) fn ensure_alias_install_target_unambiguous(
-    alias: &str,
-    target: &PackageAliasTarget,
-) -> Result<(), String> {
-    let db = load_db()?;
-    ensure_db_schema(&db)?;
-    ensure_alias_install_target_unambiguous_with_db(alias, target, &db, formula_metadata_exists)
-}
-
 pub(crate) fn resolve_i_root_package_with_db<F>(
     package: &str,
     db: &Db,
@@ -1539,30 +1487,6 @@ where
         return Err(ambiguous_install_target_message(package, provider));
     }
     Ok(resolved)
-}
-
-pub(crate) fn ensure_alias_install_target_unambiguous_with_db<F>(
-    alias: &str,
-    target: &PackageAliasTarget,
-    db: &Db,
-    formula_exists: F,
-) -> Result<(), String>
-where
-    F: FnOnce(&str) -> Result<bool, String>,
-{
-    if let Some(provider) = db.entries.get(alias) {
-        if parse_embedded_provider(provider)?.is_none() {
-            return Ok(());
-        }
-        if provider == alias {
-            return Err(ambiguous_alias_formula_message(alias, target));
-        }
-        return Err(ambiguous_alias_executable_message(alias, provider, target));
-    }
-    if formula_exists(alias)? {
-        return Err(ambiguous_alias_formula_message(alias, target));
-    }
-    Ok(())
 }
 
 pub(crate) fn recommended_full_formula(formula: &str) -> Option<&'static str> {
@@ -1680,8 +1604,12 @@ mod tests {
     fn secret_scanner_parser_rejects_duplicate_unknown_and_missing_paths() {
         let request = parse_secret_scanner_request_from_iter(
             &invocation("av scan"),
-            vec![OsString::from("--jsonl"), OsString::from("--path"), OsString::from("/tmp/secrets")]
-                .into_iter(),
+            vec![
+                OsString::from("--jsonl"),
+                OsString::from("--path"),
+                OsString::from("/tmp/secrets"),
+            ]
+            .into_iter(),
         )
         .unwrap()
         .unwrap();
@@ -1691,8 +1619,12 @@ mod tests {
         assert_eq!(
             parse_secret_scanner_request_from_iter(
                 &invocation("av scan"),
-                vec![OsString::from("--path"), OsString::from("/tmp/a"), OsString::from("--path")]
-                    .into_iter(),
+                vec![
+                    OsString::from("--path"),
+                    OsString::from("/tmp/a"),
+                    OsString::from("--path")
+                ]
+                .into_iter(),
             )
             .unwrap_err(),
             "secret scanner path specified more than once"
@@ -1782,7 +1714,7 @@ mod tests {
     }
 
     #[test]
-    fn alias_target_and_install_root_helpers_cover_uncovered_variants() {
+    fn package_target_and_install_root_helpers_cover_uncovered_variants() {
         assert_eq!(
             parse_package_alias_target("cask:").unwrap_err(),
             "package qualifier 'cask:' is missing a cask name"
@@ -1794,21 +1726,12 @@ mod tests {
         let cask_target = parse_package_alias_target("cask:iterm2").unwrap();
         assert_eq!(cask_target.display_name(), "cask:iterm2");
         assert_eq!(
-            cask_target.clone().into_requested_package(),
-            RequestedPackage::HomebrewCask("iterm2".to_string())
+            parse_package_alias_target("npm:@scope/pkg").unwrap(),
+            PackageAliasTarget::NpmPackage("@scope/pkg".to_string())
         );
-        let npm_target = parse_package_alias_target("npm:@scope/pkg").unwrap();
         assert_eq!(
-            npm_target.into_requested_package(),
-            RequestedPackage::NpmPackage {
-                package: "@scope/pkg".to_string(),
-                version: None,
-            }
-        );
-        let pip_target = parse_package_alias_target("pip:Requests").unwrap();
-        assert_eq!(
-            pip_target.into_requested_package(),
-            RequestedPackage::PipPackage("requests".to_string())
+            parse_package_alias_target("pip:Requests").unwrap(),
+            PackageAliasTarget::PipPackage("requests".to_string())
         );
 
         assert_eq!(
@@ -1828,26 +1751,17 @@ mod tests {
             "package qualifier 'cask:' is missing a cask name"
         );
         assert_eq!(parse_embedded_provider("pkg:custom").unwrap(), None);
-
-        let db = load_db().unwrap();
-        ensure_db_schema(&db).unwrap();
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "__coverage_alias__",
-                &PackageAliasTarget::NpmPackage("coverage-npm".to_string()),
-                &db,
-                |_| Ok(false),
-            )
-            .is_ok()
-        );
     }
 
     #[test]
     fn request_parsers_cover_help_version_missing_and_flag_shapes() {
         assert!(
-            parse_i_request_from_iter(&invocation("av install"), Vec::<OsString>::new().into_iter())
-                .unwrap_err()
-                .contains("missing package name")
+            parse_i_request_from_iter(
+                &invocation("av install"),
+                Vec::<OsString>::new().into_iter()
+            )
+            .unwrap_err()
+            .contains("missing package name")
         );
         assert!(
             parse_i_request_from_iter(
@@ -1892,7 +1806,11 @@ mod tests {
         );
         let uninstall = parse_uninstall_request_from_iter(
             &invocation("av uninstall"),
-            vec![OsString::from("brew:ripgrep"), OsString::from("npm:@scope/pkg")].into_iter(),
+            vec![
+                OsString::from("brew:ripgrep"),
+                OsString::from("npm:@scope/pkg"),
+            ]
+            .into_iter(),
         )
         .unwrap()
         .unwrap();
@@ -1932,9 +1850,12 @@ mod tests {
         }
 
         assert!(
-            parse_info_request_from_iter(&invocation("av info"), Vec::<OsString>::new().into_iter())
-                .unwrap_err()
-                .contains("missing package name")
+            parse_info_request_from_iter(
+                &invocation("av info"),
+                Vec::<OsString>::new().into_iter()
+            )
+            .unwrap_err()
+            .contains("missing package name")
         );
         assert!(
             parse_info_request_from_iter(
@@ -2035,7 +1956,10 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(all_installed.output, OutputMode::Json);
-        assert!(matches!(all_installed.selection, PackageSelection::AllInstalled));
+        assert!(matches!(
+            all_installed.selection,
+            PackageSelection::AllInstalled
+        ));
     }
 
     #[test]
@@ -2082,12 +2006,7 @@ mod tests {
     }
 
     #[test]
-    fn alias_and_provider_resolution_cover_ambiguous_and_fallback_paths() {
-        assert_eq!(
-            PackageAliasTarget::HomebrewFormula("ripgrep".to_string()).into_requested_package(),
-            RequestedPackage::HomebrewFormula("ripgrep".to_string())
-        );
-
+    fn provider_resolution_covers_ambiguous_and_fallback_paths() {
         assert_eq!(
             package_install_root(Path::new("/tmp/opt"), "isotope:coverage-missing").unwrap(),
             Path::new("/tmp/opt")
@@ -2096,10 +2015,8 @@ mod tests {
         );
 
         assert_eq!(
-            parse_package_alias_target("brew:ripgrep")
-                .unwrap()
-                .into_requested_package(),
-            RequestedPackage::HomebrewFormula("ripgrep".to_string())
+            parse_package_alias_target("brew:ripgrep").unwrap(),
+            PackageAliasTarget::HomebrewFormula("ripgrep".to_string())
         );
         assert_eq!(
             parse_package_alias_target("target-without-qualifier").unwrap_err(),
@@ -2135,47 +2052,6 @@ mod tests {
         assert_eq!(
             resolve_i_root_package_with_db("coverage-custom", &db, |_| Ok(false)).unwrap(),
             EmbeddedPackage::Formula("coverage-custom".to_string())
-        );
-
-        let target = PackageAliasTarget::HomebrewFormula("ripgrep".to_string());
-        db.entries.insert(
-            "coverage-alias".to_string(),
-            "npm:coverage-npm".to_string(),
-        );
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "coverage-alias",
-                &target,
-                &db,
-                |_| Ok(false),
-            )
-            .unwrap_err()
-            .contains("ambiguous")
-        );
-
-        db.entries.insert(
-            "coverage-formula-alias".to_string(),
-            "coverage-formula-alias".to_string(),
-        );
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "coverage-formula-alias",
-                &target,
-                &db,
-                |_| Ok(false),
-            )
-            .unwrap_err()
-            .contains("ambiguous")
-        );
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "ripgrep",
-                &target,
-                &db,
-                |_| Ok(true),
-            )
-            .unwrap_err()
-            .contains("ambiguous")
         );
 
         let mut stderr = Vec::new();

@@ -181,7 +181,6 @@ const RENDERED_ERROR_PREFIX: &str = "__SUBS_RENDERED_ERROR__\n";
 const SAFE_BINARY_PATH_BYTES: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+-/@";
 static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
-static PACKAGE_ALIASES: OnceLock<HashMap<String, PackageAliasTarget>> = OnceLock::new();
 static NPM_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static PIP_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static ISOTOPE_DATA: OnceLock<HashMap<String, IsotopePackageData>> = OnceLock::new();
@@ -254,7 +253,6 @@ struct CombinedData {
 
 #[derive(Debug, Deserialize)]
 struct CombinedDataSources {
-    aliases: HashMap<String, String>,
     db: Db,
     isotopes: HashMap<String, IsotopePackageData>,
     npm: HashMap<String, PackageInstallData>,
@@ -792,10 +790,6 @@ enum PackageAliasTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RequestedPackage {
     Auto(String),
-    Alias {
-        alias: String,
-        target: PackageAliasTarget,
-    },
     HomebrewFormula(String),
     HomebrewCask(String),
     Isotope(String),
@@ -1967,15 +1961,6 @@ fn run_i_package_with_progress(
                     ),
                 }
             }
-        }
-        RequestedPackage::Alias { alias, target } => {
-            ensure_alias_install_target_unambiguous(&alias, &target)?;
-            run_i_package_with_progress(
-                config,
-                target.into_requested_package(),
-                options,
-                progress_callback.clone(),
-            )
         }
         RequestedPackage::HomebrewFormula(formula) => {
             let package_name = formula_install_package_name(&formula)?;
@@ -5770,26 +5755,6 @@ package or `{executable_provider}` for the package that provides the `{package}`
     )
 }
 
-fn ambiguous_alias_formula_message(package: &str, target: &PackageAliasTarget) -> String {
-    format!(
-        "ambiguous install target '{package}': use `{BREW_PACKAGE_PREFIX}{package}` for the Homebrew \
-package or `{}` for the aliased package",
-        target.display_name()
-    )
-}
-
-fn ambiguous_alias_executable_message(
-    package: &str,
-    executable_provider: &str,
-    target: &PackageAliasTarget,
-) -> String {
-    format!(
-        "ambiguous install target '{package}': use `{executable_provider}` for the Homebrew package \
-that provides the `{package}` executable or `{}` for the aliased package",
-        target.display_name()
-    )
-}
-
 fn formula_skips_unknown_post_install(
     formula: &str,
     info: &FormulaInfo,
@@ -8066,20 +8031,6 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
-    fn ensure_alias_install_target_unambiguous_ignores_unknown_qualified_entry_providers() {
-        let db = test_db(&[("future-tool", "future:provider")]);
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "future-tool",
-                &PackageAliasTarget::NpmPackage("future-tool".to_string()),
-                &db,
-                |_| Ok(false),
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
     fn npm_package_executable_name_falls_back_to_install_leaf_name() {
         assert_eq!(
             npm_package_executable_name("unindexed-tool"),
@@ -8088,56 +8039,6 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(
             npm_package_executable_name("@scope/unindexed-tool"),
             "unindexed-tool"
-        );
-    }
-
-    #[test]
-    fn ensure_alias_install_target_unambiguous_accepts_unclaimed_aliases() {
-        let db = test_db(&[]);
-        assert!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "clawhub",
-                &PackageAliasTarget::NpmPackage("clawhub".to_string()),
-                &db,
-                |_| Ok(false),
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn ensure_alias_install_target_unambiguous_rejects_brew_executable_collisions() {
-        let db = test_db(&[("openclaw", "openclaw-cli")]);
-        assert_eq!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "openclaw",
-                &PackageAliasTarget::NpmPackage("openclaw".to_string()),
-                &db,
-                |_| Ok(false),
-            ),
-            Err(
-                "ambiguous install target 'openclaw': use `openclaw-cli` for the Homebrew package \
-that provides the `openclaw` executable or `npm:openclaw` for the aliased package"
-                    .to_string()
-            )
-        );
-    }
-
-    #[test]
-    fn ensure_alias_install_target_unambiguous_rejects_formula_collisions() {
-        let db = test_db(&[]);
-        assert_eq!(
-            ensure_alias_install_target_unambiguous_with_db(
-                "clawhub",
-                &PackageAliasTarget::NpmPackage("clawhub".to_string()),
-                &db,
-                |_| Ok(true),
-            ),
-            Err(
-                "ambiguous install target 'clawhub': use `brew:clawhub` for the Homebrew package \
-or `npm:clawhub` for the aliased package"
-                    .to_string()
-            )
         );
     }
 
@@ -8333,7 +8234,7 @@ or `npm:clawhub` for the aliased package"
     }
 
     #[test]
-    fn parse_i_request_accepts_alias_package_names() {
+    fn parse_i_request_accepts_unqualified_package_names() {
         let invocation = Invocation::for_subcommand("av", "i", Mode::I);
         let request =
             parse_i_request_from_iter(&invocation, vec![OsString::from("clawhub")].into_iter())
@@ -8342,17 +8243,14 @@ or `npm:clawhub` for the aliased package"
         assert_eq!(
             request,
             Some(IRequest {
-                packages: vec![RequestedPackage::Alias {
-                    alias: "clawhub".to_string(),
-                    target: PackageAliasTarget::NpmPackage("clawhub".to_string()),
-                }],
+                packages: vec![RequestedPackage::Auto("clawhub".to_string())],
                 force: false,
             })
         );
     }
 
     #[test]
-    fn parse_i_request_accepts_alias_when_no_vendor_package_exists() {
+    fn parse_i_request_keeps_unknown_unqualified_package_names_auto() {
         let invocation = Invocation::for_subcommand("av", "i", Mode::I);
         let request =
             parse_i_request_from_iter(&invocation, vec![OsString::from("qmd")].into_iter())
@@ -8361,10 +8259,7 @@ or `npm:clawhub` for the aliased package"
         assert_eq!(
             request,
             Some(IRequest {
-                packages: vec![RequestedPackage::Alias {
-                    alias: "qmd".to_string(),
-                    target: PackageAliasTarget::NpmPackage("@tobilu/qmd".to_string()),
-                }],
+                packages: vec![RequestedPackage::Auto("qmd".to_string())],
                 force: false,
             })
         );
@@ -9285,13 +9180,6 @@ or `npm:clawhub` for the aliased package"
     #[test]
     fn package_info_helpers_cover_identity_formatting_and_wrapping() {
         assert_eq!(
-            requested_package_name(&RequestedPackage::Alias {
-                alias: "pg".to_string(),
-                target: PackageAliasTarget::PipPackage("psycopg2".to_string()),
-            }),
-            "pip:psycopg2"
-        );
-        assert_eq!(
             requested_package_name(&RequestedPackage::Isotope("gh".to_string())),
             "isotope:gh"
         );
@@ -9674,15 +9562,6 @@ or `npm:clawhub` for the aliased package"
             })
         );
         assert_eq!(
-            explicit_requested_package_source(&RequestedPackage::Alias {
-                alias: "node-tool".to_string(),
-                target: PackageAliasTarget::NpmPackage("openclaw".to_string()),
-            }),
-            Some(PackageReceiptSource::Npm {
-                package_name: "openclaw".to_string()
-            })
-        );
-        assert_eq!(
             infer_requested_package_source(&RequestedPackage::Auto("bun".to_string())).unwrap(),
             PackageReceiptSource::Vendor {
                 vendor_name: "bun".to_string()
@@ -9703,12 +9582,6 @@ or `npm:clawhub` for the aliased package"
             });
         assert!(cask_alias_error.is_none());
         assert!(cask_aliases.is_empty());
-        assert!(
-            our_aliases_for_source(&PackageReceiptSource::Pip {
-                package_name: "psycopg2".to_string()
-            })
-            .is_empty()
-        );
         assert!(
             homebrew_aliases_for_formula("nonexistent-formula")
                 .unwrap()
@@ -12505,32 +12378,12 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     #[test]
     fn npm_package_homebrew_dependencies_support_exact_and_leaf_matches() {
         assert_eq!(
-            npm_package_homebrew_dependencies("qmd"),
-            vec!["sqlite".to_string()]
-        );
-        assert_eq!(
             npm_package_homebrew_dependencies("@tobilu/qmd"),
             vec!["sqlite".to_string()]
         );
         assert_eq!(
             npm_package_homebrew_dependencies("openclaw"),
             vec!["sqlite".to_string()]
-        );
-    }
-
-    #[test]
-    fn embedded_package_aliases_load_expected_entries() {
-        assert_eq!(
-            package_alias_target("openclaw"),
-            Some(&PackageAliasTarget::NpmPackage("openclaw".to_string()))
-        );
-        assert_eq!(
-            package_alias_target("clawhub"),
-            Some(&PackageAliasTarget::NpmPackage("clawhub".to_string()))
-        );
-        assert_eq!(
-            package_alias_target("qmd"),
-            Some(&PackageAliasTarget::NpmPackage("@tobilu/qmd".to_string()))
         );
     }
 
@@ -17898,7 +17751,6 @@ EOF
             "schema": 1,
             "generated_at": generated_at,
             "sources": {
-                "aliases": {},
                 "db": {
                     "schema": DB_SCHEMA_VERSION,
                     "generated_at": generated_at,
@@ -17919,7 +17771,6 @@ EOF
             "schema": 1,
             "generated_at": "2026-05-05T00:00:00Z",
             "sources": {
-                "aliases": {},
                 "db": {
                     "schema": db_schema,
                     "generated_at": "2026-05-05T00:00:00Z",

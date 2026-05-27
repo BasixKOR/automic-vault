@@ -7,7 +7,6 @@ import sys
 
 
 SOURCE_FILES = (
-    "aliases.json",
     "db.json",
     "isotopes.json",
     "npm.json",

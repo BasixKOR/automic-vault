@@ -88,11 +88,6 @@ def main():
         "schema": 1,
         "generated_at": "2026-05-05T00:00:00Z",
         "sources": {
-            "aliases": {
-                "clawhub": "npm:clawhub",
-                "openclaw": "npm:openclaw",
-                "qmd": "npm:@tobilu/qmd",
-            },
             "db": {
                 "schema": 7,
                 "generated_at": "2026-05-05T00:00:00Z",
@@ -232,9 +227,9 @@ def main():
                 },
             },
             "npm": {
+                "@tobilu/qmd": {"homebrewDeps": ["sqlite"]},
                 "coverage-npm": {"homebrewDeps": ["node"]},
                 "openclaw": {"homebrewDeps": ["sqlite"]},
-                "qmd": {"homebrewDeps": ["sqlite"]},
             },
             "pip": {
                 "coverage-pip": {

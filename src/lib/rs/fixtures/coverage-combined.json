@@ -2,11 +2,6 @@
   "generated_at": "2026-05-05T00:00:00Z",
   "schema": 1,
   "sources": {
-    "aliases": {
-      "clawhub": "npm:clawhub",
-      "openclaw": "npm:openclaw",
-      "qmd": "npm:@tobilu/qmd"
-    },
     "db": {
       "casks": {
         "automic-fixture": {
@@ -216,17 +211,17 @@
       }
     },
     "npm": {
+      "@tobilu/qmd": {
+        "homebrewDeps": [
+          "sqlite"
+        ]
+      },
       "coverage-npm": {
         "homebrewDeps": [
           "node"
         ]
       },
       "openclaw": {
-        "homebrewDeps": [
-          "sqlite"
-        ]
-      },
-      "qmd": {
         "homebrewDeps": [
           "sqlite"
         ]

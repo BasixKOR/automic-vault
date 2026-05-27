@@ -2588,7 +2588,6 @@ fn requested_package_from_spec(package: &PackageSpec) -> Result<RequestedPackage
             version: validate_optional_version(package.version.as_deref())?,
         }),
         RequestedPackage::Auto(_)
-        | RequestedPackage::Alias { .. }
         | RequestedPackage::HomebrewFormula(_)
         | RequestedPackage::HomebrewCask(_)
         | RequestedPackage::Isotope(_)

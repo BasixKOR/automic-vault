@@ -378,7 +378,6 @@ def page_keys_from_filtered_pages(
 ) -> set[str]:
     pages_module = load_script("generate_pkg_pages_for_graph_scope", "generate-pkg-pages.py")
     pages = pages_module.package_pages_from_sources({
-        "aliases": read_json(Path("data/aliases.json"), {}),
         "db": db,
         "geiger": geiger_data,
         "isotopes": isotopes,

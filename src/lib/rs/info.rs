@@ -250,7 +250,6 @@ pub(crate) fn requested_package_name(package: &RequestedPackage) -> String {
         RequestedPackage::Isotope(package_name) => {
             format!("{ISOTOPE_PACKAGE_PREFIX}{package_name}")
         }
-        RequestedPackage::Alias { target, .. } => target.display_name(),
         RequestedPackage::NpmPackage { package, .. } => npm_package_display_name(package),
         RequestedPackage::PipPackage(package_name) => pip_package_display_name(package_name),
     }
@@ -271,17 +270,6 @@ pub(crate) fn requested_install_package_name(package: &RequestedPackage) -> Resu
             }
             Ok(package_name.clone())
         }
-        RequestedPackage::Alias { target, .. } => match target {
-            PackageAliasTarget::HomebrewFormula(formula) => formula_install_package_name(formula),
-            PackageAliasTarget::HomebrewCask(cask) => Ok(cask.clone()),
-            PackageAliasTarget::VendorPackage(package_name) => Ok(package_name.clone()),
-            PackageAliasTarget::NpmPackage(package_name) => {
-                Ok(npm_package_display_name(package_name))
-            }
-            PackageAliasTarget::PipPackage(package_name) => {
-                Ok(pip_package_display_name(package_name))
-            }
-        },
         RequestedPackage::HomebrewFormula(formula) => formula_install_package_name(formula),
         RequestedPackage::HomebrewCask(cask) => Ok(cask.clone()),
         RequestedPackage::Isotope(package_name) => {
@@ -1242,23 +1230,6 @@ pub(crate) fn explicit_requested_package_source(
         RequestedPackage::Isotope(isotope) => Some(PackageReceiptSource::Isotope {
             isotope_name: isotope.clone(),
         }),
-        RequestedPackage::Alias { target, .. } => match target {
-            PackageAliasTarget::HomebrewFormula(formula) => Some(PackageReceiptSource::Formula {
-                root_formula: formula.clone(),
-            }),
-            PackageAliasTarget::HomebrewCask(cask) => Some(PackageReceiptSource::Cask {
-                cask_name: cask.clone(),
-            }),
-            PackageAliasTarget::VendorPackage(package_name) => Some(PackageReceiptSource::Vendor {
-                vendor_name: package_name.clone(),
-            }),
-            PackageAliasTarget::NpmPackage(package_name) => Some(PackageReceiptSource::Npm {
-                package_name: package_name.clone(),
-            }),
-            PackageAliasTarget::PipPackage(package_name) => Some(PackageReceiptSource::Pip {
-                package_name: package_name.clone(),
-            }),
-        },
         RequestedPackage::NpmPackage { package, .. } => Some(PackageReceiptSource::Npm {
             package_name: package.clone(),
         }),
@@ -1338,7 +1309,7 @@ pub(crate) fn package_source_qualified_name(source: &PackageReceiptSource) -> St
 pub(crate) fn resolve_aliases_for_source(
     source: &PackageReceiptSource,
 ) -> (Vec<String>, Option<String>) {
-    let mut aliases = our_aliases_for_source(source);
+    let mut aliases = Vec::new();
     let mut alias_error = None;
 
     if let PackageReceiptSource::Formula { root_formula } = source {
@@ -1355,18 +1326,6 @@ pub(crate) fn resolve_aliases_for_source(
     aliases.sort();
     aliases.dedup();
     (aliases, alias_error)
-}
-
-pub(crate) fn our_aliases_for_source(source: &PackageReceiptSource) -> Vec<String> {
-    let qualified_name = package_source_qualified_name(source);
-    let mut aliases = embedded_package_aliases()
-        .iter()
-        .filter_map(|(alias, target)| {
-            (target.display_name() == qualified_name).then_some(alias.clone())
-        })
-        .collect::<Vec<_>>();
-    aliases.sort();
-    aliases
 }
 
 pub(crate) fn homebrew_aliases_for_formula(formula: &str) -> Result<Vec<String>, String> {
@@ -2159,13 +2118,6 @@ mod tests {
             "isotope:gh"
         );
         assert_eq!(
-            requested_package_name(&RequestedPackage::Alias {
-                alias: "pg".to_string(),
-                target: PackageAliasTarget::HomebrewFormula("python@3.14".to_string()),
-            }),
-            "brew:python@3.14"
-        );
-        assert_eq!(
             requested_package_name(&RequestedPackage::NpmPackage {
                 package: "@openai/codex".to_string(),
                 version: Some("1.0.0".to_string()),
@@ -2187,38 +2139,6 @@ mod tests {
         assert_eq!(
             requested_install_package_name(&RequestedPackage::Auto("rg".to_string())).unwrap(),
             "ripgrep"
-        );
-        assert_eq!(
-            requested_install_package_name(&RequestedPackage::Alias {
-                alias: "py".to_string(),
-                target: PackageAliasTarget::HomebrewFormula("python@3.14".to_string()),
-            })
-            .unwrap(),
-            "python@3.14"
-        );
-        assert_eq!(
-            requested_install_package_name(&RequestedPackage::Alias {
-                alias: "codex".to_string(),
-                target: PackageAliasTarget::HomebrewCask("codex".to_string()),
-            })
-            .unwrap(),
-            "codex"
-        );
-        assert_eq!(
-            requested_install_package_name(&RequestedPackage::Alias {
-                alias: "openclaw".to_string(),
-                target: PackageAliasTarget::NpmPackage("@openai/codex".to_string()),
-            })
-            .unwrap(),
-            "npm:@openai/codex"
-        );
-        assert_eq!(
-            requested_install_package_name(&RequestedPackage::Alias {
-                alias: "psql".to_string(),
-                target: PackageAliasTarget::PipPackage("My_Package.Name".to_string()),
-            })
-            .unwrap(),
-            "pip:My_Package.Name"
         );
         assert_eq!(
             requested_install_package_name(&RequestedPackage::HomebrewFormula(
@@ -2399,15 +2319,6 @@ mod tests {
             })
         );
         assert_eq!(
-            explicit_requested_package_source(&RequestedPackage::Alias {
-                alias: "openclaw".to_string(),
-                target: PackageAliasTarget::NpmPackage("@openai/codex".to_string()),
-            }),
-            Some(PackageReceiptSource::Npm {
-                package_name: "@openai/codex".to_string(),
-            })
-        );
-        assert_eq!(
             explicit_requested_package_source(&RequestedPackage::PipPackage(
                 "My_Package.Name".to_string()
             )),
@@ -2540,10 +2451,6 @@ mod tests {
             "pip:My_Package.Name"
         );
 
-        let aliases = our_aliases_for_source(&PackageReceiptSource::Formula {
-            root_formula: "node".to_string(),
-        });
-        assert!(aliases.is_empty());
         assert!(
             homebrew_aliases_for_formula("ripgrep")
                 .unwrap()

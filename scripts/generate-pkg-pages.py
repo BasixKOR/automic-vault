@@ -670,7 +670,6 @@ def load_sources() -> dict[str, Any]:
             return sources
 
     return {
-        "aliases": read_json(Path("data/aliases.json"), {}),
         "db": read_json(Path("data/db.json"), {}),
         "geiger": read_json(Path("data/geiger-counter.json"), {}),
         "isotopes": read_json(Path("data/isotopes.json"), {}),
@@ -759,13 +758,6 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
                 page = get_page("brew", name)
                 page.geiger = geiger
                 page.source_notes.append("Geiger risk classifier")
-
-    for alias, provider_key in (sources.get("aliases") or {}).items():
-        if not isinstance(provider_key, str) or ":" not in provider_key:
-            continue
-        provider, name = provider_key.split(":", 1)
-        if provider in {"brew", "cask", "npm", "pip"}:
-            get_page(provider, name).aliases.add(alias)
 
     isotope_by_package = isotope_metadata_by_package(sources.get("isotopes") or {})
     for package_key, isotope in isotope_by_package.items():
