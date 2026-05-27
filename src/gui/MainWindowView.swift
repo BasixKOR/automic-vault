@@ -371,31 +371,34 @@ struct MainWindowView: View {
     private var linksToolbar: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 6) {
-                        ForEach(MainWindowLinkTab.allCases) { tab in
-                            Button {
-                                linkTab = tab
-                            } label: {
-                                Text(tab.title)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(
-                                        linkTab == tab
-                                            ? AVGlassPalette.primaryText
-                                            : AVGlassPalette.quietText
-                                    )
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.82)
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 30)
+                HStack(spacing: 6) {
+                    ForEach(MainWindowLinkTab.allCases) { tab in
+                        Button {
+                            linkTab = tab
+                        } label: {
+                            Text(tab.title)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(
+                                    linkTab == tab
+                                        ? AVGlassPalette.primaryText
+                                        : AVGlassPalette.quietText
+                                )
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+                                .padding(.horizontal, 10)
+                                .frame(height: 30)
+                        }
+                        .buttonStyle(.plain)
+                        .background {
+                            if linkTab == tab {
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(AVGlassPalette.selectedFill)
                             }
-                            .buttonStyle(.plain)
-                            .background {
-                                if linkTab == tab {
-                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                        .fill(AVGlassPalette.selectedFill)
-                                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                }
+                        }
+                        .overlay {
+                            if linkTab == tab {
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(AVGlassPalette.controlBorder.opacity(0.28), lineWidth: 1)
                             }
                         }
                     }
@@ -559,7 +562,7 @@ private struct SidebarCountText: View {
 
     var body: some View {
         Text(count.formatted())
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 12, weight: .regular))
             .monospacedDigit()
             .foregroundStyle(AVGlassPalette.secondaryText)
             .lineLimit(1)
