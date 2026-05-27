@@ -47,8 +47,8 @@ struct MainWindowView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: 10)
-                    .offset(y: 10)
+                    .frame(height: 14)
+                    .offset(y: 14)
                 }
 
                 Spacer(minLength: 0)
@@ -985,7 +985,7 @@ private enum AVGlassPalette {
     static let windowTint = Color.black.opacity(0.18)
     static let topBarTint = Color.black.opacity(0.28)
     static let titleBarSeparator = Color.white.opacity(0.13)
-    static let titleBarShadow = Color.black.opacity(0.16)
+    static let titleBarShadow = Color.black.opacity(0.12)
     static let sidebarTint = Color(red: 0.025, green: 0.050, blue: 0.075).opacity(0.28)
     static let packageTint = Color.black.opacity(0.20)
     static let dossierTint = Color.black.opacity(0.24)
