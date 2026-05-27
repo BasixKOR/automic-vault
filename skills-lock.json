@@ -28,6 +28,12 @@
       "sourceType": "github",
       "computedHash": "fba2c5e423b62f40dfe5355a95af1824707aa854757104f4fee92d764cba2581"
     },
+    "liquid-glass": {
+      "source": "haider-nawaz/liquid-glass-skill",
+      "sourceType": "github",
+      "skillPath": "plugins/liquid-glass/skills/liquid-glass/SKILL.md",
+      "computedHash": "32c14f4521bb6ba592c8b791f80a8d7f2720bfd2a36b59981e3851649b78ae09"
+    },
     "remotion-best-practices": {
       "source": "remotion-dev/skills",
       "sourceType": "github",
