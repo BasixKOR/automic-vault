@@ -13,6 +13,7 @@ struct MainWindowView: View {
                 hairline
                 mainContent
             }
+            .ignoresSafeArea(.container, edges: .top)
         }
         .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
@@ -28,25 +29,26 @@ struct MainWindowView: View {
     }
 
     private var topBar: some View {
-        GlassEffectContainer(spacing: 14) {
-            HStack(spacing: 16) {
-                Spacer(minLength: 240)
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 12) {
+                Spacer(minLength: 320)
 
                 searchField
-                    .frame(width: 330)
+                    .frame(width: 318)
                     .glassEffectID("search", in: glassNamespace)
 
                 Text("\(model.installedCount) installed")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AVGlassPalette.secondaryText)
 
                 Button {
                     model.reloadPackages()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                 }
                 .buttonStyle(.glass)
+                .controlSize(.small)
                 .tint(.clear)
                 .disabled(model.isReloading)
                 .help("Refresh packages")
@@ -56,9 +58,9 @@ struct MainWindowView: View {
                     .glassEffectID("mode", in: glassNamespace)
             }
         }
-        .frame(height: 68)
-        .padding(.leading, 92)
-        .padding(.trailing, 18)
+        .frame(height: 52)
+        .padding(.leading, 108)
+        .padding(.trailing, 14)
         .background {
             LiquidGlassSurface(
                 material: .ultraThinMaterial,
@@ -74,18 +76,18 @@ struct MainWindowView: View {
                 .foregroundStyle(AVGlassPalette.quietText)
             TextField("Search packages...", text: $model.searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AVGlassPalette.primaryText)
             Text("Command-K")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AVGlassPalette.quietText)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
                 .background(AVGlassPalette.controlFill, in: Capsule())
         }
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var topModeControl: some View {
@@ -98,10 +100,10 @@ struct MainWindowView: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(AVGlassPalette.secondaryText)
         }
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
-        .padding(.horizontal, 8)
-        .frame(height: 32)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .font(.system(size: 12, weight: .semibold))
+        .padding(.horizontal, 7)
+        .frame(height: 30)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var mainContent: some View {
@@ -131,13 +133,13 @@ struct MainWindowView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader("AUTOMIC VAULT")
-                .padding(.top, 36)
+                .padding(.top, 26)
             ForEach(MainWindowSection.librarySections) { section in
                 sidebarRow(section)
             }
 
             sidebarHeader("CATEGORIES")
-                .padding(.top, 30)
+                .padding(.top, 22)
             ForEach(MainWindowSection.categorySections) { section in
                 sidebarRow(section)
             }
@@ -149,7 +151,7 @@ struct MainWindowView: View {
             }
             .padding(.bottom, 18)
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 18)
         .background {
             LiquidGlassSurface(
                 material: .ultraThinMaterial,
@@ -160,10 +162,10 @@ struct MainWindowView: View {
 
     private func sidebarHeader(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(AVGlassPalette.quietText)
-            .tracking(0.6)
-            .padding(.bottom, 8)
+            .tracking(0.5)
+            .padding(.bottom, 6)
     }
 
     private func sidebarRow(_ section: MainWindowSection) -> some View {
@@ -172,13 +174,13 @@ struct MainWindowView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: section.systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 18)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 17)
                 Text(section.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
                     .layoutPriority(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
                 if let count = model.count(for: section) {
                     CountPill(count: count)
                         .fixedSize()
@@ -189,8 +191,8 @@ struct MainWindowView: View {
                     ? AVGlassPalette.primaryText
                     : AVGlassPalette.secondaryText
             )
-            .padding(.horizontal, 8)
-            .frame(height: 36)
+            .padding(.horizontal, 7)
+            .frame(height: 32)
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .background {
                 if model.selectedSection == section {
@@ -199,8 +201,8 @@ struct MainWindowView: View {
                         .overlay(alignment: .leading) {
                             Capsule()
                                 .fill(AVGlassPalette.primaryText.opacity(0.72))
-                                .frame(width: 3, height: 24)
-                                .offset(x: -7)
+                                .frame(width: 3, height: 21)
+                                .offset(x: -6)
                         }
                 }
             }
@@ -220,10 +222,10 @@ struct MainWindowView: View {
                         .controlSize(.small)
                 }
             }
-            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .font(.system(size: 13, weight: .bold))
             .foregroundStyle(AVGlassPalette.quietText)
-            .padding(.horizontal, 22)
-            .frame(height: 46)
+            .padding(.horizontal, 18)
+            .frame(height: 42)
 
             hairline
 
@@ -268,7 +270,7 @@ struct MainWindowView: View {
 
     private var dossierPanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let detail = model.selectedDetail,
                    let package = model.selectedPackage {
                     dossierHeader(detail: detail, package: package)
@@ -284,8 +286,8 @@ struct MainWindowView: View {
                     .padding(.top, 94)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 28)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 22)
         }
         .scrollIndicators(.hidden)
         .background {
@@ -300,15 +302,15 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             SectionLabel("DOSSIER")
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(model.displayName(for: package))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(AVGlassPalette.primaryText)
                     .lineLimit(1)
                 Text(model.versionText(for: package))
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AVGlassPalette.quietText)
                     .lineLimit(1)
             }
@@ -325,7 +327,7 @@ struct MainWindowView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Refreshing dossier")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AVGlassPalette.quietText)
                 }
             }
@@ -341,7 +343,7 @@ struct MainWindowView: View {
                 ForEach(paths.prefix(2), id: \.self) { path in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(URL(fileURLWithPath: path).lastPathComponent)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AVGlassPalette.primaryText)
                         Text(path)
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -349,21 +351,21 @@ struct MainWindowView: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+                    .padding(10)
                     .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
                         Text("Sandboxed")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(AVGlassPalette.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
                             .background(AVGlassPalette.blue.opacity(0.16), in: Capsule())
-                            .padding(8)
+                            .padding(7)
                     }
                 }
                 if paths.count > 2 {
                     Text("\(paths.count - 2) more")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.secondaryText)
                 }
             }
@@ -390,11 +392,11 @@ struct MainWindowView: View {
     ) -> some View {
         InfoSection(title: "NOTES") {
             Text(noteText(detail: detail, package: package))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(AVGlassPalette.secondaryText)
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+                .padding(12)
                 .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
         }
     }
@@ -402,7 +404,7 @@ struct MainWindowView: View {
     private func lastUpdatedSection(detail: PackageDetail) -> some View {
         InfoSection(title: "LAST UPDATED") {
             Text(model.relativeLastUpdatedText(for: detail))
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(AVGlassPalette.secondaryText)
         }
     }
@@ -426,8 +428,8 @@ struct MainWindowView: View {
             hairline
             ScrollView {
                 linkContent
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 34)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 26)
             }
             .scrollIndicators(.hidden)
         }
@@ -440,8 +442,8 @@ struct MainWindowView: View {
     }
 
     private var linksToolbar: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 12) {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
                 GlassEffectContainer(spacing: 8) {
                     HStack(spacing: 6) {
                         ForEach(MainWindowLinkTab.allCases) { tab in
@@ -449,7 +451,7 @@ struct MainWindowView: View {
                                 linkTab = tab
                             } label: {
                                 Text(tab.title)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(
                                         linkTab == tab
                                             ? AVGlassPalette.primaryText
@@ -457,8 +459,8 @@ struct MainWindowView: View {
                                     )
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.82)
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 34)
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 30)
                             }
                             .buttonStyle(.plain)
                             .background {
@@ -491,15 +493,15 @@ struct MainWindowView: View {
                 ToolbarIcon(systemName: "chevron.right")
                 ToolbarIcon(systemName: "arrow.clockwise")
                 Text(model.selectedURL(for: linkTab)?.absoluteString ?? "No link available")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(
                         model.selectedURL(for: linkTab) == nil
                             ? AVGlassPalette.quietText
                             : AVGlassPalette.secondaryText
                     )
                     .lineLimit(1)
-                    .padding(.horizontal, 14)
-                    .frame(height: 36)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Button {
@@ -512,12 +514,12 @@ struct MainWindowView: View {
                 .disabled(model.selectedURL(for: linkTab) == nil)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 
     private var linkContent: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 22) {
             if let detail = model.selectedDetail,
                let package = model.selectedPackage {
                 if detail.isOutdated {
@@ -533,29 +535,29 @@ struct MainWindowView: View {
                                 .fontWeight(.bold)
                             Image(systemName: "arrow.right")
                         }
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.secondaryText)
-                        .padding(.horizontal, 14)
-                        .frame(height: 34)
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular, in: Capsule())
                 }
 
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text(model.displayName(for: package))
-                        .font(.system(size: 34, weight: .heavy, design: .rounded))
+                        .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(AVGlassPalette.primaryText)
                         .lineLimit(1)
 
                     Text(detail.primaryDescription)
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .font(.system(size: 21, weight: .bold))
                         .foregroundStyle(AVGlassPalette.primaryText)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(model.packageDescription(for: package))
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 14, weight: .regular))
                         .foregroundStyle(AVGlassPalette.quietText)
                         .lineSpacing(4)
                         .lineLimit(4)
@@ -564,15 +566,15 @@ struct MainWindowView: View {
                         model.open(url: model.selectedURL(for: .homepage))
                     } label: {
                         Label("Download \(model.displayName(for: package))", systemImage: "arrow.down.to.line.compact")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .frame(minWidth: 180)
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(minWidth: 168)
                     }
                     .buttonStyle(.glassProminent)
                     .tint(.clear)
                     .disabled(model.selectedURL(for: .homepage) == nil)
 
                     Text("macOS 26+ and Automic Vault available")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.quietText)
                 }
 
@@ -608,10 +610,10 @@ private struct CountPill: View {
 
     var body: some View {
         Text(count.formatted())
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(AVGlassPalette.secondaryText)
-            .padding(.horizontal, 9)
-            .frame(height: 22)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
             .background(AVGlassPalette.controlFill, in: Capsule())
     }
 }
@@ -628,34 +630,34 @@ private struct PackageRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.primaryText)
                         .lineLimit(1)
                     Text(description)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(AVGlassPalette.quietText)
                         .lineLimit(1)
                     Text(version)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
                         .lineLimit(1)
                 }
 
                 Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 7) {
+                VStack(alignment: .trailing, spacing: 6) {
                     RiskPill(risk: risk)
                     if hardened {
                         HardenedPill()
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 16)
-            .frame(minHeight: 82)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+            .frame(minHeight: 68)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? AVGlassPalette.selectedFill : .clear)
             .contentShape(Rectangle())
@@ -669,10 +671,10 @@ private struct RiskPill: View {
 
     var body: some View {
         Text(risk.title)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(foreground)
-            .padding(.horizontal, 9)
-            .frame(height: 24)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
             .background(background, in: Capsule())
             .overlay(Capsule().stroke(foreground.opacity(0.24), lineWidth: 1))
     }
@@ -696,10 +698,10 @@ private struct RiskPill: View {
 private struct HardenedPill: View {
     var body: some View {
         Text("Hardened")
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(AVGlassPalette.blue)
-            .padding(.horizontal, 9)
-            .frame(height: 24)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
             .background(AVGlassPalette.blue.opacity(0.14), in: Capsule())
             .overlay(Capsule().stroke(AVGlassPalette.blue.opacity(0.18), lineWidth: 1))
     }
@@ -714,9 +716,9 @@ private struct SectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(AVGlassPalette.quietText)
-            .tracking(0.8)
+            .tracking(0.6)
     }
 }
 
@@ -728,10 +730,10 @@ private struct RiskBanner: View {
             risk == .high ? "High Risk" : "\(risk.title) Risk",
             systemImage: risk == .high ? "shield.lefthalf.filled.badge.exclamationmark" : "shield"
         )
-        .font(.system(size: 14, weight: .bold, design: .rounded))
+        .font(.system(size: 14, weight: .bold))
         .foregroundStyle(color)
-        .padding(.horizontal, 12)
-        .frame(height: 36)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
         .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.22), lineWidth: 1))
     }
@@ -751,10 +753,10 @@ private struct RiskBanner: View {
 private struct HardenedBanner: View {
     var body: some View {
         Label("Hardened by Automic Vault", systemImage: "shield")
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(AVGlassPalette.blue)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
             .background(AVGlassPalette.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(AVGlassPalette.blue.opacity(0.18), lineWidth: 1))
     }
@@ -765,7 +767,7 @@ private struct InfoSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) {
             SectionLabel(title)
             content
         }
@@ -778,20 +780,20 @@ private struct PermissionRow: View {
     let allowed: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 9) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
                 .frame(width: 18)
                 .foregroundStyle(AVGlassPalette.quietText)
             Text(title)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AVGlassPalette.secondaryText)
             Spacer()
             Image(systemName: allowed ? "checkmark.circle" : "minus.circle")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(allowed ? AVGlassPalette.green : AVGlassPalette.quietText)
         }
-        .frame(height: 26)
+        .frame(height: 24)
     }
 }
 
@@ -802,7 +804,7 @@ private struct ToolbarIcon: View {
         Image(systemName: systemName)
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(AVGlassPalette.quietText)
-            .frame(width: 28, height: 28)
+            .frame(width: 26, height: 26)
     }
 }
 
@@ -810,17 +812,17 @@ private struct PackagePreviewCard: View {
     let packageName: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack {
                 Text("Hidden")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(AVGlassPalette.quietText)
                 Spacer()
                 Image(systemName: "xmark")
                     .foregroundStyle(AVGlassPalette.quietText)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
             .background(AVGlassPalette.selectedFill, in: RoundedRectangle(cornerRadius: 7))
 
             PreviewRow(color: AVGlassPalette.cyan, title: packageName)
@@ -837,10 +839,10 @@ private struct PackagePreviewCard: View {
                 Image(systemName: "xmark")
                     .foregroundStyle(AVGlassPalette.quietText)
             }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .font(.system(size: 12, weight: .regular))
         }
-        .padding(18)
-        .frame(maxWidth: 360)
+        .padding(14)
+        .frame(maxWidth: 340)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .background(AVGlassPalette.previewTint, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
@@ -858,9 +860,9 @@ private struct PreviewRow: View {
         HStack(spacing: 10) {
             Circle()
                 .fill(color)
-                .frame(width: 10, height: 10)
+                .frame(width: 8, height: 8)
             Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(AVGlassPalette.secondaryText)
             Spacer()
             Image(systemName: "eye.slash")
@@ -878,10 +880,10 @@ private struct EmptyPackageState: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(AVGlassPalette.secondaryText)
             Text(message)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(AVGlassPalette.quietText)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
