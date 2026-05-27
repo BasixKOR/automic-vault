@@ -265,7 +265,7 @@ struct MainWindowView: View {
 
                 }
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.visible)
         }
         .background {
             LiquidGlassSurface(
