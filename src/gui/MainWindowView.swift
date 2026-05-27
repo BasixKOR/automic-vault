@@ -653,6 +653,8 @@ private struct PackageBadgePill: View {
             return "Vulnerable"
         case .hardened:
             return "Hardened"
+        case .immutable:
+            return "Immutable"
         }
     }
 
@@ -662,6 +664,8 @@ private struct PackageBadgePill: View {
             return .white
         case .hardened:
             return AVGlassPalette.green
+        case .immutable:
+            return AVGlassPalette.cyan
         }
     }
 
@@ -671,6 +675,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.vulnerableRed.opacity(0.86)
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
+        case .immutable:
+            return AVGlassPalette.cyan.opacity(0.14)
         }
     }
 
@@ -680,6 +686,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.vulnerableRing
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
+        case .immutable:
+            return AVGlassPalette.cyan.opacity(0.24)
         }
     }
 }
@@ -718,6 +726,8 @@ private struct PackageBadgeBanner: View {
             return "Vulnerable"
         case .hardened:
             return "Hardened"
+        case .immutable:
+            return "Immutable"
         }
     }
 
@@ -727,6 +737,8 @@ private struct PackageBadgeBanner: View {
             return "exclamationmark.shield.fill"
         case .hardened:
             return "shield.fill"
+        case .immutable:
+            return "lock.fill"
         }
     }
 
@@ -736,6 +748,8 @@ private struct PackageBadgeBanner: View {
             return .white
         case .hardened:
             return AVGlassPalette.green
+        case .immutable:
+            return AVGlassPalette.cyan
         }
     }
 
@@ -745,6 +759,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.vulnerableRed.opacity(0.82)
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
+        case .immutable:
+            return AVGlassPalette.cyan.opacity(0.14)
         }
     }
 
@@ -754,6 +770,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.vulnerableRing
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
+        case .immutable:
+            return AVGlassPalette.cyan.opacity(0.24)
         }
     }
 }

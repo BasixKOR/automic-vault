@@ -132,6 +132,7 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
 enum MainWindowPackageBadge {
     case vulnerable
     case hardened
+    case immutable
 }
 
 @MainActor
@@ -306,6 +307,9 @@ final class MainWindowModel: ObservableObject {
         if needsHardening(package) {
             return .vulnerable
         }
+        if isInstalledAsRoot(package) {
+            return .immutable
+        }
         return nil
     }
 
@@ -331,6 +335,33 @@ final class MainWindowModel: ObservableObject {
             return true
         }
         return false
+    }
+
+    private func isInstalledAsRoot(_ package: PackagePresentation) -> Bool {
+        if isInstalledAsIsotope(package) {
+            return false
+        }
+
+        if let detail = detailsByPackageName[package.selectionID] ?? package.detail,
+           detail.installed {
+            return isRootInstall(detail.installRoot)
+        }
+
+        if case .installed(let record) = package.item,
+           let installRoot = record.installRoot {
+            return isRootInstall(installRoot)
+        }
+
+        return false
+    }
+
+    private func isRootInstall(_ installRoot: String) -> Bool {
+        let trimmedRoot = installRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedRoot.isEmpty == false else {
+            return false
+        }
+        return trimmedRoot != "/opt/homebrew"
+            && !trimmedRoot.hasPrefix("/opt/homebrew/")
     }
 
     func isHardened(_ package: PackagePresentation) -> Bool {

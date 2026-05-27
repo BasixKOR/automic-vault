@@ -414,6 +414,42 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertFalse(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
+    @MainActor
+    func testRootInstalledPackageShowsImmutableBadge() {
+        let model = MainWindowModel()
+        let package = installedPresentation(
+            named: "brew:rg",
+            source: .formula(rootFormula: "rg"),
+            installRoot: "/opt/rg"
+        )
+
+        XCTAssertEqual(model.packageBadge(for: package), .immutable)
+    }
+
+    @MainActor
+    func testHomebrewInstalledPackageDoesNotShowImmutableBadge() {
+        let model = MainWindowModel()
+        let package = installedPresentation(
+            named: "brew:rg",
+            source: .formula(rootFormula: "rg"),
+            installRoot: "/opt/homebrew/Cellar/rg"
+        )
+
+        XCTAssertNil(model.packageBadge(for: package))
+    }
+
+    @MainActor
+    func testIsotopePackageShowsHardenedInsteadOfImmutableBadge() {
+        let model = MainWindowModel()
+        let package = installedPresentation(
+            named: "isotope:rg",
+            source: .isotope(isotopeName: "rg"),
+            installRoot: "/opt/isotopes/rg"
+        )
+
+        XCTAssertEqual(model.packageBadge(for: package), .hardened)
+    }
+
     private func decodePackageDetail(
         packageName: String = "brew:git",
         formula: String = "git",
@@ -451,14 +487,19 @@ final class PackageSecurityStateTests: XCTestCase {
         return try JSONDecoder().decode(PackageDetail.self, from: Data(json.utf8))
     }
 
-    private func installedPresentation(named name: String) -> PackagePresentation {
+    private func installedPresentation(
+        named name: String,
+        source: PackageSource? = nil,
+        installRoot: String? = nil
+    ) -> PackagePresentation {
         PackagePresentation(
             item: .installed(PackageRecord(
                 name: name,
-                source: nil,
+                source: source,
                 version: "1.0",
                 description: nil,
-                securityState: nil
+                securityState: nil,
+                installRoot: installRoot
             )),
             detail: nil,
             freshness: 0
