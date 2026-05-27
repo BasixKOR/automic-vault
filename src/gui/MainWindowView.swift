@@ -5,25 +5,14 @@ struct MainWindowView: View {
     @ObservedObject var model: MainWindowModel
     @State private var linkTab: MainWindowLinkTab = .homepage
     @State private var browserCommand: BrowserCommand?
-    @State private var handledSearchFocusRequestID = 0
-    @FocusState private var isSearchFocused: Bool
-    @Namespace private var glassNamespace
 
     var body: some View {
         ZStack {
             background
-            VStack(spacing: 0) {
-                topBar
-                hairline
-                mainContent
-            }
+            mainContent
         }
         .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
-        .onAppear(perform: focusSearchIfRequested)
-        .onChange(of: model.searchFocusRequestID) { _, _ in
-            focusSearchIfRequested()
-        }
     }
 
     private var background: some View {
@@ -33,81 +22,6 @@ struct MainWindowView: View {
         )
         .backgroundExtensionEffect()
         .ignoresSafeArea()
-    }
-
-    private var topBar: some View {
-        GlassEffectContainer(spacing: 10) {
-            ZStack {
-                searchField
-                    .frame(width: 318)
-                    .glassEffectID("search", in: glassNamespace)
-
-                HStack {
-                    Spacer()
-                    refreshButton
-                        .glassEffectID("refresh", in: glassNamespace)
-                }
-                .padding(.trailing, 14)
-            }
-        }
-        .frame(height: 52)
-        .background {
-            LiquidGlassSurface(
-                material: .ultraThinMaterial,
-                tint: AVGlassPalette.topBarTint
-            )
-        }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(AVGlassPalette.quietText)
-            TextField("Search Open Source", text: $model.searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(AVGlassPalette.primaryText)
-                .focused($isSearchFocused)
-            Text("⌘K")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AVGlassPalette.quietText)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(AVGlassPalette.controlFill, in: Capsule())
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var refreshButton: some View {
-        Button {
-            model.reloadPackages()
-        } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AVGlassPalette.primaryText)
-                .frame(width: 30, height: 30)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular, in: Circle())
-        .overlay {
-            Circle()
-                .stroke(AVGlassPalette.controlBorder, lineWidth: 1)
-        }
-        .opacity(model.isReloading ? 0.5 : 1)
-        .disabled(model.isReloading)
-        .help("Refresh packages")
-    }
-
-    private func focusSearchIfRequested() {
-        guard handledSearchFocusRequestID != model.searchFocusRequestID else {
-            return
-        }
-        handledSearchFocusRequestID = model.searchFocusRequestID
-        isSearchFocused = true
     }
 
     private var mainContent: some View {
@@ -827,6 +741,82 @@ private struct LiquidGlassSurface: View {
         Rectangle()
             .fill(material)
             .overlay(tint)
+    }
+}
+
+struct MainWindowToolbarSearch: View {
+    @ObservedObject var model: MainWindowModel
+    @State private var handledSearchFocusRequestID = 0
+    @FocusState private var isSearchFocused: Bool
+    @Namespace private var glassNamespace
+
+    var body: some View {
+        GlassEffectContainer(spacing: 10) {
+            searchField
+                .frame(width: 318)
+                .glassEffectID("search", in: glassNamespace)
+        }
+        .frame(width: 318, height: 34)
+        .onAppear(perform: focusSearchIfRequested)
+        .onChange(of: model.searchFocusRequestID) { _, _ in
+            focusSearchIfRequested()
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(AVGlassPalette.quietText)
+            TextField("Search Open Source", text: $model.searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .focused($isSearchFocused)
+            Text("⌘K")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(AVGlassPalette.controlFill, in: Capsule())
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func focusSearchIfRequested() {
+        guard handledSearchFocusRequestID != model.searchFocusRequestID else {
+            return
+        }
+        handledSearchFocusRequestID = model.searchFocusRequestID
+        isSearchFocused = true
+    }
+}
+
+struct MainWindowToolbarRefresh: View {
+    @ObservedObject var model: MainWindowModel
+
+    var body: some View {
+        Button {
+            model.reloadPackages()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular, in: Circle())
+        .overlay {
+            Circle()
+                .stroke(AVGlassPalette.controlBorder, lineWidth: 1)
+        }
+        .opacity(model.isReloading ? 0.5 : 1)
+        .disabled(model.isReloading)
+        .help("Refresh packages")
+        .frame(width: 34, height: 34)
     }
 }
 

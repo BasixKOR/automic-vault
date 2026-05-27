@@ -6,6 +6,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private let model: MainWindowModel
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
+    private weak var mainToolbar: NSToolbar?
 
     init() {
         let model = MainWindowModel()
@@ -31,6 +32,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        installToolbarIfNeeded()
         installSearchShortcutMonitorIfNeeded()
     }
 
@@ -67,6 +69,25 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         model.start()
     }
 
+    private func installToolbarIfNeeded() {
+        guard let window = view.window else {
+            return
+        }
+        if window.toolbar == mainToolbar, mainToolbar != nil {
+            return
+        }
+
+        let toolbar = NSToolbar(identifier: .automicVaultMain)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.centeredItemIdentifiers = [.automicVaultSearch]
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
+        mainToolbar = toolbar
+    }
+
     private func installSearchShortcutMonitorIfNeeded() {
         guard searchShortcutMonitor == nil else {
             return
@@ -97,4 +118,65 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         return hasOnlyCommand
             && event.charactersIgnoringModifiers?.lowercased() == "k"
     }
+}
+
+extension MainWindowController: NSToolbarDelegate {
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            .flexibleSpace,
+            .automicVaultSearch,
+            .automicVaultRefresh,
+        ]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            .flexibleSpace,
+            .automicVaultSearch,
+            .flexibleSpace,
+            .automicVaultRefresh,
+        ]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case .automicVaultSearch:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            let view = NSHostingView(rootView: MainWindowToolbarSearch(model: model))
+            constrain(view, width: 318, height: 34)
+            item.view = view
+            item.visibilityPriority = .high
+            return item
+        case .automicVaultRefresh:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            let view = NSHostingView(rootView: MainWindowToolbarRefresh(model: model))
+            constrain(view, width: 34, height: 34)
+            item.view = view
+            item.visibilityPriority = .high
+            return item
+        default:
+            return nil
+        }
+    }
+
+    private func constrain(_ view: NSView, width: CGFloat, height: CGFloat) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            view.widthAnchor.constraint(equalToConstant: width),
+            view.heightAnchor.constraint(equalToConstant: height),
+        ])
+    }
+}
+
+private extension NSToolbar.Identifier {
+    static let automicVaultMain = NSToolbar.Identifier("AutomicVaultMainToolbar")
+}
+
+private extension NSToolbarItem.Identifier {
+    static let automicVaultSearch = NSToolbarItem.Identifier("AutomicVaultSearch")
+    static let automicVaultRefresh = NSToolbarItem.Identifier("AutomicVaultRefresh")
 }
