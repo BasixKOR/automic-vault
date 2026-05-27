@@ -719,7 +719,11 @@ fn subs_help_topics_and_root_gated_commands_cover_dispatch_edges() {
         "install",
     ] {
         let output = run_nuke(&["help", topic]);
-        assert!(output.status.success(), "topic={topic} stderr={}", stderr(&output));
+        assert!(
+            output.status.success(),
+            "topic={topic} stderr={}",
+            stderr(&output)
+        );
         assert!(stdout(&output).contains("Usage:"), "topic={topic}");
     }
 
