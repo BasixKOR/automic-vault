@@ -65,7 +65,7 @@ struct MainWindowView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(AVGlassPalette.quietText)
-            TextField("Search packages...", text: $model.searchText)
+            TextField("Search Open Source", text: $model.searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AVGlassPalette.primaryText)
@@ -138,6 +138,7 @@ struct MainWindowView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader("AUTOMIC VAULT")
+                .kerning(1.2)
                 .padding(.top, 26)
             ForEach(MainWindowSection.librarySections) { section in
                 sidebarRow(section)
@@ -145,6 +146,7 @@ struct MainWindowView: View {
 
             sidebarHeader("CATEGORIES")
                 .padding(.top, 22)
+                .kerning(1.2)
             ForEach(MainWindowSection.categorySections) { section in
                 sidebarRow(section)
             }
@@ -179,10 +181,10 @@ struct MainWindowView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: section.systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .frame(width: 17)
                 Text(section.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .regular))
                     .lineLimit(1)
                     .layoutPriority(1)
                 Spacer(minLength: 6)
@@ -841,7 +843,7 @@ private enum AVGlassPalette {
     static let controlFill = Color.white.opacity(0.075)
     static let controlBorder = Color.white.opacity(0.22)
     static let selectedFill = Color.white.opacity(0.095)
-    static let sidebarSelectedFill = Color.accentColor.opacity(0.32)
+    static let sidebarSelectedFill = AVGlassPalette.primaryText.opacity(0.72)
     static let hairline = Color.white.opacity(0.10)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.64)
