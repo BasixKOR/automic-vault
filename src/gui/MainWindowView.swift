@@ -1,8 +1,10 @@
 import SwiftUI
+import WebKit
 
 struct MainWindowView: View {
     @ObservedObject var model: MainWindowModel
     @State private var linkTab: MainWindowLinkTab = .homepage
+    @State private var browserCommand: BrowserCommand?
     @Namespace private var glassNamespace
 
     var body: some View {
@@ -426,12 +428,7 @@ struct MainWindowView: View {
         VStack(spacing: 0) {
             linksToolbar
             hairline
-            ScrollView {
-                linkContent
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 26)
-            }
-            .scrollIndicators(.hidden)
+            linkBrowser
         }
         .background {
             LiquidGlassSurface(
@@ -489,9 +486,15 @@ struct MainWindowView: View {
             }
 
             HStack(spacing: 8) {
-                ToolbarIcon(systemName: "chevron.left")
-                ToolbarIcon(systemName: "chevron.right")
-                ToolbarIcon(systemName: "arrow.clockwise")
+                BrowserToolbarButton(systemName: "chevron.left") {
+                    browserCommand = .back(UUID())
+                }
+                BrowserToolbarButton(systemName: "chevron.right") {
+                    browserCommand = .forward(UUID())
+                }
+                BrowserToolbarButton(systemName: "arrow.clockwise") {
+                    browserCommand = .reload(UUID())
+                }
                 Text(model.selectedURL(for: linkTab)?.absoluteString ?? "No link available")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(
@@ -518,78 +521,21 @@ struct MainWindowView: View {
         .padding(.vertical, 12)
     }
 
-    private var linkContent: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            if let detail = model.selectedDetail,
-               let package = model.selectedPackage {
-                if detail.isOutdated {
-                    Button {
-                        model.open(url: model.selectedURL(for: linkTab))
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(AVGlassPalette.secondaryText)
-                                .frame(width: 7, height: 7)
-                            Text("\(model.versionText(for: package)) is out")
-                            Text("Read the changelog")
-                                .fontWeight(.bold)
-                            Image(systemName: "arrow.right")
-                        }
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AVGlassPalette.secondaryText)
-                        .padding(.horizontal, 12)
-                        .frame(height: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular, in: Capsule())
-                }
-
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(model.displayName(for: package))
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(AVGlassPalette.primaryText)
-                        .lineLimit(1)
-
-                    Text(detail.primaryDescription)
-                        .font(.system(size: 21, weight: .bold))
-                        .foregroundStyle(AVGlassPalette.primaryText)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text(model.packageDescription(for: package))
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(AVGlassPalette.quietText)
-                        .lineSpacing(4)
-                        .lineLimit(4)
-
-                    Button {
-                        model.open(url: model.selectedURL(for: .homepage))
-                    } label: {
-                        Label("Download \(model.displayName(for: package))", systemImage: "arrow.down.to.line.compact")
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(minWidth: 168)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(.clear)
-                    .disabled(model.selectedURL(for: .homepage) == nil)
-
-                    Text("macOS 26+ and Automic Vault available")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AVGlassPalette.quietText)
-                }
-
-                PackagePreviewCard(packageName: model.displayName(for: package))
-                    .padding(.top, 4)
-            } else {
-                EmptyPackageState(
-                    title: "Links",
-                    message: "Package links appear here after selecting a package."
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.top, 100)
-            }
+    @ViewBuilder
+    private var linkBrowser: some View {
+        if let url = model.selectedURL(for: linkTab) {
+            PackageWebView(url: url, command: browserCommand)
+                .id(url)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.white.opacity(0.96))
+        } else {
+            EmptyPackageState(
+                title: "Links",
+                message: "Package links appear here after selecting a package."
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 28)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var hairline: some View {
@@ -602,6 +548,83 @@ struct MainWindowView: View {
         Rectangle()
             .fill(AVGlassPalette.hairline)
             .frame(width: 1)
+    }
+}
+
+private enum BrowserCommand {
+    case back(UUID)
+    case forward(UUID)
+    case reload(UUID)
+
+    var id: UUID {
+        switch self {
+        case .back(let id), .forward(let id), .reload(let id):
+            return id
+        }
+    }
+}
+
+private struct PackageWebView: NSViewRepresentable {
+    let url: URL
+    let command: BrowserCommand?
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = true
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        if context.coordinator.currentURL != url {
+            context.coordinator.currentURL = url
+            webView.load(URLRequest(url: url))
+        }
+
+        guard let command,
+              context.coordinator.lastCommandID != command.id else {
+            return
+        }
+        context.coordinator.lastCommandID = command.id
+        switch command {
+        case .back:
+            if webView.canGoBack {
+                webView.goBack()
+            }
+        case .forward:
+            if webView.canGoForward {
+                webView.goForward()
+            }
+        case .reload:
+            webView.reload()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var currentURL: URL?
+        var lastCommandID: UUID?
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            if navigationAction.navigationType == .linkActivated,
+               let url = navigationAction.request.url,
+               url.host != currentURL?.host {
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
     }
 }
 
@@ -797,79 +820,19 @@ private struct PermissionRow: View {
     }
 }
 
-private struct ToolbarIcon: View {
+private struct BrowserToolbarButton: View {
     let systemName: String
+    let action: () -> Void
 
     var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(AVGlassPalette.quietText)
-            .frame(width: 26, height: 26)
-    }
-}
-
-private struct PackagePreviewCard: View {
-    let packageName: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                Text("Hidden")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                Spacer()
-                Image(systemName: "xmark")
-                    .foregroundStyle(AVGlassPalette.quietText)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(AVGlassPalette.selectedFill, in: RoundedRectangle(cornerRadius: 7))
-
-            PreviewRow(color: AVGlassPalette.cyan, title: packageName)
-            PreviewRow(color: AVGlassPalette.purple, title: "Slack")
-            PreviewRow(color: AVGlassPalette.green, title: "Spotify")
-
-            HStack {
-                Text("Personal")
-                    .foregroundStyle(AVGlassPalette.quietText)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                Spacer()
-                Image(systemName: "xmark")
-                    .foregroundStyle(AVGlassPalette.quietText)
-            }
-            .font(.system(size: 12, weight: .regular))
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .frame(width: 26, height: 26)
         }
-        .padding(14)
-        .frame(maxWidth: 340)
-        .background(AVGlassPalette.previewTint, in: RoundedRectangle(cornerRadius: 10))
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
-    }
-}
-
-private struct PreviewRow: View {
-    let color: Color
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(AVGlassPalette.secondaryText)
-            Spacer()
-            Image(systemName: "eye.slash")
-                .foregroundStyle(AVGlassPalette.quietText.opacity(0.76))
-            Image(systemName: "link")
-                .foregroundStyle(AVGlassPalette.quietText.opacity(0.76))
-        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
     }
 }
 
@@ -910,7 +873,6 @@ private enum AVGlassPalette {
     static let packageTint = Color.black.opacity(0.20)
     static let dossierTint = Color.black.opacity(0.24)
     static let linksTint = Color.black.opacity(0.18)
-    static let previewTint = Color.black.opacity(0.34)
     static let controlFill = Color.white.opacity(0.075)
     static let selectedFill = Color.white.opacity(0.095)
     static let hairline = Color.white.opacity(0.10)
