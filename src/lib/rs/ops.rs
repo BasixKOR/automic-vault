@@ -280,7 +280,7 @@ pub(crate) fn list_available_packages(
     let packages = resolve_available_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    Ok(search_packages_response(packages, offset, limit, false))
+    Ok(search_packages_response(packages, offset, limit))
 }
 
 pub(crate) fn list_pulse_packages(
@@ -290,7 +290,7 @@ pub(crate) fn list_pulse_packages(
     let packages = resolve_pulse_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    Ok(search_packages_response(packages, offset, limit, true))
+    Ok(search_packages_response(packages, offset, limit))
 }
 
 pub(crate) fn list_geiger_packages(
@@ -300,7 +300,7 @@ pub(crate) fn list_geiger_packages(
     let packages = resolve_geiger_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    Ok(search_packages_response(packages, offset, limit, false))
+    Ok(search_packages_response(packages, offset, limit))
 }
 
 pub(crate) fn search_packages(
@@ -314,27 +314,20 @@ pub(crate) fn search_packages(
         },
         query,
     )?;
-    Ok(search_packages_response(packages, offset, limit, true))
+    Ok(search_packages_response(packages, offset, limit))
 }
 
 fn search_packages_response(
     packages: Vec<PackageSearchResult>,
     offset: usize,
     limit: usize,
-    promote_hazards: bool,
 ) -> core::SearchPackagesResponse {
     let limit = search_page_size(limit);
     let total_count = packages.len();
-    let mut packages = packages
+    let packages = packages
         .into_iter()
         .map(search_package_summary)
         .collect::<Vec<_>>();
-    if promote_hazards {
-        let (hazards, rest): (Vec<_>, Vec<_>) = packages
-            .into_iter()
-            .partition(search_package_has_active_hazard);
-        packages = hazards.into_iter().chain(rest).collect();
-    }
     let next_offset_value = offset.saturating_add(limit);
     let next_offset = packages.get(next_offset_value).map(|_| next_offset_value);
     let packages = packages.into_iter().skip(offset).take(limit).collect();
@@ -350,13 +343,6 @@ fn search_page_size(limit: usize) -> usize {
         0 => DEFAULT_SEARCH_PAGE_SIZE,
         _ => limit.min(MAX_SEARCH_PAGE_SIZE),
     }
-}
-
-fn search_package_has_active_hazard(package: &core::SearchPackageSummary) -> bool {
-    package
-        .security_state
-        .as_ref()
-        .is_some_and(|state| state.install_is_insecure)
 }
 
 fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSummary {
@@ -1989,7 +1975,6 @@ mod tests {
             }],
             0,
             25,
-            false,
         );
 
         assert_eq!(page.total_count, 1);

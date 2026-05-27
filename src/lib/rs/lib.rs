@@ -16069,7 +16069,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
-    fn list_pulse_packages_promotes_active_security_hazards() {
+    fn list_pulse_packages_preserves_pulse_order_for_active_security_hazards() {
         let _env_lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let fly_dir = temp.path().join(".fly");
@@ -16086,16 +16086,30 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         };
         assert!(state.install_is_insecure);
 
-        let page = ops::list_pulse_packages(0, 1).unwrap();
-        assert_eq!(page.packages.len(), 1);
-        assert_eq!(page.packages[0].name, "flyctl");
-        assert_eq!(
-            page.packages[0]
-                .security_state
-                .as_ref()
-                .map(|state| (state.isotope_name.as_str(), state.install_is_insecure)),
-            Some(("flyctl", true))
+        let expected = resolve_pulse_package_results(&Config {
+            bottle_tag: String::new(),
+        })
+        .unwrap();
+        assert_ne!(
+            expected
+                .first()
+                .map(|package| package.package_name.as_str()),
+            Some("flyctl"),
+            "fixture must distinguish natural pulse order from hazard promotion"
         );
+
+        let page = ops::list_pulse_packages(0, 3).unwrap();
+        let expected_names = expected
+            .iter()
+            .take(3)
+            .map(|package| package.package_name.as_str())
+            .collect::<Vec<_>>();
+        let actual_names = page
+            .packages
+            .iter()
+            .map(|package| package.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, expected_names);
     }
 
     #[test]
