@@ -336,11 +336,11 @@ final class MainWindowModel: ObservableObject {
 
     func packageListBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
         var badges: [MainWindowPackageBadge] = []
-        if selectedSection == .installed, isOutdated(package) {
-            badges.append(.outdated)
-        }
         if let badge = packageBadge(for: package) {
             badges.append(badge)
+        }
+        if selectedSection == .installed, isOutdated(package) {
+            badges.append(.outdated)
         }
         return badges
     }
