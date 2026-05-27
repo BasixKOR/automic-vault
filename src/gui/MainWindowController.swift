@@ -132,8 +132,6 @@ extension MainWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             .flexibleSpace,
-            .automicVaultSearch,
-            .flexibleSpace,
             .automicVaultRefresh,
         ]
     }
