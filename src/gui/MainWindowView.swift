@@ -19,19 +19,6 @@ struct MainWindowView: View {
             }
         }
         .frame(minWidth: 1380, minHeight: 760)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: MainWindowChrome.cornerRadius,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: MainWindowChrome.cornerRadius,
-                style: .continuous
-            )
-            .stroke(AVGlassPalette.windowBorder, lineWidth: 1)
-        }
         .background(Color.clear)
         .onAppear(perform: focusSearchIfRequested)
         .onChange(of: model.searchFocusRequestID) { _, _ in
@@ -165,8 +152,10 @@ struct MainWindowView: View {
 
             Spacer(minLength: 24)
 
-            ForEach(MainWindowSection.utilitySections) { section in
-                sidebarRow(section)
+            VStack(spacing: 0) {
+                ForEach(MainWindowSection.utilitySections) { section in
+                    sidebarRow(section)
+                }
             }
             .padding(.bottom, 18)
         }
@@ -841,14 +830,8 @@ private struct LiquidGlassSurface: View {
     }
 }
 
-enum MainWindowChrome {
-    static let toolbarHeight: CGFloat = 52
-    static let cornerRadius: CGFloat = 20
-}
-
 private enum AVGlassPalette {
     static let windowTint = Color.black.opacity(0.18)
-    static let windowBorder = Color.white.opacity(0.14)
     static let topBarTint = Color.black.opacity(0.16)
     static let sidebarTint = Color(red: 0.025, green: 0.050, blue: 0.075).opacity(0.28)
     static let packageTint = Color.black.opacity(0.20)

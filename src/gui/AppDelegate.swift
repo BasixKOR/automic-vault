@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let toggleStartAtLoginArgument = "--toggle-start-at-login"
     private static let remoteDatabaseRefreshInterval: TimeInterval = 60 * 60
     private var window: NSWindow?
@@ -303,24 +303,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? MainWindowController)?.requestRefresh()
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        guard let resizedWindow = notification.object as? NSWindow,
-              resizedWindow === window else {
-            return
-        }
-        applyMainWindowShape(to: resizedWindow)
-        centerTrafficLights(in: resizedWindow)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        guard let keyWindow = notification.object as? NSWindow,
-              keyWindow === window else {
-            return
-        }
-        applyMainWindowShape(to: keyWindow)
-        centerTrafficLights(in: keyWindow)
     }
 
     #if DEBUG
@@ -689,60 +671,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
-        window.delegate = self
         window.contentViewController = controller
         window.makeFirstResponder(controller.view)
-        applyMainWindowShape(to: window)
-        centerTrafficLights(in: window)
-        DispatchQueue.main.async { [weak self, weak window] in
-            guard let self, let window else { return }
-            self.applyMainWindowShape(to: window)
-            self.centerTrafficLights(in: window)
-        }
         self.window = window
         return window
-    }
-
-    private func applyMainWindowShape(to window: NSWindow) {
-        guard let contentView = window.contentView else {
-            return
-        }
-        contentView.wantsLayer = true
-        contentView.layer?.cornerRadius = MainWindowChrome.cornerRadius
-        contentView.layer?.cornerCurve = .continuous
-        contentView.layer?.masksToBounds = true
-    }
-
-    private func centerTrafficLights(in window: NSWindow) {
-        let buttons = [
-            window.standardWindowButton(.closeButton),
-            window.standardWindowButton(.miniaturizeButton),
-            window.standardWindowButton(.zoomButton),
-        ].compactMap { $0 }
-        guard let container = buttons.first?.superview else {
-            return
-        }
-
-        container.layoutSubtreeIfNeeded()
-        let buttonGroupHeight = buttons.map(\.frame.height).max() ?? 0
-        guard buttonGroupHeight > 0 else {
-            return
-        }
-
-        let toolbarHeight = min(MainWindowChrome.toolbarHeight, container.bounds.height)
-        let originY: CGFloat
-        if container.isFlipped {
-            originY = (toolbarHeight - buttonGroupHeight) / 2
-        } else {
-            originY = container.bounds.height
-                - toolbarHeight
-                + (toolbarHeight - buttonGroupHeight) / 2
-        }
-
-        for button in buttons {
-            var frame = button.frame
-            frame.origin.y = originY + (buttonGroupHeight - frame.height) / 2
-            button.frame = frame
-        }
     }
 }
