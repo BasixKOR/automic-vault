@@ -185,17 +185,13 @@ struct MainWindowView: View {
                     Button {
                         model.requestOutdatedUpdateAll()
                     } label: {
-                        Label(
-                            model.isUpdatingAll ? "Updating" : "Update All",
-                            systemImage: "arrow.triangle.2.circlepath"
+                        UpdateAllHeaderButtonLabel(
+                            title: model.isUpdatingAll ? "Updating" : "Update All"
                         )
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
                     }
-                    .buttonStyle(.glass)
-                    .tint(.clear)
+                    .buttonStyle(.plain)
                     .disabled(!model.canUpdateAllOutdated)
+                    .opacity(model.canUpdateAllOutdated ? 1 : 0.42)
                     .help(updateAllHelpText)
                 }
                 if model.isReloading
@@ -208,7 +204,8 @@ struct MainWindowView: View {
             }
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(AVGlassPalette.quietText)
-            .padding(.horizontal, 18)
+            .padding(.leading, 18)
+            .padding(.trailing, 8)
             .frame(height: 42)
 
             hairline
@@ -647,6 +644,36 @@ private struct SidebarCountText: View {
             .foregroundStyle(AVGlassPalette.secondaryText)
             .lineLimit(1)
             .frame(minWidth: 18, alignment: .trailing)
+    }
+}
+
+private struct UpdateAllHeaderButtonLabel: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+            Text(title)
+                .font(.system(size: 12, weight: .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.84)
+        }
+        .foregroundStyle(AVGlassPalette.cyan.opacity(0.94))
+        .padding(.horizontal, 11)
+        .frame(height: 30)
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(AVGlassPalette.cyan.opacity(0.105))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(AVGlassPalette.cyan.opacity(0.34), lineWidth: 1)
+        }
+        .shadow(color: AVGlassPalette.cyan.opacity(0.15), radius: 9)
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
 
