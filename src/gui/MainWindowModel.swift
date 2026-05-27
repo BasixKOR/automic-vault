@@ -139,6 +139,9 @@ enum MainWindowPackageBadge {
 final class MainWindowModel: ObservableObject {
     @Published var selectedSection: MainWindowSection = .installed {
         didSet {
+            if selectedSection != oldValue {
+                clearSelectedPackage()
+            }
             ensureSelectedSectionLoaded()
         }
     }
@@ -239,6 +242,12 @@ final class MainWindowModel: ObservableObject {
     func select(_ package: PackagePresentation) {
         selectedItemID = package.selectionID
         loadDetail(for: package)
+    }
+
+    private func clearSelectedPackage() {
+        selectedItemID = nil
+        detailRequestID += 1
+        isLoadingDetail = false
     }
 
     func requestSearchFocus() {
