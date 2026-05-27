@@ -193,7 +193,7 @@ struct MainWindowView: View {
                             title: model.displayName(for: package),
                             description: model.packageDescription(for: package),
                             version: model.versionText(for: package),
-                            badge: model.packageBadge(for: package),
+                            badges: model.packageListBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
                             model.select(package)
@@ -648,7 +648,7 @@ private struct PackageRow: View {
     let title: String
     let description: String
     let version: String
-    let badge: MainWindowPackageBadge?
+    let badges: [MainWindowPackageBadge]
     let selected: Bool
     let action: () -> Void
 
@@ -677,8 +677,12 @@ private struct PackageRow: View {
 
                 Spacer(minLength: 8)
 
-                if let badge {
-                    PackageBadgePill(badge: badge)
+                if badges.isEmpty == false {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        ForEach(badges, id: \.self) { badge in
+                            PackageBadgePill(badge: badge)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 18)
@@ -713,6 +717,8 @@ private struct PackageBadgePill: View {
             return "Hardened"
         case .immutable:
             return "Immutable"
+        case .outdated:
+            return "Outdated"
         }
     }
 
@@ -724,6 +730,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.green
         case .immutable:
             return AVGlassPalette.cyan
+        case .outdated:
+            return AVGlassPalette.orange
         }
     }
 
@@ -735,6 +743,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.green.opacity(0.14)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.14)
+        case .outdated:
+            return AVGlassPalette.orange.opacity(0.14)
         }
     }
 
@@ -746,6 +756,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.24)
+        case .outdated:
+            return AVGlassPalette.orange.opacity(0.28)
         }
     }
 }
@@ -786,6 +798,8 @@ private struct PackageBadgeBanner: View {
             return "Hardened"
         case .immutable:
             return "Immutable"
+        case .outdated:
+            return "Outdated"
         }
     }
 
@@ -797,6 +811,8 @@ private struct PackageBadgeBanner: View {
             return "shield.fill"
         case .immutable:
             return "lock.fill"
+        case .outdated:
+            return "arrow.up.circle.fill"
         }
     }
 
@@ -808,6 +824,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.green
         case .immutable:
             return AVGlassPalette.cyan
+        case .outdated:
+            return AVGlassPalette.orange
         }
     }
 
@@ -819,6 +837,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.green.opacity(0.14)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.14)
+        case .outdated:
+            return AVGlassPalette.orange.opacity(0.14)
         }
     }
 
@@ -830,6 +850,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.24)
+        case .outdated:
+            return AVGlassPalette.orange.opacity(0.28)
         }
     }
 }

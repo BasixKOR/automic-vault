@@ -129,10 +129,11 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
     }
 }
 
-enum MainWindowPackageBadge {
+enum MainWindowPackageBadge: Hashable {
     case vulnerable
     case hardened
     case immutable
+    case outdated
 }
 
 @MainActor
@@ -331,6 +332,17 @@ final class MainWindowModel: ObservableObject {
             return .immutable
         }
         return nil
+    }
+
+    func packageListBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
+        var badges: [MainWindowPackageBadge] = []
+        if selectedSection == .installed, isOutdated(package) {
+            badges.append(.outdated)
+        }
+        if let badge = packageBadge(for: package) {
+            badges.append(badge)
+        }
+        return badges
     }
 
     private func needsHardening(_ package: PackagePresentation) -> Bool {
