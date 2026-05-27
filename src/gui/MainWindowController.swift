@@ -172,17 +172,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let controller = UpdateProgressViewController()
+        controller.preferredContentSize = NSSize(width: 860, height: 760)
         controller.onRetry = { [weak self] in
             self?.startUpdateAll(debugPlayback: false)
         }
         controller.onDismiss = { [weak self] in
             self?.dismissUpdateProgressController()
         }
-        addChild(controller)
-        controller.view.frame = view.bounds
-        controller.view.autoresizingMask = [.width, .height]
-        view.addSubview(controller.view)
-        view.window?.makeFirstResponder(controller.view)
+        presentAsSheet(controller)
         updateProgressViewController = controller
         return controller
     }
@@ -191,8 +188,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         guard let controller = updateProgressViewController else {
             return
         }
-        controller.view.removeFromSuperview()
-        controller.removeFromParent()
+        dismiss(controller)
         updateProgressViewController = nil
     }
 
