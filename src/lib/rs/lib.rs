@@ -8487,7 +8487,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
-    fn parse_uninstall_request_accepts_alias_package_names() {
+    fn parse_uninstall_request_accepts_unqualified_package_names() {
         let invocation = Invocation {
             binary_name: "av".to_string(),
             name: "av rm".to_string(),
@@ -8502,7 +8502,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(
             request,
             Some(UninstallRequest {
-                packages: vec!["npm:clawhub".to_string()],
+                packages: vec!["clawhub".to_string()],
             })
         );
     }
@@ -8676,7 +8676,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
-    fn parse_uninstall_request_resolves_alias_when_no_vendor_package_exists() {
+    fn parse_uninstall_request_keeps_unknown_unqualified_package_names() {
         let invocation = Invocation {
             binary_name: "av".to_string(),
             name: "av rm".to_string(),
@@ -8689,7 +8689,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(
             request,
             Some(UninstallRequest {
-                packages: vec!["npm:@tobilu/qmd".to_string()],
+                packages: vec!["qmd".to_string()],
             })
         );
     }
