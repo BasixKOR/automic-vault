@@ -96,10 +96,10 @@ struct MainWindowView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: section.systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .frame(width: 17)
                 Text(section.title)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: 14, weight: .regular))
                     .lineLimit(1)
                     .layoutPriority(1)
                 Spacer(minLength: 6)

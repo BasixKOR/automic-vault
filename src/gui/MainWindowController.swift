@@ -184,7 +184,7 @@ extension MainWindowController: NSToolbarDelegate {
     }
 
     private func configureSearchField(_ searchField: NSSearchField) {
-        searchField.placeholderString = "Search Open Source"
+        searchField.placeholderString = "Search"
         searchField.stringValue = model.searchText
         searchField.font = .systemFont(ofSize: 13, weight: .regular)
         searchField.delegate = self
