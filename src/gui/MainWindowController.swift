@@ -46,6 +46,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         model.reloadPackages()
     }
 
+    @objc private func refreshToolbarItemPressed(_ sender: Any?) {
+        requestRefresh()
+    }
+
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
@@ -153,9 +157,15 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultRefresh:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            let view = NSHostingView(rootView: MainWindowToolbarRefresh(model: model))
-            constrain(view, width: 34, height: 34)
-            item.view = view
+            item.label = "Refresh"
+            item.paletteLabel = "Refresh"
+            item.toolTip = "Refresh packages"
+            item.image = NSImage(
+                systemSymbolName: "arrow.clockwise",
+                accessibilityDescription: "Refresh packages"
+            )
+            item.target = self
+            item.action = #selector(refreshToolbarItemPressed(_:))
             item.visibilityPriority = .high
             return item
         default:
