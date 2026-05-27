@@ -27,7 +27,7 @@ struct MainWindowView: View {
 
     private var titleBarBackdrop: some View {
         GeometryReader { proxy in
-            let titleBarHeight = max(proxy.safeAreaInsets.top, 72)
+            let titleBarHeight = min(max(proxy.safeAreaInsets.top - 14, 86), 94)
 
             VStack(spacing: 0) {
                 LiquidGlassSurface(
