@@ -164,6 +164,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var isLoadingDetail = false
     @Published private(set) var statusMessage: String?
     @Published private(set) var lastErrorMessage: String?
+    @Published private(set) var searchFocusRequestID = 0
 
     private struct InitialDaemonData {
         let installed: [PackageRecord]
@@ -241,6 +242,10 @@ final class MainWindowModel: ObservableObject {
     func select(_ package: PackagePresentation) {
         selectedItemID = package.selectionID
         loadDetail(for: package)
+    }
+
+    func requestSearchFocus() {
+        searchFocusRequestID += 1
     }
 
     func selectedURL(for tab: MainWindowLinkTab) -> URL? {

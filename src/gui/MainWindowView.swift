@@ -5,6 +5,8 @@ struct MainWindowView: View {
     @ObservedObject var model: MainWindowModel
     @State private var linkTab: MainWindowLinkTab = .homepage
     @State private var browserCommand: BrowserCommand?
+    @State private var handledSearchFocusRequestID = 0
+    @FocusState private var isSearchFocused: Bool
     @Namespace private var glassNamespace
 
     var body: some View {
@@ -19,6 +21,10 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
+        .onAppear(perform: focusSearchIfRequested)
+        .onChange(of: model.searchFocusRequestID) { _, _ in
+            focusSearchIfRequested()
+        }
     }
 
     private var background: some View {
@@ -80,7 +86,8 @@ struct MainWindowView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AVGlassPalette.primaryText)
-            Text("Command-K")
+                .focused($isSearchFocused)
+            Text("⌘K")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AVGlassPalette.quietText)
                 .padding(.horizontal, 6)
@@ -90,6 +97,14 @@ struct MainWindowView: View {
         .padding(.horizontal, 10)
         .frame(height: 30)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func focusSearchIfRequested() {
+        guard handledSearchFocusRequestID != model.searchFocusRequestID else {
+            return
+        }
+        handledSearchFocusRequestID = model.searchFocusRequestID
+        isSearchFocused = true
     }
 
     private var topModeControl: some View {
