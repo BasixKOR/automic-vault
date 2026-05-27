@@ -17984,6 +17984,7 @@ EOF
         mut stream: std::net::TcpStream,
         routes: &HashMap<String, Vec<u8>>,
     ) {
+        stream.set_nonblocking(false).unwrap();
         let mut buffer = [0u8; 4096];
         let count = stream.read(&mut buffer).unwrap();
         let request = String::from_utf8_lossy(&buffer[..count]);
