@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import pathlib
 import tempfile
 import unittest
@@ -415,6 +416,76 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn('xmlns:xhtml="http://www.w3.org/1999/xhtml"', package_sitemap)
         self.assertIn('hreflang="ja" href="https://www.automicvault.com/ja/pkg/brew/ripgrep/"', package_sitemap)
         self.assertIn('hreflang="x-default" href="https://www.automicvault.com/pkg/brew/ripgrep/"', package_sitemap)
+
+    def test_package_manifest_reuses_generation_metadata_when_sources_are_unchanged(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_stable_manifest_test")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "source.json"
+            source.write_text('{"packages": []}\n', encoding="utf-8")
+            previous = module.build_manifest(1, [source])
+
+            newer = source.stat().st_mtime_ns + 10_000_000_000
+            os.utime(source, ns=(newer, newer))
+            manifest = module.build_manifest(1, [source], previous)
+
+        self.assertEqual(manifest["source_hash"], previous["source_hash"])
+        self.assertEqual(manifest["generated_at"], previous["generated_at"])
+        self.assertEqual(manifest["latest_source_mtime_ns"], previous["latest_source_mtime_ns"])
+        self.assertEqual(manifest["latest_source_mtime"], previous["latest_source_mtime"])
+
+    def test_render_all_preserves_unchanged_file_metadata(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_stable_write_test")
+        locale = {"code": "en", "slug": "", "htmlLang": "en", "hreflang": "en", "nativeName": "English"}
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        manifest = {"schema": module.SCHEMA_VERSION, "generated_at": "2026-05-24T12:00:00+00:00", "page_count": 1}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "pkg"
+            with (
+                mock.patch.object(module, "i18n_locales", return_value=[locale]),
+                mock.patch.object(module, "non_default_i18n_locales", return_value=[]),
+            ):
+                module.render_all({"brew:ripgrep": page}, dict(manifest), output)
+                html_path = output / "brew" / "ripgrep" / "index.html"
+                old_mtime = 1_700_000_000_000_000_000
+                os.utime(html_path, ns=(old_mtime, old_mtime))
+                before = html_path.stat()
+
+                stats = module.render_all({"brew:ripgrep": page}, dict(manifest), output)
+                after = html_path.stat()
+
+        self.assertEqual(stats.written, 0)
+        self.assertGreater(stats.unchanged, 0)
+        self.assertEqual(after.st_mtime_ns, before.st_mtime_ns)
+        self.assertEqual(after.st_ctime_ns, before.st_ctime_ns)
+
+    def test_render_all_removes_stale_generated_files(self):
+        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_stale_cleanup_test")
+        locale = {"code": "en", "slug": "", "htmlLang": "en", "hreflang": "en", "nativeName": "English"}
+        page = module.PackagePage(provider="brew", name="ripgrep")
+        page.summary = "Search tool"
+        page.version = "15.0.0"
+        thin_page = module.PackagePage(provider="brew", name="ripgrep")
+        thin_page.executables = [{"name": "rg", "source": "unit test"}]
+        manifest = {"schema": module.SCHEMA_VERSION, "generated_at": "2026-05-24T12:00:00+00:00", "page_count": 1}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "pkg"
+            with (
+                mock.patch.object(module, "i18n_locales", return_value=[locale]),
+                mock.patch.object(module, "non_default_i18n_locales", return_value=[]),
+            ):
+                module.render_all({"brew:ripgrep": page}, dict(manifest), output)
+                markdown_path = output / "brew" / "ripgrep" / "index.md"
+                self.assertTrue(markdown_path.exists())
+
+                stats = module.render_all({"brew:ripgrep": thin_page}, dict(manifest), output)
+                self.assertFalse(markdown_path.exists())
+
+        self.assertGreaterEqual(stats.deleted, 1)
 
     def test_localized_package_page_uses_locale_urls_and_markdown(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_i18n_test")

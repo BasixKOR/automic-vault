@@ -7,7 +7,6 @@ import html
 import json
 import os
 import re
-import shutil
 import sys
 import textwrap
 import urllib.parse
@@ -550,6 +549,14 @@ class Terminal:
 
     def error_log(self, message: str) -> None:
         self.log(f"{self.red}{self.error}{self.reset} {message}")
+
+
+@dataclass
+class RenderStats:
+    written: int = 0
+    unchanged: int = 0
+    deleted: int = 0
+    directories_removed: int = 0
 
 
 def ensure_cwd() -> Path:
@@ -1432,18 +1439,59 @@ def source_digest(files: list[Path]) -> tuple[str, int]:
     return digest.hexdigest(), latest
 
 
-def build_manifest(page_count: int, files: list[Path]) -> dict[str, Any]:
+def read_existing_manifest(output_dir: Path) -> dict[str, Any] | None:
+    try:
+        manifest = read_json(output_dir / MANIFEST_NAME)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    if isinstance(manifest, dict):
+        return manifest
+    return None
+
+
+def reusable_previous_manifest(
+    previous_manifest: dict[str, Any] | None,
+    digest: str,
+    source_file_count: int,
+    page_count: int,
+) -> dict[str, Any] | None:
+    if not previous_manifest:
+        return None
+    try:
+        previous_source_file_count = int(previous_manifest.get("source_file_count") or -1)
+        previous_page_count = int(previous_manifest.get("page_count") or -1)
+    except (TypeError, ValueError):
+        return None
+    if (
+        previous_manifest.get("schema") == SCHEMA_VERSION
+        and previous_manifest.get("source_hash") == digest
+        and previous_source_file_count == source_file_count
+        and previous_page_count == page_count
+    ):
+        return previous_manifest
+    return None
+
+
+def build_manifest(
+    page_count: int,
+    files: list[Path],
+    previous_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     digest, latest = source_digest(files)
+    reusable_manifest = reusable_previous_manifest(previous_manifest, digest, len(files), page_count)
     latest_dt = dt.datetime.fromtimestamp(latest / 1_000_000_000, dt.timezone.utc)
+    generated_at = reusable_manifest.get("generated_at") if reusable_manifest else ""
+    latest_source_mtime_ns = reusable_manifest.get("latest_source_mtime_ns") if reusable_manifest else None
+    latest_source_mtime = reusable_manifest.get("latest_source_mtime") if reusable_manifest else ""
     radioisotope_count = local_radioisotope_manifest_count()
     full_isotope_count = local_full_isotope_manifest_count()
     return {
         "schema": SCHEMA_VERSION,
-        "generated_at": utc_now(),
+        "generated_at": generated_at or utc_now(),
         "source_hash": digest,
         "source_file_count": len(files),
-        "latest_source_mtime_ns": latest,
-        "latest_source_mtime": latest_dt.replace(microsecond=0).isoformat(),
+        "latest_source_mtime_ns": latest_source_mtime_ns if latest_source_mtime_ns is not None else latest,
+        "latest_source_mtime": latest_source_mtime or latest_dt.replace(microsecond=0).isoformat(),
         "page_count": page_count,
         "radioisotope_manifest_count": radioisotope_count,
         "full_isotope_manifest_count": full_isotope_count,
@@ -1599,13 +1647,55 @@ def hub_sort_key(page: PackagePage) -> tuple[int, int, int, str, str]:
     return (coverage, gated, risk_rank.get(level, 6), rank, page.display_name.lower())
 
 
-def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_dir: Path) -> None:
+def localized_package_output_dir(output_dir: Path, locale: dict[str, Any] | None) -> Path:
+    return output_dir if locale_code(locale) == "en" else output_dir.parent / locale_slug(locale) / "pkg"
+
+
+def write_text_if_changed(path: Path, content: str, stats: RenderStats) -> None:
+    data = content.encode("utf-8")
+    try:
+        if path.read_bytes() == data:
+            stats.unchanged += 1
+            return
+    except FileNotFoundError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    stats.written += 1
+
+
+def write_generated_text(path: Path, content: str, expected_files: set[Path], stats: RenderStats) -> None:
+    expected_files.add(path)
+    write_text_if_changed(path, content, stats)
+
+
+def prune_stale_generated_files(root: Path, expected_files: set[Path], stats: RenderStats) -> None:
+    if not root.exists():
+        return
+    for path in root.rglob("*"):
+        if path.is_file() and path not in expected_files and path.name != ".DS_Store":
+            path.unlink()
+            stats.deleted += 1
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for path in directories:
+        try:
+            path.rmdir()
+        except OSError:
+            continue
+        stats.directories_removed += 1
+
+
+def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_dir: Path) -> RenderStats:
     locales = i18n_locales()
-    generated_dirs = [output_dir] + [output_dir.parent / locale_slug(locale) / "pkg" for locale in non_default_i18n_locales()]
-    for generated_dir in generated_dirs:
-        if generated_dir.exists():
-            shutil.rmtree(generated_dir)
-        generated_dir.mkdir(parents=True, exist_ok=True)
+    expected_files_by_dir: dict[Path, set[Path]] = {
+        localized_package_output_dir(output_dir, locale): set()
+        for locale in locales
+    }
+    stats = RenderStats()
     ordered = sorted(pages.values(), key=lambda page: (page.provider, page.slug, page.name))
     hubs = package_hub_pages(ordered)
     indexable_pages = [page for page in ordered if is_indexable_package_page(page)]
@@ -1625,27 +1715,34 @@ def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_d
         if any(page.provider == provider for page in indexable_pages)
     }
     for locale in locales:
-        localized_dir = output_dir if locale_code(locale) == "en" else output_dir.parent / locale_slug(locale) / "pkg"
-        (localized_dir / "styles.css").write_text(render_css(), encoding="utf-8")
+        localized_dir = localized_package_output_dir(output_dir, locale)
+        expected_files = expected_files_by_dir.setdefault(localized_dir, set())
+        write_generated_text(localized_dir / "styles.css", render_css(), expected_files, stats)
         for page in ordered:
             page_dir = localized_dir / page.provider / page.slug
-            page_dir.mkdir(parents=True, exist_ok=True)
-            (page_dir / "index.html").write_text(render_package_page(page, manifest, locale), encoding="utf-8")
+            write_generated_text(page_dir / "index.html", render_package_page(page, manifest, locale), expected_files, stats)
             if is_indexable_package_page(page):
-                (page_dir / "index.md").write_text(render_package_markdown(page, manifest, locale), encoding="utf-8")
+                write_generated_text(page_dir / "index.md", render_package_markdown(page, manifest, locale), expected_files, stats)
         for hub, hub_pages in hubs:
             hub_dir = localized_dir / hub.slug
-            hub_dir.mkdir(parents=True, exist_ok=True)
-            (hub_dir / "index.html").write_text(render_hub_page(hub, hub_pages, manifest, locale), encoding="utf-8")
-        (localized_dir / "index.html").write_text(render_index(ordered, hubs, manifest, locale), encoding="utf-8")
+            write_generated_text(hub_dir / "index.html", render_hub_page(hub, hub_pages, manifest, locale), expected_files, stats)
+        write_generated_text(localized_dir / "index.html", render_index(ordered, hubs, manifest, locale), expected_files, stats)
         if locale_code(locale) == "en":
-            (localized_dir / "sitemap.xml").write_text(render_sitemap_index(sitemap_names, manifest), encoding="utf-8")
-            (localized_dir / "sitemap-hubs.xml").write_text(render_hub_sitemap(hubs, manifest), encoding="utf-8")
+            write_generated_text(localized_dir / "sitemap.xml", render_sitemap_index(sitemap_names, manifest), expected_files, stats)
+            write_generated_text(localized_dir / "sitemap-hubs.xml", render_hub_sitemap(hubs, manifest), expected_files, stats)
             for provider in ("brew", "cask", "npm", "pip"):
                 provider_pages = [page for page in indexable_pages if page.provider == provider]
                 if provider_pages:
-                    (localized_dir / f"sitemap-{provider}.xml").write_text(render_package_sitemap(provider_pages, manifest), encoding="utf-8")
-        (localized_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                    write_generated_text(
+                        localized_dir / f"sitemap-{provider}.xml",
+                        render_package_sitemap(provider_pages, manifest),
+                        expected_files,
+                        stats,
+                    )
+        write_generated_text(localized_dir / MANIFEST_NAME, json.dumps(manifest, indent=2, sort_keys=True) + "\n", expected_files, stats)
+    for generated_dir, expected_files in expected_files_by_dir.items():
+        prune_stale_generated_files(generated_dir, expected_files, stats)
+    return stats
 
 
 def render_index(
@@ -4459,14 +4556,12 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
         terminal.error_log(f"Invalid {manifest_path}: {err}")
         return 1
     files = source_files()
-    expected_hash, latest = source_digest(files)
+    expected_hash, _latest = source_digest(files)
     failures = validate_i18n_pkg_templates()
     if manifest.get("schema") != SCHEMA_VERSION:
         failures.append(f"schema is {manifest.get('schema')!r}, expected {SCHEMA_VERSION}")
     if manifest.get("source_hash") != expected_hash:
         failures.append("source hash does not match current data files")
-    if manifest.get("latest_source_mtime_ns", 0) < latest:
-        failures.append("generated package pages are older than a source file")
     page_count = int(manifest.get("page_count") or 0)
     actual_pages = sum(1 for path in output_dir.glob("*/*/index.html"))
     if actual_pages != page_count:
@@ -4623,13 +4718,27 @@ def main() -> int:
         terminal.error_log("No package metadata found in data/.")
         return 1
     files = source_files()
-    manifest = build_manifest(len(pages), files)
+    previous_manifest = read_existing_manifest(output_dir)
+    manifest = build_manifest(len(pages), files, previous_manifest)
     terminal.ok_log(f"Loaded {fmt_int(len(pages))} packages from {fmt_int(len(files))} source files")
     terminal.step_log("Rendering HTML, CSS, sitemap, and freshness manifest")
-    render_all(pages, manifest, output_dir)
-    terminal.ok_log(f"Wrote {fmt_int(len(pages))} package pages to {output_dir} ({fmt_int(manifest['noindex_page_count'])} noindex)")
+    stats = render_all(pages, manifest, output_dir)
+    terminal.ok_log(
+        f"Rendered {fmt_int(len(pages))} package pages to {output_dir} "
+        f"({fmt_int(manifest['noindex_page_count'])} noindex, "
+        f"{fmt_int(stats.written)} changed, {fmt_int(stats.unchanged)} unchanged, "
+        f"{fmt_int(stats.deleted)} stale files removed)"
+    )
     if args.json:
-        print(json.dumps({"ok": True, "output": str(output_dir), "page_count": len(pages), "source_file_count": len(files)}, sort_keys=True))
+        print(json.dumps({
+            "ok": True,
+            "output": str(output_dir),
+            "page_count": len(pages),
+            "source_file_count": len(files),
+            "written": stats.written,
+            "unchanged": stats.unchanged,
+            "deleted": stats.deleted,
+        }, sort_keys=True))
     return 0
 
 
