@@ -165,11 +165,6 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var searchFocusRequestID = 0
 
-    private struct InitialDaemonData {
-        let installed: [PackageRecord]
-        let outdated: [OutdatedPackageRecord]
-    }
-
     nonisolated private static let pageSize = 96
     private let statusStore = NucleusStatusStore()
     private var snapshotObserver: NSObjectProtocol?
@@ -231,9 +226,18 @@ final class MainWindowModel: ObservableObject {
         statusMessage = "Loading packages from the protocol daemon"
 
         Task.detached(priority: .userInitiated) {
-            let result = Result { try Self.fetchInitialDaemonData() }
+            let result = Result { try Self.fetchInstalledPackages() }
             await MainActor.run {
-                self.finishReload(result, requestID: requestID)
+                self.finishInstalledReload(result, requestID: requestID)
+            }
+
+            guard case .success = result else {
+                return
+            }
+
+            let outdated = (try? Self.fetchOutdatedPackages()) ?? []
+            await MainActor.run {
+                self.finishOutdatedReload(outdated, requestID: requestID)
             }
         }
         statusStore.requestRefresh()
@@ -665,8 +669,8 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
-    private func finishReload(
-        _ result: Result<InitialDaemonData, Error>,
+    private func finishInstalledReload(
+        _ result: Result<[PackageRecord], Error>,
         requestID: Int
     ) {
         guard requestID == reloadRequestID else {
@@ -675,19 +679,20 @@ final class MainWindowModel: ObservableObject {
 
         isReloading = false
         switch result {
-        case .success(let data):
+        case .success(let installed):
             snapshot = NucleusStatusSnapshot(
-                installedCount: data.installed.count,
-                hazardousPackageCount: data.installed.filter {
+                installedCount: installed.count,
+                hazardousPackageCount: installed.filter {
                     $0.securityState?.installIsInsecure == true
                 }.count,
-                outdatedPackages: data.outdated,
+                outdatedPackages: snapshot.outdatedPackages,
+                homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
                 refreshedAt: Date(),
                 lastError: nil,
                 remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
             )
 
-            packages = data.installed.map { record in
+            packages = installed.map { record in
                 let merged = mergeOutdatedState(into: record)
                 let detail = detailsByPackageName[merged.name] ?? merged.fallbackDetail
                 return PackagePresentation(
@@ -707,6 +712,37 @@ final class MainWindowModel: ObservableObject {
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
             statusMessage = "Package refresh failed"
+        }
+    }
+
+    private func finishOutdatedReload(
+        _ outdated: [OutdatedPackageRecord],
+        requestID: Int
+    ) {
+        guard requestID == reloadRequestID else {
+            return
+        }
+        snapshot = NucleusStatusSnapshot(
+            installedCount: snapshot.installedCount,
+            hazardousPackageCount: snapshot.hazardousPackageCount,
+            outdatedPackages: outdated,
+            homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
+            refreshedAt: snapshot.refreshedAt,
+            lastError: snapshot.lastError,
+            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+        )
+        packages = packages.map { package in
+            guard case .installed(let record) = package.item else {
+                return package
+            }
+            let merged = mergeOutdatedState(into: record)
+            let detail = detailsByPackageName[package.selectionID] ?? package.detail
+            return PackagePresentation(
+                item: .installed(merged),
+                detail: detail,
+                freshness: package.freshness,
+                presentationID: package.presentationID
+            )
         }
     }
 
@@ -1041,9 +1077,9 @@ final class MainWindowModel: ObservableObject {
         return name
     }
 
-    private nonisolated static func fetchInitialDaemonData() throws -> InitialDaemonData {
+    private nonisolated static func fetchInstalledPackages() throws -> [PackageRecord] {
         let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
-        let installed = try bridge.fetchPackages().sorted {
+        return try bridge.fetchPackages().sorted {
             let left = $0.name.packageSearchOrderName
             let right = $1.name.packageSearchOrderName
             if left == right {
@@ -1051,11 +1087,11 @@ final class MainWindowModel: ObservableObject {
             }
             return left < right
         }
-        let outdated = (try? bridge.fetchOutdatedPackages()) ?? []
-        return InitialDaemonData(
-            installed: installed,
-            outdated: outdated
-        )
+    }
+
+    private nonisolated static func fetchOutdatedPackages() throws -> [OutdatedPackageRecord] {
+        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+            .fetchOutdatedPackages()
     }
 
     private nonisolated static func fetchSectionPage(
