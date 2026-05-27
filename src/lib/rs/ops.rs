@@ -361,8 +361,9 @@ fn search_package_has_active_hazard(package: &core::SearchPackageSummary) -> boo
 
 fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSummary {
     let qualified_name = package_source_qualified_name(&package.source);
-    let security_state =
-        package_security_state_for_identifiers([package.package_name.clone(), qualified_name]);
+    let security_state = package.security_state.or_else(|| {
+        package_security_state_for_identifiers([package.package_name.clone(), qualified_name])
+    });
     core::SearchPackageSummary {
         name: package.package_name,
         source: package.source,
@@ -1961,6 +1962,44 @@ mod tests {
         let geiger = list_geiger_packages(0, 1).unwrap();
         assert!(geiger.total_count >= geiger.packages.len());
         assert!(geiger.packages.len() <= 1);
+    }
+
+    #[test]
+    fn search_package_response_preserves_explicit_security_state() {
+        let page = search_packages_response(
+            vec![PackageSearchResult {
+                package_name: "brew:detector-target".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "detector-target".to_string(),
+                },
+                summary: Some("Detector flagged local plaintext credential exposure".to_string()),
+                latest_version: None,
+                homepage: None,
+                dependencies: Vec::new(),
+                security_state: Some(PackageSecurityState {
+                    isotope_name: "unmapped-isotope".to_string(),
+                    install_is_insecure: true,
+                    remediation_available: false,
+                    reasons: vec!["local detector hit".to_string()],
+                    error: None,
+                }),
+                rank: None,
+                last_updated_at: None,
+                pulse_kind: None,
+            }],
+            0,
+            25,
+            false,
+        );
+
+        assert_eq!(page.total_count, 1);
+        assert_eq!(
+            page.packages[0]
+                .security_state
+                .as_ref()
+                .map(|state| (state.isotope_name.as_str(), state.install_is_insecure)),
+            Some(("unmapped-isotope", true))
+        );
     }
 
     #[test]

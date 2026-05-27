@@ -390,6 +390,7 @@ pub(crate) fn resolve_package_search_results(
                 latest_version: Some(metadata.version.clone()),
                 homepage: string_or_none(&metadata.homepage),
                 dependencies: metadata.dependencies.clone(),
+                security_state: None,
                 rank: metadata
                     .popularity
                     .as_ref()
@@ -430,6 +431,7 @@ pub(crate) fn resolve_available_package_results(
             latest_version: None,
             homepage: None,
             dependencies: Vec::new(),
+            security_state: None,
             rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
             last_updated_at: entry.last_updated_at.clone(),
             pulse_kind: None,
@@ -449,6 +451,7 @@ pub(crate) fn resolve_available_package_results(
                 latest_version: Some(metadata.version),
                 homepage: string_or_none(&metadata.homepage),
                 dependencies: metadata.dependencies,
+                security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: metadata.last_updated_at,
                 pulse_kind: None,
@@ -513,6 +516,7 @@ fn npm_search_result(package_name: &str, metadata: &EmbeddedNpmMetadata) -> Pack
         latest_version: Some(metadata.version.clone()),
         homepage: string_or_none(&metadata.homepage),
         dependencies: Vec::new(),
+        security_state: None,
         rank: metadata
             .popularity
             .as_ref()
@@ -541,6 +545,7 @@ fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
                     .collect()
             })
             .unwrap_or_default(),
+        security_state: None,
         rank: None,
         last_updated_at: None,
         pulse_kind: None,
@@ -568,6 +573,7 @@ pub(crate) fn resolve_pulse_package_results(
                     latest_version: None,
                     homepage: None,
                     dependencies: Vec::new(),
+                    security_state: None,
                     rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
                     last_updated_at: Some(last_updated_at.clone()),
                     pulse_kind: Some(pulse_kind_for_timestamp(
@@ -592,6 +598,7 @@ pub(crate) fn resolve_pulse_package_results(
                 latest_version: Some(metadata.version),
                 homepage: string_or_none(&metadata.homepage),
                 dependencies: metadata.dependencies,
+                security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: Some(last_updated_at),
                 pulse_kind: Some(pulse_kind),
@@ -660,6 +667,7 @@ fn geiger_package_result_for_integration(
         latest_version: None,
         homepage: isotope.and_then(|record| record.release_url.clone()),
         dependencies: Vec::new(),
+        security_state: Some(state),
         rank: None,
         last_updated_at: isotope.and_then(|record| record.published_at.clone()),
         pulse_kind: None,
@@ -767,6 +775,7 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
         latest_version: None,
         homepage: None,
         dependencies: Vec::new(),
+        security_state: None,
         rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
         last_updated_at: entry.last_updated_at.clone(),
         pulse_kind: None,
