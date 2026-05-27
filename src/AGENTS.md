@@ -122,11 +122,19 @@ dependency choice in the root `README.md` under `## Dependencies`.
 - GUI and CLI tools all have the same version from root `Cargo.toml`.
 - Helpers and protocols have their own versions and must be bumped
   independently when their interface changes.
+- `NUKE_BUILD_ID` is an automatic exact-build stamp, not a manually bumped
+  compatibility version. Production builds should derive it from the Git commit;
+  local debug GUI builds may use a stable local value to avoid unnecessary Rust
+  rebuilds.
+- Bump `NUKE_PROTOCOL_VERSION` in root `.env` and
+  `PROTOCOL_VERSION` in `src/lib/rs/core.rs` when the `av serve` protocol
+  contract changes. This includes method names, request params, response
+  payloads, required fields, error semantics the GUI depends on, socket
+  lifecycle, or daemon compatibility expectations. Do not bump it for internal
+  implementation changes that preserve the wire contract.
 - Bump `NUKE_HELPER_VERSION` in root `.env` whenever privileged helper behavior
   changes, even if the XPC/protocol interface is unchanged. Installed helpers
   are only replaced when the bundled helper version is newer.
-- Bump `NUKE_PROTOCOL_VERSION` only when the GUI/helper protocol surface
-  changes, such as XPC methods, wire payloads, or protocol daemon contracts.
 
 ## Generated and Checked-In Artifacts
 
