@@ -143,6 +143,7 @@ final class MainWindowModel: ObservableObject {
                 clearSelectedPackage()
             }
             ensureSelectedSectionLoaded()
+            updateSelectedSectionLoadingState()
         }
     }
     @Published var searchText = "" {
@@ -170,17 +171,17 @@ final class MainWindowModel: ObservableObject {
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
     private var searchRequestID = 0
-    private var sectionPageRequestID = 0
+    private var sectionPageRequestIDs: [SectionPageKind: Int] = [:]
     private var detailRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
-    private var loadingSectionKind: SectionPageKind?
     private var transientStatusTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
-    private var sectionPageTask: Task<Void, Never>?
+    private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
+    private var loadingSectionKinds = Set<SectionPageKind>()
 
     var installedCount: Int {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
@@ -215,7 +216,10 @@ final class MainWindowModel: ObservableObject {
         }
         transientStatusTask?.cancel()
         searchTask?.cancel()
-        sectionPageTask?.cancel()
+        sectionPageTasks.values.forEach { $0.cancel() }
+        sectionPageTasks.removeAll()
+        loadingSectionKinds.removeAll()
+        updateSelectedSectionLoadingState()
     }
 
     func reloadPackages() {
@@ -709,6 +713,7 @@ final class MainWindowModel: ObservableObject {
             }
             statusMessage = nil
             ensureSelectedSectionLoaded()
+            preloadSidebarCountData()
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
             statusMessage = "Package refresh failed"
@@ -913,63 +918,72 @@ final class MainWindowModel: ObservableObject {
         guard query.isEmpty else {
             return
         }
-        switch selectedSection {
-        case .geigerCounter:
-            loadGeigerPageIfNeeded()
-        case .newUpdated:
-            loadPulsePageIfNeeded()
-        case .allPackages,
-             .shell,
-             .cliTools,
-             .development,
-             .system,
-             .networking,
-             .security,
-             .other:
-            loadCatalogPageIfNeeded()
-        case .installed, .outdated, .settings, .about:
-            break
-        }
-    }
-
-    private func loadGeigerPageIfNeeded() {
-        guard geigerPackages.isEmpty, geigerTotalCount == nil else {
+        guard let kind = SectionPageKind(section: selectedSection) else {
             return
         }
-        loadSectionPage(kind: .geiger)
+        loadSectionPageIfNeeded(kind: kind)
     }
 
-    private func loadCatalogPageIfNeeded() {
-        guard catalogPackages.isEmpty, catalogTotalCount == nil else {
-            return
-        }
-        loadSectionPage(kind: .catalog)
+    private func preloadSidebarCountData() {
+        loadSectionPageIfNeeded(kind: .geiger)
+        loadSectionPageIfNeeded(kind: .pulse)
+        loadSectionPageIfNeeded(kind: .catalog)
     }
 
-    private func loadPulsePageIfNeeded() {
-        guard pulsePackages.isEmpty, pulseTotalCount == nil else {
-            return
-        }
-        loadSectionPage(kind: .pulse)
-    }
-
-    private enum SectionPageKind: Sendable, Equatable {
+    private enum SectionPageKind: Sendable, Hashable {
         case geiger
         case catalog
         case pulse
+
+        init?(section: MainWindowSection) {
+            switch section {
+            case .geigerCounter:
+                self = .geiger
+            case .newUpdated:
+                self = .pulse
+            case .allPackages,
+                 .shell,
+                 .cliTools,
+                 .development,
+                 .system,
+                 .networking,
+                 .security,
+                 .other:
+                self = .catalog
+            case .installed, .outdated, .settings, .about:
+                return nil
+            }
+        }
+    }
+
+    private func loadSectionPageIfNeeded(kind: SectionPageKind) {
+        guard isSectionPageLoaded(kind) == false else {
+            return
+        }
+        loadSectionPage(kind: kind)
+    }
+
+    private func isSectionPageLoaded(_ kind: SectionPageKind) -> Bool {
+        switch kind {
+        case .geiger:
+            return geigerPackages.isEmpty == false || geigerTotalCount != nil
+        case .catalog:
+            return catalogPackages.isEmpty == false || catalogTotalCount != nil
+        case .pulse:
+            return pulsePackages.isEmpty == false || pulseTotalCount != nil
+        }
     }
 
     private func loadSectionPage(kind: SectionPageKind) {
-        guard loadingSectionKind != kind else {
+        guard loadingSectionKinds.contains(kind) == false else {
             return
         }
-        sectionPageTask?.cancel()
-        sectionPageRequestID += 1
-        let requestID = sectionPageRequestID
-        isLoadingSectionPage = true
-        loadingSectionKind = kind
+        let requestID = (sectionPageRequestIDs[kind] ?? 0) + 1
+        sectionPageRequestIDs[kind] = requestID
+        loadingSectionKinds.insert(kind)
+        updateSelectedSectionLoadingState()
         lastErrorMessage = nil
-        sectionPageTask = Task { [weak self] in
+        sectionPageTasks[kind] = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
                 Result {
                     try Self.fetchSectionPage(kind: kind)
@@ -986,13 +1000,12 @@ final class MainWindowModel: ObservableObject {
         kind: SectionPageKind,
         requestID: Int
     ) {
-        guard requestID == sectionPageRequestID else {
+        guard requestID == sectionPageRequestIDs[kind] else {
             return
         }
-        isLoadingSectionPage = false
-        if loadingSectionKind == kind {
-            loadingSectionKind = nil
-        }
+        loadingSectionKinds.remove(kind)
+        sectionPageTasks[kind] = nil
+        updateSelectedSectionLoadingState()
         switch result {
         case .success(let page):
             switch kind {
@@ -1017,6 +1030,14 @@ final class MainWindowModel: ObservableObject {
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
         }
+    }
+
+    private func updateSelectedSectionLoadingState() {
+        guard let kind = SectionPageKind(section: selectedSection) else {
+            isLoadingSectionPage = false
+            return
+        }
+        isLoadingSectionPage = loadingSectionKinds.contains(kind)
     }
 
     private func mergeOutdatedState(into record: PackageRecord) -> PackageRecord {
