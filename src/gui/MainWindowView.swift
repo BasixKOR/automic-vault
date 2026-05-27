@@ -217,9 +217,6 @@ struct MainWindowView: View {
                 if model.selectedSection == section {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(AVGlassPalette.sidebarSelectedFill)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        }
                 }
             }
         }
