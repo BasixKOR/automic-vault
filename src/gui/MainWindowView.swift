@@ -214,12 +214,10 @@ struct MainWindowView: View {
             .background {
                 if model.selectedSection == section {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AVGlassPalette.selectedFill)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(AVGlassPalette.primaryText.opacity(0.72))
-                                .frame(width: 3, height: 21)
-                                .offset(x: -6)
+                        .fill(AVGlassPalette.sidebarSelectedFill)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
                         }
                 }
             }
@@ -854,6 +852,7 @@ private enum AVGlassPalette {
     static let linksTint = Color.black.opacity(0.18)
     static let controlFill = Color.white.opacity(0.075)
     static let selectedFill = Color.white.opacity(0.095)
+    static let sidebarSelectedFill = Color.accentColor.opacity(0.32)
     static let hairline = Color.white.opacity(0.10)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.64)
