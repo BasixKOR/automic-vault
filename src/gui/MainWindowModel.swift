@@ -48,7 +48,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         case .installed:
             return "Installed"
         case .geigerCounter:
-            return "Geiger Counter"
+            return "Security Alerts"
         case .newUpdated:
             return "New / Updated"
         case .outdated:
@@ -81,7 +81,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         case .installed:
             return "shippingbox"
         case .geigerCounter:
-            return "dot.radiowaves.left.and.right"
+            return "exclamationmark.shield"
         case .newUpdated:
             return "sparkles"
         case .outdated:

@@ -549,7 +549,7 @@ private struct CountPill: View {
         case .normal:
             return AVGlassPalette.secondaryText
         case .critical:
-            return .white
+            return AVGlassPalette.vulnerableText
         }
     }
 
@@ -558,7 +558,7 @@ private struct CountPill: View {
         case .normal:
             return AVGlassPalette.controlFill
         case .critical:
-            return AVGlassPalette.vulnerableRed.opacity(0.96)
+            return AVGlassPalette.vulnerableFill
         }
     }
 
@@ -567,7 +567,7 @@ private struct CountPill: View {
         case .normal:
             return .clear
         case .critical:
-            return AVGlassPalette.vulnerableRing
+            return AVGlassPalette.vulnerableBorder
         }
     }
 
@@ -576,7 +576,7 @@ private struct CountPill: View {
         case .normal:
             return 0
         case .critical:
-            return 1.35
+            return 1.15
         }
     }
 
@@ -585,7 +585,7 @@ private struct CountPill: View {
         case .normal:
             return .clear
         case .critical:
-            return AVGlassPalette.vulnerableRing.opacity(0.38)
+            return AVGlassPalette.vulnerableBorder.opacity(0.28)
         }
     }
 }
@@ -661,7 +661,7 @@ private struct PackageBadgePill: View {
     private var foreground: Color {
         switch badge {
         case .vulnerable:
-            return .white
+            return AVGlassPalette.vulnerableText
         case .hardened:
             return AVGlassPalette.green
         case .immutable:
@@ -672,7 +672,7 @@ private struct PackageBadgePill: View {
     private var background: Color {
         switch badge {
         case .vulnerable:
-            return AVGlassPalette.vulnerableRed.opacity(0.86)
+            return AVGlassPalette.vulnerableFill
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
         case .immutable:
@@ -683,7 +683,7 @@ private struct PackageBadgePill: View {
     private var border: Color {
         switch badge {
         case .vulnerable:
-            return AVGlassPalette.vulnerableRing
+            return AVGlassPalette.vulnerableBorder
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
@@ -745,7 +745,7 @@ private struct PackageBadgeBanner: View {
     private var foreground: Color {
         switch badge {
         case .vulnerable:
-            return .white
+            return AVGlassPalette.vulnerableText
         case .hardened:
             return AVGlassPalette.green
         case .immutable:
@@ -756,7 +756,7 @@ private struct PackageBadgeBanner: View {
     private var background: Color {
         switch badge {
         case .vulnerable:
-            return AVGlassPalette.vulnerableRed.opacity(0.82)
+            return AVGlassPalette.vulnerableFill
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
         case .immutable:
@@ -767,7 +767,7 @@ private struct PackageBadgeBanner: View {
     private var border: Color {
         switch badge {
         case .vulnerable:
-            return AVGlassPalette.vulnerableRing
+            return AVGlassPalette.vulnerableBorder
         case .hardened:
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
@@ -857,7 +857,9 @@ private enum AVGlassPalette {
     static let orange = Color(red: 0.95, green: 0.58, blue: 0.25)
     static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
     static let vulnerableRed = Color(red: 1.00, green: 0.13, blue: 0.18)
-    static let vulnerableRing = Color(red: 1.00, green: 0.00, blue: 0.04)
+    static let vulnerableText = Color(red: 1.00, green: 0.18, blue: 0.22)
+    static let vulnerableFill = Color(red: 1.00, green: 0.10, blue: 0.14).opacity(0.14)
+    static let vulnerableBorder = Color(red: 1.00, green: 0.00, blue: 0.04).opacity(0.78)
     static let blue = Color(red: 0.55, green: 0.67, blue: 0.82)
     static let cyan = Color(red: 0.10, green: 0.52, blue: 1.00)
     static let purple = Color(red: 0.44, green: 0.10, blue: 0.48)
