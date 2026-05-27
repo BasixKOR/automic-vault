@@ -10829,7 +10829,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let netrc = temp.path().join("netrc");
         let npmrc = temp.path().join("npmrc");
         let oci_config = temp.path().join("oci-config");
-        let pulumi_credentials = temp.path().join("pulumi-credentials.json");
+        let pulumi_credentials_dir = temp.path().join("pulumi-credentials");
+        let pulumi_credentials = pulumi_credentials_dir.join("credentials.json");
         let pulumi_home = temp.path().join("pulumi-home");
         let rclone_config = temp.path().join("rclone.conf");
         let registry_auth = temp.path().join("containers-auth.json");
@@ -10845,11 +10846,11 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         );
         write_fixture(
             &akamai_edgerc,
-            "[default]\nclient_token = tok\nclient_secret = sec\naccess_token = acc\n",
+            "[default]\nhost = akamai.example\nclient_token = tok\nclient_secret = sec\naccess_token = acc\n",
         );
         write_fixture(
             &xdg_config.join("algolia/config.toml"),
-            "api_key = \"algolia\"\n",
+            "[default]\napplication_id = \"app\"\napi_key = \"algolia\"\n",
         );
         write_fixture(
             &home.join(".aliyun/config.json"),
@@ -10875,7 +10876,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             &dcos_dir.join("clusters/prod/dcos.toml"),
             "dcos_acs_token = \"dcos-token\"\n",
         );
-        write_fixture(&doctl_config, "auth-contexts:\n  prod: doctl-token\n");
+        write_fixture(
+            &doctl_config,
+            "context: default\naccess-token: doctl-token\n",
+        );
         write_fixture(
             &docker_config.join("config.json"),
             r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}},"credsStore":"osxkeychain","credHelpers":{"ghcr.io":"desktop"}}"#,
@@ -10899,8 +10903,11 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r#"{"authToken":"graphite"}"#,
         );
         write_fixture(&hcloud_config, "token = \"hcloud\"\n");
-        write_fixture(&xdg_cache.join("huggingface/token"), "hf_secret\n");
-        write_fixture(&kubeconfig, "users:\n- token: kube-token\n");
+        write_fixture(&home.join(".cache/huggingface/token"), "hf_secret\n");
+        write_fixture(
+            &kubeconfig,
+            "users:\n- name: prod\n  user:\n    token: kube-token\n",
+        );
         write_fixture(
             &home.join("Library/Preferences/netlify/config.json"),
             r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
@@ -10908,6 +10915,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         write_fixture(
             &xdg_config.join("NuGet/NuGet.Config"),
             r#"<configuration><apikeys><add key="feed" value="nuget-secret" /></apikeys></configuration>"#,
+        );
+        write_fixture(
+            &home.join(".nuget/NuGet/NuGet.Config"),
+            r#"<configuration></configuration>"#,
         );
         write_fixture(&npmrc, "_authToken=npm-token\n");
         write_fixture(
@@ -10926,10 +10937,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             &rclone_config,
             "[remote]\ntoken = {\"access_token\":\"rclone\"}\n",
         );
-        write_fixture(
-            &xdg_config.join("sentry/sentrycli.conf"),
-            "token=sentry-token\n",
-        );
+        write_fixture(&home.join(".sentryclirc"), "[auth]\ntoken=sentry-token\n");
         write_fixture(&home.join(".shodan/api_key"), "shodan-key\n");
         write_fixture(
             &xdg_config.join("configstore/snyk.json"),
@@ -11016,7 +11024,7 @@ machine example.com login user password netrc-token
             ("OCI_CLI_CONFIG_FILE", oci_config.to_str().unwrap()),
             (
                 "PULUMI_CREDENTIALS_PATH",
-                pulumi_credentials.to_str().unwrap(),
+                pulumi_credentials_dir.to_str().unwrap(),
             ),
             ("PULUMI_HOME", pulumi_home.to_str().unwrap()),
             ("RCLONE_CONFIG", rclone_config.to_str().unwrap()),
@@ -11064,6 +11072,294 @@ machine example.com login user password netrc-token
     }
 
     #[test]
+    fn generated_isotope_migrations_scrub_seeded_secret_files() {
+        let _lock = test_env_lock().lock().unwrap();
+        if isotope_integrations::INTEGRATIONS
+            .iter()
+            .all(|integration| integration.migrate.is_none())
+        {
+            return;
+        }
+
+        fn write_fixture(path: &Path, contents: impl AsRef<[u8]>) {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, contents).unwrap();
+        }
+
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let xdg_config = temp.path().join("xdg-config");
+        let xdg_cache = temp.path().join("xdg-cache");
+        let xdg_state = temp.path().join("xdg-state");
+        let xdg_runtime = temp.path().join("xdg-runtime");
+        let missing = temp.path().join("missing");
+        let akamai_edgerc = temp.path().join("akamai.edgerc");
+        let argocd_config = temp.path().join("argocd");
+        let bitwarden_appdata = temp.path().join("bitwarden");
+        let civo_config = temp.path().join("civo.json");
+        let composer_home = temp.path().join("composer");
+        let checkmarx_config = temp.path().join("checkmarx.yaml");
+        let dcos_dir = temp.path().join("dcos");
+        let doctl_config = temp.path().join("doctl.yaml");
+        let glab_config = temp.path().join("glab");
+        let hcloud_config = temp.path().join("hcloud.toml");
+        let kubeconfig = temp.path().join("kubeconfig");
+        let netrc = temp.path().join("netrc");
+        let npmrc = temp.path().join("npmrc");
+        let pulumi_credentials_dir = temp.path().join("pulumi-credentials");
+        let pulumi_credentials = pulumi_credentials_dir.join("credentials.json");
+        let rclone_config = temp.path().join("rclone.conf");
+        let registry_auth = temp.path().join("containers-auth.json");
+        let talosconfig = temp.path().join("talosconfig");
+        let vagrant_home = temp.path().join("vagrant");
+
+        write_fixture(
+            &home.join(".config/acli/jira_config.yaml"),
+            "token: atlassian\n",
+        );
+        write_fixture(
+            &akamai_edgerc,
+            "[default]\nhost = akamai.example\nclient_token = tok\nclient_secret = sec\naccess_token = acc\n",
+        );
+        write_fixture(
+            &xdg_config.join("algolia/config.toml"),
+            "[default]\napplication_id = \"app\"\napi_key = \"algolia\"\n",
+        );
+        write_fixture(
+            &home.join(".aliyun/config.json"),
+            r#"{"profiles":[{"access_key_secret":"aliyun-secret"}]}"#,
+        );
+        write_fixture(
+            &argocd_config.join("config"),
+            "users:\n- auth-token: argocd\n",
+        );
+        write_fixture(&checkmarx_config, "cx_apikey: ast-secret\n");
+        write_fixture(
+            &bitwarden_appdata.join("data.json"),
+            r#"{"accessToken":"bw"}"#,
+        );
+        write_fixture(&civo_config, r#"{"apikey":"civo-token"}"#);
+        write_fixture(
+            &composer_home.join("auth.json"),
+            r#"{"github-oauth":{"github.com":"composer-token"}}"#,
+        );
+        write_fixture(
+            &dcos_dir.join("clusters/prod/dcos.toml"),
+            "dcos_acs_token = \"dcos-token\"\n",
+        );
+        write_fixture(
+            &doctl_config,
+            "context: default\naccess-token: doctl-token\n",
+        );
+        write_fixture(
+            &xdg_config.join("fastly/config.toml"),
+            "token = \"fastly\"\n",
+        );
+        write_fixture(&home.join(".fly/config.yml"), "access_token: FlyV1 token\n");
+        write_fixture(
+            &glab_config.join("config.yml"),
+            "hosts:\n  gitlab.com:\n    token: glpat\n",
+        );
+        write_fixture(&xdg_config.join("gotify/cli.json"), r#"{"token":"gotify"}"#);
+        write_fixture(
+            &xdg_config.join("graphite/auth"),
+            r#"{"authToken":"graphite"}"#,
+        );
+        write_fixture(&hcloud_config, "token = \"hcloud\"\n");
+        write_fixture(&home.join(".cache/huggingface/token"), "hf_secret\n");
+        write_fixture(
+            &kubeconfig,
+            "users:\n- name: prod\n  user:\n    token: kube-token\n",
+        );
+        write_fixture(
+            &home.join("Library/Preferences/netlify/config.json"),
+            r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
+        );
+        write_fixture(
+            &xdg_config.join("NuGet/NuGet.Config"),
+            r#"<configuration><apikeys><add key="feed" value="nuget-secret" /></apikeys></configuration>"#,
+        );
+        write_fixture(
+            &home.join(".nuget/NuGet/NuGet.Config"),
+            r#"<configuration></configuration>"#,
+        );
+        write_fixture(&npmrc, "_authToken=npm-token\n");
+        write_fixture(
+            &pulumi_credentials,
+            r#"{"accessTokens":{"https://api.pulumi.com":"pulumi-token"}}"#,
+        );
+        write_fixture(
+            &rclone_config,
+            "[remote]\ntoken = {\"access_token\":\"rclone\"}\n",
+        );
+        write_fixture(
+            &registry_auth,
+            r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}}}"#,
+        );
+        write_fixture(&home.join(".sentryclirc"), "[auth]\ntoken=sentry-token\n");
+        write_fixture(&home.join(".shodan/api_key"), "shodan-key\n");
+        write_fixture(
+            &xdg_config.join("configstore/snyk.json"),
+            r#"{"api":"snyk-token"}"#,
+        );
+        write_fixture(
+            &talosconfig,
+            "contexts:\n  prod:\n    endpoints: []\n    ca: talos-ca\n",
+        );
+        write_fixture(
+            &home.join(".terraform.d/credentials.tfrc.json"),
+            r#"{"credentials":{"app.terraform.io":{"token":"tf-token"}}}"#,
+        );
+        write_fixture(
+            &xdg_config.join("todoist/config.json"),
+            r#"{"token":"todoist"}"#,
+        );
+        write_fixture(
+            &home.join(".travis/config.yml"),
+            "access_token: travis-token\n",
+        );
+        write_fixture(&home.join(".pypirc"), "[pypi]\npassword = twine-token\n");
+        write_fixture(
+            &vagrant_home.join("data/vagrant_login_token"),
+            "vagrant-token\n",
+        );
+        write_fixture(&home.join(".vault-token"), "hvs.secret\n");
+        write_fixture(&home.join(".vt.toml"), "apikey=\"vt-key\"\n");
+        write_fixture(&home.join(".vultr-cli.yaml"), "api-key: vultr-key\n");
+        write_fixture(
+            &home.join(".wakatime.cfg"),
+            "[settings]\napi_key = wakatime\n",
+        );
+        write_fixture(&home.join(".wskprops"), "AUTH=fake-uuid:fake-secret\n");
+        let netrc_contents = "\
+machine buf.build login alice password buf-token
+machine api.heroku.com login user password heroku-token
+machine example.com login user password netrc-token
+";
+        write_fixture(&home.join(".netrc"), netrc_contents);
+        write_fixture(&netrc, netrc_contents);
+
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            ("XDG_CONFIG_HOME", xdg_config.to_str().unwrap()),
+            ("XDG_CACHE_HOME", xdg_cache.to_str().unwrap()),
+            ("XDG_STATE_HOME", xdg_state.to_str().unwrap()),
+            ("XDG_RUNTIME_DIR", xdg_runtime.to_str().unwrap()),
+            ("AKAMAI_EDGERC", akamai_edgerc.to_str().unwrap()),
+            ("ARGOCD_CONFIG_DIR", argocd_config.to_str().unwrap()),
+            ("AWS_SHARED_CREDENTIALS_FILE", missing.to_str().unwrap()),
+            (
+                "BITWARDENCLI_APPDATA_DIR",
+                bitwarden_appdata.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", missing.to_str().unwrap()),
+            ("CAROOT", missing.to_str().unwrap()),
+            ("CIVO_CONFIG", civo_config.to_str().unwrap()),
+            ("COMPOSER_HOME", composer_home.to_str().unwrap()),
+            ("CX_CONFIG_FILE_PATH", checkmarx_config.to_str().unwrap()),
+            ("DCOS_DIR", dcos_dir.to_str().unwrap()),
+            ("DIGITALOCEAN_CONFIG", doctl_config.to_str().unwrap()),
+            ("DOCKER_CONFIG", missing.to_str().unwrap()),
+            ("GH_CONFIG_DIR", missing.to_str().unwrap()),
+            ("GLAB_CONFIG_DIR", glab_config.to_str().unwrap()),
+            ("HCLOUD_CONFIG", hcloud_config.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", missing.to_str().unwrap()),
+            ("HELM_REPOSITORY_CONFIG", missing.to_str().unwrap()),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("MCP_REMOTE_CONFIG_DIR", missing.to_str().unwrap()),
+            ("NETRC", netrc.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npmrc.to_str().unwrap()),
+            ("OCI_CLI_CONFIG_FILE", missing.to_str().unwrap()),
+            ("PULUMI_CREDENTIALS_PATH", ""),
+            ("PULUMI_HOME", pulumi_credentials_dir.to_str().unwrap()),
+            ("RCLONE_CONFIG", rclone_config.to_str().unwrap()),
+            ("REGISTRY_AUTH_FILE", registry_auth.to_str().unwrap()),
+            ("SUPABASE_HOME", missing.to_str().unwrap()),
+            ("TALOSCONFIG", talosconfig.to_str().unwrap()),
+            ("TALOS_HOME", missing.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", missing.to_str().unwrap()),
+            ("VAGRANT_HOME", vagrant_home.to_str().unwrap()),
+        ]);
+
+        let migration_targets = [
+            "acli",
+            "akamai",
+            "algolia",
+            "aliyun-cli",
+            "argocd",
+            "ast-cli",
+            "bitwarden-cli",
+            "buf",
+            "civo",
+            "composer",
+            "dcos-cli",
+            "doctl",
+            "fastly",
+            "flyctl",
+            "glab",
+            "gotify",
+            "graphite",
+            "hcloud",
+            "huggingface-cli",
+            "kubernetes-cli",
+            "netlify-cli",
+            "nuget",
+            "pulumi",
+            "rclone",
+            "sentry-cli",
+            "shodan",
+            "snyk",
+            "talosctl",
+            "terraform",
+            "todoist-cli",
+            "travis",
+            "twine",
+            "vagrant",
+            "vault",
+            "virustotal-cli",
+            "vultr",
+            "wakatime-cli",
+            "wsk",
+        ];
+
+        for name in migration_targets {
+            let integration = isotope_integrations::INTEGRATIONS
+                .iter()
+                .find(|integration| integration.name == name)
+                .unwrap_or_else(|| panic!("missing generated integration {name}"));
+            let migrate = integration
+                .migrate
+                .unwrap_or_else(|| panic!("missing generated migration {name}"));
+            let detects_seeded_secret = || -> Result<bool, String> {
+                if let Some(detect_reasons) = integration.detect_reasons {
+                    return detect_reasons().map(|reasons| !reasons.is_empty());
+                }
+                if let Some(detect) = integration.detect {
+                    return detect();
+                }
+                Ok(false)
+            };
+            assert!(
+                detects_seeded_secret()
+                    .unwrap_or_else(|err| panic!("{name} detect failed before migration: {err}")),
+                "{name} should report its seeded secret before migration"
+            );
+            match migrate() {
+                Ok(()) => assert!(
+                    !detects_seeded_secret().unwrap_or_else(|err| panic!(
+                        "{name} detect failed after migration: {err}"
+                    )),
+                    "{name} migration left its seeded secret detectable"
+                ),
+                Err(err) if err.contains("isotope keychain integration is only available") => {}
+                Err(err) => panic!("{name} migration failed: {err}"),
+            }
+        }
+    }
+
+    #[test]
     fn generated_credential_helpers_cover_help_and_reject_bad_tokens() {
         struct MissingCredentialStore;
 
@@ -11091,6 +11387,7 @@ machine example.com login user password netrc-token
                     std::ffi::OsString::from("app.terraform.io"),
                 ],
                 "podman" | "skopeo" => vec![std::ffi::OsString::from("list")],
+                "wakatime" => Vec::new(),
                 other => panic!("unexpected credential helper {other}"),
             }
         }
@@ -11150,7 +11447,7 @@ machine example.com login user password netrc-token
                 "expected invalid token error for {name}, got {invalid}"
             );
         }
-        assert_eq!(helpers.len(), 8);
+        assert_eq!(helpers.len(), 9);
     }
 
     #[test]
@@ -17687,6 +17984,7 @@ EOF
         mut stream: std::net::TcpStream,
         routes: &HashMap<String, Vec<u8>>,
     ) {
+        stream.set_nonblocking(false).unwrap();
         let mut buffer = [0u8; 4096];
         let count = stream.read(&mut buffer).unwrap();
         let request = String::from_utf8_lossy(&buffer[..count]);

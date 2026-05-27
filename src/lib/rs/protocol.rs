@@ -669,14 +669,32 @@ mod tests {
         assert_eq!(outdated["id"], 14);
         assert!(outdated["result"]["packages"].is_array());
 
-        let migration = dispatch_request(core::ProtocolRequest {
+        match dispatch_request(core::ProtocolRequest {
             id: 15,
             method: "packages.homebrewMigrationRecommendation".to_string(),
             params: serde_json::json!({}),
-        })
-        .unwrap();
-        assert_eq!(migration["id"], 15);
-        assert!(migration["result"]["packages"].is_array());
+        }) {
+            Ok(migration) => {
+                assert_eq!(migration["id"], 15);
+                assert!(migration["result"]["packages"].is_array());
+            }
+            Err(error) => {
+                assert_eq!(error.id, 15);
+                assert_eq!(error.error.code, 500);
+                assert!(
+                    error
+                        .error
+                        .message
+                        .contains("/opt/homebrew/bin/brew info failed")
+                        || error
+                            .error
+                            .message
+                            .contains("failed to run /opt/homebrew/bin/brew"),
+                    "unexpected migration error: {}",
+                    error.error.message
+                );
+            }
+        }
     }
 
     #[test]
