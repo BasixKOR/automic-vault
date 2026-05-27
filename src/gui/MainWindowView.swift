@@ -83,6 +83,14 @@ struct MainWindowView: View {
         }
     }
 
+    private static let pulseDateFormatter = ISO8601DateFormatter()
+
+    private static let pulseRelativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader("AUTOMIC VAULT")
@@ -192,7 +200,7 @@ struct MainWindowView: View {
                             package: package,
                             title: model.displayName(for: package),
                             description: model.packageDescription(for: package),
-                            version: model.versionText(for: package),
+                            version: packageRowVersion(for: package),
                             badges: model.packageListBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
@@ -211,6 +219,29 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
+    }
+
+    private func packageRowVersion(for package: PackagePresentation) -> String {
+        if model.selectedSection == .newUpdated,
+           case .available(let result) = package.item {
+            return pulseVersionText(for: result)
+        }
+        return model.versionText(for: package)
+    }
+
+    private func pulseVersionText(for result: PackageSearchResult) -> String {
+        let pulseKind = result.pulseKind?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let pulseKind,
+           pulseKind.localizedCaseInsensitiveCompare("new") == .orderedSame {
+            return "New"
+        }
+
+        guard let raw = result.lastUpdatedAt,
+              let date = Self.pulseDateFormatter.date(from: raw) else {
+            return "Updated recently"
+        }
+        return "Updated \(Self.pulseRelativeFormatter.localizedString(for: date, relativeTo: Date()))"
     }
 
     private var dossierPanel: some View {

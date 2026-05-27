@@ -355,6 +355,7 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         source: package.source,
         version: package.latest_version,
         description: package.summary,
+        last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
         security_state,
     }

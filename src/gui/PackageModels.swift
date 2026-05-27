@@ -898,6 +898,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let description: String?
     let homepage: String?
     let dependencies: [String]
+    let lastUpdatedAt: String?
     let securityState: PackageSecurityState?
     let pulseKind: String?
 
@@ -911,6 +912,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case legacyDescription = "description"
         case homepage
         case dependencies
+        case lastUpdatedAt
         case securityState
         case pulseKind
     }
@@ -922,6 +924,7 @@ struct PackageSearchResult: Decodable, Equatable {
         description: String?,
         homepage: String?,
         dependencies: [String],
+        lastUpdatedAt: String? = nil,
         securityState: PackageSecurityState?,
         pulseKind: String?
     ) {
@@ -931,6 +934,7 @@ struct PackageSearchResult: Decodable, Equatable {
         self.description = description
         self.homepage = homepage
         self.dependencies = dependencies
+        self.lastUpdatedAt = lastUpdatedAt
         self.securityState = securityState
         self.pulseKind = pulseKind
     }
@@ -951,6 +955,7 @@ struct PackageSearchResult: Decodable, Equatable {
             ?? container.decodeIfPresent(String.self, forKey: .legacyDescription)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
         dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+        lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
         securityState = try container.decodeIfPresent(
             PackageSecurityState.self,
             forKey: .securityState
@@ -975,7 +980,7 @@ struct PackageSearchResult: Decodable, Equatable {
             executablePaths: [],
             executablePathsError: nil,
             popularity: nil,
-            lastUpdatedAt: nil,
+            lastUpdatedAt: lastUpdatedAt,
             homebrewInfo: HomebrewPackageInfo(
                 formula: name,
                 description: description,

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.9";
+pub(crate) const PROTOCOL_VERSION: &str = "1.10";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -100,6 +100,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
+    pub(crate) last_updated_at: Option<String>,
     #[serde(rename = "pulseKind", skip_serializing_if = "Option::is_none")]
     pub(crate) pulse_kind: Option<String>,
     #[serde(rename = "securityState")]
@@ -289,6 +291,7 @@ mod tests {
                 },
                 version: Some("1.2.3".to_string()),
                 description: None,
+                last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
                 security_state: None,
             }],
@@ -298,6 +301,10 @@ mod tests {
         let search_json = serde_json::to_value(search).unwrap();
         assert_eq!(search_json["totalCount"], 1);
         assert_eq!(search_json["nextOffset"], 25);
+        assert_eq!(
+            search_json["packages"][0]["lastUpdatedAt"],
+            "2026-05-27T12:00:00Z"
+        );
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");
 
         let plan = IsotopeMigrationPlanResponse {
