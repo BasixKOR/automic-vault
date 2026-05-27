@@ -15,31 +15,14 @@ struct MainWindowView: View {
             }
         }
         .frame(minWidth: 1380, minHeight: 760)
-        .background(.windowBackground)
+        .background(Color.clear)
     }
 
     private var background: some View {
-        LinearGradient(
-            colors: [
-                AVGlassPalette.windowTop,
-                AVGlassPalette.windowMid,
-                AVGlassPalette.windowBottom
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+        LiquidGlassSurface(
+            material: .ultraThinMaterial,
+            tint: AVGlassPalette.windowTint
         )
-        .overlay(alignment: .topLeading) {
-            RadialGradient(
-                colors: [
-                    AVGlassPalette.cyan.opacity(0.20),
-                    .clear
-                ],
-                center: .topLeading,
-                startRadius: 40,
-                endRadius: 540
-            )
-            .allowsHitTesting(false)
-        }
         .backgroundExtensionEffect()
         .ignoresSafeArea()
     }
@@ -76,6 +59,12 @@ struct MainWindowView: View {
         .frame(height: 68)
         .padding(.leading, 92)
         .padding(.trailing, 18)
+        .background {
+            LiquidGlassSurface(
+                material: .ultraThinMaterial,
+                tint: AVGlassPalette.topBarTint
+            )
+        }
     }
 
     private var searchField: some View {
@@ -161,7 +150,12 @@ struct MainWindowView: View {
             .padding(.bottom, 18)
         }
         .padding(.horizontal, 22)
-        .background(AVGlassPalette.sidebarFill)
+        .background {
+            LiquidGlassSurface(
+                material: .ultraThinMaterial,
+                tint: AVGlassPalette.sidebarTint
+            )
+        }
     }
 
     private func sidebarHeader(_ text: String) -> some View {
@@ -264,7 +258,12 @@ struct MainWindowView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background(AVGlassPalette.panelFill)
+        .background {
+            LiquidGlassSurface(
+                material: .thinMaterial,
+                tint: AVGlassPalette.packageTint
+            )
+        }
     }
 
     private var dossierPanel: some View {
@@ -289,7 +288,12 @@ struct MainWindowView: View {
             .padding(.vertical, 28)
         }
         .scrollIndicators(.hidden)
-        .background(AVGlassPalette.detailFill)
+        .background {
+            LiquidGlassSurface(
+                material: .regularMaterial,
+                tint: AVGlassPalette.dossierTint
+            )
+        }
     }
 
     private func dossierHeader(
@@ -427,7 +431,12 @@ struct MainWindowView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background(AVGlassPalette.panelFill.opacity(0.74))
+        .background {
+            LiquidGlassSurface(
+                material: .thinMaterial,
+                tint: AVGlassPalette.linksTint
+            )
+        }
     }
 
     private var linksToolbar: some View {
@@ -832,7 +841,8 @@ private struct PackagePreviewCard: View {
         }
         .padding(18)
         .frame(maxWidth: 360)
-        .background(Color.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 10))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(AVGlassPalette.previewTint, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
@@ -880,16 +890,28 @@ private struct EmptyPackageState: View {
     }
 }
 
+private struct LiquidGlassSurface: View {
+    let material: Material
+    let tint: Color
+
+    var body: some View {
+        Rectangle()
+            .fill(material)
+            .overlay(tint)
+    }
+}
+
 private enum AVGlassPalette {
-    static let windowTop = Color(red: 0.055, green: 0.065, blue: 0.068)
-    static let windowMid = Color(red: 0.035, green: 0.038, blue: 0.042)
-    static let windowBottom = Color(red: 0.018, green: 0.020, blue: 0.024)
-    static let sidebarFill = Color.black.opacity(0.18)
-    static let panelFill = Color.black.opacity(0.28)
-    static let detailFill = Color.black.opacity(0.34)
+    static let windowTint = Color.black.opacity(0.18)
+    static let topBarTint = Color.black.opacity(0.16)
+    static let sidebarTint = Color(red: 0.025, green: 0.050, blue: 0.075).opacity(0.28)
+    static let packageTint = Color.black.opacity(0.20)
+    static let dossierTint = Color.black.opacity(0.24)
+    static let linksTint = Color.black.opacity(0.18)
+    static let previewTint = Color.black.opacity(0.34)
     static let controlFill = Color.white.opacity(0.075)
     static let selectedFill = Color.white.opacity(0.095)
-    static let hairline = Color.white.opacity(0.075)
+    static let hairline = Color.white.opacity(0.10)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.64)
     static let quietText = Color.white.opacity(0.36)
