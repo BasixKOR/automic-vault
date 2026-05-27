@@ -153,8 +153,7 @@ struct MainWindowView: View {
                             title: model.displayName(for: package),
                             description: model.packageDescription(for: package),
                             version: model.versionText(for: package),
-                            risk: model.riskLevel(for: package),
-                            hardened: model.isHardened(package),
+                            badge: model.packageBadge(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
                             model.select(package)
@@ -218,11 +217,8 @@ struct MainWindowView: View {
                     .lineLimit(1)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                RiskBanner(risk: model.riskLevel(for: package))
-                if model.isHardened(package) {
-                    HardenedBanner()
-                }
+            if let badge = model.packageBadge(for: package) {
+                PackageBadgeBanner(badge: badge)
             }
 
             if model.isLoadingDetail {
@@ -543,8 +539,7 @@ private struct PackageRow: View {
     let title: String
     let description: String
     let version: String
-    let risk: MainWindowRiskLevel
-    let hardened: Bool
+    let badge: MainWindowPackageBadge?
     let selected: Bool
     let action: () -> Void
 
@@ -568,11 +563,8 @@ private struct PackageRow: View {
 
                 Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 6) {
-                    RiskPill(risk: risk)
-                    if hardened {
-                        HardenedPill()
-                    }
+                if let badge {
+                    PackageBadgePill(badge: badge)
                 }
             }
             .padding(.horizontal, 18)
@@ -586,44 +578,53 @@ private struct PackageRow: View {
     }
 }
 
-private struct RiskPill: View {
-    let risk: MainWindowRiskLevel
+private struct PackageBadgePill: View {
+    let badge: MainWindowPackageBadge
 
     var body: some View {
-        Text(risk.title)
+        Text(title)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .frame(height: 22)
             .background(background, in: Capsule())
-            .overlay(Capsule().stroke(foreground.opacity(0.24), lineWidth: 1))
+            .overlay(Capsule().stroke(border, lineWidth: 1))
+    }
+
+    private var title: String {
+        switch badge {
+        case .vulnerable:
+            return "Vulnerable"
+        case .hardened:
+            return "Hardened"
+        }
     }
 
     private var foreground: Color {
-        switch risk {
-        case .low:
+        switch badge {
+        case .vulnerable:
+            return .white
+        case .hardened:
             return AVGlassPalette.green
-        case .medium:
-            return AVGlassPalette.orange
-        case .high:
-            return AVGlassPalette.red
         }
     }
 
     private var background: Color {
-        foreground.opacity(0.14)
+        switch badge {
+        case .vulnerable:
+            return AVGlassPalette.vulnerableRed.opacity(0.86)
+        case .hardened:
+            return AVGlassPalette.green.opacity(0.14)
+        }
     }
-}
 
-private struct HardenedPill: View {
-    var body: some View {
-        Text("Hardened")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(AVGlassPalette.blue)
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(AVGlassPalette.blue.opacity(0.14), in: Capsule())
-            .overlay(Capsule().stroke(AVGlassPalette.blue.opacity(0.18), lineWidth: 1))
+    private var border: Color {
+        switch badge {
+        case .vulnerable:
+            return Color.white.opacity(0.18)
+        case .hardened:
+            return AVGlassPalette.green.opacity(0.22)
+        }
     }
 }
 
@@ -642,43 +643,62 @@ private struct SectionLabel: View {
     }
 }
 
-private struct RiskBanner: View {
-    let risk: MainWindowRiskLevel
+private struct PackageBadgeBanner: View {
+    let badge: MainWindowPackageBadge
 
     var body: some View {
-        Label(
-            risk == .high ? "High Risk" : "\(risk.title) Risk",
-            systemImage: risk == .high ? "shield.lefthalf.filled.badge.exclamationmark" : "shield"
-        )
+        Label(title, systemImage: systemImage)
         .font(.system(size: 14, weight: .bold))
-        .foregroundStyle(color)
+        .foregroundStyle(foreground)
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.22), lineWidth: 1))
+        .background(background, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(border, lineWidth: 1))
     }
 
-    private var color: Color {
-        switch risk {
-        case .high:
-            return AVGlassPalette.red
-        case .medium:
-            return AVGlassPalette.orange
-        case .low:
+    private var title: String {
+        switch badge {
+        case .vulnerable:
+            return "Vulnerable"
+        case .hardened:
+            return "Hardened"
+        }
+    }
+
+    private var systemImage: String {
+        switch badge {
+        case .vulnerable:
+            return "exclamationmark.shield.fill"
+        case .hardened:
+            return "shield.fill"
+        }
+    }
+
+    private var foreground: Color {
+        switch badge {
+        case .vulnerable:
+            return .white
+        case .hardened:
             return AVGlassPalette.green
         }
     }
-}
 
-private struct HardenedBanner: View {
-    var body: some View {
-        Label("Hardened by Automic Vault", systemImage: "shield")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(AVGlassPalette.blue)
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .background(AVGlassPalette.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AVGlassPalette.blue.opacity(0.18), lineWidth: 1))
+    private var background: Color {
+        switch badge {
+        case .vulnerable:
+            return AVGlassPalette.vulnerableRed.opacity(0.82)
+        case .hardened:
+            return AVGlassPalette.green.opacity(0.14)
+        }
+    }
+
+    private var border: Color {
+        switch badge {
+        case .vulnerable:
+            return Color.white.opacity(0.18)
+        case .hardened:
+            return AVGlassPalette.green.opacity(0.22)
+        }
     }
 }
 
@@ -834,6 +854,7 @@ private enum AVGlassPalette {
     static let green = Color(red: 0.10, green: 0.86, blue: 0.58)
     static let orange = Color(red: 0.95, green: 0.58, blue: 0.25)
     static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
+    static let vulnerableRed = Color(red: 1.00, green: 0.13, blue: 0.18)
     static let blue = Color(red: 0.55, green: 0.67, blue: 0.82)
     static let cyan = Color(red: 0.10, green: 0.52, blue: 1.00)
     static let purple = Color(red: 0.44, green: 0.10, blue: 0.48)

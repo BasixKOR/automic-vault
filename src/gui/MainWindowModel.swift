@@ -123,21 +123,9 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
     }
 }
 
-enum MainWindowRiskLevel {
-    case low
-    case medium
-    case high
-
-    var title: String {
-        switch self {
-        case .low:
-            return "Low"
-        case .medium:
-            return "Medium"
-        case .high:
-            return "High"
-        }
-    }
+enum MainWindowPackageBadge {
+    case vulnerable
+    case hardened
 }
 
 @MainActor
@@ -301,17 +289,36 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
-    func riskLevel(for package: PackagePresentation) -> MainWindowRiskLevel {
+    func packageBadge(for package: PackagePresentation) -> MainWindowPackageBadge? {
+        if isInstalledAsIsotope(package) {
+            return .hardened
+        }
+        if needsHardening(package) {
+            return .vulnerable
+        }
+        return nil
+    }
+
+    private func needsHardening(_ package: PackagePresentation) -> Bool {
         let detail = detailsByPackageName[package.selectionID] ?? package.detail
         if detail?.securityState?.installIsInsecure == true
             || detail?.securityNotice != nil
             || package.hasActivePlainTextSecretAlert {
-            return .high
+            return true
         }
-        if isOutdated(package) {
-            return .medium
+        return false
+    }
+
+    private func isInstalledAsIsotope(_ package: PackagePresentation) -> Bool {
+        if package.isInstalledIsotope {
+            return true
         }
-        return .low
+        let detail = detailsByPackageName[package.selectionID] ?? package.detail
+        if detail?.installed == true,
+           case .isotope = detail?.source {
+            return true
+        }
+        return false
     }
 
     func isHardened(_ package: PackagePresentation) -> Bool {
