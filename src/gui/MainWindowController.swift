@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 final class MainWindowController: NSHostingController<MainWindowView> {
+    private static let searchShortcutKeys: Set<String> = ["k", "l", "p"]
+
     private let model: MainWindowModel
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
@@ -125,8 +127,9 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let hasOnlyCommand = modifiers.contains(.command)
             && modifiers.isDisjoint(with: [.control, .option, .shift])
+        let key = event.charactersIgnoringModifiers?.lowercased()
         return hasOnlyCommand
-            && event.charactersIgnoringModifiers?.lowercased() == "k"
+            && key.map(Self.searchShortcutKeys.contains) == true
     }
 }
 
