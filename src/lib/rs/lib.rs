@@ -10829,7 +10829,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let netrc = temp.path().join("netrc");
         let npmrc = temp.path().join("npmrc");
         let oci_config = temp.path().join("oci-config");
-        let pulumi_credentials = temp.path().join("pulumi-credentials.json");
+        let pulumi_credentials_dir = temp.path().join("pulumi-credentials");
+        let pulumi_credentials = pulumi_credentials_dir.join("credentials.json");
         let pulumi_home = temp.path().join("pulumi-home");
         let rclone_config = temp.path().join("rclone.conf");
         let registry_auth = temp.path().join("containers-auth.json");
@@ -10849,7 +10850,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         );
         write_fixture(
             &xdg_config.join("algolia/config.toml"),
-            "api_key = \"algolia\"\n",
+            "[default]\napplication_id = \"app\"\napi_key = \"algolia\"\n",
         );
         write_fixture(
             &home.join(".aliyun/config.json"),
@@ -10902,8 +10903,11 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r#"{"authToken":"graphite"}"#,
         );
         write_fixture(&hcloud_config, "token = \"hcloud\"\n");
-        write_fixture(&xdg_cache.join("huggingface/token"), "hf_secret\n");
-        write_fixture(&kubeconfig, "users:\n- token: kube-token\n");
+        write_fixture(&home.join(".cache/huggingface/token"), "hf_secret\n");
+        write_fixture(
+            &kubeconfig,
+            "users:\n- name: prod\n  user:\n    token: kube-token\n",
+        );
         write_fixture(
             &home.join("Library/Preferences/netlify/config.json"),
             r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
@@ -10933,10 +10937,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             &rclone_config,
             "[remote]\ntoken = {\"access_token\":\"rclone\"}\n",
         );
-        write_fixture(
-            &xdg_config.join("sentry/sentrycli.conf"),
-            "token=sentry-token\n",
-        );
+        write_fixture(&home.join(".sentryclirc"), "[auth]\ntoken=sentry-token\n");
         write_fixture(&home.join(".shodan/api_key"), "shodan-key\n");
         write_fixture(
             &xdg_config.join("configstore/snyk.json"),
@@ -11023,7 +11024,7 @@ machine example.com login user password netrc-token
             ("OCI_CLI_CONFIG_FILE", oci_config.to_str().unwrap()),
             (
                 "PULUMI_CREDENTIALS_PATH",
-                pulumi_credentials.to_str().unwrap(),
+                pulumi_credentials_dir.to_str().unwrap(),
             ),
             ("PULUMI_HOME", pulumi_home.to_str().unwrap()),
             ("RCLONE_CONFIG", rclone_config.to_str().unwrap()),
@@ -11108,6 +11109,7 @@ machine example.com login user password netrc-token
         let netrc = temp.path().join("netrc");
         let npmrc = temp.path().join("npmrc");
         let pulumi_credentials_dir = temp.path().join("pulumi-credentials");
+        let pulumi_credentials = pulumi_credentials_dir.join("credentials.json");
         let rclone_config = temp.path().join("rclone.conf");
         let registry_auth = temp.path().join("containers-auth.json");
         let talosconfig = temp.path().join("talosconfig");
@@ -11123,7 +11125,7 @@ machine example.com login user password netrc-token
         );
         write_fixture(
             &xdg_config.join("algolia/config.toml"),
-            "application_id = \"app\"\napi_key = \"algolia\"\n",
+            "[default]\napplication_id = \"app\"\napi_key = \"algolia\"\n",
         );
         write_fixture(
             &home.join(".aliyun/config.json"),
@@ -11166,8 +11168,11 @@ machine example.com login user password netrc-token
             r#"{"authToken":"graphite"}"#,
         );
         write_fixture(&hcloud_config, "token = \"hcloud\"\n");
-        write_fixture(&xdg_cache.join("huggingface/token"), "hf_secret\n");
-        write_fixture(&kubeconfig, "users:\n- token: kube-token\n");
+        write_fixture(&home.join(".cache/huggingface/token"), "hf_secret\n");
+        write_fixture(
+            &kubeconfig,
+            "users:\n- name: prod\n  user:\n    token: kube-token\n",
+        );
         write_fixture(
             &home.join("Library/Preferences/netlify/config.json"),
             r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
@@ -11182,7 +11187,7 @@ machine example.com login user password netrc-token
         );
         write_fixture(&npmrc, "_authToken=npm-token\n");
         write_fixture(
-            &pulumi_credentials_dir.join("credentials.json"),
+            &pulumi_credentials,
             r#"{"accessTokens":{"https://api.pulumi.com":"pulumi-token"}}"#,
         );
         write_fixture(
@@ -11193,10 +11198,7 @@ machine example.com login user password netrc-token
             &registry_auth,
             r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}}}"#,
         );
-        write_fixture(
-            &xdg_config.join("sentry/sentrycli.conf"),
-            "token=sentry-token\n",
-        );
+        write_fixture(&home.join(".sentryclirc"), "[auth]\ntoken=sentry-token\n");
         write_fixture(&home.join(".shodan/api_key"), "shodan-key\n");
         write_fixture(
             &xdg_config.join("configstore/snyk.json"),
@@ -11333,8 +11335,27 @@ machine example.com login user password netrc-token
             let migrate = integration
                 .migrate
                 .unwrap_or_else(|| panic!("missing generated migration {name}"));
+            let detects_seeded_secret = || -> Result<bool, String> {
+                if let Some(detect_reasons) = integration.detect_reasons {
+                    return detect_reasons().map(|reasons| !reasons.is_empty());
+                }
+                if let Some(detect) = integration.detect {
+                    return detect();
+                }
+                Ok(false)
+            };
+            assert!(
+                detects_seeded_secret()
+                    .unwrap_or_else(|err| panic!("{name} detect failed before migration: {err}")),
+                "{name} should report its seeded secret before migration"
+            );
             match migrate() {
-                Ok(()) => {}
+                Ok(()) => assert!(
+                    !detects_seeded_secret().unwrap_or_else(|err| panic!(
+                        "{name} detect failed after migration: {err}"
+                    )),
+                    "{name} migration left its seeded secret detectable"
+                ),
                 Err(err) if err.contains("isotope keychain integration is only available") => {}
                 Err(err) => panic!("{name} migration failed: {err}"),
             }
