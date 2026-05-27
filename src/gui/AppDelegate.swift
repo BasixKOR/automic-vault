@@ -2,9 +2,10 @@ import AppKit
 import ServiceManagement
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let toggleStartAtLoginArgument = "--toggle-start-at-login"
     private static let remoteDatabaseRefreshInterval: TimeInterval = 60 * 60
+    private static let mainToolbarHeight: CGFloat = 52
     private var window: NSWindow?
     private let statusStore = NucleusStatusStore()
     private let vaultApprovalStore = VaultApprovalStore()
@@ -303,6 +304,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? MainWindowController)?.requestRefresh()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let resizedWindow = notification.object as? NSWindow,
+              resizedWindow === window else {
+            return
+        }
+        centerTrafficLights(in: resizedWindow)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let keyWindow = notification.object as? NSWindow,
+              keyWindow === window else {
+            return
+        }
+        centerTrafficLights(in: keyWindow)
     }
 
     #if DEBUG
@@ -671,9 +688,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
+        window.delegate = self
         window.contentViewController = controller
         window.makeFirstResponder(controller.view)
+        centerTrafficLights(in: window)
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.centerTrafficLights(in: window)
+        }
         self.window = window
         return window
+    }
+
+    private func centerTrafficLights(in window: NSWindow) {
+        let buttons = [
+            window.standardWindowButton(.closeButton),
+            window.standardWindowButton(.miniaturizeButton),
+            window.standardWindowButton(.zoomButton),
+        ].compactMap { $0 }
+        guard let container = buttons.first?.superview else {
+            return
+        }
+
+        container.layoutSubtreeIfNeeded()
+        let buttonGroupHeight = buttons.map(\.frame.height).max() ?? 0
+        guard buttonGroupHeight > 0 else {
+            return
+        }
+
+        let toolbarHeight = Self.mainToolbarHeight
+        let originY: CGFloat
+        if container.isFlipped {
+            originY = (toolbarHeight - buttonGroupHeight) / 2
+        } else {
+            originY = container.bounds.height
+                - toolbarHeight
+                + (toolbarHeight - buttonGroupHeight) / 2
+        }
+
+        for button in buttons {
+            var frame = button.frame
+            frame.origin.y = originY + (buttonGroupHeight - frame.height) / 2
+            button.frame = frame
+        }
     }
 }

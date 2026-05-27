@@ -38,37 +38,20 @@ struct MainWindowView: View {
 
     private var topBar: some View {
         GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 12) {
-                Spacer(minLength: 320)
-
+            ZStack {
                 searchField
                     .frame(width: 318)
                     .glassEffectID("search", in: glassNamespace)
 
-                Text("\(model.installedCount) installed")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AVGlassPalette.secondaryText)
-
-                Button {
-                    model.reloadPackages()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .semibold))
+                HStack {
+                    Spacer()
+                    refreshButton
+                        .glassEffectID("refresh", in: glassNamespace)
                 }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .tint(.clear)
-                .disabled(model.isReloading)
-                .help("Refresh packages")
-                .glassEffectID("refresh", in: glassNamespace)
-
-                topModeControl
-                    .glassEffectID("mode", in: glassNamespace)
+                .padding(.trailing, 14)
             }
         }
         .frame(height: 52)
-        .padding(.leading, 108)
-        .padding(.trailing, 14)
         .background {
             LiquidGlassSurface(
                 material: .ultraThinMaterial,
@@ -99,28 +82,33 @@ struct MainWindowView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private var refreshButton: some View {
+        Button {
+            model.reloadPackages()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular, in: Circle())
+        .overlay {
+            Circle()
+                .stroke(AVGlassPalette.controlBorder, lineWidth: 1)
+        }
+        .opacity(model.isReloading ? 0.5 : 1)
+        .disabled(model.isReloading)
+        .help("Refresh packages")
+    }
+
     private func focusSearchIfRequested() {
         guard handledSearchFocusRequestID != model.searchFocusRequestID else {
             return
         }
         handledSearchFocusRequestID = model.searchFocusRequestID
         isSearchFocused = true
-    }
-
-    private var topModeControl: some View {
-        HStack(spacing: 4) {
-            Text("Dossier")
-                .foregroundStyle(AVGlassPalette.secondaryText)
-            Text("Links")
-                .foregroundStyle(AVGlassPalette.primaryText)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(AVGlassPalette.secondaryText)
-        }
-        .font(.system(size: 12, weight: .semibold))
-        .padding(.horizontal, 7)
-        .frame(height: 30)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var mainContent: some View {
@@ -851,6 +839,7 @@ private enum AVGlassPalette {
     static let dossierTint = Color.black.opacity(0.24)
     static let linksTint = Color.black.opacity(0.18)
     static let controlFill = Color.white.opacity(0.075)
+    static let controlBorder = Color.white.opacity(0.22)
     static let selectedFill = Color.white.opacity(0.095)
     static let sidebarSelectedFill = Color.accentColor.opacity(0.32)
     static let hairline = Color.white.opacity(0.10)
