@@ -7,6 +7,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
     private weak var mainToolbar: NSToolbar?
+    private weak var searchToolbarItem: NSSearchToolbarItem?
 
     init() {
         let model = MainWindowModel()
@@ -53,6 +54,11 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
+        searchToolbarItem?.beginSearchInteraction()
+    }
+
+    @objc private func searchToolbarItemChanged(_ sender: NSSearchField) {
+        updateSearchText(sender.stringValue)
     }
 
     #if DEBUG
@@ -149,11 +155,18 @@ extension MainWindowController: NSToolbarDelegate {
     ) -> NSToolbarItem? {
         switch itemIdentifier {
         case .automicVaultSearch:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            let view = NSHostingView(rootView: MainWindowToolbarSearch(model: model))
-            constrain(view, width: 318, height: 34)
-            item.view = view
+            let item = NSSearchToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Search"
+            item.paletteLabel = "Search"
+            item.toolTip = "Search packages"
+            item.preferredWidthForSearchField = 318
+            item.resignsFirstResponderWithCancel = true
+            configureSearchField(item.searchField)
+            if #available(macOS 26.0, *) {
+                item.badge = .text("⌘K")
+            }
             item.visibilityPriority = .high
+            searchToolbarItem = item
             return item
         case .automicVaultRefresh:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
@@ -173,12 +186,31 @@ extension MainWindowController: NSToolbarDelegate {
         }
     }
 
-    private func constrain(_ view: NSView, width: CGFloat, height: CGFloat) {
-        view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: width),
-            view.heightAnchor.constraint(equalToConstant: height),
-        ])
+    private func configureSearchField(_ searchField: NSSearchField) {
+        searchField.placeholderString = "Search Open Source"
+        searchField.stringValue = model.searchText
+        searchField.font = .systemFont(ofSize: 13, weight: .regular)
+        searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(searchToolbarItemChanged(_:))
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+    }
+
+    private func updateSearchText(_ text: String) {
+        guard model.searchText != text else {
+            return
+        }
+        model.searchText = text
+    }
+}
+
+extension MainWindowController: NSSearchFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard let searchField = notification.object as? NSSearchField else {
+            return
+        }
+        updateSearchText(searchField.stringValue)
     }
 }
 
