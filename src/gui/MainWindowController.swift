@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class MainWindowController: NSHostingController<MainWindowView> {
     private let model: MainWindowModel
+    private var didStartModel = false
 
     init() {
         let model = MainWindowModel()
@@ -19,10 +20,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        model.start()
+        startModelIfNeeded()
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        startModelIfNeeded()
     }
 
     func requestRefresh() {
+        startModelIfNeeded()
         model.reloadPackages()
     }
 
@@ -34,5 +41,13 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     func applicationWillTerminate() {
         model.stop()
+    }
+
+    private func startModelIfNeeded() {
+        guard didStartModel == false else {
+            return
+        }
+        didStartModel = true
+        model.start()
     }
 }

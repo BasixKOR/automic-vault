@@ -221,7 +221,7 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
-                if model.isReloading {
+                if model.isReloading || model.isSearching {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -253,7 +253,9 @@ struct MainWindowView: View {
                     if model.displayedPackages.isEmpty {
                         EmptyPackageState(
                             title: model.selectedSection.title,
-                            message: model.lastErrorMessage ?? "No packages match the current filter."
+                            message: model.lastErrorMessage
+                                ?? model.statusMessage
+                                ?? "No packages match the current filter."
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 80)

@@ -442,14 +442,14 @@ final class NucleusBridge {
             params: EmptyParams(),
             as: SystemInfoResponse.self
         )
+        guard compatibilityPolicy == .strict else {
+            return
+        }
         guard info.protocolVersion == expectedProtocolVersion else {
             close(connection.descriptor)
             throw NucleusBridgeError.connectionFailed(
                 "protocol mismatch: expected \(expectedProtocolVersion), got \(info.protocolVersion)"
             )
-        }
-        guard compatibilityPolicy == .strict else {
-            return
         }
         guard info.buildId == expectedBuildID else {
             close(connection.descriptor)
@@ -696,6 +696,15 @@ final class NucleusBridge {
             .appendingPathComponent("target/release/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: development.path) {
             return development
+        }
+
+        let debug = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("target/debug/\(binaryName)")
+        if FileManager.default.isExecutableFile(atPath: debug.path) {
+            return debug
         }
 
         throw NucleusBridgeError.binaryNotFound

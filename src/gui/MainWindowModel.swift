@@ -143,21 +143,42 @@ enum MainWindowRiskLevel {
 @MainActor
 final class MainWindowModel: ObservableObject {
     @Published var selectedSection: MainWindowSection = .installed
-    @Published var searchText = ""
+    @Published var searchText = "" {
+        didSet {
+            scheduleSearch()
+        }
+    }
     @Published private(set) var packages: [PackagePresentation] = []
+    @Published private(set) var catalogPackages: [PackagePresentation] = []
+    @Published private(set) var pulsePackages: [PackagePresentation] = []
+    @Published private(set) var searchResults: [PackagePresentation] = []
     @Published private(set) var snapshot = NucleusStatusSnapshot.empty
     @Published private(set) var selectedItemID: String?
     @Published private(set) var isReloading = false
+    @Published private(set) var isSearching = false
     @Published private(set) var isLoadingDetail = false
     @Published private(set) var statusMessage: String?
     @Published private(set) var lastErrorMessage: String?
 
+    private struct InitialDaemonData {
+        let installed: [PackageRecord]
+        let catalog: PackageSearchPage
+        let pulse: PackageSearchPage
+        let outdated: [OutdatedPackageRecord]
+    }
+
+    nonisolated private static let pageSize = 96
     private let statusStore = NucleusStatusStore()
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
+    private var searchRequestID = 0
     private var detailRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
+    private var catalogTotalCount = 0
+    private var pulseTotalCount = 0
+    private var searchTotalCount = 0
     private var transientStatusTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
 
     var installedCount: Int {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
@@ -167,7 +188,7 @@ final class MainWindowModel: ObservableObject {
         guard let selectedItemID else {
             return displayedPackages.first
         }
-        return packages.first { $0.selectionID == selectedItemID }
+        return allKnownPackages.first { $0.selectionID == selectedItemID }
     }
 
     var selectedDetail: PackageDetail? {
@@ -193,6 +214,7 @@ final class MainWindowModel: ObservableObject {
             DistributedNotificationCenter.default().removeObserver(snapshotObserver)
         }
         transientStatusTask?.cancel()
+        searchTask?.cancel()
     }
 
     func reloadPackages() {
@@ -200,10 +222,10 @@ final class MainWindowModel: ObservableObject {
         let requestID = reloadRequestID
         isReloading = true
         lastErrorMessage = nil
-        statusMessage = "Refreshing packages"
+        statusMessage = "Loading packages from the protocol daemon"
 
         Task.detached(priority: .userInitiated) {
-            let result = Result { try Self.fetchInstalledRecords() }
+            let result = Result { try Self.fetchInitialDaemonData() }
             await MainActor.run {
                 self.finishReload(result, requestID: requestID)
             }
@@ -252,15 +274,15 @@ final class MainWindowModel: ObservableObject {
         case .installed:
             return installedCount
         case .newUpdated:
-            return max(outdatedPackageNames.count, snapshot.flaggedOutdatedPackageCount)
+            return max(pulseTotalCount, pulsePackages.count)
         case .outdated:
             return max(outdatedPackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
-            return packages.count
+            return max(catalogTotalCount, catalogPackages.count)
         case .settings, .about:
             return nil
         case .shell, .cliTools, .development, .system, .networking, .security, .other:
-            return packages.filter { package in
+            return catalogSourcePackages.filter { package in
                 sectionMatches(section, package: package)
             }.count
         }
@@ -335,15 +357,60 @@ final class MainWindowModel: ObservableObject {
             .union(snapshot.homebrewOutdatedPackages.map(\.name))
     }
 
+    private var allKnownPackages: [PackagePresentation] {
+        var seen = Set<String>()
+        var result: [PackagePresentation] = []
+        for package in packages + catalogPackages + pulsePackages + searchResults {
+            if seen.insert(package.selectionID).inserted {
+                result.append(package)
+            }
+        }
+        return result
+    }
+
+    private var catalogSourcePackages: [PackagePresentation] {
+        catalogPackages.isEmpty ? packages : catalogPackages
+    }
+
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {
         guard section != .settings, section != .about else {
             return []
         }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return packages.filter { package in
-            sectionMatches(section, package: package)
-                && (query.isEmpty || packageMatchesQuery(package, query: query))
+        if query.isEmpty == false {
+            return mergedSearchPackages(query: query)
         }
+
+        let source: [PackagePresentation]
+        switch section {
+        case .installed:
+            source = packages
+        case .newUpdated:
+            source = pulsePackages
+        case .outdated:
+            source = packages.filter(isOutdated)
+        case .allPackages:
+            source = catalogSourcePackages
+        case .shell, .cliTools, .development, .system, .networking, .security, .other:
+            source = catalogSourcePackages
+        case .settings, .about:
+            source = []
+        }
+
+        return source.filter { package in
+            sectionMatches(section, package: package)
+        }
+    }
+
+    private func mergedSearchPackages(query: String) -> [PackagePresentation] {
+        let installedMatches = packages.filter {
+            packageMatchesQuery($0, query: query)
+        }
+        var seen = Set(installedMatches.map(\.selectionID))
+        let daemonMatches = searchResults.filter { package in
+            seen.insert(package.selectionID).inserted
+        }
+        return installedMatches + daemonMatches
     }
 
     private func sectionMatches(
@@ -353,7 +420,9 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed, .allPackages:
             return true
-        case .newUpdated, .outdated:
+        case .newUpdated:
+            return true
+        case .outdated:
             return isOutdated(package)
         case .shell:
             return packageName(package, containsAny: [
@@ -468,7 +537,14 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func applyStatusSnapshot(_ snapshot: NucleusStatusSnapshot) {
-        self.snapshot = snapshot
+        let shouldKeepDaemonSnapshot =
+            snapshot.installedCount == 0
+            && snapshot.outdatedPackages.isEmpty
+            && snapshot.homebrewOutdatedPackages.isEmpty
+            && packages.isEmpty == false
+        self.snapshot = shouldKeepDaemonSnapshot
+            ? self.snapshot.withRemoteDatabaseRefreshState(snapshot.remoteDatabaseRefreshState)
+            : snapshot
         packages = packages.map { package in
             guard case .installed(let record) = package.item else {
                 return package
@@ -485,7 +561,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func finishReload(
-        _ result: Result<[PackageRecord], Error>,
+        _ result: Result<InitialDaemonData, Error>,
         requestID: Int
     ) {
         guard requestID == reloadRequestID else {
@@ -494,8 +570,21 @@ final class MainWindowModel: ObservableObject {
 
         isReloading = false
         switch result {
-        case .success(let records):
-            packages = records.map { record in
+        case .success(let data):
+            snapshot = NucleusStatusSnapshot(
+                installedCount: data.installed.count,
+                hazardousPackageCount: data.installed.filter {
+                    $0.securityState?.installIsInsecure == true
+                }.count,
+                outdatedPackages: data.outdated,
+                refreshedAt: Date(),
+                lastError: nil,
+                remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+            )
+            catalogTotalCount = data.catalog.totalCount
+            pulseTotalCount = data.pulse.totalCount
+
+            packages = data.installed.map { record in
                 let merged = mergeOutdatedState(into: record)
                 let detail = detailsByPackageName[merged.name] ?? merged.fallbackDetail
                 return PackagePresentation(
@@ -504,8 +593,14 @@ final class MainWindowModel: ObservableObject {
                     freshness: Self.freshness(for: merged.name)
                 )
             }
+            catalogPackages = data.catalog.packages.map {
+                presentation(for: $0, prefix: nil)
+            }
+            pulsePackages = data.pulse.packages.map {
+                presentation(for: $0, prefix: "pulse")
+            }
             if let selectedItemID,
-               packages.contains(where: { $0.selectionID == selectedItemID }) {
+               allKnownPackages.contains(where: { $0.selectionID == selectedItemID }) {
                 loadSelectedDetailIfPossible()
             } else if let first = displayedPackages.first ?? packages.first {
                 select(first)
@@ -527,9 +622,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func loadDetail(for package: PackagePresentation) {
-        guard let packageName = package.packageName else {
-            return
-        }
+        let packageName = detailLookupName(for: package)
         detailRequestID += 1
         let requestID = detailRequestID
         isLoadingDetail = true
@@ -562,11 +655,10 @@ final class MainWindowModel: ObservableObject {
         }
         switch result {
         case .success(let detail):
-            let normalized = detail.applying(
-                outdated: snapshot.outdatedPackagesByName[detail.packageName]
-            )
+            let normalized = normalizedDetail(detail)
             detailsByPackageName[package.selectionID] = normalized
             detailsByPackageName[detail.packageName] = normalized
+            detailsByPackageName[detailLookupName(for: package)] = normalized
             packages = packages.map { current in
                 guard current.selectionID == package.selectionID else {
                     return current
@@ -578,10 +670,108 @@ final class MainWindowModel: ObservableObject {
                     presentationID: current.presentationID
                 )
             }
+            catalogPackages = catalogPackages.updatingDetail(
+                normalized,
+                for: package.selectionID
+            )
+            pulsePackages = pulsePackages.updatingDetail(
+                normalized,
+                for: package.selectionID
+            )
+            searchResults = searchResults.updatingDetail(
+                normalized,
+                for: package.selectionID
+            )
         case .failure:
             if let fallback = package.detail {
                 detailsByPackageName[package.selectionID] = fallback
             }
+        }
+    }
+
+    private func normalizedDetail(_ detail: PackageDetail) -> PackageDetail {
+        if let outdated = snapshot.outdatedPackagesByName[detail.packageName] {
+            return detail.applying(outdated: outdated)
+        }
+        if let outdated = homebrewOutdatedPackage(named: detail.packageName) {
+            return detail.applying(outdated: outdated)
+        }
+        return detail
+    }
+
+    private func detailLookupName(for package: PackagePresentation) -> String {
+        switch package.item {
+        case .available(let result):
+            return result.detailLookupName
+        case .installed, .recommendation, .command:
+            return package.packageName ?? package.selectionID
+        }
+    }
+
+    private func presentation(
+        for result: PackageSearchResult,
+        prefix: String?
+    ) -> PackagePresentation {
+        let presentationID = prefix.map { "\($0):\(result.name)" }
+        return PackagePresentation(
+            item: .available(result),
+            detail: detailsByPackageName[result.detailLookupName] ?? result.fallbackDetail,
+            freshness: Self.freshness(for: result.detailLookupName),
+            presentationID: presentationID
+        )
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else {
+            isSearching = false
+            searchResults = []
+            searchTotalCount = 0
+            return
+        }
+
+        searchRequestID += 1
+        let requestID = searchRequestID
+        isSearching = true
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try Self.searchPackages(query: query)
+                }
+            }.value
+            await MainActor.run {
+                self?.finishSearch(result, query: query, requestID: requestID)
+            }
+        }
+    }
+
+    private func finishSearch(
+        _ result: Result<PackageSearchPage, Error>,
+        query: String,
+        requestID: Int
+    ) {
+        guard requestID == searchRequestID,
+              query == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return
+        }
+        isSearching = false
+        switch result {
+        case .success(let page):
+            searchTotalCount = page.totalCount
+            searchResults = page.packages.map {
+                presentation(for: $0, prefix: "search")
+            }
+            if selectedItemID == nil,
+               let first = displayedPackages.first {
+                select(first)
+            }
+        case .failure(let error):
+            searchTotalCount = 0
+            searchResults = []
+            lastErrorMessage = error.localizedDescription
         }
     }
 
@@ -643,8 +833,9 @@ final class MainWindowModel: ObservableObject {
         return name
     }
 
-    private nonisolated static func fetchInstalledRecords() throws -> [PackageRecord] {
-        try NucleusBridge().fetchPackages().sorted {
+    private nonisolated static func fetchInitialDaemonData() throws -> InitialDaemonData {
+        let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+        let installed = try bridge.fetchPackages().sorted {
             let left = $0.name.packageSearchOrderName
             let right = $1.name.packageSearchOrderName
             if left == right {
@@ -652,10 +843,26 @@ final class MainWindowModel: ObservableObject {
             }
             return left < right
         }
+        let outdated = (try? bridge.fetchOutdatedPackages()) ?? []
+        let catalog = try bridge.fetchAvailablePackages(offset: 0, limit: pageSize)
+        let pulse = (try? bridge.fetchPulsePackages(offset: 0, limit: pageSize))
+            ?? PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+        return InitialDaemonData(
+            installed: installed,
+            catalog: catalog,
+            pulse: pulse,
+            outdated: outdated
+        )
     }
 
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {
-        try NucleusBridge().fetchDetail(packageName: packageName)
+        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+            .fetchDetail(packageName: packageName)
+    }
+
+    private nonisolated static func searchPackages(query: String) throws -> PackageSearchPage {
+        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+            .fetchSearchResults(query: query, offset: 0, limit: pageSize)
     }
 
     private nonisolated static func freshness(for packageName: String) -> CGFloat {
@@ -670,4 +877,23 @@ final class MainWindowModel: ObservableObject {
         formatter.unitsStyle = .full
         return formatter
     }()
+}
+
+private extension Array where Element == PackagePresentation {
+    func updatingDetail(
+        _ detail: PackageDetail,
+        for selectionID: String
+    ) -> [PackagePresentation] {
+        map { package in
+            guard package.selectionID == selectionID else {
+                return package
+            }
+            return PackagePresentation(
+                item: package.item,
+                detail: detail,
+                freshness: package.freshness,
+                presentationID: package.presentationID
+            )
+        }
+    }
 }
