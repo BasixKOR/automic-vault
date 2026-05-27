@@ -110,7 +110,7 @@ APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.to
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 
 git_build_id() {
-  git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown'
+  git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || printf '%s' "$APP_VERSION"
 }
 
 if [[ "$CONFIGURATION" == "release" || "$PUBLISH_BUILD" == "true" ]]; then
