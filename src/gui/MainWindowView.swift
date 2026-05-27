@@ -26,15 +26,13 @@ struct MainWindowView: View {
     }
 
     private var titleBarBackdrop: some View {
-        GeometryReader { proxy in
-            let titleBarHeight = min(max(proxy.safeAreaInsets.top - 14, 86), 94)
-
+        GeometryReader { _ in
             VStack(spacing: 0) {
                 LiquidGlassSurface(
                     material: .ultraThinMaterial,
                     tint: AVGlassPalette.topBarTint
                 )
-                .frame(height: titleBarHeight)
+                .frame(height: 56)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(AVGlassPalette.titleBarSeparator)
