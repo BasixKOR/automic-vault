@@ -1946,7 +1946,7 @@ def render_package_page(
     title = tx(
         locale,
         "installTitle",
-        "Install {name} with {manager} | Automic Vault",
+        "Install {name} | Automic Vault",
         name=page.display_name,
         manager=package_manager_label(page),
     )

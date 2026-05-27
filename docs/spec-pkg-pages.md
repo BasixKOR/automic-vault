@@ -359,8 +359,8 @@ Unique per page.
 Examples:
 
 ```txt id="qk0s5p"
-Install awscli with Homebrew | Automic Vault
-Install ripgrep with pacman | Automic Vault
+Install awscli | Automic Vault
+Install ripgrep | Automic Vault
 ```
 
 ---

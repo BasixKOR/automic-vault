@@ -429,9 +429,10 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         markdown = module.render_package_markdown(page, {"generated_at": "2026-05-24T12:00:00+00:00"}, locale)
 
         self.assertIn('<html lang="ja">', html)
+        self.assertIn("<title>ripgrep をインストール | Automic Vault</title>", html)
         self.assertIn('<link rel="canonical" href="https://www.automicvault.com/ja/pkg/brew/ripgrep/">', html)
         self.assertIn('hreflang="de" href="https://www.automicvault.com/de/pkg/brew/ripgrep/"', html)
-        self.assertIn("ripgrep を Homebrew でインストール", html)
+        self.assertIn("ripgrep をインストール", html)
         self.assertIn("# ripgrep をインストール", markdown)
 
     def test_localized_package_page_translates_site_owned_body_copy(self):
