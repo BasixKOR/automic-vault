@@ -104,11 +104,13 @@ struct MainWindowView: View {
                     .layoutPriority(1)
                 Spacer(minLength: 6)
                 if let count = model.count(for: section) {
-                    CountPill(
-                        count: count,
-                        prominence: section == .geigerCounter && count > 0 ? .critical : .normal
-                    )
-                        .fixedSize()
+                    if section == .geigerCounter && count > 0 {
+                        CountPill(count: count, prominence: .critical)
+                            .fixedSize()
+                    } else {
+                        SidebarCountText(count: count)
+                            .fixedSize()
+                    }
                 }
             }
             .foregroundStyle(
@@ -521,6 +523,19 @@ private struct PackageWebView: NSViewRepresentable {
                 decisionHandler(.allow)
             }
         }
+    }
+}
+
+private struct SidebarCountText: View {
+    let count: Int
+
+    var body: some View {
+        Text(count.formatted())
+            .font(.system(size: 14, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(AVGlassPalette.secondaryText)
+            .lineLimit(1)
+            .frame(minWidth: 18, alignment: .trailing)
     }
 }
 
