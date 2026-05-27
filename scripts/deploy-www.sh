@@ -1194,7 +1194,7 @@ sync_package_pages() {
   while IFS= read -r -d '' locale_dir; do
     locale_slug="${locale_dir#"${site_dir}/"}"
     locale_slug="${locale_slug%/pkg}"
-    sync_package_tree "${locale_dir}/pkg" "${locale_slug}/pkg"
+    sync_package_tree "${locale_dir}" "${locale_slug}/pkg"
   done < <(
     find "${site_dir}" -mindepth 2 -maxdepth 2 -type d -path "${site_dir}/*/pkg" -print0
   )
