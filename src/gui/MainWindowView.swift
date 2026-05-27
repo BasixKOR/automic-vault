@@ -205,7 +205,7 @@ struct MainWindowView: View {
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(AVGlassPalette.quietText)
             .padding(.leading, 18)
-            .padding(.trailing, 8)
+            .padding(.trailing, 7)
             .frame(height: 42)
 
             hairline
@@ -651,9 +651,9 @@ private struct UpdateAllHeaderButtonLabel: View {
     let title: String
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(size: 12, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
             Text(title)
                 .font(.system(size: 12, weight: .regular))
@@ -661,19 +661,19 @@ private struct UpdateAllHeaderButtonLabel: View {
                 .minimumScaleFactor(0.84)
         }
         .foregroundStyle(AVGlassPalette.cyan.opacity(0.94))
-        .padding(.horizontal, 11)
-        .frame(height: 30)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(AVGlassPalette.cyan.opacity(0.105))
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(AVGlassPalette.cyan.opacity(0.34), lineWidth: 1)
         }
-        .shadow(color: AVGlassPalette.cyan.opacity(0.15), radius: 9)
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .shadow(color: AVGlassPalette.cyan.opacity(0.15), radius: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
