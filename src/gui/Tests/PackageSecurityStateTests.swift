@@ -450,6 +450,29 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(model.packageBadge(for: package), .hardened)
     }
 
+    @MainActor
+    func testGeigerProtocolPackageShowsVulnerableBadgeWithoutSecurityState() {
+        let model = MainWindowModel()
+        let result = PackageSearchResult(
+            name: "brew:supabase-cli",
+            source: .formula(rootFormula: "supabase-cli"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        let package = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0,
+            presentationID: "geiger:brew:supabase-cli"
+        )
+
+        XCTAssertEqual(model.packageBadge(for: package), .vulnerable)
+    }
+
     private func decodePackageDetail(
         packageName: String = "brew:git",
         formula: String = "git",

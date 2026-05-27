@@ -307,6 +307,9 @@ final class MainWindowModel: ObservableObject {
         if needsHardening(package) {
             return .vulnerable
         }
+        if isGeigerProtocolPackage(package) {
+            return .vulnerable
+        }
         if isInstalledAsRoot(package) {
             return .immutable
         }
@@ -541,6 +544,10 @@ final class MainWindowModel: ObservableObject {
 
     private func isGeigerActionPackage(_ package: PackagePresentation) -> Bool {
         packageBadge(for: package) == .vulnerable
+    }
+
+    private func isGeigerProtocolPackage(_ package: PackagePresentation) -> Bool {
+        package.selectionID.hasPrefix("geiger:")
     }
 
     private func packageMatchesQuery(
