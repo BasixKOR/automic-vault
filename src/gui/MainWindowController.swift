@@ -96,7 +96,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         toolbar.centeredItemIdentifiers = [.automicVaultSearch]
         window.toolbar = toolbar
         window.toolbarStyle = .unified
-        window.titlebarSeparatorStyle = .none
+        window.titlebarSeparatorStyle = .line
         mainToolbar = toolbar
     }
 

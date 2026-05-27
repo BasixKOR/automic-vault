@@ -10,6 +10,7 @@ struct MainWindowView: View {
         ZStack {
             background
             mainContent
+            titleBarBackdrop
         }
         .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
@@ -22,6 +23,42 @@ struct MainWindowView: View {
         )
         .backgroundExtensionEffect()
         .ignoresSafeArea()
+    }
+
+    private var titleBarBackdrop: some View {
+        GeometryReader { proxy in
+            let titleBarHeight = max(proxy.safeAreaInsets.top, 72)
+
+            VStack(spacing: 0) {
+                LiquidGlassSurface(
+                    material: .ultraThinMaterial,
+                    tint: AVGlassPalette.topBarTint
+                )
+                .frame(height: titleBarHeight)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(AVGlassPalette.titleBarSeparator)
+                        .frame(height: 1)
+                }
+                .overlay(alignment: .bottom) {
+                    LinearGradient(
+                        colors: [
+                            AVGlassPalette.titleBarShadow,
+                            .clear,
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 10)
+                    .offset(y: 10)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .ignoresSafeArea(edges: .top)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var mainContent: some View {
@@ -863,7 +900,9 @@ private struct LiquidGlassSurface: View {
 
 private enum AVGlassPalette {
     static let windowTint = Color.black.opacity(0.18)
-    static let topBarTint = Color.black.opacity(0.16)
+    static let topBarTint = Color.black.opacity(0.28)
+    static let titleBarSeparator = Color.white.opacity(0.13)
+    static let titleBarShadow = Color.black.opacity(0.16)
     static let sidebarTint = Color(red: 0.025, green: 0.050, blue: 0.075).opacity(0.28)
     static let packageTint = Color.black.opacity(0.20)
     static let dossierTint = Color.black.opacity(0.24)
