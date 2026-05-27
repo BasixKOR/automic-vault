@@ -11272,11 +11272,8 @@ machine example.com login user password netrc-token
             ("NETRC", netrc.to_str().unwrap()),
             ("NPM_CONFIG_USERCONFIG", npmrc.to_str().unwrap()),
             ("OCI_CLI_CONFIG_FILE", missing.to_str().unwrap()),
-            (
-                "PULUMI_CREDENTIALS_PATH",
-                pulumi_credentials_dir.to_str().unwrap(),
-            ),
-            ("PULUMI_HOME", missing.to_str().unwrap()),
+            ("PULUMI_CREDENTIALS_PATH", ""),
+            ("PULUMI_HOME", pulumi_credentials_dir.to_str().unwrap()),
             ("RCLONE_CONFIG", rclone_config.to_str().unwrap()),
             ("REGISTRY_AUTH_FILE", registry_auth.to_str().unwrap()),
             ("SUPABASE_HOME", missing.to_str().unwrap()),
