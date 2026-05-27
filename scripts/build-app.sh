@@ -106,9 +106,26 @@ ICON_ICNS="$BUILD_DIR/$ICON_NAME.icns"
 NUKE_PROTOCOL_VERSION="$(rust_protocol_version)"
 [[ -n "$NUKE_PROTOCOL_VERSION" ]] || cli_die "Could not read PROTOCOL_VERSION from src/lib/rs/core.rs"
 [[ -n "${NUKE_HELPER_VERSION:-}" ]] || cli_die "Set NUKE_HELPER_VERSION in .env"
-NUKE_BUILD_ID="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown')"
 APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
+
+git_build_id() {
+  git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown'
+}
+
+if [[ "$CONFIGURATION" == "release" || "$PUBLISH_BUILD" == "true" ]]; then
+  # Production builds intentionally let build.rs compute and track the Git ID.
+  APP_BUILD_ID="$(git_build_id)"
+  unset NUKE_BUILD_ID
+elif [[ -n "${NUKE_BUILD_ID:-}" ]]; then
+  APP_BUILD_ID="$NUKE_BUILD_ID"
+  export NUKE_BUILD_ID
+else
+  # Local target/gui apps force a fresh daemon at launch, so a stable ID avoids
+  # recompiling Rust for Swift-only commits while keeping app and daemon aligned.
+  APP_BUILD_ID="local-${APP_VERSION}"
+  export NUKE_BUILD_ID="$APP_BUILD_ID"
+fi
 
 APP_BUNDLE_ID="com.automicvault"
 MENU_BUNDLE_ID="com.automicvault.menu-helper"
@@ -141,7 +158,11 @@ if [[ "$CONFIGURATION" == "release" ]]; then
   [[ -n "${POSTHOG_API_KEY:-}" ]] || cli_die "Set POSTHOG_API_KEY in the environment for release GUI builds"
 fi
 
-export APPLE_TEAM_ID
+if [[ -n "$APPLE_TEAM_ID" ]]; then
+  export APPLE_TEAM_ID
+else
+  unset APPLE_TEAM_ID
+fi
 export NUKE_HELPER_VERSION
 SHARED_SWIFT_SOURCES=(
   "$GUI_DIR/PackageModels.swift"
@@ -464,7 +485,7 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>NukeBuildID</key>
-  <string>${NUKE_BUILD_ID}</string>
+  <string>${APP_BUILD_ID}</string>
   <key>NukeProtocolVersion</key>
   <string>${NUKE_PROTOCOL_VERSION}</string>
   <key>NukeHelperVersion</key>
@@ -518,7 +539,7 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key>
   <true/>
   <key>NukeBuildID</key>
-  <string>${NUKE_BUILD_ID}</string>
+  <string>${APP_BUILD_ID}</string>
   <key>NukeProtocolVersion</key>
   <string>${NUKE_PROTOCOL_VERSION}</string>
 </dict>

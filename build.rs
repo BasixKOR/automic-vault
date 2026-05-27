@@ -1,11 +1,7 @@
 fn main() {
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    if let Ok(head_path) = std::fs::read_to_string(".git/HEAD") {
-        if let Some(reference) = head_path.strip_prefix("ref: ") {
-            println!("cargo:rerun-if-changed=.git/{}", reference.trim());
-        }
-    }
-    println!("cargo:rustc-env=NUKE_BUILD_ID={}", build_id());
+    println!("cargo:rerun-if-env-changed=NUKE_BUILD_ID");
+    let build_id = build_id();
+    println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");
     println!(
         "cargo:rustc-env=NUKE_CODESIGN_IDENTITY={}",
         build_env_var("CODESIGN_IDENTITY").unwrap_or_default()
@@ -472,6 +468,26 @@ fn rust_module_name(value: &str) -> String {
 }
 
 fn build_id() -> String {
+    if let Ok(value) = std::env::var("NUKE_BUILD_ID")
+        && !value.is_empty()
+    {
+        return value;
+    }
+
+    track_git_head();
+    git_build_id()
+}
+
+fn track_git_head() {
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    if let Ok(head_path) = std::fs::read_to_string(".git/HEAD")
+        && let Some(reference) = head_path.strip_prefix("ref: ")
+    {
+        println!("cargo:rerun-if-changed=.git/{}", reference.trim());
+    }
+}
+
+fn git_build_id() -> String {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
         .output();
