@@ -162,9 +162,6 @@ extension MainWindowController: NSToolbarDelegate {
             item.preferredWidthForSearchField = 318
             item.resignsFirstResponderWithCancel = true
             configureSearchField(item.searchField)
-            if #available(macOS 26.0, *) {
-                item.badge = .text("⌘K")
-            }
             item.visibilityPriority = .high
             searchToolbarItem = item
             return item
@@ -187,7 +184,7 @@ extension MainWindowController: NSToolbarDelegate {
     }
 
     private func configureSearchField(_ searchField: NSSearchField) {
-        searchField.placeholderString = "Search Open Source"
+        searchField.placeholderString = "Search Open Source  ⌘K"
         searchField.stringValue = model.searchText
         searchField.font = .systemFont(ofSize: 13, weight: .regular)
         searchField.delegate = self
