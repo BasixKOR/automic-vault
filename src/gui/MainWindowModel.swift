@@ -417,6 +417,9 @@ final class MainWindowModel: ObservableObject {
            text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             return text
         }
+        if case .installed = package.item {
+            return detail?.primaryDescription ?? "Installed component record available in the local vault."
+        }
         return package.listSecondaryText
     }
 
