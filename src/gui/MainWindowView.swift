@@ -809,10 +809,6 @@ struct MainWindowToolbarRefresh: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular, in: Circle())
-        .overlay {
-            Circle()
-                .stroke(AVGlassPalette.controlBorder, lineWidth: 1)
-        }
         .opacity(model.isReloading ? 0.5 : 1)
         .disabled(model.isReloading)
         .help("Refresh packages")
