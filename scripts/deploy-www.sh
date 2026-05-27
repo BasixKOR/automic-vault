@@ -1028,6 +1028,8 @@ sync_site() {
     --exclude "*/.DS_Store" \
     --exclude "Automic Vault.dmg" \
     --exclude "db.json" \
+    --exclude "pkg/*" \
+    --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --exclude "*.html" \
     --exclude "*.xml" \
@@ -1111,6 +1113,8 @@ sync_site() {
     --include "*.html" \
     --include "*.xml" \
     --exclude "AGENTS.md" \
+    --exclude "pkg/*" \
+    --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
@@ -1121,6 +1125,8 @@ sync_site() {
     --exclude "*" \
     --include "*.txt" \
     --exclude "AGENTS.md" \
+    --exclude "pkg/*" \
+    --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --content-type "text/plain; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
@@ -1132,6 +1138,8 @@ sync_site() {
     --exclude "*" \
     --include "*.md" \
     --exclude "AGENTS.md" \
+    --exclude "pkg/*" \
+    --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --content-type "text/markdown; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
@@ -1143,14 +1151,91 @@ sync_site() {
     --exclude "*" \
     --include "*.json" \
     --exclude "AGENTS.md" \
+    --exclude "pkg/*" \
+    --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --content-type "application/json; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  sync_package_pages
 
   log_step "Removing repo-local guidance from S3"
   aws s3 rm "s3://${WWW_BUCKET}/AGENTS.md"
 
   log_ok "S3 content synced"
+}
+
+sync_package_tree() {
+  local source_dir="$1"
+  local destination_prefix="$2"
+
+  if [[ ! -d "${source_dir}" ]]; then
+    die "Missing generated package page directory: ${source_dir}"
+  fi
+
+  log "  ${destination_prefix}/ from ${source_dir}"
+
+  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*.html" \
+    --exclude "*.xml" \
+    --exclude "*.txt" \
+    --exclude "*.md" \
+    --exclude "*.json" \
+    --cache-control "${WWW_ASSET_CACHE_CONTROL}"
+
+  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "*.html" \
+    --include "*.xml" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "*.txt" \
+    --content-type "text/plain; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "*.md" \
+    --content-type "text/markdown; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
+    --delete \
+    --exclude ".DS_Store" \
+    --exclude "*/.DS_Store" \
+    --exclude "*" \
+    --include "*.json" \
+    --content-type "application/json; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+}
+
+sync_package_pages() {
+  local locale_dir locale_slug
+
+  log_step "Syncing generated package pages from www"
+  sync_package_tree "${site_dir}/pkg" "pkg"
+
+  while IFS= read -r -d '' locale_dir; do
+    locale_slug="${locale_dir#"${site_dir}/"}"
+    locale_slug="${locale_slug%/pkg}"
+    sync_package_tree "${locale_dir}/pkg" "${locale_slug}/pkg"
+  done < <(
+    find "${site_dir}" -mindepth 2 -maxdepth 2 -type d -path "${site_dir}/*/pkg" -print0
+  )
 }
 
 ensure_certificate_issued() {
