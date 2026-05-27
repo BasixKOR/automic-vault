@@ -423,6 +423,12 @@ final class MainWindowModel: ObservableObject {
     func versionText(for package: PackagePresentation) -> String {
         switch package.item {
         case .installed(let record):
+            if selectedSection == .outdated,
+               let latestVersion = record.latestVersion,
+               latestVersion.isEmpty == false,
+               latestVersion != record.version {
+                return "\(record.version) → \(latestVersion)"
+            }
             return record.version
         case .recommendation, .available, .command:
             return package.versionText
