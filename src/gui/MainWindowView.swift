@@ -219,7 +219,7 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
-                if model.isReloading || model.isSearching {
+                if model.isReloading || model.isSearching || model.isLoadingSectionPage {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -248,16 +248,6 @@ struct MainWindowView: View {
                         hairline
                     }
 
-                    if model.displayedPackages.isEmpty {
-                        EmptyPackageState(
-                            title: model.selectedSection.title,
-                            message: model.lastErrorMessage
-                                ?? model.statusMessage
-                                ?? "No packages match the current filter."
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 80)
-                    }
                 }
             }
             .scrollIndicators(.hidden)
@@ -281,11 +271,8 @@ struct MainWindowView: View {
                     notesSection(detail: detail, package: package)
                     lastUpdatedSection(detail: detail)
                 } else {
-                    EmptyPackageState(
-                        title: "Dossier",
-                        message: "Select a package to inspect its local record."
-                    )
-                    .padding(.top, 94)
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 1)
                 }
             }
             .padding(.horizontal, 20)
@@ -495,7 +482,7 @@ struct MainWindowView: View {
                 BrowserToolbarButton(systemName: "arrow.clockwise") {
                     browserCommand = .reload(UUID())
                 }
-                Text(model.selectedURL(for: linkTab)?.absoluteString ?? "No link available")
+                Text(model.selectedURL(for: linkTab)?.absoluteString ?? "")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(
                         model.selectedURL(for: linkTab) == nil
@@ -529,12 +516,8 @@ struct MainWindowView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white.opacity(0.96))
         } else {
-            EmptyPackageState(
-                title: "Links",
-                message: "Package links appear here after selecting a package."
-            )
+            Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 28)
         }
     }
 
@@ -833,25 +816,6 @@ private struct BrowserToolbarButton: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-    }
-}
-
-private struct EmptyPackageState: View {
-    let title: String
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(AVGlassPalette.secondaryText)
-            Text(message)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(AVGlassPalette.quietText)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-        }
-        .padding(.horizontal, 28)
     }
 }
 

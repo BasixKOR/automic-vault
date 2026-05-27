@@ -142,7 +142,11 @@ enum MainWindowRiskLevel {
 
 @MainActor
 final class MainWindowModel: ObservableObject {
-    @Published var selectedSection: MainWindowSection = .installed
+    @Published var selectedSection: MainWindowSection = .installed {
+        didSet {
+            ensureSelectedSectionLoaded()
+        }
+    }
     @Published var searchText = "" {
         didSet {
             scheduleSearch()
@@ -155,6 +159,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var snapshot = NucleusStatusSnapshot.empty
     @Published private(set) var selectedItemID: String?
     @Published private(set) var isReloading = false
+    @Published private(set) var isLoadingSectionPage = false
     @Published private(set) var isSearching = false
     @Published private(set) var isLoadingDetail = false
     @Published private(set) var statusMessage: String?
@@ -162,8 +167,6 @@ final class MainWindowModel: ObservableObject {
 
     private struct InitialDaemonData {
         let installed: [PackageRecord]
-        let catalog: PackageSearchPage
-        let pulse: PackageSearchPage
         let outdated: [OutdatedPackageRecord]
     }
 
@@ -172,22 +175,23 @@ final class MainWindowModel: ObservableObject {
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
     private var searchRequestID = 0
+    private var sectionPageRequestID = 0
     private var detailRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
-    private var catalogTotalCount = 0
-    private var pulseTotalCount = 0
+    private var catalogTotalCount: Int?
+    private var pulseTotalCount: Int?
     private var searchTotalCount = 0
+    private var loadingSectionKind: SectionPageKind?
     private var transientStatusTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var sectionPageTask: Task<Void, Never>?
 
     var installedCount: Int {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
     }
 
     var selectedPackage: PackagePresentation? {
-        guard let selectedItemID else {
-            return displayedPackages.first
-        }
+        guard let selectedItemID else { return nil }
         return allKnownPackages.first { $0.selectionID == selectedItemID }
     }
 
@@ -215,6 +219,7 @@ final class MainWindowModel: ObservableObject {
         }
         transientStatusTask?.cancel()
         searchTask?.cancel()
+        sectionPageTask?.cancel()
     }
 
     func reloadPackages() {
@@ -274,14 +279,17 @@ final class MainWindowModel: ObservableObject {
         case .installed:
             return installedCount
         case .newUpdated:
-            return max(pulseTotalCount, pulsePackages.count)
+            return pulseTotalCount ?? (pulsePackages.isEmpty ? nil : pulsePackages.count)
         case .outdated:
             return max(outdatedPackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
-            return max(catalogTotalCount, catalogPackages.count)
+            return catalogTotalCount ?? (catalogPackages.isEmpty ? nil : catalogPackages.count)
         case .settings, .about:
             return nil
         case .shell, .cliTools, .development, .system, .networking, .security, .other:
+            guard catalogPackages.isEmpty == false else {
+                return nil
+            }
             return catalogSourcePackages.filter { package in
                 sectionMatches(section, package: package)
             }.count
@@ -369,7 +377,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private var catalogSourcePackages: [PackagePresentation] {
-        catalogPackages.isEmpty ? packages : catalogPackages
+        catalogPackages
     }
 
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {
@@ -581,8 +589,6 @@ final class MainWindowModel: ObservableObject {
                 lastError: nil,
                 remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
             )
-            catalogTotalCount = data.catalog.totalCount
-            pulseTotalCount = data.pulse.totalCount
 
             packages = data.installed.map { record in
                 let merged = mergeOutdatedState(into: record)
@@ -593,21 +599,14 @@ final class MainWindowModel: ObservableObject {
                     freshness: Self.freshness(for: merged.name)
                 )
             }
-            catalogPackages = data.catalog.packages.map {
-                presentation(for: $0, prefix: nil)
-            }
-            pulsePackages = data.pulse.packages.map {
-                presentation(for: $0, prefix: "pulse")
-            }
             if let selectedItemID,
                allKnownPackages.contains(where: { $0.selectionID == selectedItemID }) {
                 loadSelectedDetailIfPossible()
-            } else if let first = displayedPackages.first ?? packages.first {
-                select(first)
             } else {
                 selectedItemID = nil
             }
             statusMessage = nil
+            ensureSelectedSectionLoaded()
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
             statusMessage = "Package refresh failed"
@@ -728,6 +727,7 @@ final class MainWindowModel: ObservableObject {
             isSearching = false
             searchResults = []
             searchTotalCount = 0
+            ensureSelectedSectionLoaded()
             return
         }
 
@@ -764,13 +764,103 @@ final class MainWindowModel: ObservableObject {
             searchResults = page.packages.map {
                 presentation(for: $0, prefix: "search")
             }
-            if selectedItemID == nil,
-               let first = displayedPackages.first {
-                select(first)
-            }
         case .failure(let error):
             searchTotalCount = 0
             searchResults = []
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func ensureSelectedSectionLoaded() {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty else {
+            return
+        }
+        switch selectedSection {
+        case .newUpdated:
+            loadPulsePageIfNeeded()
+        case .allPackages,
+             .shell,
+             .cliTools,
+             .development,
+             .system,
+             .networking,
+             .security,
+             .other:
+            loadCatalogPageIfNeeded()
+        case .installed, .outdated, .settings, .about:
+            break
+        }
+    }
+
+    private func loadCatalogPageIfNeeded() {
+        guard catalogPackages.isEmpty, catalogTotalCount == nil else {
+            return
+        }
+        loadSectionPage(kind: .catalog)
+    }
+
+    private func loadPulsePageIfNeeded() {
+        guard pulsePackages.isEmpty, pulseTotalCount == nil else {
+            return
+        }
+        loadSectionPage(kind: .pulse)
+    }
+
+    private enum SectionPageKind: Sendable, Equatable {
+        case catalog
+        case pulse
+    }
+
+    private func loadSectionPage(kind: SectionPageKind) {
+        guard loadingSectionKind != kind else {
+            return
+        }
+        sectionPageTask?.cancel()
+        sectionPageRequestID += 1
+        let requestID = sectionPageRequestID
+        isLoadingSectionPage = true
+        loadingSectionKind = kind
+        lastErrorMessage = nil
+        sectionPageTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try Self.fetchSectionPage(kind: kind)
+                }
+            }.value
+            await MainActor.run {
+                self?.finishSectionPage(result, kind: kind, requestID: requestID)
+            }
+        }
+    }
+
+    private func finishSectionPage(
+        _ result: Result<PackageSearchPage, Error>,
+        kind: SectionPageKind,
+        requestID: Int
+    ) {
+        guard requestID == sectionPageRequestID else {
+            return
+        }
+        isLoadingSectionPage = false
+        if loadingSectionKind == kind {
+            loadingSectionKind = nil
+        }
+        switch result {
+        case .success(let page):
+            switch kind {
+            case .catalog:
+                catalogTotalCount = page.totalCount
+                catalogPackages = page.packages.map {
+                    presentation(for: $0, prefix: nil)
+                }
+            case .pulse:
+                pulseTotalCount = page.totalCount
+                pulsePackages = page.packages.map {
+                    presentation(for: $0, prefix: "pulse")
+                }
+            }
+        case .failure(let error):
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -844,15 +934,22 @@ final class MainWindowModel: ObservableObject {
             return left < right
         }
         let outdated = (try? bridge.fetchOutdatedPackages()) ?? []
-        let catalog = try bridge.fetchAvailablePackages(offset: 0, limit: pageSize)
-        let pulse = (try? bridge.fetchPulsePackages(offset: 0, limit: pageSize))
-            ?? PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
         return InitialDaemonData(
             installed: installed,
-            catalog: catalog,
-            pulse: pulse,
             outdated: outdated
         )
+    }
+
+    private nonisolated static func fetchSectionPage(
+        kind: SectionPageKind
+    ) throws -> PackageSearchPage {
+        let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+        switch kind {
+        case .catalog:
+            return try bridge.fetchAvailablePackages(offset: 0, limit: pageSize)
+        case .pulse:
+            return try bridge.fetchPulsePackages(offset: 0, limit: pageSize)
+        }
     }
 
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {
