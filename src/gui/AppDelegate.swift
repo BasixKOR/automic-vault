@@ -729,7 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        let toolbarHeight = MainWindowChrome.toolbarHeight
+        let toolbarHeight = min(MainWindowChrome.toolbarHeight, container.bounds.height)
         let originY: CGFloat
         if container.isFlipped {
             originY = (toolbarHeight - buttonGroupHeight) / 2

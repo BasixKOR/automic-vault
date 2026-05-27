@@ -17,7 +17,6 @@ struct MainWindowView: View {
                 hairline
                 mainContent
             }
-            .ignoresSafeArea(.container, edges: .top)
         }
         .frame(minWidth: 1380, minHeight: 760)
         .clipShape(
