@@ -156,12 +156,14 @@ extension MainWindowController: NSToolbarDelegate {
         switch itemIdentifier {
         case .automicVaultSearch:
             let item = NSSearchToolbarItem(itemIdentifier: itemIdentifier)
+            let searchField = CenteredPlaceholderSearchField(frame: .zero)
             item.label = "Search"
             item.paletteLabel = "Search"
             item.toolTip = "Search packages"
             item.preferredWidthForSearchField = 318
             item.resignsFirstResponderWithCancel = true
-            configureSearchField(item.searchField)
+            item.searchField = searchField
+            configureSearchField(searchField)
             item.visibilityPriority = .high
             searchToolbarItem = item
             return item
@@ -192,6 +194,7 @@ extension MainWindowController: NSToolbarDelegate {
         searchField.action = #selector(searchToolbarItemChanged(_:))
         searchField.sendsSearchStringImmediately = true
         searchField.sendsWholeSearchString = false
+        (searchField as? CenteredPlaceholderSearchField)?.syncCentering(animated: false)
     }
 
     private func updateSearchText(_ text: String) {
@@ -203,11 +206,159 @@ extension MainWindowController: NSToolbarDelegate {
 }
 
 extension MainWindowController: NSSearchFieldDelegate {
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        syncSearchFieldCentering(from: notification, animated: true)
+    }
+
     func controlTextDidChange(_ notification: Notification) {
         guard let searchField = notification.object as? NSSearchField else {
             return
         }
         updateSearchText(searchField.stringValue)
+        syncSearchFieldCentering(searchField, animated: true)
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        syncSearchFieldCentering(from: notification, animated: true)
+    }
+
+    private func syncSearchFieldCentering(from notification: Notification, animated: Bool) {
+        guard let searchField = notification.object as? NSSearchField else {
+            return
+        }
+        syncSearchFieldCentering(searchField, animated: animated)
+    }
+
+    private func syncSearchFieldCentering(_ searchField: NSSearchField, animated: Bool) {
+        (searchField as? CenteredPlaceholderSearchField)?.syncCentering(animated: animated)
+    }
+}
+
+private final class CenteredPlaceholderSearchField: NSSearchField {
+    fileprivate var centeringProgress: CGFloat = 1 {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
+    private var centeringAnimationTimer: Timer?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installCenteredPlaceholderCell()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        installCenteredPlaceholderCell()
+    }
+
+    deinit {
+        centeringAnimationTimer?.invalidate()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let didBecomeFirstResponder = super.becomeFirstResponder()
+        syncCentering(animated: true)
+        return didBecomeFirstResponder
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let didResignFirstResponder = super.resignFirstResponder()
+        syncCentering(animated: true)
+        return didResignFirstResponder
+    }
+
+    fileprivate func syncCentering(animated: Bool) {
+        animateCentering(to: shouldCenterPlaceholder ? 1 : 0, animated: animated)
+    }
+
+    fileprivate var shouldCenterPlaceholder: Bool {
+        stringValue.isEmpty && currentEditor() == nil
+    }
+
+    private func installCenteredPlaceholderCell() {
+        cell = CenteredPlaceholderSearchFieldCell(textCell: "")
+    }
+
+    private func animateCentering(to target: CGFloat, animated: Bool) {
+        centeringAnimationTimer?.invalidate()
+        centeringAnimationTimer = nil
+
+        let start = centeringProgress
+        guard animated, abs(start - target) > 0.001 else {
+            centeringProgress = target
+            return
+        }
+
+        let startTime = Date.timeIntervalSinceReferenceDate
+        let duration = 0.16
+        let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+
+            let elapsed = Date.timeIntervalSinceReferenceDate - startTime
+            let progress = min(1, elapsed / duration)
+            let easedProgress = 1 - pow(1 - progress, 3)
+            centeringProgress = start + (target - start) * CGFloat(easedProgress)
+
+            if progress >= 1 {
+                timer.invalidate()
+                centeringAnimationTimer = nil
+            }
+        }
+
+        centeringAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+}
+
+private final class CenteredPlaceholderSearchFieldCell: NSSearchFieldCell {
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        centeredSearchTextRect(forBounds: rect)
+    }
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        centeredSearchTextRect(forBounds: rect)
+    }
+
+    override func searchButtonRect(forBounds rect: NSRect) -> NSRect {
+        super.searchButtonRect(forBounds: rect)
+            .offsetBy(dx: centeringOffset(forBounds: rect), dy: 0)
+    }
+
+    override func searchTextRect(forBounds rect: NSRect) -> NSRect {
+        centeredSearchTextRect(forBounds: rect)
+    }
+
+    private func centeredSearchTextRect(forBounds rect: NSRect) -> NSRect {
+        super.searchTextRect(forBounds: rect)
+            .offsetBy(dx: centeringOffset(forBounds: rect), dy: 0)
+    }
+
+    private func centeringOffset(forBounds rect: NSRect) -> CGFloat {
+        guard let searchField = controlView as? CenteredPlaceholderSearchField,
+              searchField.centeringProgress > 0,
+              searchField.stringValue.isEmpty,
+              let placeholderString,
+              placeholderString.isEmpty == false else {
+            return 0
+        }
+
+        let searchButtonRect = super.searchButtonRect(forBounds: rect)
+        let textRect = super.searchTextRect(forBounds: rect)
+        let font = font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let textWidth = ceil((placeholderString as NSString).size(
+            withAttributes: [.font: font]
+        ).width)
+        let spacing = max(4, textRect.minX - searchButtonRect.maxX)
+        let groupWidth = searchButtonRect.width + spacing + textWidth
+        let centeredMinX = floor(rect.midX - groupWidth / 2)
+        let offset = max(0, centeredMinX - searchButtonRect.minX)
+
+        return offset * searchField.centeringProgress
     }
 }
 
