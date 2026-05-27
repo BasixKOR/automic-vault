@@ -209,6 +209,30 @@ extension MainWindowController: NSSearchFieldDelegate {
         }
         updateSearchText(searchField.stringValue)
     }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard commandSelector == #selector(NSResponder.cancelOperation(_:)),
+              let searchField = control as? NSSearchField else {
+            return false
+        }
+        clearAndDeactivateSearch(searchField, fieldEditor: textView)
+        return true
+    }
+
+    private func clearAndDeactivateSearch(
+        _ searchField: NSSearchField,
+        fieldEditor: NSTextView
+    ) {
+        searchField.stringValue = ""
+        fieldEditor.string = ""
+        updateSearchText("")
+        searchField.abortEditing()
+        searchField.window?.makeFirstResponder(nil)
+    }
 }
 
 private extension NSToolbar.Identifier {
