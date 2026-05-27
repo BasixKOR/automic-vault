@@ -370,7 +370,7 @@ final class UpdateProgressViewController: NSViewController {
         let packageListView = PackageProgressListView()
         let logScrollView = NSScrollView(frame: .zero)
         let logView = NSTextView(frame: .zero)
-        let primaryButton = NSButton(title: "Abort", target: nil, action: nil)
+        let primaryButton = NSButton(title: "Updating", target: nil, action: nil)
         let secondaryButton = NSButton(title: "Dismiss", target: nil, action: nil)
         var onCancel: (() -> Void)?
 
@@ -580,7 +580,7 @@ final class UpdateProgressViewController: NSViewController {
         super.viewDidLoad()
         guard let rootView = view as? RootView else { return }
         rootView.onCancel = { [weak self] in
-            self?.onDismiss?()
+            self?.requestDismiss()
         }
         operationAnimator = GlitchTextAnimator(
             field: rootView.operationField,
@@ -595,6 +595,7 @@ final class UpdateProgressViewController: NSViewController {
         rootView.primaryButton.action = #selector(primaryAction)
         rootView.secondaryButton.target = self
         rootView.secondaryButton.action = #selector(secondaryAction)
+        updateButtons(primaryTitle: "Updating", showSecondary: false, primaryEnabled: false)
     }
 
     func configure(
@@ -631,6 +632,7 @@ final class UpdateProgressViewController: NSViewController {
         if let rootView = view as? RootView {
             rootView.logView.string = ""
         }
+        setStatus(idleStatusText)
         if let initialOperation {
             setOperation(initialOperation)
         }
@@ -638,7 +640,7 @@ final class UpdateProgressViewController: NSViewController {
         if packages.isEmpty {
             appendLog("Awaiting package plan from nucleus.")
         }
-        updateButtons(primaryTitle: "Abort", showSecondary: false)
+        updateButtons(primaryTitle: "Updating", showSecondary: false, primaryEnabled: false)
         rebuildRows()
         resetPackageScrollPosition()
     }
@@ -731,6 +733,9 @@ final class UpdateProgressViewController: NSViewController {
     }
 
     func succeed(message: String, packages: [String]) {
+        guard !isTerminalState else {
+            return
+        }
         packages
             .compactMap { visiblePackageName(forProgressPackage: $0) }
             .forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
@@ -744,6 +749,9 @@ final class UpdateProgressViewController: NSViewController {
     }
 
     func fail(message: String) {
+        guard !isTerminalState else {
+            return
+        }
         isTerminalState = true
         operationAnimator?.stop()
         setOperation(failureOperationTitle)
@@ -914,10 +922,16 @@ final class UpdateProgressViewController: NSViewController {
         CATransaction.commit()
     }
 
-    private func updateButtons(primaryTitle: String, showSecondary: Bool) {
+    private func updateButtons(
+        primaryTitle: String,
+        showSecondary: Bool,
+        primaryEnabled: Bool = true
+    ) {
         guard let rootView = view as? RootView else { return }
         rootView.primaryButton.title = primaryTitle
+        rootView.primaryButton.isEnabled = primaryEnabled
         rootView.secondaryButton.isHidden = !showSecondary
+        rootView.secondaryButton.isEnabled = showSecondary
     }
 
     @objc private func primaryAction() {
@@ -929,10 +943,22 @@ final class UpdateProgressViewController: NSViewController {
             }
             return
         }
-        onDismiss?()
+        NSSound.beep()
     }
 
     @objc private func secondaryAction() {
+        guard isTerminalState else {
+            NSSound.beep()
+            return
+        }
+        onDismiss?()
+    }
+
+    private func requestDismiss() {
+        guard isTerminalState else {
+            NSSound.beep()
+            return
+        }
         onDismiss?()
     }
 

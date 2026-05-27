@@ -181,7 +181,27 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
-                if model.isReloading || model.isSearching || model.isLoadingSectionPage {
+                if model.selectedSection == .outdated {
+                    Button {
+                        model.requestOutdatedUpdateAll()
+                    } label: {
+                        Label(
+                            model.isUpdatingAll ? "Updating" : "Update All",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                    }
+                    .buttonStyle(.glass)
+                    .tint(.clear)
+                    .disabled(!model.canUpdateAllOutdated)
+                    .help(updateAllHelpText)
+                }
+                if model.isReloading
+                    || model.isSearching
+                    || model.isLoadingSectionPage
+                    || model.isUpdatingAll {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -219,6 +239,16 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
+    }
+
+    private var updateAllHelpText: String {
+        let count = model.outdatedUpdatePackageNames.count
+        guard count > 0 else {
+            return "No outdated packages to update"
+        }
+        return count == 1
+            ? "Update 1 outdated package"
+            : "Update \(count) outdated packages"
     }
 
     private func packageRowVersion(for package: PackagePresentation) -> String {

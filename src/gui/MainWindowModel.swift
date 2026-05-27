@@ -167,6 +167,8 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var searchFocusRequestID = 0
+    @Published private(set) var updateAllRequestID = 0
+    @Published private(set) var isUpdatingAll = false
 
     nonisolated private static let pageSize = 96
     private let statusStore = NucleusStatusStore()
@@ -203,6 +205,42 @@ final class MainWindowModel: ObservableObject {
 
     var displayedPackages: [PackagePresentation] {
         packages(for: selectedSection)
+    }
+
+    var canUpdateAllOutdated: Bool {
+        selectedSection == .outdated
+            && !isUpdatingAll
+            && !outdatedUpdatePackageNames.isEmpty
+    }
+
+    var outdatedUpdatePackageNames: [String] {
+        var seen = Set<String>()
+        var names: [String] = []
+
+        func append(_ name: String) {
+            let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty,
+                  seen.insert(normalized).inserted else {
+                return
+            }
+            names.append(normalized)
+        }
+
+        snapshot.outdatedPackages.forEach { append($0.name) }
+        snapshot.homebrewOutdatedPackages.forEach { append($0.name) }
+        packages
+            .filter(isOutdated)
+            .compactMap(\.packageName)
+            .forEach(append)
+
+        return names.sorted { left, right in
+            let leftOrderName = left.packageSearchOrderName
+            let rightOrderName = right.packageSearchOrderName
+            if leftOrderName == rightOrderName {
+                return left < right
+            }
+            return leftOrderName < rightOrderName
+        }
     }
 
     func start() {
@@ -262,6 +300,42 @@ final class MainWindowModel: ObservableObject {
 
     func requestSearchFocus() {
         searchFocusRequestID += 1
+    }
+
+    func requestOutdatedUpdateAll() {
+        guard canUpdateAllOutdated else {
+            if outdatedUpdatePackageNames.isEmpty {
+                showTransientStatus("No outdated packages to update")
+            }
+            return
+        }
+        updateAllRequestID += 1
+    }
+
+    func beginOutdatedUpdateAll(packageCount: Int) {
+        transientStatusTask?.cancel()
+        isUpdatingAll = true
+        lastErrorMessage = nil
+        statusMessage = "Updating \(Self.packageCountText(packageCount))"
+    }
+
+    func finishOutdatedUpdateAll(
+        _ result: Result<NukeHelperResult, Error>,
+        refreshAfterSuccess: Bool
+    ) {
+        isUpdatingAll = false
+        switch result {
+        case .success(let helperResult):
+            if refreshAfterSuccess {
+                statusMessage = "\(helperResult.message); refreshing packages"
+                reloadPackages()
+            } else {
+                showTransientStatus(helperResult.message)
+            }
+        case .failure(let error):
+            lastErrorMessage = error.localizedDescription
+            statusMessage = "Update all failed"
+        }
     }
 
     func selectedURL(for tab: MainWindowLinkTab) -> URL? {
@@ -1173,6 +1247,10 @@ final class MainWindowModel: ObservableObject {
         formatter.unitsStyle = .full
         return formatter
     }()
+
+    private static func packageCountText(_ count: Int) -> String {
+        count == 1 ? "1 outdated package" : "\(count) outdated packages"
+    }
 }
 
 private extension Array where Element == PackagePresentation {
