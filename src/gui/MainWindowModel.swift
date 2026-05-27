@@ -432,12 +432,8 @@ final class MainWindowModel: ObservableObject {
     }
 
     private var geigerCounterCount: Int? {
-        let knownActionableCount = geigerActionPackages.count
-        if let geigerTotalCount {
-            return max(geigerTotalCount, knownActionableCount)
-        }
-        let fallbackCount = max(snapshot.hazardousPackageCount, knownActionableCount)
-        return fallbackCount > 0 ? fallbackCount : nil
+        let count = geigerActionPackages.count
+        return count > 0 ? count : nil
     }
 
     private var geigerActionPackages: [PackagePresentation] {
