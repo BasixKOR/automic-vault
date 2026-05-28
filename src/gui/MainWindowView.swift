@@ -664,7 +664,7 @@ private struct UpdateAllHeaderButtonLabel: View {
         }
         .foregroundStyle(AVGlassPalette.secondaryText)
         .padding(.horizontal, 4)
-        .frame(height: 20, alignment: .center)
+        .frame(height: 16, alignment: .center)
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
