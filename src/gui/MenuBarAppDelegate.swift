@@ -2,6 +2,14 @@ import AppKit
 import UserNotifications
 
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
+    private static let menuBarIndicatorColor = NSColor(
+        name: NSColor.Name("MenuBarIndicatorColor")
+    ) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .white
+            : .black
+    }
+
     private let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
     private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
@@ -453,7 +461,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     string: "●",
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 9, weight: .bold),
-                        .foregroundColor: NSColor.systemRed,
+                        .foregroundColor: Self.menuBarIndicatorColor,
                         .baselineOffset: 5
                     ]
                 )
@@ -476,7 +484,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         string: " ●",
                         attributes: [
                             .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-                            .foregroundColor: NSColor.systemRed,
+                            .foregroundColor: Self.menuBarIndicatorColor,
                             .baselineOffset: 6
                         ]
                     )
