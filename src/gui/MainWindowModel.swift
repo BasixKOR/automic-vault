@@ -207,8 +207,16 @@ final class MainWindowModel: ObservableObject {
         packages(for: selectedSection)
     }
 
+    var isSearchActive: Bool {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    var activeSidebarSection: MainWindowSection? {
+        isSearchActive ? nil : selectedSection
+    }
+
     var canUpdateAllOutdated: Bool {
-        selectedSection == .outdated
+        activeSidebarSection == .outdated
             && !isUpdatingAll
             && !outdatedUpdatePackageNames.isEmpty
     }
@@ -307,6 +315,13 @@ final class MainWindowModel: ObservableObject {
 
     func requestSearchFocus() {
         searchFocusRequestID += 1
+    }
+
+    func selectSection(_ section: MainWindowSection) {
+        selectedSection = section
+        if isSearchActive {
+            searchText = ""
+        }
     }
 
     func requestOutdatedUpdateAll() {
@@ -425,7 +440,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     func packageInlineBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
-        guard selectedSection == .installed, isOutdated(package) else {
+        guard !isSearchActive,
+              selectedSection == .installed,
+              isOutdated(package) else {
             return []
         }
         return [.outdated]
@@ -505,7 +522,8 @@ final class MainWindowModel: ObservableObject {
     func versionText(for package: PackagePresentation) -> String {
         switch package.item {
         case .installed(let record):
-            if selectedSection == .outdated,
+            if !isSearchActive,
+               selectedSection == .outdated,
                let latestVersion = record.latestVersion,
                latestVersion.isEmpty == false,
                latestVersion != record.version {
@@ -590,12 +608,12 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {
-        guard section != .settings, section != .about else {
-            return []
-        }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty == false {
             return mergedSearchPackages(query: query)
+        }
+        guard section != .settings, section != .about else {
+            return []
         }
 
         let source: [PackagePresentation]
@@ -991,12 +1009,14 @@ final class MainWindowModel: ObservableObject {
             searchResults = []
             searchTotalCount = 0
             ensureSelectedSectionLoaded()
+            updateSelectedSectionLoadingState()
             return
         }
 
         searchRequestID += 1
         let requestID = searchRequestID
         isSearching = true
+        updateSelectedSectionLoadingState()
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
@@ -1154,6 +1174,10 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func updateSelectedSectionLoadingState() {
+        guard !isSearchActive else {
+            isLoadingSectionPage = false
+            return
+        }
         guard let kind = SectionPageKind(section: selectedSection) else {
             isLoadingSectionPage = false
             return

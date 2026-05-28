@@ -74,6 +74,57 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(presentation.versionText, "NPM")
     }
 
+    @MainActor
+    func testSearchDeselectsAndRestoresSidebarSection() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        model.selectedSection = .outdated
+
+        XCTAssertEqual(model.activeSidebarSection, .outdated)
+
+        model.searchText = "openclaw"
+
+        XCTAssertTrue(model.isSearchActive)
+        XCTAssertNil(model.activeSidebarSection)
+
+        model.searchText = ""
+
+        XCTAssertFalse(model.isSearchActive)
+        XCTAssertEqual(model.activeSidebarSection, .outdated)
+    }
+
+    @MainActor
+    func testSelectingSidebarSectionCancelsSearch() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        model.selectedSection = .outdated
+        model.searchText = "openclaw"
+
+        model.selectSection(.newUpdated)
+
+        XCTAssertEqual(model.searchText, "")
+        XCTAssertEqual(model.selectedSection, .newUpdated)
+        XCTAssertEqual(model.activeSidebarSection, .newUpdated)
+    }
+
+    @MainActor
+    func testSearchUsesNeutralVersionTextDespiteSelectedSection() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        model.selectedSection = .outdated
+        let package = installedPresentation(
+            version: "1.0",
+            latestVersion: "2.0"
+        )
+
+        XCTAssertEqual(model.versionText(for: package), "1.0 → 2.0")
+
+        model.searchText = "rg"
+
+        XCTAssertEqual(model.versionText(for: package), "1.0")
+        XCTAssertEqual(model.packageInlineBadges(for: package), [])
+    }
+
     private func pulseResult(
         lastUpdatedAt: String?,
         pulseKind: String
@@ -88,6 +139,25 @@ final class MainWindowModelTests: XCTestCase {
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,
             pulseKind: pulseKind
+        )
+    }
+
+    private func installedPresentation(
+        version: String,
+        latestVersion: String
+    ) -> PackagePresentation {
+        let record = PackageRecord(
+            name: "brew:rg",
+            source: .formula(rootFormula: "rg"),
+            version: version,
+            description: "Search tool",
+            latestVersion: latestVersion,
+            securityState: nil
+        )
+        return PackagePresentation(
+            item: .installed(record),
+            detail: record.fallbackDetail,
+            freshness: 0
         )
     }
 

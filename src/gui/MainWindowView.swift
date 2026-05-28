@@ -127,7 +127,7 @@ struct MainWindowView: View {
 
     private func sidebarRow(_ section: MainWindowSection) -> some View {
         Button {
-            model.selectedSection = section
+            model.selectSection(section)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: section.systemImage)
@@ -149,7 +149,7 @@ struct MainWindowView: View {
                 }
             }
             .foregroundStyle(
-                model.selectedSection == section
+                model.activeSidebarSection == section
                     ? AVGlassPalette.primaryText
                     : AVGlassPalette.secondaryText
             )
@@ -157,7 +157,7 @@ struct MainWindowView: View {
             .frame(height: 32)
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .background {
-                if model.selectedSection == section {
+                if model.activeSidebarSection == section {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(AVGlassPalette.sidebarSelectedFill)
                 }
@@ -173,7 +173,7 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
-                if model.selectedSection == .outdated {
+                if model.activeSidebarSection == .outdated {
                     Button {
                         model.requestOutdatedUpdateAll()
                     } label: {
@@ -244,7 +244,8 @@ struct MainWindowView: View {
     }
 
     private func packageRowVersion(for package: PackagePresentation) -> String {
-        if model.selectedSection == .newUpdated,
+        if !model.isSearchActive,
+           model.selectedSection == .newUpdated,
            case .available(let result) = package.item {
             return model.pulseListTimestampText(for: result)
         }
@@ -253,7 +254,8 @@ struct MainWindowView: View {
 
     private func packageRowBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
         var badges = model.packageListBadges(for: package)
-        if model.selectedSection == .newUpdated,
+        if !model.isSearchActive,
+           model.selectedSection == .newUpdated,
            case .available(let result) = package.item,
            result.isNewPulse {
             badges.append(.new)

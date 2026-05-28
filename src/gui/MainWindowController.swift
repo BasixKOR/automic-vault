@@ -13,6 +13,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
+    private var searchTextCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
 
     init() {
@@ -20,6 +21,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         self.model = model
         super.init(rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
+        installSearchTextObserver()
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
@@ -27,6 +29,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         self.model = model
         super.init(coder: coder, rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
+        installSearchTextObserver()
     }
 
     override func viewDidLoad() {
@@ -77,6 +80,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     func applicationWillTerminate() {
         updateAllRequestCancellable?.cancel()
+        searchTextCancellable?.cancel()
         model.stop()
     }
 
@@ -88,6 +92,28 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                     self?.startUpdateAll(debugPlayback: false)
                 }
             }
+    }
+
+    private func installSearchTextObserver() {
+        searchTextCancellable = model.$searchText
+            .removeDuplicates()
+            .sink { [weak self] text in
+                Task { @MainActor in
+                    self?.syncSearchFieldText(text)
+                }
+            }
+    }
+
+    private func syncSearchFieldText(_ text: String) {
+        guard let searchField = searchToolbarItem?.searchField else {
+            return
+        }
+        if searchField.stringValue != text {
+            searchField.stringValue = text
+        }
+        if let editor = searchField.currentEditor(), editor.string != text {
+            editor.string = text
+        }
     }
 
     private func startUpdateAll(debugPlayback: Bool) {
