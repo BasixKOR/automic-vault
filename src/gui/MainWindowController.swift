@@ -172,7 +172,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let controller = UpdateProgressViewController()
-        controller.preferredContentSize = NSSize(width: 860, height: 760)
+        controller.preferredContentSize = NSSize(width: 820, height: 700)
         controller.onRetry = { [weak self] in
             self?.startUpdateAll(debugPlayback: false)
         }
@@ -201,10 +201,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             self?.startUpdateAll(debugPlayback: debugPlayback)
         }
         progressController.configure(
-            title: debugPlayback ? "NUCLEUS UPDATE PLAYBACK" : "NUCLEUS UPDATE CHANNEL",
+            title: debugPlayback ? "Update Playback" : "Update All",
             awaitingClearance: debugPlayback
-                ? "Debug update stream ready"
-                : "Awaiting helper authorization",
+                ? "Ready to replay update progress"
+                : "Waiting for helper authorization",
             idleStatus: updateStatusText(packageCount: packageCount),
             successOperation: "Update Complete",
             failureOperation: "Update Halted"
@@ -214,8 +214,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func activationLog(packageCount: Int, debugPlayback: Bool) -> String {
         let countText = updateStatusText(packageCount: packageCount)
         return debugPlayback
-            ? "Starting debug playback for \(countText)."
-            : "Starting update all for \(countText)."
+            ? "Replaying update progress for \(countText)."
+            : "Preparing updates for \(countText)."
     }
 
     private func updateStatusText(packageCount: Int) -> String {

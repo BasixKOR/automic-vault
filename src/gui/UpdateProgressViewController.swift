@@ -1,601 +1,153 @@
 import AppKit
+import SwiftUI
 
 private enum PackageStage: String {
-    case queued = "QUEUED"
-    case resolving = "RESOLVING"
-    case downloading = "DOWNLOADING"
-    case extracting = "EXTRACTING"
-    case installing = "INSTALLING"
-    case completed = "COMPLETE"
-    case failed = "FAULT"
-}
+    case queued = "Queued"
+    case resolving = "Resolving"
+    case downloading = "Downloading"
+    case extracting = "Extracting"
+    case installing = "Installing"
+    case completed = "Complete"
+    case failed = "Failed"
 
-private final class ProgressStripView: NSView {
-    private let trackLayer = CALayer()
-    private let fillLayer = CALayer()
-    private var renderedProgress: CGFloat = 0
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer = CALayer()
-        trackLayer.backgroundColor = UIStyle.separator.cgColor
-        fillLayer.backgroundColor = UIStyle.accent.cgColor
-        layer?.addSublayer(trackLayer)
-        layer?.addSublayer(fillLayer)
+    var systemImage: String {
+        switch self {
+        case .queued:
+            return "circle.dotted"
+        case .resolving:
+            return "point.3.connected.trianglepath.dotted"
+        case .downloading:
+            return "arrow.down.circle"
+        case .extracting:
+            return "archivebox"
+        case .installing:
+            return "shippingbox"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-        trackLayer.frame = bounds
-        layoutFill(animated: false)
-    }
-
-    func setProgress(_ progress: CGFloat, animated: Bool) {
-        renderedProgress = max(0, min(progress, 1))
-        layoutFill(animated: animated)
-    }
-
-    private func layoutFill(animated: Bool) {
-        let target = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width * renderedProgress,
-            height: bounds.height
-        )
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(animated ? 0.08 : 0)
-        fillLayer.frame = target
-        CATransaction.commit()
-    }
-}
-
-private enum PackageProgressListMetrics {
-    static let rowHeight: CGFloat = 34
-    static let rowSpacing: CGFloat = 6
-
-    static func contentHeight(rowCount: Int) -> CGFloat {
-        guard rowCount > 0 else { return 0 }
-        return CGFloat(rowCount) * rowHeight
-            + CGFloat(max(rowCount - 1, 0)) * rowSpacing
-    }
-}
-
-private final class PackageProgressListView: NSView {
-    override var isFlipped: Bool { true }
-
-    override func layout() {
-        super.layout()
-        var y: CGFloat = 0
-        for subview in subviews {
-            subview.frame = CGRect(
-                x: 0,
-                y: y,
-                width: bounds.width,
-                height: PackageProgressListMetrics.rowHeight
-            )
-            y += PackageProgressListMetrics.rowHeight
-                + PackageProgressListMetrics.rowSpacing
+    var tint: Color {
+        switch self {
+        case .queued:
+            return UpdateProgressPalette.quietText
+        case .resolving:
+            return UpdateProgressPalette.blue
+        case .downloading, .extracting, .installing:
+            return UpdateProgressPalette.cyan
+        case .completed:
+            return UpdateProgressPalette.green
+        case .failed:
+            return UpdateProgressPalette.red
         }
     }
 }
 
-private final class PackageProgressRowView: NSView {
-    private let nameField = NSTextField(labelWithString: "")
-    private let statusField = NSTextField(labelWithString: "")
-    private let speedField = NSTextField(labelWithString: "")
-    private let progressView = ProgressStripView(frame: .zero)
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer = CALayer()
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.02).cgColor
-        layer?.cornerRadius = 4
-
-        [nameField, statusField, speedField].forEach {
-            $0.isEditable = false
-            $0.isBordered = false
-            $0.drawsBackground = false
-            addSubview($0)
-        }
-        nameField.font = UIStyle.monoFont(size: 11, weight: .medium)
-        nameField.textColor = UIStyle.text
-        statusField.font = UIStyle.monoFont(size: 10, weight: .regular)
-        statusField.textColor = UIStyle.accent.withAlphaComponent(0.9)
-        speedField.font = UIStyle.monoFont(size: 10, weight: .regular)
-        speedField.textColor = UIStyle.quietText
-        addSubview(progressView)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-        nameField.frame = CGRect(x: 10, y: bounds.height - 20, width: bounds.width - 160, height: 14)
-        statusField.frame = CGRect(x: bounds.width - 145, y: bounds.height - 20, width: 78, height: 14)
-        speedField.frame = CGRect(x: bounds.width - 72, y: bounds.height - 20, width: 62, height: 14)
-        progressView.frame = CGRect(x: 10, y: 9, width: bounds.width - 20, height: 2)
-    }
-
-    func render(
-        name: String,
-        stage: PackageStage,
-        progress: CGFloat,
-        speed: String?,
-        animated: Bool
-    ) {
-        nameField.stringValue = name
-        statusField.stringValue = stage.rawValue
-        speedField.stringValue = speed ?? ""
-        progressView.setProgress(progress, animated: animated)
-        if stage == .failed {
-            statusField.textColor = UIStyle.danger
-        } else if stage == .completed {
-            statusField.textColor = UIStyle.accent
-        } else {
-            statusField.textColor = UIStyle.text.withAlphaComponent(0.72)
-        }
-    }
+private struct PackageRuntimeState {
+    var stage: PackageStage = .queued
+    var progress: Double = 0.02
+    var speed: String?
+    var lastDownloadUpdateAt: Date?
+    var lastDownloadProgress = 0.0
+    var didLogDownloadStart = false
+    var observedDownload = false
 }
 
-private final class GlitchTextAnimator {
-    private struct Burst {
-        let startedAt: Date
-        let endsAt: Date
-    }
-
-    private weak var field: NSTextField?
-    private let size: CGFloat
-    private let baseColor: NSColor
-    private let glitchColor: NSColor
-    private let weight: NSFont.Weight
-    private let tracking: CGFloat
-    private let timerInterval: TimeInterval = 1.0 / 30.0
-
-    private var timer: Timer?
-    private var baseText = ""
-    private var bursts: [Burst] = []
-    private var nextShiftAt = Date.distantPast
-
-    init(
-        field: NSTextField,
-        size: CGFloat,
-        baseColor: NSColor,
-        glitchColor: NSColor,
-        weight: NSFont.Weight = .medium,
-        tracking: CGFloat = 0.2
-    ) {
-        self.field = field
-        self.size = size
-        self.baseColor = baseColor
-        self.glitchColor = glitchColor
-        self.weight = weight
-        self.tracking = tracking
-    }
-
-    deinit {
-        stop()
-    }
-
-    func setText(_ text: String, animated: Bool) {
-        if text == baseText {
-            if animated {
-                startTimerIfNeeded()
-            } else {
-                stopTimer()
-                bursts.removeAll(keepingCapacity: true)
-                applyCurrentFrame()
-            }
-            return
-        }
-
-        baseText = text
-        bursts.removeAll(keepingCapacity: true)
-        applyCurrentFrame()
-
-        if animated, !text.isEmpty {
-            scheduleNextShift(from: Date())
-            startTimerIfNeeded()
-        } else {
-            stopTimer()
-        }
-    }
-
-    func stop() {
-        stopTimer()
-        bursts.removeAll(keepingCapacity: true)
-        applyCurrentFrame()
-    }
-
-    private func startTimerIfNeeded() {
-        guard timer == nil else { return }
-        let timer = Timer(timeInterval: timerInterval, repeats: true) { [weak self] _ in
-            self?.tick()
-        }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-
-    private func tick() {
-        guard !baseText.isEmpty else {
-            stop()
-            return
-        }
-
-        let now = Date()
-
-        if now >= nextShiftAt {
-            let duration = burstDuration()
-            bursts.append(
-                Burst(
-                    startedAt: now,
-                    endsAt: now.addingTimeInterval(duration)
-                )
-            )
-            nextShiftAt = now.addingTimeInterval(duration + shimmerPause())
-            applyCurrentFrame()
-        }
-
-        guard !bursts.isEmpty else { return }
-
-        var didChange = false
-        bursts.removeAll { burst in
-            let expired = now >= burst.endsAt
-            didChange = didChange || expired
-            return expired
-        }
-
-        if didChange || !bursts.isEmpty {
-            applyCurrentFrame()
-        }
-    }
-
-    private func scheduleNextShift(from date: Date) {
-        nextShiftAt = date.addingTimeInterval(.random(in: 0.36 ... 0.72))
-    }
-
-    private func burstDuration() -> TimeInterval {
-        let baseDuration = TimeInterval.random(in: 1.10 ... 1.46)
-        return baseDuration * Double.random(in: 0.92 ... 1.12)
-    }
-
-    private func shimmerPause() -> TimeInterval {
-        TimeInterval.random(in: 0.82 ... 1.56)
-    }
-
-    private func applyCurrentFrame() {
-        guard let field else { return }
-        let rendered = NSMutableAttributedString(
-            attributedString: UIStyle.attributedMonoText(
-                baseText,
-                size: size,
-                color: baseColor,
-                weight: weight,
-                tracking: tracking
-            )
-        )
-
-        let now = Date()
-        for index in 0 ..< baseText.count {
-            guard let color = sweepColor(for: index, at: now) else { continue }
-            let range = NSRange(location: index, length: 1)
-            rendered.addAttributes(
-                [
-                    .font: UIStyle.monoFont(size: size, weight: weight),
-                    .foregroundColor: color,
-                    .kern: tracking,
-                    .paragraphStyle: UIStyle.wrapParagraphStyle()
-                ],
-                range: range
-            )
-        }
-
-        field.attributedStringValue = rendered
-    }
-
-    private func sweepColor(for index: Int, at now: Date) -> NSColor? {
-        let count = baseText.count
-        guard count > 0 else { return nil }
-        let center = Double(count - 1) / 2.0
-        let maxDistance = max(center, Double(count - 1) - center)
-
-        var strongestAlpha = 0.0
-        for burst in bursts {
-            let duration = burst.endsAt.timeIntervalSince(burst.startedAt)
-            guard duration > 0 else { continue }
-            let progress = now.timeIntervalSince(burst.startedAt) / duration
-            guard progress >= 0, progress <= 1 else { continue }
-
-            let waveRadius = progress * maxDistance
-            let distance = abs(Double(index) - center)
-            let waveWidth = max(1.0, maxDistance * 0.28)
-            let delta = abs(distance - waveRadius)
-            guard delta <= waveWidth else { continue }
-
-            let ringStrength = 1.0 - (delta / waveWidth)
-            let easedRing = ringStrength * ringStrength * (3.0 - 2.0 * ringStrength)
-            let fadeIn = min(1.0, progress / 0.12)
-            let fadeOut = 1.0 - max(0.0, progress - 0.78) / 0.22
-            strongestAlpha = max(strongestAlpha, easedRing * fadeIn * fadeOut)
-        }
-
-        guard strongestAlpha > 0 else { return nil }
-        return baseColor.blended(
-            withFraction: CGFloat(min(0.78, strongestAlpha)),
-            of: glitchColor
-        ) ?? glitchColor
-    }
+private struct PackageProgressRowState: Identifiable, Equatable {
+    let id: String
+    var stage: PackageStage
+    var progress: Double
+    var speed: String?
 }
 
-final class UpdateProgressViewController: NSViewController {
+private struct ProgressLogEntry: Identifiable, Equatable {
+    let id = UUID()
+    let timestamp: String
+    let message: String
+}
+
+@MainActor
+private final class UpdateProgressViewModel: ObservableObject {
     private enum ProgressLayout {
-        static let queued: CGFloat = 0.02
-        static let resolving: CGFloat = 0.04
-        static let downloadFloor: CGFloat = 0.06
-        static let downloadCeiling: CGFloat = 0.78
-        static let extractFloor: CGFloat = 0.82
-        static let extractCeiling: CGFloat = 0.92
-        static let installFloor: CGFloat = 0.84
+        static let queued = 0.02
+        static let resolving = 0.04
+        static let downloadFloor = 0.06
+        static let downloadCeiling = 0.78
+        static let extractFloor = 0.82
+        static let extractCeiling = 0.92
+        static let installFloor = 0.84
     }
 
-    private struct PackageRuntimeState {
-        var stage: PackageStage = .queued
-        var lastRenderedProgress: CGFloat = ProgressLayout.queued
-        var lastSpeed: String?
-        var lastDownloadUpdateAt: Date?
-        var lastDownloadProgress: CGFloat = 0
-        var didLogDownloadStart = false
-        var observedDownload = false
-    }
+    @Published var title = "Update All"
+    @Published var operation = "Waiting for helper authorization"
+    @Published var status = "Ready"
+    @Published var rows: [PackageProgressRowState] = []
+    @Published var logs: [ProgressLogEntry] = []
+    @Published var primaryTitle = "Updating"
+    @Published var primaryEnabled = false
+    @Published var showSecondary = false
+    @Published var isTerminalState = false
+    @Published var terminalStage: PackageStage?
 
-    private final class RootView: NSView {
-        let backdrop = NSView(frame: .zero)
-        let panel = NSView(frame: .zero)
-        let titleField = NSTextField(labelWithString: "")
-        let operationField = NSTextField(labelWithString: "")
-        let statusField = NSTextField(labelWithString: "")
-        let packageScrollView = NSScrollView(frame: .zero)
-        let packageListView = PackageProgressListView()
-        let logScrollView = NSScrollView(frame: .zero)
-        let logView = NSTextView(frame: .zero)
-        let primaryButton = NSButton(title: "Updating", target: nil, action: nil)
-        let secondaryButton = NSButton(title: "Dismiss", target: nil, action: nil)
-        var onCancel: (() -> Void)?
-
-        override init(frame frameRect: NSRect) {
-            super.init(frame: frameRect)
-            wantsLayer = true
-            layer = CALayer()
-
-            backdrop.wantsLayer = true
-            backdrop.layer = CALayer()
-            backdrop.layer?.backgroundColor = NSColor(calibratedWhite: 0, alpha: 0.6).cgColor
-            addSubview(backdrop)
-
-            panel.wantsLayer = true
-            panel.layer = CALayer()
-            panel.layer?.backgroundColor = UIStyle.surface.cgColor
-            panel.layer?.borderColor = UIStyle.separator.cgColor
-            panel.layer?.borderWidth = 1
-            panel.layer?.cornerRadius = 12
-            panel.layer?.shadowColor = UIStyle.accentShadow.cgColor
-            panel.layer?.shadowOpacity = 1
-            panel.layer?.shadowRadius = 18
-            panel.layer?.shadowOffset = .zero
-            addSubview(panel)
-
-            [titleField, operationField, statusField].forEach {
-                $0.isEditable = false
-                $0.isBordered = false
-                $0.drawsBackground = false
-                panel.addSubview($0)
-            }
-            titleField.font = UIStyle.monoFont(size: 15, weight: .medium)
-            titleField.textColor = UIStyle.text
-            operationField.font = UIStyle.monoFont(size: 12, weight: .medium)
-            operationField.textColor = UIStyle.accent
-            statusField.font = UIStyle.monoFont(size: 10, weight: .regular)
-            statusField.textColor = UIStyle.quietText
-
-            packageScrollView.drawsBackground = false
-            packageScrollView.borderType = .noBorder
-            packageScrollView.hasHorizontalScroller = false
-            packageScrollView.hasVerticalScroller = true
-            packageScrollView.autohidesScrollers = true
-            packageScrollView.contentView.postsBoundsChangedNotifications = true
-            packageScrollView.documentView = packageListView
-            panel.addSubview(packageScrollView)
-
-            logView.isEditable = false
-            logView.isSelectable = true
-            logView.drawsBackground = false
-            logView.textColor = UIStyle.dimText
-            logView.font = UIStyle.monoFont(size: 11)
-            logView.textContainerInset = NSSize(width: 0, height: 8)
-            logScrollView.drawsBackground = false
-            logScrollView.borderType = .noBorder
-            logScrollView.hasVerticalScroller = true
-            logScrollView.documentView = logView
-            panel.addSubview(logScrollView)
-
-            [primaryButton, secondaryButton].forEach {
-                $0.wantsLayer = true
-                $0.layer = CALayer()
-                $0.isBordered = false
-                $0.font = UIStyle.monoFont(size: 11, weight: .medium)
-                UIStyle.applyControlChrome(
-                    to: $0.layer,
-                    chrome: UIStyle.ControlChrome(
-                        topBackgroundColor: NSColor.white.withAlphaComponent(0.03),
-                        bottomBackgroundColor: NSColor.white.withAlphaComponent(0.012),
-                        borderColor: UIStyle.accent.withAlphaComponent(0.12),
-                        contentColor: UIStyle.dimText,
-                        topInnerStrokeColor: NSColor.white.withAlphaComponent(0.04),
-                        bottomInnerStrokeColor: NSColor.black.withAlphaComponent(0.18)
-                    )
-                )
-                panel.addSubview($0)
-            }
-            secondaryButton.isHidden = true
-        }
-
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override var acceptsFirstResponder: Bool {
-            true
-        }
-
-        override func keyDown(with event: NSEvent) {
-            if event.keyCode == 53 {
-                onCancel?()
-                return
-            }
-            super.keyDown(with: event)
-        }
-
-        override func cancelOperation(_ sender: Any?) {
-            onCancel?()
-        }
-
-        override func layout() {
-            super.layout()
-            backdrop.frame = bounds
-            let panelWidth = min(max(bounds.width * 0.54, 560), 780)
-            let panelHeight = min(max(bounds.height * 0.70, 520), 720)
-            panel.frame = CGRect(
-                x: (bounds.width - panelWidth) / 2,
-                y: (bounds.height - panelHeight) / 2,
-                width: panelWidth,
-                height: panelHeight
-            )
-
-            let inset: CGFloat = 24
-            titleField.frame = CGRect(
-                x: inset,
-                y: panelHeight - 42,
-                width: panelWidth - inset * 2,
-                height: 20
-            )
-            operationField.frame = CGRect(
-                x: inset,
-                y: panelHeight - 68,
-                width: panelWidth - inset * 2,
-                height: 18
-            )
-            statusField.frame = CGRect(
-                x: inset,
-                y: panelHeight - 90,
-                width: panelWidth - inset * 2,
-                height: 16
-            )
-
-            let rowContentHeight = PackageProgressListMetrics.contentHeight(
-                rowCount: packageListView.subviews.count
-            )
-            let buttonY: CGFloat = 24
-            let buttonHeight: CGFloat = 30
-            let logBottom = buttonY + buttonHeight + 16
-            let contentTop = panelHeight - 112
-            let packageLogGap: CGFloat = 14
-            let availableContentHeight = contentTop - logBottom - packageLogGap
-            let maxPackageHeight = min(320, max(120, availableContentHeight * 0.70))
-            let packageHeight = min(rowContentHeight, maxPackageHeight)
-            let packageY = contentTop - packageHeight
-            let logHeight = max(104, packageY - packageLogGap - logBottom)
-
-            packageScrollView.frame = CGRect(
-                x: inset,
-                y: packageY,
-                width: panelWidth - inset * 2,
-                height: packageHeight
-            )
-            packageScrollView.hasVerticalScroller = rowContentHeight > packageHeight + 0.5
-            packageListView.frame = CGRect(
-                x: 0,
-                y: 0,
-                width: packageScrollView.contentSize.width,
-                height: max(rowContentHeight, packageScrollView.contentSize.height)
-            )
-            packageListView.needsLayout = true
-
-            logScrollView.frame = CGRect(
-                x: inset,
-                y: logBottom,
-                width: panelWidth - inset * 2,
-                height: logHeight
-            )
-            primaryButton.frame = CGRect(
-                x: panelWidth - 128,
-                y: buttonY,
-                width: 104,
-                height: buttonHeight
-            )
-            secondaryButton.frame = CGRect(
-                x: panelWidth - 240,
-                y: buttonY,
-                width: 104,
-                height: buttonHeight
-            )
-            UIStyle.layoutControlChrome(in: primaryButton.layer)
-            UIStyle.layoutControlChrome(in: secondaryButton.layer)
-        }
-    }
-
-    var onRetry: (() -> Void)?
-    var onDismiss: (() -> Void)?
-
-    private var rows: [String: PackageProgressRowView] = [:]
     private var orderedPackages: [String] = []
-    private var visiblePackages: Set<String> = []
+    private var visiblePackages = Set<String>()
     private var acceptsNewVisiblePackages = true
     private var packageStates: [String: PackageRuntimeState] = [:]
-    private var isTerminalState = false
-    private var channelTitle = "NUCLEUS UPDATE CHANNEL"
-    private var awaitingClearanceText = "Awaiting clearance"
-    private var idleStatusText = "Nucleus idle"
     private var successOperationTitle = "Update Complete"
     private var failureOperationTitle = "Update Halted"
     private var hasLoggedResolving = false
-    private var operationAnimator: GlitchTextAnimator?
+    private var lastActivePackage: String?
 
-    override func loadView() {
-        view = RootView(frame: .zero)
+    var completedCount: Int {
+        rows.filter { $0.stage == .completed }.count
     }
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        guard let rootView = view as? RootView else { return }
-        rootView.onCancel = { [weak self] in
-            self?.requestDismiss()
+    var failedCount: Int {
+        rows.filter { $0.stage == .failed }.count
+    }
+
+    var totalCount: Int {
+        rows.count
+    }
+
+    var overallProgress: Double {
+        guard rows.isEmpty == false else {
+            return isTerminalState && terminalStage == .completed ? 1 : 0
         }
-        operationAnimator = GlitchTextAnimator(
-            field: rootView.operationField,
-            size: 12,
-            baseColor: UIStyle.accent,
-            glitchColor: UIStyle.text.withAlphaComponent(0.86)
-        )
-        rootView.titleField.stringValue = channelTitle
-        operationAnimator?.setText(awaitingClearanceText, animated: true)
-        rootView.statusField.stringValue = idleStatusText
-        rootView.primaryButton.target = self
-        rootView.primaryButton.action = #selector(primaryAction)
-        rootView.secondaryButton.target = self
-        rootView.secondaryButton.action = #selector(secondaryAction)
-        updateButtons(primaryTitle: "Updating", showSecondary: false, primaryEnabled: false)
+        return rows.reduce(0) { $0 + $1.progress } / Double(rows.count)
+    }
+
+    var progressSummary: String {
+        if failedCount > 0 {
+            return "\(failedCount) failed"
+        }
+        if totalCount == 0 {
+            return "Preparing package plan"
+        }
+        return "\(completedCount) of \(totalCount) complete"
+    }
+
+    var statusTint: Color {
+        if terminalStage == .failed {
+            return UpdateProgressPalette.red
+        }
+        if terminalStage == .completed {
+            return UpdateProgressPalette.green
+        }
+        return UpdateProgressPalette.cyan
+    }
+
+    var primarySystemImage: String {
+        switch primaryTitle {
+        case "Retry":
+            return "arrow.clockwise"
+        case "Dismiss":
+            return "checkmark"
+        default:
+            return "arrow.triangle.2.circlepath"
+        }
     }
 
     func configure(
@@ -605,21 +157,18 @@ final class UpdateProgressViewController: NSViewController {
         successOperation: String,
         failureOperation: String
     ) {
-        channelTitle = title
-        awaitingClearanceText = awaitingClearance
-        idleStatusText = idleStatus
+        self.title = title
+        operation = awaitingClearance
+        status = idleStatus
         successOperationTitle = successOperation
         failureOperationTitle = failureOperation
-        guard let rootView = view as? RootView else { return }
-        rootView.titleField.stringValue = title
-        operationAnimator?.setText(awaitingClearance, animated: true)
-        rootView.statusField.stringValue = idleStatus
+        terminalStage = nil
     }
 
     func begin(
         packages: [String],
         activationLog: String,
-        initialOperation: String? = nil
+        initialOperation: String?
     ) {
         orderedPackages = packages
         visiblePackages = Set(packages)
@@ -627,140 +176,150 @@ final class UpdateProgressViewController: NSViewController {
         packageStates = Dictionary(
             uniqueKeysWithValues: packages.map { ($0, PackageRuntimeState()) }
         )
-        isTerminalState = false
         hasLoggedResolving = false
-        if let rootView = view as? RootView {
-            rootView.logView.string = ""
+        lastActivePackage = nil
+        isTerminalState = false
+        terminalStage = nil
+        primaryTitle = "Updating"
+        primaryEnabled = false
+        showSecondary = false
+        rows = packages.map { package in
+            PackageProgressRowState(
+                id: package,
+                stage: .queued,
+                progress: ProgressLayout.queued,
+                speed: nil
+            )
         }
-        setStatus(idleStatusText)
+        logs = []
+        status = packageCountText(packages.count)
         if let initialOperation {
-            setOperation(initialOperation)
+            operation = initialOperation
         }
         appendLog(activationLog)
         if packages.isEmpty {
-            appendLog("Awaiting package plan from nucleus.")
+            appendLog("Waiting for the package plan.")
         }
-        updateButtons(primaryTitle: "Updating", showSecondary: false, primaryEnabled: false)
-        rebuildRows()
-        resetPackageScrollPosition()
     }
 
     func handle(event: NukeHelperProgressEvent) {
+        guard isTerminalState == false else {
+            return
+        }
+
         switch event {
         case .resolving:
-            setOperation("Resolving package graph")
-            if !hasLoggedResolving {
+            operation = "Resolving package graph"
+            if hasLoggedResolving == false {
                 appendLog("Resolving package graph")
                 hasLoggedResolving = true
             }
             orderedPackages.forEach {
-                updateRow(
-                    package: $0,
-                    stage: .resolving,
-                    progress: ProgressLayout.resolving,
-                    speed: nil
-                )
+                updateRow(package: $0, stage: .resolving, progress: ProgressLayout.resolving)
             }
         case .downloading(let package, let bytesPerSecond, let progress):
             let visiblePackage = visiblePackageName(
                 forProgressPackage: package,
                 allowsNewProgressPackage: true
             )
-            let isVisiblePackage = visiblePackage != nil
             let rowPackage = visiblePackage ?? package
-            let speedText = Self.format(speed: bytesPerSecond)
-            setOperation("Updating \(package)")
-            if shouldLogDownloadStart(for: package) {
+            operation = "Updating \(package)"
+            if shouldLogDownloadStart(for: rowPackage) {
                 appendLog("Downloading \(package)")
             }
-            guard isVisiblePackage else { return }
-            guard shouldRenderDownloadUpdate(for: package, progress: CGFloat(progress)) else {
+            guard visiblePackage != nil,
+                  shouldRenderDownloadUpdate(for: rowPackage, progress: Double(progress)) else {
                 return
             }
             updateRow(
                 package: rowPackage,
                 stage: .downloading,
-                progress: downloadProgress(for: CGFloat(progress)),
-                speed: speedText
+                progress: downloadProgress(for: Double(progress)),
+                speed: Self.format(speed: bytesPerSecond)
             )
         case .installing(let package):
             let visiblePackage = visiblePackageName(
                 forProgressPackage: package,
                 allowsNewProgressPackage: true
             )
-            let isVisiblePackage = visiblePackage != nil
             let rowPackage = visiblePackage ?? package
-            let state = packageStates[rowPackage] ?? packageStates[package] ?? PackageRuntimeState()
+            let state = packageStates[rowPackage]
+                ?? packageStates[package]
+                ?? PackageRuntimeState()
             if state.observedDownload {
-                setOperation("Extracting \(package)")
+                operation = "Extracting \(package)"
                 appendLog("Extracting \(package)")
-                guard isVisiblePackage else { return }
+                guard visiblePackage != nil else { return }
                 updateRow(
                     package: rowPackage,
                     stage: .extracting,
-                    progress: extractProgress(from: state.lastRenderedProgress),
-                    speed: nil
+                    progress: extractProgress(from: state.progress)
                 )
             } else {
-                setOperation("Installing \(package)")
+                operation = "Installing \(package)"
                 appendLog("Installing \(package)")
-                guard isVisiblePackage else { return }
+                guard visiblePackage != nil else { return }
                 updateRow(
                     package: rowPackage,
                     stage: .installing,
-                    progress: ProgressLayout.installFloor,
-                    speed: nil
+                    progress: ProgressLayout.installFloor
                 )
             }
         case .log(let package, let message):
-            _ = visiblePackageName(
+            if let trackedPackage = visiblePackageName(
                 forProgressPackage: package,
                 allowsNewProgressPackage: true
-            ).map(track)
-            setOperation(Self.sentenceCase(message))
+            ) {
+                track(trackedPackage)
+            }
+            operation = Self.sentenceCase(message)
             appendLog("\(package): \(message)")
         case .completed(let package):
             let visiblePackage = visiblePackageName(forProgressPackage: package)
-            let isVisiblePackage = visiblePackage != nil
             let rowPackage = visiblePackage ?? package
-            setOperation("Sealing \(package)")
+            operation = "Finishing \(package)"
             appendLog("Completed \(package)")
-            guard isVisiblePackage else { return }
-            updateRow(package: rowPackage, stage: .completed, progress: 1, speed: nil)
+            guard visiblePackage != nil else { return }
+            updateRow(package: rowPackage, stage: .completed, progress: 1)
         case .error(let message):
             fail(message: message)
         }
     }
 
     func succeed(message: String, packages: [String]) {
-        guard !isTerminalState else {
+        guard isTerminalState == false else {
             return
         }
+
         packages
             .compactMap { visiblePackageName(forProgressPackage: $0) }
-            .forEach { updateRow(package: $0, stage: .completed, progress: 1, speed: nil) }
+            .forEach { updateRow(package: $0, stage: .completed, progress: 1) }
         isTerminalState = true
-        operationAnimator?.stop()
-        setOperation(successOperationTitle)
-        setStatus(message, color: UIStyle.accent)
+        terminalStage = .completed
+        operation = successOperationTitle
+        status = message
+        primaryTitle = "Dismiss"
+        primaryEnabled = true
+        showSecondary = false
         appendLog(message)
-        animateSuccessPulse()
-        updateButtons(primaryTitle: "Dismiss", showSecondary: false)
     }
 
     func fail(message: String) {
-        guard !isTerminalState else {
+        guard isTerminalState == false else {
             return
         }
+
         isTerminalState = true
-        operationAnimator?.stop()
-        setOperation(failureOperationTitle)
-        setStatus(message, color: UIStyle.danger)
-        appendLog("FAULT: \(message)")
-        if let current = orderedPackages.last {
-            updateRow(package: current, stage: .failed, progress: 1, speed: nil)
+        terminalStage = .failed
+        operation = failureOperationTitle
+        status = message
+        appendLog("Failed: \(message)")
+        if let package = lastActivePackage ?? orderedPackages.last {
+            updateRow(package: package, stage: .failed, progress: 1)
         }
-        updateButtons(primaryTitle: "Retry", showSecondary: true)
+        primaryTitle = "Retry"
+        primaryEnabled = true
+        showSecondary = true
     }
 
     @discardableResult
@@ -772,10 +331,13 @@ final class UpdateProgressViewController: NSViewController {
             packageStates[package] = packageStates[package] ?? PackageRuntimeState()
             return false
         }
-        guard rows[package] == nil else { return true }
+        guard orderedPackages.contains(package) == false else {
+            renderRows()
+            return true
+        }
         orderedPackages.append(package)
         packageStates[package] = packageStates[package] ?? PackageRuntimeState()
-        rebuildRows()
+        renderRows()
         return true
     }
 
@@ -797,6 +359,7 @@ final class UpdateProgressViewController: NSViewController {
             if allowsNewProgressPackage {
                 visiblePackages.insert(package)
                 packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+                track(package)
                 return package
             }
             packageStates[package] = packageStates[package] ?? PackageRuntimeState()
@@ -809,38 +372,20 @@ final class UpdateProgressViewController: NSViewController {
         return visiblePackage
     }
 
-    private func rebuildRows() {
-        guard let rootView = view as? RootView else { return }
-        let existingRows = rows
-        rows.removeAll(keepingCapacity: true)
-        rootView.packageListView.subviews.forEach { subview in
-            subview.removeFromSuperview()
-        }
-        for package in orderedPackages {
-            let row = existingRows[package] ?? PackageProgressRowView(frame: .zero)
-            rows[package] = row
-            let state = packageStates[package] ?? PackageRuntimeState()
-            row.render(
-                name: package,
-                stage: state.stage,
-                progress: state.lastRenderedProgress,
-                speed: state.lastSpeed,
-                animated: false
-            )
-            rootView.packageListView.addSubview(row)
-        }
-        rootView.needsLayout = true
-        resetPackageScrollPosition()
-    }
-
-    private func updateRow(package: String, stage: PackageStage, progress: CGFloat, speed: String?) {
+    private func updateRow(
+        package: String,
+        stage: PackageStage,
+        progress: Double,
+        speed: String? = nil
+    ) {
         guard track(package) else {
             return
         }
+        lastActivePackage = package
         var state = packageStates[package] ?? PackageRuntimeState()
         state.stage = stage
-        state.lastRenderedProgress = progress
-        state.lastSpeed = speed
+        state.progress = progress.clamped(to: 0 ... 1)
+        state.speed = speed
         if stage == .downloading {
             state.observedDownload = true
         } else {
@@ -848,19 +393,19 @@ final class UpdateProgressViewController: NSViewController {
             state.lastDownloadUpdateAt = nil
         }
         packageStates[package] = state
-        rows[package]?.render(
-            name: package,
-            stage: stage,
-            progress: progress,
-            speed: speed,
-            animated: stage != .downloading
-        )
+        renderRows()
     }
 
-    private func resetPackageScrollPosition() {
-        guard let rootView = view as? RootView else { return }
-        rootView.packageScrollView.contentView.scroll(to: .zero)
-        rootView.packageScrollView.reflectScrolledClipView(rootView.packageScrollView.contentView)
+    private func renderRows() {
+        rows = orderedPackages.map { package in
+            let state = packageStates[package] ?? PackageRuntimeState()
+            return PackageProgressRowState(
+                id: package,
+                stage: state.stage,
+                progress: state.progress,
+                speed: state.speed
+            )
+        }
     }
 
     private func shouldLogDownloadStart(for package: String) -> Bool {
@@ -873,7 +418,7 @@ final class UpdateProgressViewController: NSViewController {
         return true
     }
 
-    private func shouldRenderDownloadUpdate(for package: String, progress: CGFloat) -> Bool {
+    private func shouldRenderDownloadUpdate(for package: String, progress: Double) -> Bool {
         let now = Date()
         var state = packageStates[package] ?? PackageRuntimeState()
         defer {
@@ -891,75 +436,33 @@ final class UpdateProgressViewController: NSViewController {
         return now.timeIntervalSince(lastUpdate) >= 0.05
     }
 
-    private func setOperation(_ text: String) {
-        operationAnimator?.setText(text, animated: !isTerminalState)
-    }
-
-    private func setStatus(_ text: String, color: NSColor = UIStyle.quietText) {
-        guard let rootView = view as? RootView else { return }
-        rootView.statusField.stringValue = text
-        rootView.statusField.textColor = color
-    }
-
     private func appendLog(_ line: String) {
-        guard let rootView = view as? RootView else { return }
-        let prefix = DateFormatter.localizedString(
-            from: Date(),
-            dateStyle: .none,
-            timeStyle: .medium
-        )
-        let existing = rootView.logView.string
-        rootView.logView.string = existing + "[\(prefix)] \(line)\n"
-        rootView.logView.scrollToEndOfDocument(nil)
-    }
-
-    private func animateSuccessPulse() {
-        guard let rootView = view as? RootView else { return }
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.28)
-        rootView.panel.layer?.shadowRadius = 28
-        rootView.panel.layer?.shadowColor = UIStyle.accent.cgColor
-        CATransaction.commit()
-    }
-
-    private func updateButtons(
-        primaryTitle: String,
-        showSecondary: Bool,
-        primaryEnabled: Bool = true
-    ) {
-        guard let rootView = view as? RootView else { return }
-        rootView.primaryButton.title = primaryTitle
-        rootView.primaryButton.isEnabled = primaryEnabled
-        rootView.secondaryButton.isHidden = !showSecondary
-        rootView.secondaryButton.isEnabled = showSecondary
-    }
-
-    @objc private func primaryAction() {
-        if isTerminalState {
-            if (view as? RootView)?.primaryButton.title == "Retry" {
-                onRetry?()
-            } else {
-                onDismiss?()
-            }
-            return
+        logs.append(ProgressLogEntry(
+            timestamp: DateFormatter.localizedString(
+                from: Date(),
+                dateStyle: .none,
+                timeStyle: .medium
+            ),
+            message: line
+        ))
+        if logs.count > 160 {
+            logs.removeFirst(logs.count - 160)
         }
-        NSSound.beep()
     }
 
-    @objc private func secondaryAction() {
-        guard isTerminalState else {
-            NSSound.beep()
-            return
-        }
-        onDismiss?()
+    private func downloadProgress(for progress: Double) -> Double {
+        let normalized = progress.clamped(to: 0 ... 1)
+        return ProgressLayout.downloadFloor
+            + normalized * (ProgressLayout.downloadCeiling - ProgressLayout.downloadFloor)
     }
 
-    private func requestDismiss() {
-        guard isTerminalState else {
-            NSSound.beep()
-            return
-        }
-        onDismiss?()
+    private func extractProgress(from currentProgress: Double) -> Double {
+        max(currentProgress, ProgressLayout.extractFloor)
+            .clamped(to: ProgressLayout.extractFloor ... ProgressLayout.extractCeiling)
+    }
+
+    private func packageCountText(_ count: Int) -> String {
+        count == 1 ? "1 outdated package" : "\(count) outdated packages"
     }
 
     private static func format(speed: UInt64) -> String {
@@ -976,17 +479,419 @@ final class UpdateProgressViewController: NSViewController {
         guard let first = message.first else { return message }
         return first.uppercased() + message.dropFirst()
     }
+}
 
-    private func downloadProgress(for progress: CGFloat) -> CGFloat {
-        let normalized = max(0, min(progress, 1))
-        return ProgressLayout.downloadFloor
-            + normalized * (ProgressLayout.downloadCeiling - ProgressLayout.downloadFloor)
+@MainActor
+final class UpdateProgressViewController: NSViewController {
+    var onRetry: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    private let model = UpdateProgressViewModel()
+
+    override func loadView() {
+        view = NSHostingView(rootView: UpdateProgressSheetView(
+            model: model,
+            onPrimary: { [weak self] in self?.primaryAction() },
+            onSecondary: { [weak self] in self?.secondaryAction() },
+            onCancel: { [weak self] in self?.requestDismiss() }
+        ))
     }
 
-    private func extractProgress(from currentProgress: CGFloat) -> CGFloat {
-        max(currentProgress, ProgressLayout.extractFloor)
-            .clamped(to: ProgressLayout.extractFloor ... ProgressLayout.extractCeiling)
+    func configure(
+        title: String,
+        awaitingClearance: String,
+        idleStatus: String,
+        successOperation: String,
+        failureOperation: String
+    ) {
+        model.configure(
+            title: title,
+            awaitingClearance: awaitingClearance,
+            idleStatus: idleStatus,
+            successOperation: successOperation,
+            failureOperation: failureOperation
+        )
     }
+
+    func begin(
+        packages: [String],
+        activationLog: String,
+        initialOperation: String? = nil
+    ) {
+        model.begin(
+            packages: packages,
+            activationLog: activationLog,
+            initialOperation: initialOperation
+        )
+    }
+
+    func handle(event: NukeHelperProgressEvent) {
+        model.handle(event: event)
+    }
+
+    func succeed(message: String, packages: [String]) {
+        model.succeed(message: message, packages: packages)
+    }
+
+    func fail(message: String) {
+        model.fail(message: message)
+    }
+
+    private func primaryAction() {
+        guard model.isTerminalState else {
+            NSSound.beep()
+            return
+        }
+        if model.primaryTitle == "Retry" {
+            onRetry?()
+        } else {
+            onDismiss?()
+        }
+    }
+
+    private func secondaryAction() {
+        guard model.isTerminalState else {
+            NSSound.beep()
+            return
+        }
+        onDismiss?()
+    }
+
+    private func requestDismiss() {
+        guard model.isTerminalState else {
+            NSSound.beep()
+            return
+        }
+        onDismiss?()
+    }
+}
+
+private struct UpdateProgressSheetView: View {
+    @ObservedObject var model: UpdateProgressViewModel
+    let onPrimary: () -> Void
+    let onSecondary: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+                .overlay(UpdateProgressPalette.hairline)
+            content
+            Divider()
+                .overlay(UpdateProgressPalette.hairline)
+            footer
+        }
+        .frame(width: 820, height: 700)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(UpdateProgressPalette.windowTint)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(UpdateProgressPalette.controlBorder.opacity(0.28), lineWidth: 1)
+        }
+        .preferredColorScheme(.dark)
+        .onExitCommand(perform: onCancel)
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(model.statusTint.opacity(0.16))
+                Image(systemName: model.terminalStage?.systemImage ?? "arrow.triangle.2.circlepath")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(model.statusTint)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .frame(width: 42, height: 42)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(model.title)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(UpdateProgressPalette.primaryText)
+                    .lineLimit(1)
+                Text(model.operation)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(UpdateProgressPalette.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 16)
+
+            StatusPill(
+                text: model.progressSummary,
+                systemImage: model.terminalStage?.systemImage ?? "waveform.path.ecg",
+                tint: model.statusTint
+            )
+        }
+        .padding(.horizontal, 24)
+        .frame(height: 82)
+        .background {
+            Rectangle()
+                .fill(.thinMaterial)
+                .overlay(UpdateProgressPalette.headerTint)
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 16) {
+            overallProgress
+            HStack(alignment: .top, spacing: 16) {
+                packagePanel
+                    .frame(width: 464)
+                activityPanel
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var overallProgress: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(model.status)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(UpdateProgressPalette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Text("\(Int((model.overallProgress * 100).rounded()))%")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(UpdateProgressPalette.secondaryText)
+                    .monospacedDigit()
+            }
+            ProgressView(value: model.overallProgress)
+                .tint(model.statusTint)
+        }
+        .padding(14)
+        .frame(height: 72)
+        .background(UpdateProgressPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(UpdateProgressPalette.controlBorder.opacity(0.20), lineWidth: 1)
+        }
+    }
+
+    private var packagePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("Packages")
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    if model.rows.isEmpty {
+                        EmptyProgressPlaceholder(text: "Preparing package plan")
+                    } else {
+                        ForEach(model.rows) { row in
+                            PackageProgressRow(row: row)
+                        }
+                    }
+                }
+                .padding(10)
+            }
+            .scrollIndicators(.visible)
+            .background(UpdateProgressPalette.panelFill, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(UpdateProgressPalette.controlBorder.opacity(0.16), lineWidth: 1)
+            }
+        }
+    }
+
+    private var activityPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("Activity")
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 7) {
+                        if model.logs.isEmpty {
+                            EmptyProgressPlaceholder(text: "Waiting for activity")
+                        } else {
+                            ForEach(model.logs) { entry in
+                                LogEntryRow(entry: entry)
+                                    .id(entry.id)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+                .scrollIndicators(.visible)
+                .background(UpdateProgressPalette.panelFill, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(UpdateProgressPalette.controlBorder.opacity(0.16), lineWidth: 1)
+                }
+                .onChange(of: model.logs.last?.id) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            if model.isTerminalState == false {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(UpdateProgressPalette.cyan)
+                Text("Updating packages")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(UpdateProgressPalette.secondaryText)
+            }
+
+            Spacer()
+
+            if model.showSecondary {
+                Button(action: onSecondary) {
+                    Text("Dismiss")
+                        .frame(minWidth: 82)
+                }
+                .buttonStyle(.glass)
+                .tint(.clear)
+            }
+
+            Button(action: onPrimary) {
+                Label(model.primaryTitle, systemImage: model.primarySystemImage)
+                    .frame(minWidth: 94)
+            }
+            .buttonStyle(.glass)
+            .tint(.clear)
+            .disabled(model.primaryEnabled == false)
+        }
+        .padding(.horizontal, 24)
+        .frame(height: 64)
+        .background {
+            Rectangle()
+                .fill(.thinMaterial)
+                .overlay(UpdateProgressPalette.footerTint)
+        }
+    }
+}
+
+private struct PackageProgressRow: View {
+    let row: PackageProgressRowState
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: row.stage.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(row.stage.tint)
+                .frame(width: 20)
+                .symbolRenderingMode(.hierarchical)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.id)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(UpdateProgressPalette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Text(row.stage.rawValue)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(row.stage.tint)
+                        .lineLimit(1)
+                    if let speed = row.speed {
+                        Text(speed)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(UpdateProgressPalette.quietText)
+                            .lineLimit(1)
+                    }
+                }
+                ProgressView(value: row.progress)
+                    .tint(row.stage.tint)
+            }
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 58)
+        .background(UpdateProgressPalette.rowFill, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct LogEntryRow: View {
+    let entry: ProgressLogEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(entry.timestamp)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(UpdateProgressPalette.quietText)
+                .frame(width: 76, alignment: .leading)
+                .lineLimit(1)
+            Text(entry.message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(UpdateProgressPalette.secondaryText)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct StatusPill: View {
+    let text: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(tint.opacity(0.13), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.26), lineWidth: 1))
+    }
+}
+
+private struct SectionLabel: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(UpdateProgressPalette.quietText)
+    }
+}
+
+private struct EmptyProgressPlaceholder: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(UpdateProgressPalette.quietText)
+            .frame(maxWidth: .infinity, minHeight: 90)
+    }
+}
+
+private enum UpdateProgressPalette {
+    static let windowTint = Color.black.opacity(0.30)
+    static let headerTint = Color.black.opacity(0.18)
+    static let footerTint = Color.black.opacity(0.14)
+    static let panelFill = Color.white.opacity(0.045)
+    static let rowFill = Color.white.opacity(0.060)
+    static let controlFill = Color.white.opacity(0.070)
+    static let controlBorder = Color.white.opacity(0.22)
+    static let hairline = Color.white.opacity(0.10)
+    static let primaryText = Color.white.opacity(0.92)
+    static let secondaryText = Color.white.opacity(0.66)
+    static let quietText = Color.white.opacity(0.38)
+    static let green = Color(red: 0.10, green: 0.86, blue: 0.58)
+    static let cyan = Color(red: 0.10, green: 0.52, blue: 1.00)
+    static let blue = Color(red: 0.55, green: 0.67, blue: 0.82)
+    static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
 }
 
 private extension Comparable {
