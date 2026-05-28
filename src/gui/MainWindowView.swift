@@ -651,7 +651,7 @@ private struct SidebarCountText: View {
 private struct UpdateAllHeaderButtonLabel: View {
     let title: String
 
-    private static let accent = Color(red: 0.00, green: 0.84, blue: 1.00)
+    private static let accent = Color(red: 0.90, green: 1.00, blue: 0.93)
 
     var body: some View {
         HStack(spacing: 6) {
