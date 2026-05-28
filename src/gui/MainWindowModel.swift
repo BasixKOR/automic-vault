@@ -322,8 +322,8 @@ final class MainWindowModel: ObservableObject {
         selectedSection = section
         if isSearchActive {
             searchText = ""
-            searchDeactivationRequestID += 1
         }
+        searchDeactivationRequestID += 1
     }
 
     func requestOutdatedUpdateAll() {

@@ -113,6 +113,22 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectingSidebarSectionDeactivatesEmptySearchField() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let initialDeactivationRequestID = model.searchDeactivationRequestID
+
+        model.selectSection(.newUpdated)
+
+        XCTAssertEqual(model.searchText, "")
+        XCTAssertEqual(model.selectedSection, .newUpdated)
+        XCTAssertEqual(
+            model.searchDeactivationRequestID,
+            initialDeactivationRequestID + 1
+        )
+    }
+
+    @MainActor
     func testSearchUsesNeutralVersionTextDespiteSelectedSection() {
         let model = MainWindowModel()
         defer { model.stop() }
