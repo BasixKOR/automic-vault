@@ -5,6 +5,9 @@ import SwiftUI
 @MainActor
 final class MainWindowController: NSHostingController<MainWindowView> {
     private static let searchShortcutKeys: Set<String> = ["k", "l", "p"]
+    private static let appUpdateToolbarHorizontalPadding: CGFloat = 18
+    private static let appUpdateToolbarIconTitleSpacing = ""
+    private static let appUpdateToolbarTrailingPadding = "  "
 
     private let model: MainWindowModel
     private let appUpdateCoordinator: AppUpdateCoordinator
@@ -485,7 +488,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let itemIndex = toolbar.items.firstIndex {
             $0.itemIdentifier == .automicVaultAppUpdate
         }
-        let shouldShowUpdate = appUpdateCoordinator.hasAvailableUpdate
+        let shouldShowUpdate =
+            appUpdateCoordinator.hasAvailableUpdate
             || appUpdateCoordinator.isInstalling
 
         if shouldShowUpdate {
@@ -517,7 +521,9 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             ? "Installing the Automic Vault update"
             : "Install the staged Automic Vault update and relaunch"
 
-        button.title = title
+        button.title = Self.appUpdateToolbarIconTitleSpacing
+            + title
+            + Self.appUpdateToolbarTrailingPadding
         button.image = NSImage(
             systemSymbolName: isInstalling
                 ? "arrow.triangle.2.circlepath"
@@ -530,7 +536,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
         let fittingSize = button.fittingSize
         let size = NSSize(
-            width: max(ceil(fittingSize.width), 168),
+            width: max(
+                ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
+                182
+            ),
             height: max(ceil(fittingSize.height), 28)
         )
         button.frame.size = size
@@ -698,6 +707,7 @@ extension MainWindowController: NSToolbarDelegate {
             button.controlSize = .small
             button.font = .systemFont(ofSize: 12, weight: .semibold)
             button.imagePosition = .imageLeading
+            button.imageHugsTitle = true
             button.imageScaling = .scaleProportionallyDown
             button.setButtonType(.momentaryPushIn)
             item.view = button
