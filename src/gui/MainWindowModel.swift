@@ -137,6 +137,89 @@ enum MainWindowPackageBadge: Hashable {
     case outdated
 }
 
+enum PackageOperationKind: String, CaseIterable, Identifiable {
+    case install
+    case update
+    case uninstall
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .install:
+            return "Install"
+        case .update:
+            return "Update"
+        case .uninstall:
+            return "Uninstall"
+        }
+    }
+
+    var progressTitle: String {
+        switch self {
+        case .install:
+            return "Installing"
+        case .update:
+            return "Updating"
+        case .uninstall:
+            return "Uninstalling"
+        }
+    }
+
+    var progressSheetTitle: String {
+        switch self {
+        case .install:
+            return "Install Package"
+        case .update:
+            return "Update Package"
+        case .uninstall:
+            return "Uninstall Package"
+        }
+    }
+
+    var successOperationTitle: String {
+        switch self {
+        case .install:
+            return "Install Complete"
+        case .update:
+            return "Update Complete"
+        case .uninstall:
+            return "Uninstall Complete"
+        }
+    }
+
+    var failureOperationTitle: String {
+        switch self {
+        case .install:
+            return "Install Halted"
+        case .update:
+            return "Update Halted"
+        case .uninstall:
+            return "Uninstall Halted"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .install:
+            return "arrow.down.circle"
+        case .update:
+            return "arrow.triangle.2.circlepath"
+        case .uninstall:
+            return "trash"
+        }
+    }
+}
+
+struct PackageOperationRequest: Equatable {
+    let id: Int
+    let kind: PackageOperationKind
+    let packageNames: [String]
+    let displayName: String
+    let isAutomicVaultCLT: Bool
+    let isXcodeCLT: Bool
+}
+
 @MainActor
 final class MainWindowModel: ObservableObject {
     @Published var selectedSection: MainWindowSection = .installed {
@@ -170,6 +253,8 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var searchDeactivationRequestID = 0
     @Published private(set) var updateAllRequestID = 0
     @Published private(set) var isUpdatingAll = false
+    @Published private(set) var packageOperationRequest: PackageOperationRequest?
+    @Published private(set) var activePackageOperation: PackageOperationRequest?
 
     nonisolated private static let pageSize = 96
     private let statusStore = NucleusStatusStore()
@@ -178,6 +263,7 @@ final class MainWindowModel: ObservableObject {
     private var searchRequestID = 0
     private var sectionPageRequestIDs: [SectionPageKind: Int] = [:]
     private var detailRequestID = 0
+    private var packageOperationRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
@@ -219,7 +305,12 @@ final class MainWindowModel: ObservableObject {
     var canUpdateAllOutdated: Bool {
         activeSidebarSection == .outdated
             && !isUpdatingAll
+            && activePackageOperation == nil
             && !outdatedUpdatePackageNames.isEmpty
+    }
+
+    var isPackageMutationInFlight: Bool {
+        isUpdatingAll || activePackageOperation != nil
     }
 
     var outdatedUpdatePackageNames: [String] {
@@ -330,6 +421,8 @@ final class MainWindowModel: ObservableObject {
         guard canUpdateAllOutdated else {
             if outdatedUpdatePackageNames.isEmpty {
                 showTransientStatus("No outdated packages to update")
+            } else if isPackageMutationInFlight {
+                showTransientStatus("Package operation already in progress")
             }
             return
         }
@@ -359,6 +452,94 @@ final class MainWindowModel: ObservableObject {
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
             statusMessage = "Update all failed"
+        }
+    }
+
+    func dossierPrimaryPackageAction(for detail: PackageDetail) -> PackageOperationKind {
+        guard detail.installed else {
+            return .install
+        }
+        return detail.isOutdated ? .update : .uninstall
+    }
+
+    func dossierAlternativePackageActions(for detail: PackageDetail) -> [PackageOperationKind] {
+        guard detail.installed,
+              detail.isOutdated,
+              !detail.isAutomicVaultCLT,
+              !detail.isXcodeCLT else {
+            return []
+        }
+        return [.uninstall]
+    }
+
+    func canRequestDossierPackageAction(
+        _ action: PackageOperationKind,
+        detail: PackageDetail
+    ) -> Bool {
+        guard !isPackageMutationInFlight,
+              hasPackageOperationTarget(for: detail) else {
+            return false
+        }
+        switch action {
+        case .install:
+            return !detail.installed
+        case .update:
+            return detail.installed && detail.isOutdated
+        case .uninstall:
+            return detail.installed
+                && !detail.isAutomicVaultCLT
+                && !detail.isXcodeCLT
+        }
+    }
+
+    func requestDossierPackageAction(
+        _ action: PackageOperationKind,
+        detail: PackageDetail,
+        package: PackagePresentation
+    ) {
+        guard canRequestDossierPackageAction(action, detail: detail) else {
+            showTransientStatus("Package operation is unavailable")
+            return
+        }
+        let packageNames = packageOperationPackageNames(for: detail)
+        packageOperationRequestID += 1
+        packageOperationRequest = PackageOperationRequest(
+            id: packageOperationRequestID,
+            kind: action,
+            packageNames: packageNames,
+            displayName: displayName(for: package),
+            isAutomicVaultCLT: detail.isAutomicVaultCLT,
+            isXcodeCLT: detail.isXcodeCLT
+        )
+    }
+
+    func beginPackageOperation(_ request: PackageOperationRequest) {
+        transientStatusTask?.cancel()
+        activePackageOperation = request
+        lastErrorMessage = nil
+        statusMessage = "\(request.kind.progressTitle) \(request.displayName)"
+    }
+
+    func finishPackageOperation(
+        _ request: PackageOperationRequest,
+        _ result: Result<NukeHelperResult, Error>,
+        refreshAfterSuccess: Bool
+    ) {
+        guard activePackageOperation?.id == request.id else {
+            return
+        }
+        activePackageOperation = nil
+        switch result {
+        case .success(let helperResult):
+            if refreshAfterSuccess {
+                statusMessage = "\(helperResult.message); refreshing packages"
+                reloadPackages()
+            } else {
+                showTransientStatus(helperResult.message)
+            }
+        case .failure(let error):
+            lastErrorMessage = error.localizedDescription
+            statusMessage = "\(request.kind.title) failed"
         }
     }
 
@@ -585,6 +766,32 @@ final class MainWindowModel: ObservableObject {
             }
         }
         return result
+    }
+
+    private func hasPackageOperationTarget(for detail: PackageDetail) -> Bool {
+        detail.isAutomicVaultCLT
+            || detail.isXcodeCLT
+            || !packageOperationPackageNames(for: detail).isEmpty
+    }
+
+    private func packageOperationPackageNames(for detail: PackageDetail) -> [String] {
+        if detail.isAutomicVaultCLT {
+            return ["av"]
+        }
+        if detail.isXcodeCLT {
+            return [PackageRecommendation.xcodeCLTName]
+        }
+        var seen = Set<String>()
+        var names: [String] = []
+        for packageName in detail.helperPackageNames {
+            let trimmed = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  seen.insert(trimmed).inserted else {
+                continue
+            }
+            names.append(trimmed)
+        }
+        return names
     }
 
     private var geigerCounterCount: Int? {

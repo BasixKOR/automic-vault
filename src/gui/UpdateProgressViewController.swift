@@ -97,6 +97,7 @@ private final class UpdateProgressViewModel: ObservableObject {
     private var packageStates: [String: PackageRuntimeState] = [:]
     private var successOperationTitle = "Update Complete"
     private var failureOperationTitle = "Update Halted"
+    private var activePrimaryTitle = "Updating"
     private var hasLoggedResolving = false
     private var lastActivePackage: String?
 
@@ -155,13 +156,15 @@ private final class UpdateProgressViewModel: ObservableObject {
         awaitingClearance: String,
         idleStatus: String,
         successOperation: String,
-        failureOperation: String
+        failureOperation: String,
+        activePrimaryTitle: String = "Updating"
     ) {
         self.title = title
         operation = awaitingClearance
         status = idleStatus
         successOperationTitle = successOperation
         failureOperationTitle = failureOperation
+        self.activePrimaryTitle = activePrimaryTitle
         terminalStage = nil
     }
 
@@ -180,7 +183,7 @@ private final class UpdateProgressViewModel: ObservableObject {
         lastActivePackage = nil
         isTerminalState = false
         terminalStage = nil
-        primaryTitle = "Updating"
+        primaryTitle = activePrimaryTitle
         primaryEnabled = false
         showSecondary = false
         rows = packages.map { package in
@@ -502,14 +505,16 @@ final class UpdateProgressViewController: NSViewController {
         awaitingClearance: String,
         idleStatus: String,
         successOperation: String,
-        failureOperation: String
+        failureOperation: String,
+        activePrimaryTitle: String = "Updating"
     ) {
         model.configure(
             title: title,
             awaitingClearance: awaitingClearance,
             idleStatus: idleStatus,
             successOperation: successOperation,
-            failureOperation: failureOperation
+            failureOperation: failureOperation,
+            activePrimaryTitle: activePrimaryTitle
         )
     }
 

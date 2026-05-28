@@ -13,6 +13,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
+    private var packageOperationRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
     private var searchDeactivationRequestCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
@@ -22,6 +23,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         self.model = model
         super.init(rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
+        installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
     }
@@ -31,6 +33,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         self.model = model
         super.init(coder: coder, rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
+        installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
     }
@@ -83,6 +86,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     func applicationWillTerminate() {
         updateAllRequestCancellable?.cancel()
+        packageOperationRequestCancellable?.cancel()
         searchTextCancellable?.cancel()
         searchDeactivationRequestCancellable?.cancel()
         model.stop()
@@ -94,6 +98,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.startUpdateAll(debugPlayback: false)
+                }
+            }
+    }
+
+    private func installPackageOperationRequestObserver() {
+        packageOperationRequestCancellable = model.$packageOperationRequest
+            .compactMap { $0 }
+            .sink { [weak self] request in
+                Task { @MainActor in
+                    self?.startPackageOperation(request)
                 }
             }
     }
@@ -215,6 +229,117 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         )
     }
 
+    private func startPackageOperation(_ request: PackageOperationRequest) {
+        guard !model.isPackageMutationInFlight else {
+            model.showTransientStatus("Package operation already in progress")
+            return
+        }
+
+        if request.isXcodeCLT, request.kind == .install {
+            startXcodeCommandLineToolsInstall(request)
+            return
+        }
+
+        let progressController = presentUpdateProgressController()
+        configure(progressController, request: request)
+        model.beginPackageOperation(request)
+        progressController.begin(
+            packages: request.packageNames,
+            activationLog: packageOperationActivationLog(request),
+            initialOperation: "Awaiting helper authorization"
+        )
+
+        var stagedCLTDirectory: URL?
+        let handleProgress: (NukeHelperProgressEvent) -> Void = { [weak progressController] event in
+            progressController?.handle(event: event)
+        }
+        let handleCompletion: (Result<NukeHelperResult, Error>) -> Void = {
+            [weak self, weak progressController] result in
+            guard let self else { return }
+            if let stagedCLTDirectory {
+                try? FileManager.default.removeItem(at: stagedCLTDirectory)
+            }
+            switch result {
+            case .success(let helperResult):
+                let completedPackages = helperResult.processedPackages.isEmpty
+                    ? request.packageNames
+                    : helperResult.processedPackages
+                progressController?.succeed(
+                    message: helperResult.message,
+                    packages: completedPackages
+                )
+            case .failure(let error):
+                progressController?.fail(message: error.localizedDescription)
+            }
+            self.model.finishPackageOperation(
+                request,
+                result,
+                refreshAfterSuccess: true
+            )
+        }
+
+        if request.isAutomicVaultCLT,
+           request.kind == .install || request.kind == .update {
+            do {
+                stagedCLTDirectory = try NucleusBridge().exportBundledCLTForHelperInstall()
+                helperBridge.installAv(
+                    sourcePath: stagedCLTDirectory?.path ?? "",
+                    progress: handleProgress,
+                    completion: handleCompletion
+                )
+            } catch {
+                handleCompletion(.failure(error))
+            }
+            return
+        }
+
+        let packageSpecs = request.packageNames.map { AVPackageSpec(name: $0) }
+        switch request.kind {
+        case .install:
+            helperBridge.install(
+                packages: packageSpecs,
+                progress: handleProgress,
+                completion: handleCompletion
+            )
+        case .update:
+            helperBridge.update(
+                packages: packageSpecs,
+                progress: handleProgress,
+                completion: handleCompletion
+            )
+        case .uninstall:
+            helperBridge.uninstall(
+                packages: packageSpecs,
+                progress: handleProgress,
+                completion: handleCompletion
+            )
+        }
+    }
+
+    private func startXcodeCommandLineToolsInstall(_ request: PackageOperationRequest) {
+        model.beginPackageOperation(request)
+        do {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+            process.arguments = ["--install"]
+            try process.run()
+            model.finishPackageOperation(
+                request,
+                .success(NukeHelperResult(
+                    message: "Command Line Tools installer launched",
+                    processedPackages: request.packageNames
+                )),
+                refreshAfterSuccess: false
+            )
+        } catch {
+            model.finishPackageOperation(
+                request,
+                .failure(error),
+                refreshAfterSuccess: false
+            )
+        }
+    }
+
     private func presentUpdateProgressController() -> UpdateProgressViewController {
         if let updateProgressViewController {
             return updateProgressViewController
@@ -256,7 +381,25 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 : "Waiting for helper authorization",
             idleStatus: updateStatusText(packageCount: packageCount),
             successOperation: "Update Complete",
-            failureOperation: "Update Halted"
+            failureOperation: "Update Halted",
+            activePrimaryTitle: "Updating"
+        )
+    }
+
+    private func configure(
+        _ progressController: UpdateProgressViewController,
+        request: PackageOperationRequest
+    ) {
+        progressController.onRetry = { [weak self] in
+            self?.startPackageOperation(request)
+        }
+        progressController.configure(
+            title: request.kind.progressSheetTitle,
+            awaitingClearance: "Waiting for helper authorization",
+            idleStatus: packageOperationStatusText(request),
+            successOperation: request.kind.successOperationTitle,
+            failureOperation: request.kind.failureOperationTitle,
+            activePrimaryTitle: request.kind.progressTitle
         )
     }
 
@@ -271,6 +414,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         packageCount == 1
             ? "1 outdated package"
             : "\(packageCount) outdated packages"
+    }
+
+    private func packageOperationStatusText(_ request: PackageOperationRequest) -> String {
+        request.packageNames.count == 1
+            ? request.displayName
+            : "\(request.packageNames.count) packages"
+    }
+
+    private func packageOperationActivationLog(_ request: PackageOperationRequest) -> String {
+        "\(request.kind.progressTitle) \(packageOperationStatusText(request))."
     }
 
     private func startModelIfNeeded() {

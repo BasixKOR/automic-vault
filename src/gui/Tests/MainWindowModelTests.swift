@@ -146,6 +146,66 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(model.packageInlineBadges(for: package), [])
     }
 
+    @MainActor
+    func testDossierPrimaryActionFollowsInstallState() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let available = PackageSearchResult(
+            name: "brew:fd",
+            source: .formula(rootFormula: "fd"),
+            version: "10.0",
+            description: "Find entries",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        let installed = installedPresentation(version: "1.0", latestVersion: "1.0")
+        let outdated = installedPresentation(version: "1.0", latestVersion: "2.0")
+
+        XCTAssertEqual(
+            model.dossierPrimaryPackageAction(for: available.fallbackDetail),
+            .install
+        )
+        XCTAssertEqual(
+            model.dossierPrimaryPackageAction(for: installed.detail!),
+            .uninstall
+        )
+        XCTAssertEqual(
+            model.dossierPrimaryPackageAction(for: outdated.detail!),
+            .update
+        )
+    }
+
+    @MainActor
+    func testOutdatedDossierActionOffersUninstallAlternative() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let outdated = try XCTUnwrap(
+            installedPresentation(version: "1.0", latestVersion: "2.0").detail
+        )
+
+        XCTAssertEqual(
+            model.dossierAlternativePackageActions(for: outdated),
+            [.uninstall]
+        )
+    }
+
+    @MainActor
+    func testDossierActionRequestUsesHelperPackageNames() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let package = installedPresentation(version: "1.0", latestVersion: "2.0")
+        let detail = try XCTUnwrap(package.detail)
+
+        model.requestDossierPackageAction(.update, detail: detail, package: package)
+
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.kind, .update)
+        XCTAssertEqual(request.packageNames, ["brew:rg"])
+        XCTAssertEqual(request.displayName, "rg")
+    }
+
     private func pulseResult(
         lastUpdatedAt: String?,
         pulseKind: String

@@ -306,6 +306,8 @@ struct MainWindowView: View {
                     .lineLimit(1)
             }
 
+            dossierActionRow(detail: detail, package: package)
+
             if let badge = model.packageBadge(for: package) {
                 PackageBadgeBanner(badge: badge)
             }
@@ -318,6 +320,62 @@ struct MainWindowView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AVGlassPalette.quietText)
                 }
+            }
+        }
+    }
+
+    private func dossierActionRow(
+        detail: PackageDetail,
+        package: PackagePresentation
+    ) -> some View {
+        let primaryAction = model.dossierPrimaryPackageAction(for: detail)
+        let alternativeActions = model.dossierAlternativePackageActions(for: detail)
+        let primaryEnabled = model.canRequestDossierPackageAction(primaryAction, detail: detail)
+        let isPrimaryActive = model.activePackageOperation?.kind == primaryAction
+            && model.activePackageOperation?.displayName == model.displayName(for: package)
+
+        return HStack(spacing: 6) {
+            Button {
+                model.requestDossierPackageAction(
+                    primaryAction,
+                    detail: detail,
+                    package: package
+                )
+            } label: {
+                PackageDossierActionButtonLabel(
+                    action: primaryAction,
+                    isActive: isPrimaryActive
+                )
+            }
+            .buttonStyle(.glass)
+            .tint(.clear)
+            .disabled(!primaryEnabled)
+            .opacity(primaryEnabled || isPrimaryActive ? 1 : 0.42)
+            .help(primaryAction.title)
+
+            if !alternativeActions.isEmpty {
+                Menu {
+                    ForEach(alternativeActions) { action in
+                        Button {
+                            model.requestDossierPackageAction(
+                                action,
+                                detail: detail,
+                                package: package
+                            )
+                        } label: {
+                            Label(action.title, systemImage: action.systemImage)
+                        }
+                        .disabled(!model.canRequestDossierPackageAction(action, detail: detail))
+                    }
+                } label: {
+                    PackageDossierActionMenuLabel()
+                }
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .tint(.clear)
+                .disabled(model.isPackageMutationInFlight)
+                .opacity(model.isPackageMutationInFlight ? 0.42 : 1)
+                .help("More package actions")
             }
         }
     }
@@ -642,6 +700,55 @@ private struct UpdateAllHeaderButtonLabel: View {
         .foregroundStyle(AVGlassPalette.secondaryText)
         .frame(height: 15, alignment: .center)
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+private struct PackageDossierActionButtonLabel: View {
+    let action: PackageOperationKind
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if isActive {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 14, height: 14)
+            } else {
+                Image(systemName: action.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(width: 14)
+            }
+            Text(isActive ? action.progressTitle : action.title)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
+        }
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 11)
+        .frame(height: 28)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var foreground: Color {
+        switch action {
+        case .install:
+            return AVGlassPalette.green
+        case .update:
+            return AVGlassPalette.orange
+        case .uninstall:
+            return AVGlassPalette.secondaryText
+        }
+    }
+}
+
+private struct PackageDossierActionMenuLabel: View {
+    var body: some View {
+        Image(systemName: "chevron.down")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(AVGlassPalette.secondaryText)
+            .frame(width: 28, height: 28)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
