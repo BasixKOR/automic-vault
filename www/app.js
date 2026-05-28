@@ -1,8 +1,5 @@
 const toggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector(".nav");
-const revealTargets = document.querySelectorAll(
-  ".feature-section, .highlight-card, .final-cta"
-);
 const scrollMeter = document.querySelector(".scroll-meter span");
 const securedFeed = document.querySelector("[data-secured-feed]");
 
@@ -51,15 +48,26 @@ if (toggle && nav) {
 }
 
 if (scrollMeter) {
+  let scrollMeterFrame = 0;
+
   const updateScrollMeter = () => {
+    scrollMeterFrame = 0;
     const scrollable = document.documentElement.scrollHeight - window.innerHeight;
     const progress = scrollable > 0 ? window.scrollY / scrollable : 0;
-    scrollMeter.style.width = `${Math.min(1, Math.max(0, progress)) * 100}%`;
+    scrollMeter.style.transform = `scaleX(${Math.min(1, Math.max(0, progress))})`;
+  };
+
+  const scheduleScrollMeterUpdate = () => {
+    if (scrollMeterFrame) {
+      return;
+    }
+
+    scrollMeterFrame = window.requestAnimationFrame(updateScrollMeter);
   };
 
   updateScrollMeter();
-  window.addEventListener("scroll", updateScrollMeter, { passive: true });
-  window.addEventListener("resize", updateScrollMeter);
+  window.addEventListener("scroll", scheduleScrollMeterUpdate, { passive: true });
+  window.addEventListener("resize", scheduleScrollMeterUpdate);
 }
 
 if (securedFeed) {
@@ -104,45 +112,15 @@ if (securedFeed) {
         }
 
         row.className = `feed-row ${accent} is-entering`;
-        void row.offsetWidth;
-        row.classList.remove("is-entering");
-        row.classList.add("is-lit");
+        window.requestAnimationFrame(() => {
+          row.classList.remove("is-entering");
+          row.classList.add("is-lit");
 
-        window.setTimeout(() => {
-          row.classList.remove("is-lit");
-        }, litDuration);
+          window.setTimeout(() => {
+            row.classList.remove("is-lit");
+          }, litDuration);
+        });
       }, swapDuration);
     }, swapInterval);
-  }
-}
-
-if (revealTargets.length > 0) {
-  const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
-
-  if (motionAllowed.matches && "IntersectionObserver" in window) {
-    document.body.classList.add("reveal-ready");
-
-    const revealObserver = new IntersectionObserver(
-      (entries, observer) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            observer.unobserve(entry.target);
-          }
-        }
-      },
-      {
-        rootMargin: "0px 0px -14% 0px",
-        threshold: 0.14,
-      }
-    );
-
-    for (const target of revealTargets) {
-      revealObserver.observe(target);
-    }
-  } else {
-    for (const target of revealTargets) {
-      target.classList.add("is-visible");
-    }
   }
 }
