@@ -318,7 +318,6 @@ struct MainWindowView: View {
         package: PackagePresentation
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel("DOSSIER")
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(model.displayName(for: package))
                     .font(.system(size: 22, weight: .semibold))
