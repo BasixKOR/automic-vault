@@ -1663,7 +1663,10 @@ final class MainWindowModel: ObservableObject {
     }
 
     private nonisolated static func fetchInstalledPackages() throws -> [PackageRecord] {
-        let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+        let bridge = NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
         return try bridge.fetchPackages().sorted {
             let left = $0.name.packageSearchOrderName
             let right = $1.name.packageSearchOrderName
@@ -1675,14 +1678,20 @@ final class MainWindowModel: ObservableObject {
     }
 
     private nonisolated static func fetchOutdatedPackages() throws -> [OutdatedPackageRecord] {
-        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
             .fetchOutdatedPackages()
     }
 
     private nonisolated static func fetchSectionPage(
         kind: SectionPageKind
     ) throws -> PackageSearchPage {
-        let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+        let bridge = NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
         switch kind {
         case .geiger:
             return try bridge.fetchGeigerPackages(offset: 0, limit: pageSize)
@@ -1694,12 +1703,18 @@ final class MainWindowModel: ObservableObject {
     }
 
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {
-        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
             .fetchDetail(packageName: packageName)
     }
 
     private nonisolated static func searchPackages(query: String) throws -> PackageSearchPage {
-        try NucleusBridge(compatibilityPolicy: .protocolOnly)
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
             .fetchSearchResults(query: query, offset: 0, limit: pageSize)
     }
 

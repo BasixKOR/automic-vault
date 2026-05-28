@@ -32,6 +32,11 @@ final class NucleusBridge {
         case protocolOnly
     }
 
+    enum DaemonOwnership {
+        case client
+        case owner
+    }
+
     private struct EmptyParams: Encodable {}
 
     private struct SearchParams: Encodable {
@@ -118,6 +123,7 @@ final class NucleusBridge {
     private var readBuffer = Data()
     private var forcedFreshDaemonThisLaunch = false
     private let compatibilityPolicy: CompatibilityPolicy
+    private let daemonOwnership: DaemonOwnership
     private let expectedProtocolVersion = Bundle.main.object(
         forInfoDictionaryKey: "NukeProtocolVersion"
     ) as? String ?? "1.0"
@@ -125,8 +131,12 @@ final class NucleusBridge {
         forInfoDictionaryKey: "NukeBuildID"
     ) as? String ?? "unknown"
 
-    init(compatibilityPolicy: CompatibilityPolicy = .strict) {
+    init(
+        compatibilityPolicy: CompatibilityPolicy = .strict,
+        daemonOwnership: DaemonOwnership = .client
+    ) {
         self.compatibilityPolicy = compatibilityPolicy
+        self.daemonOwnership = daemonOwnership
     }
 
     func isAvInstalledAtSystemPath() -> Bool {
@@ -337,6 +347,10 @@ final class NucleusBridge {
             return connection
         }
 
+        guard daemonOwnership == .owner else {
+            return try connectToProtocolDaemon()
+        }
+
         return try withProtocolStartupLock {
             if self.shouldForceFreshDaemonOnLaunch,
                self.forcedFreshDaemonThisLaunch == false {
@@ -345,29 +359,35 @@ final class NucleusBridge {
             } else if self.daemonProcess == nil {
                 try self.stopStaleProtocolDaemon()
             }
+            return try self.startAndConnectToProtocolDaemon()
+        }
+    }
 
-            if let connected = try self.connectToProtocolSocket() {
-                try self.validateCompatibility(of: connected)
-                self.connection = connected
+    private func connectToProtocolDaemon() throws -> ProtocolConnection {
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            if let connected = try connectToProtocolSocket() {
+                try validateCompatibility(of: connected)
+                connection = connected
                 return connected
             }
-
-            try self.startProtocolDaemonIfNeeded()
-
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                if let connected = try self.connectToProtocolSocket() {
-                    try self.validateCompatibility(of: connected)
-                    self.connection = connected
-                    return connected
-                }
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-
-            throw NucleusBridgeError.connectionFailed(
-                "unable to connect to the nucleus daemon"
-            )
+            Thread.sleep(forTimeInterval: 0.05)
         }
+
+        throw NucleusBridgeError.connectionFailed(
+            "nucleus daemon is unavailable"
+        )
+    }
+
+    private func startAndConnectToProtocolDaemon() throws -> ProtocolConnection {
+        if let connected = try connectToProtocolSocket() {
+            try validateCompatibility(of: connected)
+            connection = connected
+            return connected
+        }
+
+        try startProtocolDaemonIfNeeded()
+        return try connectToProtocolDaemon()
     }
 
     private func connectToProtocolSocket() throws -> ProtocolConnection? {
@@ -621,7 +641,8 @@ final class NucleusBridge {
     }
 
     private var shouldForceFreshDaemonOnLaunch: Bool {
-        Bundle.main.bundleURL.path.contains("/target/gui/")
+        daemonOwnership == .owner
+            && Bundle.main.bundleURL.path.contains("/target/gui/")
     }
 
     private func withProtocolStartupLock<Result>(

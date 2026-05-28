@@ -10,7 +10,10 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             : .black
     }
 
-    private let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
+    private let bridge = NucleusBridge(
+        compatibilityPolicy: .protocolOnly,
+        daemonOwnership: .owner
+    )
     private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
     private let automaticSecretApprovalToast = MenuBarInlineNotification()

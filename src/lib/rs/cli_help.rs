@@ -78,7 +78,7 @@ pub(crate) fn print_trace_usage(program: &str) {
 pub(crate) fn print_serve_usage(program: &str) {
     println!("Usage: {program}");
     println!();
-    println!("Starts the local read-only protocol daemon.");
+    println!("Starts the local Nucleus protocol daemon.");
 }
 
 pub(crate) fn print_pkg_usage(program: &str) {
@@ -276,7 +276,7 @@ impl<'a> HelpScreen<'a> {
             command_line("gate", None, "Block until a manual approval is decided."),
             HelpLine::plain(""),
             section_line("LOCAL SYSTEM"),
-            command_line("serve", None, "Start the local read-only protocol daemon."),
+            command_line("serve", None, "Start the local Nucleus protocol daemon."),
         ]
     }
 
