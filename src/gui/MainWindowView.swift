@@ -4,7 +4,6 @@ import WebKit
 struct MainWindowView: View {
     @ObservedObject var model: MainWindowModel
     @State private var linkTab: MainWindowLinkTab = .homepage
-    @State private var browserCommand: BrowserCommand?
 
     var body: some View {
         ZStack {
@@ -492,95 +491,65 @@ struct MainWindowView: View {
     }
 
     private var linksToolbar: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    ForEach(MainWindowLinkTab.allCases) { tab in
-                        Button {
-                            linkTab = tab
-                        } label: {
-                            Text(tab.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(
-                                    linkTab == tab
-                                        ? AVGlassPalette.primaryText
-                                        : AVGlassPalette.quietText
-                                )
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.82)
-                                .padding(.horizontal, 10)
-                                .frame(height: 30)
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                ForEach(MainWindowLinkTab.allCases) { tab in
+                    Button {
+                        linkTab = tab
+                    } label: {
+                        Text(linkToolbarTitle(for: tab))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(
+                                linkTab == tab
+                                    ? AVGlassPalette.primaryText
+                                    : AVGlassPalette.quietText
+                            )
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .padding(.horizontal, 10)
+                            .frame(height: 30)
+                    }
+                    .buttonStyle(.plain)
+                    .background {
+                        if linkTab == tab {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(AVGlassPalette.selectedFill)
                         }
-                        .buttonStyle(.plain)
-                        .background {
-                            if linkTab == tab {
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(AVGlassPalette.selectedFill)
-                            }
-                        }
-                        .overlay {
-                            if linkTab == tab {
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(AVGlassPalette.controlBorder.opacity(0.28), lineWidth: 1)
-                            }
+                    }
+                    .overlay {
+                        if linkTab == tab {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .stroke(AVGlassPalette.controlBorder.opacity(0.28), lineWidth: 1)
                         }
                     }
                 }
-                .layoutPriority(1)
-
-                Spacer()
-
-                Button {
-                    model.open(url: model.selectedURL(for: linkTab))
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                }
-                .buttonStyle(.glass)
-                .tint(.clear)
-                .disabled(model.selectedURL(for: linkTab) == nil)
-                .help("Open externally")
             }
+            .layoutPriority(1)
 
-            HStack(spacing: 8) {
-                BrowserToolbarButton(systemName: "chevron.left") {
-                    browserCommand = .back(UUID())
-                }
-                BrowserToolbarButton(systemName: "chevron.right") {
-                    browserCommand = .forward(UUID())
-                }
-                BrowserToolbarButton(systemName: "arrow.clockwise") {
-                    browserCommand = .reload(UUID())
-                }
-                Text(model.selectedURL(for: linkTab)?.absoluteString ?? "")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(
-                        model.selectedURL(for: linkTab) == nil
-                            ? AVGlassPalette.quietText
-                            : AVGlassPalette.secondaryText
-                    )
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Button {
-                    model.open(url: model.selectedURL(for: linkTab))
-                } label: {
-                    Image(systemName: "arrow.up.right")
-                }
-                .buttonStyle(.glass)
-                .tint(.clear)
-                .disabled(model.selectedURL(for: linkTab) == nil)
+            LinkURLBar(url: model.selectedURL(for: linkTab)) {
+                model.open(url: model.selectedURL(for: linkTab))
             }
+            .layoutPriority(2)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
     }
 
+    private func linkToolbarTitle(for tab: MainWindowLinkTab) -> String {
+        switch tab {
+        case .homepage:
+            return "Home"
+        case .repository:
+            return "Repo"
+        case .documentation:
+            return "Docs"
+        }
+    }
+
     @ViewBuilder
     private var linkBrowser: some View {
         if let url = model.selectedURL(for: linkTab) {
-            PackageWebView(url: url, command: browserCommand)
+            PackageWebView(url: url)
                 .id(url)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white.opacity(0.96))
@@ -603,22 +572,8 @@ struct MainWindowView: View {
     }
 }
 
-private enum BrowserCommand {
-    case back(UUID)
-    case forward(UUID)
-    case reload(UUID)
-
-    var id: UUID {
-        switch self {
-        case .back(let id), .forward(let id), .reload(let id):
-            return id
-        }
-    }
-}
-
 private struct PackageWebView: NSViewRepresentable {
     let url: URL
-    let command: BrowserCommand?
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -635,24 +590,6 @@ private struct PackageWebView: NSViewRepresentable {
             context.coordinator.currentURL = url
             webView.load(URLRequest(url: url))
         }
-
-        guard let command,
-              context.coordinator.lastCommandID != command.id else {
-            return
-        }
-        context.coordinator.lastCommandID = command.id
-        switch command {
-        case .back:
-            if webView.canGoBack {
-                webView.goBack()
-            }
-        case .forward:
-            if webView.canGoForward {
-                webView.goForward()
-            }
-        case .reload:
-            webView.reload()
-        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -661,7 +598,6 @@ private struct PackageWebView: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var currentURL: URL?
-        var lastCommandID: UUID?
 
         func webView(
             _ webView: WKWebView,
@@ -1387,19 +1323,34 @@ private struct PermissionRow: View {
     }
 }
 
-private struct BrowserToolbarButton: View {
-    let systemName: String
-    let action: () -> Void
+private struct LinkURLBar: View {
+    let url: URL?
+    let open: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(AVGlassPalette.quietText)
-                .frame(width: 26, height: 26)
+        HStack(spacing: 8) {
+            Text(url?.absoluteString ?? "")
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(url == nil ? AVGlassPalette.quietText : AVGlassPalette.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: open) {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(url == nil ? AVGlassPalette.quietText : AVGlassPalette.secondaryText)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(url == nil)
+            .help("Open externally")
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
+        .padding(.leading, 12)
+        .padding(.trailing, 5)
+        .frame(height: 32)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
