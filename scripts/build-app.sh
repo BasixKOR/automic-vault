@@ -189,7 +189,6 @@ GUI_SWIFT_SOURCES=(
 MENU_SWIFT_SOURCES=(
   "$GUI_DIR/MenuBarMain.swift"
   "$GUI_DIR/MenuBarAppDelegate.swift"
-  "$GUI_DIR/MenuBarHazardEffect.swift"
   "$GUI_DIR/VaultDaemon.swift"
 )
 

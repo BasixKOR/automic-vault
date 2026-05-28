@@ -5,7 +5,6 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private let bridge = NucleusBridge(compatibilityPolicy: .protocolOnly)
     private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
-    private let hazardEffect = MenuBarHazardEffect()
     private let automaticSecretApprovalToast = MenuBarInlineNotification()
     private lazy var vaultDaemon = VaultDaemon(
         openMainWindow: { [weak self] in
@@ -486,9 +485,6 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             button.image = nil
             button.attributedTitle = title
         }
-        hazardEffect.install(in: button)
-        hazardEffect.layout(in: button.bounds)
-        hazardEffect.update(isActive: hazardousCount > 0)
         button.toolTip = buttonTooltip(
             outdatedCount: outdatedCount,
             hazardousCount: hazardousCount

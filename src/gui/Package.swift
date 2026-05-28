@@ -25,7 +25,6 @@ let package = Package(
             exclude: [
                 "AutomicVault.entitlements",
                 "MenuBarAppDelegate.swift",
-                "MenuBarHazardEffect.swift",
                 "MenuBarMain.swift",
                 "VaultDaemon.swift",
                 "Tests",
