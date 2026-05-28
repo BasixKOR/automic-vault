@@ -803,6 +803,9 @@ private struct PackageInlineBadgeText: View {
             .kerning(1.2)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
+            .alignmentGuide(.firstTextBaseline) { dimensions in
+                dimensions[.firstTextBaseline]
+            }
     }
 
     private var title: String {
