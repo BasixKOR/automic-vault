@@ -1808,7 +1808,7 @@ struct PackagePresentation: Equatable {
             if let installedVersion = recommendation.installedVersion,
                let latestVersion = recommendation.latestVersion,
                recommendation.isOutdated {
-                return "v\(installedVersion) -> v\(latestVersion)"
+                return "v\(installedVersion) → v\(latestVersion)"
             }
             if let latestVersion = recommendation.latestVersion {
                 return "v\(latestVersion)"

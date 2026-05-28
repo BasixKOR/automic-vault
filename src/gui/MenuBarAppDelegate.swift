@@ -426,13 +426,13 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let nucleusItems = snapshot.outdatedPackages.map { package in
             packageStatusItem(
                 name: package.name,
-                detail: "\(package.currentVersion) -> \(package.latestVersion)"
+                detail: "\(package.currentVersion) → \(package.latestVersion)"
             )
         }
         let homebrewItems = snapshot.homebrewOutdatedPackages.map { package in
             packageStatusItem(
                 name: package.name,
-                detail: "\(package.currentVersion) -> \(package.latestVersion)",
+                detail: "\(package.currentVersion) → \(package.latestVersion)",
                 source: "Homebrew"
             )
         }
@@ -611,7 +611,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
 private final class PackageStatusMenuItemView: NSView {
     private enum Metrics {
-        static let minimumWidth: CGFloat = 268
+        static let minimumWidth: CGFloat = 190
         static let maximumWidth: CGFloat = 360
         static let height: CGFloat = 24
         static let leadingInset: CGFloat = 24

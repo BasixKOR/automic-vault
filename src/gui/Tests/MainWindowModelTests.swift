@@ -169,7 +169,7 @@ final class MainWindowModelTests: XCTestCase {
         let package = try XCTUnwrap(model.displayedPackages.first)
         XCTAssertEqual(package.selectionID, PackageRecommendation.automicVaultCLTName)
         XCTAssertEqual(model.displayName(for: package), PackageRecommendation.automicVaultCLTName)
-        XCTAssertEqual(model.versionText(for: package), "v1.0 -> v2.0")
+        XCTAssertEqual(model.versionText(for: package), "v1.0 → v2.0")
 
         model.select(package)
 
