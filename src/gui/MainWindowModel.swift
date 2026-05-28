@@ -245,6 +245,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var isUpdatingAll = false
     @Published private(set) var packageOperationRequest: PackageOperationRequest?
     @Published private(set) var activePackageOperation: PackageOperationRequest?
+    @Published private(set) var automicVaultCLTRecommendation: PackageRecommendation?
 
     nonisolated private static let pageSize = 96
     private let statusStore = NucleusStatusStore()
@@ -263,6 +264,17 @@ final class MainWindowModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
     private var loadingSectionKinds = Set<SectionPageKind>()
+    private let cliToolsRecommendationProvider: () -> PackageRecommendation?
+
+    init(
+        cliToolsRecommendationProvider: @escaping () -> PackageRecommendation? = {
+            NucleusBridge().cliToolsRecommendation()
+        },
+        initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil
+    ) {
+        self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
+        automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
+    }
 
     var installedCount: Int {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
@@ -303,6 +315,26 @@ final class MainWindowModel: ObservableObject {
         isUpdatingAll || activePackageOperation != nil
     }
 
+    var shouldShowAutomicVaultCLTInstallButton: Bool {
+        isInstallingAutomicVaultCLT
+            || automicVaultCLTRecommendation?.missingPackageNames.isEmpty == false
+    }
+
+    var canRequestAutomicVaultCLTInstall: Bool {
+        automicVaultCLTRecommendation?.missingPackageNames.isEmpty == false
+            && !isPackageMutationInFlight
+    }
+
+    var isInstallingAutomicVaultCLT: Bool {
+        activePackageOperation?.isAutomicVaultCLT == true
+            && activePackageOperation?.kind == .install
+    }
+
+    var shouldUpdateAutomicVaultCLTWithUpdateAll: Bool {
+        automicVaultCLTRecommendation?.isInstalled == true
+            && automicVaultCLTRecommendation?.isOutdated == true
+    }
+
     var outdatedUpdatePackageNames: [String] {
         var seen = Set<String>()
         var names: [String] = []
@@ -322,6 +354,9 @@ final class MainWindowModel: ObservableObject {
             .filter(isOutdated)
             .compactMap(\.packageName)
             .forEach(append)
+        if shouldUpdateAutomicVaultCLTWithUpdateAll {
+            append("av")
+        }
 
         return names.sorted { left, right in
             let leftOrderName = left.packageSearchOrderName
@@ -362,14 +397,27 @@ final class MainWindowModel: ObservableObject {
     func reloadPackages() {
         reloadRequestID += 1
         let requestID = reloadRequestID
+        let cliToolsRecommendationProvider = cliToolsRecommendationProvider
         isReloading = true
         lastErrorMessage = nil
         statusMessage = "Loading packages from the protocol daemon"
 
         Task.detached(priority: .userInitiated) {
+            let cltRecommendation = cliToolsRecommendationProvider()
+            await MainActor.run {
+                self.finishAutomicVaultCLTRecommendationReload(
+                    cltRecommendation,
+                    requestID: requestID
+                )
+            }
+
             let result = Result { try Self.fetchInstalledPackages() }
             await MainActor.run {
-                self.finishInstalledReload(result, requestID: requestID)
+                self.finishInstalledReload(
+                    result,
+                    cltRecommendation: cltRecommendation,
+                    requestID: requestID
+                )
             }
 
             guard case .success = result else {
@@ -386,6 +434,14 @@ final class MainWindowModel: ObservableObject {
 
     func select(_ package: PackagePresentation) {
         selectedItemID = package.selectionID
+        if case .recommendation = package.item {
+            if let detail = package.detail {
+                detailsByPackageName[package.selectionID] = detail
+                detailsByPackageName[detail.packageName] = detail
+            }
+            isLoadingDetail = false
+            return
+        }
         loadDetail(for: package)
     }
 
@@ -417,6 +473,26 @@ final class MainWindowModel: ObservableObject {
             return
         }
         updateAllRequestID += 1
+    }
+
+    func requestAutomicVaultCLTInstall() {
+        guard canRequestAutomicVaultCLTInstall else {
+            if isPackageMutationInFlight {
+                showTransientStatus("Package operation already in progress")
+            } else {
+                showTransientStatus("Automic Vault command line tool is already installed")
+            }
+            return
+        }
+        packageOperationRequestID += 1
+        packageOperationRequest = PackageOperationRequest(
+            id: packageOperationRequestID,
+            kind: .install,
+            packageNames: ["av"],
+            displayName: "av",
+            isAutomicVaultCLT: true,
+            isXcodeCLT: false
+        )
     }
 
     func beginOutdatedUpdateAll(packageCount: Int) {
@@ -511,6 +587,9 @@ final class MainWindowModel: ObservableObject {
         activePackageOperation = nil
         switch result {
         case .success(let helperResult):
+            if request.isAutomicVaultCLT {
+                automicVaultCLTRecommendation = nil
+            }
             if refreshAfterSuccess {
                 statusMessage = "\(helperResult.message); refreshing packages"
                 reloadPackages()
@@ -563,7 +642,7 @@ final class MainWindowModel: ObservableObject {
         case .newUpdated:
             return pulseNewPackageCount
         case .outdated:
-            return max(outdatedPackageNames.count, snapshot.flaggedOutdatedPackageCount)
+            return max(outdatedUpdatePackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
             return catalogTotalCount ?? (catalogPackages.isEmpty ? nil : catalogPackages.count)
         case .settings, .about:
@@ -740,7 +819,12 @@ final class MainWindowModel: ObservableObject {
     private var allKnownPackages: [PackagePresentation] {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
-        for package in packages + geigerPackages + catalogPackages + pulsePackages + searchResults {
+        for package in packages
+            + localOutdatedPackages
+            + geigerPackages
+            + catalogPackages
+            + pulsePackages
+            + searchResults {
             if seen.insert(package.selectionID).inserted {
                 result.append(package)
             }
@@ -814,7 +898,7 @@ final class MainWindowModel: ObservableObject {
         case .newUpdated:
             source = pulsePackages
         case .outdated:
-            source = packages.filter(isOutdated)
+            source = packages.filter(isOutdated) + localOutdatedPackages
         case .allPackages:
             source = catalogSourcePackages
         case .shell, .cliTools, .development, .system, .networking, .security, .other:
@@ -901,6 +985,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func isOutdated(_ package: PackagePresentation) -> Bool {
+        if case .recommendation(let recommendation) = package.item {
+            return recommendation.isOutdated
+        }
         if let detail = detailsByPackageName[package.selectionID] ?? package.detail {
             return detail.isOutdated
         }
@@ -1005,6 +1092,7 @@ final class MainWindowModel: ObservableObject {
 
     private func finishInstalledReload(
         _ result: Result<[PackageRecord], Error>,
+        cltRecommendation: PackageRecommendation?,
         requestID: Int
     ) {
         guard requestID == reloadRequestID else {
@@ -1012,6 +1100,7 @@ final class MainWindowModel: ObservableObject {
         }
 
         isReloading = false
+        automicVaultCLTRecommendation = cltRecommendation
         switch result {
         case .success(let installed):
             snapshot = NucleusStatusSnapshot(
@@ -1046,6 +1135,16 @@ final class MainWindowModel: ObservableObject {
             lastErrorMessage = error.localizedDescription
             statusMessage = "Package refresh failed"
         }
+    }
+
+    private func finishAutomicVaultCLTRecommendationReload(
+        _ recommendation: PackageRecommendation?,
+        requestID: Int
+    ) {
+        guard requestID == reloadRequestID else {
+            return
+        }
+        automicVaultCLTRecommendation = recommendation
     }
 
     private func finishOutdatedReload(
@@ -1426,6 +1525,21 @@ final class MainWindowModel: ObservableObject {
             }
         }
         return name
+    }
+
+    private var localOutdatedPackages: [PackagePresentation] {
+        guard let recommendation = automicVaultCLTRecommendation,
+              recommendation.isInstalled,
+              recommendation.isOutdated else {
+            return []
+        }
+        return [
+            PackagePresentation(
+                item: .recommendation(recommendation),
+                detail: recommendation.detail,
+                freshness: Self.freshness(for: recommendation.packageName)
+            )
+        ]
     }
 
     private nonisolated static func fetchInstalledPackages() throws -> [PackageRecord] {

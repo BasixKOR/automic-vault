@@ -17,10 +17,12 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
     private weak var appUpdateToolbarItem: NSToolbarItem?
+    private weak var automicVaultCLTInstallToolbarItem: NSToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
     private var packageOperationRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
     private var searchDeactivationRequestCancellable: AnyCancellable?
+    private var cltInstallToolbarStateCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
 
     init(appUpdateCoordinator: AppUpdateCoordinator) {
@@ -32,6 +34,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
+        installAutomicVaultCLTInstallToolbarObserver()
         installAppUpdateCallbacks()
     }
 
@@ -44,6 +47,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
+        installAutomicVaultCLTInstallToolbarObserver()
         installAppUpdateCallbacks()
     }
 
@@ -85,6 +89,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         confirmAndInstallAppUpdate()
     }
 
+    @objc private func automicVaultCLTInstallToolbarItemPressed(_ sender: Any?) {
+        model.requestAutomicVaultCLTInstall()
+    }
+
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
@@ -106,6 +114,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         packageOperationRequestCancellable?.cancel()
         searchTextCancellable?.cancel()
         searchDeactivationRequestCancellable?.cancel()
+        cltInstallToolbarStateCancellable?.cancel()
         model.stop()
     }
 
@@ -170,6 +179,22 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             }
     }
 
+    private func installAutomicVaultCLTInstallToolbarObserver() {
+        let recommendationChanges = model.$automicVaultCLTRecommendation.map { _ in () }
+        let operationChanges = model.$activePackageOperation.map { _ in () }
+        let updateAllChanges = model.$isUpdatingAll.map { _ in () }
+        cltInstallToolbarStateCancellable = Publishers.Merge3(
+            recommendationChanges,
+            operationChanges,
+            updateAllChanges
+        )
+        .sink { [weak self] _ in
+            Task { @MainActor in
+                self?.syncAutomicVaultCLTInstallToolbarItem()
+            }
+        }
+    }
+
     private func deactivateSearchField() {
         guard let searchField = searchToolbarItem?.searchField else {
             return
@@ -191,6 +216,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         #else
         let packageNames = model.outdatedUpdatePackageNames
         #endif
+        let updatesAutomicVaultCLT =
+            !debugPlayback && model.shouldUpdateAutomicVaultCLTWithUpdateAll
 
         guard !packageNames.isEmpty else {
             model.showTransientStatus("No outdated packages to update")
@@ -215,12 +242,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 : "Awaiting helper authorization"
         )
 
+        var stagedCLTDirectory: URL?
         let handleProgress: (NukeHelperProgressEvent) -> Void = { [weak progressController] event in
             progressController?.handle(event: event)
         }
         let handleCompletion: (Result<NukeHelperResult, Error>) -> Void = {
             [weak self, weak progressController] result in
             guard let self else { return }
+            if let stagedCLTDirectory {
+                try? FileManager.default.removeItem(at: stagedCLTDirectory)
+            }
             switch result {
             case .success(let helperResult):
                 let completedPackages = helperResult.processedPackages.isEmpty
@@ -239,6 +270,15 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             )
         }
 
+        if updatesAutomicVaultCLT {
+            do {
+                stagedCLTDirectory = try NucleusBridge().exportBundledCLTForHelperInstall()
+            } catch {
+                handleCompletion(.failure(error))
+                return
+            }
+        }
+
         #if DEBUG
         if debugPlayback {
             helperBridge.debugFakeUpdate(
@@ -251,8 +291,73 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
         helperBridge.updateAll(
             progress: handleProgress,
-            completion: handleCompletion
+            completion: { [weak self] result in
+                guard let self,
+                      updatesAutomicVaultCLT else {
+                    handleCompletion(result)
+                    return
+                }
+                self.finishUpdateAll(
+                    result,
+                    byInstallingAutomicVaultCLTFrom: stagedCLTDirectory,
+                    progress: handleProgress,
+                    completion: handleCompletion
+                )
+            }
         )
+    }
+
+    private func finishUpdateAll(
+        _ updateAllResult: Result<NukeHelperResult, Error>,
+        byInstallingAutomicVaultCLTFrom stagedCLTDirectory: URL?,
+        progress: @escaping (NukeHelperProgressEvent) -> Void,
+        completion: @escaping (Result<NukeHelperResult, Error>) -> Void
+    ) {
+        switch updateAllResult {
+        case .failure:
+            completion(updateAllResult)
+        case .success(let updateAllSuccess):
+            guard let stagedCLTDirectory else {
+                completion(.failure(NukeHelperBridgeError.operationFailed(
+                    "Bundled av command line tool was not staged for installation."
+                )))
+                return
+            }
+            helperBridge.installAv(
+                sourcePath: stagedCLTDirectory.path,
+                progress: progress
+            ) { avResult in
+                switch avResult {
+                case .failure:
+                    completion(avResult)
+                case .success(let avSuccess):
+                    completion(.success(NukeHelperResult(
+                        message: updateAllSuccess.processedPackages.isEmpty
+                            ? avSuccess.message
+                            : "Update complete",
+                        processedPackages: Self.mergedProcessedPackages(
+                            updateAllSuccess.processedPackages,
+                            avSuccess.processedPackages
+                        )
+                    )))
+                }
+            }
+        }
+    }
+
+    private static func mergedProcessedPackages(
+        _ left: [String],
+        _ right: [String]
+    ) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for package in left + right {
+            guard seen.insert(package).inserted else {
+                continue
+            }
+            result.append(package)
+        }
+        return result
     }
 
     private func startPackageOperation(_ request: PackageOperationRequest) {
@@ -478,6 +583,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         window.titlebarSeparatorStyle = .none
         mainToolbar = toolbar
         syncAppUpdateToolbarItem()
+        syncAutomicVaultCLTInstallToolbarItem()
     }
 
     private func syncAppUpdateToolbarItem() {
@@ -539,6 +645,76 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             width: max(
                 ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
                 182
+            ),
+            height: max(ceil(fittingSize.height), 28)
+        )
+        button.frame.size = size
+        item.label = title
+        item.paletteLabel = title
+        item.toolTip = toolTip
+    }
+
+    private func syncAutomicVaultCLTInstallToolbarItem() {
+        guard let toolbar = mainToolbar else {
+            return
+        }
+
+        let itemIndex = toolbar.items.firstIndex {
+            $0.itemIdentifier == .automicVaultCLTInstall
+        }
+
+        if model.shouldShowAutomicVaultCLTInstallButton {
+            if itemIndex == nil {
+                let insertionIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == .automicVaultRefresh
+                } ?? toolbar.items.count
+                toolbar.insertItem(
+                    withItemIdentifier: .automicVaultCLTInstall,
+                    at: insertionIndex
+                )
+            }
+            updateAutomicVaultCLTInstallToolbarItemState()
+        } else if let itemIndex {
+            toolbar.removeItem(at: itemIndex)
+            automicVaultCLTInstallToolbarItem = nil
+        }
+    }
+
+    private func updateAutomicVaultCLTInstallToolbarItemState() {
+        guard let item = automicVaultCLTInstallToolbarItem,
+              let button = item.view as? NSButton else {
+            return
+        }
+
+        let isInstalling = model.isInstallingAutomicVaultCLT
+        let title = isInstalling ? "Installing av" : "Install av"
+        let toolTip: String
+        if isInstalling {
+            toolTip = "Installing the bundled av command line tool"
+        } else if model.isPackageMutationInFlight {
+            toolTip = "Finish the current package operation before installing av"
+        } else {
+            toolTip = "Install the bundled av command line tool to /usr/local/bin/av"
+        }
+
+        button.title = Self.appUpdateToolbarIconTitleSpacing
+            + title
+            + Self.appUpdateToolbarTrailingPadding
+        button.image = NSImage(
+            systemSymbolName: isInstalling
+                ? "arrow.triangle.2.circlepath"
+                : "terminal.fill",
+            accessibilityDescription: title
+        )
+        button.isEnabled = model.canRequestAutomicVaultCLTInstall
+        button.toolTip = toolTip
+        button.sizeToFit()
+
+        let fittingSize = button.fittingSize
+        let size = NSSize(
+            width: max(
+                ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
+                116
             ),
             height: max(ceil(fittingSize.height), 28)
         )
@@ -650,6 +826,7 @@ extension MainWindowController: NSToolbarDelegate {
             .automicVaultSearch,
             .automicVaultRefresh,
             .automicVaultAppUpdate,
+            .automicVaultCLTInstall,
         ]
     }
 
@@ -713,6 +890,28 @@ extension MainWindowController: NSToolbarDelegate {
             item.view = button
             appUpdateToolbarItem = item
             updateAppUpdateToolbarItemState()
+            return item
+        case .automicVaultCLTInstall:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Install av"
+            item.paletteLabel = "Install av"
+            item.visibilityPriority = .high
+
+            let button = NSButton(
+                title: "Install av",
+                target: self,
+                action: #selector(automicVaultCLTInstallToolbarItemPressed(_:))
+            )
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.font = .systemFont(ofSize: 12, weight: .semibold)
+            button.imagePosition = .imageLeading
+            button.imageHugsTitle = true
+            button.imageScaling = .scaleProportionallyDown
+            button.setButtonType(.momentaryPushIn)
+            item.view = button
+            automicVaultCLTInstallToolbarItem = item
+            updateAutomicVaultCLTInstallToolbarItemState()
             return item
         default:
             return nil
@@ -779,4 +978,5 @@ private extension NSToolbarItem.Identifier {
     static let automicVaultSearch = NSToolbarItem.Identifier("AutomicVaultSearch")
     static let automicVaultRefresh = NSToolbarItem.Identifier("AutomicVaultRefresh")
     static let automicVaultAppUpdate = NSToolbarItem.Identifier("AutomicVaultAppUpdate")
+    static let automicVaultCLTInstall = NSToolbarItem.Identifier("AutomicVaultCLTInstall")
 }

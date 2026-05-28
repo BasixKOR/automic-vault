@@ -147,6 +147,67 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testOutdatedAutomicVaultCLTAppearsInOutdatedSection() throws {
+        let recommendation = PackageRecommendation.automicVaultCLT(
+            installedVersion: "1.0",
+            latestVersion: "2.0",
+            missingToolNames: []
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { recommendation },
+            initialAutomicVaultCLTRecommendation: recommendation
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .outdated
+
+        XCTAssertFalse(model.shouldShowAutomicVaultCLTInstallButton)
+        XCTAssertTrue(model.shouldUpdateAutomicVaultCLTWithUpdateAll)
+        XCTAssertEqual(model.outdatedUpdatePackageNames, ["av"])
+        XCTAssertEqual(model.count(for: .outdated), 1)
+
+        let package = try XCTUnwrap(model.displayedPackages.first)
+        XCTAssertEqual(package.selectionID, PackageRecommendation.automicVaultCLTName)
+        XCTAssertEqual(model.displayName(for: package), PackageRecommendation.automicVaultCLTName)
+        XCTAssertEqual(model.versionText(for: package), "v1.0 -> v2.0")
+
+        model.select(package)
+
+        XCTAssertFalse(model.isLoadingDetail)
+        XCTAssertEqual(model.selectedDetail?.packageName, PackageRecommendation.automicVaultCLTName)
+    }
+
+    @MainActor
+    func testMissingAutomicVaultCLTRequestsInstallFromToolbarState() throws {
+        let recommendation = PackageRecommendation.automicVaultCLT(
+            installedVersion: nil,
+            latestVersion: "2.0",
+            missingToolNames: ["av"]
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { recommendation },
+            initialAutomicVaultCLTRecommendation: recommendation
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .outdated
+
+        XCTAssertTrue(model.shouldShowAutomicVaultCLTInstallButton)
+        XCTAssertTrue(model.canRequestAutomicVaultCLTInstall)
+        XCTAssertFalse(model.shouldUpdateAutomicVaultCLTWithUpdateAll)
+        XCTAssertTrue(model.displayedPackages.isEmpty)
+
+        model.requestAutomicVaultCLTInstall()
+
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.kind, .install)
+        XCTAssertEqual(request.packageNames, ["av"])
+        XCTAssertEqual(request.displayName, "av")
+        XCTAssertTrue(request.isAutomicVaultCLT)
+        XCTAssertFalse(request.isXcodeCLT)
+    }
+
+    @MainActor
     func testDossierPrimaryActionFollowsInstallState() {
         let model = MainWindowModel()
         defer { model.stop() }
