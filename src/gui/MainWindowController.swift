@@ -14,6 +14,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private weak var searchToolbarItem: NSSearchToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
+    private var searchDeactivationRequestCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
 
     init() {
@@ -22,6 +23,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         super.init(rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installSearchTextObserver()
+        installSearchDeactivationObserver()
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
@@ -30,6 +32,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         super.init(coder: coder, rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installSearchTextObserver()
+        installSearchDeactivationObserver()
     }
 
     override func viewDidLoad() {
@@ -81,6 +84,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     func applicationWillTerminate() {
         updateAllRequestCancellable?.cancel()
         searchTextCancellable?.cancel()
+        searchDeactivationRequestCancellable?.cancel()
         model.stop()
     }
 
@@ -114,6 +118,25 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         if let editor = searchField.currentEditor(), editor.string != text {
             editor.string = text
         }
+    }
+
+    private func installSearchDeactivationObserver() {
+        searchDeactivationRequestCancellable = model.$searchDeactivationRequestID
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.deactivateSearchField()
+                }
+            }
+    }
+
+    private func deactivateSearchField() {
+        guard let searchField = searchToolbarItem?.searchField else {
+            return
+        }
+        syncSearchFieldText(model.searchText)
+        searchField.abortEditing()
+        searchField.window?.makeFirstResponder(nil)
     }
 
     private func startUpdateAll(debugPlayback: Bool) {

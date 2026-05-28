@@ -167,6 +167,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var searchFocusRequestID = 0
+    @Published private(set) var searchDeactivationRequestID = 0
     @Published private(set) var updateAllRequestID = 0
     @Published private(set) var isUpdatingAll = false
 
@@ -321,6 +322,7 @@ final class MainWindowModel: ObservableObject {
         selectedSection = section
         if isSearchActive {
             searchText = ""
+            searchDeactivationRequestID += 1
         }
     }
 

@@ -99,12 +99,17 @@ final class MainWindowModelTests: XCTestCase {
         defer { model.stop() }
         model.selectedSection = .outdated
         model.searchText = "openclaw"
+        let initialDeactivationRequestID = model.searchDeactivationRequestID
 
         model.selectSection(.newUpdated)
 
         XCTAssertEqual(model.searchText, "")
         XCTAssertEqual(model.selectedSection, .newUpdated)
         XCTAssertEqual(model.activeSidebarSection, .newUpdated)
+        XCTAssertEqual(
+            model.searchDeactivationRequestID,
+            initialDeactivationRequestID + 1
+        )
     }
 
     @MainActor
