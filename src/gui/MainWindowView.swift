@@ -189,7 +189,8 @@ struct MainWindowView: View {
                             title: model.isUpdatingAll ? "Updating" : "Update All"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .tint(.clear)
                     .disabled(!model.canUpdateAllOutdated)
                     .opacity(model.canUpdateAllOutdated ? 1 : 0.42)
                     .help(updateAllHelpText)
