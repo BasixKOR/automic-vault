@@ -998,8 +998,8 @@ private struct PackageBadgeBanner: View {
         .foregroundStyle(foreground)
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .background(background, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(border, lineWidth: 1))
+        .background(background, in: Capsule())
+        .overlay(Capsule().stroke(border, lineWidth: 1))
     }
 
     private var title: String {
