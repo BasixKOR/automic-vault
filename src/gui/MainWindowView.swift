@@ -651,6 +651,8 @@ private struct SidebarCountText: View {
 private struct UpdateAllHeaderButtonLabel: View {
     let title: String
 
+    private static let accent = Color(red: 0.00, green: 0.84, blue: 1.00)
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.2.circlepath")
@@ -661,19 +663,19 @@ private struct UpdateAllHeaderButtonLabel: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.84)
         }
-        .foregroundStyle(AVGlassPalette.cyan.opacity(0.94))
+        .foregroundStyle(Self.accent.opacity(0.98))
         .padding(.horizontal, 10)
         .frame(height: 28)
         .background {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AVGlassPalette.cyan.opacity(0.105))
+                .fill(Self.accent.opacity(0.16))
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AVGlassPalette.cyan.opacity(0.34), lineWidth: 1)
+                .stroke(Self.accent.opacity(0.52), lineWidth: 1)
         }
-        .shadow(color: AVGlassPalette.cyan.opacity(0.15), radius: 8)
+        .shadow(color: Self.accent.opacity(0.22), radius: 8)
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
