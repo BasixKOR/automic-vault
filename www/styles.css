@@ -1,27 +1,27 @@
 :root {
-  --bg-outer: oklch(8% 0.012 62);
-  --bg: oklch(13% 0.014 62);
-  --surface: oklch(16% 0.014 62);
-  --surface-2: oklch(20% 0.016 62);
-  --surface-3: oklch(24% 0.018 62);
-  --surface-deep: oklch(12% 0.012 62);
-  --surface-shell: oklch(16% 0.014 62 / 0.96);
-  --surface-nav: oklch(17% 0.014 62 / 0.92);
-  --ink: oklch(94% 0.016 78);
-  --ink-dark: oklch(13% 0.018 62);
-  --muted: oklch(70% 0.022 78);
-  --dim: oklch(61% 0.022 78);
-  --line: oklch(27% 0.016 68);
-  --line-strong: oklch(36% 0.018 68);
+  --bg-outer: oklch(8% 0.006 255);
+  --bg: oklch(13% 0.006 255);
+  --surface: oklch(16% 0.006 255);
+  --surface-2: oklch(20% 0.007 255);
+  --surface-3: oklch(24% 0.008 255);
+  --surface-deep: oklch(12% 0.006 255);
+  --surface-shell: oklch(16% 0.006 255 / 0.96);
+  --surface-nav: oklch(17% 0.006 255 / 0.92);
+  --ink: oklch(94% 0.01 82);
+  --ink-dark: oklch(13% 0.008 255);
+  --muted: oklch(70% 0.014 82);
+  --dim: oklch(61% 0.014 82);
+  --line: oklch(27% 0.008 255);
+  --line-strong: oklch(36% 0.01 255);
   --hot: oklch(70% 0.17 37);
   --blue: oklch(68% 0.15 246);
   --green: oklch(72% 0.14 137);
   --gold: oklch(76% 0.13 82);
-  --grid-line: oklch(94% 0.016 78 / 0.035);
-  --grid-line-soft: oklch(94% 0.016 78 / 0.024);
+  --grid-line: oklch(94% 0.01 82 / 0.035);
+  --grid-line-soft: oklch(94% 0.01 82 / 0.024);
   --glow-hot: oklch(70% 0.17 37 / 0.1);
   --glow-blue: oklch(68% 0.15 246 / 0.08);
-  --shadow: oklch(6% 0.012 62 / 0.48);
+  --shadow: oklch(6% 0.006 255 / 0.48);
   --font-ui: "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "SFMono-Regular", Consolas, monospace;
   --max: 1540px;
@@ -56,7 +56,7 @@ body::before {
   pointer-events: none;
   background:
     linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(94% 0.016 78 / 0.018) 1px, transparent 1px);
+    linear-gradient(90deg, oklch(94% 0.01 82 / 0.018) 1px, transparent 1px);
   background-size: 100% 4px, 48px 100%;
   opacity: 0.22;
   mix-blend-mode: screen;
@@ -1080,7 +1080,7 @@ h1 {
     gap: 0;
     padding: 8px 20px 20px;
     border-bottom: 1px solid var(--line);
-    background: oklch(17% 0.014 62 / 0.98);
+    background: oklch(17% 0.006 255 / 0.98);
   }
 
   .nav.is-open {
