@@ -433,14 +433,7 @@ final class MainWindowModel: ObservableObject {
 
     private func needsHardening(_ package: PackagePresentation) -> Bool {
         let detail = detailsByPackageName[package.selectionID] ?? package.detail
-        if detail?.securityState?.installIsInsecure == true
-            || detail?.securityState?.error?
-                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            || detail?.securityNotice != nil
-            || package.hasActivePlainTextSecretAlert {
-            return true
-        }
-        return false
+        return package.hasMainWindowSecurityAlert(resolvedDetail: detail)
     }
 
     private func isInstalledAsIsotope(_ package: PackagePresentation) -> Bool {
@@ -801,9 +794,7 @@ final class MainWindowModel: ObservableObject {
         case .success(let installed):
             snapshot = NucleusStatusSnapshot(
                 installedCount: installed.count,
-                hazardousPackageCount: installed.filter {
-                    $0.securityState?.installIsInsecure == true
-                }.count,
+                hazardousPackageCount: installed.filter(\.hasMainWindowSecurityAlert).count,
                 outdatedPackages: snapshot.outdatedPackages,
                 homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
                 refreshedAt: Date(),

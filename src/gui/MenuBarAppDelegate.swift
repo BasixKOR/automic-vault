@@ -2,8 +2,8 @@ import AppKit
 import UserNotifications
 
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
-    private static let menuBarIndicatorColor = NSColor(
-        name: NSColor.Name("MenuBarIndicatorColor")
+    private static let neutralMenuBarIndicatorColor = NSColor(
+        name: NSColor.Name("NeutralMenuBarIndicatorColor")
     ) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? .white
@@ -362,9 +362,10 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 }
                 nextSnapshot = NucleusStatusSnapshot(
                     installedCount: installedPackages.count,
-                    hazardousPackageCount: installedPackages.filter {
-                        $0.fallbackDetail.securityNotice != nil
-                    }.count,
+                    hazardousPackageCount: Self.securityAlertCount(
+                        installedPackages: installedPackages,
+                        geigerAlertCount: self.geigerAlertCount()
+                    ),
                     outdatedPackages: outdatedPackages,
                     homebrewOutdatedPackages: homebrewOutdatedPackages,
                     refreshedAt: Date(),
@@ -450,7 +451,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func applyButtonAppearance(outdatedCount: Int, hazardousCount: Int) {
         guard let button = statusItem.button else { return }
-        let shouldShowIndicator = outdatedCount > 0 || appUpdateSnapshot.updateAvailable
+        let hasSecurityAlerts = hazardousCount > 0
+        let shouldShowIndicator = hasSecurityAlerts
+            || outdatedCount > 0
+            || appUpdateSnapshot.updateAvailable
+        let indicatorColor = Self.menuBarIndicatorColor(hasSecurityAlerts: hasSecurityAlerts)
 
         if let statusIcon {
             button.image = adjustedIcon(statusIcon, horizontalInset: 0, heightReduction: 0, offsetY: 0)
@@ -461,7 +466,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     string: "●",
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 6.3, weight: .bold),
-                        .foregroundColor: Self.menuBarIndicatorColor,
+                        .foregroundColor: indicatorColor,
                         .baselineOffset: 7.52
                     ]
                 )
@@ -484,7 +489,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         string: " ●",
                         attributes: [
                             .font: NSFont.systemFont(ofSize: 7, weight: .bold),
-                            .foregroundColor: Self.menuBarIndicatorColor,
+                            .foregroundColor: indicatorColor,
                             .baselineOffset: 8.8
                         ]
                     )
@@ -497,6 +502,24 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             outdatedCount: outdatedCount,
             hazardousCount: hazardousCount
         )
+    }
+
+    private static func menuBarIndicatorColor(hasSecurityAlerts: Bool) -> NSColor {
+        hasSecurityAlerts ? .systemRed : neutralMenuBarIndicatorColor
+    }
+
+    private static func securityAlertCount(
+        installedPackages: [PackageRecord],
+        geigerAlertCount: Int
+    ) -> Int {
+        max(
+            installedPackages.filter(\.hasMainWindowSecurityAlert).count,
+            geigerAlertCount
+        )
+    }
+
+    private func geigerAlertCount() -> Int {
+        (try? bridge.fetchGeigerPackages(offset: 0, limit: 1).totalCount) ?? 0
     }
 
     private func buttonTooltip(outdatedCount: Int, hazardousCount: Int) -> String {

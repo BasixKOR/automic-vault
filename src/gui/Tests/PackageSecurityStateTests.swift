@@ -120,6 +120,23 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertFalse(presentation.plainTextSecretAlertIsGhosted)
     }
 
+    func testInstalledDetectorErrorCountsAsMainWindowSecurityAlert() {
+        let record = PackageRecord(
+            name: "brew:git",
+            source: .formula(rootFormula: "git"),
+            version: "2.54.0",
+            description: "Distributed revision control system",
+            securityState: PackageSecurityState(
+                isotopeName: "git",
+                installIsInsecure: false,
+                reasons: [],
+                error: "Detector failed"
+            )
+        )
+
+        XCTAssertTrue(record.hasMainWindowSecurityAlert)
+    }
+
     func testLocalDetectorHazardInInstalledPanelIsActiveEvenWhenPackageIsNotInstalled() throws {
         let lookupDetail = try decodePackageDetail(
             packageName: "brew:curl",

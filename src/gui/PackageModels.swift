@@ -138,6 +138,14 @@ struct PackageRecord: Decodable, Equatable {
         return version != latestVersion
     }
 
+    var hasMainWindowSecurityAlert: Bool {
+        PackagePresentation(
+            item: .installed(self),
+            detail: fallbackDetail,
+            freshness: 0
+        ).hasMainWindowSecurityAlert()
+    }
+
     func applying(outdated: OutdatedPackageRecord) -> PackageRecord {
         PackageRecord(
             name: name,
@@ -1615,6 +1623,31 @@ struct PackagePresentation: Equatable {
 
     var hasActivePlainTextSecretAlert: Bool {
         hasPlainTextSecretAlert && !plainTextSecretAlertIsGhosted
+    }
+
+    func hasMainWindowSecurityAlert(
+        resolvedDetail detailOverride: PackageDetail? = nil
+    ) -> Bool {
+        let resolvedDetail = detailOverride ?? detail
+        if resolvedDetail?.securityState?.installIsInsecure == true {
+            return true
+        }
+        if resolvedDetail?.securityState?.error?
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+        if resolvedDetail?.securityNotice != nil {
+            return true
+        }
+        guard let resolvedDetail else {
+            return hasActivePlainTextSecretAlert
+        }
+        return PackagePresentation(
+            item: item,
+            detail: resolvedDetail,
+            freshness: freshness,
+            presentationID: presentationID
+        ).hasActivePlainTextSecretAlert
     }
 
     var plainTextSecretAlertIsGhosted: Bool {
