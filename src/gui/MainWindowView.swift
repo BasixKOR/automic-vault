@@ -268,10 +268,17 @@ struct MainWindowView: View {
             VStack(alignment: .leading, spacing: 18) {
                 if let detail = model.selectedDetail,
                    let package = model.selectedPackage {
+                    let warning = DossierSecurityWarningContent(detail: detail)
+
                     dossierHeader(detail: detail, package: package)
+                    if let warning {
+                        securityWarningSection(warning: warning)
+                    }
                     executableSection(detail: detail, package: package)
                     permissionsSection(detail: detail, package: package)
-                    notesSection(detail: detail, package: package)
+                    if warning == nil {
+                        notesSection(detail: detail, package: package)
+                    }
                     lastUpdatedSection(detail: detail)
                 } else {
                     Color.clear
@@ -444,6 +451,14 @@ struct MainWindowView: View {
         }
     }
 
+    private func securityWarningSection(
+        warning: DossierSecurityWarningContent
+    ) -> some View {
+        InfoSection(title: "HAZARD WARNING") {
+            DossierSecurityWarningCard(warning: warning)
+        }
+    }
+
     private func lastUpdatedSection(detail: PackageDetail) -> some View {
         InfoSection(title: "LAST UPDATED") {
             Text(model.relativeLastUpdatedText(for: detail))
@@ -456,9 +471,6 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> String {
-        if let notice = detail.securityNotice {
-            return notice.body
-        }
         if model.isHardened(package) {
             return "This package is hardened. Binary execution is sandboxed and secret access is restricted."
         }
@@ -728,6 +740,246 @@ private struct PackageDossierActionButtonLabel: View {
         case .install, .uninstall:
             return AVGlassPalette.secondaryText
         }
+    }
+}
+
+struct DossierSecurityWarningContent: Equatable {
+    let headline: String
+    let body: String
+    let reasons: [String]
+    let detectorError: String?
+    let caveats: PackageSecurityNotice.Caveats?
+
+    init?(detail: PackageDetail) {
+        let detectorError = detail.securityState?.error?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let nonEmptyDetectorError = detectorError?.isEmpty == false ? detectorError : nil
+
+        if let notice = detail.securityNotice {
+            headline = notice.headline
+            body = notice.body
+            reasons = notice.reasons
+            self.detectorError = nonEmptyDetectorError
+            caveats = notice.caveats
+            return
+        }
+
+        guard let securityState = detail.securityState,
+              let nonEmptyDetectorError else {
+            return nil
+        }
+
+        headline = "DETECTOR NEEDS REVIEW"
+        body = "The detector for isotope:\(securityState.isotopeName) did not complete cleanly."
+        reasons = securityState.reasons
+        self.detectorError = nonEmptyDetectorError
+        caveats = nil
+    }
+
+    var hasCaveats: Bool {
+        switch caveats {
+        case .paragraph(let paragraph):
+            return paragraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        case .bullets(let bullets):
+            return bullets.contains {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            }
+        case .none:
+            return false
+        }
+    }
+}
+
+private struct DossierSecurityWarningCard: View {
+    let warning: DossierSecurityWarningContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(warning.headline)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(AVGlassPalette.vulnerableText)
+                .lineLimit(nil)
+                .textSelection(.enabled)
+
+            DossierSecurityMarkdownText(
+                warning.body,
+                fontSize: 13,
+                weight: .medium,
+                color: AVGlassPalette.secondaryText
+            )
+
+            if warning.reasons.isEmpty == false {
+                DossierSecurityWarningSection(title: "DETECTION") {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(warning.reasons.indices, id: \.self) { index in
+                            DossierSecurityWarningBullet(text: warning.reasons[index])
+                        }
+                    }
+                }
+            }
+
+            if let detectorError = warning.detectorError {
+                DossierSecurityWarningSection(title: "DETECTOR ERROR") {
+                    Text(detectorError)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(AVGlassPalette.secondaryText)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if warning.hasCaveats {
+                DossierSecurityWarningSection(title: "CAVEATS") {
+                    caveatsContent
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AVGlassPalette.vulnerableFill, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AVGlassPalette.vulnerableBorder.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var caveatsContent: some View {
+        switch warning.caveats {
+        case .paragraph(let paragraph):
+            DossierSecurityMarkdownText(
+                paragraph,
+                fontSize: 12,
+                weight: .regular,
+                color: AVGlassPalette.secondaryText
+            )
+        case .bullets(let bullets):
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(bullets.indices, id: \.self) { index in
+                    DossierSecurityWarningBullet(text: bullets[index])
+                }
+            }
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+private struct DossierSecurityWarningSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.vulnerableText.opacity(0.86))
+                .tracking(0.7)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DossierSecurityWarningBullet: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("•")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AVGlassPalette.vulnerableText.opacity(0.82))
+            DossierSecurityMarkdownText(
+                text,
+                fontSize: 12,
+                weight: .regular,
+                color: AVGlassPalette.secondaryText
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DossierSecurityMarkdownText: View {
+    let text: String
+    let fontSize: CGFloat
+    let weight: Font.Weight
+    let color: Color
+
+    init(
+        _ text: String,
+        fontSize: CGFloat,
+        weight: Font.Weight,
+        color: Color
+    ) {
+        self.text = text
+        self.fontSize = fontSize
+        self.weight = weight
+        self.color = color
+    }
+
+    var body: some View {
+        Text(attributedText)
+            .font(.system(size: fontSize, weight: weight))
+            .foregroundStyle(color)
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    private var attributedText: AttributedString {
+        let normalized = normalizedSecurityMarkdown(text)
+        do {
+            return try AttributedString(
+                markdown: normalized,
+                options: AttributedString.MarkdownParsingOptions(
+                    interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                    failurePolicy: .returnPartiallyParsedIfPossible
+                )
+            )
+        } catch {
+            return AttributedString(normalized)
+        }
+    }
+
+    private func normalizedSecurityMarkdown(_ markdown: String) -> String {
+        let lines = markdown
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+        var blocks: [[String]] = []
+        var currentBlock: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                if currentBlock.isEmpty == false {
+                    blocks.append(currentBlock)
+                    currentBlock = []
+                }
+            } else {
+                currentBlock.append(trimmed)
+            }
+        }
+
+        if currentBlock.isEmpty == false {
+            blocks.append(currentBlock)
+        }
+
+        return blocks
+            .map { block in
+                if block.contains(where: isMarkdownListItem) {
+                    return block.joined(separator: "\n")
+                }
+                return block.joined(separator: " ")
+            }
+            .joined(separator: "\n\n")
+    }
+
+    private func isMarkdownListItem(_ line: String) -> Bool {
+        line.hasPrefix("- ") || line.hasPrefix("* ")
     }
 }
 

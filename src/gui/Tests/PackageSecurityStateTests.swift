@@ -44,6 +44,68 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(notice.reasons, state.reasons)
     }
 
+    func testDossierWarningContentIncludesFullHazardOutput() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": [
+                "curl netrc file contains plaintext credentials: /Users/test/.netrc",
+                "curl config includes a plaintext bearer token"
+              ],
+              "error": null
+            }
+            """
+        )
+
+        let warning = try XCTUnwrap(DossierSecurityWarningContent(detail: detail))
+
+        XCTAssertEqual(warning.headline, "LOCAL SECRET EXPOSURE")
+        XCTAssertTrue(warning.body.contains("plaintext secret exposure"))
+        XCTAssertEqual(
+            warning.reasons,
+            [
+                "curl netrc file contains plaintext credentials: /Users/test/.netrc",
+                "curl config includes a plaintext bearer token",
+            ]
+        )
+        XCTAssertNil(warning.detectorError)
+    }
+
+    func testDossierWarningContentIncludesDetectorErrorWithoutNotice() throws {
+        let detail = try decodePackageDetail(
+            packageName: "brew:not-a-real-detector-test-package",
+            formula: "not-a-real-detector-test-package",
+            securityState: """
+            {
+              "isotopeName": "test-isotope",
+              "installIsInsecure": false,
+              "remediationAvailable": true,
+              "reasons": [],
+              "error": "detector exited with status 1\\nstderr: permission denied"
+            }
+            """
+        )
+
+        XCTAssertNil(detail.securityNotice)
+
+        let warning = try XCTUnwrap(DossierSecurityWarningContent(detail: detail))
+
+        XCTAssertEqual(warning.headline, "DETECTOR NEEDS REVIEW")
+        XCTAssertEqual(
+            warning.body,
+            "The detector for isotope:test-isotope did not complete cleanly."
+        )
+        XCTAssertEqual(
+            warning.detectorError,
+            "detector exited with status 1\nstderr: permission denied"
+        )
+    }
+
     func testDetectorOnlyNoticeLinksToRadioisotopeReadme() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:curl",
