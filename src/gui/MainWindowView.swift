@@ -798,8 +798,9 @@ private struct PackageInlineBadgeText: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: .bold))
+            .font(.system(size: 9, weight: .regular))
             .foregroundStyle(foreground)
+            .kerning(1.2)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }
@@ -815,7 +816,7 @@ private struct PackageInlineBadgeText: View {
         case .immutable:
             return "Immutable"
         case .outdated:
-            return "Outdated"
+            return "OUTDATED"
         }
     }
 
