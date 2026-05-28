@@ -243,6 +243,13 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
+    private var pulseNewPackageCount: Int? {
+        guard pulsePackages.isEmpty == false || pulseTotalCount != nil else {
+            return nil
+        }
+        return pulsePackages.filter(isNewPulsePackage).count
+    }
+
     func start() {
         installSnapshotObserverIfNeeded()
         applyStatusSnapshot(statusStore.loadSnapshot())
@@ -376,7 +383,7 @@ final class MainWindowModel: ObservableObject {
         case .geigerCounter:
             return geigerCounterCount
         case .newUpdated:
-            return pulseTotalCount ?? (pulsePackages.isEmpty ? nil : pulsePackages.count)
+            return pulseNewPackageCount
         case .outdated:
             return max(outdatedPackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
@@ -685,6 +692,14 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         return outdatedPackageNames.contains(name)
+    }
+
+    private func isNewPulsePackage(_ package: PackagePresentation) -> Bool {
+        guard case .available(let result) = package.item else {
+            return false
+        }
+        let pulseKind = result.pulseKind?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return pulseKind?.localizedCaseInsensitiveCompare("new") == .orderedSame
     }
 
     private func isDevelopment(_ package: PackagePresentation) -> Bool {
