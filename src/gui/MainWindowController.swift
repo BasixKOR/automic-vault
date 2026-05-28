@@ -7,35 +7,41 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private static let searchShortcutKeys: Set<String> = ["k", "l", "p"]
 
     private let model: MainWindowModel
+    private let appUpdateCoordinator: AppUpdateCoordinator
     private let helperBridge = NukeHelperBridge()
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
+    private weak var appUpdateToolbarItem: NSToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
     private var packageOperationRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
     private var searchDeactivationRequestCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
 
-    init() {
+    init(appUpdateCoordinator: AppUpdateCoordinator) {
         let model = MainWindowModel()
         self.model = model
+        self.appUpdateCoordinator = appUpdateCoordinator
         super.init(rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
+        installAppUpdateCallbacks()
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
         let model = MainWindowModel()
         self.model = model
+        self.appUpdateCoordinator = AppUpdateCoordinator(statusStore: NucleusStatusStore())
         super.init(coder: coder, rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installPackageOperationRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
+        installAppUpdateCallbacks()
     }
 
     override func viewDidLoad() {
@@ -68,6 +74,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         requestRefresh()
     }
 
+    @objc private func appUpdateToolbarItemPressed(_ sender: Any?) {
+        guard appUpdateCoordinator.hasAvailableUpdate else {
+            appUpdateCoordinator.checkForUpdates()
+            return
+        }
+        confirmAndInstallAppUpdate()
+    }
+
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
@@ -90,6 +104,15 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         searchTextCancellable?.cancel()
         searchDeactivationRequestCancellable?.cancel()
         model.stop()
+    }
+
+    private func installAppUpdateCallbacks() {
+        appUpdateCoordinator.onStateChange = { [weak self] in
+            self?.syncAppUpdateToolbarItem()
+        }
+        appUpdateCoordinator.onError = { [weak self] message in
+            self?.presentAppUpdateError(message)
+        }
     }
 
     private func installUpdateAllRequestObserver() {
@@ -451,6 +474,131 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
         mainToolbar = toolbar
+        syncAppUpdateToolbarItem()
+    }
+
+    private func syncAppUpdateToolbarItem() {
+        guard let toolbar = mainToolbar else {
+            return
+        }
+
+        let itemIndex = toolbar.items.firstIndex {
+            $0.itemIdentifier == .automicVaultAppUpdate
+        }
+        let shouldShowUpdate = appUpdateCoordinator.hasAvailableUpdate
+            || appUpdateCoordinator.isInstalling
+
+        if shouldShowUpdate {
+            if itemIndex == nil {
+                let insertionIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == .automicVaultRefresh
+                } ?? toolbar.items.count
+                toolbar.insertItem(
+                    withItemIdentifier: .automicVaultAppUpdate,
+                    at: insertionIndex
+                )
+            }
+            updateAppUpdateToolbarItemState()
+        } else if let itemIndex {
+            toolbar.removeItem(at: itemIndex)
+            appUpdateToolbarItem = nil
+        }
+    }
+
+    private func updateAppUpdateToolbarItemState() {
+        guard let item = appUpdateToolbarItem,
+              let button = item.view as? NSButton else {
+            return
+        }
+
+        let isInstalling = appUpdateCoordinator.isInstalling
+        let title = isInstalling ? "Updating Automic Vault" : "Update Automic Vault"
+        let toolTip = isInstalling
+            ? "Installing the Automic Vault update"
+            : "Install the staged Automic Vault update and relaunch"
+
+        button.title = title
+        button.image = NSImage(
+            systemSymbolName: isInstalling
+                ? "arrow.triangle.2.circlepath"
+                : "arrow.down.circle.fill",
+            accessibilityDescription: title
+        )
+        button.isEnabled = !isInstalling
+        button.toolTip = toolTip
+        button.sizeToFit()
+
+        let fittingSize = button.fittingSize
+        let size = NSSize(
+            width: max(ceil(fittingSize.width), 168),
+            height: max(ceil(fittingSize.height), 28)
+        )
+        button.frame.size = size
+        item.label = title
+        item.paletteLabel = title
+        item.toolTip = toolTip
+    }
+
+    private func confirmAndInstallAppUpdate() {
+        guard let window = view.window else {
+            installAppUpdateIfReady()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Update Automic Vault?"
+        alert.informativeText = "Automic Vault will quit and relaunch after the update is installed."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Update Automic Vault")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else {
+                return
+            }
+            DispatchQueue.main.async {
+                self?.installAppUpdateIfReady()
+            }
+        }
+    }
+
+    private func installAppUpdateIfReady() {
+        appUpdateCoordinator.installWhenReady(
+            readiness: { [weak self] in
+                self?.appUpdateInstallReadiness()
+                    ?? .busy("Main window is unavailable.")
+            },
+            prepareForInstall: { [weak self] in
+                self?.model.showTransientStatus("Installing Automic Vault update")
+            }
+        )
+    }
+
+    private func appUpdateInstallReadiness() -> AppUpdateCoordinator.InstallReadiness {
+        if model.isPackageMutationInFlight {
+            return .busy(
+                "Finish the current package operation before updating Automic Vault."
+            )
+        }
+        if view.window?.attachedSheet != nil {
+            return .busy(
+                "Close the current sheet before updating Automic Vault."
+            )
+        }
+        return .ready
+    }
+
+    private func presentAppUpdateError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Could Not Update Automic Vault"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window, window.attachedSheet == nil {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
     private func installSearchShortcutMonitorIfNeeded() {
@@ -492,6 +640,7 @@ extension MainWindowController: NSToolbarDelegate {
             .flexibleSpace,
             .automicVaultSearch,
             .automicVaultRefresh,
+            .automicVaultAppUpdate,
         ]
     }
 
@@ -533,6 +682,27 @@ extension MainWindowController: NSToolbarDelegate {
             item.target = self
             item.action = #selector(refreshToolbarItemPressed(_:))
             item.visibilityPriority = .high
+            return item
+        case .automicVaultAppUpdate:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Update Automic Vault"
+            item.paletteLabel = "Update Automic Vault"
+            item.visibilityPriority = .high
+
+            let button = NSButton(
+                title: "Update Automic Vault",
+                target: self,
+                action: #selector(appUpdateToolbarItemPressed(_:))
+            )
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.font = .systemFont(ofSize: 12, weight: .semibold)
+            button.imagePosition = .imageLeading
+            button.imageScaling = .scaleProportionallyDown
+            button.setButtonType(.momentaryPushIn)
+            item.view = button
+            appUpdateToolbarItem = item
+            updateAppUpdateToolbarItemState()
             return item
         default:
             return nil
@@ -598,4 +768,5 @@ private extension NSToolbar.Identifier {
 private extension NSToolbarItem.Identifier {
     static let automicVaultSearch = NSToolbarItem.Identifier("AutomicVaultSearch")
     static let automicVaultRefresh = NSToolbarItem.Identifier("AutomicVaultRefresh")
+    static let automicVaultAppUpdate = NSToolbarItem.Identifier("AutomicVaultAppUpdate")
 }

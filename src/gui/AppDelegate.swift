@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let isotopeApprovalStore = IsotopeApprovalStore()
     private let gateApprovalStore = GateApprovalStore()
     private let helperBridge = NukeHelperBridge()
+    private lazy var appUpdateCoordinator = AppUpdateCoordinator(statusStore: statusStore)
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     #endif
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installGateApprovalObserverIfNeeded()
         startRemoteDatabaseRefreshTimer()
         showMainWindow()
+        appUpdateCoordinator.startAutomaticChecks()
         presentPendingVaultApprovalIfNeeded()
         presentPendingIsotopeApprovalIfNeeded()
         presentPendingGateApprovalIfNeeded()
@@ -70,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DistributedNotificationCenter.default().removeObserver(pendingGateApprovalObserver)
         }
         remoteDatabaseRefreshTimer?.invalidate()
+        appUpdateCoordinator.stop()
         (window?.contentViewController as? MainWindowController)?
             .applicationWillTerminate()
     }
@@ -650,7 +653,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return window
         }
 
-        let controller = MainWindowController()
+        let controller = MainWindowController(appUpdateCoordinator: appUpdateCoordinator)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1380, height: 860),
             styleMask: [
