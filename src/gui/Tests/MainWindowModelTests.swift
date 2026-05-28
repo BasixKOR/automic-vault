@@ -54,6 +54,26 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
+    func testAvailableNpmPackageShowsSourceLabelInsteadOfLatestVersion() {
+        let result = PackageSearchResult(
+            name: "npm:openclaw",
+            source: .npm(packageName: "openclaw"),
+            version: "2026.5.22",
+            description: "Multi-channel AI gateway",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        let presentation = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(presentation.versionText, "NPM")
+    }
+
     private func pulseResult(
         lastUpdatedAt: String?,
         pulseKind: String

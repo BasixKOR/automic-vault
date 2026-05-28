@@ -414,7 +414,141 @@ pub(crate) fn resolve_package_search_results(
     );
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
+    results.sort_by(|left, right| {
+        compare_package_search_results_for_query(&lowered_query, left, right)
+    });
     Ok(results)
+}
+
+pub(crate) fn compare_package_search_results_for_query(
+    query: &str,
+    left: &PackageSearchResult,
+    right: &PackageSearchResult,
+) -> std::cmp::Ordering {
+    let query = query.trim().to_ascii_lowercase();
+    search_result_match_rank(left, &query)
+        .cmp(&search_result_match_rank(right, &query))
+        .then_with(|| {
+            search_result_match_distance(left, &query)
+                .cmp(&search_result_match_distance(right, &query))
+        })
+        .then_with(|| compare_optional_popularity_rank(left.rank, right.rank))
+        .then_with(|| {
+            compare_package_names_for_search_order(&left.package_name, &right.package_name)
+        })
+}
+
+fn compare_optional_popularity_rank(left: Option<u32>, right: Option<u32>) -> std::cmp::Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    }
+}
+
+fn search_result_match_rank(package: &PackageSearchResult, query: &str) -> u8 {
+    if query.is_empty() {
+        return 5;
+    }
+
+    let candidates = search_result_name_candidates(package);
+    if candidates.iter().any(|candidate| candidate == query) {
+        return 0;
+    }
+    if candidates
+        .iter()
+        .any(|candidate| candidate.starts_with(query))
+    {
+        return 1;
+    }
+    if candidates.iter().any(|candidate| candidate.contains(query)) {
+        return 2;
+    }
+    if package
+        .summary
+        .as_deref()
+        .is_some_and(|summary| summary.to_ascii_lowercase().contains(query))
+    {
+        return 3;
+    }
+    4
+}
+
+fn search_result_match_distance(package: &PackageSearchResult, query: &str) -> usize {
+    if query.is_empty() {
+        return usize::MAX;
+    }
+
+    let name_distance = search_result_name_candidates(package)
+        .into_iter()
+        .filter_map(|candidate| {
+            if candidate == query {
+                Some(0)
+            } else if candidate.starts_with(query) {
+                Some(candidate.len().saturating_sub(query.len()))
+            } else {
+                candidate
+                    .find(query)
+                    .map(|index| candidate.len().saturating_sub(query.len()) + index)
+            }
+        })
+        .min();
+    if let Some(distance) = name_distance {
+        return distance;
+    }
+
+    package
+        .summary
+        .as_deref()
+        .and_then(|summary| summary.to_ascii_lowercase().find(query))
+        .unwrap_or(usize::MAX)
+}
+
+fn search_result_name_candidates(package: &PackageSearchResult) -> Vec<String> {
+    let mut candidates = Vec::new();
+    push_search_result_name_candidate(&mut candidates, &package.package_name);
+
+    let qualified_name = package_source_qualified_name(&package.source);
+    push_search_result_name_candidate(&mut candidates, &qualified_name);
+
+    match &package.source {
+        PackageReceiptSource::Formula { root_formula } => {
+            push_search_result_name_candidate(&mut candidates, root_formula);
+        }
+        PackageReceiptSource::Cask { cask_name } => {
+            push_search_result_name_candidate(&mut candidates, cask_name);
+        }
+        PackageReceiptSource::Isotope { isotope_name } => {
+            push_search_result_name_candidate(&mut candidates, isotope_name);
+        }
+        PackageReceiptSource::Vendor { vendor_name } => {
+            push_search_result_name_candidate(&mut candidates, vendor_name);
+        }
+        PackageReceiptSource::Npm { package_name } | PackageReceiptSource::Pip { package_name } => {
+            push_search_result_name_candidate(&mut candidates, package_name);
+        }
+    }
+
+    candidates
+}
+
+fn push_search_result_name_candidate(candidates: &mut Vec<String>, candidate: &str) {
+    let candidate = candidate.trim().to_ascii_lowercase();
+    if candidate.is_empty() {
+        return;
+    }
+    push_unique_search_candidate(candidates, candidate.clone());
+
+    let order_name = package_search_order_name(&candidate).to_string();
+    push_unique_search_candidate(candidates, order_name);
+}
+
+fn push_unique_search_candidate(candidates: &mut Vec<String>, candidate: String) {
+    if candidate.is_empty() || candidates.contains(&candidate) {
+        return;
+    }
+    candidates.push(candidate);
 }
 
 pub(crate) fn resolve_available_package_results(

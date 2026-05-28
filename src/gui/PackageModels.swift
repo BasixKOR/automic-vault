@@ -890,7 +890,7 @@ enum PackageSource: Decodable, Equatable {
         case .vendor:
             return "Vault"
         case .npm:
-            return "npm"
+            return "NPM"
         case .pip:
             return "PyPI"
         }
@@ -1754,6 +1754,12 @@ struct PackagePresentation: Equatable {
             }
             return recommendation.description
         case .available(let result):
+            if case .npm = result.source {
+                return result.source?.displayLabel ?? "NPM"
+            }
+            if case .pip = result.source {
+                return result.source?.displayLabel ?? "PyPI"
+            }
             if let latestVersion = result.version, !latestVersion.isEmpty {
                 return "latest \(latestVersion)"
             }

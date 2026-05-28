@@ -7901,6 +7901,26 @@ mod tests {
         }
     }
 
+    fn package_search_result(
+        package_name: &str,
+        source: PackageReceiptSource,
+        summary: Option<&str>,
+        rank: Option<u32>,
+    ) -> PackageSearchResult {
+        PackageSearchResult {
+            package_name: package_name.to_string(),
+            source,
+            summary: summary.map(str::to_string),
+            latest_version: None,
+            homepage: None,
+            dependencies: Vec::new(),
+            security_state: None,
+            rank,
+            last_updated_at: None,
+            pulse_kind: None,
+        }
+    }
+
     #[test]
     fn resolve_i_root_formula_keeps_ffmpeg() {
         let db = test_db(&[]);
@@ -15758,6 +15778,66 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 && result.summary == Some("Coverage npm tool".to_string())
                 && result.latest_version == Some("1.2.3".to_string())
         }));
+    }
+
+    #[test]
+    fn package_search_relevance_prefers_exact_name_over_scoped_and_summary_matches() {
+        let mut results = vec![
+            package_search_result(
+                "npm:@askjo/camofox-browser",
+                PackageReceiptSource::Npm {
+                    package_name: "@askjo/camofox-browser".to_string(),
+                },
+                Some("Headless browser automation server and OpenClaw plugin"),
+                Some(1),
+            ),
+            package_search_result(
+                "npm:@qingchencloud/openclaw-zh",
+                PackageReceiptSource::Npm {
+                    package_name: "@qingchencloud/openclaw-zh".to_string(),
+                },
+                Some("OpenClaw localized release"),
+                Some(2),
+            ),
+            package_search_result(
+                "npm:openclaw",
+                PackageReceiptSource::Npm {
+                    package_name: "openclaw".to_string(),
+                },
+                Some("Multi-channel AI gateway"),
+                None,
+            ),
+            package_search_result(
+                "openclaw-cli",
+                PackageReceiptSource::Formula {
+                    root_formula: "openclaw-cli".to_string(),
+                },
+                Some("Your own personal AI assistant"),
+                None,
+            ),
+        ];
+
+        results.sort_by(|left, right| {
+            compare_package_search_results_for_query("openclaw", left, right)
+        });
+
+        assert_eq!(results[0].package_name, "npm:openclaw");
+        assert!(
+            results
+                .iter()
+                .position(|result| result.package_name == "npm:@askjo/camofox-browser")
+                > results
+                    .iter()
+                    .position(|result| result.package_name == "openclaw-cli")
+        );
+        assert!(
+            results
+                .iter()
+                .position(|result| result.package_name == "npm:@askjo/camofox-browser")
+                > results
+                    .iter()
+                    .position(|result| result.package_name == "npm:@qingchencloud/openclaw-zh")
+        );
     }
 
     #[test]
