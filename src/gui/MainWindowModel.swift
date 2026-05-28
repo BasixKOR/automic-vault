@@ -1121,6 +1121,7 @@ final class MainWindowModel: ObservableObject {
         switch result {
         case .success(let detail):
             let normalized = normalizedDetail(detail)
+                .preservingLocalSecurityContext(from: package.detail)
             detailsByPackageName[package.selectionID] = normalized
             detailsByPackageName[detail.packageName] = normalized
             detailsByPackageName[detailLookupName(for: package)] = normalized
@@ -1169,12 +1170,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func detailLookupName(for package: PackagePresentation) -> String {
-        switch package.item {
-        case .available(let result):
-            return result.detailLookupName
-        case .installed, .recommendation, .command:
-            return package.packageName ?? package.selectionID
-        }
+        package.preferredDetailLookupName
     }
 
     private func presentation(

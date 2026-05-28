@@ -407,6 +407,49 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.installPackageNames, ["brew:flyctl"])
     }
 
+    func testDetectedLocalHazardKeepsAlertAfterDetailLoadWithoutSecurityState() throws {
+        let result = PackageSearchResult(
+            name: "brew:supabase",
+            source: .formula(rootFormula: "supabase"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "supabase-cli",
+                installIsInsecure: true,
+                remediationAvailable: true,
+                reasons: ["Supabase access token is readable by /usr/bin/security"],
+                error: nil
+            ),
+            pulseKind: nil
+        )
+        let hazard = try XCTUnwrap(result.detectedLocalHazardPresentation(freshness: 0.4))
+        let resolvedDetail = try decodePackageDetail(
+            packageName: "brew:supabase",
+            formula: "supabase",
+            securityState: "null"
+        )
+
+        XCTAssertEqual(hazard.presentation.selectionID, "gone:supabase")
+        XCTAssertEqual(hazard.presentation.preferredDetailLookupName, "brew:supabase")
+        XCTAssertTrue(
+            hazard.presentation.hasMainWindowSecurityAlert(resolvedDetail: resolvedDetail)
+        )
+
+        let preserved = resolvedDetail.preservingLocalSecurityContext(from: hazard.detail)
+        XCTAssertEqual(preserved.packageName, "gone:supabase")
+        XCTAssertEqual(preserved.qualifiedName, "gone:supabase")
+        XCTAssertEqual(preserved.installPackageNames, ["brew:supabase"])
+        XCTAssertEqual(preserved.securityState, hazard.detail.securityState)
+
+        let warning = try XCTUnwrap(DossierSecurityWarningContent(detail: preserved))
+        XCTAssertEqual(
+            warning.reasons,
+            ["Supabase access token is readable by /usr/bin/security"]
+        )
+    }
+
     func testMacOSSystemHazardUsesSystemPrefixEvenWhenRemediable() throws {
         let result = PackageSearchResult(
             name: "curl",

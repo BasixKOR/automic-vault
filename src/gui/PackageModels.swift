@@ -44,6 +44,10 @@ extension String {
         }
         return String(self[index(after: separator)...])
     }
+
+    var isLocalDetectorDisplayPackageName: Bool {
+        hasPrefix("gone:") || hasPrefix("sys:")
+    }
 }
 
 struct PackageRecord: Decodable, Equatable {
@@ -236,6 +240,11 @@ struct PackageSecurityState: Decodable, Equatable {
         ) ?? true
         reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    var needsMainWindowSecurityAlert: Bool {
+        installIsInsecure
+            || error?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 }
 
@@ -618,6 +627,40 @@ struct PackageDetail: Decodable, Equatable {
         )
     }
 
+    func preservingLocalSecurityContext(from fallback: PackageDetail?) -> PackageDetail {
+        guard let fallback,
+              fallback.securityStateNeedsReview,
+              !securityStateNeedsReview else {
+            return self
+        }
+
+        return PackageDetail(
+            packageName: fallback.packageName,
+            qualifiedName: fallback.qualifiedName,
+            installRoot: installRoot,
+            installed: installed,
+            source: source,
+            sourceError: sourceError,
+            aliases: aliases,
+            aliasesError: aliasesError,
+            installedVersion: installedVersion,
+            latestVersion: latestVersion,
+            latestVersionError: latestVersionError,
+            executablePaths: executablePaths,
+            executablePathsError: executablePathsError,
+            popularity: popularity,
+            lastUpdatedAt: lastUpdatedAt,
+            homebrewInfo: homebrewInfo,
+            homebrewInfoError: homebrewInfoError,
+            npmHomepage: npmHomepage,
+            npmPackageInfoError: npmPackageInfoError,
+            securityState: fallback.securityState,
+            installPackageNames: fallback.installPackageNames ?? installPackageNames,
+            homebrewMigration: homebrewMigration,
+            versionOptions: versionOptions
+        )
+    }
+
     private var rawHomepage: String? {
         homebrewInfo?.homepage ?? npmHomepage
     }
@@ -673,11 +716,7 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     private var securityStateNeedsReview: Bool {
-        guard let securityState else {
-            return false
-        }
-        return securityState.installIsInsecure
-            || securityState.error?.isEmpty == false
+        securityState?.needsMainWindowSecurityAlert == true
     }
 }
 
@@ -1634,6 +1673,10 @@ struct PackagePresentation: Equatable {
         resolvedDetail detailOverride: PackageDetail? = nil
     ) -> Bool {
         let resolvedDetail = detailOverride ?? detail
+        if case .installed(let record) = item,
+           record.securityState?.needsMainWindowSecurityAlert == true {
+            return true
+        }
         if resolvedDetail?.securityState?.installIsInsecure == true {
             return true
         }
@@ -1653,6 +1696,24 @@ struct PackagePresentation: Equatable {
             freshness: freshness,
             presentationID: presentationID
         ).hasActivePlainTextSecretAlert
+    }
+
+    var preferredDetailLookupName: String {
+        switch item {
+        case .available(let result):
+            return result.detailLookupName
+        case .installed(let record):
+            if record.name.isLocalDetectorDisplayPackageName,
+               let lookupName = Self.firstNonEmptyPackageName(
+                   record.installPackageNames,
+                   detail?.installPackageNames
+               ) {
+                return lookupName
+            }
+            return packageName ?? selectionID
+        case .recommendation, .command:
+            return packageName ?? selectionID
+        }
     }
 
     var plainTextSecretAlertIsGhosted: Bool {
@@ -1771,6 +1832,21 @@ struct PackagePresentation: Equatable {
 
     private static func versionLabel(_ version: String) -> String {
         version.hasPrefix("v") ? version : "v\(version)"
+    }
+
+    private static func firstNonEmptyPackageName(_ candidates: [String]?...) -> String? {
+        for names in candidates {
+            guard let names else {
+                continue
+            }
+            for name in names {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty == false {
+                    return trimmed
+                }
+            }
+        }
+        return nil
     }
 
     var listSecondaryText: String {
