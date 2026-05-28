@@ -199,16 +199,6 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
         }
     }
 
-    var systemImage: String {
-        switch self {
-        case .install:
-            return "arrow.down.circle"
-        case .update:
-            return "arrow.triangle.2.circlepath"
-        case .uninstall:
-            return "trash"
-        }
-    }
 }
 
 struct PackageOperationRequest: Equatable {

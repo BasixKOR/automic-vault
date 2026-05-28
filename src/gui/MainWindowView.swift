@@ -691,11 +691,6 @@ private struct PackageDossierActionButtonLabel: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 14, height: 14)
-            } else {
-                Image(systemName: action.systemImage)
-                    .font(.system(size: 12, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(width: 14)
             }
             Text(isActive ? action.progressTitle : action.title)
                 .font(.system(size: 12, weight: .semibold))
