@@ -687,14 +687,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let isInstalling = model.isInstallingAutomicVaultCLT
-        let title = isInstalling ? "Installing av" : "Install av"
+        let title = isInstalling ? "Installing Automic Vault CLI" : "Install Automic Vault CLI"
         let toolTip: String
         if isInstalling {
             toolTip = "Installing the bundled av command line tool"
         } else if model.isPackageMutationInFlight {
             toolTip = "Finish the current package operation before installing av"
         } else {
-            toolTip = "Install the bundled av command line tool to /usr/local/bin/av"
+            toolTip = "Install the bundled Automic Vault CLI to /usr/local/bin/av"
         }
 
         button.title = Self.appUpdateToolbarIconTitleSpacing
@@ -714,7 +714,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let size = NSSize(
             width: max(
                 ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
-                116
+                206
             ),
             height: max(ceil(fittingSize.height), 28)
         )
@@ -893,12 +893,12 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultCLTInstall:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Install av"
-            item.paletteLabel = "Install av"
+            item.label = "Install Automic Vault CLI"
+            item.paletteLabel = "Install Automic Vault CLI"
             item.visibilityPriority = .high
 
             let button = NSButton(
-                title: "Install av",
+                title: "Install Automic Vault CLI",
                 target: self,
                 action: #selector(automicVaultCLTInstallToolbarItemPressed(_:))
             )
