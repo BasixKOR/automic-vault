@@ -2,6 +2,19 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class PackageSecurityStateTests: XCTestCase {
+    func testInstalledSummaryHomepageIsAvailableFromFallbackDetail() throws {
+        let record = PackageRecord(
+            name: "brew:curl",
+            source: .formula(rootFormula: "curl"),
+            version: "8.20.0",
+            description: "Get a file from an HTTP, HTTPS or FTP server",
+            homepage: "https://curl.se",
+            securityState: nil
+        )
+
+        XCTAssertEqual(record.fallbackDetail.homepageURL?.absoluteString, "https://curl.se")
+    }
+
     func testDetectorOnlySecurityStateDecodesWithoutRemediationAction() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:curl",

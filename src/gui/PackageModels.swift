@@ -51,6 +51,7 @@ struct PackageRecord: Decodable, Equatable {
     let source: PackageSource?
     let version: String
     let description: String?
+    let homepage: String?
     let latestVersion: String?
     let securityState: PackageSecurityState?
     let installRoot: String?
@@ -64,6 +65,7 @@ struct PackageRecord: Decodable, Equatable {
         case source
         case version
         case description
+        case homepage
         case latestVersion
         case securityState
         case installRoot
@@ -78,6 +80,7 @@ struct PackageRecord: Decodable, Equatable {
         source: PackageSource?,
         version: String,
         description: String?,
+        homepage: String? = nil,
         latestVersion: String? = nil,
         securityState: PackageSecurityState?,
         installRoot: String? = nil,
@@ -90,6 +93,7 @@ struct PackageRecord: Decodable, Equatable {
         self.source = source
         self.version = version
         self.description = description
+        self.homepage = homepage
         self.latestVersion = latestVersion
         self.securityState = securityState
         self.installRoot = installRoot
@@ -105,6 +109,7 @@ struct PackageRecord: Decodable, Equatable {
         source = try container.decodeIfPresent(PackageSource.self, forKey: .source)
         version = try container.decode(String.self, forKey: .version)
         description = try container.decodeIfPresent(String.self, forKey: .description)
+        homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
         latestVersion = try container.decodeIfPresent(String.self, forKey: .latestVersion)
         securityState = try container.decodeIfPresent(PackageSecurityState.self, forKey: .securityState)
         installRoot = try container.decodeIfPresent(String.self, forKey: .installRoot)
@@ -139,6 +144,7 @@ struct PackageRecord: Decodable, Equatable {
             source: source,
             version: version,
             description: description,
+            homepage: homepage,
             latestVersion: outdated.latestVersion,
             securityState: securityState,
             installRoot: installRoot,
@@ -169,7 +175,7 @@ struct PackageRecord: Decodable, Equatable {
             homebrewInfo: HomebrewPackageInfo(
                 formula: name,
                 description: description,
-                homepage: nil,
+                homepage: homepage,
                 license: nil,
                 dependencies: []
             ),

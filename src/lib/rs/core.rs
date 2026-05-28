@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.10";
+pub(crate) const PROTOCOL_VERSION: &str = "1.11";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -77,6 +77,8 @@ pub(crate) struct InstalledPackageSummary {
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: String,
     pub(crate) description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) homepage: Option<String>,
     #[serde(rename = "installedVersions", skip_serializing_if = "Vec::is_empty")]
     pub(crate) installed_versions: Vec<String>,
     #[serde(rename = "installPackageNames", skip_serializing_if = "Vec::is_empty")]
@@ -100,6 +102,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) source: PackageReceiptSource,
     pub(crate) version: Option<String>,
     pub(crate) description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) homepage: Option<String>,
     #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
     pub(crate) last_updated_at: Option<String>,
     #[serde(rename = "pulseKind", skip_serializing_if = "Option::is_none")]
@@ -260,6 +264,7 @@ mod tests {
             },
             version: "3.0.0".to_string(),
             description: Some("TLS toolkit".to_string()),
+            homepage: Some("https://openssl-library.org".to_string()),
             installed_versions: vec!["3.0.0".to_string()],
             install_package_names: vec!["brew:openssl@3".to_string()],
             security_state: Some(PackageSecurityState {
@@ -272,6 +277,7 @@ mod tests {
         };
 
         let value = serde_json::to_value(summary).unwrap();
+        assert_eq!(value["homepage"], "https://openssl-library.org");
         assert_eq!(value["installedVersions"], json!(["3.0.0"]));
         assert_eq!(value["installPackageNames"], json!(["brew:openssl@3"]));
         assert_eq!(
@@ -291,6 +297,7 @@ mod tests {
                 },
                 version: Some("1.2.3".to_string()),
                 description: None,
+                homepage: Some("https://example.test/pkg".to_string()),
                 last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
                 security_state: None,
@@ -304,6 +311,10 @@ mod tests {
         assert_eq!(
             search_json["packages"][0]["lastUpdatedAt"],
             "2026-05-27T12:00:00Z"
+        );
+        assert_eq!(
+            search_json["packages"][0]["homepage"],
+            "https://example.test/pkg"
         );
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");
 

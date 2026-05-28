@@ -180,6 +180,7 @@ pub(crate) fn list_installed_packages() -> Result<core::ListInstalledResponse, S
             source: receipt.source,
             version: receipt.version,
             description: receipt.metadata.description,
+            homepage: receipt.metadata.homepage,
             installed_versions: Vec::new(),
             install_package_names: Vec::new(),
             security_state,
@@ -355,6 +356,7 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         source: package.source,
         version: package.latest_version,
         description: package.summary,
+        homepage: package.homepage,
         last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
         security_state,
@@ -1379,6 +1381,15 @@ mod tests {
         version: &str,
         source: PackageReceiptSource,
     ) -> PathBuf {
+        write_test_receipt_with_metadata(package_name, version, source, PackageMetadata::default())
+    }
+
+    fn write_test_receipt_with_metadata(
+        package_name: &str,
+        version: &str,
+        source: PackageReceiptSource,
+        metadata: PackageMetadata,
+    ) -> PathBuf {
         let install_root = opt_pkg_root().join(package_name);
         if fs::symlink_metadata(&install_root).is_ok() {
             remove_path(&install_root).unwrap();
@@ -1390,7 +1401,7 @@ mod tests {
                 package_name: package_name.to_string(),
                 version: version.to_string(),
                 source,
-                metadata: PackageMetadata::default(),
+                metadata,
             },
         )
         .unwrap();
@@ -1776,11 +1787,15 @@ mod tests {
                     root_formula: "coverage-python@3.14".to_string(),
                 },
             ),
-            write_test_receipt(
+            write_test_receipt_with_metadata(
                 "coverage-cask",
                 "1.0.0",
                 PackageReceiptSource::Cask {
                     cask_name: "coverage-cask".to_string(),
+                },
+                PackageMetadata {
+                    description: Some("Coverage cask".to_string()),
+                    homepage: Some("https://example.test/coverage-cask".to_string()),
                 },
             ),
         ];
@@ -1806,6 +1821,10 @@ mod tests {
                 cask_name: "coverage-cask".to_string()
             }
         );
+        assert_eq!(
+            cask.homepage.as_deref(),
+            Some("https://example.test/coverage-cask")
+        );
 
         for root in roots {
             remove_path(&root).unwrap();
@@ -1825,6 +1844,7 @@ mod tests {
                 },
                 version: "1.0.0".to_string(),
                 description: Some("Codex".to_string()),
+                homepage: Some("https://example.test/codex".to_string()),
                 installed_versions: Vec::new(),
                 install_package_names: Vec::new(),
                 security_state: None,
@@ -1853,6 +1873,7 @@ mod tests {
             },
             version: version.to_string(),
             description: None,
+            homepage: None,
             installed_versions: Vec::new(),
             install_package_names: Vec::new(),
             security_state: None,

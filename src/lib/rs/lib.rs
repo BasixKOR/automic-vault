@@ -10482,6 +10482,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             },
             version: "2.80.0".to_string(),
             description: None,
+            homepage: None,
             security_state: None,
             installed_versions: Vec::new(),
             install_package_names: Vec::new(),
