@@ -464,7 +464,7 @@ struct MainWindowView: View {
     private func lastUpdatedSection(detail: PackageDetail) -> some View {
         InfoSection(title: "LAST UPDATED") {
             Text(model.relativeLastUpdatedText(for: detail))
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(AVGlassPalette.secondaryText)
         }
     }
