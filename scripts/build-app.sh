@@ -139,7 +139,10 @@ elif [[ "$PUBLISH_BUILD" == "true" ]]; then
   cli_die "Package database must be current for published builds."
 else
   cli_warn "${package_database_check}"
-  cli_warn "Continuing with stale package database because --publish was not specified."
+  cli_step "Regenerating package database"
+  "$ROOT_DIR/scripts/build-combined-json.py"
+  package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"
+  cli_info "${package_database_check}"
 fi
 
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then

@@ -749,6 +749,7 @@ struct DossierSecurityWarningContent: Equatable {
     let reasons: [String]
     let detectorError: String?
     let caveats: PackageSecurityNotice.Caveats?
+    let learnMoreURL: URL
 
     init?(detail: PackageDetail) {
         let detectorError = detail.securityState?.error?
@@ -761,6 +762,7 @@ struct DossierSecurityWarningContent: Equatable {
             reasons = notice.reasons
             self.detectorError = nonEmptyDetectorError
             caveats = notice.caveats
+            learnMoreURL = notice.learnMoreURL
             return
         }
 
@@ -774,6 +776,7 @@ struct DossierSecurityWarningContent: Equatable {
         reasons = securityState.reasons
         self.detectorError = nonEmptyDetectorError
         caveats = nil
+        learnMoreURL = PackageSecurityNotice.defaultLearnMoreURL
     }
 
     var hasCaveats: Bool {
@@ -792,6 +795,7 @@ struct DossierSecurityWarningContent: Equatable {
 
 private struct DossierSecurityWarningCard: View {
     let warning: DossierSecurityWarningContent
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -835,6 +839,24 @@ private struct DossierSecurityWarningCard: View {
                     caveatsContent
                 }
             }
+
+            Button {
+                openURL(warning.learnMoreURL)
+            } label: {
+                Text("LEARN MORE")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(AVGlassPalette.vulnerableText)
+                    .tracking(0.6)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(AVGlassPalette.vulnerableBorder.opacity(0.66), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

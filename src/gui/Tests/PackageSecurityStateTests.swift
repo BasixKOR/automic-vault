@@ -106,6 +106,67 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testSecurityCatalogNoticeUsesRadioisotopeJustificationAndCaveats() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "schema": 1,
+          "sources": {
+            "isotopes": {
+              "curl": {
+                "name": "isotope:curl",
+                "modifies": "brew:curl",
+                "repository": "automic-vault/radioisotopes",
+                "justification": {
+                  "title": "Plain Text HTTP Credentials",
+                  "detail": "`curl` can read reusable HTTP credentials from ~/.netrc and ~/.curlrc.\\n\\nAutomic Vault currently detects this exposure but does not yet provide a\\nmigration or package modification for curl.\\n"
+                },
+                "caveats": [
+                  "We detect non-empty netrc passwords.",
+                  "We detect clear auth options and Authorization headers in ~/.curlrc.",
+                  "Per-command credentials passed directly on the command line are not scanned."
+                ]
+              }
+            }
+          }
+        }
+        """)
+        let detail = try decodePackageDetail(
+            packageName: "brew:curl",
+            formula: "curl",
+            securityState: """
+            {
+              "isotopeName": "curl",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["curl netrc file contains plaintext credentials: /Users/test/.netrc"],
+              "error": null
+            }
+            """
+        )
+
+        let notice = try XCTUnwrap(SecurityCatalog(bundle: bundle).notice(for: detail))
+
+        XCTAssertEqual(notice.headline, "Plain Text HTTP Credentials")
+        XCTAssertTrue(notice.body.contains("`curl` can read reusable HTTP credentials"))
+        XCTAssertTrue(notice.body.contains("migration or package modification for curl"))
+        XCTAssertEqual(
+            notice.reasons,
+            ["curl netrc file contains plaintext credentials: /Users/test/.netrc"]
+        )
+        XCTAssertEqual(
+            notice.caveats,
+            .bullets([
+                "We detect non-empty netrc passwords.",
+                "We detect clear auth options and Authorization headers in ~/.curlrc.",
+                "Per-command credentials passed directly on the command line are not scanned.",
+            ])
+        )
+        XCTAssertEqual(
+            notice.learnMoreURL.absoluteString,
+            "https://github.com/automic-vault/radioisotopes/tree/main/curl#readme"
+        )
+    }
+
     func testDetectorOnlyNoticeLinksToRadioisotopeReadme() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:curl",
@@ -600,6 +661,28 @@ final class PackageSecurityStateTests: XCTestCase {
         }
         """
         return try JSONDecoder().decode(PackageDetail.self, from: Data(json.utf8))
+    }
+
+    private func makeSecurityCatalogBundle(combinedJSON: String) throws -> Bundle {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SecurityCatalogTests-\(UUID().uuidString).bundle")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let infoPlist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleIdentifier</key>
+          <string>com.automic-vault.SecurityCatalogTests</string>
+          <key>CFBundlePackageType</key>
+          <string>BNDL</string>
+        </dict>
+        </plist>
+        """
+        try Data(combinedJSON.utf8).write(to: directory.appendingPathComponent("combined.json"))
+        try Data("[]".utf8).write(to: directory.appendingPathComponent("enrichment-manifests.json"))
+        try Data(infoPlist.utf8).write(to: directory.appendingPathComponent("Info.plist"))
+        return try XCTUnwrap(Bundle(url: directory))
     }
 
     private func installedPresentation(
