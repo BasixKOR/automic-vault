@@ -269,7 +269,7 @@ struct MainWindowView: View {
                 if let detail = model.selectedDetail,
                    let package = model.selectedPackage {
                     dossierHeader(detail: detail, package: package)
-                    executableSection(detail: detail)
+                    executableSection(detail: detail, package: package)
                     permissionsSection(detail: detail, package: package)
                     notesSection(detail: detail, package: package)
                     lastUpdatedSection(detail: detail)
@@ -358,7 +358,10 @@ struct MainWindowView: View {
         .help(primaryAction.title)
     }
 
-    private func executableSection(detail: PackageDetail) -> some View {
+    private func executableSection(
+        detail: PackageDetail,
+        package: PackagePresentation
+    ) -> some View {
         InfoSection(title: "EXECUTABLES") {
             let paths = detail.executablePaths.isEmpty
                 ? ["/usr/local/bin/\(detail.helperPackageName.split(separator: ":").last.map(String.init) ?? detail.packageName)"]
@@ -378,13 +381,15 @@ struct MainWindowView: View {
                     .padding(10)
                     .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
-                        Text("Sandboxed")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(AVGlassPalette.blue)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(AVGlassPalette.blue.opacity(0.16), in: Capsule())
-                            .padding(7)
+                        if isIsotopeInstall(detail: detail, package: package) {
+                            Text("Hardened")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.green)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(AVGlassPalette.green.opacity(0.14), in: Capsule())
+                                .padding(7)
+                        }
                     }
                 }
                 if paths.count > 2 {
@@ -394,6 +399,20 @@ struct MainWindowView: View {
                 }
             }
         }
+    }
+
+    private func isIsotopeInstall(
+        detail: PackageDetail,
+        package: PackagePresentation
+    ) -> Bool {
+        if package.isInstalledIsotope {
+            return true
+        }
+        if detail.installed,
+           case .isotope = detail.source {
+            return true
+        }
+        return false
     }
 
     private func permissionsSection(
