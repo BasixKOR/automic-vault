@@ -663,7 +663,7 @@ private struct UpdateAllHeaderButtonLabel: View {
                 .minimumScaleFactor(0.84)
         }
         .padding(.horizontal, 10)
-        .frame(height: 22)
+        .frame(height: 16)
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
