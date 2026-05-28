@@ -414,10 +414,14 @@ final class MainWindowModel: ObservableObject {
         if let badge = packageBadge(for: package) {
             badges.append(badge)
         }
-        if selectedSection == .installed, isOutdated(package) {
-            badges.append(.outdated)
-        }
         return badges
+    }
+
+    func packageInlineBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
+        guard selectedSection == .installed, isOutdated(package) else {
+            return []
+        }
+        return [.outdated]
     }
 
     private func needsHardening(_ package: PackagePresentation) -> Bool {

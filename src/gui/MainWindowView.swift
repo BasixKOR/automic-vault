@@ -218,6 +218,7 @@ struct MainWindowView: View {
                             title: model.displayName(for: package),
                             description: model.packageDescription(for: package),
                             version: packageRowVersion(for: package),
+                            inlineBadges: model.packageInlineBadges(for: package),
                             badges: packageRowBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
@@ -748,6 +749,7 @@ private struct PackageRow: View {
     let title: String
     let description: String
     let version: String
+    let inlineBadges: [MainWindowPackageBadge]
     let badges: [MainWindowPackageBadge]
     let selected: Bool
     let action: () -> Void
@@ -769,6 +771,9 @@ private struct PackageRow: View {
                                 .foregroundStyle(AVGlassPalette.quietText.opacity(0.74))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                        }
+                        ForEach(inlineBadges, id: \.self) { badge in
+                            PackageBadgePill(badge: badge, size: .inline)
                         }
                     }
                     Text(description)
@@ -799,16 +804,23 @@ private struct PackageRow: View {
 }
 
 private struct PackageBadgePill: View {
+    enum Size {
+        case regular
+        case inline
+    }
+
     let badge: MainWindowPackageBadge
+    var size: Size = .regular
 
     var body: some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: fontSize, weight: fontWeight))
             .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
-            .frame(height: 22)
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: height)
             .background(background, in: Capsule())
             .overlay(Capsule().stroke(border, lineWidth: 1))
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var title: String {
@@ -844,7 +856,7 @@ private struct PackageBadgePill: View {
     private var background: Color {
         switch badge {
         case .new:
-            return AVGlassPalette.orange.opacity(0.14)
+            return AVGlassPalette.orange.opacity(orangeFillOpacity)
         case .vulnerable:
             return AVGlassPalette.vulnerableFill
         case .hardened:
@@ -852,14 +864,14 @@ private struct PackageBadgePill: View {
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.14)
         case .outdated:
-            return AVGlassPalette.orange.opacity(0.14)
+            return AVGlassPalette.orange.opacity(orangeFillOpacity)
         }
     }
 
     private var border: Color {
         switch badge {
         case .new:
-            return AVGlassPalette.orange.opacity(0.28)
+            return AVGlassPalette.orange.opacity(orangeBorderOpacity)
         case .vulnerable:
             return AVGlassPalette.vulnerableBorder
         case .hardened:
@@ -867,7 +879,61 @@ private struct PackageBadgePill: View {
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.24)
         case .outdated:
-            return AVGlassPalette.orange.opacity(0.28)
+            return AVGlassPalette.orange.opacity(orangeBorderOpacity)
+        }
+    }
+
+    private var fontSize: CGFloat {
+        switch size {
+        case .regular:
+            return 11
+        case .inline:
+            return 10
+        }
+    }
+
+    private var fontWeight: Font.Weight {
+        switch size {
+        case .regular:
+            return .semibold
+        case .inline:
+            return .bold
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch size {
+        case .regular:
+            return 8
+        case .inline:
+            return 6
+        }
+    }
+
+    private var height: CGFloat {
+        switch size {
+        case .regular:
+            return 22
+        case .inline:
+            return 18
+        }
+    }
+
+    private var orangeFillOpacity: Double {
+        switch size {
+        case .regular:
+            return 0.14
+        case .inline:
+            return 0.24
+        }
+    }
+
+    private var orangeBorderOpacity: Double {
+        switch size {
+        case .regular:
+            return 0.28
+        case .inline:
+            return 0.55
         }
     }
 }
