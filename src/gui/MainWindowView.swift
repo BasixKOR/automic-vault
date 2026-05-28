@@ -318,7 +318,7 @@ struct MainWindowView: View {
                             .controlSize(.small)
                             .frame(width: 14, height: 14)
                             .alignmentGuide(.firstTextBaseline) { dimensions in
-                                dimensions[VerticalAlignment.center]
+                                dimensions[VerticalAlignment.bottom] - 2
                             }
                             .help("Refreshing dossier")
                     }
