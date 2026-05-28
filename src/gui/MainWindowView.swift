@@ -269,7 +269,11 @@ struct MainWindowView: View {
                    let package = model.selectedPackage {
                     let warning = DossierSecurityWarningContent(detail: detail)
 
-                    dossierHeader(detail: detail, package: package)
+                    dossierHeader(
+                        detail: detail,
+                        package: package,
+                        showsHazardWarning: warning != nil
+                    )
                     if let warning {
                         securityWarningSection(warning: warning)
                     }
@@ -298,7 +302,8 @@ struct MainWindowView: View {
 
     private func dossierHeader(
         detail: PackageDetail,
-        package: PackagePresentation
+        package: PackagePresentation,
+        showsHazardWarning: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -329,7 +334,8 @@ struct MainWindowView: View {
                     .fixedSize()
             }
 
-            if let badge = model.packageBadge(for: package) {
+            if let badge = model.packageBadge(for: package),
+               !(badge == .vulnerable && showsHazardWarning) {
                 PackageBadgeBanner(badge: badge)
             }
         }
@@ -452,9 +458,7 @@ struct MainWindowView: View {
     private func securityWarningSection(
         warning: DossierSecurityWarningContent
     ) -> some View {
-        InfoSection(title: "HAZARD WARNING") {
-            DossierSecurityWarningCard(warning: warning)
-        }
+        DossierSecurityWarningCard(warning: warning)
     }
 
     private func lastUpdatedSection(detail: PackageDetail) -> some View {
@@ -506,6 +510,7 @@ struct MainWindowView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
                             .padding(.horizontal, 10)
+                            .frame(minWidth: 58)
                             .frame(height: 30)
                     }
                     .buttonStyle(.plain)
@@ -523,12 +528,13 @@ struct MainWindowView: View {
                     }
                 }
             }
-            .layoutPriority(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(3)
 
             LinkURLBar(url: model.selectedURL(for: linkTab)) {
                 model.open(url: model.selectedURL(for: linkTab))
             }
-            .layoutPriority(2)
+            .layoutPriority(1)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -1348,7 +1354,7 @@ private struct LinkURLBar: View {
         .padding(.leading, 12)
         .padding(.trailing, 5)
         .frame(height: 32)
-        .frame(maxWidth: .infinity)
+        .frame(minWidth: 140, maxWidth: .infinity)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
