@@ -1334,7 +1334,7 @@ private struct LinkURLBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(url?.absoluteString ?? "")
+            Text(displayedURLString)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(url == nil ? AVGlassPalette.quietText : AVGlassPalette.secondaryText)
                 .lineLimit(1)
@@ -1356,6 +1356,13 @@ private struct LinkURLBar: View {
         .frame(height: 32)
         .frame(minWidth: 140, maxWidth: .infinity)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var displayedURLString: String {
+        guard let urlString = url?.absoluteString else {
+            return ""
+        }
+        return urlString.strippingPrefix("https://") ?? urlString
     }
 }
 
