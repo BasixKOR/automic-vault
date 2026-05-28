@@ -1030,6 +1030,11 @@ struct PackageSearchResult: Decodable, Equatable {
         }
     }
 
+    var isNewPulse: Bool {
+        let trimmed = pulseKind?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.localizedCaseInsensitiveCompare("new") == .orderedSame
+    }
+
     func detectedLocalHazardPresentation(freshness: CGFloat) -> PackageDetectedLocalHazard? {
         guard securityState?.installIsInsecure == true else {
             return nil

@@ -59,6 +59,7 @@ let package = Package(
             path: "Tests",
             sources: [
                 "HomebrewUpdateCheckerTests.swift",
+                "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
             ]
         ),

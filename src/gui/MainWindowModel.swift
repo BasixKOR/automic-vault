@@ -519,10 +519,26 @@ final class MainWindowModel: ObservableObject {
 
     func relativeLastUpdatedText(for detail: PackageDetail?) -> String {
         guard let raw = detail?.lastUpdatedAt,
-              let date = Self.iso8601Formatter.date(from: raw) else {
+              let date = Self.parseISO8601Date(raw) else {
             return relativeRefreshText
         }
         return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    func pulseListTimestampText(for result: PackageSearchResult) -> String {
+        Self.pulseListTimestampText(for: result, relativeTo: Date())
+    }
+
+    static func pulseListTimestampText(
+        for result: PackageSearchResult,
+        relativeTo referenceDate: Date
+    ) -> String {
+        guard let raw = result.lastUpdatedAt,
+              let date = parseISO8601Date(raw) else {
+            return result.isNewPulse ? "recently" : "Updated recently"
+        }
+        let ageText = relativeAgeText(for: date, relativeTo: referenceDate)
+        return result.isNewPulse ? ageText : "Updated \(ageText)"
     }
 
     var relativeRefreshText: String {
@@ -691,8 +707,7 @@ final class MainWindowModel: ObservableObject {
         guard case .available(let result) = package.item else {
             return false
         }
-        let pulseKind = result.pulseKind?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return pulseKind?.localizedCaseInsensitiveCompare("new") == .orderedSame
+        return result.isNewPulse
     }
 
     private func isDevelopment(_ package: PackagePresentation) -> Bool {
@@ -1252,11 +1267,37 @@ final class MainWindowModel: ObservableObject {
 
     private static let iso8601Formatter = ISO8601DateFormatter()
 
+    private static let fractionalISO8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         return formatter
     }()
+
+    private static func parseISO8601Date(_ raw: String) -> Date? {
+        iso8601Formatter.date(from: raw)
+            ?? fractionalISO8601Formatter.date(from: raw)
+    }
+
+    private static func relativeAgeText(
+        for date: Date,
+        relativeTo referenceDate: Date
+    ) -> String {
+        let elapsed = referenceDate.timeIntervalSince(date)
+        if elapsed >= 0, elapsed < 60 * 60 * 60 {
+            let hours = Int(elapsed / 3600)
+            if hours < 1 {
+                return "less than 1 hour ago"
+            }
+            return hours == 1 ? "1 hour ago" : "\(hours) hours ago"
+        }
+        return relativeFormatter.localizedString(for: date, relativeTo: referenceDate)
+    }
 
     private static func packageCountText(_ count: Int) -> String {
         count == 1 ? "1 outdated package" : "\(count) outdated packages"

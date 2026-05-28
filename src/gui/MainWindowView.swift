@@ -83,14 +83,6 @@ struct MainWindowView: View {
         }
     }
 
-    private static let pulseDateFormatter = ISO8601DateFormatter()
-
-    private static let pulseRelativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
-
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader("AUTOMIC VAULT")
@@ -254,10 +246,7 @@ struct MainWindowView: View {
     private func packageRowVersion(for package: PackagePresentation) -> String {
         if model.selectedSection == .newUpdated,
            case .available(let result) = package.item {
-            if isNewPulseResult(result) {
-                return ""
-            }
-            return pulseVersionText(for: result)
+            return model.pulseListTimestampText(for: result)
         }
         return model.versionText(for: package)
     }
@@ -266,24 +255,10 @@ struct MainWindowView: View {
         var badges = model.packageListBadges(for: package)
         if model.selectedSection == .newUpdated,
            case .available(let result) = package.item,
-           isNewPulseResult(result) {
+           result.isNewPulse {
             badges.append(.new)
         }
         return badges
-    }
-
-    private func isNewPulseResult(_ result: PackageSearchResult) -> Bool {
-        let pulseKind = result.pulseKind?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return pulseKind?.localizedCaseInsensitiveCompare("new") == .orderedSame
-    }
-
-    private func pulseVersionText(for result: PackageSearchResult) -> String {
-        guard let raw = result.lastUpdatedAt,
-              let date = Self.pulseDateFormatter.date(from: raw) else {
-            return "Updated recently"
-        }
-        return "Updated \(Self.pulseRelativeFormatter.localizedString(for: date, relativeTo: Date()))"
     }
 
     private var dossierPanel: some View {
