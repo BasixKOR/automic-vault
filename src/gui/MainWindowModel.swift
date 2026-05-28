@@ -864,7 +864,10 @@ final class MainWindowModel: ObservableObject {
     }
 
     private var geigerActionPackages: [PackagePresentation] {
-        uniquePackages(packages.filter(isGeigerActionPackage) + geigerPackages)
+        Self.securityAlertPackages(
+            installed: packages.filter(isGeigerActionPackage),
+            geiger: geigerPackages
+        )
     }
 
     private var catalogSourcePackages: [PackagePresentation] {
@@ -878,6 +881,123 @@ final class MainWindowModel: ObservableObject {
             result.append(package)
         }
         return result
+    }
+
+    static func securityAlertPackages(
+        installed installedPackages: [PackagePresentation],
+        geiger geigerPackages: [PackagePresentation]
+    ) -> [PackagePresentation] {
+        uniqueSecurityAlertPackages(installedPackages + geigerPackages)
+    }
+
+    private static func uniqueSecurityAlertPackages(
+        _ source: [PackagePresentation]
+    ) -> [PackagePresentation] {
+        var seen = Set<String>()
+        var result: [PackagePresentation] = []
+
+        for package in source {
+            let keys = securityAlertDeduplicationKeys(for: package)
+            guard keys.contains(where: seen.contains) == false else {
+                continue
+            }
+            keys.forEach { seen.insert($0) }
+            result.append(package)
+        }
+
+        return result
+    }
+
+    private static func securityAlertDeduplicationKeys(
+        for package: PackagePresentation
+    ) -> [String] {
+        var seen = Set<String>()
+        var keys: [String] = []
+
+        func append(_ key: String?) {
+            guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  key.isEmpty == false else {
+                return
+            }
+            let normalized = key.lowercased()
+            guard seen.insert(normalized).inserted else {
+                return
+            }
+            keys.append(normalized)
+        }
+
+        if let state = securityState(for: package),
+           state.needsMainWindowSecurityAlert {
+            append("security:\(state.isotopeName)")
+        }
+
+        switch package.item {
+        case .installed(let record):
+            append(record.name)
+            record.installPackageNames?.forEach(append)
+            append(sourceQualifiedName(for: record.source))
+        case .available(let result):
+            append(result.name)
+            append(result.detailLookupName)
+            append(sourceQualifiedName(for: result.source))
+        case .recommendation(let recommendation):
+            append(recommendation.detail.packageName)
+            append(recommendation.detail.qualifiedName)
+            recommendation.detail.installPackageNames?.forEach(append)
+            append(sourceQualifiedName(for: recommendation.detail.source))
+        case .command(let command):
+            append(command.selectionID)
+        }
+
+        if let detail = package.detail {
+            append(detail.packageName)
+            append(detail.qualifiedName)
+            detail.installPackageNames?.forEach(append)
+            append(sourceQualifiedName(for: detail.source))
+        }
+
+        append(package.packageName)
+        append(package.selectionID)
+        append(package.preferredDetailLookupName)
+
+        return keys.isEmpty ? [package.selectionID.lowercased()] : keys
+    }
+
+    private static func securityState(
+        for package: PackagePresentation
+    ) -> PackageSecurityState? {
+        if let state = package.detail?.securityState {
+            return state
+        }
+        switch package.item {
+        case .installed(let record):
+            return record.securityState
+        case .recommendation(let recommendation):
+            return recommendation.detail.securityState
+        case .available(let result):
+            return result.securityState
+        case .command:
+            return nil
+        }
+    }
+
+    private static func sourceQualifiedName(for source: PackageSource?) -> String? {
+        switch source {
+        case .formula(let rootFormula):
+            return "brew:\(rootFormula)"
+        case .cask(let caskName):
+            return "cask:\(caskName)"
+        case .isotope(let isotopeName):
+            return "isotope:\(isotopeName)"
+        case .vendor(let vendorName):
+            return vendorName
+        case .npm(let packageName):
+            return "npm:\(packageName)"
+        case .pip(let packageName):
+            return "pip:\(packageName)"
+        case .none:
+            return nil
+        }
     }
 
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {

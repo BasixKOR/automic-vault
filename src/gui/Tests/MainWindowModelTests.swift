@@ -147,6 +147,67 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSecurityAlertsPreferInstalledPackageOverMatchingDetectorRow() throws {
+        let flyctlState = securityState(
+            isotopeName: "flyctl",
+            reason: "flyctl config file contains a plaintext access token"
+        )
+        let installedFlyctlRecord = PackageRecord(
+            name: "flyctl",
+            source: .formula(rootFormula: "flyctl"),
+            version: "0.4.57",
+            description: "Command-line tools for fly.io services",
+            securityState: flyctlState
+        )
+        let installedFlyctl = PackagePresentation(
+            item: .installed(installedFlyctlRecord),
+            detail: installedFlyctlRecord.fallbackDetail,
+            freshness: 0
+        )
+        let detectedFlyctl = try XCTUnwrap(
+            PackageSearchResult(
+                name: "flyctl",
+                source: .formula(rootFormula: "flyctl"),
+                version: nil,
+                description: "Detector flagged local plaintext credential exposure",
+                homepage: nil,
+                dependencies: [],
+                securityState: flyctlState,
+                pulseKind: nil
+            )
+            .detectedLocalHazardPresentation(freshness: 0)?
+            .presentation
+        )
+        let detectedSupabase = try XCTUnwrap(
+            PackageSearchResult(
+                name: "supabase-cli",
+                source: .formula(rootFormula: "supabase-cli"),
+                version: nil,
+                description: "Detector flagged local plaintext credential exposure",
+                homepage: nil,
+                dependencies: [],
+                securityState: securityState(
+                    isotopeName: "supabase-cli",
+                    reason: "Supabase access token is readable by /usr/bin/security"
+                ),
+                pulseKind: nil
+            )
+            .detectedLocalHazardPresentation(freshness: 0)?
+            .presentation
+        )
+
+        let alerts = MainWindowModel.securityAlertPackages(
+            installed: [installedFlyctl],
+            geiger: [detectedFlyctl, detectedSupabase]
+        )
+
+        XCTAssertEqual(
+            alerts.map(\.selectionID),
+            ["flyctl", "gone:supabase-cli"]
+        )
+    }
+
+    @MainActor
     func testOutdatedAutomicVaultCLTAppearsInOutdatedSection() throws {
         let recommendation = PackageRecommendation.automicVaultCLT(
             installedVersion: "1.0",
@@ -286,6 +347,16 @@ final class MainWindowModelTests: XCTestCase {
             item: .installed(record),
             detail: record.fallbackDetail,
             freshness: 0
+        )
+    }
+
+    private func securityState(isotopeName: String, reason: String) -> PackageSecurityState {
+        PackageSecurityState(
+            isotopeName: isotopeName,
+            installIsInsecure: true,
+            remediationAvailable: true,
+            reasons: [reason],
+            error: nil
         )
     }
 
