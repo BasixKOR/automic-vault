@@ -462,16 +462,6 @@ final class MainWindowModel: ObservableObject {
         return detail.isOutdated ? .update : .uninstall
     }
 
-    func dossierAlternativePackageActions(for detail: PackageDetail) -> [PackageOperationKind] {
-        guard detail.installed,
-              detail.isOutdated,
-              !detail.isAutomicVaultCLT,
-              !detail.isXcodeCLT else {
-            return []
-        }
-        return [.uninstall]
-    }
-
     func canRequestDossierPackageAction(
         _ action: PackageOperationKind,
         detail: PackageDetail

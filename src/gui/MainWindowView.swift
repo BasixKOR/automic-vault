@@ -295,18 +295,24 @@ struct MainWindowView: View {
         package: PackagePresentation
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.displayName(for: package))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(AVGlassPalette.primaryText)
-                    .lineLimit(1)
-                Text(model.versionText(for: package))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                    .lineLimit(1)
-            }
+            HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(model.displayName(for: package))
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(AVGlassPalette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(model.versionText(for: package))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AVGlassPalette.quietText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            dossierActionRow(detail: detail, package: package)
+                dossierActionButton(detail: detail, package: package)
+                    .fixedSize()
+            }
 
             if let badge = model.packageBadge(for: package) {
                 PackageBadgeBanner(badge: badge)
@@ -324,60 +330,32 @@ struct MainWindowView: View {
         }
     }
 
-    private func dossierActionRow(
+    private func dossierActionButton(
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
         let primaryAction = model.dossierPrimaryPackageAction(for: detail)
-        let alternativeActions = model.dossierAlternativePackageActions(for: detail)
         let primaryEnabled = model.canRequestDossierPackageAction(primaryAction, detail: detail)
         let isPrimaryActive = model.activePackageOperation?.kind == primaryAction
             && model.activePackageOperation?.displayName == model.displayName(for: package)
 
-        return HStack(spacing: 6) {
-            Button {
-                model.requestDossierPackageAction(
-                    primaryAction,
-                    detail: detail,
-                    package: package
-                )
-            } label: {
-                PackageDossierActionButtonLabel(
-                    action: primaryAction,
-                    isActive: isPrimaryActive
-                )
-            }
-            .buttonStyle(.glass)
-            .tint(.clear)
-            .disabled(!primaryEnabled)
-            .opacity(primaryEnabled || isPrimaryActive ? 1 : 0.42)
-            .help(primaryAction.title)
-
-            if !alternativeActions.isEmpty {
-                Menu {
-                    ForEach(alternativeActions) { action in
-                        Button {
-                            model.requestDossierPackageAction(
-                                action,
-                                detail: detail,
-                                package: package
-                            )
-                        } label: {
-                            Label(action.title, systemImage: action.systemImage)
-                        }
-                        .disabled(!model.canRequestDossierPackageAction(action, detail: detail))
-                    }
-                } label: {
-                    PackageDossierActionMenuLabel()
-                }
-                .menuStyle(.button)
-                .buttonStyle(.glass)
-                .tint(.clear)
-                .disabled(model.isPackageMutationInFlight)
-                .opacity(model.isPackageMutationInFlight ? 0.42 : 1)
-                .help("More package actions")
-            }
+        return Button {
+            model.requestDossierPackageAction(
+                primaryAction,
+                detail: detail,
+                package: package
+            )
+        } label: {
+            PackageDossierActionButtonLabel(
+                action: primaryAction,
+                isActive: isPrimaryActive
+            )
         }
+        .buttonStyle(.glass)
+        .tint(.clear)
+        .disabled(!primaryEnabled)
+        .opacity(primaryEnabled || isPrimaryActive ? 1 : 0.42)
+        .help(primaryAction.title)
     }
 
     private func executableSection(detail: PackageDetail) -> some View {
@@ -732,23 +710,11 @@ private struct PackageDossierActionButtonLabel: View {
 
     private var foreground: Color {
         switch action {
-        case .install:
-            return AVGlassPalette.green
         case .update:
             return AVGlassPalette.orange
-        case .uninstall:
+        case .install, .uninstall:
             return AVGlassPalette.secondaryText
         }
-    }
-}
-
-private struct PackageDossierActionMenuLabel: View {
-    var body: some View {
-        Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(AVGlassPalette.secondaryText)
-            .frame(width: 28, height: 28)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

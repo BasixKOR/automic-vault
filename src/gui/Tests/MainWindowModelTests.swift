@@ -178,20 +178,6 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testOutdatedDossierActionOffersUninstallAlternative() throws {
-        let model = MainWindowModel()
-        defer { model.stop() }
-        let outdated = try XCTUnwrap(
-            installedPresentation(version: "1.0", latestVersion: "2.0").detail
-        )
-
-        XCTAssertEqual(
-            model.dossierAlternativePackageActions(for: outdated),
-            [.uninstall]
-        )
-    }
-
-    @MainActor
     func testDossierActionRequestUsesHelperPackageNames() throws {
         let model = MainWindowModel()
         defer { model.stop() }
