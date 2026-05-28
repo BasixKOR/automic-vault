@@ -703,7 +703,6 @@ private struct PackageDossierActionButtonLabel: View {
                 .minimumScaleFactor(0.86)
         }
         .foregroundStyle(foreground)
-        .padding(.horizontal, 11)
         .frame(height: 28)
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
