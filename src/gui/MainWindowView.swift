@@ -194,6 +194,7 @@ struct MainWindowView: View {
                     .disabled(!model.canUpdateAllOutdated)
                     .opacity(model.canUpdateAllOutdated ? 1 : 0.42)
                     .help(updateAllHelpText)
+                    .offset(y: 2)
                 }
                 if model.isReloading
                     || model.isSearching
