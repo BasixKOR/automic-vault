@@ -655,16 +655,16 @@ private struct UpdateAllHeaderButtonLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 12, weight: .regular))
+                .font(.system(size: 10, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
             Text(title)
-                .font(.system(size: 12, weight: .regular))
+                .font(.system(size: 10, weight: .regular))
                 .lineLimit(1)
                 .minimumScaleFactor(0.84)
         }
         .padding(.horizontal, 10)
-        .frame(height: 28)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(height: 22)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
