@@ -313,6 +313,15 @@ struct MainWindowView: View {
                         .foregroundStyle(AVGlassPalette.quietText)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if model.isLoadingDetail {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 14, height: 14)
+                            .alignmentGuide(.firstTextBaseline) { dimensions in
+                                dimensions[VerticalAlignment.center]
+                            }
+                            .help("Refreshing dossier")
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -322,16 +331,6 @@ struct MainWindowView: View {
 
             if let badge = model.packageBadge(for: package) {
                 PackageBadgeBanner(badge: badge)
-            }
-
-            if model.isLoadingDetail {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Refreshing dossier")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AVGlassPalette.quietText)
-                }
             }
         }
     }
