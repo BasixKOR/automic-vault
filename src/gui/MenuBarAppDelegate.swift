@@ -462,7 +462,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 6.3, weight: .bold),
                         .foregroundColor: Self.menuBarIndicatorColor,
-                        .baselineOffset: 5
+                        .baselineOffset: 7.52
                     ]
                 )
             } else {
@@ -485,7 +485,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         attributes: [
                             .font: NSFont.systemFont(ofSize: 7, weight: .bold),
                             .foregroundColor: Self.menuBarIndicatorColor,
-                            .baselineOffset: 6
+                            .baselineOffset: 8.8
                         ]
                     )
                 )
