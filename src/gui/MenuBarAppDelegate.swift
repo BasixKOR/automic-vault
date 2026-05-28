@@ -460,7 +460,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 button.attributedTitle = NSAttributedString(
                     string: "●",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 9, weight: .bold),
+                        .font: NSFont.systemFont(ofSize: 6.3, weight: .bold),
                         .foregroundColor: Self.menuBarIndicatorColor,
                         .baselineOffset: 5
                     ]
@@ -483,7 +483,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     NSAttributedString(
                         string: " ●",
                         attributes: [
-                            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                            .font: NSFont.systemFont(ofSize: 7, weight: .bold),
                             .foregroundColor: Self.menuBarIndicatorColor,
                             .baselineOffset: 6
                         ]
