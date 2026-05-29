@@ -306,7 +306,7 @@ struct MainWindowView: View {
         showsHazardWarning: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(model.displayName(for: package))
                         .font(.system(size: 22, weight: .semibold))
