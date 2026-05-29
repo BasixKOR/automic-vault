@@ -328,6 +328,44 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDossierPrimaryActionHardensInsecureInstalledBrewFormula() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let state = securityState(
+            isotopeName: "gh",
+            reason: "GitHub token is stored in plaintext"
+        )
+        let record = PackageRecord(
+            name: "brew:gh",
+            source: .formula(rootFormula: "gh"),
+            version: "2.49.0",
+            description: "GitHub command line tool",
+            securityState: state,
+            installRoot: "/opt/homebrew/Cellar/gh",
+            installPackageNames: ["brew:gh"]
+        )
+        let package = PackagePresentation(
+            item: .installed(record),
+            detail: record.fallbackDetail,
+            freshness: 0
+        )
+        let detail = try XCTUnwrap(package.detail)
+
+        XCTAssertEqual(model.dossierPrimaryPackageAction(for: detail), .harden)
+        XCTAssertTrue(model.canRequestDossierPackageAction(.harden, detail: detail))
+        XCTAssertEqual(PackageOperationKind.harden.title, "Harden")
+        XCTAssertEqual(PackageOperationKind.harden.progressTitle, "Hardening")
+
+        model.requestDossierPackageAction(.harden, detail: detail, package: package)
+
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.kind, .harden)
+        XCTAssertEqual(request.packageNames, ["isotope:gh"])
+        XCTAssertEqual(request.migrationIsotopeName, "gh")
+        XCTAssertEqual(request.displayName, "gh")
+    }
+
+    @MainActor
     func testDossierActionRequestUsesHelperPackageNames() throws {
         let model = MainWindowModel()
         defer { model.stop() }

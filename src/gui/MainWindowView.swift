@@ -676,6 +676,8 @@ private struct PackageDossierActionButtonLabel: View {
 
     private var foreground: Color {
         switch action {
+        case .harden:
+            return AVGlassPalette.green
         case .update:
             return AVGlassPalette.orange
         case .install, .uninstall:

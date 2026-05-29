@@ -141,6 +141,7 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
     case install
     case update
     case uninstall
+    case harden
 
     var id: String { rawValue }
 
@@ -152,6 +153,8 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
             return "Update"
         case .uninstall:
             return "Uninstall"
+        case .harden:
+            return "Harden"
         }
     }
 
@@ -163,6 +166,8 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
             return "Updating"
         case .uninstall:
             return "Uninstalling"
+        case .harden:
+            return "Hardening"
         }
     }
 
@@ -174,6 +179,8 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
             return "Update Package"
         case .uninstall:
             return "Uninstall Package"
+        case .harden:
+            return "Harden Package"
         }
     }
 
@@ -185,6 +192,8 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
             return "Update Complete"
         case .uninstall:
             return "Uninstall Complete"
+        case .harden:
+            return "Hardening Complete"
         }
     }
 
@@ -196,6 +205,8 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
             return "Update Halted"
         case .uninstall:
             return "Uninstall Halted"
+        case .harden:
+            return "Hardening Halted"
         }
     }
 
@@ -208,6 +219,7 @@ struct PackageOperationRequest: Equatable {
     let displayName: String
     let isAutomicVaultCLT: Bool
     let isXcodeCLT: Bool
+    let migrationIsotopeName: String?
 }
 
 @MainActor
@@ -491,7 +503,8 @@ final class MainWindowModel: ObservableObject {
             packageNames: ["av"],
             displayName: "av",
             isAutomicVaultCLT: true,
-            isXcodeCLT: false
+            isXcodeCLT: false,
+            migrationIsotopeName: nil
         )
     }
 
@@ -522,6 +535,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     func dossierPrimaryPackageAction(for detail: PackageDetail) -> PackageOperationKind {
+        if securityHardeningPackageName(for: detail) != nil {
+            return .harden
+        }
         guard detail.installed else {
             return .install
         }
@@ -533,7 +549,7 @@ final class MainWindowModel: ObservableObject {
         detail: PackageDetail
     ) -> Bool {
         guard !isPackageMutationInFlight,
-              hasPackageOperationTarget(for: detail) else {
+              hasPackageOperationTarget(for: detail, action: action) else {
             return false
         }
         switch action {
@@ -545,6 +561,8 @@ final class MainWindowModel: ObservableObject {
             return detail.installed
                 && !detail.isAutomicVaultCLT
                 && !detail.isXcodeCLT
+        case .harden:
+            return securityHardeningPackageName(for: detail) != nil
         }
     }
 
@@ -557,7 +575,7 @@ final class MainWindowModel: ObservableObject {
             showTransientStatus("Package operation is unavailable")
             return
         }
-        let packageNames = packageOperationPackageNames(for: detail)
+        let packageNames = packageOperationPackageNames(for: detail, action: action)
         packageOperationRequestID += 1
         packageOperationRequest = PackageOperationRequest(
             id: packageOperationRequestID,
@@ -565,7 +583,10 @@ final class MainWindowModel: ObservableObject {
             packageNames: packageNames,
             displayName: displayName(for: package),
             isAutomicVaultCLT: detail.isAutomicVaultCLT,
-            isXcodeCLT: detail.isXcodeCLT
+            isXcodeCLT: detail.isXcodeCLT,
+            migrationIsotopeName: action == .harden
+                ? detail.securityState?.isotopeName.trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil
         )
     }
 
@@ -832,18 +853,28 @@ final class MainWindowModel: ObservableObject {
         return result
     }
 
-    private func hasPackageOperationTarget(for detail: PackageDetail) -> Bool {
+    private func hasPackageOperationTarget(
+        for detail: PackageDetail,
+        action: PackageOperationKind
+    ) -> Bool {
         detail.isAutomicVaultCLT
             || detail.isXcodeCLT
-            || !packageOperationPackageNames(for: detail).isEmpty
+            || !packageOperationPackageNames(for: detail, action: action).isEmpty
     }
 
-    private func packageOperationPackageNames(for detail: PackageDetail) -> [String] {
+    private func packageOperationPackageNames(
+        for detail: PackageDetail,
+        action: PackageOperationKind
+    ) -> [String] {
         if detail.isAutomicVaultCLT {
             return ["av"]
         }
         if detail.isXcodeCLT {
             return [PackageRecommendation.xcodeCLTName]
+        }
+        if action == .harden,
+           let packageName = securityHardeningPackageName(for: detail) {
+            return [packageName]
         }
         var seen = Set<String>()
         var names: [String] = []
@@ -856,6 +887,19 @@ final class MainWindowModel: ObservableObject {
             names.append(trimmed)
         }
         return names
+    }
+
+    private func securityHardeningPackageName(for detail: PackageDetail) -> String? {
+        guard let securityState = detail.securityState,
+              securityState.installIsInsecure,
+              securityState.remediationAvailable else {
+            return nil
+        }
+        let isotopeName = securityState.isotopeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isotopeName.isEmpty == false else {
+            return nil
+        }
+        return "isotope:\(isotopeName)"
     }
 
     private var geigerCounterCount: Int? {

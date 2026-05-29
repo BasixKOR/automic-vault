@@ -360,6 +360,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         return result
     }
 
+    nonisolated private static func performIsotopeMigration(
+        isotopeName: String
+    ) throws -> NucleusBridge.IsotopeMigrationPlan {
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
+            .migrateIsotope(isotopeName: isotopeName)
+    }
+
     private func startPackageOperation(_ request: PackageOperationRequest) {
         guard !model.isPackageMutationInFlight else {
             model.showTransientStatus("Package operation already in progress")
@@ -384,7 +394,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let handleProgress: (NukeHelperProgressEvent) -> Void = { [weak progressController] event in
             progressController?.handle(event: event)
         }
-        let handleCompletion: (Result<NukeHelperResult, Error>) -> Void = {
+        let finishOperation: (Result<NukeHelperResult, Error>) -> Void = {
             [weak self, weak progressController] result in
             guard let self else { return }
             if let stagedCLTDirectory {
@@ -408,6 +418,40 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 refreshAfterSuccess: true
             )
         }
+        let handleCompletion: (Result<NukeHelperResult, Error>) -> Void = {
+            [weak progressController] result in
+            guard case .harden = request.kind,
+                  let migrationIsotopeName = request.migrationIsotopeName,
+                  case .success(let helperResult) = result else {
+                finishOperation(result)
+                return
+            }
+
+            let migrationPackageName = request.packageNames.first ?? "isotope:\(migrationIsotopeName)"
+            progressController?.handle(event: .log(
+                package: migrationPackageName,
+                message: "migrating secrets"
+            ))
+            Task.detached(priority: .userInitiated) {
+                let migrationResult = Result {
+                    try Self.performIsotopeMigration(isotopeName: migrationIsotopeName)
+                }
+                await MainActor.run {
+                    switch migrationResult {
+                    case .success:
+                        finishOperation(.success(NukeHelperResult(
+                            message: "Hardening complete",
+                            processedPackages: Self.mergedProcessedPackages(
+                                helperResult.processedPackages,
+                                request.packageNames
+                            )
+                        )))
+                    case .failure(let error):
+                        finishOperation(.failure(error))
+                    }
+                }
+            }
+        }
 
         if request.isAutomicVaultCLT,
            request.kind == .install || request.kind == .update {
@@ -426,7 +470,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
         let packageSpecs = request.packageNames.map { AVPackageSpec(name: $0) }
         switch request.kind {
-        case .install:
+        case .install, .harden:
             helperBridge.install(
                 packages: packageSpecs,
                 progress: handleProgress,
