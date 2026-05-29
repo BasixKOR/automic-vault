@@ -222,6 +222,7 @@ final class NukeHelperBridge {
     private enum HelperBlessingPolicy {
         case blessIfNeeded
         case installedOnly
+        case compatibleInstalledOnly
     }
 
     func authenticateBiometrics(reason: String, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -303,7 +304,7 @@ final class NukeHelperBridge {
             do {
                 guard let proxy = try self.remoteProxy(
                     progressHandler: nil,
-                    blessingPolicy: .installedOnly
+                    blessingPolicy: .compatibleInstalledOnly
                 ) else {
                     DispatchQueue.main.async {
                         completion(.success(false))
@@ -330,7 +331,7 @@ final class NukeHelperBridge {
             do {
                 guard let proxy = try self.remoteProxy(
                     progressHandler: nil,
-                    blessingPolicy: .installedOnly
+                    blessingPolicy: .compatibleInstalledOnly
                 ) else {
                     DispatchQueue.main.async {
                         completion?(.success(.pendingHelperInstallation))
@@ -618,7 +619,9 @@ final class NukeHelperBridge {
     ) throws -> NukeHelperProtocol? {
         let requiresBlessing: Bool
         do {
-            requiresBlessing = try helperRequiresBlessing()
+            requiresBlessing = try helperRequiresBlessing(
+                allowOlderInstalledVersion: blessingPolicy == .compatibleInstalledOnly
+            )
         } catch {
             if blessingPolicy == .installedOnly {
                 return nil
@@ -647,7 +650,9 @@ final class NukeHelperBridge {
         FileManager.default.fileExists(atPath: helperToolURL().path)
     }
 
-    private func helperRequiresBlessing() throws -> Bool {
+    private func helperRequiresBlessing(
+        allowOlderInstalledVersion: Bool = false
+    ) throws -> Bool {
         guard helperToolInstalled() else {
             return true
         }
@@ -678,6 +683,9 @@ final class NukeHelperBridge {
         }
         if installedIdentity.teamIdentifier != bundledIdentity.teamIdentifier {
             return true
+        }
+        if allowOlderInstalledVersion {
+            return false
         }
         return compareHelperVersion(
             installedIdentity.bundleVersion,

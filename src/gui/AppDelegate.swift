@@ -235,8 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshRemoteDatabase() {
         helperBridge.refreshRemoteDatabase { result in
             switch result {
-            case .success(.completed(_)):
+            case .success(.completed(let updated)):
                 try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+                if updated {
+                    self.statusStore.requestRefresh()
+                }
             case .success(.pendingHelperInstallation):
                 try? self.statusStore.saveRemoteDatabaseRefreshState(.pendingHelperInstallation)
             case .failure(let error):

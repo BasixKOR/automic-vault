@@ -2,6 +2,7 @@ import AppKit
 import UserNotifications
 
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
+    private static let remoteDatabaseRefreshInterval: TimeInterval = 60 * 60
     private static let neutralMenuBarIndicatorColor = NSColor(
         name: NSColor.Name("NeutralMenuBarIndicatorColor")
     ) { appearance in
@@ -14,6 +15,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         compatibilityPolicy: .protocolOnly,
         daemonOwnership: .owner
     )
+    private let helperBridge = NukeHelperBridge()
     private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
     private let automaticSecretApprovalToast = MenuBarInlineNotification()
@@ -36,6 +38,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         keyEquivalent: ""
     )
     private var refreshTimer: Timer?
+    private var remoteDatabaseRefreshTimer: Timer?
     private var refreshObserver: NSObjectProtocol?
     private var startAtLoginObserver: NSObjectProtocol?
     private var appUpdateObserver: NSObjectProtocol?
@@ -56,6 +59,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         installStartAtLoginObserverIfNeeded()
         installAppUpdateObserverIfNeeded()
         installAutoApprovedSecretObserverIfNeeded()
+        startRemoteDatabaseRefreshTimer()
         refreshSnapshot(reason: "launch")
         startRefreshTimer()
         vaultDaemon.start()
@@ -63,6 +67,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
+        remoteDatabaseRefreshTimer?.invalidate()
         if let refreshObserver {
             DistributedNotificationCenter.default().removeObserver(refreshObserver)
         }
@@ -240,9 +245,41 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
     }
 
+    private func startRemoteDatabaseRefreshTimer() {
+        remoteDatabaseRefreshTimer?.invalidate()
+        refreshRemoteDatabase()
+        remoteDatabaseRefreshTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.remoteDatabaseRefreshInterval,
+            repeats: true
+        ) { [weak self] _ in
+            self?.refreshRemoteDatabase()
+        }
+        if let remoteDatabaseRefreshTimer {
+            RunLoop.main.add(remoteDatabaseRefreshTimer, forMode: .common)
+        }
+    }
+
+    private func refreshRemoteDatabase() {
+        helperBridge.refreshRemoteDatabase { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(.completed(let updated)):
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+                guard updated else { return }
+                self.bridge.invalidate()
+                self.refreshSnapshot(reason: "remote database")
+            case .success(.pendingHelperInstallation):
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.pendingHelperInstallation)
+            case .failure(let error):
+                NSLog("remote database refresh failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func installRefreshObserverIfNeeded() {
         guard refreshObserver == nil else { return }
         refreshObserver = statusStore.observeRefreshRequests { [weak self] _ in
+            self?.bridge.invalidate()
             self?.refreshSnapshot(reason: "requested")
         }
     }
