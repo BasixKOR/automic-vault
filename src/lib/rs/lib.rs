@@ -11122,6 +11122,40 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn install_progress_emits_fallback_download_state_without_package_entry() {
+        let events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+        let progress = InstallProgress::with_callback("brew:sqlite", Some(callback));
+        *progress.bytes_downloaded.lock().unwrap() = 75;
+        *progress.total_bytes.lock().unwrap() = Some(100);
+        *progress.download_started_at.lock().unwrap() =
+            Some(Instant::now() - Duration::from_secs(3));
+
+        progress.emit_downloading_for("sqlite");
+
+        let event = events
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|event| match event {
+                ProgressEvent::Downloading {
+                    package,
+                    bytes_per_sec,
+                    progress,
+                } => Some((package.clone(), *bytes_per_sec, *progress)),
+                _ => None,
+            })
+            .expect("fallback download event should be emitted");
+        assert_eq!(event.0, "sqlite");
+        assert!(event.1 > 0);
+        assert!((event.2 - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
     fn installed_package_summary_serializes_source() {
         let summary = core::InstalledPackageSummary {
             name: "isotope:gh".to_string(),
@@ -13000,6 +13034,42 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn relocate_file_rewrites_non_utf8_binary_paths() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("ripgrep").join("14.1.1");
+        let path = root.join("bin/rg");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            b"\xff/opt/homebrew/opt/pcre2/lib/libpcre2-8.dylib\0tail",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o444);
+        fs::set_permissions(&path, permissions).unwrap();
+        let rules = vec![RewriteRule {
+            source: "/opt/homebrew/opt/pcre2".to_string(),
+            destination: "/opt/rg".to_string(),
+        }];
+
+        relocate_file(&path, &root, Path::new("/opt/rg"), "ripgrep", &rules, None).unwrap();
+
+        let rewritten = fs::read(&path).unwrap();
+        assert!(rewritten.starts_with(b"\xff/opt/"));
+        assert!(
+            !rewritten
+                .windows(b"/opt/homebrew".len())
+                .any(|window| window == b"/opt/homebrew")
+        );
+        assert!(
+            rewritten
+                .windows(b"lib/libpcre2-8.dylib".len())
+                .any(|window| window == b"lib/libpcre2-8.dylib")
+        );
+        assert!(fs::metadata(&path).unwrap().permissions().mode() & 0o200 != 0);
+    }
+
+    #[test]
     fn documentation_detection_covers_share_doc_and_changelog_names() {
         let root = Path::new("/tmp/keg");
         assert!(is_documentation_text_path(
@@ -13425,6 +13495,8 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
 
     #[test]
     fn build_sandboxed_npm_install_command_uses_isolated_env() {
+        let _lock = test_env_lock().lock().unwrap();
+        let _env = TestEnvGuard::set(&[("CODEX_CI", "1")]);
         let temp = TempDir::new().unwrap();
         let sandbox_root = TempDir::new_in(temp.path()).unwrap();
         let install_root = temp.path().join("install");
@@ -13444,29 +13516,16 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         .unwrap();
 
         let args: Vec<_> = command.get_args().collect();
-        if should_bypass_npm_install_sandbox() {
-            assert_eq!(command.get_program(), OsStr::new("/opt/pkg/bin/npm"));
-            assert_eq!(args[0], OsStr::new("install"));
-            assert_eq!(args[1], OsStr::new("-g"));
-            assert_eq!(args[2], OsStr::new("--prefix"));
-            assert_eq!(args[3], install_root.as_os_str());
-            assert_eq!(
-                args[4],
-                OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
-            );
-        } else {
-            assert_eq!(command.get_program(), OsStr::new("/usr/bin/sandbox-exec"));
-            assert_eq!(args[0], OsStr::new("-f"));
-            assert_eq!(args[2], OsStr::new("/opt/pkg/bin/npm"));
-            assert_eq!(args[3], OsStr::new("install"));
-            assert_eq!(args[4], OsStr::new("-g"));
-            assert_eq!(args[5], OsStr::new("--prefix"));
-            assert_eq!(args[6], install_root.as_os_str());
-            assert_eq!(
-                args[7],
-                OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
-            );
-        }
+        assert!(should_bypass_npm_install_sandbox());
+        assert_eq!(command.get_program(), OsStr::new("/opt/pkg/bin/npm"));
+        assert_eq!(args[0], OsStr::new("install"));
+        assert_eq!(args[1], OsStr::new("-g"));
+        assert_eq!(args[2], OsStr::new("--prefix"));
+        assert_eq!(args[3], install_root.as_os_str());
+        assert_eq!(
+            args[4],
+            OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
+        );
         assert_eq!(
             *args.last().unwrap(),
             OsStr::new("https://registry.npmjs.org/openclaw/-/openclaw-1.2.3.tgz")
@@ -14097,6 +14156,46 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         merge_path_into(&source_file, &target_file).unwrap();
 
         assert_eq!(fs::read(target_file).unwrap(), b"replacement");
+    }
+
+    #[test]
+    fn copy_path_preserves_symlinks_directories_and_file_modes() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination/tree");
+        fs::create_dir_all(source.join("bin")).unwrap();
+        fs::write(source.join("bin/tool"), b"tool").unwrap();
+        symlink("../bin/tool", source.join("tool-link")).unwrap();
+        let mut dir_permissions = fs::metadata(source.join("bin")).unwrap().permissions();
+        dir_permissions.set_mode(0o755);
+        fs::set_permissions(source.join("bin"), dir_permissions).unwrap();
+        let mut file_permissions = fs::metadata(source.join("bin/tool")).unwrap().permissions();
+        file_permissions.set_mode(0o700);
+        fs::set_permissions(source.join("bin/tool"), file_permissions).unwrap();
+
+        copy_path(&source, &destination).unwrap();
+
+        assert_eq!(fs::read(destination.join("bin/tool")).unwrap(), b"tool");
+        assert_eq!(
+            fs::read_link(destination.join("tool-link")).unwrap(),
+            PathBuf::from("../bin/tool")
+        );
+        assert_eq!(
+            fs::metadata(destination.join("bin"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
+        );
+        assert_eq!(
+            fs::metadata(destination.join("bin/tool"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
     }
 
     #[test]
@@ -15414,6 +15513,25 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             plan.tmp_root,
             temp_root_for_target_root(
                 &opt_pip_root(),
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            )
+        );
+    }
+
+    #[test]
+    fn install_plan_for_i_radioisotope_uses_formula_root() {
+        let plan =
+            InstallPlan::for_i_radioisotope("isotope:aws-cli".to_string(), "awscli".to_string());
+
+        assert_eq!(plan.package_name, "isotope:aws-cli");
+        assert_eq!(plan.root_formula, "awscli");
+        assert_eq!(plan.stable_root, opt_pkg_root().join("awscli"));
+        assert_eq!(plan.install_root, opt_pkg_root().join("awscli"));
+        assert_eq!(
+            plan.tmp_root,
+            temp_root_for_target_root(
+                &opt_pkg_root(),
                 Path::new(SYSTEM_TMP_ROOT),
                 Path::new(TMP_TOOL_ROOT),
             )
