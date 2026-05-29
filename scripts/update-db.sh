@@ -12,7 +12,7 @@ isotope_args=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/update-db.sh [--skip-isotope-builds]
+Usage: scripts/update-db.sh [--skip-isotope-builds] [--once]
                             [--color auto|always|never] [--no-color]
 
 Refresh isotope metadata, rebuild the Homebrew package database, rebuild
@@ -23,6 +23,8 @@ hourly database loop and daily package-page deploy cadence.
 
 Options:
   --skip-isotope-builds       Pass --skip-builds to build-isotopes.sh.
+  --once                      Run one update immediately and exit.
+                              This is the default behavior.
   --color auto|always|never   Control terminal color output.
                               Defaults to auto.
   --no-color                  Disable terminal color output.
@@ -33,7 +35,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once)
-      # Kept as a no-op for old crontabs and manual muscle memory.
+      # update-db.sh is always immediate and one-shot.
       shift
       ;;
     --interval-seconds)

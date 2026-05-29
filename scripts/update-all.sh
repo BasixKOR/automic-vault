@@ -25,7 +25,7 @@ Options:
   --skip-isotope-builds             Pass --skip-builds through to update-db.sh.
   --skip-daily                      Disable scheduled daily website publishes.
   --website-now                     Run the website publish immediately on startup.
-  --once                            Run the next scheduled hourly slot and exit.
+  --once                            Run a database update immediately and exit.
   --color auto|always|never         Control terminal color output.
                                     Defaults to auto.
   --no-color                        Disable terminal color output.
@@ -213,10 +213,15 @@ run_step() {
 
 run_database_update() {
   local command=("${script_dir}/update-db.sh" "--color" "${color_mode}")
+  local step_name="hourly database update"
+
   if [[ "${skip_isotope_builds}" == "true" ]]; then
     command+=(--skip-isotope-builds)
   fi
-  run_step "hourly database update" "${command[@]}"
+  if [[ "${run_once}" == "true" ]]; then
+    step_name="database update"
+  fi
+  run_step "${step_name}" "${command[@]}"
 }
 
 run_daily_publish() {
@@ -279,11 +284,15 @@ is_daily_slot() {
 trap 'log WARN "Stopping update-all"; exit 130' INT TERM
 
 log INFO "${bold}Automic Vault publishing cadence${reset}"
-log INFO "Database updates at the top of every hour"
-if [[ "${skip_daily}" == "true" ]]; then
-  log WARN "Scheduled daily package-page deploy is disabled"
+if [[ "${run_once}" == "true" ]]; then
+  log INFO "Database update will run immediately and exit"
 else
-  log INFO "Package-page deploy runs daily at 03:00 local time"
+  log INFO "Database updates at the top of every hour"
+  if [[ "${skip_daily}" == "true" ]]; then
+    log WARN "Scheduled daily package-page deploy is disabled"
+  else
+    log INFO "Package-page deploy runs daily at 03:00 local time"
+  fi
 fi
 
 last_daily_date=""
@@ -299,11 +308,18 @@ if [[ "${run_website_now}" == "true" ]]; then
   fi
 fi
 
+if [[ "${run_once}" == "true" ]]; then
+  log INFO "Immediate database update requested"
+  if run_database_update; then
+    exit 0
+  fi
+  exit 1
+fi
+
 while true; do
   scheduled_epoch="$(wait_until_next_hour)"
   scheduled_date="$(date -r "${scheduled_epoch}" '+%Y-%m-%d')"
   scheduled_label="$(date -r "${scheduled_epoch}" '+%Y-%m-%d %H:%M:%S %Z')"
-  cycle_status=0
   if run_database_update; then
     if [[ "${skip_daily}" != "true" ]]; then
       if is_daily_slot "${scheduled_epoch}" && [[ "${last_daily_date}" != "${scheduled_date}" ]]; then
@@ -312,7 +328,6 @@ while true; do
           last_daily_date="${scheduled_date}"
           log OK "Daily package-page publish completed"
         else
-          cycle_status=1
           log ERROR "Daily package-page publish failed; next retry is tomorrow at 03:00"
         fi
       else
@@ -320,12 +335,7 @@ while true; do
       fi
     fi
   else
-    cycle_status=1
     log ERROR "Database update failed; retrying at the next hour"
-  fi
-
-  if [[ "${run_once}" == "true" ]]; then
-    exit "${cycle_status}"
   fi
 
   sleep 1
