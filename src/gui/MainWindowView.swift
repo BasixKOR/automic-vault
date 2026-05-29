@@ -669,6 +669,10 @@ private struct PackageDossierActionButtonLabel: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 14, height: 14)
+            } else if action == .harden {
+                Image(systemName: "shield.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
             }
             Text(isActive ? action.progressTitle : action.title)
                 .font(.system(size: 12, weight: .semibold))

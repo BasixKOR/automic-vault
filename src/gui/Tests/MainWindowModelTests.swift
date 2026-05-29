@@ -403,6 +403,8 @@ final class MainWindowModelTests: XCTestCase {
               "supabase-cli": {
                 "name": "isotope:supabase-cli",
                 "replaces": "brew:supabase",
+                "repository": "automic-vault/supabase-cli",
+                "releaseUrl": "https://github.com/automic-vault/supabase-cli/releases/tag/v2.101.0",
                 "archiveUrl": "https://example.test/supabase-cli.tgz"
               }
             }
@@ -433,6 +435,18 @@ final class MainWindowModelTests: XCTestCase {
         let unwrappedDetail = try XCTUnwrap(detail)
         XCTAssertEqual(model.dossierPrimaryPackageAction(for: unwrappedDetail), .harden)
         XCTAssertTrue(model.canRequestDossierPackageAction(.harden, detail: unwrappedDetail))
+        XCTAssertEqual(
+            model.linkURL(for: .homepage, detail: unwrappedDetail)?.absoluteString,
+            "https://github.com/automic-vault/supabase-cli/releases/tag/v2.101.0"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .repository, detail: unwrappedDetail)?.absoluteString,
+            "https://github.com/automic-vault/supabase-cli"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .documentation, detail: unwrappedDetail)?.absoluteString,
+            "https://github.com/automic-vault/supabase-cli/wiki"
+        )
     }
 
     @MainActor

@@ -637,14 +637,29 @@ final class MainWindowModel: ObservableObject {
         guard let detail = selectedDetail else {
             return nil
         }
+        return linkURL(for: tab, detail: detail)
+    }
+
+    func linkURL(for tab: MainWindowLinkTab, detail: PackageDetail) -> URL? {
+        let homepageURL = detail.homepageURL ?? catalogHomepageURL(for: detail)
         switch tab {
         case .homepage:
-            return detail.homepageURL
+            return homepageURL
         case .repository:
-            return githubRepositoryURL(from: detail.homepageURL)
+            return githubRepositoryURL(from: homepageURL)
         case .documentation:
-            return documentationURL(from: detail.homepageURL)
+            return documentationURL(from: homepageURL)
         }
+    }
+
+    private func catalogHomepageURL(for detail: PackageDetail) -> URL? {
+        if detail.securityState?.needsMainWindowSecurityAlert == true {
+            return securityCatalog.homepageURL(for: detail)
+        }
+        if case .isotope = detail.source {
+            return securityCatalog.homepageURL(for: detail)
+        }
+        return nil
     }
 
     func open(url: URL?) {

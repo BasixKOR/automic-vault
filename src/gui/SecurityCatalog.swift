@@ -146,7 +146,19 @@ final class SecurityCatalog {
         return nil
     }
 
+    func homepageURL(for detail: PackageDetail) -> URL? {
+        matchedIsotopePackages(for: detail)
+            .lazy
+            .compactMap(\.homepageURL)
+            .first
+    }
+
     private let isotopePackages: [String: IsotopeRecord]
+
+    private func matchedIsotopePackages(for detail: PackageDetail) -> [IsotopeRecord] {
+        let identifiers = packageIdentifiers(for: detail)
+        return identifiers.compactMap { isotopePackages[$0] }
+    }
 
     private func packageIdentifiers(for detail: PackageDetail) -> Set<String> {
         var identifiers = Set<String>()
@@ -292,6 +304,7 @@ private struct IsotopeRecord: Decodable {
     let modifies: String?
     let repository: String?
     let upstreamRepository: String?
+    let releaseUrl: String?
     let archiveUrl: String?
     let justification: IsotopeJustification?
     let caveats: IsotopeCaveats?
@@ -307,6 +320,13 @@ private struct IsotopeRecord: Decodable {
         archiveUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
+    var homepageURL: URL? {
+        if let url = httpURL(from: releaseUrl) {
+            return url
+        }
+        return learnMoreURL
+    }
+
     var learnMoreURL: URL? {
         guard let repository,
               repository.contains("/") else {
@@ -316,6 +336,20 @@ private struct IsotopeRecord: Decodable {
             return radioisotopeReadmeURL(for: isotopeName)
         }
         return URL(string: "https://github.com/\(repository)#readme")
+    }
+
+    private func httpURL(from rawValue: String?) -> URL? {
+        guard let rawValue else {
+            return nil
+        }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme,
+              scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        return url
     }
 }
 
