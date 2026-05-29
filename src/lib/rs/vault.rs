@@ -243,7 +243,7 @@ where
     };
     notify_containment_started(&session);
 
-    let mut sandbox = Command::new(SANDBOX_EXEC_PATH);
+    let mut sandbox = Command::new(sandbox_exec_path());
     sandbox
         .arg("-f")
         .arg(&manifest.environment.sandbox_profile_path)
@@ -257,6 +257,18 @@ where
         )
         .env(VAULT_AGENT_ID_ENV, agent_id);
     Err(format!("failed to enter sandbox: {}", sandbox.exec()))
+}
+
+#[cfg(test)]
+fn sandbox_exec_path() -> PathBuf {
+    env::var_os("NUKE_TEST_VAULT_SANDBOX_EXEC")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(SANDBOX_EXEC_PATH))
+}
+
+#[cfg(not(test))]
+fn sandbox_exec_path() -> &'static str {
+    SANDBOX_EXEC_PATH
 }
 
 fn run_internal_exec<I>(program_name: &str, args: I) -> Result<(), String>
@@ -1091,6 +1103,38 @@ mod tests {
                 .unwrap_err()
                 .contains("vaultd unavailable")
         );
+    }
+
+    #[test]
+    fn subs_contain_sandboxed_command_reaches_exec_failure_path() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let tool = bin.join("contained-tool");
+        fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let missing_sandbox = temp.path().join("missing-sandbox-exec");
+        let socket = temp.path().join("missing.sock");
+        let _env = EnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("PATH", bin.to_str().unwrap()),
+            (VAULT_AGENT_ID_ENV, "agent-contained"),
+            (VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap()),
+            (
+                "NUKE_TEST_VAULT_SANDBOX_EXEC",
+                missing_sandbox.to_str().unwrap(),
+            ),
+        ]);
+
+        let err = run_sandboxed_command(
+            OsString::from("contained-tool"),
+            vec![OsString::from("--version")].into_iter(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("failed to enter sandbox"));
+        assert!(err.contains("No such file") || err.contains("os error 2"));
     }
 
     #[test]

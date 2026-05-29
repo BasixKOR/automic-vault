@@ -8071,10 +8071,14 @@ mod tests {
     }
 
     fn write_executable(path: &Path) {
+        write_executable_with_body(path, "")
+    }
+
+    fn write_executable_with_body(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
-        fs::write(path, b"#!/bin/sh\n").unwrap();
+        fs::write(path, format!("#!/bin/sh\n{body}")).unwrap();
         let mut permissions = fs::metadata(path).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(path, permissions).unwrap();
@@ -10341,6 +10345,42 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn secret_scanner_helpers_cover_default_paths_and_token_shapes() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", home.to_str().unwrap())]);
+
+        let paths = default_secret_scan_paths();
+        assert!(paths.iter().any(|path| path.ends_with(".env")));
+        assert!(
+            paths
+                .iter()
+                .any(|path| path == &home.join(".aws/credentials"))
+        );
+
+        let stripe_live = ["sk", "live", "abcdefghijklmnopqrstuvwxyz"].join("_");
+        for token in [
+            "ghp_abcdefghijklmnopqrstuvwxyz",
+            "gho_abcdefghijklmnopqrstuvwxyz",
+            "ghs_abcdefghijklmnopqrstuvwxyz",
+            "github_pat_abcdefghijklmnopqrstuvwxyz",
+            "glpat-abcdefghijklmnopqrstuvwxyz",
+            "xoxb-abcdefghijklmnopqrstuvwxyz",
+            "xoxp-abcdefghijklmnopqrstuvwxyz",
+            stripe_live.as_str(),
+            "npm_abcdefghijklmnop",
+            "sk-abcdefghijklmnopqrstuv",
+            "AKIAABCDEFGHIJKLMNOP",
+        ] {
+            assert!(secret_value_has_known_token_shape(token), "{token}");
+        }
+        assert!(!secret_value_has_known_token_shape("npm_short"));
+        assert!(!secret_value_has_known_token_shape("plain-secret-value"));
+    }
+
+    #[test]
     fn is_list_subcommand_accepts_both_aliases() {
         assert!(is_list_subcommand("list"));
         assert!(is_list_subcommand("ls"));
@@ -10439,6 +10479,65 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert!(script.contains("gh auth av-migrate"));
         assert!(!script.contains("auth login"));
         assert!(!script.contains("--with-token"));
+    }
+
+    #[test]
+    fn custom_isotope_migration_runs_rewritten_script_and_reports_failures() {
+        if is_root() {
+            return;
+        }
+
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let install_root = temp.path().join("install");
+        let tmp_root = temp.path().join("tmp");
+        fs::create_dir_all(&install_root).unwrap();
+        fs::create_dir_all(&tmp_root).unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", temp.path().to_str().unwrap()),
+            ("USER", "coverage-user"),
+            ("LOGNAME", "coverage-logname"),
+        ]);
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "isotope:coverage-migrate".to_string(),
+            root_formula: "isotope:coverage-migrate".to_string(),
+            stable_root: install_root.clone(),
+            install_root: install_root.clone(),
+            tmp_root,
+        };
+        let isotope = IsotopePackageData {
+            name: "coverage-migrate".to_string(),
+            replaces: Some("brew:coverage-replaced".to_string()),
+            modifies: None,
+            migrate: Some(
+                "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n' \"$ISOTOPE_NAME\" \"$ISOTOPE_PREFIX\" \"$USER\" > /opt/iso/repository-leaf/migration.out\n"
+                    .to_string(),
+            ),
+            _repository: Some("example/repository-leaf".to_string()),
+            _upstream_repository: None,
+            version: "1.0.0".to_string(),
+            release_url: None,
+            archive_url: None,
+            published_at: None,
+        };
+        let progress = InstallProgress::with_callback("coverage-migrate", None);
+
+        run_isotope_migration(&plan, &isotope, Some(&progress)).unwrap();
+
+        let output = fs::read_to_string(install_root.join("migration.out")).unwrap();
+        assert!(output.contains("coverage-migrate"));
+        assert!(output.contains(install_root.to_str().unwrap()));
+        assert!(output.contains("coverage-user"));
+
+        let failing = IsotopePackageData {
+            migrate: Some("echo migration-broke >&2\nexit 9\n".to_string()),
+            ..isotope
+        };
+        let err = run_isotope_migration(&plan, &failing, Some(&progress)).unwrap_err();
+        assert!(err.contains("migration failed for coverage-migrate"));
+        assert!(err.contains("exit code 9"));
+        assert!(err.contains("migration-broke"));
     }
 
     #[test]
@@ -13430,6 +13529,36 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn build_sandboxed_npm_install_command_uses_sandbox_when_codex_bypass_is_absent() {
+        let _lock = test_env_lock().lock().unwrap();
+        let _env = TestEnvGuard::unset(&["CODEX_CI"]);
+        let temp = TempDir::new().unwrap();
+        let sandbox_root = TempDir::new_in(temp.path()).unwrap();
+        let install_root = temp.path().join("install");
+        let tmp_root = temp.path().join("tmp");
+        fs::create_dir_all(&tmp_root).unwrap();
+
+        let command = build_sandboxed_npm_install_command(
+            "/usr/bin/sandbox-exec",
+            "/opt/pkg/bin/npm",
+            "coverage-npm",
+            &install_root,
+            &tmp_root,
+            &sandbox_root,
+            OsString::from("/opt/pkg/bin"),
+            true,
+        )
+        .unwrap();
+
+        let args = command.get_args().collect::<Vec<_>>();
+        assert_eq!(command.get_program(), OsStr::new("/usr/bin/sandbox-exec"));
+        assert_eq!(args[0], OsStr::new("-f"));
+        assert_eq!(args[2], OsStr::new("/opt/pkg/bin/npm"));
+        assert!(args.contains(&OsStr::new("--dry-run")));
+        assert_eq!(*args.last().unwrap(), OsStr::new("coverage-npm"));
+    }
+
+    #[test]
     fn normalize_bundled_npm_extension_dependencies_links_missing_root_packages() {
         let temp = TempDir::new().unwrap();
         let install_root = temp.path().join("opt/npm/openclaw");
@@ -13911,6 +14040,63 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         let resolved = resolve_command_in_path_entries(&[first, second.clone()], "npm").unwrap();
 
         assert_eq!(resolved, second.join("npm"));
+    }
+
+    #[test]
+    fn install_time_command_probes_cover_success_failure_and_missing_tools() {
+        let temp = TempDir::new().unwrap();
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "coverage-runtime".to_string(),
+            root_formula: "coverage-runtime".to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join("install"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        fs::create_dir_all(&plan.tmp_root).unwrap();
+        write_executable_with_body(&plan.install_root.join("bin/ok-runtime"), "exit 0\n");
+        write_executable_with_body(&plan.install_root.join("bin/bad-runtime"), "exit 7\n");
+        let progress = InstallProgress::with_callback("coverage-runtime", None);
+
+        assert!(
+            install_time_commands_are_usable(&plan, &[], ["ok-runtime"], Some(&progress)).unwrap()
+        );
+        assert!(
+            !install_time_commands_are_usable(&plan, &[], ["ok-runtime", "bad-runtime"], None)
+                .unwrap()
+        );
+        assert!(!install_time_commands_are_usable(&plan, &[], ["missing-runtime"], None).unwrap());
+    }
+
+    #[test]
+    fn merge_path_into_recursively_merges_directories_and_replaces_files() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::create_dir_all(target.join("nested")).unwrap();
+        fs::write(source.join("nested/source.txt"), b"source").unwrap();
+        fs::write(target.join("nested/target.txt"), b"target").unwrap();
+
+        merge_path_into(&source, &target).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read(target.join("nested/source.txt")).unwrap(),
+            b"source"
+        );
+        assert_eq!(
+            fs::read(target.join("nested/target.txt")).unwrap(),
+            b"target"
+        );
+
+        let source_file = temp.path().join("replacement");
+        let target_file = target.join("nested/target.txt");
+        fs::write(&source_file, b"replacement").unwrap();
+        merge_path_into(&source_file, &target_file).unwrap();
+
+        assert_eq!(fs::read(target_file).unwrap(), b"replacement");
     }
 
     #[test]
@@ -18516,6 +18702,20 @@ EOF
                     let previous = env::var_os(key);
                     unsafe {
                         env::set_var(key, value);
+                    }
+                    ((*key).to_string(), previous)
+                })
+                .collect();
+            Self { previous }
+        }
+
+        fn unset(keys: &[&str]) -> Self {
+            let previous = keys
+                .iter()
+                .map(|key| {
+                    let previous = env::var_os(key);
+                    unsafe {
+                        env::remove_var(key);
                     }
                     ((*key).to_string(), previous)
                 })

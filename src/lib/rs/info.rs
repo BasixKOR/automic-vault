@@ -2256,6 +2256,193 @@ mod tests {
         install_root
     }
 
+    fn search_result(
+        package_name: &str,
+        source: PackageReceiptSource,
+        summary: Option<&str>,
+        rank: Option<u32>,
+    ) -> PackageSearchResult {
+        PackageSearchResult {
+            package_name: package_name.to_string(),
+            source,
+            summary: summary.map(str::to_string),
+            latest_version: None,
+            homepage: None,
+            dependencies: Vec::new(),
+            security_state: None,
+            rank,
+            last_updated_at: None,
+            pulse_kind: None,
+        }
+    }
+
+    #[test]
+    fn search_ranking_helpers_cover_names_summaries_sources_and_popularity() {
+        let exact = search_result(
+            "ripgrep",
+            PackageReceiptSource::Formula {
+                root_formula: "ripgrep".to_string(),
+            },
+            Some("fast recursive search"),
+            Some(20),
+        );
+        let prefix = search_result(
+            "ripgrep-all",
+            PackageReceiptSource::Cask {
+                cask_name: "rg-suite".to_string(),
+            },
+            None,
+            Some(10),
+        );
+        let summary = search_result(
+            "other-tool",
+            PackageReceiptSource::Npm {
+                package_name: "@scope/other-tool".to_string(),
+            },
+            Some("contains ripgrep in summary"),
+            None,
+        );
+        let vendor = search_result(
+            "av:terraform",
+            PackageReceiptSource::Vendor {
+                vendor_name: "terraform".to_string(),
+            },
+            None,
+            Some(1),
+        );
+        let pip = search_result(
+            "pip:ruff",
+            PackageReceiptSource::Pip {
+                package_name: "ruff".to_string(),
+            },
+            None,
+            None,
+        );
+        let isotope = search_result(
+            "isotope:aws-cli",
+            PackageReceiptSource::Isotope {
+                isotope_name: "aws-cli".to_string(),
+            },
+            None,
+            None,
+        );
+
+        assert_eq!(search_result_match_rank(&exact, "ripgrep"), 0);
+        assert_eq!(search_result_match_rank(&prefix, "rip"), 1);
+        assert_eq!(search_result_match_rank(&summary, "ripgrep"), 3);
+        assert_eq!(search_result_match_rank(&summary, "missing"), 4);
+        assert_eq!(search_result_match_rank(&summary, ""), 5);
+        assert_eq!(search_result_match_distance(&prefix, "grep"), 10);
+        assert_eq!(search_result_match_distance(&summary, "ripgrep"), 9);
+        assert_eq!(search_result_match_distance(&summary, ""), usize::MAX);
+        assert!(search_result_name_candidates(&vendor).contains(&"terraform".to_string()));
+        assert!(search_result_name_candidates(&pip).contains(&"ruff".to_string()));
+        assert!(search_result_name_candidates(&isotope).contains(&"aws-cli".to_string()));
+        assert_eq!(
+            compare_optional_popularity_rank(Some(1), None),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_optional_popularity_rank(None, Some(1)),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_package_search_results_for_query("ripgrep", &exact, &summary),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn installed_package_refs_cover_nested_source_roots_and_receipt_fallbacks() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("npm/@scope/pkg")).unwrap();
+        fs::create_dir_all(root.join("npm/plain")).unwrap();
+        fs::create_dir_all(root.join("pip/Some_Pkg")).unwrap();
+        fs::create_dir_all(root.join(ISOTOPE_INSTALL_ROOT_DIR).join("gh")).unwrap();
+        fs::create_dir_all(root.join("regular")).unwrap();
+        fs::create_dir_all(root.join(".hidden")).unwrap();
+        fs::write(root.join("not-a-dir"), b"file").unwrap();
+        write_package_receipt(
+            &root.join("npm/@scope/pkg").join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "npm:@scope/pkg".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "@scope/pkg".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_package_receipt(
+            &root.join("pip/Some_Pkg").join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "pip:custom-name".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Pip {
+                    package_name: "Some_Pkg".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let names = installed_package_refs(root)
+            .unwrap()
+            .into_iter()
+            .map(|package| package.package_name)
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"npm:@scope/pkg".to_string()));
+        assert!(names.contains(&"npm:plain".to_string()));
+        assert!(names.contains(&"pip:custom-name".to_string()));
+        assert!(names.contains(&"isotope:gh".to_string()));
+        assert!(names.contains(&"regular".to_string()));
+        assert!(!names.contains(&".hidden".to_string()));
+    }
+
+    #[test]
+    fn package_stubs_are_active_requires_manifest_and_owned_stub() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let install_root = temp.path().join("install");
+        fs::create_dir_all(&install_root).unwrap();
+        assert!(!package_stubs_are_active(&install_root, "coverage-active").unwrap());
+
+        write_stub_manifest(
+            &install_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["coverage-active".to_string()],
+            },
+        )
+        .unwrap();
+        assert!(!package_stubs_are_active(&install_root, "coverage-active").unwrap());
+
+        let stub_path = managed_bin_root().join("coverage-active");
+        if fs::symlink_metadata(&stub_path).is_ok() {
+            remove_path(&stub_path).unwrap();
+        }
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "coverage-active".to_string(),
+            root_formula: "coverage-active".to_string(),
+            stable_root: install_root.clone(),
+            install_root: install_root.clone(),
+            tmp_root: temp.path().join("tmp"),
+        };
+        write_stub(
+            &plan,
+            &stub_path,
+            &install_root.join("bin/coverage-active"),
+            &[],
+        )
+        .unwrap();
+
+        assert!(package_stubs_are_active(&install_root, "coverage-active").unwrap());
+        remove_path(&stub_path).unwrap();
+    }
+
     #[test]
     fn status_and_record_wrappers_cover_all_installed_and_requested_paths() {
         let _lock = crate::global_test_env_lock().lock().unwrap();

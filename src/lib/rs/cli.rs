@@ -2006,6 +2006,183 @@ mod tests {
     }
 
     #[test]
+    fn shebang_arg_splitter_handles_quotes_escapes_and_invalid_input() {
+        assert_eq!(split_shebang_subcommand_arg(OsStr::new("contain")), None);
+        assert_eq!(
+            split_shebang_subcommand_arg(OsStr::new(
+                "contain --flag 'two words' \"quoted \\\"value\\\"\" plain\\ value"
+            ))
+            .unwrap(),
+            vec![
+                OsString::from("contain"),
+                OsString::from("--flag"),
+                OsString::from("two words"),
+                OsString::from("quoted \"value\""),
+                OsString::from("plain value"),
+            ]
+        );
+        assert_eq!(
+            split_shebang_subcommand_arg(OsStr::new("contain 'unterminated")),
+            None
+        );
+
+        #[cfg(unix)]
+        assert_eq!(
+            split_shebang_subcommand_arg(&OsString::from_vec(vec![0xff, b' ', b'x'])),
+            None
+        );
+    }
+
+    #[test]
+    fn installed_package_matcher_covers_stubs_sources_and_radioisotopes() {
+        let temp = TempDir::new().unwrap();
+        let install_root = temp.path().join("installed");
+        fs::create_dir_all(&install_root).unwrap();
+        let installed = InstalledPackageRef {
+            package_name: "installed-name".to_string(),
+            install_root: install_root.clone(),
+        };
+        let formula_receipt = PackageReceipt {
+            package_name: "receipt-name".to_string(),
+            version: "1.0.0".to_string(),
+            source: PackageReceiptSource::Formula {
+                root_formula: "root-formula".to_string(),
+            },
+            metadata: PackageMetadata::default(),
+        };
+
+        assert!(
+            installed_package_matches_uninstall_name(
+                "installed-name",
+                None,
+                &installed,
+                &formula_receipt,
+            )
+            .unwrap()
+        );
+        assert!(
+            installed_package_matches_uninstall_name(
+                "receipt-name",
+                None,
+                &installed,
+                &formula_receipt,
+            )
+            .unwrap()
+        );
+        assert!(
+            installed_package_matches_uninstall_name(
+                "brew:root-formula",
+                None,
+                &installed,
+                &formula_receipt,
+            )
+            .unwrap()
+        );
+        assert!(
+            installed_package_matches_uninstall_name(
+                "provider-name",
+                Some("installed-name"),
+                &installed,
+                &formula_receipt,
+            )
+            .unwrap()
+        );
+
+        write_stub_manifest(
+            &install_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["stub-match".to_string()],
+            },
+        )
+        .unwrap();
+        assert!(
+            installed_package_matches_uninstall_name(
+                "stub-match",
+                None,
+                &installed,
+                &formula_receipt
+            )
+            .unwrap()
+        );
+
+        for (package, source) in [
+            (
+                "root-formula",
+                PackageReceiptSource::Formula {
+                    root_formula: "root-formula".to_string(),
+                },
+            ),
+            (
+                "cask-real",
+                PackageReceiptSource::Cask {
+                    cask_name: "cask-real".to_string(),
+                },
+            ),
+            (
+                "vendor-real",
+                PackageReceiptSource::Vendor {
+                    vendor_name: "vendor-real".to_string(),
+                },
+            ),
+            (
+                "npm-real",
+                PackageReceiptSource::Npm {
+                    package_name: "npm-real".to_string(),
+                },
+            ),
+            (
+                "pip-real",
+                PackageReceiptSource::Pip {
+                    package_name: "pip-real".to_string(),
+                },
+            ),
+        ] {
+            let receipt = PackageReceipt {
+                package_name: "package".to_string(),
+                version: "1.0.0".to_string(),
+                source,
+                metadata: PackageMetadata::default(),
+            };
+            assert!(
+                installed_package_matches_uninstall_name(package, None, &installed, &receipt)
+                    .unwrap(),
+                "{package}"
+            );
+        }
+
+        let isotope_receipt = PackageReceipt {
+            package_name: "isotope:aws-cli".to_string(),
+            version: "1.0.0".to_string(),
+            source: PackageReceiptSource::Isotope {
+                isotope_name: "aws-cli".to_string(),
+            },
+            metadata: PackageMetadata::default(),
+        };
+        assert!(
+            installed_package_matches_uninstall_name("awscli", None, &installed, &isotope_receipt)
+                .unwrap()
+        );
+        assert!(
+            installed_package_matches_uninstall_name(
+                "provider-name",
+                Some("awscli"),
+                &installed,
+                &isotope_receipt,
+            )
+            .unwrap()
+        );
+        assert!(
+            !installed_package_matches_uninstall_name(
+                "definitely-not-installed",
+                None,
+                &installed,
+                &isotope_receipt,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
     fn provider_resolution_covers_ambiguous_and_fallback_paths() {
         assert_eq!(
             package_install_root(Path::new("/tmp/opt"), "isotope:coverage-missing").unwrap(),
