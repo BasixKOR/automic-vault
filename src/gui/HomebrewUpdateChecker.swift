@@ -96,7 +96,6 @@ final class HomebrewUpdateChecker {
             return []
         }
 
-        _ = try runBrew(arguments: ["update"])
         let installedOutput = try runBrew(arguments: ["info", "--json=v2", "--installed"])
         let output = try runBrew(arguments: ["outdated", "--json=v2"])
         let installedPackages = try parseInstalledPackageNames(from: installedOutput)

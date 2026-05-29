@@ -2,7 +2,7 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class HomebrewUpdateCheckerTests: XCTestCase {
-    func testRefreshDrainsLargeHomebrewInfoOutput() throws {
+    func testRefreshDoesNotRunUpdateAndDrainsLargeHomebrewInfoOutput() throws {
         let brewPath = try installBrewFixture()
         let checker = HomebrewUpdateChecker(
             brewPath: brewPath.path,
@@ -38,9 +38,6 @@ final class HomebrewUpdateCheckerTests: XCTestCase {
         let script = """
         #!/bin/sh
         case "$*" in
-        "update")
-          exit 0
-          ;;
         "info --json=v2 --installed")
           cat <<'JSON'
         \(installedJSON)
