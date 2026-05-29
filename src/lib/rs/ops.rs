@@ -722,10 +722,24 @@ fn ensure_expected_codesign_identity(
     path: &Path,
     authorities: &[String],
 ) -> Result<(), String> {
-    let Some(expected) = required_codesign_identity()? else {
+    ensure_expected_codesign_identity_with_expected(
+        label,
+        path,
+        authorities,
+        required_codesign_identity()?,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_expected_codesign_identity_with_expected(
+    label: &str,
+    path: &Path,
+    authorities: &[String],
+    expected: Option<&str>,
+) -> Result<(), String> {
+    let Some(expected) = expected else {
         return Ok(());
     };
-
     match authorities.first() {
         Some(actual) if actual == expected => Ok(()),
         Some(actual) => Err(format!(
@@ -761,8 +775,17 @@ fn code_signature_authorities(path: &Path) -> Result<Vec<String>, String> {
         .arg(path)
         .output()
         .map_err(|err| format!("failed to run codesign for {}: {err}", path.display()))?;
-    if !output.status.success() {
-        let stderr_lines = String::from_utf8_lossy(&output.stderr)
+    code_signature_authorities_from_output(path, output.status.success(), &output.stderr)
+}
+
+#[cfg(target_os = "macos")]
+fn code_signature_authorities_from_output(
+    path: &Path,
+    status_success: bool,
+    stderr: &[u8],
+) -> Result<Vec<String>, String> {
+    if !status_success {
+        let stderr_lines = String::from_utf8_lossy(stderr)
             .lines()
             .map(str::to_string)
             .collect::<Vec<_>>();
@@ -773,7 +796,7 @@ fn code_signature_authorities(path: &Path) -> Result<Vec<String>, String> {
         ));
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = String::from_utf8_lossy(stderr);
     let authorities = stderr
         .lines()
         .filter_map(|line| line.strip_prefix("Authority="))
@@ -1213,6 +1236,66 @@ mod tests {
                 .unwrap_err()
                 .contains("invalid av install target")
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn codesign_helpers_parse_authorities_and_identity_errors() {
+        let path = Path::new("/tmp/staged-av");
+        let authorities = code_signature_authorities_from_output(
+            path,
+            true,
+            b"Executable=/tmp/staged-av\nAuthority=Developer ID Application: Example\nAuthority=Apple Root CA\n",
+        )
+        .unwrap();
+        assert_eq!(
+            authorities,
+            vec![
+                "Developer ID Application: Example".to_string(),
+                "Apple Root CA".to_string()
+            ]
+        );
+
+        assert!(
+            code_signature_authorities_from_output(path, true, b"Executable=/tmp/staged-av\n")
+                .unwrap_err()
+                .contains("has no signing authority")
+        );
+        assert!(
+            code_signature_authorities_from_output(
+                path,
+                false,
+                b"/tmp/staged-av: code object is not signed at all\n"
+            )
+            .unwrap_err()
+            .contains("code object is not signed at all")
+        );
+
+        assert!(
+            ensure_expected_codesign_identity_with_expected(
+                "helper",
+                path,
+                &authorities,
+                Some("Developer ID Application: Example")
+            )
+            .is_ok()
+        );
+        assert!(
+            ensure_expected_codesign_identity_with_expected(
+                "helper",
+                path,
+                &authorities,
+                Some("Developer ID Application: Other")
+            )
+            .unwrap_err()
+            .contains("signature identity mismatch")
+        );
+        assert!(
+            ensure_expected_codesign_identity_with_expected("helper", path, &[], Some("Expected"))
+                .unwrap_err()
+                .contains("is not signed with expected identity")
+        );
+        assert!(ensure_expected_codesign_identity_with_expected("helper", path, &[], None).is_ok());
     }
 
     #[test]

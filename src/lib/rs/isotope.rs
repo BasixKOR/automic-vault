@@ -1757,6 +1757,14 @@ mod tests {
         }
     }
 
+    struct ReadOnlyCredentialStore;
+
+    impl CredentialHelperSecretStore for ReadOnlyCredentialStore {
+        fn load_secret(&self, key: &str) -> Result<String, String> {
+            Ok(format!("secret:{key}"))
+        }
+    }
+
     struct FdGuard {
         fd: i32,
     }
@@ -2213,6 +2221,23 @@ mod tests {
 
         let err = parse_save_key("av save", &[OsString::from_vec(vec![0xff])]).unwrap_err();
         assert_eq!(err, "secret key must be valid UTF-8");
+    }
+
+    #[test]
+    fn credential_helper_secret_store_defaults_are_read_only() {
+        let store = ReadOnlyCredentialStore;
+
+        assert_eq!(
+            store.load_secret_if_present("TOKEN").unwrap(),
+            Some("secret:TOKEN".to_string())
+        );
+        assert!(store.secret_exists("TOKEN").unwrap());
+        assert!(
+            store
+                .store_secret("TOKEN", "value")
+                .unwrap_err()
+                .contains("read-only")
+        );
     }
 
     #[test]
@@ -2908,9 +2933,41 @@ mod tests {
         #[cfg(target_os = "macos")]
         {
             assert!(keychain_read_secret("svc\0bad", "account").is_err());
+            assert!(keychain_read_secret_if_present("svc\0bad", "account").is_err());
+            assert!(keychain_secret_exists("svc", "account\0bad").is_err());
             assert!(keychain_write_secret("svc", "account\0bad", "value").is_err());
             assert!(keychain_write_secret("svc", "account", "value\0bad").is_err());
             assert!(post_distributed_notification("bad\0notice").is_err());
+            assert!(post_distributed_notification_with_object("bad\0notice", "object").is_err());
+            assert!(post_distributed_notification_with_object("notice", "bad\0object").is_err());
+            assert_eq!(unsafe { take_bridge_string(std::ptr::null_mut()) }, None);
+
+            let missing_account = format!(
+                "coverage-missing-{}-{}",
+                std::process::id(),
+                OffsetDateTime::now_utc().unix_timestamp_nanos()
+            );
+            assert_eq!(
+                keychain_read_secret_if_present(KEYCHAIN_SERVICE, &missing_account).unwrap(),
+                None
+            );
+            assert!(!keychain_secret_exists(KEYCHAIN_SERVICE, &missing_account).unwrap());
+            assert!(
+                keychain_read_secret(KEYCHAIN_SERVICE, &missing_account)
+                    .unwrap_err()
+                    .contains("could not be found")
+            );
+
+            let store = KeychainCredentialStore;
+            assert!(CredentialHelperSecretStore::load_secret(&store, "bad\0key").is_err());
+            assert!(
+                CredentialHelperSecretStore::load_secret_if_present(&store, "bad\0key").is_err()
+            );
+            assert!(CredentialHelperSecretStore::secret_exists(&store, "bad\0key").is_err());
+            assert!(
+                CredentialHelperSecretStore::store_secret(&store, "bad\0key", "value").is_err()
+            );
+            assert!(CredentialStore::store_secret(&store, "bad\0key", "value").is_err());
         }
     }
 
