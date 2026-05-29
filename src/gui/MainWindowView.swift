@@ -705,9 +705,15 @@ private struct HardenTraceStroke: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let cornerRadius: CGFloat = 8
-    private let cycleDuration: TimeInterval = 1.8
-    private let minimumTraceLength: CGFloat = 0.16
-    private let maximumTraceLength: CGFloat = 0.42
+    private let cycleDuration: TimeInterval = 1.90
+    private let minimumTraceLength: CGFloat = 0.04
+    private let maximumTraceLength: CGFloat = 0.29
+    private let growDuration: CGFloat = 0.80
+    private let holdDuration: CGFloat = 0.10
+    private let baseStrokeOpacity = 0.42
+    private let traceStrokeWidth = 1.8
+    private let shadowRadius = 4.0
+    private let shadowOpacity = 0.76
 
     var body: some View {
         Group {
@@ -730,7 +736,7 @@ private struct HardenTraceStroke: View {
         let traceLength = reduceMotion ? maximumTraceLength : traceLength(at: phase)
         return ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(AVGlassPalette.hardenTrace.opacity(0.42), lineWidth: 1)
+                .strokeBorder(AVGlassPalette.hardenTrace.opacity(baseStrokeOpacity), lineWidth: 1)
             traceSegments(endingAt: phase, length: traceLength)
         }
     }
@@ -747,8 +753,6 @@ private struct HardenTraceStroke: View {
     }
 
     private func traceLength(at phase: CGFloat) -> CGFloat {
-        let growDuration: CGFloat = 0.36
-        let holdDuration: CGFloat = 0.12
         let wavePhase = phase.truncatingRemainder(dividingBy: 1)
 
         let wave: CGFloat
@@ -774,9 +778,16 @@ private struct HardenTraceStroke: View {
             .trim(from: start, to: end)
             .stroke(
                 AVGlassPalette.hardenTrace,
-                style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(
+                    lineWidth: traceStrokeWidth,
+                    lineCap: .round,
+                    lineJoin: .round
+                )
             )
-            .shadow(color: AVGlassPalette.hardenTrace.opacity(0.76), radius: 4)
+            .shadow(
+                color: AVGlassPalette.hardenTrace.opacity(shadowOpacity),
+                radius: shadowRadius
+            )
     }
 }
 
