@@ -9797,6 +9797,34 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn secret_scanner_warnings_cover_path_and_source_only_errors() {
+        let report = SecretScannerReport {
+            findings: Vec::new(),
+            errors: vec![
+                SecretScannerError {
+                    source: "filesystem".to_string(),
+                    path: Some("/tmp/secret".to_string()),
+                    message: "permission denied".to_string(),
+                },
+                SecretScannerError {
+                    source: "detector".to_string(),
+                    path: None,
+                    message: "unavailable".to_string(),
+                },
+            ],
+            summary: SecretScannerSummary {
+                scanned_files: 0,
+                findings: 0,
+                errors: 2,
+                isotope_detectors: 0,
+                file_probes: 0,
+            },
+        };
+
+        print_secret_scanner_warnings(&report, false);
+    }
+
+    #[test]
     fn package_info_metadata_helpers_cover_source_variants() {
         assert_eq!(
             explicit_requested_package_source(&RequestedPackage::HomebrewCask(
@@ -10852,6 +10880,74 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         )
         .unwrap_err();
         assert!(err.contains("not-a-registered-vendor is not registered"));
+
+        let err = run_i_package(
+            &config,
+            RequestedPackage::NpmPackage {
+                package: "@scope".to_string(),
+                version: None,
+            },
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("scoped npm package names"));
+
+        let err = run_i_package(
+            &config,
+            RequestedPackage::PipPackage("bad/name".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("pip package names must not contain path separators"));
+
+        let err = run_i_package(
+            &config,
+            RequestedPackage::Isotope("bad/name".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("qualified package name must not contain"));
+
+        assert!(
+            run_i_cask(
+                &config,
+                "missing-cask".to_string(),
+                "missing-cask".to_string(),
+                InstallIntent::Install,
+                None,
+            )
+            .unwrap_err()
+            .contains("no embedded cask metadata found")
+        );
+        assert!(
+            run_i_isotope(
+                &config,
+                "isotope:missing-isotope".to_string(),
+                "missing-isotope".to_string(),
+                true,
+                InstallIntent::Install,
+                None,
+            )
+            .unwrap_err()
+            .contains("unknown isotope")
+        );
+        assert!(
+            run_i_radioisotope(
+                &config,
+                "isotope:missing-radio".to_string(),
+                "missing-radio".to_string(),
+                InstallIntent::Install,
+                None,
+            )
+            .unwrap_err()
+            .contains("unknown isotope")
+        );
 
         for package_name in ["codex", "isotope:gh"] {
             remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
@@ -12924,6 +13020,25 @@ machine example.com login user password netrc-token
     }
 
     #[test]
+    fn perl_placeholder_prefers_staged_perl_dependency() {
+        let plan = fixed_i_plan("ack", "ack");
+        let installs = vec![InstalledFormula {
+            spec: FormulaSpec {
+                name: "perl".to_string(),
+                bottle_sha256: "sha256".to_string(),
+                bottle_url: "https://example.invalid/perl.tar.gz".to_string(),
+            },
+            keg_dir_name: "5.40.2".to_string(),
+            archive_path: PathBuf::from("/tmp/perl.tar.gz"),
+        }];
+
+        assert_eq!(
+            perl_placeholder_target(&plan, &installs),
+            "/opt/ack/bin/perl"
+        );
+    }
+
+    #[test]
     fn rewrite_text_rewrites_homebrew_perl_shebang() {
         let plan = fixed_i_plan("ack", "ack");
         let rules = build_rewrite_rules(&plan, &[]);
@@ -13067,6 +13182,38 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
                 .any(|window| window == b"lib/libpcre2-8.dylib")
         );
         assert!(fs::metadata(&path).unwrap().permissions().mode() & 0o200 != 0);
+    }
+
+    #[test]
+    fn relocate_file_rewrites_utf8_text_paths_and_skips_static_archives() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("ripgrep").join("14.1.1");
+        let path = root.join("lib/pkgconfig/libpcre2.pc");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "prefix=/opt/homebrew/opt/pcre2\n").unwrap();
+        let archive = root.join("lib/libpcre2.a");
+        fs::write(&archive, b"/opt/homebrew/opt/pcre2").unwrap();
+        let rules = vec![RewriteRule {
+            source: "/opt/homebrew/opt/pcre2".to_string(),
+            destination: "/opt/rg".to_string(),
+        }];
+
+        relocate_file(&path, &root, Path::new("/opt/rg"), "ripgrep", &rules, None).unwrap();
+        relocate_file(
+            &archive,
+            &root,
+            Path::new("/opt/rg"),
+            "ripgrep",
+            &rules,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "prefix=/opt/rg\n");
+        assert_eq!(
+            fs::read_to_string(&archive).unwrap(),
+            "/opt/homebrew/opt/pcre2"
+        );
     }
 
     #[test]
@@ -13479,6 +13626,16 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         write_executable(&plan.install_root.join("bin/bun"));
 
         assert!(vendor_dependency_is_current(&plan, &install).unwrap());
+        assert!(vendor_dependencies_are_current(&plan, std::slice::from_ref(&install)).unwrap());
+
+        let missing = fake_vendor_install("codex", &["codex"], "0.2.0");
+        assert!(!vendor_dependencies_are_current(&plan, &[missing]).unwrap());
+        assert!(vendor_dependencies_are_current(&plan, &[]).unwrap());
+        assert!(
+            install_vendor_copy_tree(&plan, &install, "pkg", None)
+                .unwrap_err()
+                .contains("has no download URL")
+        );
     }
 
     #[test]
@@ -14156,6 +14313,14 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         merge_path_into(&source_file, &target_file).unwrap();
 
         assert_eq!(fs::read(target_file).unwrap(), b"replacement");
+    }
+
+    #[test]
+    fn passwd_entry_returns_current_user_when_available() {
+        let uid = unsafe { libc::getuid() };
+        let (home, name) = passwd_entry(uid);
+
+        assert!(home.is_some() || name.is_some());
     }
 
     #[test]
@@ -17680,6 +17845,36 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn run_i_vendor_reports_missing_download_url() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        let package_name = "coverage-vendor-missing-url";
+        let install_root = package_install_root(&opt_root, package_name).unwrap();
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+        }
+        let package = fake_vendor_install(package_name, &["coverage-vendor"], "1.2.3").package;
+
+        let err = run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            package,
+            InstallIntent::Install,
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("has no download URL"));
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+        }
+    }
+
+    #[test]
     fn run_i_npm_and_pip_install_with_local_formula_tools() {
         let _env_lock = test_env_lock().lock().unwrap();
         let _package_lock = acquire_package_mutation_lock().unwrap();
@@ -18152,6 +18347,31 @@ EOF
 
         assert!(destination.join("pkg/bin/tool").is_file());
         assert!(destination.join("pkg/share/doc.txt").is_file());
+    }
+
+    #[test]
+    fn unpack_vendor_archive_reports_unknown_and_zip_failures() {
+        let temp = TempDir::new().unwrap();
+        let destination = temp.path().join("out");
+        fs::create_dir_all(&destination).unwrap();
+        let unsupported = temp.path().join("payload.bin");
+        fs::write(&unsupported, b"payload").unwrap();
+
+        assert!(
+            unpack_vendor_archive(&unsupported, &destination, "payload")
+                .unwrap_err()
+                .contains("unsupported vendor archive format")
+        );
+
+        #[cfg(target_os = "macos")]
+        {
+            let missing_zip = temp.path().join("missing.zip");
+            assert!(
+                unpack_vendor_archive(&missing_zip, &destination, "missing")
+                    .unwrap_err()
+                    .contains("failed to unpack vendor archive")
+            );
+        }
     }
 
     #[test]
