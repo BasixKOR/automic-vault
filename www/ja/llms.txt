@@ -4,5 +4,5 @@ Automic Vault は macOS 上の AI エージェント向けローカルセキュ�
 
 シークレットを平文ファイルから離し、承認されたツールだけに渡します。
 
-- Website: https://www.automicvault.com/ja/
-- Packages: https://www.automicvault.com/ja/pkg/
+- ウェブサイト: https://www.automicvault.com/ja/
+- パッケージ: https://www.automicvault.com/ja/pkg/

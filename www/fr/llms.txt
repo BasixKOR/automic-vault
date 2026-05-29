@@ -4,5 +4,5 @@ Automic Vault est une couche de sécurité locale pour agents IA sur macOS.
 
 Les secrets quittent les fichiers en clair et ne sont transmis qu'aux outils approuvés.
 
-- Website: https://www.automicvault.com/fr/
-- Packages: https://www.automicvault.com/fr/pkg/
+- Site web: https://www.automicvault.com/fr/
+- Paquets: https://www.automicvault.com/fr/pkg/

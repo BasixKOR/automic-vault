@@ -42,18 +42,18 @@
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
   <div class="site-shell" id="top">
     <header class="masthead">
-      <a class="brand" href="/fr/" aria-label="Automic Vault home">
+      <a class="brand" href="/fr/" aria-label="Accueil Automic Vault">
         <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
-      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span></button>
-      <nav class="nav" aria-label="Main navigation">
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Afficher ou masquer la navigation"><span></span><span></span></button>
+      <nav class="nav" aria-label="Navigation principale">
         <a href="#ranked">Limites</a>
         <a href="#secrets">Secrets</a>
         <a href="#approval">Approbation</a>
         <a href="#nucleus">Nucleus</a>
         <a href="/fr/pkg/">Paquets</a>
-        <a href="/fr/docs/">Docs</a>
+        <a href="/fr/docs/">Documentation</a>
         <a href="/fr/download/">Télécharger</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
@@ -67,7 +67,7 @@
             <h1 id="hero-title">Automic Vault</h1>
             <p class="lede">Automic Vault est une couche d&#x27;exécution locale pour macOS qui contrôle les secrets, les CLI et les installations de paquets utilisés par les agents de codage IA.</p>
           </div>
-          <aside class="hero-brief" aria-label="Current security posture">
+          <aside class="hero-brief" aria-label="État de sécurité actuel">
             <div>
               <span class="tiny-icon" aria-hidden="true"></span>
               <p>Les secrets restent dans un stockage adossé au trousseau jusqu&#x27;à ce que l&#x27;outil approuvé en ait besoin.</p>
@@ -89,7 +89,7 @@
         </div>
       </section>
       <section class="highlights" aria-labelledby="highlights-title">
-        <div class="section-label"><h2 id="highlights-title">Highlights</h2><span>security map</span></div>
+        <div class="section-label"><h2 id="highlights-title">Points forts</h2><span>carte de sécurité</span></div>
         <div class="highlight-grid">
           <a class="highlight-card accent-hot" href="#secrets">
             <span>01 / secrets</span>
@@ -109,16 +109,16 @@
           </a>
         </div>
       </section>
-      <section class="story-layout" id="ranked" aria-label="Automic Vault ranked features">
+      <section class="story-layout" id="ranked" aria-label="Fonctionnalités principales d&#x27;Automic Vault">
         <div class="story-main">
-          <div class="list-heading"><div><h2>Limites principales</h2><p>Ce qui change quand un agent peut exécuter des outils sur votre Mac.</p></div><span>v0 surface</span></div>
+          <div class="list-heading"><div><h2>Limites principales</h2><p>Ce qui change quand un agent peut exécuter des outils sur votre Mac.</p></div><span>surface v0</span></div>
           <article class="ranked-story feature-section" id="secrets">
             <span class="rank">1</span>
             <div>
               <p class="story-kicker">Secrets adossés au trousseau</p>
               <h3>Les outils reçoivent les secrets. Les agents, non.</h3>
               <p>Automic Vault ajoute une frontière aux outils critiques pour déplacer les identifiants hors des fichiers en clair vers un stockage local protégé. L&#x27;outil continue de fonctionner; l&#x27;agent perd le chemin de lecture facile.</p>
-              <ul class="story-tags" aria-label="Secret boundary details"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>
+              <ul class="story-tags" aria-label="Détails de la limite des secrets"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>
             </div>
           </article>
           <article class="ranked-story feature-section" id="approval">
@@ -127,7 +127,7 @@
               <p class="story-kicker">Portes d&#x27;approbation humaines</p>
               <h3>L&#x27;approbation doit vivre sous l&#x27;agent, pas en lui.</h3>
               <p>Les contrôles intégrés aux agents aident, mais un agent compromis contrôle sa propre surface de politique. Automic Vault place les portes dans la couche locale des outils, là où s&#x27;exécutent l&#x27;export de jetons, la publication de paquets et les autres actions sensibles.</p>
-              <div class="inline-prompt" aria-label="Example approval request"><span>Automic Vault</span><strong>Agent wants to run <code>npm publish</code>. Approve?</strong><i>Deny</i><i>Approve</i></div>
+              <div class="inline-prompt" aria-label="Exemple de demande d&#x27;approbation"><span>Automic Vault</span><strong>L&#x27;agent veut exécuter : <code>npm publish</code> Approuver ?</strong><i>Refuser</i><i>Approuver</i></div>
             </div>
           </article>
           <article class="ranked-story feature-section" id="nucleus">
@@ -136,7 +136,7 @@
               <p class="story-kicker">Gestionnaire de paquets Nucleus</p>
               <h3>Installez les outils de l&#x27;agent dans une racine qu&#x27;il ne peut pas réécrire.</h3>
               <p>Nucleus installe les paquets Homebrew, npm et PyPI dans des racines durcies. Les agents peuvent lancer les outils approuvés sans transformer l&#x27;environnement développeur en état ambiant modifiable.</p>
-              <div class="source-strip" aria-label="Package sources"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>
+              <div class="source-strip" aria-label="Sources des paquets"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>
             </div>
           </article>
           <article class="ranked-story feature-section" id="scanner">
@@ -154,21 +154,21 @@
               <p class="story-kicker">Automic Vault.app</p>
               <h3>Une surface Mac native pour contrôler les paquets.</h3>
               <p>Recherchez des paquets, inspectez les métadonnées, approuvez les installations avec Touch ID, suivez les mises à jour et utilisez la CLI av quand le terminal est la bonne interface.</p>
-              <figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="Automic Vault app showing package search and package details" width="1693" height="929"></figure>
+              <figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="Application Automic Vault affichant la recherche et les détails de paquets" width="1693" height="929"></figure>
             </div>
           </article>
         </div>
-        <aside class="side-rail" aria-label="Operational notes">
+        <aside class="side-rail" aria-label="Notes d&#x27;exploitation">
           <section>
-            <h2>Runtime</h2>
-            <article><span>release</span><strong>/opt</strong><p>Root-owned package installs.</p></article>
-            <article><span>stubs</span><strong>/usr/local/bin</strong><p>Stable command entrypoints.</p></article>
+            <h2>Exécution</h2>
+            <article><span>release</span><strong>/opt</strong><p>Installations de paquets détenues par root.</p></article>
+            <article><span>stubs</span><strong>/usr/local/bin</strong><p>Points d&#x27;entrée de commande stables.</p></article>
           </section>
           <section>
-            <h2>Case Files</h2>
-            <a class="rail-link" href="/fr/github-cli-token-security-ai-agents/"><span>gh</span><strong>GitHub CLI token security</strong></a>
-            <a class="rail-link" href="/fr/secure-aws-cli-credentials-ai-agents/"><span>aws</span><strong>Secure AWS CLI credentials</strong></a>
-            <a class="rail-link" href="/fr/ai-agent-approval-gates/"><span>gate</span><strong>AI agent approval gates</strong></a>
+            <h2>Cas pratiques</h2>
+            <a class="rail-link" href="/fr/github-cli-token-security-ai-agents/"><span>gh</span><strong>Sécurité des jetons GitHub CLI</strong></a>
+            <a class="rail-link" href="/fr/secure-aws-cli-credentials-ai-agents/"><span>aws</span><strong>Identifiants AWS CLI sécurisés</strong></a>
+            <a class="rail-link" href="/fr/ai-agent-approval-gates/"><span>gate</span><strong>Portes d&#x27;approbation pour agents IA</strong></a>
           </section>
         </aside>
       </section>
@@ -193,19 +193,19 @@
         </div>
       </section>
       <section class="final-cta" aria-labelledby="final-title">
-        <p class="eyebrow">Free and open source</p>
+        <p class="eyebrow">Gratuit et open source</p>
         <h2 id="final-title">Sécurisez la couche outil avant la prochaine exécution autonome.</h2>
-        <div><a class="button primary" href="/Automic Vault.dmg">Télécharger le .dmg</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">View source</a></div>
+        <div><a class="button primary" href="/Automic Vault.dmg">Télécharger le .dmg</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">Voir le code source</a></div>
       </section>
-      <nav class="language-links" aria-label="Language versions"><a href="/" lang="en">English</a> <a href="/ja/" lang="ja">日本語</a> <a href="/de/" lang="de">Deutsch</a> <a href="/fr/" lang="fr">Français</a> <a href="/zh-hans/" lang="zh-Hans">简体中文</a></nav>
+      <nav class="language-links" aria-label="Versions linguistiques"><a href="/" lang="en">English</a> <a href="/ja/" lang="ja">日本語</a> <a href="/de/" lang="de">Deutsch</a> <a href="/fr/" lang="fr">Français</a> <a href="/zh-hans/" lang="zh-Hans">简体中文</a></nav>
     </main>
     <footer class="site-footer">
       <p>&copy; 2026 Automic Vault.</p>
       <div class="footer-links">
-        <a href="/fr/about/">About</a>
-        <a href="/fr/security/">Security</a>
-        <a href="/fr/privacy/">Privacy</a>
-        <a href="/fr/terms/">Terms</a>
+        <a href="/fr/about/">À propos</a>
+        <a href="/fr/security/">Sécurité</a>
+        <a href="/fr/privacy/">Confidentialité</a>
+        <a href="/fr/terms/">Conditions</a>
         <a href="https://x.com/AutomicVault">X</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </div>

@@ -61,7 +61,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
             "リリース版のインストールは /opt に入り、/usr/local/bin のスタブから起動します。",
         ],
         "nav": ["境界", "シークレット", "承認", "Nucleus", "パッケージ", "ドキュメント", "ダウンロード"],
-        "actions": ["Download .dmg", "ドキュメントを読む", "スキャナーを実行"],
+        "actions": [".dmg をダウンロード", "ドキュメントを読む", "スキャナーを実行"],
         "highlights": [
             ["01 / secrets", "エージェントが読み取れる平文の認証情報ファイルをなくします。"],
             ["02 / approval", "機密性の高いツール操作が実行される場所に承認を置きます。"],
@@ -71,10 +71,10 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "storiesTitle": "主要な境界",
         "storiesLede": "エージェントが Mac 上でツールを実行できるときに変わること。",
         "stories": [
-            ["Keychain-backed secrets", "ツールはシークレットを受け取る。エージェントは受け取らない。", "Automic Vault は重要なツールに境界を追加し、認証情報を平文ファイルからローカルの保護ストレージへ移します。ツールは動き続け、エージェントは簡単な読み取り経路を失います。"],
-            ["Human approval gates", "承認はエージェントの内側ではなく下に置く。", "モデル内の制御も役立ちますが、侵害されたエージェントは自分のポリシー面を操作できます。Automic Vault はトークン出力、パッケージ公開、その他の機密操作が実行されるローカルツール層にゲートを置きます。"],
-            ["Nucleus package manager", "エージェントのツールを、書き換えられない root にインストール。", "Nucleus は Homebrew、npm、PyPI パッケージを強化された root にインストールします。エージェントは承認済みツールを実行できますが、開発環境を自由に書き換えられる状態にはしません。"],
-            ["Plaintext exposure scan", "実行前にエージェントから見えるものを探す。", "av secret-scanner は、ローカルファイルにすでに露出している認証情報を検索します。自律実行に広いファイルアクセスを渡す前の高速な事前確認に使えます。"],
+            ["Keychain ベースのシークレット", "ツールはシークレットを受け取る。エージェントは受け取らない。", "Automic Vault は重要なツールに境界を追加し、認証情報を平文ファイルからローカルの保護ストレージへ移します。ツールは動き続け、エージェントは簡単な読み取り経路を失います。"],
+            ["人間による承認ゲート", "承認はエージェントの内側ではなく下に置く。", "モデル内の制御も役立ちますが、侵害されたエージェントは自分のポリシー面を操作できます。Automic Vault はトークン出力、パッケージ公開、その他の機密操作が実行されるローカルツール層にゲートを置きます。"],
+            ["Nucleus パッケージマネージャー", "エージェントのツールを、書き換えられない root にインストール。", "Nucleus は Homebrew、npm、PyPI パッケージを強化された root にインストールします。エージェントは承認済みツールを実行できますが、開発環境を自由に書き換えられる状態にはしません。"],
+            ["平文露出スキャン", "実行前にエージェントから見えるものを探す。", "av secret-scanner は、ローカルファイルにすでに露出している認証情報を検索します。自律実行に広いファイルアクセスを渡す前の高速な事前確認に使えます。"],
             ["Automic Vault.app", "パッケージ制御のためのネイティブ Mac 画面。", "パッケージ検索、メタデータ確認、Touch ID での承認、アップデート確認を行い、端末が適した場面では av CLI を使えます。"],
         ],
         "fitTitle": "位置づけ",
@@ -82,7 +82,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "fit": [
             ["Homebrew", "パッケージマネージャー", "Automic Vault は馴染みのあるパッケージをインストールし、その下をエージェントが書き換えられる範囲を制限します。"],
             ["1Password", "シークレットマネージャー", "中央の vault はシークレットを管理します。Automic Vault は、ローカルツールがそのシークレットを受け取れるかを制御します。"],
-            ["Agent controls", "実行ポリシー", "エージェント側の制御は有用です。ツール層の制御は、モデルとプロンプトの下で残ります。"],
+            ["エージェント制御", "実行ポリシー", "エージェント側の制御は有用です。ツール層の制御は、モデルとプロンプトの下で残ります。"],
         ],
         "guidesTitle": "ガイド",
         "guidesKicker": "詳しい読み物",
@@ -97,8 +97,8 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
             "Riskante Tool-Aktionen können zur Laufzeit menschliche Freigabe verlangen.",
             "Release-Installationen liegen unter /opt, mit stabilen Stubs in /usr/local/bin.",
         ],
-        "nav": ["Grenzen", "Secrets", "Freigabe", "Nucleus", "Pakete", "Docs", "Download"],
-        "actions": ["Download .dmg", "Docs lesen", "Scanner starten"],
+        "nav": ["Grenzen", "Secrets", "Freigabe", "Nucleus", "Pakete", "Dokumentation", "Herunterladen"],
+        "actions": [".dmg herunterladen", "Dokumentation lesen", "Scanner starten"],
         "highlights": [
             ["01 / secrets", "Keine Klartext-Credential-Datei, die Agents auslesen können."],
             ["02 / approval", "Freigaben sitzen dort, wo sensitive Tool-Aktionen ausgeführt werden."],
@@ -108,10 +108,10 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "storiesTitle": "Wichtige Grenzen",
         "storiesLede": "Was sich ändert, wenn ein Agent Tools auf deinem Mac ausführen kann.",
         "stories": [
-            ["Keychain-backed secrets", "Tools bekommen Secrets. Agents nicht.", "Automic Vault ergänzt kritische Tools, damit Credentials aus Klartextdateien in lokalen geschützten Speicher wandern. Das Tool funktioniert weiter; der Agent verliert den einfachen Lesepfad."],
-            ["Human approval gates", "Freigabe gehört unter den Agent, nicht in ihn hinein.", "Agent-interne Kontrollen helfen, aber ein kompromittierter Agent kontrolliert seine eigene Policy-Fläche. Automic Vault setzt Gates an die lokale Tool-Schicht, wo Token-Export, Paketveröffentlichung und andere sensitive Aktionen laufen."],
-            ["Nucleus package manager", "Installiere Agent-Tools in eine Root, die er nicht umschreiben kann.", "Nucleus installiert Homebrew-, npm- und PyPI-Pakete in gehärtete Roots. Agents können genehmigte Tools ausführen, ohne die Entwicklerumgebung in beschreibbaren Umgebungszustand zu verwandeln."],
-            ["Plaintext exposure scan", "Finde, was ein Agent sehen kann, bevor du den Lauf startest.", "av secret-scanner sucht Credentials, die bereits in lokalen Dateien liegen. Nutze ihn als schnellen Preflight, bevor ein autonomer Lauf breiten Dateizugriff bekommt."],
+            ["Keychain-gestützte Secrets", "Tools bekommen Secrets. Agents nicht.", "Automic Vault ergänzt kritische Tools, damit Credentials aus Klartextdateien in lokalen geschützten Speicher wandern. Das Tool funktioniert weiter; der Agent verliert den einfachen Lesepfad."],
+            ["Menschliche Approval Gates", "Freigabe gehört unter den Agent, nicht in ihn hinein.", "Agent-interne Kontrollen helfen, aber ein kompromittierter Agent kontrolliert seine eigene Policy-Fläche. Automic Vault setzt Gates an die lokale Tool-Schicht, wo Token-Export, Paketveröffentlichung und andere sensitive Aktionen laufen."],
+            ["Nucleus-Paketmanager", "Installiere Agent-Tools in eine Root, die er nicht umschreiben kann.", "Nucleus installiert Homebrew-, npm- und PyPI-Pakete in gehärtete Roots. Agents können genehmigte Tools ausführen, ohne die Entwicklerumgebung in beschreibbaren Umgebungszustand zu verwandeln."],
+            ["Klartext-Exposure-Scan", "Finde, was ein Agent sehen kann, bevor du den Lauf startest.", "av secret-scanner sucht Credentials, die bereits in lokalen Dateien liegen. Nutze ihn als schnellen Preflight, bevor ein autonomer Lauf breiten Dateizugriff bekommt."],
             ["Automic Vault.app", "Eine native Mac-Oberfläche für Paketkontrolle.", "Suche Pakete, prüfe Metadaten, genehmige Installationen mit Touch ID, verfolge Updates und nutze die av CLI, wenn das Terminal die richtige Oberfläche ist."],
         ],
         "fitTitle": "Einordnung",
@@ -119,7 +119,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "fit": [
             ["Homebrew", "Paketmanager", "Automic Vault installiert bekannte Pakete und begrenzt danach, was Agents darunter umschreiben können."],
             ["1Password", "Secrets Manager", "Zentrale Vaults verwalten Secrets. Automic Vault kontrolliert, ob ein lokales Tool eines erhalten darf."],
-            ["Agent controls", "Ausführungsrichtlinie", "Agent-Kontrollen sind nützlich. Tool-Layer-Kontrollen bleiben unter Modell und Prompt bestehen."],
+            ["Agent-Kontrollen", "Ausführungsrichtlinie", "Agent-Kontrollen sind nützlich. Tool-Layer-Kontrollen bleiben unter Modell und Prompt bestehen."],
         ],
         "guidesTitle": "Guides",
         "guidesKicker": "Vertiefung",
@@ -134,7 +134,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
             "Les actions dangereuses des outils peuvent exiger une approbation humaine au moment de l'exécution.",
             "Les installations de release vivent sous /opt, avec des stubs stables dans /usr/local/bin.",
         ],
-        "nav": ["Limites", "Secrets", "Approbation", "Nucleus", "Paquets", "Docs", "Télécharger"],
+        "nav": ["Limites", "Secrets", "Approbation", "Nucleus", "Paquets", "Documentation", "Télécharger"],
         "actions": ["Télécharger le .dmg", "Lire la doc", "Lancer le scanner"],
         "highlights": [
             ["01 / secrets", "Plus de fichier d'identifiants en clair que les agents peuvent aspirer."],
@@ -182,10 +182,10 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "storiesTitle": "核心边界",
         "storiesLede": "当代理可以在你的 Mac 上运行工具时，真正改变的部分。",
         "stories": [
-            ["Keychain-backed secrets", "工具获得密钥。代理不会。", "Automic Vault 为关键工具加入边界，让凭据离开明文文件并进入本地受保护存储。工具继续工作，代理失去简单读取路径。"],
-            ["Human approval gates", "审批应位于代理之下，而不是代理内部。", "代理内置控制有帮助，但被攻破的代理会控制自己的策略面。Automic Vault 将门放在本地工具层，也就是令牌导出、软件包发布和其他敏感操作实际运行的位置。"],
-            ["Nucleus package manager", "把代理工具安装到它无法重写的 root 中。", "Nucleus 将 Homebrew、npm 和 PyPI 软件包安装到加固 root。代理可以运行已批准工具，但不会把开发环境变成可随意写入的环境状态。"],
-            ["Plaintext exposure scan", "运行前找出代理能看到什么。", "av secret-scanner 会搜索已经暴露在本地文件中的凭据。在给自主运行授予广泛文件访问前，可用它做快速预检。"],
+            ["Keychain 支持的密钥", "工具获得密钥。代理不会。", "Automic Vault 为关键工具加入边界，让凭据离开明文文件并进入本地受保护存储。工具继续工作，代理失去简单读取路径。"],
+            ["人工审批门", "审批应位于代理之下，而不是代理内部。", "代理内置控制有帮助，但被攻破的代理会控制自己的策略面。Automic Vault 将门放在本地工具层，也就是令牌导出、软件包发布和其他敏感操作实际运行的位置。"],
+            ["Nucleus 软件包管理器", "把代理工具安装到它无法重写的 root 中。", "Nucleus 将 Homebrew、npm 和 PyPI 软件包安装到加固 root。代理可以运行已批准工具，但不会把开发环境变成可随意写入的环境状态。"],
+            ["明文暴露扫描", "运行前找出代理能看到什么。", "av secret-scanner 会搜索已经暴露在本地文件中的凭据。在给自主运行授予广泛文件访问前，可用它做快速预检。"],
             ["Automic Vault.app", "用于软件包控制的原生 Mac 界面。", "搜索软件包、检查元数据、用 Touch ID 批准安装、跟踪更新；当终端更合适时使用 av CLI。"],
         ],
         "fitTitle": "定位",
@@ -193,7 +193,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "fit": [
             ["Homebrew", "软件包管理器", "Automic Vault 安装熟悉的软件包，然后限制代理能在其下方重写什么。"],
             ["1Password", "密钥管理器", "中心化 vault 管理密钥。Automic Vault 控制本地工具是否能接收某个密钥。"],
-            ["Agent controls", "执行策略", "代理层控制很有用。工具层控制位于模型和提示词下方，仍然存在。"],
+            ["代理控制", "执行策略", "代理层控制很有用。工具层控制位于模型和提示词下方，仍然存在。"],
         ],
         "guidesTitle": "指南",
         "guidesKicker": "深入阅读",
@@ -203,9 +203,227 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
     },
 }
 
+UI_COPY: dict[str, dict[str, str]] = {
+    "en": {
+        "about": "About",
+        "approvalPrompt": "Agent wants to run",
+        "approvalQuestion": "Approve?",
+        "approvalRequestAria": "Example approval request",
+        "approve": "Approve",
+        "brandHomeAria": "Automic Vault home",
+        "caseApproval": "AI agent approval gates",
+        "caseAws": "Secure AWS CLI credentials",
+        "caseFiles": "Case Files",
+        "caseGithub": "GitHub CLI token security",
+        "currentSecurityPostureAria": "Current security posture",
+        "deny": "Deny",
+        "dismissLanguageSuggestion": "Dismiss language suggestion",
+        "docs": "Docs",
+        "download": "Download",
+        "finalKicker": "Free and open source",
+        "highlights": "Highlights",
+        "home": "Home",
+        "languageSuggestionAria": "Language suggestion",
+        "languageSuggestionText": "Read this page in English",
+        "languageVersionsAria": "Language versions",
+        "mainNavigationAria": "Main navigation",
+        "operationalNotesAria": "Operational notes",
+        "packageSourcesAria": "Package sources",
+        "packages": "Packages",
+        "privacy": "Privacy",
+        "rankedFeaturesAria": "Automic Vault ranked features",
+        "releaseLabel": "release",
+        "releaseNote": "Root-owned package installs.",
+        "runtime": "Runtime",
+        "security": "Security",
+        "securityMap": "security map",
+        "secretBoundaryDetailsAria": "Secret boundary details",
+        "screenshotAlt": "Automic Vault app showing package search and package details",
+        "stableEntrypoints": "Stable command entrypoints.",
+        "stubsLabel": "stubs",
+        "terms": "Terms",
+        "toggleNavigationAria": "Toggle navigation",
+        "v0Surface": "v0 surface",
+        "viewSource": "View source",
+        "website": "Website",
+    },
+    "ja": {
+        "about": "概要",
+        "approvalPrompt": "エージェントが実行を要求しています:",
+        "approvalQuestion": "承認しますか？",
+        "approvalRequestAria": "承認リクエスト例",
+        "approve": "承認",
+        "brandHomeAria": "Automic Vault ホーム",
+        "caseApproval": "AI エージェント承認ゲート",
+        "caseAws": "AWS CLI 認証情報の保護",
+        "caseFiles": "ケースファイル",
+        "caseGithub": "GitHub CLI トークン保護",
+        "currentSecurityPostureAria": "現在のセキュリティ状態",
+        "deny": "拒否",
+        "dismissLanguageSuggestion": "言語提案を閉じる",
+        "docs": "ドキュメント",
+        "download": "ダウンロード",
+        "finalKicker": "無料のオープンソース",
+        "highlights": "ハイライト",
+        "home": "ホーム",
+        "languageSuggestionAria": "言語の提案",
+        "languageSuggestionText": "このページを日本語で読む",
+        "languageVersionsAria": "言語版",
+        "mainNavigationAria": "メインナビゲーション",
+        "operationalNotesAria": "運用メモ",
+        "packageSourcesAria": "パッケージソース",
+        "packages": "パッケージ",
+        "privacy": "プライバシー",
+        "rankedFeaturesAria": "Automic Vault の主要機能",
+        "releaseLabel": "リリース",
+        "releaseNote": "root 所有のパッケージインストール。",
+        "runtime": "実行環境",
+        "security": "セキュリティ",
+        "securityMap": "セキュリティマップ",
+        "secretBoundaryDetailsAria": "シークレット境界の詳細",
+        "screenshotAlt": "パッケージ検索と詳細を表示する Automic Vault アプリ",
+        "stableEntrypoints": "安定したコマンド入口。",
+        "stubsLabel": "スタブ",
+        "terms": "利用規約",
+        "toggleNavigationAria": "ナビゲーションを開閉",
+        "v0Surface": "v0 対象範囲",
+        "viewSource": "ソースを見る",
+        "website": "ウェブサイト",
+    },
+    "de": {
+        "about": "Über uns",
+        "approvalPrompt": "Agent möchte ausführen:",
+        "approvalQuestion": "Freigeben?",
+        "approvalRequestAria": "Beispiel für Freigabeanfrage",
+        "approve": "Freigeben",
+        "brandHomeAria": "Automic Vault Startseite",
+        "caseApproval": "Approval Gates für AI-Agents",
+        "caseAws": "AWS-CLI-Credentials schützen",
+        "caseFiles": "Fallbeispiele",
+        "caseGithub": "GitHub-CLI-Token schützen",
+        "currentSecurityPostureAria": "Aktueller Sicherheitsstatus",
+        "deny": "Ablehnen",
+        "dismissLanguageSuggestion": "Sprachvorschlag schließen",
+        "docs": "Dokumentation",
+        "download": "Herunterladen",
+        "finalKicker": "Kostenlos und Open Source",
+        "highlights": "Kernpunkte",
+        "home": "Startseite",
+        "languageSuggestionAria": "Sprachvorschlag",
+        "languageSuggestionText": "Diese Seite auf Deutsch lesen",
+        "languageVersionsAria": "Sprachversionen",
+        "mainNavigationAria": "Hauptnavigation",
+        "operationalNotesAria": "Betriebsnotizen",
+        "packageSourcesAria": "Paketquellen",
+        "packages": "Pakete",
+        "privacy": "Datenschutz",
+        "rankedFeaturesAria": "Automic Vault Hauptfunktionen",
+        "releaseLabel": "Release",
+        "releaseNote": "Paketinstallationen mit root-Besitz.",
+        "runtime": "Laufzeit",
+        "security": "Sicherheit",
+        "securityMap": "Sicherheitskarte",
+        "secretBoundaryDetailsAria": "Details zur Secret-Grenze",
+        "screenshotAlt": "Automic Vault App mit Paketsuche und Paketdetails",
+        "stableEntrypoints": "Stabile Befehlseinstiege.",
+        "stubsLabel": "Stubs",
+        "terms": "Bedingungen",
+        "toggleNavigationAria": "Navigation umschalten",
+        "v0Surface": "v0-Oberfläche",
+        "viewSource": "Quellcode ansehen",
+        "website": "Website",
+    },
+    "fr": {
+        "about": "À propos",
+        "approvalPrompt": "L'agent veut exécuter :",
+        "approvalQuestion": "Approuver ?",
+        "approvalRequestAria": "Exemple de demande d'approbation",
+        "approve": "Approuver",
+        "brandHomeAria": "Accueil Automic Vault",
+        "caseApproval": "Portes d'approbation pour agents IA",
+        "caseAws": "Identifiants AWS CLI sécurisés",
+        "caseFiles": "Cas pratiques",
+        "caseGithub": "Sécurité des jetons GitHub CLI",
+        "currentSecurityPostureAria": "État de sécurité actuel",
+        "deny": "Refuser",
+        "dismissLanguageSuggestion": "Fermer la suggestion de langue",
+        "docs": "Documentation",
+        "download": "Télécharger",
+        "finalKicker": "Gratuit et open source",
+        "highlights": "Points forts",
+        "home": "Accueil",
+        "languageSuggestionAria": "Suggestion de langue",
+        "languageSuggestionText": "Lire cette page en français",
+        "languageVersionsAria": "Versions linguistiques",
+        "mainNavigationAria": "Navigation principale",
+        "operationalNotesAria": "Notes d'exploitation",
+        "packageSourcesAria": "Sources des paquets",
+        "packages": "Paquets",
+        "privacy": "Confidentialité",
+        "rankedFeaturesAria": "Fonctionnalités principales d'Automic Vault",
+        "releaseLabel": "release",
+        "releaseNote": "Installations de paquets détenues par root.",
+        "runtime": "Exécution",
+        "security": "Sécurité",
+        "securityMap": "carte de sécurité",
+        "secretBoundaryDetailsAria": "Détails de la limite des secrets",
+        "screenshotAlt": "Application Automic Vault affichant la recherche et les détails de paquets",
+        "stableEntrypoints": "Points d'entrée de commande stables.",
+        "stubsLabel": "stubs",
+        "terms": "Conditions",
+        "toggleNavigationAria": "Afficher ou masquer la navigation",
+        "v0Surface": "surface v0",
+        "viewSource": "Voir le code source",
+        "website": "Site web",
+    },
+    "zh-Hans": {
+        "about": "关于",
+        "approvalPrompt": "代理想要运行：",
+        "approvalQuestion": "批准吗？",
+        "approvalRequestAria": "审批请求示例",
+        "approve": "批准",
+        "brandHomeAria": "Automic Vault 首页",
+        "caseApproval": "AI 代理审批门",
+        "caseAws": "保护 AWS CLI 凭据",
+        "caseFiles": "案例",
+        "caseGithub": "GitHub CLI 令牌安全",
+        "currentSecurityPostureAria": "当前安全状态",
+        "deny": "拒绝",
+        "dismissLanguageSuggestion": "关闭语言建议",
+        "docs": "文档",
+        "download": "下载",
+        "finalKicker": "免费开源",
+        "highlights": "亮点",
+        "home": "首页",
+        "languageSuggestionAria": "语言建议",
+        "languageSuggestionText": "用简体中文阅读本页",
+        "languageVersionsAria": "语言版本",
+        "mainNavigationAria": "主导航",
+        "operationalNotesAria": "运维备注",
+        "packageSourcesAria": "软件包来源",
+        "packages": "软件包",
+        "privacy": "隐私",
+        "rankedFeaturesAria": "Automic Vault 主要功能",
+        "releaseLabel": "发布版",
+        "releaseNote": "root 拥有的软件包安装。",
+        "runtime": "运行时",
+        "security": "安全",
+        "securityMap": "安全地图",
+        "secretBoundaryDetailsAria": "密钥边界详情",
+        "screenshotAlt": "显示软件包搜索和详情的 Automic Vault 应用",
+        "stableEntrypoints": "稳定的命令入口。",
+        "stubsLabel": "stub",
+        "terms": "条款",
+        "toggleNavigationAria": "切换导航",
+        "v0Surface": "v0 范围",
+        "viewSource": "查看源码",
+        "website": "网站",
+    },
+}
+
 ALIASED_TOPIC = {
     "pricing": {"ja": ("Automic Vault 価格", "Automic Vault は無料のオープンソースソフトウェアです。"), "de": ("Automic Vault Preise", "Automic Vault ist freie Open-Source-Software."), "fr": ("Tarifs Automic Vault", "Automic Vault est un logiciel open source gratuit."), "zh-Hans": ("Automic Vault 定价", "Automic Vault 是免费的开源软件。")},
-    "download": {"ja": ("Automic Vault ダウンロード", "macOS 用 Automic Vault を入手し、ローカルの AI エージェント実行を保護します。"), "de": ("Automic Vault Download", "Lade Automic Vault für macOS herunter und schütze lokale AI-Agent-Läufe."), "fr": ("Télécharger Automic Vault", "Téléchargez Automic Vault pour macOS et protégez les exécutions locales d'agents IA."), "zh-Hans": ("下载 Automic Vault", "获取 macOS 版 Automic Vault，保护本地 AI 代理运行。")},
+    "download": {"ja": ("Automic Vault ダウンロード", "macOS 用 Automic Vault を入手し、ローカルの AI エージェント実行を保護します。"), "de": ("Automic Vault herunterladen", "Lade Automic Vault für macOS herunter und schütze lokale AI-Agent-Läufe."), "fr": ("Télécharger Automic Vault", "Téléchargez Automic Vault pour macOS et protégez les exécutions locales d'agents IA."), "zh-Hans": ("下载 Automic Vault", "获取 macOS 版 Automic Vault，保护本地 AI 代理运行。")},
     "secretsManager": {"ja": ("AI エージェント向けシークレットマネージャー", "AI エージェントが平文ファイルを読まずに必要な認証情報を使えるようにします。"), "de": ("Secrets Manager für AI-Agents", "AI-Agents erhalten benötigte Credentials, ohne Klartextdateien lesen zu müssen."), "fr": ("Gestionnaire de secrets pour agents IA", "Les agents IA obtiennent les identifiants nécessaires sans lire les fichiers en clair."), "zh-Hans": ("面向 AI 代理的密钥管理器", "让 AI 代理无需读取明文文件也能使用必要凭据。")},
     "dotenv": {"ja": ("AI エージェントに .env を読ませない", ".env の常時露出を、承認されたツールへの制御された注入に置き換えます。"), "de": ("Verhindere, dass AI-Agents .env lesen", "Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools."), "fr": ("Empêcher les agents IA de lire .env", "Remplacez l'exposition permanente de .env par une injection contrôlée dans les outils approuvés."), "zh-Hans": ("阻止 AI 代理读取 .env", "用向已批准工具的受控注入替代持续暴露的 .env 文件。")},
     "apiKeys": {"ja": ("AI エージェント向け API キー管理", "CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。"), "de": ("API-Key-Management für AI-Agents", "Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus."), "fr": ("Gestion des clés API pour agents IA", "Gardez les jetons CLI et SDK hors du contexte modèle et de la configuration en clair."), "zh-Hans": ("面向 AI 代理的 API 密钥管理", "让 CLI 与 SDK 令牌远离模型上下文和明文配置。")},
@@ -274,6 +492,10 @@ def href(path: str, locale: Locale | None = None) -> str:
     return SITE_ORIGIN + locale_path(path, locale)
 
 
+def ui_copy(locale_code: str) -> dict[str, str]:
+    return UI_COPY.get(locale_code, UI_COPY["en"])
+
+
 def alternate_link_block(path: str, locales: list[Locale], indent: str = "  ") -> str:
     links = [f'{indent}<link rel="alternate" hreflang="en" href="{href(path)}">']
     for locale in locales:
@@ -285,8 +507,9 @@ def alternate_link_block(path: str, locales: list[Locale], indent: str = "  ") -
 
 
 def language_links(path: str, current: Locale, locales: list[Locale]) -> str:
+    ui = ui_copy(current.code)
     links = [f'<a href="{html.escape(locale_path(path, locale if locale.code != "en" else None))}" lang="{html.escape(locale.html_lang)}">{html.escape(locale.native_name)}</a>' for locale in locales]
-    return f'<nav class="language-links" aria-label="Language versions">{" ".join(links)}</nav>'
+    return f'<nav class="language-links" aria-label="{html.escape(ui["languageVersionsAria"], quote=True)}">{" ".join(links)}</nav>'
 
 
 def translated_page_records() -> list[dict[str, Any]]:
@@ -332,6 +555,7 @@ def generic_second_paragraph(locale_code: str) -> str:
 def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
     path = record["path"]
     t = record["translations"][locale.code]
+    ui = ui_copy(locale.code)
     root = rel_root(path, locale)
     canonical = href(path, locale)
     sections = "\n".join(
@@ -379,14 +603,14 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
 <body>
   <div class="site-shell i18n-page">
     <header class="masthead">
-      <a class="brand" href="{locale_path('/', locale)}" aria-label="Automic Vault home">
+      <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
         <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
-      <nav class="nav" aria-label="Main navigation">
-        <a href="{locale_path('/docs/', locale)}">Docs</a>
-        <a href="{locale_path('/security/', locale)}">Security</a>
-        <a href="{locale_path('/pkg/', locale)}">Packages</a>
+      <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
+        <a href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
+        <a href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
+        <a href="{locale_path('/pkg/', locale)}">{html.escape(ui["packages"])}</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
     </header>
@@ -396,8 +620,8 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
         <h1>{html.escape(t["h1"])}</h1>
         <p class="lede">{html.escape(t.get("lede", t["description"]))}</p>
         <div class="hero-actions">
-          <a class="button primary" href="{locale_path('/download/', locale)}">Download</a>
-          <a class="button secondary" href="{locale_path('/docs/', locale)}">Docs</a>
+          <a class="button primary" href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
         </div>
       </section>
 {sections}
@@ -406,8 +630,8 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
     <footer class="site-footer">
       <p>Automic Vault</p>
       <div class="footer-links">
-        <a href="{locale_path('/privacy/', locale)}">Privacy</a>
-        <a href="{locale_path('/terms/', locale)}">Terms</a>
+        <a href="{locale_path('/privacy/', locale)}">{html.escape(ui["privacy"])}</a>
+        <a href="{locale_path('/terms/', locale)}">{html.escape(ui["terms"])}</a>
         <a href="{locale_path('/llms.txt', locale)}">llms.txt</a>
       </div>
     </footer>
@@ -418,13 +642,14 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
 
 
 def render_llms(locale: Locale) -> str:
+    ui = ui_copy(locale.code)
     lines = {
         "ja": ["# Automic Vault", "Automic Vault は macOS 上の AI エージェント向けローカルセキュリティレイヤーです。", "シークレットを平文ファイルから離し、承認されたツールだけに渡します。"],
         "de": ["# Automic Vault", "Automic Vault ist eine lokale Sicherheitsschicht für AI-Agents auf macOS.", "Secrets verlassen Klartextdateien und werden nur an genehmigte Tools weitergegeben."],
         "fr": ["# Automic Vault", "Automic Vault est une couche de sécurité locale pour agents IA sur macOS.", "Les secrets quittent les fichiers en clair et ne sont transmis qu'aux outils approuvés."],
         "zh-Hans": ["# Automic Vault", "Automic Vault 是 macOS 上面向 AI 代理的本地安全层。", "密钥不再保存在明文文件中，只会传递给已批准的工具。"],
     }[locale.code]
-    return "\n\n".join(lines) + f"\n\n- Website: {href('/', locale)}\n- Packages: {href('/pkg/', locale)}\n"
+    return "\n\n".join(lines) + f"\n\n- {ui['website']}: {href('/', locale)}\n- {ui['packages']}: {href('/pkg/', locale)}\n"
 
 
 def render_i18n_js(locales: list[Locale]) -> str:
@@ -434,6 +659,9 @@ def render_i18n_js(locales: list[Locale]) -> str:
             "slug": locale.slug,
             "nativeName": locale.native_name,
             "languages": list(locale.browser_languages),
+            "suggestionAria": ui_copy(locale.code)["languageSuggestionAria"],
+            "suggestionText": ui_copy(locale.code)["languageSuggestionText"],
+            "dismissLabel": ui_copy(locale.code)["dismissLanguageSuggestion"],
         }
         for locale in locales
         if locale.code != "en"
@@ -456,12 +684,19 @@ def render_i18n_js(locales: list[Locale]) -> str:
       if (!response.ok) return;
       const banner = document.createElement("aside");
       banner.className = "i18n-suggestion";
-      banner.setAttribute("aria-label", "Language suggestion");
-      banner.innerHTML = `<a href="${{localized}}">Read this page in ${{match.nativeName}}</a><button type="button" aria-label="Dismiss language suggestion">×</button>`;
-      banner.querySelector("button").addEventListener("click", () => {{
+      banner.setAttribute("aria-label", match.suggestionAria);
+      const link = document.createElement("a");
+      link.href = localized;
+      link.textContent = match.suggestionText;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("aria-label", match.dismissLabel);
+      button.textContent = "×";
+      button.addEventListener("click", () => {{
         localStorage.setItem(dismissedKey, "1");
         banner.remove();
       }});
+      banner.append(link, button);
       document.body.appendChild(banner);
     }})
     .catch(() => {{}});
@@ -472,6 +707,7 @@ def render_i18n_js(locales: list[Locale]) -> str:
 def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
     t = record["translations"][locale.code]
     detail = HOME_DETAIL[locale.code]
+    ui = ui_copy(locale.code)
     canonical = href("/", locale)
     meta = "".join(f"<span>{html.escape(item)}</span>" for item in detail["meta"])
     brief = "\n".join(
@@ -492,12 +728,13 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
             ["#secrets", "#approval", "#nucleus", locale_path("/av-trace/", locale)],
         )
     )
+    approval_prompt = f'{html.escape(ui["approvalPrompt"])} <code>npm publish</code> {html.escape(ui["approvalQuestion"])}'
     story_extras = [
-        '<ul class="story-tags" aria-label="Secret boundary details"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>',
-        '<div class="inline-prompt" aria-label="Example approval request"><span>Automic Vault</span><strong>Agent wants to run <code>npm publish</code>. Approve?</strong><i>Deny</i><i>Approve</i></div>',
-        '<div class="source-strip" aria-label="Package sources"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>',
+        f'<ul class="story-tags" aria-label="{html.escape(ui["secretBoundaryDetailsAria"], quote=True)}"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>',
+        f'<div class="inline-prompt" aria-label="{html.escape(ui["approvalRequestAria"], quote=True)}"><span>Automic Vault</span><strong>{approval_prompt}</strong><i>{html.escape(ui["deny"])}</i><i>{html.escape(ui["approve"])}</i></div>',
+        f'<div class="source-strip" aria-label="{html.escape(ui["packageSourcesAria"], quote=True)}"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>',
         "<!-- no extra content -->",
-        '<figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="Automic Vault app showing package search and package details" width="1693" height="929"></figure>',
+        f'<figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="{html.escape(ui["screenshotAlt"], quote=True)}" width="1693" height="929"></figure>',
     ]
     stories = "\n".join(
         f"""          <article class="ranked-story feature-section" id="{story_id}">
@@ -562,12 +799,12 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
   <div class="site-shell" id="top">
     <header class="masthead">
-      <a class="brand" href="{locale_path('/', locale)}" aria-label="Automic Vault home">
+      <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
         <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
-      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span></button>
-      <nav class="nav" aria-label="Main navigation">
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="{html.escape(ui["toggleNavigationAria"], quote=True)}"><span></span><span></span></button>
+      <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
         <a href="#ranked">{html.escape(nav_labels[0])}</a>
         <a href="#secrets">{html.escape(nav_labels[1])}</a>
         <a href="#approval">{html.escape(nav_labels[2])}</a>
@@ -587,7 +824,7 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
             <h1 id="hero-title">Automic Vault</h1>
             <p class="lede">{html.escape(t["lede"])}</p>
           </div>
-          <aside class="hero-brief" aria-label="Current security posture">
+          <aside class="hero-brief" aria-label="{html.escape(ui["currentSecurityPostureAria"], quote=True)}">
 {brief}
           </aside>
         </div>
@@ -598,27 +835,27 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
         </div>
       </section>
       <section class="highlights" aria-labelledby="highlights-title">
-        <div class="section-label"><h2 id="highlights-title">Highlights</h2><span>security map</span></div>
+        <div class="section-label"><h2 id="highlights-title">{html.escape(ui["highlights"])}</h2><span>{html.escape(ui["securityMap"])}</span></div>
         <div class="highlight-grid">
 {highlights}
         </div>
       </section>
-      <section class="story-layout" id="ranked" aria-label="Automic Vault ranked features">
+      <section class="story-layout" id="ranked" aria-label="{html.escape(ui["rankedFeaturesAria"], quote=True)}">
         <div class="story-main">
-          <div class="list-heading"><div><h2>{html.escape(detail["storiesTitle"])}</h2><p>{html.escape(detail["storiesLede"])}</p></div><span>v0 surface</span></div>
+          <div class="list-heading"><div><h2>{html.escape(detail["storiesTitle"])}</h2><p>{html.escape(detail["storiesLede"])}</p></div><span>{html.escape(ui["v0Surface"])}</span></div>
 {stories}
         </div>
-        <aside class="side-rail" aria-label="Operational notes">
+        <aside class="side-rail" aria-label="{html.escape(ui["operationalNotesAria"], quote=True)}">
           <section>
-            <h2>Runtime</h2>
-            <article><span>release</span><strong>/opt</strong><p>Root-owned package installs.</p></article>
-            <article><span>stubs</span><strong>/usr/local/bin</strong><p>Stable command entrypoints.</p></article>
+            <h2>{html.escape(ui["runtime"])}</h2>
+            <article><span>{html.escape(ui["releaseLabel"])}</span><strong>/opt</strong><p>{html.escape(ui["releaseNote"])}</p></article>
+            <article><span>{html.escape(ui["stubsLabel"])}</span><strong>/usr/local/bin</strong><p>{html.escape(ui["stableEntrypoints"])}</p></article>
           </section>
           <section>
-            <h2>Case Files</h2>
-            <a class="rail-link" href="{locale_path('/github-cli-token-security-ai-agents/', locale)}"><span>gh</span><strong>GitHub CLI token security</strong></a>
-            <a class="rail-link" href="{locale_path('/secure-aws-cli-credentials-ai-agents/', locale)}"><span>aws</span><strong>Secure AWS CLI credentials</strong></a>
-            <a class="rail-link" href="{locale_path('/ai-agent-approval-gates/', locale)}"><span>gate</span><strong>AI agent approval gates</strong></a>
+            <h2>{html.escape(ui["caseFiles"])}</h2>
+            <a class="rail-link" href="{locale_path('/github-cli-token-security-ai-agents/', locale)}"><span>gh</span><strong>{html.escape(ui["caseGithub"])}</strong></a>
+            <a class="rail-link" href="{locale_path('/secure-aws-cli-credentials-ai-agents/', locale)}"><span>aws</span><strong>{html.escape(ui["caseAws"])}</strong></a>
+            <a class="rail-link" href="{locale_path('/ai-agent-approval-gates/', locale)}"><span>gate</span><strong>{html.escape(ui["caseApproval"])}</strong></a>
           </section>
         </aside>
       </section>
@@ -629,19 +866,19 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
         </div>
       </section>
       <section class="final-cta" aria-labelledby="final-title">
-        <p class="eyebrow">Free and open source</p>
+        <p class="eyebrow">{html.escape(ui["finalKicker"])}</p>
         <h2 id="final-title">{html.escape(detail["final"])}</h2>
-        <div><a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">View source</a></div>
+        <div><a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">{html.escape(ui["viewSource"])}</a></div>
       </section>
       {language_links("/", locale, locales)}
     </main>
     <footer class="site-footer">
       <p>&copy; 2026 Automic Vault.</p>
       <div class="footer-links">
-        <a href="{locale_path('/about/', locale)}">About</a>
-        <a href="{locale_path('/security/', locale)}">Security</a>
-        <a href="{locale_path('/privacy/', locale)}">Privacy</a>
-        <a href="{locale_path('/terms/', locale)}">Terms</a>
+        <a href="{locale_path('/about/', locale)}">{html.escape(ui["about"])}</a>
+        <a href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
+        <a href="{locale_path('/privacy/', locale)}">{html.escape(ui["privacy"])}</a>
+        <a href="{locale_path('/terms/', locale)}">{html.escape(ui["terms"])}</a>
         <a href="https://x.com/AutomicVault">X</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </div>
