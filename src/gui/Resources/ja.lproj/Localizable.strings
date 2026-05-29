@@ -126,6 +126,7 @@
 "Homepage" = "ホームページ";
 "Immutable" = "不変";
 "Install" = "インストール";
+"Install All" = "すべてインストール";
 "Install Automic Vault CLI" = "Automic Vault CLIをインストール";
 "Install Complete" = "インストール完了";
 "Install Halted" = "インストール停止";

@@ -102,6 +102,33 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["brew:uv"])
     }
 
+    func testPackagePackInstallTargetsUseSourceQualifiedNames() {
+        XCTAssertEqual(
+            PackagePack.agent.installPackageNames.prefix(2),
+            ["cask:codex", "brew:claude-code"]
+        )
+        XCTAssertEqual(
+            PackagePack.agenticToolkit.installPackageNames.first,
+            "brew:ffmpeg-full"
+        )
+        XCTAssertEqual(
+            PackagePack.unixPlusPlus.installPackageNames.first,
+            "brew:bat"
+        )
+        XCTAssertEqual(
+            PackagePack.agent.installPackageNames.count,
+            PackagePack.agent.packageNames.count
+        )
+        XCTAssertEqual(
+            PackagePack.agenticToolkit.installPackageNames.count,
+            PackagePack.agenticToolkit.packageNames.count
+        )
+        XCTAssertEqual(
+            PackagePack.unixPlusPlus.installPackageNames.count,
+            PackagePack.unixPlusPlus.packageNames.count
+        )
+    }
+
     func testAppBadgeCountCombinesNucleusOutdatedPackagesAndSecurityAlerts() {
         let snapshot = NucleusStatusSnapshot(
             installedCount: 10,
@@ -172,43 +199,6 @@ final class MainWindowModelTests: XCTestCase {
             model.searchDeactivationRequestID,
             initialDeactivationRequestID + 1
         )
-    }
-
-    @MainActor
-    func testPackSidebarRowsSelectPackagePackRecommendations() throws {
-        let agentPack = try XCTUnwrap(
-            PackageRecommendation.agentPack(missingPackageNames: ["codex", "mods"])
-        )
-        let unixPack = try XCTUnwrap(
-            PackageRecommendation.unixPlusPlusPack(missingPackageNames: ["eza"])
-        )
-        let model = MainWindowModel(initialPackRecommendations: [agentPack, unixPack])
-        defer { model.stop() }
-
-        XCTAssertFalse(MainWindowSection.librarySections.contains(.packs))
-        XCTAssertEqual(model.count(for: .packs), 2)
-
-        let package = try XCTUnwrap(model.packRecommendations.first)
-        model.selectPack(package)
-
-        XCTAssertEqual(model.selectedSection, .packs)
-        XCTAssertNil(model.activeSidebarSection)
-        XCTAssertEqual(model.activeSidebarPackID, PackageRecommendation.agentPackName)
-        XCTAssertEqual(
-            model.displayedPackages.map(\.selectionID),
-            [PackageRecommendation.agentPackName]
-        )
-        XCTAssertEqual(package.selectionID, PackageRecommendation.agentPackName)
-        XCTAssertEqual(model.displayName(for: package), PackageRecommendation.agentPackName)
-        XCTAssertEqual(model.selectedPackage?.selectionID, PackageRecommendation.agentPackName)
-        XCTAssertEqual(model.dossierPrimaryPackageAction(for: agentPack.detail), .install)
-
-        model.requestDossierPackageAction(.install, detail: agentPack.detail, package: package)
-
-        let request = try XCTUnwrap(model.packageOperationRequest)
-        XCTAssertEqual(request.kind, .install)
-        XCTAssertEqual(request.packageNames, ["cask:codex", "brew:mods"])
-        XCTAssertEqual(request.displayName, PackageRecommendation.agentPackName)
     }
 
     @MainActor

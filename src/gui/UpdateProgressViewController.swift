@@ -128,6 +128,8 @@ final class UpdateProgressViewModel: ObservableObject {
     private var successOperationTitle = L10n.string("Update Complete")
     private var failureOperationTitle = L10n.string("Update Halted")
     private var activePrimaryTitle = L10n.string("Updating")
+    private var packageCountLabel: (Int) -> String =
+        UpdateProgressViewModel.outdatedPackageCountText
     private var hasLoggedResolving = false
     private var lastActivePackage: String?
 
@@ -188,7 +190,8 @@ final class UpdateProgressViewModel: ObservableObject {
         idleStatus: String,
         successOperation: String,
         failureOperation: String,
-        activePrimaryTitle: String = L10n.string("Updating")
+        activePrimaryTitle: String = L10n.string("Updating"),
+        packageCountLabel: ((Int) -> String)? = nil
     ) {
         self.title = title
         operation = awaitingClearance
@@ -196,6 +199,7 @@ final class UpdateProgressViewModel: ObservableObject {
         successOperationTitle = successOperation
         failureOperationTitle = failureOperation
         self.activePrimaryTitle = activePrimaryTitle
+        self.packageCountLabel = packageCountLabel ?? Self.outdatedPackageCountText
         terminalStage = nil
     }
 
@@ -498,6 +502,10 @@ final class UpdateProgressViewModel: ObservableObject {
     }
 
     private func packageCountText(_ count: Int) -> String {
+        packageCountLabel(count)
+    }
+
+    private static func outdatedPackageCountText(_ count: Int) -> String {
         count == 1
             ? L10n.string("1 outdated package")
             : L10n.format("%d outdated packages", count)
@@ -541,7 +549,8 @@ final class UpdateProgressViewController: NSViewController {
         idleStatus: String,
         successOperation: String,
         failureOperation: String,
-        activePrimaryTitle: String = L10n.string("Updating")
+        activePrimaryTitle: String = L10n.string("Updating"),
+        packageCountLabel: ((Int) -> String)? = nil
     ) {
         model.configure(
             title: title,
@@ -549,7 +558,8 @@ final class UpdateProgressViewController: NSViewController {
             idleStatus: idleStatus,
             successOperation: successOperation,
             failureOperation: failureOperation,
-            activePrimaryTitle: activePrimaryTitle
+            activePrimaryTitle: activePrimaryTitle,
+            packageCountLabel: packageCountLabel
         )
     }
 

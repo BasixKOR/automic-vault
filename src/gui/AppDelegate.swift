@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeIsotopeApprovalID: String?
     private var activeGateApprovalID: String?
     private var containmentWindowControllers: [String: ContainmentLogWindowController] = [:]
+    private var packWindowControllers: [PackagePack.ID: PackWindowController] = [:]
     private var remoteDatabaseRefreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -100,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu(title: L10n.string("Main Menu"))
         menu.addItem(makeAppMenuItem())
         menu.addItem(makeEditMenuItem())
+        menu.addItem(makePacksMenuItem())
         menu.addItem(makeWindowMenuItem())
         return menu
     }
@@ -181,6 +183,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         editItem.submenu = editMenu
         return editItem
+    }
+
+    private func makePacksMenuItem() -> NSMenuItem {
+        let packsItem = NSMenuItem()
+        let packsMenu = NSMenu(title: L10n.string("Packs"))
+
+        for pack in PackagePack.allCases {
+            let item = packsMenu.addItem(
+                withTitle: pack.title,
+                action: #selector(openPackWindow(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = pack.id
+            item.image = NSImage(
+                systemSymbolName: pack.systemImage,
+                accessibilityDescription: pack.title
+            )
+        }
+
+        packsItem.submenu = packsMenu
+        return packsItem
     }
 
     private func makeWindowMenuItem() -> NSMenuItem {
@@ -331,6 +355,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? MainWindowController)?.requestRefresh()
+    }
+
+    @objc private func openPackWindow(_ sender: NSMenuItem) {
+        guard let packID = sender.representedObject as? PackagePack.ID,
+              let pack = PackagePack(rawValue: packID) else {
+            return
+        }
+
+        let controller: PackWindowController
+        if let existing = packWindowControllers[pack.id] {
+            controller = existing
+        } else {
+            controller = PackWindowController(pack: pack) { [weak self] in
+                self?.statusStore.requestRefresh()
+            }
+            packWindowControllers[pack.id] = controller
+        }
+
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     #if DEBUG

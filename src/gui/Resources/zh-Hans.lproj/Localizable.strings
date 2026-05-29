@@ -126,6 +126,7 @@
 "Homepage" = "主页";
 "Immutable" = "不可变";
 "Install" = "安装";
+"Install All" = "全部安装";
 "Install Automic Vault CLI" = "安装Automic Vault CLI";
 "Install Complete" = "安装完成";
 "Install Halted" = "安装已停止";

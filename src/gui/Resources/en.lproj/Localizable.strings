@@ -126,6 +126,7 @@
 "Homepage" = "Homepage";
 "Immutable" = "Immutable";
 "Install" = "Install";
+"Install All" = "Install All";
 "Install Automic Vault CLI" = "Install Automic Vault CLI";
 "Install Complete" = "Install Complete";
 "Install Halted" = "Install Halted";

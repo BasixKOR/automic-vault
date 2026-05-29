@@ -386,6 +386,15 @@ copy_localizations() {
   done
 }
 
+copy_pack_images() {
+  local destination_dir="$1"
+  local source_dir="$GUI_DIR/Resources/PackImages"
+
+  [[ -d "$source_dir" ]] || return
+  rm -rf "$destination_dir/PackImages"
+  cp -R "$source_dir" "$destination_dir/"
+}
+
 cli_title "Build Automic Vault.app"
 cli_info "Configuration: $CONFIGURATION"
 cli_info "Output: $APP_DIR"
@@ -456,6 +465,7 @@ cp "$ENRICHMENT_MANIFESTS_JSON" "$RESOURCES_DIR/enrichment-manifests.json"
 cp "$RUST_BIN_DIR/nuke-helper" "$HELPER_EXECUTABLE"
 cp "$ICON_ICNS" "$RESOURCES_DIR/$ICON_NAME.icns"
 copy_localizations "$RESOURCES_DIR"
+copy_pack_images "$RESOURCES_DIR"
 cp "$ICON_ICNS" "$MENU_RESOURCES_DIR/$MENU_APP_ICON_NAME.icns"
 cp "$RUST_BIN_DIR/av" "$MENU_RESOURCES_DIR/av"
 cp "$ROOT_DIR/data/combined.json" "$MENU_RESOURCES_DIR/combined.json"
