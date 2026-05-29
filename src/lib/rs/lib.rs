@@ -11611,7 +11611,7 @@ machine example.com login user password netrc-token
             "docker",
             "gh",
             "kubernetes-cli",
-            "supabase-cli",
+            "supabase",
             "terraform",
         ] {
             assert!(
