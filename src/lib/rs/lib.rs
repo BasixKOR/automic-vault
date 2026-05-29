@@ -4337,6 +4337,12 @@ fn resolve_isotope_archive_root(unpack_root: &Path) -> Result<PathBuf, String> {
         .map_err(|err| format!("failed to read {}: {err}", unpack_root.display()))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("failed to read {}: {err}", unpack_root.display()))?;
+    if entries
+        .iter()
+        .any(|entry| isotope_archive_top_level_entry_is_install_layout(&entry.file_name()))
+    {
+        return Ok(unpack_root.to_path_buf());
+    }
     if entries.len() == 1 {
         let path = entries.remove(0).path();
         if path.is_dir() {
@@ -4344,6 +4350,22 @@ fn resolve_isotope_archive_root(unpack_root: &Path) -> Result<PathBuf, String> {
         }
     }
     Ok(unpack_root.to_path_buf())
+}
+
+fn isotope_archive_top_level_entry_is_install_layout(name: &OsStr) -> bool {
+    matches!(
+        name.as_bytes(),
+        b".bottle"
+            | b".pkg"
+            | b"bin"
+            | b"etc"
+            | b"include"
+            | b"lib"
+            | b"libexec"
+            | b"sbin"
+            | b"share"
+            | b"ssl"
+    )
 }
 
 fn download_cask_archive(
@@ -17896,12 +17918,24 @@ EOF
                 ("share/doc/aws.txt", b"aws docs\n"),
             ],
         );
+        let bin_only_archive = temp.path().join("supabase-cli.tgz");
+        write_test_archive(
+            &bin_only_archive,
+            &[
+                ("bin/supabase", b"#!/bin/sh\nprintf supabase\\n\n"),
+                ("bin/supabase-go", b"#!/bin/sh\nprintf supabase-go\\n\n"),
+            ],
+        );
         let (base, server) = start_test_http_server(
             vec![
                 ("/gh.tar.gz".to_string(), fs::read(&nested_archive).unwrap()),
                 ("/aws-cli.tgz".to_string(), fs::read(&flat_archive).unwrap()),
+                (
+                    "/supabase-cli.tgz".to_string(),
+                    fs::read(&bin_only_archive).unwrap(),
+                ),
             ],
-            2,
+            3,
         );
 
         let isotope = IsotopePackageData {
@@ -17969,6 +18003,35 @@ EOF
         install_isotope_root(&aws_plan, &radioisotope, &[], None).unwrap();
         assert!(is_executable(&aws_plan.install_root.join("bin/aws")));
         assert!(aws_plan.install_root.join("share/doc/aws.txt").is_file());
+
+        let bin_only_isotope = IsotopePackageData {
+            name: "isotope:supabase-cli".to_string(),
+            replaces: Some("brew:supabase".to_string()),
+            modifies: None,
+            migrate: Some("/opt/iso/supabase-cli/bin/supabase-go av-migrate \"$@\"".to_string()),
+            _repository: None,
+            _upstream_repository: None,
+            version: "2.101.0".to_string(),
+            release_url: Some("https://example.test/isotopes/supabase-cli".to_string()),
+            archive_url: Some(format!("{base}/supabase-cli.tgz")),
+            published_at: None,
+        };
+        let bin_only_plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "isotope:supabase-cli".to_string(),
+            root_formula: "supabase".to_string(),
+            stable_root: temp.path().join("opt/iso/supabase-cli"),
+            install_root: temp.path().join("opt/iso/supabase-cli"),
+            tmp_root: tmp_root.clone(),
+        };
+        install_isotope_root(&bin_only_plan, &bin_only_isotope, &[], None).unwrap();
+        assert!(is_executable(
+            &bin_only_plan.install_root.join("bin/supabase")
+        ));
+        assert!(is_executable(
+            &bin_only_plan.install_root.join("bin/supabase-go")
+        ));
+        assert!(!bin_only_plan.install_root.join("supabase").exists());
 
         let missing_archive = IsotopePackageData {
             archive_url: None,
