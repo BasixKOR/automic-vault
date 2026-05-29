@@ -579,7 +579,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func refreshStatusText(for snapshot: NucleusStatusSnapshot) -> String {
         switch snapshot.remoteDatabaseRefreshState {
         case .normal:
-            return formattedRefresh(snapshot.refreshedAt)
+            return formattedRefresh(snapshot.refreshedAt).capitalized
         case .pendingHelperInstallation:
             return "pending helper installation"
         }
