@@ -167,6 +167,23 @@ struct PackageRecord: Decodable, Equatable {
         )
     }
 
+    func clearingSecurityState() -> PackageRecord {
+        PackageRecord(
+            name: name,
+            source: source,
+            version: version,
+            description: description,
+            homepage: homepage,
+            latestVersion: latestVersion,
+            securityState: nil,
+            installRoot: installRoot,
+            installPackageNames: installPackageNames,
+            installedVersions: installedVersions,
+            isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
+            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
+        )
+    }
+
     var fallbackDetail: PackageDetail {
         PackageDetail(
             packageName: name,
@@ -593,6 +610,34 @@ struct PackageDetail: Decodable, Equatable {
             npmHomepage: npmHomepage,
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
+            installPackageNames: installPackageNames,
+            homebrewMigration: homebrewMigration,
+            versionOptions: versionOptions
+        )
+    }
+
+    func clearingSecurityState() -> PackageDetail {
+        PackageDetail(
+            packageName: packageName,
+            qualifiedName: qualifiedName,
+            installRoot: installRoot,
+            installed: installed,
+            source: source,
+            sourceError: sourceError,
+            aliases: aliases,
+            aliasesError: aliasesError,
+            installedVersion: installedVersion,
+            latestVersion: latestVersion,
+            latestVersionError: latestVersionError,
+            executablePaths: executablePaths,
+            executablePathsError: executablePathsError,
+            popularity: popularity,
+            lastUpdatedAt: lastUpdatedAt,
+            homebrewInfo: homebrewInfo,
+            homebrewInfoError: homebrewInfoError,
+            npmHomepage: npmHomepage,
+            npmPackageInfoError: npmPackageInfoError,
+            securityState: nil,
             installPackageNames: installPackageNames,
             homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
@@ -1112,6 +1157,20 @@ struct PackageSearchResult: Decodable, Equatable {
         )
     }
 
+    func clearingSecurityState() -> PackageSearchResult {
+        PackageSearchResult(
+            name: name,
+            source: source,
+            version: version,
+            description: description,
+            homepage: homepage,
+            dependencies: dependencies,
+            lastUpdatedAt: lastUpdatedAt,
+            securityState: nil,
+            pulseKind: pulseKind
+        )
+    }
+
     private static func localHazardDisplayName(for lookupName: String) -> String {
         if let formula = lookupName.strippingPrefix("brew:"), !formula.isEmpty {
             let prefix = macOSSystemDetectorPackageNames.contains(formula) ? "sys:" : "gone:"
@@ -1300,6 +1359,17 @@ struct PackageRecommendation: Equatable {
             return false
         }
         return installedVersion != latestVersion
+    }
+
+    func clearingSecurityState() -> PackageRecommendation {
+        PackageRecommendation(
+            packageName: packageName,
+            installedVersion: installedVersion,
+            latestVersion: latestVersion,
+            missingPackageNames: missingPackageNames,
+            detail: detail.clearingSecurityState(),
+            description: description
+        )
     }
 
     static func automicVaultCLT(

@@ -276,6 +276,8 @@ final class MainWindowModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
     private var loadingSectionKinds = Set<SectionPageKind>()
+    private var staleSectionKinds = Set<SectionPageKind>()
+    private var pendingHardeningSelection: PackageHardeningContext?
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
     private let securityCatalog: SecurityCatalog
 
@@ -406,6 +408,7 @@ final class MainWindowModel: ObservableObject {
         sectionPageTasks.values.forEach { $0.cancel() }
         sectionPageTasks.removeAll()
         loadingSectionKinds.removeAll()
+        staleSectionKinds.removeAll()
         updateSelectedSectionLoadingState()
     }
 
@@ -416,6 +419,8 @@ final class MainWindowModel: ObservableObject {
         isReloading = true
         lastErrorMessage = nil
         statusMessage = "Loading packages from the protocol daemon"
+        markDynamicSectionPagesStale()
+        preloadSidebarCountData()
 
         Task.detached(priority: .userInitiated) {
             let cltRecommendation = cliToolsRecommendationProvider()
@@ -620,6 +625,9 @@ final class MainWindowModel: ObservableObject {
         case .success(let helperResult):
             if request.isAutomicVaultCLT {
                 automicVaultCLTRecommendation = nil
+            }
+            if request.kind == .harden {
+                retireCompletedHardening(request)
             }
             if refreshAfterSuccess {
                 statusMessage = "\(helperResult.message); refreshing packages"
@@ -1277,7 +1285,7 @@ final class MainWindowModel: ObservableObject {
                 return package
             }
             let merged = mergeOutdatedState(into: record)
-            let detail = detailsByPackageName[package.selectionID] ?? package.detail
+            let detail = installedDetail(for: merged, fallback: package.detail)
             return PackagePresentation(
                 item: .installed(merged),
                 detail: detail,
@@ -1312,18 +1320,26 @@ final class MainWindowModel: ObservableObject {
 
             packages = installed.map { record in
                 let merged = mergeOutdatedState(into: record)
-                let detail = detailsByPackageName[merged.name] ?? merged.fallbackDetail
+                let detail = installedDetail(for: merged)
                 return PackagePresentation(
                     item: .installed(merged),
                     detail: detail,
                     freshness: Self.freshness(for: merged.name)
                 )
             }
-            if let selectedItemID,
-               allKnownPackages.contains(where: { $0.selectionID == selectedItemID }) {
-                loadSelectedDetailIfPossible()
-            } else {
-                selectedItemID = nil
+            let selectedPendingHardening = selectPendingHardeningPackageIfPossible()
+            if !selectedPendingHardening {
+                if pendingHardeningSelection != nil,
+                   selectedItemID != nil,
+                   selectedPackage == nil {
+                    selectedItemID = nil
+                }
+                if let selectedItemID,
+                   allKnownPackages.contains(where: { $0.selectionID == selectedItemID }) {
+                    loadSelectedDetailIfPossible()
+                } else {
+                    selectedItemID = nil
+                }
             }
             statusMessage = nil
             ensureSelectedSectionLoaded()
@@ -1365,7 +1381,7 @@ final class MainWindowModel: ObservableObject {
                 return package
             }
             let merged = mergeOutdatedState(into: record)
-            let detail = detailsByPackageName[package.selectionID] ?? package.detail
+            let detail = installedDetail(for: merged, fallback: package.detail)
             return PackagePresentation(
                 item: .installed(merged),
                 detail: detail,
@@ -1552,6 +1568,20 @@ final class MainWindowModel: ObservableObject {
         loadSectionPageIfNeeded(kind: .catalog)
     }
 
+    private func markDynamicSectionPagesStale() {
+        markSectionPageStale(kind: .geiger)
+        markSectionPageStale(kind: .pulse)
+    }
+
+    private func markSectionPageStale(kind: SectionPageKind) {
+        staleSectionKinds.insert(kind)
+        sectionPageTasks[kind]?.cancel()
+        sectionPageTasks[kind] = nil
+        loadingSectionKinds.remove(kind)
+        sectionPageRequestIDs[kind] = (sectionPageRequestIDs[kind] ?? 0) + 1
+        updateSelectedSectionLoadingState()
+    }
+
     private enum SectionPageKind: Sendable, Hashable {
         case geiger
         case catalog
@@ -1586,6 +1616,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func isSectionPageLoaded(_ kind: SectionPageKind) -> Bool {
+        guard staleSectionKinds.contains(kind) == false else {
+            return false
+        }
         switch kind {
         case .geiger:
             return geigerPackages.isEmpty == false || geigerTotalCount != nil
@@ -1627,6 +1660,7 @@ final class MainWindowModel: ObservableObject {
         }
         loadingSectionKinds.remove(kind)
         sectionPageTasks[kind] = nil
+        staleSectionKinds.remove(kind)
         updateSelectedSectionLoadingState()
         switch result {
         case .success(let page):
@@ -1674,6 +1708,99 @@ final class MainWindowModel: ObservableObject {
             return record.applying(outdated: outdated)
         }
         return record
+    }
+
+    private func installedDetail(
+        for record: PackageRecord,
+        fallback: PackageDetail? = nil
+    ) -> PackageDetail {
+        if let cached = detailsByPackageName[record.name],
+           !isStaleSecurityDetail(cached, for: record) {
+            return cached
+        }
+        if let cached = detailsByPackageName[record.name],
+           isStaleSecurityDetail(cached, for: record) {
+            detailsByPackageName[record.name] = nil
+        }
+        if let fallback, !isStaleSecurityDetail(fallback, for: record) {
+            return fallback
+        }
+        return record.fallbackDetail
+    }
+
+    private func isStaleSecurityDetail(
+        _ detail: PackageDetail,
+        for record: PackageRecord
+    ) -> Bool {
+        guard record.securityState?.needsMainWindowSecurityAlert != true else {
+            return false
+        }
+        return detail.securityState?.needsMainWindowSecurityAlert == true
+            || detail.packageName.isLocalDetectorDisplayPackageName
+            || detail.qualifiedName.isLocalDetectorDisplayPackageName
+    }
+
+    private func retireCompletedHardening(_ request: PackageOperationRequest) {
+        guard let context = PackageHardeningContext(request: request) else {
+            return
+        }
+
+        let selectedWasRemediated = selectedPackage.map(context.matches) ?? false
+        let immediateSelectionID = selectedWasRemediated
+            ? packages.first(where: context.matches)?.selectionID
+            : nil
+
+        packages = packages.retiringSecurityReview(matching: context)
+        catalogPackages = catalogPackages.retiringSecurityReview(matching: context)
+        pulsePackages = pulsePackages.retiringSecurityReview(matching: context)
+        searchResults = searchResults.retiringSecurityReview(matching: context)
+        geigerPackages.removeAll { context.matches($0) }
+        staleSectionKinds.insert(.geiger)
+
+        detailsByPackageName = detailsByPackageName.filter { key, detail in
+            !context.matches(key: key) && !context.matches(detail)
+        }
+        snapshot = snapshotWithHazardousPackageCount(geigerActionPackages.count)
+
+        guard selectedWasRemediated else {
+            return
+        }
+
+        pendingHardeningSelection = context
+        if let immediateSelectionID {
+            selectedItemID = immediateSelectionID
+            loadSelectedDetailIfPossible()
+        } else {
+            selectedItemID = nil
+            detailRequestID += 1
+            isLoadingDetail = false
+        }
+    }
+
+    @discardableResult
+    private func selectPendingHardeningPackageIfPossible() -> Bool {
+        guard let context = pendingHardeningSelection,
+              let package = packages.first(where: context.matches) else {
+            return false
+        }
+        pendingHardeningSelection = nil
+        selectedItemID = package.selectionID
+        loadSelectedDetailIfPossible()
+        return true
+    }
+
+    private func snapshotWithHazardousPackageCount(
+        _ hazardousPackageCount: Int
+    ) -> NucleusStatusSnapshot {
+        NucleusStatusSnapshot(
+            installedCount: snapshot.installedCount,
+            hazardousPackageCount: hazardousPackageCount,
+            outdatedPackages: snapshot.outdatedPackages,
+            homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
+            refreshedAt: snapshot.refreshedAt,
+            lastError: snapshot.lastError,
+            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+        )
     }
 
     private func homebrewOutdatedPackage(named packageName: String) -> OutdatedPackageRecord? {
@@ -1855,5 +1982,155 @@ private extension Array where Element == PackagePresentation {
                 presentationID: package.presentationID
             )
         }
+    }
+
+    func retiringSecurityReview(
+        matching context: PackageHardeningContext
+    ) -> [PackagePresentation] {
+        map { package in
+            guard context.matches(package) else {
+                return package
+            }
+
+            let item: PackageListItem
+            switch package.item {
+            case .installed(let record):
+                item = .installed(record.clearingSecurityState())
+            case .available(let result):
+                item = .available(result.clearingSecurityState())
+            case .recommendation(let recommendation):
+                item = .recommendation(recommendation.clearingSecurityState())
+            case .command:
+                item = package.item
+            }
+
+            return PackagePresentation(
+                item: item,
+                detail: package.detail?.clearingSecurityState(),
+                freshness: package.freshness,
+                presentationID: package.presentationID
+            )
+        }
+    }
+}
+
+private struct PackageHardeningContext {
+    private let identifiers: Set<String>
+
+    init?(request: PackageOperationRequest) {
+        guard request.kind == .harden else {
+            return nil
+        }
+
+        var identifiers = Set<String>()
+        for packageName in request.packageNames {
+            Self.insert(packageName, into: &identifiers)
+        }
+        Self.insert(request.migrationIsotopeName, into: &identifiers)
+
+        guard identifiers.isEmpty == false else {
+            return nil
+        }
+        self.identifiers = identifiers
+    }
+
+    func matches(_ package: PackagePresentation) -> Bool {
+        if let detail = package.detail,
+           matches(detail) {
+            return true
+        }
+
+        switch package.item {
+        case .installed(let record):
+            return matches(record)
+        case .available(let result):
+            return matches(result)
+        case .recommendation(let recommendation):
+            return matches(recommendation.detail)
+                || matches(key: recommendation.packageName)
+                || recommendation.missingPackageNames.contains(where: matches(key:))
+        case .command:
+            return false
+        }
+    }
+
+    func matches(_ detail: PackageDetail) -> Bool {
+        matches(detail.securityState)
+            || matches(key: detail.packageName)
+            || matches(key: detail.qualifiedName)
+            || matches(detail.source)
+            || detail.installPackageNames?.contains(where: matches(key:)) == true
+    }
+
+    func matches(key: String?) -> Bool {
+        guard let identifier = Self.normalizedIdentifier(key) else {
+            return false
+        }
+        return identifiers.contains(identifier)
+    }
+
+    private func matches(_ record: PackageRecord) -> Bool {
+        matches(record.securityState)
+            || matches(key: record.name)
+            || matches(record.source)
+            || record.installPackageNames?.contains(where: matches(key:)) == true
+    }
+
+    private func matches(_ result: PackageSearchResult) -> Bool {
+        matches(result.securityState)
+            || matches(key: result.name)
+            || matches(result.source)
+    }
+
+    private func matches(_ securityState: PackageSecurityState?) -> Bool {
+        guard let securityState else {
+            return false
+        }
+        return matches(key: securityState.isotopeName)
+    }
+
+    private func matches(_ source: PackageSource?) -> Bool {
+        switch source {
+        case .formula(let rootFormula):
+            return matches(key: rootFormula)
+        case .cask(let caskName):
+            return matches(key: caskName)
+        case .isotope(let isotopeName):
+            return matches(key: isotopeName)
+        case .vendor(let vendorName):
+            return matches(key: vendorName)
+        case .npm(let packageName):
+            return matches(key: packageName)
+        case .pip(let packageName):
+            return matches(key: packageName)
+        case .none:
+            return false
+        }
+    }
+
+    private static func insert(_ value: String?, into identifiers: inout Set<String>) {
+        guard let identifier = normalizedIdentifier(value) else {
+            return
+        }
+        identifiers.insert(identifier)
+    }
+
+    private static func normalizedIdentifier(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return nil
+        }
+
+        let orderedName = trimmed.packageSearchOrderName
+        let leafName = orderedName
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .last
+            .map(String.init)
+            ?? orderedName
+        let normalized = leafName.lowercased()
+        return normalized.isEmpty ? nil : normalized
     }
 }
