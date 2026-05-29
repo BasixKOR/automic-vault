@@ -170,6 +170,13 @@ rebase_onto_remote_branch() {
   git -C "${repo_dir}" rebase "refs/remotes/${remote}/${branch}"
 }
 
+rebase_onto_ref() {
+  local repo_dir="$1"
+  local ref="$2"
+
+  git -C "${repo_dir}" rebase "${ref}"
+}
+
 fetch_release_tag_if_missing() {
   local repo_dir="$1"
   local remote="$2"
@@ -379,33 +386,17 @@ manifest_homebrew_formula() {
   esac
 }
 
-manifest_upstream_branch() {
-  local manifest_path="$1"
-  local manifest
-
-  manifest="$(manifest_json "${manifest_path}")"
-  printf '%s\n' "${manifest}" | jq -r '
-    .upstreamBranch // .upstream_branch // .source.upstreamBranch //
-      .source.upstream_branch // empty
-  '
-}
-
 repo_source_json() {
   local repo_name="$1"
   local repo_json="$2"
   local repo_dir="$3"
   local manifest_path="${repo_dir}/automic-vault.yml"
-  local parent upstream_repo upstream_default upstream_branch formula release_json
-
-  upstream_branch="$(manifest_upstream_branch "${manifest_path}")"
+  local parent upstream_repo upstream_default formula release_json
 
   parent="$(printf '%s\n' "${repo_json}" | jq -r '.parent')"
   if [[ "${parent}" != "null" ]]; then
     upstream_repo="$(printf '%s\n' "${repo_json}" | jq -r '.parent.full_name')"
     upstream_default="$(printf '%s\n' "${repo_json}" | jq -r '.parent.default_branch')"
-    if [[ -n "${upstream_branch}" ]]; then
-      upstream_default="${upstream_branch}"
-    fi
     release_json="$(latest_release_json "${upstream_repo}")"
     jq -n \
       --arg kind "github" \
@@ -429,7 +420,7 @@ repo_source_json() {
     jq -n \
       --arg kind "homebrew" \
       --arg upstreamRepo "$(homebrew_formula_repository "${formula}")" \
-      --arg upstreamDefault "${upstream_branch:-$(printf '%s\n' "${repo_json}" | jq -r '.default_branch')}" \
+      --arg upstreamDefault "$(printf '%s\n' "${repo_json}" | jq -r '.default_branch')" \
       --arg upstreamName "${formula}" \
       --arg formula "${formula}" \
       --argjson release "${release_json}" \
@@ -752,9 +743,8 @@ process_repo() {
 
   if [[ "${dry_run}" == "true" ]]; then
     if [[ "${source_kind}" == "github" ]]; then
-      echo "Would fetch upstream ${upstream_default} without tags"
       echo "Would fetch upstream tag ${tag} if missing"
-      echo "Would rebase onto upstream ${upstream_default}"
+      echo "Would rebase onto upstream tag ${tag}"
     else
       echo "Would fetch origin ${upstream_default} without tags"
       echo "Would rebase onto origin ${upstream_default}"
@@ -773,9 +763,8 @@ process_repo() {
   fi
 
   if [[ "${source_kind}" == "github" ]]; then
-    fetch_branch_without_tags "${repo_dir}" upstream "${upstream_default}"
     fetch_release_tag_if_missing "${repo_dir}" upstream "${tag}"
-    rebase_onto_remote_branch "${repo_dir}" upstream "${upstream_default}"
+    rebase_onto_ref "${repo_dir}" "refs/tags/${tag}"
   else
     fetch_branch_without_tags "${repo_dir}" origin "${upstream_default}"
     rebase_onto_remote_branch "${repo_dir}" origin "${upstream_default}"
