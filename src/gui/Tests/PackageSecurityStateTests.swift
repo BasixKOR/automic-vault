@@ -15,6 +15,19 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.fallbackDetail.homepageURL?.absoluteString, "https://curl.se")
     }
 
+    func testHomebrewFormulaPageIsNotUsedAsFallbackHomepage() throws {
+        let record = PackageRecord(
+            name: "brew:ripgrep",
+            source: .formula(rootFormula: "ripgrep"),
+            version: "14.1.1",
+            description: "Search tool",
+            homepage: "https://formulae.brew.sh/formula/ripgrep",
+            securityState: nil
+        )
+
+        XCTAssertNil(record.fallbackDetail.homepageURL)
+    }
+
     func testDetectorOnlySecurityStateDecodesWithoutRemediationAction() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:curl",

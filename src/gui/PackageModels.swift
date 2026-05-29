@@ -440,6 +440,9 @@ struct PackageDetail: Decodable, Equatable {
         guard scheme == "http" || scheme == "https" else {
             return nil
         }
+        guard !url.isHomebrewPackageManagerPage else {
+            return nil
+        }
         if isOutdated, let latestReleaseURL = url.githubLatestReleaseURL {
             return latestReleaseURL
         }
@@ -1136,6 +1139,16 @@ struct PackageDetectedLocalHazard: Equatable {
 }
 
 private extension URL {
+    var isHomebrewPackageManagerPage: Bool {
+        guard host?.localizedCaseInsensitiveCompare("formulae.brew.sh") == .orderedSame else {
+            return false
+        }
+        let pathComponents = path
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        return pathComponents.first == "formula" || pathComponents.first == "cask"
+    }
+
     var githubLatestReleaseURL: URL? {
         guard host?.localizedCaseInsensitiveCompare("github.com") == .orderedSame else {
             return nil
