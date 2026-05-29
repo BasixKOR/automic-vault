@@ -64,7 +64,7 @@ struct PackageSecurityNotice: Equatable {
     }
 
     fileprivate static var detectorOnlyHeadline: String {
-        "Local Secret Exposure"
+        "LOCAL SECRET EXPOSURE"
     }
 
     fileprivate static var detectorOnlyBody: String {
