@@ -643,15 +643,16 @@ private struct PackageWebView: NSViewRepresentable {
           const style = document.createElement("style");
           style.dataset.automicVaultDefaults = "true";
           style.textContent = `
-            html {
-              color-scheme: light;
-              background-color: white;
-              color: black;
-            }
+            @layer automic-vault-defaults {
+              :where(html) {
+                background-color: white;
+                color: black;
+              }
 
-            body {
-              background-color: white;
-              color: black;
+              :where(body) {
+                background-color: white;
+                color: black;
+              }
             }
           `;
 
