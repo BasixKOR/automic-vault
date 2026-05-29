@@ -370,6 +370,11 @@ struct MainWindowView: View {
         }
         .buttonStyle(.glass)
         .tint(.clear)
+        .overlay {
+            if primaryAction == .harden {
+                HardenTraceStroke()
+            }
+        }
         .disabled(!primaryEnabled)
         .opacity(primaryEnabled || isPrimaryActive ? 1 : 0.42)
         .help(primaryAction.title)
@@ -693,6 +698,60 @@ private struct PackageDossierActionButtonLabel: View {
         case .install, .uninstall:
             return AVGlassPalette.secondaryText
         }
+    }
+}
+
+private struct HardenTraceStroke: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let cornerRadius: CGFloat = 8
+    private let cycleDuration: TimeInterval = 1.8
+    private let traceLength: CGFloat = 0.30
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                strokeContent(phase: 0.08)
+            } else {
+                TimelineView(.animation) { context in
+                    let phase = CGFloat(
+                        context.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
+                    )
+                    strokeContent(phase: phase)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func strokeContent(phase: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(AVGlassPalette.hardenTrace.opacity(0.42), lineWidth: 1)
+            traceSegments(startingAt: phase)
+        }
+    }
+
+    @ViewBuilder
+    private func traceSegments(startingAt start: CGFloat) -> some View {
+        let end = start + traceLength
+        if end <= 1 {
+            traceSegment(from: start, to: end)
+        } else {
+            traceSegment(from: start, to: 1)
+            traceSegment(from: 0, to: end - 1)
+        }
+    }
+
+    private func traceSegment(from start: CGFloat, to end: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .trim(from: start, to: end)
+            .stroke(
+                AVGlassPalette.hardenTrace,
+                style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+            )
+            .shadow(color: AVGlassPalette.hardenTrace.opacity(0.76), radius: 4)
     }
 }
 
@@ -1408,6 +1467,7 @@ private enum AVGlassPalette {
     static let secondaryText = Color.white.opacity(0.64)
     static let quietText = Color.white.opacity(0.36)
     static let green = Color(red: 0.10, green: 0.86, blue: 0.58)
+    static let hardenTrace = Color(red: 0.00, green: 1.00, blue: 0.50)
     static let orange = Color(red: 0.95, green: 0.58, blue: 0.25)
     static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
     static let vulnerableRed = Color(red: 1.00, green: 0.13, blue: 0.18)
