@@ -710,6 +710,7 @@ private struct HardenTraceStroke: View {
     private let maximumTraceLength: CGFloat = 0.29
     private let growDuration: CGFloat = 0.80
     private let holdDuration: CGFloat = 0.10
+    private let pulseOffsetPerCycle: CGFloat = 0.08
     private let baseStrokeOpacity = 0.42
     private let traceStrokeWidth = 1.8
     private let shadowRadius = 4.0
@@ -718,26 +719,28 @@ private struct HardenTraceStroke: View {
     var body: some View {
         Group {
             if reduceMotion {
-                strokeContent(phase: 0.08)
+                strokeContent(travelPhase: 0.08, lengthPhase: 0.08)
             } else {
                 TimelineView(.animation) { context in
-                    let phase = CGFloat(
-                        context.date.timeIntervalSinceReferenceDate
-                            .truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
+                    let cycles = context.date.timeIntervalSinceReferenceDate / cycleDuration
+                    let travelPhase = CGFloat(cycles.truncatingRemainder(dividingBy: 1))
+                    let lengthPhase = CGFloat(
+                        (cycles * (1 + Double(pulseOffsetPerCycle)))
+                            .truncatingRemainder(dividingBy: 1)
                     )
-                    strokeContent(phase: phase)
+                    strokeContent(travelPhase: travelPhase, lengthPhase: lengthPhase)
                 }
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func strokeContent(phase: CGFloat) -> some View {
-        let traceLength = reduceMotion ? maximumTraceLength : traceLength(at: phase)
+    private func strokeContent(travelPhase: CGFloat, lengthPhase: CGFloat) -> some View {
+        let traceLength = reduceMotion ? maximumTraceLength : traceLength(at: lengthPhase)
         return ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(AVGlassPalette.hardenTrace.opacity(baseStrokeOpacity), lineWidth: 1)
-            traceSegments(endingAt: phase, length: traceLength)
+            traceSegments(endingAt: travelPhase, length: traceLength)
         }
     }
 
