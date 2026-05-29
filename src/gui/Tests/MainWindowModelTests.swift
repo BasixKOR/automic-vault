@@ -4,6 +4,56 @@ import XCTest
 
 final class MainWindowModelTests: XCTestCase {
     @MainActor
+    func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
+        let requests = PageRequestRecorder()
+        let model = MainWindowModel(
+            availablePackagesFetcher: { offset, _ in
+                requests.append(offset)
+                switch offset {
+                case 0:
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(name: "brew:alpha"),
+                            Self.packageSearchResult(name: "brew:bravo"),
+                        ],
+                        totalCount: 3,
+                        nextOffset: 2
+                    )
+                case 2:
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(name: "brew:charlie"),
+                        ],
+                        totalCount: 3,
+                        nextOffset: nil
+                    )
+                default:
+                    return PackageSearchPage(
+                        packages: [],
+                        totalCount: 3,
+                        nextOffset: nil
+                    )
+                }
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .allPackages
+        await waitUntil(model.displayedPackages.count == 2)
+
+        let lastPackage = try XCTUnwrap(model.displayedPackages.last)
+        model.loadNextPageIfNeeded(after: lastPackage)
+
+        await waitUntil(model.displayedPackages.count == 3)
+
+        XCTAssertEqual(requests.values, [0, 2])
+        XCTAssertEqual(
+            model.displayedPackages.map(\.selectionID),
+            ["brew:alpha", "brew:bravo", "brew:charlie"]
+        )
+    }
+
+    @MainActor
     func testPulseTimestampUsesHoursUntilSixtyHours() throws {
         let referenceDate = try XCTUnwrap(Self.date("2026-05-28T12:00:00Z"))
         let result = pulseResult(
@@ -654,6 +704,34 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
+    private static func packageSearchResult(name: String) -> PackageSearchResult {
+        PackageSearchResult(
+            name: name,
+            source: .formula(rootFormula: name.replacingOccurrences(of: "brew:", with: "")),
+            version: "1.0",
+            description: "\(name) package",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ condition: @autoclosure @escaping @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<50 {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("Timed out waiting for condition", file: file, line: line)
+    }
+
     private func makeSecurityCatalogBundle(combinedJSON: String) throws -> Bundle {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MainWindowModelTests-\(UUID().uuidString).bundle")
@@ -678,5 +756,20 @@ final class MainWindowModelTests: XCTestCase {
 
     private static func date(_ raw: String) -> Date? {
         ISO8601DateFormatter().date(from: raw)
+    }
+}
+
+private final class PageRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var offsets: [Int] = []
+
+    var values: [Int] {
+        lock.withLock { offsets }
+    }
+
+    func append(_ offset: Int) {
+        lock.withLock {
+            offsets.append(offset)
+        }
     }
 }

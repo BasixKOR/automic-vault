@@ -223,6 +223,9 @@ struct MainWindowView: View {
                         ) {
                             model.select(package)
                         }
+                        .onAppear {
+                            model.loadNextPageIfNeeded(after: package)
+                        }
                         hairline
                     }
 

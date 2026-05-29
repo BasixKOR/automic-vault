@@ -260,6 +260,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var automicVaultCLTRecommendation: PackageRecommendation?
 
     nonisolated private static let pageSize = 96
+    nonisolated private static let paginationPrefetchThreshold = 12
     private let statusStore = NucleusStatusStore()
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
@@ -272,6 +273,8 @@ final class MainWindowModel: ObservableObject {
     private var catalogTotalCount: Int?
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
+    private var sectionPageNextOffsets: [SectionPageKind: Int] = [:]
+    private var searchNextOffset: Int?
     private var transientStatusTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
@@ -280,17 +283,46 @@ final class MainWindowModel: ObservableObject {
     private var pendingHardeningSelection: PackageHardeningContext?
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
     private let securityCatalog: SecurityCatalog
+    private let availablePackagesFetcher: (Int, Int) throws -> PackageSearchPage
+    private let pulsePackagesFetcher: (Int, Int) throws -> PackageSearchPage
+    private let geigerPackagesFetcher: (Int, Int) throws -> PackageSearchPage
+    private let searchPackagesFetcher: (String, Int, Int) throws -> PackageSearchPage
 
     init(
         cliToolsRecommendationProvider: @escaping () -> PackageRecommendation? = {
             NucleusBridge().cliToolsRecommendation()
         },
         initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
-        securityCatalog: SecurityCatalog = .shared
+        securityCatalog: SecurityCatalog = .shared,
+        availablePackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
+            offset,
+            limit in
+            try MainWindowModel.fetchAvailablePackages(offset: offset, limit: limit)
+        },
+        pulsePackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
+            offset,
+            limit in
+            try MainWindowModel.fetchPulsePackages(offset: offset, limit: limit)
+        },
+        geigerPackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
+            offset,
+            limit in
+            try MainWindowModel.fetchGeigerPackages(offset: offset, limit: limit)
+        },
+        searchPackagesFetcher: @escaping (String, Int, Int) throws -> PackageSearchPage = {
+            query,
+            offset,
+            limit in
+            try MainWindowModel.searchPackages(query: query, offset: offset, limit: limit)
+        }
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
         automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
         self.securityCatalog = securityCatalog
+        self.availablePackagesFetcher = availablePackagesFetcher
+        self.pulsePackagesFetcher = pulsePackagesFetcher
+        self.geigerPackagesFetcher = geigerPackagesFetcher
+        self.searchPackagesFetcher = searchPackagesFetcher
     }
 
     var installedCount: Int {
@@ -408,6 +440,8 @@ final class MainWindowModel: ObservableObject {
         sectionPageTasks.removeAll()
         loadingSectionKinds.removeAll()
         staleSectionKinds.removeAll()
+        sectionPageNextOffsets.removeAll()
+        searchNextOffset = nil
         updateSelectedSectionLoadingState()
     }
 
@@ -462,6 +496,22 @@ final class MainWindowModel: ObservableObject {
             return
         }
         loadDetail(for: package)
+    }
+
+    func loadNextPageIfNeeded(after package: PackagePresentation) {
+        guard shouldPrefetchPage(after: package) else {
+            return
+        }
+
+        if isSearchActive {
+            loadNextSearchPageIfNeeded()
+            return
+        }
+
+        guard let kind = SectionPageKind(section: selectedSection) else {
+            return
+        }
+        loadNextSectionPageIfNeeded(kind: kind)
     }
 
     private func clearSelectedPackage() {
@@ -1591,6 +1641,7 @@ final class MainWindowModel: ObservableObject {
             isSearching = false
             searchResults = []
             searchTotalCount = 0
+            searchNextOffset = nil
             ensureSelectedSectionLoaded()
             updateSelectedSectionLoadingState()
             return
@@ -1598,6 +1649,7 @@ final class MainWindowModel: ObservableObject {
 
         searchRequestID += 1
         let requestID = searchRequestID
+        let searchPackagesFetcher = searchPackagesFetcher
         isSearching = true
         updateSelectedSectionLoadingState()
         searchTask = Task { [weak self] in
@@ -1605,11 +1657,16 @@ final class MainWindowModel: ObservableObject {
             guard !Task.isCancelled else { return }
             let result = await Task.detached(priority: .userInitiated) {
                 Result {
-                    try Self.searchPackages(query: query)
+                    try searchPackagesFetcher(query, 0, Self.pageSize)
                 }
             }.value
             await MainActor.run {
-                self?.finishSearch(result, query: query, requestID: requestID)
+                self?.finishSearch(
+                    result,
+                    query: query,
+                    requestID: requestID,
+                    appending: false
+                )
             }
         }
     }
@@ -1617,7 +1674,8 @@ final class MainWindowModel: ObservableObject {
     private func finishSearch(
         _ result: Result<PackageSearchPage, Error>,
         query: String,
-        requestID: Int
+        requestID: Int,
+        appending: Bool
     ) {
         guard requestID == searchRequestID,
               query == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else {
@@ -1627,13 +1685,70 @@ final class MainWindowModel: ObservableObject {
         switch result {
         case .success(let page):
             searchTotalCount = page.totalCount
-            searchResults = page.packages.map {
+            searchNextOffset = page.nextOffset
+            let packages = page.packages.map {
                 presentation(for: $0, prefix: "search")
             }
+            if appending {
+                searchResults = searchResults.appendingUniquePackages(packages)
+            } else {
+                searchResults = packages
+            }
         case .failure(let error):
-            searchTotalCount = 0
-            searchResults = []
+            if !appending {
+                searchTotalCount = 0
+                searchResults = []
+                searchNextOffset = nil
+            }
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func shouldPrefetchPage(after package: PackagePresentation) -> Bool {
+        let visiblePackages = displayedPackages
+        guard let index = visiblePackages.firstIndex(where: {
+            $0.selectionID == package.selectionID
+        }) else {
+            return false
+        }
+        let remainingCount = visiblePackages.distance(
+            from: index,
+            to: visiblePackages.endIndex
+        )
+        return remainingCount <= Self.paginationPrefetchThreshold
+    }
+
+    private func loadNextSearchPageIfNeeded() {
+        guard !isSearching,
+              let nextOffset = searchNextOffset else {
+            return
+        }
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return
+        }
+
+        searchRequestID += 1
+        let requestID = searchRequestID
+        let searchPackagesFetcher = searchPackagesFetcher
+        isSearching = true
+        updateSelectedSectionLoadingState()
+
+        searchTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try searchPackagesFetcher(query, nextOffset, Self.pageSize)
+                }
+            }.value
+            await MainActor.run {
+                self?.finishSearch(
+                    result,
+                    query: query,
+                    requestID: requestID,
+                    appending: true
+                )
+            }
         }
     }
 
@@ -1665,6 +1780,7 @@ final class MainWindowModel: ObservableObject {
         sectionPageTasks[kind] = nil
         loadingSectionKinds.remove(kind)
         sectionPageRequestIDs[kind] = (sectionPageRequestIDs[kind] ?? 0) + 1
+        sectionPageNextOffsets[kind] = nil
         updateSelectedSectionLoadingState()
     }
 
@@ -1698,7 +1814,7 @@ final class MainWindowModel: ObservableObject {
         guard isSectionPageLoaded(kind) == false else {
             return
         }
-        loadSectionPage(kind: kind)
+        loadSectionPage(kind: kind, offset: 0)
     }
 
     private func isSectionPageLoaded(_ kind: SectionPageKind) -> Bool {
@@ -1715,7 +1831,14 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
-    private func loadSectionPage(kind: SectionPageKind) {
+    private func loadNextSectionPageIfNeeded(kind: SectionPageKind) {
+        guard let nextOffset = sectionPageNextOffsets[kind] else {
+            return
+        }
+        loadSectionPage(kind: kind, offset: nextOffset)
+    }
+
+    private func loadSectionPage(kind: SectionPageKind, offset: Int) {
         guard loadingSectionKinds.contains(kind) == false else {
             return
         }
@@ -1724,14 +1847,20 @@ final class MainWindowModel: ObservableObject {
         loadingSectionKinds.insert(kind)
         updateSelectedSectionLoadingState()
         lastErrorMessage = nil
+        let fetcher = sectionPageFetcher(for: kind)
         sectionPageTasks[kind] = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
                 Result {
-                    try Self.fetchSectionPage(kind: kind)
+                    try fetcher(offset, Self.pageSize)
                 }
             }.value
             await MainActor.run {
-                self?.finishSectionPage(result, kind: kind, requestID: requestID)
+                self?.finishSectionPage(
+                    result,
+                    kind: kind,
+                    offset: offset,
+                    requestID: requestID
+                )
             }
         }
     }
@@ -1739,6 +1868,7 @@ final class MainWindowModel: ObservableObject {
     private func finishSectionPage(
         _ result: Result<PackageSearchPage, Error>,
         kind: SectionPageKind,
+        offset: Int,
         requestID: Int
     ) {
         guard requestID == sectionPageRequestIDs[kind] else {
@@ -1750,24 +1880,40 @@ final class MainWindowModel: ObservableObject {
         updateSelectedSectionLoadingState()
         switch result {
         case .success(let page):
+            sectionPageNextOffsets[kind] = page.nextOffset
+            let previousVisibleCount = displayedPackages.count
             switch kind {
             case .geiger:
                 geigerTotalCount = page.totalCount
-                geigerPackages = page.packages.map { result in
+                let packages = page.packages.map { result in
                     result.detectedLocalHazardPresentation(
                         freshness: Self.freshness(for: result.detailLookupName)
                     )?.presentation ?? presentation(for: result, prefix: "geiger")
                 }
+                geigerPackages = offset == 0
+                    ? packages
+                    : geigerPackages.appendingUniquePackages(packages)
             case .catalog:
                 catalogTotalCount = page.totalCount
-                catalogPackages = page.packages.map {
+                let packages = page.packages.map {
                     presentation(for: $0, prefix: nil)
                 }
+                catalogPackages = offset == 0
+                    ? packages
+                    : catalogPackages.appendingUniquePackages(packages)
             case .pulse:
                 pulseTotalCount = page.totalCount
-                pulsePackages = page.packages.map {
+                let packages = page.packages.map {
                     presentation(for: $0, prefix: "pulse")
                 }
+                pulsePackages = offset == 0
+                    ? packages
+                    : pulsePackages.appendingUniquePackages(packages)
+            }
+            if offset > 0,
+               kind == SectionPageKind(section: selectedSection),
+               displayedPackages.count == previousVisibleCount {
+                loadNextSectionPageIfNeeded(kind: kind)
             }
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
@@ -1957,21 +2103,50 @@ final class MainWindowModel: ObservableObject {
             .fetchOutdatedPackages()
     }
 
-    private nonisolated static func fetchSectionPage(
-        kind: SectionPageKind
+    private func sectionPageFetcher(
+        for kind: SectionPageKind
+    ) -> (Int, Int) throws -> PackageSearchPage {
+        switch kind {
+        case .geiger:
+            return geigerPackagesFetcher
+        case .catalog:
+            return availablePackagesFetcher
+        case .pulse:
+            return pulsePackagesFetcher
+        }
+    }
+
+    private nonisolated static func fetchAvailablePackages(
+        offset: Int,
+        limit: Int
     ) throws -> PackageSearchPage {
         let bridge = NucleusBridge(
             compatibilityPolicy: .protocolOnly,
             daemonOwnership: .client
         )
-        switch kind {
-        case .geiger:
-            return try bridge.fetchGeigerPackages(offset: 0, limit: pageSize)
-        case .catalog:
-            return try bridge.fetchAvailablePackages(offset: 0, limit: pageSize)
-        case .pulse:
-            return try bridge.fetchPulsePackages(offset: 0, limit: pageSize)
-        }
+        return try bridge.fetchAvailablePackages(offset: offset, limit: limit)
+    }
+
+    private nonisolated static func fetchPulsePackages(
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
+        .fetchPulsePackages(offset: offset, limit: limit)
+    }
+
+    private nonisolated static func fetchGeigerPackages(
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .client
+        )
+        .fetchGeigerPackages(offset: offset, limit: limit)
     }
 
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {
@@ -1982,12 +2157,16 @@ final class MainWindowModel: ObservableObject {
             .fetchDetail(packageName: packageName)
     }
 
-    private nonisolated static func searchPackages(query: String) throws -> PackageSearchPage {
+    private nonisolated static func searchPackages(
+        query: String,
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
             daemonOwnership: .client
         )
-            .fetchSearchResults(query: query, offset: 0, limit: pageSize)
+            .fetchSearchResults(query: query, offset: offset, limit: limit)
     }
 
     private nonisolated static func freshness(for packageName: String) -> CGFloat {
@@ -2039,6 +2218,17 @@ final class MainWindowModel: ObservableObject {
 }
 
 private extension Array where Element == PackagePresentation {
+    func appendingUniquePackages(
+        _ packages: [PackagePresentation]
+    ) -> [PackagePresentation] {
+        var seen = Set(map(\.selectionID))
+        var result = self
+        for package in packages where seen.insert(package.selectionID).inserted {
+            result.append(package)
+        }
+        return result
+    }
+
     func updatingDetail(
         _ detail: PackageDetail,
         for selectionID: String
