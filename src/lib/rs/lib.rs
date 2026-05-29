@@ -372,7 +372,9 @@ fn refresh_remote_combined_data_with(
         return Ok(false);
     }
 
-    let mut request = ureq::get(url).set("User-Agent", USER_AGENT);
+    let mut request = ureq::get(url)
+        .set("User-Agent", USER_AGENT)
+        .set("Cache-Control", "no-cache");
     if let Some(etag) = metadata.etag.as_deref() {
         request = request.set("If-None-Match", etag);
     }
@@ -15380,9 +15382,19 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 .contains("accept-encoding: gzip, br")
         );
         assert!(
+            requests[0]
+                .to_ascii_lowercase()
+                .contains("cache-control: no-cache")
+        );
+        assert!(
             requests[1]
                 .to_ascii_lowercase()
                 .contains("accept-encoding: gzip, br")
+        );
+        assert!(
+            requests[1]
+                .to_ascii_lowercase()
+                .contains("cache-control: no-cache")
         );
         assert!(!requests[0].contains("If-None-Match"));
         assert!(requests[1].contains("If-None-Match: \"test-etag\""));

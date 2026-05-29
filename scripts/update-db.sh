@@ -6,7 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 combined_path="${repo_root}/data/combined.json"
 radioisotopes_dir="${repo_root}/data/radioisotopes"
-cache_control="public, max-age=3600"
+cache_control="public, no-cache"
 color_mode="auto"
 isotope_args=()
 
