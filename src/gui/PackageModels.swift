@@ -1094,7 +1094,7 @@ struct PackageSearchResult: Decodable, Equatable {
             version: displayDetail.installedVersion
                 ?? displayDetail.latestVersion
                 ?? version
-                ?? "detected",
+                ?? "",
             description: displayDetail.homebrewInfo?.description ?? description,
             latestVersion: displayDetail.latestVersion,
             securityState: displayDetail.securityState,

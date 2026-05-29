@@ -438,6 +438,10 @@ final class PackageSecurityStateTests: XCTestCase {
             pulseKind: nil
         )
         let hazard = try XCTUnwrap(result.detectedLocalHazardPresentation(freshness: 0.4))
+        guard case .installed(let record) = hazard.presentation.item else {
+            return XCTFail("detected local hazards should be rendered as installed rows")
+        }
+        XCTAssertEqual(record.version, "")
         let resolvedDetail = try decodePackageDetail(
             packageName: "brew:supabase",
             formula: "supabase",
