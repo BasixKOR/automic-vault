@@ -1021,7 +1021,7 @@ pub(crate) fn parse_package_name(value: &OsString) -> Result<RequestedPackage, S
         }
         vendor::get(vendor_package)
             .ok_or_else(|| format!("vendor package {vendor_package} is not registered"))?;
-        return Ok(RequestedPackage::Auto(vendor_package.to_string()));
+        return Ok(RequestedPackage::VendorPackage(vendor_package.to_string()));
     }
     if let Some(npm_package) = package.strip_prefix("npm:") {
         let (package, version) = parse_npm_package_request(npm_package)?;
@@ -1684,7 +1684,7 @@ mod tests {
         );
         assert_eq!(
             parse_package_name(&OsString::from("av:terraform")).unwrap(),
-            RequestedPackage::Auto("terraform".to_string())
+            RequestedPackage::VendorPackage("terraform".to_string())
         );
         assert_eq!(
             parse_package_name(&OsString::from("av:")).unwrap_err(),

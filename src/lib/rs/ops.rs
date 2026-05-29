@@ -2650,6 +2650,7 @@ fn requested_package_from_spec(package: &PackageSpec) -> Result<RequestedPackage
         RequestedPackage::Auto(_)
         | RequestedPackage::HomebrewFormula(_)
         | RequestedPackage::HomebrewCask(_)
+        | RequestedPackage::VendorPackage(_)
         | RequestedPackage::Isotope(_)
         | RequestedPackage::PipPackage(_) => {
             if package.version.is_some() {

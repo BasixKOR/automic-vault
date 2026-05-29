@@ -792,6 +792,7 @@ enum RequestedPackage {
     Auto(String),
     HomebrewFormula(String),
     HomebrewCask(String),
+    VendorPackage(String),
     Isotope(String),
     NpmPackage {
         package: String,
@@ -1903,7 +1904,34 @@ fn run_i_package_with_progress(
     let mut rollback_name = requested_package_name(&requested);
     let result = match requested {
         RequestedPackage::Auto(package_name) => {
-            if let Some(package) = vendor::get(&package_name) {
+            if let Some(isotope_name) = preferred_auto_isotope_name(&package_name)? {
+                let package_name = isotope_qualified_name(&isotope_name);
+                rollback_name = package_name.clone();
+                if isotope_has_post_install(&package_name) {
+                    run_i_radioisotope(
+                        config,
+                        package_name,
+                        isotope_name,
+                        options.intent,
+                        progress_callback.clone(),
+                    )
+                } else {
+                    prepare_install_target(
+                        &opt_pkg_root(),
+                        &package_name,
+                        options.intent,
+                        &managed_bin_root(),
+                    )?;
+                    run_i_isotope(
+                        config,
+                        package_name,
+                        isotope_name,
+                        true,
+                        options.intent,
+                        progress_callback.clone(),
+                    )
+                }
+            } else if let Some(package) = vendor::get(&package_name) {
                 prepare_install_target(
                     &opt_pkg_root(),
                     &package_name,
@@ -1962,6 +1990,23 @@ fn run_i_package_with_progress(
                     ),
                 }
             }
+        }
+        RequestedPackage::VendorPackage(package_name) => {
+            let package = vendor::get(&package_name)
+                .ok_or_else(|| format!("vendor package {package_name} is not registered"))?;
+            prepare_install_target(
+                &opt_pkg_root(),
+                &package_name,
+                options.intent,
+                &managed_bin_root(),
+            )?;
+            run_i_vendor(
+                config,
+                package_name.clone(),
+                package,
+                options.intent,
+                progress_callback.clone(),
+            )
         }
         RequestedPackage::HomebrewFormula(formula) => {
             let package_name = formula_install_package_name(&formula)?;
@@ -2427,7 +2472,25 @@ fn run_i_radioisotope(
                 )?;
             }
             Some(InstallIntent::Install) => unreachable!("install intent is handled as None"),
-            None => ensure_package_installed(&opt_pkg_root(), &modified_package)?,
+            None => {
+                let modified_root = package_install_root(&opt_pkg_root(), &modified_package)?;
+                if !modified_root.exists() {
+                    prepare_install_target(
+                        &opt_pkg_root(),
+                        &modified_package,
+                        InstallIntent::Install,
+                        &managed_bin_root(),
+                    )?;
+                    run_i_modified_package(
+                        config,
+                        modified_package.clone(),
+                        &modified_target,
+                        InstallIntent::Install,
+                        progress_callback.clone(),
+                    )?;
+                }
+                ensure_package_installed(&opt_pkg_root(), &modified_package)?;
+            }
         }
 
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
@@ -2723,6 +2786,81 @@ fn isotope_package_data(name: &str) -> Result<&'static IsotopePackageData, Strin
     embedded_isotope_data()
         .get(&format!("{ISOTOPE_PACKAGE_PREFIX}{name}"))
         .ok_or_else(|| format!("unknown isotope {ISOTOPE_PACKAGE_PREFIX}{name}"))
+}
+
+fn preferred_auto_isotope_name(package_name: &str) -> Result<Option<String>, String> {
+    let target = if vendor::get(package_name).is_some() {
+        Some(PackageAliasTarget::VendorPackage(package_name.to_string()))
+    } else {
+        preferred_auto_homebrew_formula_target(package_name)?
+    };
+
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    installable_isotope_name_for_target(&target)
+}
+
+fn preferred_auto_homebrew_formula_target(
+    package_name: &str,
+) -> Result<Option<PackageAliasTarget>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    if let Some(provider) = db.entries.get(package_name) {
+        return Ok(match crate::cli::parse_embedded_provider(provider)? {
+            Some(EmbeddedPackage::Formula(formula)) => Some(PackageAliasTarget::HomebrewFormula(
+                formula_install_package_name(&formula)?,
+            )),
+            Some(EmbeddedPackage::Cask(_) | EmbeddedPackage::NpmPackage(_)) => None,
+            None => Some(PackageAliasTarget::HomebrewFormula(
+                formula_install_package_name(package_name)?,
+            )),
+        });
+    }
+
+    Ok(Some(PackageAliasTarget::HomebrewFormula(
+        formula_install_package_name(package_name)?,
+    )))
+}
+
+fn installable_isotope_name_for_target(
+    target: &PackageAliasTarget,
+) -> Result<Option<String>, String> {
+    let mut isotopes = embedded_isotope_data().values().collect::<Vec<_>>();
+    isotopes.sort_by(|left, right| left.name.cmp(&right.name));
+
+    for isotope in isotopes {
+        if !isotope_is_installable(isotope) {
+            continue;
+        }
+        match isotope_targets_package(isotope, target) {
+            Ok(true) => return Ok(Some(isotope_unqualified_name(&isotope.name).to_string())),
+            Ok(false) | Err(_) => {}
+        }
+    }
+
+    Ok(None)
+}
+
+fn isotope_is_installable(record: &IsotopePackageData) -> bool {
+    record
+        .archive_url
+        .as_deref()
+        .is_some_and(|url| !url.trim().is_empty())
+        || isotope_has_post_install(&record.name)
+}
+
+fn isotope_targets_package(
+    record: &IsotopePackageData,
+    target: &PackageAliasTarget,
+) -> Result<bool, String> {
+    if isotope_replaced_package_target(record)?.as_ref() == Some(target) {
+        return Ok(true);
+    }
+    if isotope_modified_package_target(record)?.as_ref() == Some(target) {
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn isotope_qualified_name(name: &str) -> String {
@@ -3516,6 +3654,26 @@ fn isotope_replaced_package_name(record: &IsotopePackageData) -> Result<Option<S
     crate::cli::parse_uninstall_package_name(&OsString::from(replaces))
         .map(Some)
         .map_err(|err| format!("invalid isotope replacement {}: {err}", replaces))
+}
+
+fn isotope_replaced_package_target(
+    record: &IsotopePackageData,
+) -> Result<Option<PackageAliasTarget>, String> {
+    if isotope_has_post_install(&record.name) {
+        return Ok(None);
+    }
+    let Some(replaces) = record.replaces.as_ref() else {
+        return Ok(None);
+    };
+    match parse_package_alias_target(replaces)
+        .map_err(|err| format!("invalid isotope replacement {}: {err}", replaces))?
+    {
+        target
+        @ (PackageAliasTarget::HomebrewFormula(_) | PackageAliasTarget::VendorPackage(_)) => {
+            Ok(Some(target))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn isotope_modified_package_target(
@@ -10263,6 +10421,52 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn auto_install_prefers_installable_isotopes_for_matching_targets() {
+        assert_eq!(
+            preferred_auto_isotope_name("terraform").unwrap(),
+            Some("terraform".to_string())
+        );
+        assert_eq!(
+            installable_isotope_name_for_target(&PackageAliasTarget::HomebrewFormula(
+                "awscli".to_string()
+            ))
+            .unwrap(),
+            Some("aws-cli".to_string())
+        );
+        assert_eq!(
+            installable_isotope_name_for_target(&PackageAliasTarget::HomebrewFormula(
+                "curl".to_string()
+            ))
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn isotope_installability_distinguishes_payloads_from_detector_only_records() {
+        assert!(isotope_is_installable(
+            isotope_package_data("terraform").unwrap()
+        ));
+        let curl = isotope_package_data("curl").unwrap();
+        assert_eq!(curl.version, "detector-only");
+        assert!(!isotope_is_installable(curl));
+
+        let archive_backed = IsotopePackageData {
+            name: "isotope:archive-backed".to_string(),
+            replaces: Some("brew:archive-backed".to_string()),
+            modifies: None,
+            migrate: None,
+            _repository: None,
+            _upstream_repository: None,
+            version: "1.0.0".to_string(),
+            release_url: None,
+            archive_url: Some("https://example.test/archive.tgz".to_string()),
+            published_at: None,
+        };
+        assert!(isotope_is_installable(&archive_backed));
+    }
+
+    #[test]
     fn radioisotope_update_refreshes_modified_formula() {
         assert_eq!(
             radioisotope_modified_formula_intent(InstallIntent::Install),
@@ -11797,7 +12001,7 @@ machine example.com login user password netrc-token
         );
         assert_eq!(
             requested_package_from_status(&vendor),
-            RequestedPackage::Auto("deno".to_string())
+            RequestedPackage::VendorPackage("deno".to_string())
         );
         assert_eq!(
             requested_package_from_status(&npm),

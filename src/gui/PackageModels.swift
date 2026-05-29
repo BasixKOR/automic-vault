@@ -509,7 +509,7 @@ struct PackageDetail: Decodable, Equatable {
         }
         switch source {
         case .formula(let rootFormula):
-            return "brew:\(rootFormula)"
+            return installed ? "brew:\(rootFormula)" : rootFormula
         case .cask(let caskName):
             return "cask:\(caskName)"
         case .isotope(let isotopeName):

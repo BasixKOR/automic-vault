@@ -246,7 +246,8 @@ pub(crate) fn requested_package_name(package: &RequestedPackage) -> String {
     match package {
         RequestedPackage::Auto(package_name)
         | RequestedPackage::HomebrewFormula(package_name)
-        | RequestedPackage::HomebrewCask(package_name) => package_name.clone(),
+        | RequestedPackage::HomebrewCask(package_name)
+        | RequestedPackage::VendorPackage(package_name) => package_name.clone(),
         RequestedPackage::Isotope(package_name) => {
             format!("{ISOTOPE_PACKAGE_PREFIX}{package_name}")
         }
@@ -258,6 +259,9 @@ pub(crate) fn requested_package_name(package: &RequestedPackage) -> String {
 pub(crate) fn requested_install_package_name(package: &RequestedPackage) -> Result<String, String> {
     match package {
         RequestedPackage::Auto(package_name) => {
+            if let Some(isotope_name) = preferred_auto_isotope_name(package_name)? {
+                return Ok(isotope_qualified_name(&isotope_name));
+            }
             if vendor::get(package_name).is_some() {
                 return Ok(package_name.clone());
             }
@@ -272,6 +276,7 @@ pub(crate) fn requested_install_package_name(package: &RequestedPackage) -> Resu
         }
         RequestedPackage::HomebrewFormula(formula) => formula_install_package_name(formula),
         RequestedPackage::HomebrewCask(cask) => Ok(cask.clone()),
+        RequestedPackage::VendorPackage(package_name) => Ok(package_name.clone()),
         RequestedPackage::Isotope(package_name) => {
             Ok(format!("{ISOTOPE_PACKAGE_PREFIX}{package_name}"))
         }
@@ -287,6 +292,9 @@ pub(crate) fn requested_package_from_status(status: &PackageStatus) -> Requested
         }
         PackageReceiptSource::Cask { cask_name } if status.package_name == *cask_name => {
             RequestedPackage::HomebrewCask(cask_name.clone())
+        }
+        PackageReceiptSource::Vendor { vendor_name } if status.package_name == *vendor_name => {
+            RequestedPackage::VendorPackage(vendor_name.clone())
         }
         PackageReceiptSource::Isotope { isotope_name } => {
             RequestedPackage::Isotope(isotope_name.clone())
@@ -1451,6 +1459,9 @@ pub(crate) fn explicit_requested_package_source(
         RequestedPackage::HomebrewCask(cask) => Some(PackageReceiptSource::Cask {
             cask_name: cask.clone(),
         }),
+        RequestedPackage::VendorPackage(package_name) => Some(PackageReceiptSource::Vendor {
+            vendor_name: package_name.clone(),
+        }),
         RequestedPackage::Isotope(isotope) => Some(PackageReceiptSource::Isotope {
             isotope_name: isotope.clone(),
         }),
@@ -1475,13 +1486,24 @@ pub(crate) fn infer_requested_package_source(
         unreachable!("qualified and aliased packages are handled above")
     };
     if let Some(package) = vendor::get(package_name) {
+        if let Some(isotope_name) = preferred_auto_isotope_name(package_name)? {
+            return Ok(PackageReceiptSource::Isotope { isotope_name });
+        }
         return Ok(PackageReceiptSource::Vendor {
             vendor_name: package.name.to_string(),
         });
     }
 
     Ok(match resolve_i_root_package(package_name)? {
-        EmbeddedPackage::Formula(root_formula) => PackageReceiptSource::Formula { root_formula },
+        EmbeddedPackage::Formula(root_formula) => {
+            if let Some(isotope_name) = installable_isotope_name_for_target(
+                &PackageAliasTarget::HomebrewFormula(root_formula.clone()),
+            )? {
+                PackageReceiptSource::Isotope { isotope_name }
+            } else {
+                PackageReceiptSource::Formula { root_formula }
+            }
+        }
         EmbeddedPackage::Cask(cask_name) => PackageReceiptSource::Cask { cask_name },
         EmbeddedPackage::NpmPackage(package_name) => PackageReceiptSource::Npm { package_name },
     })
@@ -2338,6 +2360,10 @@ mod tests {
             "cursor"
         );
         assert_eq!(
+            requested_package_name(&RequestedPackage::VendorPackage("terraform".to_string())),
+            "terraform"
+        );
+        assert_eq!(
             requested_package_name(&RequestedPackage::Isotope("gh".to_string())),
             "isotope:gh"
         );
@@ -2361,8 +2387,24 @@ mod tests {
             "bun"
         );
         assert_eq!(
+            requested_install_package_name(&RequestedPackage::Auto("terraform".to_string()))
+                .unwrap(),
+            "isotope:terraform"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::Auto("awscli".to_string())).unwrap(),
+            "isotope:aws-cli"
+        );
+        assert_eq!(
             requested_install_package_name(&RequestedPackage::Auto("rg".to_string())).unwrap(),
             "ripgrep"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::HomebrewFormula(
+                "awscli".to_string()
+            ))
+            .unwrap(),
+            "awscli"
         );
         assert_eq!(
             requested_install_package_name(&RequestedPackage::HomebrewFormula(
@@ -2370,6 +2412,13 @@ mod tests {
             ))
             .unwrap(),
             "python@3.14"
+        );
+        assert_eq!(
+            requested_install_package_name(&RequestedPackage::VendorPackage(
+                "terraform".to_string()
+            ))
+            .unwrap(),
+            "terraform"
         );
         assert_eq!(
             requested_install_package_name(&RequestedPackage::HomebrewCask("codex".to_string()))
@@ -2451,7 +2500,7 @@ mod tests {
         );
         assert_eq!(
             requested_package_from_status(&vendor),
-            RequestedPackage::Auto("bun".to_string())
+            RequestedPackage::VendorPackage("bun".to_string())
         );
     }
 
@@ -2537,6 +2586,14 @@ mod tests {
             })
         );
         assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::VendorPackage(
+                "terraform".to_string()
+            )),
+            Some(PackageReceiptSource::Vendor {
+                vendor_name: "terraform".to_string(),
+            })
+        );
+        assert_eq!(
             explicit_requested_package_source(&RequestedPackage::Isotope("gh".to_string())),
             Some(PackageReceiptSource::Isotope {
                 isotope_name: "gh".to_string(),
@@ -2559,6 +2616,19 @@ mod tests {
             infer_requested_package_source(&RequestedPackage::Auto("bun".to_string())).unwrap(),
             PackageReceiptSource::Vendor {
                 vendor_name: "bun".to_string(),
+            }
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("terraform".to_string()))
+                .unwrap(),
+            PackageReceiptSource::Isotope {
+                isotope_name: "terraform".to_string(),
+            }
+        );
+        assert_eq!(
+            infer_requested_package_source(&RequestedPackage::Auto("awscli".to_string())).unwrap(),
+            PackageReceiptSource::Isotope {
+                isotope_name: "aws-cli".to_string(),
             }
         );
         assert_eq!(

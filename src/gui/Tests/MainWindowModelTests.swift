@@ -74,6 +74,34 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(presentation.versionText, "NPM")
     }
 
+    func testUninstalledFormulaInstallsThroughUnqualifiedAutoTarget() {
+        let result = PackageSearchResult(
+            name: "uv",
+            source: .formula(rootFormula: "uv"),
+            version: "0.8.23",
+            description: "Python package manager",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+
+        XCTAssertEqual(result.fallbackDetail.helperPackageNames, ["uv"])
+        XCTAssertEqual(result.fallbackDetail.installCommand, "av install uv")
+    }
+
+    func testInstalledFormulaKeepsExplicitBrewTarget() {
+        let record = PackageRecord(
+            name: "uv",
+            source: .formula(rootFormula: "uv"),
+            version: "0.8.23",
+            description: "Python package manager",
+            securityState: nil
+        )
+
+        XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["brew:uv"])
+    }
+
     @MainActor
     func testSearchDeselectsAndRestoresSidebarSection() {
         let model = MainWindowModel()
