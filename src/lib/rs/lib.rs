@@ -372,9 +372,7 @@ fn refresh_remote_combined_data_with(
         return Ok(false);
     }
 
-    let mut request = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .set("Cache-Control", "no-cache");
+    let mut request = ureq::get(url).set("User-Agent", USER_AGENT);
     if let Some(etag) = metadata.etag.as_deref() {
         request = request.set("If-None-Match", etag);
     }
@@ -7507,16 +7505,56 @@ fn rewrite_isotope_migration_script(
     plan: &InstallPlan,
     isotope: &IsotopePackageData,
 ) -> Result<String, String> {
-    let Some(replaced_package) = isotope_replaced_package_name(isotope)? else {
-        return Ok(script.to_string());
-    };
     let target_prefix = plan.install_root.display().to_string();
-    let replaced_prefix = package_install_root(&opt_pkg_root(), &replaced_package)?
-        .display()
-        .to_string();
-    Ok(script
-        .replace(&replaced_prefix, &target_prefix)
-        .replace(&format!("/opt/{replaced_package}"), &target_prefix))
+    let mut rewritten = script.to_string();
+
+    if let Some(replaced_package) = isotope_replaced_package_name(isotope)? {
+        let replaced_prefix = package_install_root(&opt_pkg_root(), &replaced_package)?
+            .display()
+            .to_string();
+        rewritten = rewritten
+            .replace(&replaced_prefix, &target_prefix)
+            .replace(&format!("/opt/{replaced_package}"), &target_prefix);
+    }
+
+    for alias in isotope_migration_install_root_aliases(isotope) {
+        rewritten = rewritten.replace(&alias, &target_prefix);
+    }
+    Ok(rewritten)
+}
+
+fn isotope_migration_install_root_aliases(isotope: &IsotopePackageData) -> Vec<String> {
+    let mut names = Vec::new();
+    push_unique_string(
+        &mut names,
+        isotope_unqualified_name(&isotope.name).to_string(),
+    );
+    if let Some(repository_leaf) = isotope
+        ._repository
+        .as_deref()
+        .and_then(|repository| repository.rsplit('/').next())
+        .filter(|repository_leaf| !repository_leaf.is_empty())
+    {
+        push_unique_string(&mut names, repository_leaf.to_string());
+    }
+
+    let mut aliases = Vec::new();
+    for name in names {
+        push_unique_string(
+            &mut aliases,
+            opt_pkg_root()
+                .join(ISOTOPE_INSTALL_ROOT_DIR)
+                .join(&name)
+                .display()
+                .to_string(),
+        );
+        push_unique_string(
+            &mut aliases,
+            format!("/opt/{ISOTOPE_INSTALL_ROOT_DIR}/{name}"),
+        );
+    }
+    aliases.sort_by_key(|alias| std::cmp::Reverse(alias.len()));
+    aliases
 }
 
 fn executable_isotope_migration_script(
@@ -10827,6 +10865,41 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert!(executable.starts_with("#!/bin/sh\n"));
         assert!(executable.contains("isotope migration must not run as root"));
         assert!(executable.contains("exit 77"));
+    }
+
+    #[test]
+    fn isotope_migration_script_rewrites_repository_named_install_root() {
+        let isotope = IsotopePackageData {
+            name: "isotope:supabase".to_string(),
+            replaces: Some("brew:supabase".to_string()),
+            modifies: None,
+            migrate: None,
+            _repository: Some("automic-vault/supabase-cli".to_string()),
+            _upstream_repository: None,
+            version: "2.102.0".to_string(),
+            release_url: Some("https://example.test/isotopes/supabase".to_string()),
+            archive_url: Some("https://example.test/supabase-cli.tgz".to_string()),
+            published_at: None,
+        };
+        let plan = InstallPlan::for_i_isotope("isotope:supabase".to_string(), "supabase");
+        let executable = executable_isotope_migration_script(
+            "/opt/iso/supabase-cli/bin/supabase-go av-migrate \"$@\"",
+            &plan,
+            &isotope,
+        )
+        .unwrap();
+
+        assert!(
+            executable.contains(
+                &plan
+                    .install_root
+                    .join("bin/supabase-go")
+                    .display()
+                    .to_string()
+            )
+        );
+        assert!(!executable.contains("/opt/iso/supabase-cli"));
+        assert!(!executable.contains("/tmp/opt/iso/supabase-cli"));
     }
 
     #[test]
@@ -15382,19 +15455,9 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 .contains("accept-encoding: gzip, br")
         );
         assert!(
-            requests[0]
-                .to_ascii_lowercase()
-                .contains("cache-control: no-cache")
-        );
-        assert!(
             requests[1]
                 .to_ascii_lowercase()
                 .contains("accept-encoding: gzip, br")
-        );
-        assert!(
-            requests[1]
-                .to_ascii_lowercase()
-                .contains("cache-control: no-cache")
         );
         assert!(!requests[0].contains("If-None-Match"));
         assert!(requests[1].contains("If-None-Match: \"test-etag\""));
@@ -18017,10 +18080,10 @@ EOF
         assert!(aws_plan.install_root.join("share/doc/aws.txt").is_file());
 
         let bin_only_isotope = IsotopePackageData {
-            name: "isotope:supabase-cli".to_string(),
+            name: "isotope:supabase".to_string(),
             replaces: Some("brew:supabase".to_string()),
             modifies: None,
-            migrate: Some("/opt/iso/supabase-cli/bin/supabase-go av-migrate \"$@\"".to_string()),
+            migrate: Some("/opt/iso/supabase/bin/supabase-go av-migrate \"$@\"".to_string()),
             _repository: None,
             _upstream_repository: None,
             version: "2.101.0".to_string(),
@@ -18030,10 +18093,10 @@ EOF
         };
         let bin_only_plan = InstallPlan {
             mode: Mode::I,
-            package_name: "isotope:supabase-cli".to_string(),
+            package_name: "isotope:supabase".to_string(),
             root_formula: "supabase".to_string(),
-            stable_root: temp.path().join("opt/iso/supabase-cli"),
-            install_root: temp.path().join("opt/iso/supabase-cli"),
+            stable_root: temp.path().join("opt/iso/supabase"),
+            install_root: temp.path().join("opt/iso/supabase"),
             tmp_root: tmp_root.clone(),
         };
         install_isotope_root(&bin_only_plan, &bin_only_isotope, &[], None).unwrap();
