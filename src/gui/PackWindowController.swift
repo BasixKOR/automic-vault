@@ -12,7 +12,7 @@ final class PackWindowController: NSWindowController {
         self.model = PackWindowModel(pack: pack)
         self.onInstallFinished = onInstallFinished
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
             styleMask: [
                 .titled,
                 .closable,
@@ -33,7 +33,7 @@ final class PackWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 820, height: 640)
+        window.minSize = NSSize(width: 880, height: 640)
         window.contentViewController = NSHostingController(
             rootView: PackWindowView(
                 model: model,
@@ -281,21 +281,22 @@ private struct PackWindowView: View {
                 if model.isAuthorizing || model.isInstalling {
                     ProgressView()
                         .controlSize(.small)
-                        .frame(width: 12, height: 12)
+                        .frame(width: 13, height: 13)
                 } else {
                     Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 10, weight: .regular))
+                        .font(.system(size: 11, weight: .regular))
                         .symbolRenderingMode(.hierarchical)
                 }
                 Text(model.isInstalling
                     ? L10n.string("Installing")
                     : L10n.string("Install All"))
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: 11, weight: .regular))
                     .lineLimit(1)
                     .minimumScaleFactor(0.84)
             }
             .foregroundStyle(PackWindowPalette.secondaryText)
-            .frame(height: 15, alignment: .center)
+            .frame(minWidth: 106)
+            .frame(height: 18, alignment: .center)
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.glass)
@@ -305,50 +306,71 @@ private struct PackWindowView: View {
     }
 
     private var content: some View {
-        HStack(spacing: 0) {
-            overview
-                .frame(width: 360)
+        GeometryReader { proxy in
+            let overviewWidth = min(
+                PackWindowLayout.maximumOverviewWidth,
+                max(
+                    PackWindowLayout.minimumOverviewWidth,
+                    proxy.size.width * PackWindowLayout.overviewWidthRatio
+                )
+            )
 
-            Divider()
-                .overlay(PackWindowPalette.hairline)
+            HStack(spacing: 0) {
+                overview
+                    .frame(width: overviewWidth)
 
-            packagePanel
+                Divider()
+                    .overlay(PackWindowPalette.hairline)
+
+                packagePanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
     private var overview: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            packImage
-                .frame(height: 260)
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(PackWindowPalette.controlBorder.opacity(0.22), lineWidth: 1)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                packImage
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(
+                                PackWindowPalette.controlBorder.opacity(0.22),
+                                lineWidth: 1
+                            )
+                    }
 
-            Text(model.pack.summary)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(PackWindowPalette.secondaryText)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let lastErrorMessage = model.lastErrorMessage {
-                Text(lastErrorMessage)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(PackWindowPalette.red)
-                    .lineSpacing(2)
+                Text(model.pack.summary)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(PackWindowPalette.secondaryText)
+                    .lineSpacing(3)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
-            }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 0)
+                if let lastErrorMessage = model.lastErrorMessage {
+                    Text(lastErrorMessage)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(PackWindowPalette.red)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(24)
+        .scrollIndicators(.visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             Rectangle()
                 .fill(.thinMaterial)
                 .overlay(PackWindowPalette.sidebarTint)
         }
+        .clipped()
     }
 
     @ViewBuilder
@@ -382,9 +404,7 @@ private struct PackWindowView: View {
 
             ScrollView {
                 LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 178, maximum: 240), spacing: 10)
-                    ],
+                    columns: PackWindowLayout.packageGridColumns,
                     alignment: .leading,
                     spacing: 10
                 ) {
@@ -398,11 +418,13 @@ private struct PackWindowView: View {
                         )
                     }
                 }
-                .padding(.bottom, 24)
+                .padding(.bottom, 18)
             }
             .scrollIndicators(.visible)
         }
-        .padding(24)
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -471,4 +493,14 @@ private enum PackWindowPalette {
     static let quietText = Color.white.opacity(0.38)
     static let accent = Color(red: 0.10, green: 0.86, blue: 0.58)
     static let red = Color(red: 1.00, green: 0.45, blue: 0.45)
+}
+
+private enum PackWindowLayout {
+    static let minimumOverviewWidth: CGFloat = 330
+    static let maximumOverviewWidth: CGFloat = 410
+    static let overviewWidthRatio: CGFloat = 0.38
+    static let packageGridColumns = [
+        GridItem(.flexible(minimum: 180), spacing: 10),
+        GridItem(.flexible(minimum: 180), spacing: 10)
+    ]
 }
