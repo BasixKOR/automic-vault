@@ -23,6 +23,81 @@ static NSMutableDictionary *isotope_generic_password_query(NSString *service,
   return query;
 }
 
+static NSString *isotope_security_error_message(OSStatus status,
+                                                NSString *fallbackPrefix) {
+  NSString *message = (__bridge_transfer NSString *)
+      SecCopyErrorMessageString(status, NULL);
+  if (message != nil) {
+    return message;
+  }
+  return [NSString stringWithFormat:@"%@ (%d)", fallbackPrefix, (int)status];
+}
+
+static bool isotope_add_trusted_application(NSMutableArray *trustedApplications,
+                                            const char *path,
+                                            char **error_cstr) {
+  SecTrustedApplicationRef application = NULL;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  OSStatus status = SecTrustedApplicationCreateFromPath(path, &application);
+#pragma clang diagnostic pop
+  if (status != errSecSuccess) {
+    if (error_cstr != NULL) {
+      NSString *message =
+          isotope_security_error_message(status, @"trusted application failed");
+      if (path != NULL) {
+        message = [NSString stringWithFormat:@"%@ for %s", message, path];
+      }
+      *error_cstr = strdup(message.UTF8String);
+    }
+    return false;
+  }
+  [trustedApplications addObject:CFBridgingRelease(application)];
+  return true;
+}
+
+static bool isotope_create_password_access(NSString *service,
+                                           SecAccessRef *accessRef,
+                                           char **error_cstr) {
+  NSMutableArray *trustedApplications = [NSMutableArray array];
+  if (!isotope_add_trusted_application(trustedApplications, NULL, error_cstr)) {
+    return false;
+  }
+
+  NSArray<NSString *> *injectionPaths = @[
+    @"/usr/local/bin/av",
+    @"/tmp/usr/local/bin/av",
+  ];
+  NSFileManager *fileManager = NSFileManager.defaultManager;
+  for (NSString *path in injectionPaths) {
+    if (![fileManager isExecutableFileAtPath:path]) {
+      continue;
+    }
+    if (!isotope_add_trusted_application(trustedApplications,
+                                         path.fileSystemRepresentation,
+                                         error_cstr)) {
+      return false;
+    }
+  }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  OSStatus status = SecAccessCreate((__bridge CFStringRef)service,
+                                    (__bridge CFArrayRef)trustedApplications,
+                                    accessRef);
+#pragma clang diagnostic pop
+  if (status != errSecSuccess) {
+    if (error_cstr != NULL) {
+      NSString *message =
+          isotope_security_error_message(status, @"keychain access failed");
+      *error_cstr = strdup(message.UTF8String);
+    }
+    return false;
+  }
+
+  return true;
+}
+
 char *isotope_copy_generic_password_json_with_status(const char *service_cstr,
                                                      const char *account_cstr,
                                                      char **error_cstr,
@@ -251,24 +326,28 @@ bool isotope_store_generic_password_json(const char *service_cstr,
     NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
     NSMutableDictionary *query = isotope_generic_password_query(service, account);
 
+    // Changing access on an existing item can trigger a keychain authorization
+    // dialog, so only attach our trusted-app ACL when creating a new item.
     NSDictionary *attributes = @{(__bridge id)kSecValueData: data};
     OSStatus status =
         SecItemUpdate((__bridge CFDictionaryRef)query,
                       (__bridge CFDictionaryRef)attributes);
     if (status == errSecItemNotFound) {
+      SecAccessRef access = NULL;
+      if (!isotope_create_password_access(service, &access, error_cstr)) {
+        return false;
+      }
+      id accessObject = CFBridgingRelease(access);
       NSMutableDictionary *createQuery = [query mutableCopy];
       createQuery[(__bridge id)kSecValueData] = data;
+      createQuery[(__bridge id)kSecAttrAccess] = accessObject;
       status = SecItemAdd((__bridge CFDictionaryRef)createQuery, NULL);
     }
 
     if (status != errSecSuccess) {
       if (error_cstr != NULL) {
-        NSString *message = (__bridge_transfer NSString *)
-            SecCopyErrorMessageString(status, NULL);
-        if (message == nil) {
-          message = [NSString stringWithFormat:@"keychain write failed (%d)",
-                                                (int)status];
-        }
+        NSString *message =
+            isotope_security_error_message(status, @"keychain write failed");
         *error_cstr = strdup(message.UTF8String);
       }
       return false;
