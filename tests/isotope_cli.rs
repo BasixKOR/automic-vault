@@ -44,6 +44,7 @@ fn subs_isotope_cli_covers_help_version_and_missing_target() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av inject"));
     assert!(stdout(&output).contains("--replace-existing-env"));
+    assert!(stdout(&output).contains("--allow-missing-keys"));
     assert!(stdout(&output).contains("+KEY"));
 
     let output = run_isotope(&["--version"]);

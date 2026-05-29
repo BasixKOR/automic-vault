@@ -3,13 +3,15 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CString;
 #[cfg(target_os = "macos")]
-use std::ffi::c_char;
+use std::ffi::{c_char, c_int};
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::AsRawFd;
 
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
+#[cfg(target_os = "macos")]
+const ERR_SEC_ITEM_NOT_FOUND: c_int = -25300;
 const APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
 const APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.pending-changed";
 const AUTOMATIC_APPROVAL_NOTIFICATION: &str = "com.automicvault.isotope-approval.automatic-granted";
@@ -21,6 +23,7 @@ pub(crate) const CREDENTIAL_HELPER_TOKEN_ENV: &str = "AUTOMIC_VAULT_CREDENTIAL_H
 #[derive(Debug)]
 struct IsotopeOptions {
     replace_existing_env: bool,
+    allow_missing_keys: bool,
     keys: Vec<String>,
     target: PathBuf,
     args: Vec<OsString>,
@@ -129,6 +132,15 @@ impl IsotopeAlwaysAllowStore {
 pub(crate) trait CredentialHelperSecretStore {
     fn load_secret(&self, key: &str) -> Result<String, String>;
 
+    fn load_secret_if_present(&self, key: &str) -> Result<Option<String>, String> {
+        self.load_secret(key).map(Some)
+    }
+
+    fn secret_exists(&self, key: &str) -> Result<bool, String> {
+        self.load_secret_if_present(key)
+            .map(|value| value.is_some())
+    }
+
     fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
         Err("credential helper store is read-only".to_string())
     }
@@ -136,6 +148,12 @@ pub(crate) trait CredentialHelperSecretStore {
 
 trait CredentialStore: CredentialHelperSecretStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MissingCredentialPolicy {
+    Required,
+    SkipMissing,
 }
 
 struct KeychainCredentialStore;
@@ -254,6 +272,7 @@ fn parse_isotope_options(
     args: impl Iterator<Item = OsString>,
 ) -> Result<IsotopeOptions, String> {
     let mut replace_existing_env = false;
+    let mut allow_missing_keys = false;
     let mut keys = Vec::new();
     let mut seen_keys = BTreeSet::new();
     let mut iter = std::iter::once(first_arg).chain(args);
@@ -261,6 +280,10 @@ fn parse_isotope_options(
     while let Some(arg) = iter.next() {
         if arg == "--replace-existing-env" {
             replace_existing_env = true;
+            continue;
+        }
+        if arg == "--allow-missing-keys" {
+            allow_missing_keys = true;
             continue;
         }
         if arg == "--allow-existing-env" {
@@ -298,6 +321,7 @@ fn parse_isotope_options(
         }
         return Ok(IsotopeOptions {
             replace_existing_env,
+            allow_missing_keys,
             keys,
             target,
             args: iter.collect(),
@@ -456,7 +480,7 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
         .to_string();
 
     let existing_env_keys = check_environment_conflicts(&options.keys);
-    let credential_keys = credential_keys_to_load(
+    let mut credential_keys = credential_keys_to_load(
         &options.keys,
         &existing_env_keys,
         options.replace_existing_env,
@@ -492,14 +516,23 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
         .map(|path| validate_root_controlled_path(path).is_ok());
     let can_always_allow = always_allow_scope.is_ok();
 
-    let automatically_approved = !credential_keys.is_empty()
-        && can_always_allow
-        && always_allows_usage(
+    if options.allow_missing_keys {
+        credential_keys = credential_keys_present(store, &credential_keys)?;
+    }
+
+    let automatically_approved = if !credential_keys.is_empty() && can_always_allow {
+        match always_allows_usage(
             always_allow_scope
                 .as_ref()
                 .expect("validated always-allow scope"),
             &credential_keys,
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(err) => return Err(err),
+        }
+    } else {
+        false
+    };
 
     if !credential_keys.is_empty() && !automatically_approved {
         request_isotope_approval(
@@ -520,12 +553,23 @@ fn run_isotope(options: &IsotopeOptions, store: &dyn CredentialStore) -> Result<
     }
 
     let mut env_map = env::vars_os().collect::<BTreeMap<_, _>>();
-    let mut credentials = load_credentials(store, &credential_keys)?;
+    let missing_policy = if options.allow_missing_keys {
+        MissingCredentialPolicy::SkipMissing
+    } else {
+        MissingCredentialPolicy::Required
+    };
+    let mut credentials = load_credentials_with_policy(store, &credential_keys, missing_policy)?;
     for (key, value) in &credentials {
         env_map.insert(OsString::from(key), OsString::from(value));
     }
 
-    let prepared = prepare_execution(&file, options, env_map)?;
+    let prepared = match prepare_execution(&file, options, env_map) {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            zeroize_credentials(&mut credentials);
+            return Err(err);
+        }
+    };
     let result = exec_prepared(prepared);
     zeroize_credentials(&mut credentials);
     result
@@ -561,13 +605,43 @@ fn credential_keys_to_load(
         .collect()
 }
 
+fn credential_keys_present(
+    store: &dyn CredentialHelperSecretStore,
+    keys: &[String],
+) -> Result<Vec<String>, String> {
+    let mut present = Vec::new();
+    for key in keys {
+        if store.secret_exists(key)? {
+            present.push(key.clone());
+        }
+    }
+    Ok(present)
+}
+
 pub(crate) fn load_credentials(
     store: &dyn CredentialHelperSecretStore,
     keys: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
+    load_credentials_with_policy(store, keys, MissingCredentialPolicy::Required)
+}
+
+fn load_credentials_with_policy(
+    store: &dyn CredentialHelperSecretStore,
+    keys: &[String],
+    missing_policy: MissingCredentialPolicy,
+) -> Result<BTreeMap<String, String>, String> {
     let mut credentials = BTreeMap::new();
     for key in keys {
-        credentials.insert(key.clone(), store.load_secret(key)?);
+        match missing_policy {
+            MissingCredentialPolicy::Required => {
+                credentials.insert(key.clone(), store.load_secret(key)?);
+            }
+            MissingCredentialPolicy::SkipMissing => {
+                if let Some(value) = store.load_secret_if_present(key)? {
+                    credentials.insert(key.clone(), value);
+                }
+            }
+        }
     }
     Ok(credentials)
 }
@@ -1337,6 +1411,14 @@ impl CredentialHelperSecretStore for KeychainCredentialStore {
         keychain_read_secret(KEYCHAIN_SERVICE, key)
     }
 
+    fn load_secret_if_present(&self, key: &str) -> Result<Option<String>, String> {
+        keychain_read_secret_if_present(KEYCHAIN_SERVICE, key)
+    }
+
+    fn secret_exists(&self, key: &str) -> Result<bool, String> {
+        keychain_secret_exists(KEYCHAIN_SERVICE, key)
+    }
+
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
         keychain_write_secret(KEYCHAIN_SERVICE, key, value)
     }
@@ -1350,11 +1432,23 @@ impl CredentialStore for KeychainCredentialStore {
 
 #[cfg(target_os = "macos")]
 fn keychain_read_secret(service: &str, account: &str) -> Result<String, String> {
+    keychain_read_secret_if_present(service, account)?
+        .ok_or_else(|| missing_keychain_item_error(account))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_read_secret(_service: &str, _account: &str) -> Result<String, String> {
+    Err("isotope keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_read_secret_if_present(service: &str, account: &str) -> Result<Option<String>, String> {
     unsafe extern "C" {
-        fn isotope_copy_generic_password_json(
+        fn isotope_copy_generic_password_json_with_status(
             service_cstr: *const c_char,
             account_cstr: *const c_char,
             error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
         ) -> *mut c_char;
     }
 
@@ -1363,22 +1457,89 @@ fn keychain_read_secret(service: &str, account: &str) -> Result<String, String> 
     let account_cstr =
         CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
     let mut error = std::ptr::null_mut();
+    let mut status = 0;
     let value = unsafe {
-        isotope_copy_generic_password_json(service_cstr.as_ptr(), account_cstr.as_ptr(), &mut error)
+        isotope_copy_generic_password_json_with_status(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
     };
     if value.is_null() {
+        if status == ERR_SEC_ITEM_NOT_FOUND {
+            unsafe {
+                let _ = take_bridge_string(error);
+            }
+            return Ok(None);
+        }
         let message = unsafe { take_bridge_string(error) }
             .unwrap_or_else(|| "keychain lookup failed".to_string());
         return Err(format!("failed to load isotope key {account}: {message}"));
     }
 
     unsafe { take_bridge_string(value) }
+        .map(Some)
         .ok_or_else(|| "keychain returned invalid UTF-8".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_read_secret(_service: &str, _account: &str) -> Result<String, String> {
+fn keychain_read_secret_if_present(
+    _service: &str,
+    _account: &str,
+) -> Result<Option<String>, String> {
     Err("isotope keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_secret_exists(service: &str, account: &str) -> Result<bool, String> {
+    unsafe extern "C" {
+        fn isotope_generic_password_exists(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
+        ) -> bool;
+    }
+
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let mut status = 0;
+    if unsafe {
+        isotope_generic_password_exists(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
+    } {
+        return Ok(true);
+    }
+    if status == ERR_SEC_ITEM_NOT_FOUND {
+        unsafe {
+            let _ = take_bridge_string(error);
+        }
+        return Ok(false);
+    }
+
+    let message = unsafe { take_bridge_string(error) }
+        .unwrap_or_else(|| "keychain lookup failed".to_string());
+    Err(format!("failed to load isotope key {account}: {message}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_secret_exists(_service: &str, _account: &str) -> Result<bool, String> {
+    Err("isotope keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn missing_keychain_item_error(account: &str) -> String {
+    format!(
+        "failed to load isotope key {account}: The specified item could not be found in the keychain."
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -1498,9 +1659,10 @@ unsafe fn take_bridge_string(value: *mut c_char) -> Option<String> {
 pub fn print_isotope_usage(program_name: &str) {
     println!(
         "\
-Usage: {program_name} [--replace-existing-env] +KEY [+KEY...] /absolute/path/to/executable-or-script [args...]
+Usage: {program_name} [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] /absolute/path/to/executable-or-script [args...]
 
-Asks Automic Vault to approve injecting the named keys into the target process."
+Asks Automic Vault to approve injecting the named keys into the target process.
+--allow-missing-keys skips absent keychain items without a warning."
     );
 }
 
@@ -1566,6 +1728,22 @@ mod tests {
                 .get(key)
                 .cloned()
                 .unwrap_or_else(|| Err("missing stub credential".to_string()))
+        }
+
+        fn load_secret_if_present(&self, key: &str) -> Result<Option<String>, String> {
+            match self.secrets.get(key).cloned() {
+                Some(Ok(value)) => Ok(Some(value)),
+                Some(Err(err)) => Err(err),
+                None => Ok(None),
+            }
+        }
+
+        fn secret_exists(&self, key: &str) -> Result<bool, String> {
+            match self.secrets.get(key) {
+                Some(Ok(_)) => Ok(true),
+                Some(Err(err)) => Err(err.clone()),
+                None => Ok(false),
+            }
         }
     }
 
@@ -1764,6 +1942,17 @@ mod tests {
         )
         .unwrap();
         assert!(options.replace_existing_env);
+    }
+
+    #[test]
+    fn isotopes_parse_options_accepts_allow_missing_keys_flag() {
+        let options = parse_isotope_options(
+            "av inject",
+            OsString::from("--allow-missing-keys"),
+            vec![OsString::from("+TOKEN"), OsString::from("/bin/bash")].into_iter(),
+        )
+        .unwrap();
+        assert!(options.allow_missing_keys);
     }
 
     #[test]
@@ -2208,6 +2397,7 @@ mod tests {
             &file,
             &IsotopeOptions {
                 replace_existing_env: false,
+                allow_missing_keys: false,
                 keys: Vec::new(),
                 target: invalid_target,
                 args: Vec::new(),
@@ -2273,6 +2463,26 @@ mod tests {
             .secrets
             .insert("TOKEN".to_string(), Ok("secret".to_string()));
         let loaded = load_credentials(&store, &["TOKEN".to_string()]).unwrap();
+        assert_eq!(loaded["TOKEN"], "secret");
+    }
+
+    #[test]
+    fn isotopes_load_credentials_can_skip_missing_optional_keys() {
+        let mut store = StubCredentialStore::default();
+        store
+            .secrets
+            .insert("TOKEN".to_string(), Ok("secret".to_string()));
+        let loaded = load_credentials_with_policy(
+            &store,
+            &["MISSING".to_string(), "TOKEN".to_string()],
+            MissingCredentialPolicy::SkipMissing,
+        )
+        .unwrap();
+
+        assert_eq!(
+            loaded.keys().cloned().collect::<Vec<_>>(),
+            vec!["TOKEN".to_string()]
+        );
         assert_eq!(loaded["TOKEN"], "secret");
     }
 
@@ -2677,6 +2887,7 @@ mod tests {
     fn isotopes_request_and_bridge_helpers_reject_invalid_utf8_inputs() {
         let options = IsotopeOptions {
             replace_existing_env: false,
+            allow_missing_keys: false,
             keys: vec!["TOKEN".to_string()],
             target: PathBuf::from("/bin/sh"),
             args: vec![OsString::from_vec(b"bad-\xff".to_vec())],
@@ -2708,6 +2919,7 @@ mod tests {
         let bad_path = PathBuf::from(OsString::from_vec(b"/tmp/isotope-\xff".to_vec()));
         let options = IsotopeOptions {
             replace_existing_env: false,
+            allow_missing_keys: false,
             keys: vec!["TOKEN".to_string()],
             target: bad_path.clone(),
             args: vec![OsString::from("--version")],
@@ -2727,6 +2939,7 @@ mod tests {
 
         let options = IsotopeOptions {
             replace_existing_env: false,
+            allow_missing_keys: false,
             keys: vec!["TOKEN".to_string()],
             target: PathBuf::from("/bin/sh"),
             args: vec![OsString::from("--version")],
@@ -2776,6 +2989,7 @@ mod tests {
         let result = run_isotope(
             &IsotopeOptions {
                 replace_existing_env: false,
+                allow_missing_keys: false,
                 keys: vec!["TOKEN".to_string()],
                 target: tool.clone(),
                 args: vec![OsString::from("--flag")],
@@ -2800,6 +3014,7 @@ mod tests {
         let err = run_isotope(
             &IsotopeOptions {
                 replace_existing_env: false,
+                allow_missing_keys: false,
                 keys: Vec::new(),
                 target: tool,
                 args: vec![OsString::from("--verbose"), OsString::from("value")],
@@ -2812,6 +3027,31 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_run_allows_missing_keys_without_warning_or_store_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        fs::write(&tool, b"plain text\n").unwrap();
+        let mut permissions = fs::metadata(&tool).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&tool, permissions).unwrap();
+
+        let err = run_isotope(
+            &IsotopeOptions {
+                replace_existing_env: false,
+                allow_missing_keys: true,
+                keys: vec!["TOKEN".to_string()],
+                target: tool,
+                args: Vec::new(),
+            },
+            &StubCredentialStore::default(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("failed to execute"));
+        assert!(!err.contains("missing stub credential"));
+    }
+
+    #[test]
     fn isotopes_prepare_execution_preserves_argv_zero_and_env() {
         let temp = tempfile::tempdir().unwrap();
         let tool = temp.path().join("tool");
@@ -2819,6 +3059,7 @@ mod tests {
         let file = File::open(&tool).unwrap();
         let options = IsotopeOptions {
             replace_existing_env: false,
+            allow_missing_keys: false,
             keys: vec!["TOKEN".to_string()],
             target: tool.clone(),
             args: vec![OsString::from("--flag"), OsString::from("value")],
@@ -2852,6 +3093,7 @@ mod tests {
         let file = File::open(fs::canonicalize(&requested_tool).unwrap()).unwrap();
         let options = IsotopeOptions {
             replace_existing_env: false,
+            allow_missing_keys: false,
             keys: vec!["TOKEN".to_string()],
             target: requested_tool.clone(),
             args: Vec::new(),

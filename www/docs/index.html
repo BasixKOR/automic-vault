@@ -535,6 +535,8 @@ sudo av uninstall ripgrep</code></pre>
                 path with those values in its environment after approval. Key
                 names must start with a letter or underscore and may contain
                 only ASCII letters, digits, and underscores.
+                Use <code>--allow-missing-keys</code> for wrappers that should
+                continue silently when an optional migrated key is absent.
                 Secret values are read from stdin, or from a hidden prompt when
                 run interactively.
               </p>
@@ -697,7 +699,7 @@ av contain sandbox-profile --allow /usr/local/bin/av</code></pre>
                 <p role="cell">Stores a secret read from stdin or a hidden prompt.</p>
               </div>
               <div role="row">
-                <span role="cell"><code>av inject [+KEY...] /abs/tool [args...]</code></span>
+                <span role="cell"><code>av inject [--allow-missing-keys] [+KEY...] /abs/tool [args...]</code></span>
                 <p role="cell">Executes an absolute target with approved keys.</p>
               </div>
               <div role="row">

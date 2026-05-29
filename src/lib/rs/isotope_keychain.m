@@ -23,12 +23,33 @@ static NSMutableDictionary *isotope_generic_password_query(NSString *service,
   return query;
 }
 
+char *isotope_copy_generic_password_json_with_status(const char *service_cstr,
+                                                     const char *account_cstr,
+                                                     char **error_cstr,
+                                                     int *status_out);
+bool isotope_generic_password_exists(const char *service_cstr,
+                                     const char *account_cstr,
+                                     char **error_cstr,
+                                     int *status_out);
+
 char *isotope_copy_generic_password_json(const char *service_cstr,
                                          const char *account_cstr,
                                          char **error_cstr) {
+  return isotope_copy_generic_password_json_with_status(service_cstr,
+                                                        account_cstr,
+                                                        error_cstr, NULL);
+}
+
+char *isotope_copy_generic_password_json_with_status(const char *service_cstr,
+                                                     const char *account_cstr,
+                                                     char **error_cstr,
+                                                     int *status_out) {
   @autoreleasepool {
     if (error_cstr != NULL) {
       *error_cstr = NULL;
+    }
+    if (status_out != NULL) {
+      *status_out = errSecSuccess;
     }
 
     if (service_cstr == NULL || account_cstr == NULL) {
@@ -53,6 +74,9 @@ char *isotope_copy_generic_password_json(const char *service_cstr,
 
     CFTypeRef result = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+    if (status_out != NULL) {
+      *status_out = (int)status;
+    }
     if (status != errSecSuccess) {
       if (error_cstr != NULL) {
         NSString *message = (__bridge_transfer NSString *)
@@ -84,6 +108,58 @@ char *isotope_copy_generic_password_json(const char *service_cstr,
     memcpy(copy, data.bytes, data.length);
     copy[data.length] = '\0';
     return copy;
+  }
+}
+
+bool isotope_generic_password_exists(const char *service_cstr,
+                                     const char *account_cstr,
+                                     char **error_cstr,
+                                     int *status_out) {
+  @autoreleasepool {
+    if (error_cstr != NULL) {
+      *error_cstr = NULL;
+    }
+    if (status_out != NULL) {
+      *status_out = errSecSuccess;
+    }
+
+    if (service_cstr == NULL || account_cstr == NULL) {
+      if (error_cstr != NULL) {
+        *error_cstr = strdup("invalid keychain lookup arguments");
+      }
+      return false;
+    }
+
+    NSString *service = [NSString stringWithUTF8String:service_cstr];
+    NSString *account = [NSString stringWithUTF8String:account_cstr];
+    if (service == nil || account == nil) {
+      if (error_cstr != NULL) {
+        *error_cstr = strdup("keychain lookup arguments must be UTF-8");
+      }
+      return false;
+    }
+
+    NSMutableDictionary *query = isotope_generic_password_query(service, account);
+    query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
+
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, NULL);
+    if (status_out != NULL) {
+      *status_out = (int)status;
+    }
+    if (status == errSecSuccess) {
+      return true;
+    }
+
+    if (error_cstr != NULL) {
+      NSString *message = (__bridge_transfer NSString *)
+          SecCopyErrorMessageString(status, NULL);
+      if (message == nil) {
+        message = [NSString stringWithFormat:@"keychain lookup failed (%d)",
+                                              (int)status];
+      }
+      *error_cstr = strdup(message.UTF8String);
+    }
+    return false;
   }
 }
 
