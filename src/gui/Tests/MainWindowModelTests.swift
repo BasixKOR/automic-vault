@@ -200,6 +200,39 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchPrefersInstalledPackageOverMatchingDaemonResult() {
+        let installedFlyctlRecord = PackageRecord(
+            name: "flyctl",
+            source: .formula(rootFormula: "flyctl"),
+            version: "0.4.57",
+            description: "Command-line tools for fly.io services",
+            securityState: nil
+        )
+        let installedFlyctl = PackagePresentation(
+            item: .installed(installedFlyctlRecord),
+            detail: installedFlyctlRecord.fallbackDetail,
+            freshness: 0
+        )
+        let daemonFlyctl = searchPresentation(
+            name: "flyctl",
+            formula: "flyctl",
+            description: "Command-line tools for fly.io services"
+        )
+        let daemonFlye = searchPresentation(
+            name: "flye",
+            formula: "flye",
+            description: "De novo assembler for single molecule sequencing reads"
+        )
+
+        let merged = MainWindowModel.mergedSearchPackages(
+            installed: [installedFlyctl],
+            daemon: [daemonFlye, daemonFlyctl]
+        )
+
+        XCTAssertEqual(merged.map(\.selectionID), ["flyctl", "search:flye"])
+    }
+
+    @MainActor
     func testSecurityAlertsPreferInstalledPackageOverMatchingDetectorRow() throws {
         let flyctlState = securityState(
             isotopeName: "flyctl",
@@ -522,6 +555,29 @@ final class MainWindowModelTests: XCTestCase {
             item: .installed(record),
             detail: record.fallbackDetail,
             freshness: 0
+        )
+    }
+
+    private func searchPresentation(
+        name: String,
+        formula: String,
+        description: String
+    ) -> PackagePresentation {
+        let result = PackageSearchResult(
+            name: name,
+            source: .formula(rootFormula: formula),
+            version: nil,
+            description: description,
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        return PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0,
+            presentationID: "search:\(name)"
         )
     }
 

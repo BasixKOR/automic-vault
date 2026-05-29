@@ -975,6 +975,25 @@ final class MainWindowModel: ObservableObject {
         uniqueSecurityAlertPackages(installedPackages + geigerPackages)
     }
 
+    static func mergedSearchPackages(
+        installed installedPackages: [PackagePresentation],
+        daemon daemonPackages: [PackagePresentation]
+    ) -> [PackagePresentation] {
+        var seen = Set<String>()
+        var result: [PackagePresentation] = []
+
+        for package in installedPackages + daemonPackages {
+            let keys = packageIdentityDeduplicationKeys(for: package)
+            guard keys.contains(where: seen.contains) == false else {
+                continue
+            }
+            keys.forEach { seen.insert($0) }
+            result.append(package)
+        }
+
+        return result
+    }
+
     private static func uniqueSecurityAlertPackages(
         _ source: [PackagePresentation]
     ) -> [PackagePresentation] {
@@ -1014,6 +1033,29 @@ final class MainWindowModel: ObservableObject {
         if let state = securityState(for: package),
            state.needsMainWindowSecurityAlert {
             append("security:\(state.isotopeName)")
+        }
+
+        packageIdentityDeduplicationKeys(for: package).forEach(append)
+
+        return keys.isEmpty ? [package.selectionID.lowercased()] : keys
+    }
+
+    private static func packageIdentityDeduplicationKeys(
+        for package: PackagePresentation
+    ) -> [String] {
+        var seen = Set<String>()
+        var keys: [String] = []
+
+        func append(_ key: String?) {
+            guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  key.isEmpty == false else {
+                return
+            }
+            let normalized = key.lowercased()
+            guard seen.insert(normalized).inserted else {
+                return
+            }
+            keys.append(normalized)
         }
 
         switch package.item {
@@ -1121,11 +1163,10 @@ final class MainWindowModel: ObservableObject {
         let installedMatches = packages.filter {
             packageMatchesQuery($0, query: query)
         }
-        var seen = Set(installedMatches.map(\.selectionID))
-        let daemonMatches = searchResults.filter { package in
-            seen.insert(package.selectionID).inserted
-        }
-        return installedMatches + daemonMatches
+        return Self.mergedSearchPackages(
+            installed: installedMatches,
+            daemon: searchResults
+        )
     }
 
     private func sectionMatches(
