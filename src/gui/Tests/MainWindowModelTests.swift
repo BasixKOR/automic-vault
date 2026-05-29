@@ -294,6 +294,49 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSecurityAlertsDedupeInstalledIsotopeAgainstStaleGeigerRow() {
+        let flyctlState = securityState(
+            isotopeName: "flyctl",
+            reason: "flyctl config file contains a plaintext access token"
+        )
+        let installedFlyctlRecord = PackageRecord(
+            name: "isotope:flyctl",
+            source: .isotope(isotopeName: "flyctl"),
+            version: "0.4.57",
+            description: "Command-line tools for fly.io services",
+            securityState: flyctlState
+        )
+        let installedFlyctl = PackagePresentation(
+            item: .installed(installedFlyctlRecord),
+            detail: installedFlyctlRecord.fallbackDetail,
+            freshness: 0
+        )
+        let staleGeigerFlyctlResult = PackageSearchResult(
+            name: "brew:flyctl",
+            source: .formula(rootFormula: "flyctl"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        let staleGeigerFlyctl = PackagePresentation(
+            item: .available(staleGeigerFlyctlResult),
+            detail: staleGeigerFlyctlResult.fallbackDetail,
+            freshness: 0,
+            presentationID: "geiger:brew:flyctl"
+        )
+
+        let alerts = MainWindowModel.securityAlertPackages(
+            installed: [installedFlyctl],
+            geiger: [staleGeigerFlyctl]
+        )
+
+        XCTAssertEqual(alerts.map(\.selectionID), ["isotope:flyctl"])
+    }
+
+    @MainActor
     func testOutdatedAutomicVaultCLTAppearsInOutdatedSection() throws {
         let recommendation = PackageRecommendation.automicVaultCLT(
             installedVersion: "1.0",

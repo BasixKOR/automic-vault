@@ -1030,12 +1030,23 @@ final class MainWindowModel: ObservableObject {
             keys.append(normalized)
         }
 
+        func appendSubject(_ key: String?) {
+            guard let subject = securityAlertSubjectName(for: key) else {
+                return
+            }
+            append("subject:\(subject)")
+        }
+
         if let state = securityState(for: package),
            state.needsMainWindowSecurityAlert {
             append("security:\(state.isotopeName)")
+            appendSubject(state.isotopeName)
         }
 
-        packageIdentityDeduplicationKeys(for: package).forEach(append)
+        packageIdentityDeduplicationKeys(for: package).forEach { key in
+            append(key)
+            appendSubject(key)
+        }
 
         return keys.isEmpty ? [package.selectionID.lowercased()] : keys
     }
@@ -1088,6 +1099,43 @@ final class MainWindowModel: ObservableObject {
         append(package.preferredDetailLookupName)
 
         return keys.isEmpty ? [package.selectionID.lowercased()] : keys
+    }
+
+    private static func securityAlertSubjectName(for key: String?) -> String? {
+        guard var value = key?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              value.isEmpty == false else {
+            return nil
+        }
+
+        let prefixes = [
+            "search:",
+            "geiger:",
+            "brew:",
+            "cask:",
+            "gone:",
+            "sys:",
+            "isotope:",
+            "npm:",
+            "pip:"
+        ]
+        var strippedPrefix = true
+        while strippedPrefix {
+            strippedPrefix = false
+            for prefix in prefixes where value.hasPrefix(prefix) {
+                value = String(value.dropFirst(prefix.count))
+                strippedPrefix = true
+                break
+            }
+        }
+
+        let subject = value.packageSearchOrderName
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .last
+            .map(String.init)
+            ?? value
+        return subject.isEmpty ? nil : subject
     }
 
     private static func securityState(
