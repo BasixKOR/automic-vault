@@ -16858,7 +16858,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
-    fn run_i_formula_keeps_downloaded_bottles_alive_until_extract() {
+    fn run_i_package_keeps_downloaded_bottles_alive_until_extract() {
         let _env_lock = test_env_lock().lock().unwrap();
         let _package_lock = acquire_package_mutation_lock().unwrap();
         let package_name = "archive-lifetime-test";
