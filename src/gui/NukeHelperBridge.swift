@@ -26,7 +26,7 @@ enum NukeHelperBridgeError: Error, LocalizedError {
              .biometricDenied(let message):
             return message
         case .biometricCanceled:
-            return "Authentication canceled."
+            return L10n.string("Authentication canceled.")
         }
     }
 }
@@ -227,7 +227,7 @@ final class NukeHelperBridge {
 
     func authenticateBiometrics(reason: String, completion: @escaping (Result<Void, Error>) -> Void) {
         let context = LAContext()
-        context.localizedCancelTitle = "Abort"
+        context.localizedCancelTitle = L10n.string("Abort")
         var authError: NSError?
         if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &authError) {
             evaluateAuthentication(
@@ -253,7 +253,7 @@ final class NukeHelperBridge {
         completion(.failure(NukeHelperBridgeError.biometricUnavailable(
             ownerAuthError?.localizedDescription
                 ?? authError?.localizedDescription
-                ?? "Touch ID and password authentication are unavailable."
+                ?? L10n.string("Touch ID and password authentication are unavailable.")
         )))
     }
 
@@ -285,7 +285,7 @@ final class NukeHelperBridge {
                     completion(.failure(NukeHelperBridgeError.biometricCanceled))
                 } else {
                     completion(.failure(NukeHelperBridgeError.biometricDenied(
-                        error?.localizedDescription ?? "Biometric authorization failed."
+                        error?.localizedDescription ?? L10n.string("Biometric authorization failed.")
                     )))
                 }
             }

@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeMainMenu() -> NSMenu {
-        let menu = NSMenu(title: "Main Menu")
+        let menu = NSMenu(title: L10n.string("Main Menu"))
         menu.addItem(makeAppMenuItem())
         menu.addItem(makeEditMenuItem())
         menu.addItem(makeWindowMenuItem())
@@ -110,30 +110,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appName = ProcessInfo.processInfo.processName
 
         appMenu.addItem(
-            withTitle: "About \(appName)",
+            withTitle: L10n.format("About %@", appName),
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(.separator())
         appMenu.addItem(
-            withTitle: "Hide \(appName)",
+            withTitle: L10n.format("Hide %@", appName),
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         )
         let hideOthers = appMenu.addItem(
-            withTitle: "Hide Others",
+            withTitle: L10n.string("Hide Others"),
             action: #selector(NSApplication.hideOtherApplications(_:)),
             keyEquivalent: "h"
         )
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(
-            withTitle: "Show All",
+            withTitle: L10n.string("Show All"),
             action: #selector(NSApplication.unhideAllApplications(_:)),
             keyEquivalent: ""
         )
         appMenu.addItem(.separator())
         appMenu.addItem(
-            withTitle: "Quit \(appName)",
+            withTitle: L10n.format("Quit %@", appName),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -144,37 +144,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeEditMenuItem() -> NSMenuItem {
         let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
+        let editMenu = NSMenu(title: L10n.string("Edit"))
 
         editMenu.addItem(
-            withTitle: "Undo",
+            withTitle: L10n.string("Undo"),
             action: Selector(("undo:")),
             keyEquivalent: "z"
         )
         let redoItem = editMenu.addItem(
-            withTitle: "Redo",
+            withTitle: L10n.string("Redo"),
             action: Selector(("redo:")),
             keyEquivalent: "z"
         )
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
         editMenu.addItem(
-            withTitle: "Cut",
+            withTitle: L10n.string("Cut"),
             action: #selector(NSText.cut(_:)),
             keyEquivalent: "x"
         )
         editMenu.addItem(
-            withTitle: "Copy",
+            withTitle: L10n.string("Copy"),
             action: #selector(NSText.copy(_:)),
             keyEquivalent: "c"
         )
         editMenu.addItem(
-            withTitle: "Paste",
+            withTitle: L10n.string("Paste"),
             action: #selector(NSText.paste(_:)),
             keyEquivalent: "v"
         )
         editMenu.addItem(
-            withTitle: "Select All",
+            withTitle: L10n.string("Select All"),
             action: #selector(NSText.selectAll(_:)),
             keyEquivalent: "a"
         )
@@ -185,17 +185,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeWindowMenuItem() -> NSMenuItem {
         let windowItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
+        let windowMenu = NSMenu(title: L10n.string("Window"))
 
         let refreshItem = windowMenu.addItem(
-            withTitle: "Refresh",
+            withTitle: L10n.string("Refresh"),
             action: #selector(refreshPackages(_:)),
             keyEquivalent: "r"
         )
         refreshItem.target = self
         #if DEBUG
         let fakeUpdateItem = windowMenu.addItem(
-            withTitle: "Run Fake Update",
+            withTitle: L10n.string("Run Fake Update"),
             action: #selector(runFakeUpdate(_:)),
             keyEquivalent: "u"
         )
@@ -204,17 +204,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(.separator())
         #endif
         windowMenu.addItem(
-            withTitle: "Close",
+            withTitle: L10n.string("Close"),
             action: #selector(NSWindow.performClose(_:)),
             keyEquivalent: "w"
         )
         windowMenu.addItem(
-            withTitle: "Minimize",
+            withTitle: L10n.string("Minimize"),
             action: #selector(NSWindow.performMiniaturize(_:)),
             keyEquivalent: "m"
         )
         windowMenu.addItem(
-            withTitle: "Zoom",
+            withTitle: L10n.string("Zoom"),
             action: #selector(NSWindow.performZoom(_:)),
             keyEquivalent: ""
         )
@@ -403,11 +403,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "Approve Command Execution"
+        alert.messageText = L10n.string("Approve Command Execution")
         alert.informativeText = ""
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Approve")
-        alert.addButton(withTitle: "Deny")
+        alert.addButton(withTitle: L10n.string("Approve"))
+        alert.addButton(withTitle: L10n.string("Deny"))
         alert.accessoryView = approvalAccessoryView(for: approval)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
@@ -440,11 +440,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
 
         let alert = NSAlert()
-        alert.messageText = "Approve Key Injection"
+        alert.messageText = L10n.string("Approve Key Injection")
         alert.informativeText = isotopeApprovalSummary(for: approval)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Deny")
+        alert.addButton(withTitle: L10n.string("Allow"))
+        alert.addButton(withTitle: L10n.string("Deny"))
         if approval.canAlwaysAllow {
             alert.addButton(withTitle: isotopeAlwaysAllowButtonTitle(for: approval))
         }
@@ -465,7 +465,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func isotopeAlwaysAllowButtonTitle(for approval: IsotopeApprovalRequestSnapshot) -> String {
-        approval.scriptSha256 == nil ? "Always Allow" : "Always Allow for Script SHA"
+        approval.scriptSha256 == nil
+            ? L10n.string("Always Allow")
+            : L10n.string("Always Allow for Script SHA")
     }
 
     private func presentPendingGateApprovalIfNeeded() {
@@ -483,11 +485,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
 
         let alert = NSAlert()
-        alert.messageText = "Approve Gate"
+        alert.messageText = L10n.string("Approve Gate")
         alert.informativeText = approval.message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Approve")
-        alert.addButton(withTitle: "Deny")
+        alert.addButton(withTitle: L10n.string("Approve"))
+        alert.addButton(withTitle: L10n.string("Deny"))
         alert.accessoryView = gateApprovalAccessoryView(for: approval)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
@@ -554,7 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentIsotopeAlwaysAllowError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Could Not Remember Approval"
+        alert.messageText = L10n.string("Could Not Remember Approval")
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.runModal()
@@ -573,19 +575,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> String {
         let name = parentProcess.displayName
             ?? parentProcess.executablePath
-            ?? "unknown"
-        return "\(name) (pid \(parentProcess.pid))"
+            ?? L10n.string("unknown")
+        return L10n.format("%@ (pid %d)", name, parentProcess.pid)
     }
 
     private func isotopeParentProcessDetail(
         _ parentProcess: IsotopeParentProcessSnapshot
     ) -> String {
-        let executable = parentProcess.executablePath ?? "unknown"
-        let name = parentProcess.displayName ?? "unknown"
+        let executable = parentProcess.executablePath ?? L10n.string("unknown")
+        let name = parentProcess.displayName ?? L10n.string("unknown")
         return [
-            "PID: \(parentProcess.pid)",
-            "Name: \(name)",
-            "Executable: \(executable)"
+            L10n.format("PID: %d", parentProcess.pid),
+            L10n.format("Name: %@", name),
+            L10n.format("Executable: %@", executable)
         ].joined(separator: "\n")
     }
 
@@ -605,13 +607,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func gateApprovalDetailText(for approval: GateApprovalRequestSnapshot) -> String {
         [
-            "Message",
+            L10n.string("Message"),
             approval.message,
             "",
-            "Working Directory",
+            L10n.string("Working Directory"),
             approval.cwd,
             "",
-            "Invoked By",
+            L10n.string("Invoked By"),
             isotopeParentProcessDetail(approval.parentProcess)
         ].joined(separator: "\n")
     }

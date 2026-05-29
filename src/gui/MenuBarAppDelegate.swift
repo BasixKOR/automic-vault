@@ -29,10 +29,14 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusIcon = Bundle.main.image(forResource: "NSMenuItem")
     private let menu = NSMenu()
-    private let refreshedItem = NSMenuItem(title: "Last Refresh: --", action: nil, keyEquivalent: "")
+    private let refreshedItem = NSMenuItem(
+        title: L10n.string("Last Refresh: --"),
+        action: nil,
+        keyEquivalent: ""
+    )
     private let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let startAtLoginItem = NSMenuItem(
-        title: "Start at Login",
+        title: L10n.string("Start at Login"),
         action: #selector(toggleStartAtLogin(_:)),
         keyEquivalent: ""
     )
@@ -144,8 +148,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func postApprovalNotification() {
         let content = UNMutableNotificationContent()
-        content.title = "Automic Vault Approval Needed"
-        content.body = "A command is waiting for approval."
+        content.title = L10n.string("Automic Vault Approval Needed")
+        content.body = L10n.string("A command is waiting for approval.")
         content.sound = .default
         let request = UNNotificationRequest(
             identifier: "com.automicvault.vault.approval",
@@ -193,7 +197,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Refresh",
+            withTitle: L10n.string("Refresh"),
             action: #selector(refreshFromMenu(_:)),
             keyEquivalent: "r"
         ).target = self
@@ -202,7 +206,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         menu.addItem(errorItem)
         menu.addItem(
-            withTitle: "Open Main Window",
+            withTitle: L10n.string("Open Main Window"),
             action: #selector(openMainWindow(_:)),
             keyEquivalent: ""
         ).target = self
@@ -211,7 +215,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         menu.addItem(startAtLoginItem)
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Quit",
+            withTitle: L10n.string("Quit"),
             action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         ).target = self
@@ -225,7 +229,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func presentStartAtLoginError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "Could Not Update Login Item"
+        alert.messageText = L10n.string("Could Not Update Login Item")
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.runModal()
@@ -329,11 +333,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func automaticSecretApprovalMessage(secretNames: String?) -> String {
         let names = secretNames?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard names.isEmpty == false else {
-            return "Secret auto-approved"
+            return L10n.string("Secret auto-approved")
         }
         return names.contains(",")
-            ? "Secrets auto-approved: \(names)"
-            : "Secret auto-approved: \(names)"
+            ? L10n.format("Secrets auto-approved: %@", names)
+            : L10n.format("Secret auto-approved: %@", names)
     }
 
     private func mainApplicationIsRunning() -> Bool {
@@ -403,7 +407,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     outdatedPackages: previous.outdatedPackages,
                     refreshedAt: previous.refreshedAt,
                     lastError: .init(
-                        message: "Refresh failed during \(reason): \(error.localizedDescription)",
+                        message: L10n.format(
+                            "Refresh failed during %@: %@",
+                            L10n.string(reason),
+                            error.localizedDescription
+                        ),
                         refreshedAt: Date()
                     ),
                     remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
@@ -420,7 +428,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func apply(snapshot: NucleusStatusSnapshot) {
         self.snapshot = snapshot
-        refreshedItem.title = "Last Refresh: \(refreshStatusText(for: snapshot))"
+        refreshedItem.title = L10n.format("Last Refresh: %@", refreshStatusText(for: snapshot))
         if let error = snapshot.lastError {
             errorItem.isHidden = false
             errorItem.title = error.message
@@ -440,8 +448,10 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         guard snapshot.flaggedOutdatedPackageCount > 0 else {
             return [
                 packageStatusItem(
-                    name: "Installed",
-                    detail: "\(snapshot.installedCount) packages"
+                    name: L10n.string("Installed"),
+                    detail: snapshot.installedCount == 1
+                        ? L10n.string("1 package")
+                        : L10n.format("%d packages", snapshot.installedCount)
                 )
             ]
         }
@@ -539,13 +549,21 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func buttonTooltip(outdatedCount: Int, hazardousCount: Int) -> String {
         var parts: [String] = []
         if hazardousCount > 0 {
-            parts.append("\(hazardousCount) hazardous packages")
+            parts.append(
+                hazardousCount == 1
+                    ? L10n.string("1 hazardous package")
+                    : L10n.format("%d hazardous packages", hazardousCount)
+            )
         }
         if outdatedCount > 0 {
-            parts.append("\(outdatedCount) outdated packages")
+            parts.append(
+                outdatedCount == 1
+                    ? L10n.string("1 outdated package")
+                    : L10n.format("%d outdated packages", outdatedCount)
+            )
         }
         if appUpdateSnapshot.updateAvailable {
-            parts.append("app update available")
+            parts.append(L10n.string("app update available"))
         }
         return parts.isEmpty ? "Automic Vault" : parts.joined(separator: ", ")
     }
@@ -553,9 +571,9 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func refreshStatusText(for snapshot: NucleusStatusSnapshot) -> String {
         switch snapshot.remoteDatabaseRefreshState {
         case .normal:
-            return formattedRefresh(snapshot.refreshedAt).capitalized
+            return formattedRefresh(snapshot.refreshedAt)
         case .pendingHelperInstallation:
-            return "pending helper installation"
+            return L10n.string("pending helper installation")
         }
     }
 
@@ -589,25 +607,31 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func formattedRefresh(_ date: Date) -> String {
         guard date != .distantPast else {
-            return "never"
+            return L10n.string("never")
         }
         let elapsedSeconds = max(0, Int(Date().timeIntervalSince(date)))
         if elapsedSeconds < 60 {
-            return "just now"
+            return L10n.string("just now")
         }
 
         let elapsedMinutes = elapsedSeconds / 60
         if elapsedMinutes < 60 {
-            return elapsedMinutes == 1 ? "1 min. ago" : "\(elapsedMinutes) min. ago"
+            return elapsedMinutes == 1
+                ? L10n.string("1 min. ago")
+                : L10n.format("%d min. ago", elapsedMinutes)
         }
 
         let elapsedHours = elapsedMinutes / 60
         if elapsedHours < 24 {
-            return elapsedHours == 1 ? "1 hr. ago" : "\(elapsedHours) hr. ago"
+            return elapsedHours == 1
+                ? L10n.string("1 hr. ago")
+                : L10n.format("%d hr. ago", elapsedHours)
         }
 
         let elapsedDays = elapsedHours / 24
-        return elapsedDays == 1 ? "1 day ago" : "\(elapsedDays) days ago"
+        return elapsedDays == 1
+            ? L10n.string("1 day ago")
+            : L10n.format("%d days ago", elapsedDays)
     }
 
     private func mainApplicationURL() -> URL? {

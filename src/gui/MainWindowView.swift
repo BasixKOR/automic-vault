@@ -92,7 +92,7 @@ struct MainWindowView: View {
                 sidebarRow(section)
             }
 
-            sidebarHeader("CATEGORIES")
+            sidebarHeader(L10n.string("CATEGORIES"))
                 .padding(.top, 22)
                 .kerning(1.2)
             ForEach(MainWindowSection.categorySections) { section in
@@ -169,7 +169,7 @@ struct MainWindowView: View {
     private var packageList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Package")
+                Text(L10n.string("Package"))
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
@@ -178,7 +178,9 @@ struct MainWindowView: View {
                         model.requestOutdatedUpdateAll()
                     } label: {
                         UpdateAllHeaderButtonLabel(
-                            title: model.isUpdatingAll ? "Updating" : "Update All"
+                            title: model.isUpdatingAll
+                                ? L10n.string("Updating")
+                                : L10n.string("Update All")
                         )
                     }
                     .buttonStyle(.glass)
@@ -236,11 +238,11 @@ struct MainWindowView: View {
     private var updateAllHelpText: String {
         let count = model.outdatedUpdatePackageNames.count
         guard count > 0 else {
-            return "No outdated packages to update"
+            return L10n.string("No outdated packages to update")
         }
         return count == 1
-            ? "Update 1 outdated package"
-            : "Update \(count) outdated packages"
+            ? L10n.string("Update 1 outdated package")
+            : L10n.format("Update %d outdated packages", count)
     }
 
     private func packageRowVersion(for package: PackagePresentation) -> String {
@@ -326,7 +328,7 @@ struct MainWindowView: View {
                             .alignmentGuide(.firstTextBaseline) { dimensions in
                                 dimensions[VerticalAlignment.bottom] - 2
                             }
-                            .help("Refreshing dossier")
+                            .help(L10n.string("Refreshing dossier"))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -385,7 +387,7 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
-        InfoSection(title: "EXECUTABLES") {
+        InfoSection(title: L10n.string("EXECUTABLES")) {
             let paths = detail.executablePaths.isEmpty
                 ? ["/usr/local/bin/\(detail.helperPackageName.split(separator: ":").last.map(String.init) ?? detail.packageName)"]
                 : detail.executablePaths
@@ -405,7 +407,7 @@ struct MainWindowView: View {
                     .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
                         if model.isHardened(package, detail: detail) {
-                            Text("Hardened")
+                            Text(L10n.string("Hardened"))
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(AVGlassPalette.green)
                                 .padding(.horizontal, 7)
@@ -416,7 +418,7 @@ struct MainWindowView: View {
                     }
                 }
                 if paths.count > 2 {
-                    Text("\(paths.count - 2) more")
+                    Text(L10n.format("%d more", paths.count - 2))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.secondaryText)
                 }
@@ -428,12 +430,20 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
-        InfoSection(title: "PERMISSIONS") {
+        InfoSection(title: L10n.string("PERMISSIONS")) {
             VStack(spacing: 8) {
-                PermissionRow(icon: "network", title: "Network Access", allowed: true)
-                PermissionRow(icon: "folder", title: "File System", allowed: true)
-                PermissionRow(icon: "point.3.connected.trianglepath.dotted", title: "Process Spawning", allowed: true)
-                PermissionRow(icon: "key", title: "Secrets Access", allowed: model.isHardened(package) || detail.securityNotice != nil)
+                PermissionRow(icon: "network", title: L10n.string("Network Access"), allowed: true)
+                PermissionRow(icon: "folder", title: L10n.string("File System"), allowed: true)
+                PermissionRow(
+                    icon: "point.3.connected.trianglepath.dotted",
+                    title: L10n.string("Process Spawning"),
+                    allowed: true
+                )
+                PermissionRow(
+                    icon: "key",
+                    title: L10n.string("Secrets Access"),
+                    allowed: model.isHardened(package) || detail.securityNotice != nil
+                )
             }
         }
     }
@@ -442,7 +452,7 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
-        InfoSection(title: "NOTES") {
+        InfoSection(title: L10n.string("NOTES")) {
             Text(noteText(detail: detail, package: package))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(AVGlassPalette.secondaryText)
@@ -460,7 +470,7 @@ struct MainWindowView: View {
     }
 
     private func lastUpdatedSection(detail: PackageDetail) -> some View {
-        InfoSection(title: "LAST UPDATED") {
+        InfoSection(title: L10n.string("LAST UPDATED")) {
             Text(model.relativeLastUpdatedText(for: detail))
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AVGlassPalette.secondaryText)
@@ -472,7 +482,9 @@ struct MainWindowView: View {
         package: PackagePresentation
     ) -> String {
         if model.isHardened(package) {
-            return "This package is hardened. Binary execution is sandboxed and secret access is restricted."
+            return L10n.string(
+                "This package is hardened. Binary execution is sandboxed and secret access is restricted."
+            )
         }
         return detail.primaryDescription
     }
@@ -587,11 +599,11 @@ private struct LinkTabBar: View {
     private func title(for tab: MainWindowLinkTab) -> String {
         switch tab {
         case .homepage:
-            return "Home"
+            return L10n.string("Home")
         case .repository:
-            return "Repo"
+            return L10n.string("Repo")
         case .documentation:
-            return "Docs"
+            return L10n.string("Docs")
         }
     }
 }
@@ -830,8 +842,11 @@ struct DossierSecurityWarningContent: Equatable {
             return nil
         }
 
-        headline = "DETECTOR NEEDS REVIEW"
-        body = "The detector for isotope:\(securityState.isotopeName) did not complete cleanly."
+        headline = L10n.string("DETECTOR NEEDS REVIEW")
+        body = L10n.format(
+            "The detector for %@ did not complete cleanly.",
+            "isotope:\(securityState.isotopeName)"
+        )
         reasons = securityState.reasons
         self.detectorError = nonEmptyDetectorError
         caveats = nil
@@ -872,7 +887,7 @@ private struct DossierSecurityWarningCard: View {
             )
 
             if warning.reasons.isEmpty == false {
-                DossierSecurityWarningSection(title: "DETECTION") {
+                DossierSecurityWarningSection(title: L10n.string("DETECTION")) {
                     VStack(alignment: .leading, spacing: 7) {
                         ForEach(warning.reasons.indices, id: \.self) { index in
                             DossierSecurityWarningBullet(text: warning.reasons[index])
@@ -882,7 +897,7 @@ private struct DossierSecurityWarningCard: View {
             }
 
             if let detectorError = warning.detectorError {
-                DossierSecurityWarningSection(title: "DETECTOR ERROR") {
+                DossierSecurityWarningSection(title: L10n.string("DETECTOR ERROR")) {
                     Text(detectorError)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(AVGlassPalette.secondaryText)
@@ -894,7 +909,7 @@ private struct DossierSecurityWarningCard: View {
             }
 
             if warning.hasCaveats {
-                DossierSecurityWarningSection(title: "CAVEATS") {
+                DossierSecurityWarningSection(title: L10n.string("CAVEATS")) {
                     caveatsContent
                 }
             }
@@ -902,7 +917,7 @@ private struct DossierSecurityWarningCard: View {
             Button {
                 openURL(warning.learnMoreURL)
             } label: {
-                Text("LEARN MORE")
+                Text(L10n.string("LEARN MORE"))
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(AVGlassPalette.vulnerableText)
                     .tracking(0.6)
@@ -1207,15 +1222,15 @@ private struct PackageInlineBadgeText: View {
     private var title: String {
         switch badge {
         case .new:
-            return "New"
+            return L10n.string("New")
         case .vulnerable:
-            return "Vulnerable"
+            return L10n.string("Vulnerable")
         case .hardened:
-            return "Hardened"
+            return L10n.string("Hardened")
         case .immutable:
-            return "Immutable"
+            return L10n.string("Immutable")
         case .outdated:
-            return "OUTDATED"
+            return L10n.string("OUTDATED")
         }
     }
 
@@ -1249,15 +1264,15 @@ private struct PackageBadgePill: View {
     private var title: String {
         switch badge {
         case .new:
-            return "New"
+            return L10n.string("New")
         case .vulnerable:
-            return "Vulnerable"
+            return L10n.string("Vulnerable")
         case .hardened:
-            return "Hardened"
+            return L10n.string("Hardened")
         case .immutable:
-            return "Immutable"
+            return L10n.string("Immutable")
         case .outdated:
-            return "Outdated"
+            return L10n.string("Outdated")
         }
     }
 
@@ -1339,15 +1354,15 @@ private struct PackageBadgeBanner: View {
     private var title: String {
         switch badge {
         case .new:
-            return "New"
+            return L10n.string("New")
         case .vulnerable:
-            return "Vulnerable"
+            return L10n.string("Vulnerable")
         case .hardened:
-            return "Hardened"
+            return L10n.string("Hardened")
         case .immutable:
-            return "Immutable"
+            return L10n.string("Immutable")
         case .outdated:
-            return "Outdated"
+            return L10n.string("Outdated")
         }
     }
 
@@ -1468,7 +1483,7 @@ private struct LinkURLBar: View {
             }
             .buttonStyle(.plain)
             .disabled(url == nil)
-            .help("Open externally")
+            .help(L10n.string("Open externally"))
         }
         .padding(.leading, 12)
         .padding(.trailing, 5)

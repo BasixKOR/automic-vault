@@ -269,11 +269,11 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         completion: @escaping () -> Void
     ) {
         guard isAuthorizingPrivilegedOperation == false else {
-            model.showTransientStatus("Authentication already in progress")
+            model.showTransientStatus(L10n.string("Authentication already in progress"))
             return
         }
         isAuthorizingPrivilegedOperation = true
-        model.showTransientStatus("Waiting for Touch ID authorization")
+        model.showTransientStatus(L10n.string("Waiting for Touch ID authorization"))
         helperBridge.authenticateBiometrics(reason: reason) { [weak self] result in
             guard let self else { return }
             self.isAuthorizingPrivilegedOperation = false
@@ -289,12 +289,12 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func beginHelperMaintenance() {
         guard isUpdatingHelper == false,
               model.isPackageMutationInFlight == false else {
-            model.showTransientStatus("Privileged operation already in progress")
+            model.showTransientStatus(L10n.string("Privileged operation already in progress"))
             return
         }
 
         authorizePrivilegedHelperOperation(
-            reason: "Authorize privileged helper update for Automic Vault."
+            reason: L10n.string("Authorize privileged helper update for Automic Vault.")
         ) { [weak self] in
             self?.installOrUpdateHelper()
         }
@@ -303,7 +303,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func installOrUpdateHelper() {
         isUpdatingHelper = true
         helperNeedsMaintenance = true
-        model.showTransientStatus("Updating privileged helper")
+        model.showTransientStatus(L10n.string("Updating privileged helper"))
         helperBridge.installOrUpdateHelper { [weak self] result in
             guard let self else { return }
             self.isUpdatingHelper = false
@@ -316,12 +316,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 case .completed(let updated):
                     self.model.showTransientStatus(
                         updated
-                            ? "Privileged helper updated"
-                            : "Privileged helper is current"
+                            ? L10n.string("Privileged helper updated")
+                            : L10n.string("Privileged helper is current")
                     )
                 case .pendingHelperInstallation:
                     self.helperNeedsMaintenance = true
-                    self.model.showTransientStatus("Privileged helper still needs installation")
+                    self.model.showTransientStatus(
+                        L10n.string("Privileged helper still needs installation")
+                    )
                 }
             case .failure(let error):
                 self.helperNeedsMaintenance = true
@@ -341,7 +343,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         #endif
 
         authorizePrivilegedHelperOperation(
-            reason: "Authorize privileged package updates for Automic Vault."
+            reason: L10n.string("Authorize privileged package updates for Automic Vault.")
         ) { [weak self] in
             self?.startAuthorizedUpdateAll(debugPlayback: debugPlayback)
         }
@@ -351,7 +353,9 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         guard !model.isUpdatingAll,
               isUpdatingHelper == false else {
             if isUpdatingHelper {
-                model.showTransientStatus("Privileged helper update already in progress")
+                model.showTransientStatus(
+                    L10n.string("Privileged helper update already in progress")
+                )
             }
             return
         }
@@ -367,7 +371,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             !debugPlayback && model.shouldUpdateAutomicVaultCLTWithUpdateAll
 
         guard !packageNames.isEmpty else {
-            model.showTransientStatus("No outdated packages to update")
+            model.showTransientStatus(L10n.string("No outdated packages to update"))
             return
         }
 
@@ -385,8 +389,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 debugPlayback: debugPlayback
             ),
             initialOperation: debugPlayback
-                ? "Playing debug update stream"
-                : "Awaiting helper authorization"
+                ? L10n.string("Playing debug update stream")
+                : L10n.string("Awaiting helper authorization")
         )
 
         var stagedCLTDirectory: URL?
@@ -466,7 +470,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         case .success(let updateAllSuccess):
             guard let stagedCLTDirectory else {
                 completion(.failure(NukeHelperBridgeError.operationFailed(
-                    "Bundled av command line tool was not staged for installation."
+                    L10n.string("Bundled av command line tool was not staged for installation.")
                 )))
                 return
             }
@@ -481,7 +485,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                     completion(.success(NukeHelperResult(
                         message: updateAllSuccess.processedPackages.isEmpty
                             ? avSuccess.message
-                            : "Update complete",
+                            : L10n.string("Update complete"),
                         processedPackages: Self.mergedProcessedPackages(
                             updateAllSuccess.processedPackages,
                             avSuccess.processedPackages
@@ -520,7 +524,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func startPackageOperation(_ request: PackageOperationRequest) {
         guard !model.isPackageMutationInFlight,
               isUpdatingHelper == false else {
-            model.showTransientStatus("Privileged operation already in progress")
+            model.showTransientStatus(L10n.string("Privileged operation already in progress"))
             return
         }
 
@@ -539,7 +543,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func startAuthorizedPackageOperation(_ request: PackageOperationRequest) {
         guard !model.isPackageMutationInFlight,
               isUpdatingHelper == false else {
-            model.showTransientStatus("Privileged operation already in progress")
+            model.showTransientStatus(L10n.string("Privileged operation already in progress"))
             return
         }
 
@@ -549,7 +553,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         progressController.begin(
             packages: request.packageNames,
             activationLog: packageOperationActivationLog(request),
-            initialOperation: "Awaiting helper authorization"
+            initialOperation: L10n.string("Awaiting helper authorization")
         )
 
         var stagedCLTDirectory: URL?
@@ -592,7 +596,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             let migrationPackageName = request.packageNames.first ?? "isotope:\(migrationIsotopeName)"
             progressController?.handle(event: .log(
                 package: migrationPackageName,
-                message: "migrating secrets"
+                message: L10n.string("migrating secrets")
             ))
             Task.detached(priority: .userInitiated) {
                 let migrationResult = Result {
@@ -602,7 +606,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                     switch migrationResult {
                     case .success:
                         finishOperation(.success(NukeHelperResult(
-                            message: "Hardening complete",
+                            message: L10n.string("Hardening complete"),
                             processedPackages: Self.mergedProcessedPackages(
                                 helperResult.processedPackages,
                                 request.packageNames
@@ -657,18 +661,32 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         for request: PackageOperationRequest
     ) -> String {
         if request.isAutomicVaultCLT {
-            return "Authorize installation of Automic Vault command line tools into /usr/local/bin."
+            return L10n.string(
+                "Authorize installation of Automic Vault command line tools into /usr/local/bin."
+            )
         }
 
         switch request.kind {
         case .install:
-            return "Authorize privileged package install for \(request.displayName)."
+            return L10n.format(
+                "Authorize privileged package install for %@.",
+                request.displayName
+            )
         case .update:
-            return "Authorize privileged package update for \(request.displayName)."
+            return L10n.format(
+                "Authorize privileged package update for %@.",
+                request.displayName
+            )
         case .uninstall:
-            return "Authorize privileged package uninstall for \(request.displayName)."
+            return L10n.format(
+                "Authorize privileged package uninstall for %@.",
+                request.displayName
+            )
         case .harden:
-            return "Authorize privileged security hardening for \(request.displayName)."
+            return L10n.format(
+                "Authorize privileged security hardening for %@.",
+                request.displayName
+            )
         }
     }
 
@@ -682,7 +700,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             model.finishPackageOperation(
                 request,
                 .success(NukeHelperResult(
-                    message: "Command Line Tools installer launched",
+                    message: L10n.string("Command Line Tools installer launched"),
                     processedPackages: request.packageNames
                 )),
                 refreshAfterSuccess: false
@@ -731,14 +749,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             self?.startUpdateAll(debugPlayback: debugPlayback)
         }
         progressController.configure(
-            title: debugPlayback ? "Update Playback" : "Update All",
+            title: debugPlayback ? L10n.string("Update Playback") : L10n.string("Update All"),
             awaitingClearance: debugPlayback
-                ? "Ready to replay update progress"
-                : "Waiting for helper authorization",
+                ? L10n.string("Ready to replay update progress")
+                : L10n.string("Waiting for helper authorization"),
             idleStatus: updateStatusText(packageCount: packageCount),
-            successOperation: "Update Complete",
-            failureOperation: "Update Halted",
-            activePrimaryTitle: "Updating"
+            successOperation: L10n.string("Update Complete"),
+            failureOperation: L10n.string("Update Halted"),
+            activePrimaryTitle: L10n.string("Updating")
         )
     }
 
@@ -751,7 +769,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
         progressController.configure(
             title: request.kind.progressSheetTitle,
-            awaitingClearance: "Waiting for helper authorization",
+            awaitingClearance: L10n.string("Waiting for helper authorization"),
             idleStatus: packageOperationStatusText(request),
             successOperation: request.kind.successOperationTitle,
             failureOperation: request.kind.failureOperationTitle,
@@ -762,24 +780,24 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func activationLog(packageCount: Int, debugPlayback: Bool) -> String {
         let countText = updateStatusText(packageCount: packageCount)
         return debugPlayback
-            ? "Replaying update progress for \(countText)."
-            : "Preparing updates for \(countText)."
+            ? L10n.format("Replaying update progress for %@.", countText)
+            : L10n.format("Preparing updates for %@.", countText)
     }
 
     private func updateStatusText(packageCount: Int) -> String {
         packageCount == 1
-            ? "1 outdated package"
-            : "\(packageCount) outdated packages"
+            ? L10n.string("1 outdated package")
+            : L10n.format("%d outdated packages", packageCount)
     }
 
     private func packageOperationStatusText(_ request: PackageOperationRequest) -> String {
         request.packageNames.count == 1
             ? request.displayName
-            : "\(request.packageNames.count) packages"
+            : L10n.format("%d packages", request.packageNames.count)
     }
 
     private func packageOperationActivationLog(_ request: PackageOperationRequest) -> String {
-        "\(request.kind.progressTitle) \(packageOperationStatusText(request))."
+        L10n.format("%@ %@.", request.kind.progressTitle, packageOperationStatusText(request))
     }
 
     private func startModelIfNeeded() {
@@ -849,10 +867,12 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let isInstalling = appUpdateCoordinator.isInstalling
-        let title = isInstalling ? "Updating Automic Vault" : "Update Automic Vault"
+        let title = isInstalling
+            ? L10n.string("Updating Automic Vault")
+            : L10n.string("Update Automic Vault")
         let toolTip = isInstalling
-            ? "Installing the Automic Vault update"
-            : "Install the staged Automic Vault update and relaunch"
+            ? L10n.string("Installing the Automic Vault update")
+            : L10n.string("Install the staged Automic Vault update and relaunch")
 
         button.title = Self.appUpdateToolbarIconTitleSpacing
             + title
@@ -914,18 +934,20 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let isInstalling = model.isInstallingAutomicVaultCLT
-        let title = isInstalling ? "Installing Automic Vault CLI" : "Install Automic Vault CLI"
+        let title = isInstalling
+            ? L10n.string("Installing Automic Vault CLI")
+            : L10n.string("Install Automic Vault CLI")
         let toolTip: String
         if isInstalling {
-            toolTip = "Installing the bundled av command line tool"
+            toolTip = L10n.string("Installing the bundled av command line tool")
         } else if isAuthorizingPrivilegedOperation {
-            toolTip = "Complete Touch ID authorization before installing av"
+            toolTip = L10n.string("Complete Touch ID authorization before installing av")
         } else if isUpdatingHelper {
-            toolTip = "Finish the privileged helper update before installing av"
+            toolTip = L10n.string("Finish the privileged helper update before installing av")
         } else if model.isPackageMutationInFlight {
-            toolTip = "Finish the current package operation before installing av"
+            toolTip = L10n.string("Finish the current package operation before installing av")
         } else {
-            toolTip = "Install the bundled Automic Vault CLI to /usr/local/bin/av"
+            toolTip = L10n.string("Install the bundled Automic Vault CLI to /usr/local/bin/av")
         }
 
         button.title = Self.appUpdateToolbarIconTitleSpacing
@@ -992,16 +1014,18 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             return
         }
 
-        let title = isUpdatingHelper ? "Updating Helper" : "Update Helper"
+        let title = isUpdatingHelper
+            ? L10n.string("Updating Helper")
+            : L10n.string("Update Helper")
         let toolTip: String
         if isUpdatingHelper {
-            toolTip = "Installing the bundled privileged helper"
+            toolTip = L10n.string("Installing the bundled privileged helper")
         } else if isAuthorizingPrivilegedOperation {
-            toolTip = "Complete Touch ID authorization before updating the helper"
+            toolTip = L10n.string("Complete Touch ID authorization before updating the helper")
         } else if model.isPackageMutationInFlight {
-            toolTip = "Finish the current package operation before updating the helper"
+            toolTip = L10n.string("Finish the current package operation before updating the helper")
         } else {
-            toolTip = "Install the bundled privileged helper"
+            toolTip = L10n.string("Install the bundled privileged helper")
         }
 
         button.title = Self.appUpdateToolbarIconTitleSpacing
@@ -1040,11 +1064,13 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let alert = NSAlert()
-        alert.messageText = "Update Automic Vault?"
-        alert.informativeText = "Automic Vault will quit and relaunch after the update is installed."
+        alert.messageText = L10n.string("Update Automic Vault?")
+        alert.informativeText = L10n.string(
+            "Automic Vault will quit and relaunch after the update is installed."
+        )
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Update Automic Vault")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.string("Update Automic Vault"))
+        alert.addButton(withTitle: L10n.string("Cancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else {
                 return
@@ -1059,10 +1085,12 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         appUpdateCoordinator.installWhenReady(
             readiness: { [weak self] in
                 self?.appUpdateInstallReadiness()
-                    ?? .busy("Main window is unavailable.")
+                    ?? .busy(L10n.string("Main window is unavailable."))
             },
             prepareForInstall: { [weak self] in
-                self?.model.showTransientStatus("Installing Automic Vault update")
+                self?.model.showTransientStatus(
+                    L10n.string("Installing Automic Vault update")
+                )
             }
         )
     }
@@ -1070,22 +1098,22 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private func appUpdateInstallReadiness() -> AppUpdateCoordinator.InstallReadiness {
         if model.isPackageMutationInFlight {
             return .busy(
-                "Finish the current package operation before updating Automic Vault."
+                L10n.string("Finish the current package operation before updating Automic Vault.")
             )
         }
         if isUpdatingHelper {
             return .busy(
-                "Finish the privileged helper update before updating Automic Vault."
+                L10n.string("Finish the privileged helper update before updating Automic Vault.")
             )
         }
         if isAuthorizingPrivilegedOperation {
             return .busy(
-                "Complete Touch ID authorization before updating Automic Vault."
+                L10n.string("Complete Touch ID authorization before updating Automic Vault.")
             )
         }
         if view.window?.attachedSheet != nil {
             return .busy(
-                "Close the current sheet before updating Automic Vault."
+                L10n.string("Close the current sheet before updating Automic Vault.")
             )
         }
         return .ready
@@ -1093,10 +1121,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     private func presentAppUpdateError(_ message: String) {
         let alert = NSAlert()
-        alert.messageText = "Could Not Update Automic Vault"
+        alert.messageText = L10n.string("Could Not Update Automic Vault")
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("OK"))
 
         if let window = view.window, window.attachedSheet == nil {
             alert.beginSheetModal(for: window)
@@ -1111,10 +1139,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let alert = NSAlert()
-        alert.messageText = "Privileged Operation Failed"
+        alert.messageText = L10n.string("Privileged Operation Failed")
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.string("OK"))
 
         if let window = view.window, window.attachedSheet == nil {
             alert.beginSheetModal(for: window)
@@ -1185,9 +1213,9 @@ extension MainWindowController: NSToolbarDelegate {
         switch itemIdentifier {
         case .automicVaultSearch:
             let item = NSSearchToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Search"
-            item.paletteLabel = "Search"
-            item.toolTip = "Search packages"
+            item.label = L10n.string("Search")
+            item.paletteLabel = L10n.string("Search")
+            item.toolTip = L10n.string("Search packages")
             item.preferredWidthForSearchField = 318
             item.resignsFirstResponderWithCancel = true
             configureSearchField(item.searchField)
@@ -1196,12 +1224,12 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultRefresh:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Refresh"
-            item.paletteLabel = "Refresh"
-            item.toolTip = "Refresh packages"
+            item.label = L10n.string("Refresh")
+            item.paletteLabel = L10n.string("Refresh")
+            item.toolTip = L10n.string("Refresh packages")
             item.image = NSImage(
                 systemSymbolName: "arrow.clockwise",
-                accessibilityDescription: "Refresh packages"
+                accessibilityDescription: L10n.string("Refresh packages")
             )
             item.target = self
             item.action = #selector(refreshToolbarItemPressed(_:))
@@ -1209,12 +1237,12 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultAppUpdate:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Update Automic Vault"
-            item.paletteLabel = "Update Automic Vault"
+            item.label = L10n.string("Update Automic Vault")
+            item.paletteLabel = L10n.string("Update Automic Vault")
             item.visibilityPriority = .high
 
             let button = NSButton(
-                title: "Update Automic Vault",
+                title: L10n.string("Update Automic Vault"),
                 target: self,
                 action: #selector(appUpdateToolbarItemPressed(_:))
             )
@@ -1231,12 +1259,12 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultCLTInstall:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Install Automic Vault CLI"
-            item.paletteLabel = "Install Automic Vault CLI"
+            item.label = L10n.string("Install Automic Vault CLI")
+            item.paletteLabel = L10n.string("Install Automic Vault CLI")
             item.visibilityPriority = .high
 
             let button = NSButton(
-                title: "Install Automic Vault CLI",
+                title: L10n.string("Install Automic Vault CLI"),
                 target: self,
                 action: #selector(automicVaultCLTInstallToolbarItemPressed(_:))
             )
@@ -1253,12 +1281,12 @@ extension MainWindowController: NSToolbarDelegate {
             return item
         case .automicVaultHelperUpdate:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Update Helper"
-            item.paletteLabel = "Update Helper"
+            item.label = L10n.string("Update Helper")
+            item.paletteLabel = L10n.string("Update Helper")
             item.visibilityPriority = .high
 
             let button = NSButton(
-                title: "Update Helper",
+                title: L10n.string("Update Helper"),
                 target: self,
                 action: #selector(helperMaintenanceToolbarItemPressed(_:))
             )
@@ -1279,7 +1307,7 @@ extension MainWindowController: NSToolbarDelegate {
     }
 
     private func configureSearchField(_ searchField: NSSearchField) {
-        searchField.placeholderString = "Search"
+        searchField.placeholderString = L10n.string("Search")
         searchField.stringValue = model.searchText
         searchField.font = .systemFont(ofSize: 13, weight: .regular)
         searchField.delegate = self

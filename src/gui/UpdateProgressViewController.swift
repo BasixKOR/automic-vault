@@ -10,6 +10,25 @@ enum PackageStage: String {
     case completed = "Complete"
     case failed = "Failed"
 
+    var title: String {
+        switch self {
+        case .queued:
+            return L10n.string("Queued")
+        case .resolving:
+            return L10n.string("Resolving")
+        case .downloading:
+            return L10n.string("Downloading")
+        case .extracting:
+            return L10n.string("Extracting")
+        case .installing:
+            return L10n.string("Installing")
+        case .completed:
+            return L10n.string("Complete")
+        case .failed:
+            return L10n.string("Failed")
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .queued:
@@ -91,12 +110,12 @@ final class UpdateProgressViewModel: ObservableObject {
         static let installFloor = 0.84
     }
 
-    @Published var title = "Update All"
-    @Published var operation = "Waiting for helper authorization"
-    @Published var status = "Ready"
+    @Published var title = L10n.string("Update All")
+    @Published var operation = L10n.string("Waiting for helper authorization")
+    @Published var status = L10n.string("Ready")
     @Published var rows: [PackageProgressRowState] = []
     @Published var logs: [ProgressLogEntry] = []
-    @Published var primaryTitle = "Updating"
+    @Published var primaryTitle = L10n.string("Updating")
     @Published var primaryEnabled = false
     @Published var showSecondary = false
     @Published var isTerminalState = false
@@ -106,9 +125,9 @@ final class UpdateProgressViewModel: ObservableObject {
     private var nextDisplayIndex = 0
     private var acceptsDiscoveredDisplayItems = true
     private var packageStates: [String: PackageRuntimeState] = [:]
-    private var successOperationTitle = "Update Complete"
-    private var failureOperationTitle = "Update Halted"
-    private var activePrimaryTitle = "Updating"
+    private var successOperationTitle = L10n.string("Update Complete")
+    private var failureOperationTitle = L10n.string("Update Halted")
+    private var activePrimaryTitle = L10n.string("Updating")
     private var hasLoggedResolving = false
     private var lastActivePackage: String?
 
@@ -133,12 +152,14 @@ final class UpdateProgressViewModel: ObservableObject {
 
     var progressSummary: String {
         if failedCount > 0 {
-            return "\(failedCount) failed"
+            return failedCount == 1
+                ? L10n.string("1 failed")
+                : L10n.format("%d failed", failedCount)
         }
         if totalCount == 0 {
-            return "Preparing package plan"
+            return L10n.string("Preparing package plan")
         }
-        return "\(completedCount) of \(totalCount) complete"
+        return L10n.format("%d of %d complete", completedCount, totalCount)
     }
 
     var statusTint: Color {
@@ -152,14 +173,13 @@ final class UpdateProgressViewModel: ObservableObject {
     }
 
     var primarySystemImage: String {
-        switch primaryTitle {
-        case "Retry":
+        if primaryTitle == L10n.string("Retry") {
             return "arrow.clockwise"
-        case "Dismiss":
-            return "checkmark"
-        default:
-            return "arrow.triangle.2.circlepath"
         }
+        if primaryTitle == L10n.string("Dismiss") {
+            return "checkmark"
+        }
+        return "arrow.triangle.2.circlepath"
     }
 
     func configure(
@@ -168,7 +188,7 @@ final class UpdateProgressViewModel: ObservableObject {
         idleStatus: String,
         successOperation: String,
         failureOperation: String,
-        activePrimaryTitle: String = "Updating"
+        activePrimaryTitle: String = L10n.string("Updating")
     ) {
         self.title = title
         operation = awaitingClearance
@@ -207,7 +227,7 @@ final class UpdateProgressViewModel: ObservableObject {
         }
         appendLog(activationLog)
         if packages.isEmpty {
-            appendLog("Waiting for the package plan.")
+            appendLog(L10n.string("Waiting for the package plan."))
         }
     }
 
@@ -218,9 +238,9 @@ final class UpdateProgressViewModel: ObservableObject {
 
         switch event {
         case .resolving:
-            operation = "Resolving package graph"
+            operation = L10n.string("Resolving package graph")
             if hasLoggedResolving == false {
-                appendLog("Resolving package graph")
+                appendLog(L10n.string("Resolving package graph"))
                 hasLoggedResolving = true
             }
             displayItemIDs.forEach {
@@ -230,10 +250,10 @@ final class UpdateProgressViewModel: ObservableObject {
             let displayPackage = displayPackageName(forProgressPackage: package)
             let rowPackage = displayPackage ?? package
             if let displayPackage {
-                operation = "Updating \(displayPackage.progressDisplayName)"
+                operation = L10n.format("Updating %@", displayPackage.progressDisplayName)
             }
             if shouldLogDownloadStart(for: rowPackage) {
-                appendLog("Downloading \(package)")
+                appendLog(L10n.format("Downloading %@", package))
             }
             guard displayPackage != nil,
                   shouldRenderDownloadUpdate(for: rowPackage, progress: Double(progress)) else {
@@ -252,18 +272,18 @@ final class UpdateProgressViewModel: ObservableObject {
                 ?? packageStates[package]
                 ?? PackageRuntimeState()
             if state.observedDownload {
-                appendLog("Extracting \(package)")
+                appendLog(L10n.format("Extracting %@", package))
                 guard let displayPackage else { return }
-                operation = "Extracting \(displayPackage.progressDisplayName)"
+                operation = L10n.format("Extracting %@", displayPackage.progressDisplayName)
                 updateRow(
                     package: rowPackage,
                     stage: .extracting,
                     progress: extractProgress(from: state.progress)
                 )
             } else {
-                appendLog("Installing \(package)")
+                appendLog(L10n.format("Installing %@", package))
                 guard let displayPackage else { return }
-                operation = "Installing \(displayPackage.progressDisplayName)"
+                operation = L10n.format("Installing %@", displayPackage.progressDisplayName)
                 updateRow(
                     package: rowPackage,
                     stage: .installing,
@@ -279,9 +299,9 @@ final class UpdateProgressViewModel: ObservableObject {
         case .completed(let package):
             let displayPackage = displayPackageName(forProgressPackage: package)
             let rowPackage = displayPackage ?? package
-            appendLog("Completed \(package)")
+            appendLog(L10n.format("Completed %@", package))
             guard let displayPackage else { return }
-            operation = "Finishing \(displayPackage.progressDisplayName)"
+            operation = L10n.format("Finishing %@", displayPackage.progressDisplayName)
             updateRow(package: rowPackage, stage: .completed, progress: 1)
         case .error(let message):
             fail(message: message)
@@ -300,7 +320,7 @@ final class UpdateProgressViewModel: ObservableObject {
         terminalStage = .completed
         operation = successOperationTitle
         status = message
-        primaryTitle = "Dismiss"
+        primaryTitle = L10n.string("Dismiss")
         primaryEnabled = true
         showSecondary = false
         appendLog(message)
@@ -315,11 +335,11 @@ final class UpdateProgressViewModel: ObservableObject {
         terminalStage = .failed
         operation = failureOperationTitle
         status = message
-        appendLog("Failed: \(message)")
+        appendLog(L10n.format("Failed: %@", message))
         if let package = lastActivePackage ?? displayItemIDs.last {
             updateRow(package: package, stage: .failed, progress: 1)
         }
-        primaryTitle = "Retry"
+        primaryTitle = L10n.string("Retry")
         primaryEnabled = true
         showSecondary = true
     }
@@ -478,7 +498,9 @@ final class UpdateProgressViewModel: ObservableObject {
     }
 
     private func packageCountText(_ count: Int) -> String {
-        count == 1 ? "1 outdated package" : "\(count) outdated packages"
+        count == 1
+            ? L10n.string("1 outdated package")
+            : L10n.format("%d outdated packages", count)
     }
 
     private static func format(speed: UInt64) -> String {
@@ -519,7 +541,7 @@ final class UpdateProgressViewController: NSViewController {
         idleStatus: String,
         successOperation: String,
         failureOperation: String,
-        activePrimaryTitle: String = "Updating"
+        activePrimaryTitle: String = L10n.string("Updating")
     ) {
         model.configure(
             title: title,
@@ -560,7 +582,7 @@ final class UpdateProgressViewController: NSViewController {
             NSSound.beep()
             return
         }
-        if model.primaryTitle == "Retry" {
+        if model.primaryTitle == L10n.string("Retry") {
             onRetry?()
         } else {
             onDismiss?()
@@ -698,11 +720,11 @@ private struct UpdateProgressSheetView: View {
 
     private var packagePanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("Packages")
+            SectionLabel(L10n.string("Packages"))
             ScrollView {
                 LazyVStack(spacing: 8) {
                     if model.rows.isEmpty {
-                        EmptyProgressPlaceholder(text: "Preparing package plan")
+                        EmptyProgressPlaceholder(text: L10n.string("Preparing package plan"))
                     } else {
                         ForEach(model.rows) { row in
                             PackageProgressRow(row: row)
@@ -722,12 +744,12 @@ private struct UpdateProgressSheetView: View {
 
     private var activityPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("Activity")
+            SectionLabel(L10n.string("Activity"))
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 7) {
                         if model.logs.isEmpty {
-                            EmptyProgressPlaceholder(text: "Waiting for activity")
+                            EmptyProgressPlaceholder(text: L10n.string("Waiting for activity"))
                         } else {
                             ForEach(model.logs) { entry in
                                 LogEntryRow(entry: entry)
@@ -759,7 +781,7 @@ private struct UpdateProgressSheetView: View {
                 ProgressView()
                     .controlSize(.small)
                     .tint(UpdateProgressPalette.cyan)
-                Text("Updating packages")
+                Text(L10n.string("Updating packages"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(UpdateProgressPalette.secondaryText)
             }
@@ -768,7 +790,7 @@ private struct UpdateProgressSheetView: View {
 
             if model.showSecondary {
                 Button(action: onSecondary) {
-                    Text("Dismiss")
+                    Text(L10n.string("Dismiss"))
                         .frame(minWidth: 82)
                 }
                 .buttonStyle(.glass)
@@ -812,7 +834,7 @@ private struct PackageProgressRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 8)
-                    Text(row.stage.rawValue)
+                    Text(row.stage.title)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(row.stage.tint)
                         .lineLimit(1)

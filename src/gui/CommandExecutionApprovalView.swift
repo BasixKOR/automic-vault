@@ -74,7 +74,7 @@ final class CommandExecutionApprovalView: NSView {
 
     private func commandPanel() -> NSView {
         let view = makePanel()
-        let title = sectionTitle("Command")
+        let title = sectionTitle(L10n.string("Command"))
         let commandBox = makeCommandBox()
         let commandText = label(displayCommandLine, size: 10, weight: .regular, color: Palette.text, monospaced: true)
         commandText.maximumNumberOfLines = 2
@@ -106,7 +106,14 @@ final class CommandExecutionApprovalView: NSView {
 
     private func requesterPanel() -> NSView {
         let view = makePanel()
-        let title = label("REQUESTED BY", size: 9, weight: .semibold, color: Palette.quietText, monospaced: true, tracking: 0.9)
+        let title = label(
+            L10n.string("REQUESTED BY"),
+            size: 9,
+            weight: .semibold,
+            color: Palette.quietText,
+            monospaced: true,
+            tracking: 0.9
+        )
         let summary = attributedLabel(requesterSummary)
         summary.lineBreakMode = .byTruncatingMiddle
         summary.maximumNumberOfLines = 1
@@ -131,7 +138,7 @@ final class CommandExecutionApprovalView: NSView {
 
     private func environmentPanel() -> NSView {
         let rows = environmentRows
-        return sectionPanel(title: "Environment", rows: rows, scrollsRows: true)
+        return sectionPanel(title: L10n.string("Environment"), rows: rows, scrollsRows: true)
     }
 
     private func sectionPanel(
@@ -376,10 +383,10 @@ final class CommandExecutionApprovalView: NSView {
         let result = NSMutableAttributedString()
         result.append(bold(processName))
         if let process {
-            result.append(plain("; pid "))
+            result.append(plain(L10n.string("; pid ")))
             result.append(bold("\(process.pid)"))
         }
-        result.append(plain("; cwd: "))
+        result.append(plain(L10n.string("; cwd: ")))
         result.append(code(abbreviatedPath(approval.intent.cwd)))
         return result
     }
@@ -390,7 +397,14 @@ final class CommandExecutionApprovalView: NSView {
 
     private var environmentRows: [InfoRow] {
         guard approval.intent.env.isEmpty == false else {
-            return [InfoRow("Overrides", "No explicit environment overrides", nil, false)]
+            return [
+                InfoRow(
+                    L10n.string("Overrides"),
+                    L10n.string("No explicit environment overrides"),
+                    nil,
+                    false
+                )
+            ]
         }
 
         return approval.intent.env.keys.sorted().map { key in

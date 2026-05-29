@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "AutomicVaultGUI",
+    defaultLocalization: "en",
     platforms: [
         .macOS("26.0"),
     ],
@@ -30,6 +31,7 @@ let package = Package(
                 "Tests",
             ],
             sources: [
+                "Localization.swift",
                 "PackageModels.swift",
                 "SecurityCatalog.swift",
                 "NucleusBridge.swift",
@@ -50,6 +52,9 @@ let package = Package(
                 "UpdateProgressViewController.swift",
                 "ContainmentLogWindowController.swift",
                 "UIStyle.swift",
+            ],
+            resources: [
+                .process("Resources"),
             ]
         ),
         .testTarget(
@@ -57,6 +62,7 @@ let package = Package(
             dependencies: ["AutomicVaultApp"],
             path: "Tests",
             sources: [
+                "LocalizationResourceTests.swift",
                 "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
                 "UpdateProgressViewModelTests.swift",

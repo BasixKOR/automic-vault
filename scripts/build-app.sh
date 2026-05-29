@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GUI_DIR="$ROOT_DIR/src/gui"
+GUI_LOCALIZATION_DIR="$GUI_DIR/Resources"
 CONFIGURATION="${GUI_BUILD_CONFIGURATION:-debug}"
 PUBLISH_BUILD=false
 source "$ROOT_DIR/scripts/cli-style.sh"
@@ -168,6 +169,7 @@ else
 fi
 export NUKE_HELPER_VERSION
 SHARED_SWIFT_SOURCES=(
+  "$GUI_DIR/Localization.swift"
   "$GUI_DIR/PackageModels.swift"
   "$GUI_DIR/SecurityCatalog.swift"
   "$GUI_DIR/NucleusBridge.swift"
@@ -373,6 +375,17 @@ generate_enrichment_manifest_index() {
   fi
 }
 
+copy_localizations() {
+  local destination_dir="$1"
+  local localization_dir
+
+  [[ -d "$GUI_LOCALIZATION_DIR" ]] || return
+  rm -rf "$destination_dir"/*.lproj(N)
+  for localization_dir in "$GUI_LOCALIZATION_DIR"/*.lproj(N); do
+    cp -R "$localization_dir" "$destination_dir/"
+  done
+}
+
 cli_title "Build Automic Vault.app"
 cli_info "Configuration: $CONFIGURATION"
 cli_info "Output: $APP_DIR"
@@ -442,11 +455,13 @@ rm -f "$RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$RESOURCES_DIR/enrichment-manifests.json"
 cp "$RUST_BIN_DIR/nuke-helper" "$HELPER_EXECUTABLE"
 cp "$ICON_ICNS" "$RESOURCES_DIR/$ICON_NAME.icns"
+copy_localizations "$RESOURCES_DIR"
 cp "$ICON_ICNS" "$MENU_RESOURCES_DIR/$MENU_APP_ICON_NAME.icns"
 cp "$RUST_BIN_DIR/av" "$MENU_RESOURCES_DIR/av"
 cp "$ROOT_DIR/data/combined.json" "$MENU_RESOURCES_DIR/combined.json"
 rm -f "$MENU_RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$MENU_RESOURCES_DIR/enrichment-manifests.json"
+copy_localizations "$MENU_RESOURCES_DIR"
 cp "$MENU_ICON_1X" "$MENU_RESOURCES_DIR/NSMenuItem.png"
 cp "$MENU_ICON_2X" "$MENU_RESOURCES_DIR/NSMenuItem@2x.png"
 chmod 755 \
@@ -464,6 +479,14 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>ja</string>
+    <string>de</string>
+    <string>fr</string>
+    <string>zh-Hans</string>
+  </array>
   <key>CFBundleExecutable</key>
   <string>Automic Vault</string>
   <key>CFBundleIconFile</key>
@@ -519,6 +542,14 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>ja</string>
+    <string>de</string>
+    <string>fr</string>
+    <string>zh-Hans</string>
+  </array>
   <key>CFBundleExecutable</key>
   <string>Automic Vault Menu</string>
   <key>CFBundleIconFile</key>

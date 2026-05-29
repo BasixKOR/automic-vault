@@ -46,33 +46,33 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .installed:
-            return "Installed"
+            return L10n.string("Installed")
         case .geigerCounter:
-            return "Security Alerts"
+            return L10n.string("Security Alerts")
         case .newUpdated:
-            return "New / Updated"
+            return L10n.string("New / Updated")
         case .outdated:
-            return "Outdated"
+            return L10n.string("Outdated")
         case .allPackages:
-            return "All Packages"
+            return L10n.string("All Packages")
         case .shell:
-            return "Shell"
+            return L10n.string("Shell")
         case .cliTools:
-            return "CLI Tools"
+            return L10n.string("CLI Tools")
         case .development:
-            return "Development"
+            return L10n.string("Development")
         case .system:
-            return "System"
+            return L10n.string("System")
         case .networking:
-            return "Networking"
+            return L10n.string("Networking")
         case .security:
-            return "Security"
+            return L10n.string("Security")
         case .other:
-            return "Other"
+            return L10n.string("Other")
         case .settings:
-            return "Settings"
+            return L10n.string("Settings")
         case .about:
-            return "About"
+            return L10n.string("About")
         }
     }
 
@@ -120,11 +120,11 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .homepage:
-            return "Homepage"
+            return L10n.string("Homepage")
         case .repository:
-            return "Repository"
+            return L10n.string("Repository")
         case .documentation:
-            return "Documentation"
+            return L10n.string("Documentation")
         }
     }
 }
@@ -148,65 +148,65 @@ enum PackageOperationKind: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .install:
-            return "Install"
+            return L10n.string("Install")
         case .update:
-            return "Update"
+            return L10n.string("Update")
         case .uninstall:
-            return "Uninstall"
+            return L10n.string("Uninstall")
         case .harden:
-            return "Harden"
+            return L10n.string("Harden")
         }
     }
 
     var progressTitle: String {
         switch self {
         case .install:
-            return "Installing"
+            return L10n.string("Installing")
         case .update:
-            return "Updating"
+            return L10n.string("Updating")
         case .uninstall:
-            return "Uninstalling"
+            return L10n.string("Uninstalling")
         case .harden:
-            return "Hardening"
+            return L10n.string("Hardening")
         }
     }
 
     var progressSheetTitle: String {
         switch self {
         case .install:
-            return "Install Package"
+            return L10n.string("Install Package")
         case .update:
-            return "Update Package"
+            return L10n.string("Update Package")
         case .uninstall:
-            return "Uninstall Package"
+            return L10n.string("Uninstall Package")
         case .harden:
-            return "Harden Package"
+            return L10n.string("Harden Package")
         }
     }
 
     var successOperationTitle: String {
         switch self {
         case .install:
-            return "Install Complete"
+            return L10n.string("Install Complete")
         case .update:
-            return "Update Complete"
+            return L10n.string("Update Complete")
         case .uninstall:
-            return "Uninstall Complete"
+            return L10n.string("Uninstall Complete")
         case .harden:
-            return "Hardening Complete"
+            return L10n.string("Hardening Complete")
         }
     }
 
     var failureOperationTitle: String {
         switch self {
         case .install:
-            return "Install Halted"
+            return L10n.string("Install Halted")
         case .update:
-            return "Update Halted"
+            return L10n.string("Update Halted")
         case .uninstall:
-            return "Uninstall Halted"
+            return L10n.string("Uninstall Halted")
         case .harden:
-            return "Hardening Halted"
+            return L10n.string("Hardening Halted")
         }
     }
 
@@ -417,7 +417,7 @@ final class MainWindowModel: ObservableObject {
         let cliToolsRecommendationProvider = cliToolsRecommendationProvider
         isReloading = true
         lastErrorMessage = nil
-        statusMessage = "Loading packages from the protocol daemon"
+        statusMessage = L10n.string("Loading packages from the protocol daemon")
         markDynamicSectionPagesStale()
         preloadSidebarCountData()
 
@@ -485,9 +485,9 @@ final class MainWindowModel: ObservableObject {
     func requestOutdatedUpdateAll() {
         guard canUpdateAllOutdated else {
             if outdatedUpdatePackageNames.isEmpty {
-                showTransientStatus("No outdated packages to update")
+                showTransientStatus(L10n.string("No outdated packages to update"))
             } else if isPackageMutationInFlight {
-                showTransientStatus("Package operation already in progress")
+                showTransientStatus(L10n.string("Package operation already in progress"))
             }
             return
         }
@@ -497,9 +497,11 @@ final class MainWindowModel: ObservableObject {
     func requestAutomicVaultCLTInstall() {
         guard canRequestAutomicVaultCLTInstall else {
             if isPackageMutationInFlight {
-                showTransientStatus("Package operation already in progress")
+                showTransientStatus(L10n.string("Package operation already in progress"))
             } else {
-                showTransientStatus("Automic Vault command line tool is already installed")
+                showTransientStatus(
+                    L10n.string("Automic Vault command line tool is already installed")
+                )
             }
             return
         }
@@ -519,7 +521,7 @@ final class MainWindowModel: ObservableObject {
         transientStatusTask?.cancel()
         isUpdatingAll = true
         lastErrorMessage = nil
-        statusMessage = "Updating \(Self.packageCountText(packageCount))"
+        statusMessage = L10n.format("Updating %@", Self.packageCountText(packageCount))
     }
 
     func finishOutdatedUpdateAll(
@@ -530,14 +532,14 @@ final class MainWindowModel: ObservableObject {
         switch result {
         case .success(let helperResult):
             if refreshAfterSuccess {
-                statusMessage = "\(helperResult.message); refreshing packages"
+                statusMessage = L10n.format("%@; refreshing packages", helperResult.message)
                 reloadPackages()
             } else {
                 showTransientStatus(helperResult.message)
             }
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
-            statusMessage = "Update all failed"
+            statusMessage = L10n.string("Update all failed")
         }
     }
 
@@ -586,7 +588,7 @@ final class MainWindowModel: ObservableObject {
         package: PackagePresentation
     ) {
         guard canRequestDossierPackageAction(action, detail: detail) else {
-            showTransientStatus("Package operation is unavailable")
+            showTransientStatus(L10n.string("Package operation is unavailable"))
             return
         }
         let packageNames = packageOperationPackageNames(for: detail, action: action)
@@ -608,7 +610,7 @@ final class MainWindowModel: ObservableObject {
         transientStatusTask?.cancel()
         activePackageOperation = request
         lastErrorMessage = nil
-        statusMessage = "\(request.kind.progressTitle) \(request.displayName)"
+        statusMessage = L10n.format("%@ %@", request.kind.progressTitle, request.displayName)
     }
 
     func finishPackageOperation(
@@ -629,14 +631,14 @@ final class MainWindowModel: ObservableObject {
                 retireCompletedHardening(request)
             }
             if refreshAfterSuccess {
-                statusMessage = "\(helperResult.message); refreshing packages"
+                statusMessage = L10n.format("%@; refreshing packages", helperResult.message)
                 reloadPackages()
             } else {
                 showTransientStatus(helperResult.message)
             }
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
-            statusMessage = "\(request.kind.title) failed"
+            statusMessage = L10n.format("%@ failed", request.kind.title)
         }
     }
 
@@ -815,7 +817,8 @@ final class MainWindowModel: ObservableObject {
             return text
         }
         if case .installed = package.item {
-            return detail?.primaryDescription ?? "Installed component record available in the local vault."
+            return detail?.primaryDescription
+                ?? L10n.string("Installed component record available in the local vault.")
         }
         return package.listSecondaryText
     }
@@ -854,15 +857,17 @@ final class MainWindowModel: ObservableObject {
     ) -> String {
         guard let raw = result.lastUpdatedAt,
               let date = parseISO8601Date(raw) else {
-            return result.isNewPulse ? "recently" : "Updated recently"
+            return result.isNewPulse
+                ? L10n.string("recently")
+                : L10n.string("Updated recently")
         }
         let ageText = relativeAgeText(for: date, relativeTo: referenceDate)
-        return result.isNewPulse ? ageText : "Updated \(ageText)"
+        return result.isNewPulse ? ageText : L10n.format("Updated %@", ageText)
     }
 
     var relativeRefreshText: String {
         guard snapshot.refreshedAt > .distantPast else {
-            return "Not yet refreshed"
+            return L10n.string("Not yet refreshed")
         }
         return Self.relativeFormatter.localizedString(
             for: snapshot.refreshedAt,
@@ -1431,7 +1436,7 @@ final class MainWindowModel: ObservableObject {
             preloadSidebarCountData()
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
-            statusMessage = "Package refresh failed"
+            statusMessage = L10n.string("Package refresh failed")
         }
     }
 
@@ -2017,15 +2022,19 @@ final class MainWindowModel: ObservableObject {
         if elapsed >= 0, elapsed < 60 * 60 * 60 {
             let hours = Int(elapsed / 3600)
             if hours < 1 {
-                return "less than 1 hour ago"
+                return L10n.string("less than 1 hour ago")
             }
-            return hours == 1 ? "1 hour ago" : "\(hours) hours ago"
+            return hours == 1
+                ? L10n.string("1 hour ago")
+                : L10n.format("%d hours ago", hours)
         }
         return relativeFormatter.localizedString(for: date, relativeTo: referenceDate)
     }
 
     private static func packageCountText(_ count: Int) -> String {
-        count == 1 ? "1 outdated package" : "\(count) outdated packages"
+        count == 1
+            ? L10n.string("1 outdated package")
+            : L10n.format("%d outdated packages", count)
     }
 }
 

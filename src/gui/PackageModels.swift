@@ -396,14 +396,16 @@ struct PackageDetail: Decodable, Equatable {
             return description
         }
         if installed {
-            return "Installed component record available in the local vault."
+            return L10n.string("Installed component record available in the local vault.")
         }
-        return "Component metadata is available, but the local vault has not initialized it."
+        return L10n.string(
+            "Component metadata is available, but the local vault has not initialized it."
+        )
     }
 
     var metadataLine: String {
-        let version = installedVersion ?? latestVersion ?? "unversioned"
-        return [version, source?.displayLabel, installed ? "installed" : "uninstalled"]
+        let version = installedVersion ?? latestVersion ?? L10n.string("unversioned")
+        return [version, source?.displayLabel, installed ? L10n.string("installed") : L10n.string("uninstalled")]
             .compactMap { $0 }
             .joined(separator: "  ·  ")
     }
@@ -1180,8 +1182,8 @@ struct PackageRecommendation: Equatable {
         missingToolNames: [String]
     ) -> PackageRecommendation {
         let description = missingToolNames.isEmpty
-            ? "Bundled command line tools are installed but need updating."
-            : "Installs the Automic Vault command line tool"
+            ? L10n.string("Bundled command line tools are installed but need updating.")
+            : L10n.string("Installs the Automic Vault command line tool")
         let detail = PackageDetail(
             packageName: automicVaultCLTName,
             qualifiedName: automicVaultCLTName,
@@ -1223,7 +1225,9 @@ struct PackageRecommendation: Equatable {
 
     static func xcodeCLT() -> PackageRecommendation {
         let description =
-            "Installs Apple's Command Line Tools for compilers, SDK headers and system build utilities."
+            L10n.string(
+                "Installs Apple's Command Line Tools for compilers, SDK headers and system build utilities."
+            )
         let detail = PackageDetail(
             packageName: xcodeCLTName,
             qualifiedName: xcodeCLTName,
@@ -1268,7 +1272,9 @@ struct PackageRecommendation: Equatable {
             return nil
         }
         let description =
-            "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools."
+            L10n.string(
+                "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools."
+            )
         let detail = PackageDetail(
             packageName: agenticToolingPackName,
             qualifiedName: agenticToolingPackName,
@@ -1313,7 +1319,9 @@ struct PackageRecommendation: Equatable {
             return nil
         }
         let description =
-            "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection."
+            L10n.string(
+                "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection."
+            )
         let detail = PackageDetail(
             packageName: agentPackName,
             qualifiedName: agentPackName,
@@ -1367,7 +1375,9 @@ struct PackageRecommendation: Equatable {
             return nil
         }
         let description =
-            "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work."
+            L10n.string(
+                "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work."
+            )
         let detail = PackageDetail(
             packageName: unixPlusPlusPackName,
             qualifiedName: unixPlusPlusPackName,
@@ -1631,7 +1641,7 @@ struct PackagePresentation: Equatable {
                 return result.source?.displayLabel ?? "PyPI"
             }
             if let latestVersion = result.version, !latestVersion.isEmpty {
-                return "latest \(latestVersion)"
+                return L10n.format("latest %@", latestVersion)
             }
             return result.source?.displayLabel ?? "Homebrew"
         case .command(let command):
@@ -1684,7 +1694,7 @@ struct PackagePresentation: Equatable {
         }
         switch pulseKind.lowercased() {
         case "new":
-            return "NEW"
+            return L10n.string("NEW")
         default:
             return nil
         }

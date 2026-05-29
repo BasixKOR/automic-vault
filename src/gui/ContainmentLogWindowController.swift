@@ -22,7 +22,7 @@ final class ContainmentLogWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Contained Entity"
+        window.title = L10n.string("Contained Entity")
         window.backgroundColor = UIStyle.background
         window.isOpaque = true
         window.isReleasedWhenClosed = false
@@ -45,7 +45,7 @@ final class ContainmentLogWindowController: NSWindowController {
         subtitleLabel.stringValue = ([snapshot.session.command] + snapshot.session.args)
             .joined(separator: " ")
         detailLabel.stringValue = [
-            "PID \(snapshot.session.pid)",
+            L10n.format("PID %d", snapshot.session.pid),
             snapshot.session.cwd,
             snapshot.session.initialExecutablePath
         ].joined(separator: "  |  ")
@@ -113,15 +113,15 @@ final class ContainmentLogWindowController: NSWindowController {
     private func label(for kind: VaultContainmentLogEntry.Kind) -> String {
         switch kind {
         case .sessionStarted:
-            return "session"
+            return L10n.string("session")
         case .command:
-            return "command"
+            return L10n.string("command")
         case .approval:
-            return "approval"
+            return L10n.string("approval")
         case .completion:
-            return "complete"
+            return L10n.string("complete")
         case .error:
-            return "error"
+            return L10n.string("error")
         }
     }
 }

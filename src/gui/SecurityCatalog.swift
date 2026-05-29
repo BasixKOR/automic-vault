@@ -53,24 +53,23 @@ struct PackageSecurityNotice: Equatable {
     }
 
     fileprivate static var defaultHeadline: String {
-        "PLAIN TEXT SECRET"
+        L10n.string("PLAIN TEXT SECRET")
     }
 
     fileprivate static var defaultBody: String {
-        "This package stores its secrets in plain text. " +
-            "Automic Vault isotopes are aftermarket open source packages " +
-            "modded by packaging experts to incorporate Automic Vault’s " +
-            "security bolstering technologies."
+        L10n.string(
+            "This package stores its secrets in plain text. Automic Vault isotopes are aftermarket open source packages modded by packaging experts to incorporate Automic Vault’s security bolstering technologies."
+        )
     }
 
     fileprivate static var detectorOnlyHeadline: String {
-        "LOCAL SECRET EXPOSURE"
+        L10n.string("LOCAL SECRET EXPOSURE")
     }
 
     fileprivate static var detectorOnlyBody: String {
-        "Automic Vault detected plaintext secret exposure for this package. " +
-            "A detector exists, but Automic Vault does not yet provide " +
-            "migration or package modification for this tool."
+        L10n.string(
+            "Automic Vault detected plaintext secret exposure for this package. A detector exists, but Automic Vault does not yet provide migration or package modification for this tool."
+        )
     }
 }
 

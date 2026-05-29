@@ -76,7 +76,14 @@ final class IsotopeApprovalView: NSView {
     private func requesterPanel() -> NSView {
         let view = makePanel()
 
-        let title = label("PARENT PROCESS", size: 9, weight: .semibold, color: Palette.quietText, monospaced: true, tracking: 0.9)
+        let title = label(
+            L10n.string("PARENT PROCESS"),
+            size: 9,
+            weight: .semibold,
+            color: Palette.quietText,
+            monospaced: true,
+            tracking: 0.9
+        )
         let summary = attributedLabel(requesterSummary)
         summary.lineBreakMode = .byTruncatingMiddle
         summary.maximumNumberOfLines = 1
@@ -102,37 +109,52 @@ final class IsotopeApprovalView: NSView {
     private func targetPanel() -> NSView {
         let scriptPath = displayScriptPath
         var rows: [InfoRow] = [
-            InfoRow("Requested executable", abbreviatedPath(requestedExecutablePath), nil),
-            InfoRow("Audited executable", abbreviatedPath(approval.executablePath), rootStatus(approval.executableRootControlled))
+            InfoRow(
+                L10n.string("Requested executable"),
+                abbreviatedPath(requestedExecutablePath),
+                nil
+            ),
+            InfoRow(
+                L10n.string("Audited executable"),
+                abbreviatedPath(approval.executablePath),
+                rootStatus(approval.executableRootControlled)
+            )
         ]
 
         if isInterpreter {
             rows.append(InfoRow(
-                "Interpreter script",
-                scriptPath.map(abbreviatedPath) ?? "No script file detected; flags or inline code are in use",
+                L10n.string("Interpreter script"),
+                scriptPath.map(abbreviatedPath)
+                    ?? L10n.string("No script file detected; flags or inline code are in use"),
                 scriptPath.map { _ in scriptStatus }
-                    ?? Status(title: "not a script", color: Palette.amber)
+                    ?? Status(title: L10n.string("not a script"), color: Palette.amber)
             ))
         } else {
-            rows.append(InfoRow("Invocation type", "Direct executable; no interpreter script detected", nil))
+            rows.append(InfoRow(
+                L10n.string("Invocation type"),
+                L10n.string("Direct executable; no interpreter script detected"),
+                nil
+            ))
         }
 
         rows.append(InfoRow(
-            "Always allow",
+            L10n.string("Always allow"),
             approval.canAlwaysAllow
                 ? alwaysAllowDescription
-                : "Manual approval only; not every executable boundary is root-controlled",
+                : L10n.string(
+                    "Manual approval only; not every executable boundary is root-controlled"
+                ),
             approval.canAlwaysAllow
-                ? Status(title: "root-controlled", color: Palette.accent)
-                : Status(title: "manual only", color: Palette.amber)
+                ? Status(title: L10n.string("root-controlled"), color: Palette.accent)
+                : Status(title: L10n.string("manual only"), color: Palette.amber)
         ))
 
-        return sectionPanel(title: "Execution target", rows: rows)
+        return sectionPanel(title: L10n.string("Execution target"), rows: rows)
     }
 
     private func secretsPanel() -> NSView {
         let view = makePanel()
-        let title = sectionTitle("Requested secrets")
+        let title = sectionTitle(L10n.string("Requested secrets"))
 
         let keyStack = NSStackView()
         keyStack.orientation = .horizontal
@@ -163,13 +185,13 @@ final class IsotopeApprovalView: NSView {
 
     private func commandPanel() -> NSView {
         let view = makePanel()
-        let title = sectionTitle("Command")
+        let title = sectionTitle(L10n.string("Command"))
         let commandBox = makeCommandBox()
         let commandText = label(displayCommandLine, size: 10, weight: .regular, color: Palette.text, monospaced: true)
         commandText.maximumNumberOfLines = 2
         commandText.lineBreakMode = .byTruncatingMiddle
         let helper = label(
-            "This command will receive the secrets",
+            L10n.string("This command will receive the secrets"),
             size: 10,
             weight: .regular,
             color: Palette.quietText
@@ -375,12 +397,12 @@ final class IsotopeApprovalView: NSView {
     private var requesterSummary: NSAttributedString {
         let parentName = approval.parentProcess.displayName
             ?? approval.parentProcess.executablePath
-            ?? "unknown process"
+            ?? L10n.string("unknown process")
         let result = NSMutableAttributedString()
         result.append(bold(parentName))
-        result.append(plain("; pid "))
+        result.append(plain(L10n.string("; pid ")))
         result.append(bold("\(approval.parentProcess.pid)"))
-        result.append(plain("; cwd: "))
+        result.append(plain(L10n.string("; cwd: ")))
         result.append(code(abbreviatedPath(approval.cwd)))
         return result
     }
@@ -416,7 +438,7 @@ final class IsotopeApprovalView: NSView {
 
     private var scriptStatus: Status {
         if approval.scriptSha256 != nil {
-            return Status(title: "hash-bound", color: Palette.accent)
+            return Status(title: L10n.string("hash-bound"), color: Palette.accent)
         }
         return rootStatus(scriptRootControlled)
     }
@@ -424,21 +446,23 @@ final class IsotopeApprovalView: NSView {
     private var alwaysAllowDescription: String {
         if displayScriptPath != nil {
             if approval.scriptSha256 != nil {
-                return "Available for this root-controlled interpreter and unchanged script"
+                return L10n.string(
+                    "Available for this root-controlled interpreter and unchanged script"
+                )
             }
-            return "Available for this root-controlled interpreter and script"
+            return L10n.string("Available for this root-controlled interpreter and script")
         }
-        return "Available for this root-controlled executable"
+        return L10n.string("Available for this root-controlled executable")
     }
 
     private func rootStatus(_ value: Bool?) -> Status {
         switch value {
         case .some(true):
-            return Status(title: "root-controlled", color: Palette.accent)
+            return Status(title: L10n.string("root-controlled"), color: Palette.accent)
         case .some(false):
-            return Status(title: "not root-controlled", color: Palette.red)
+            return Status(title: L10n.string("not root-controlled"), color: Palette.red)
         case .none:
-            return Status(title: "not verified", color: Palette.amber)
+            return Status(title: L10n.string("not verified"), color: Palette.amber)
         }
     }
 
