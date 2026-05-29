@@ -366,7 +366,6 @@ final class MainWindowModel: ObservableObject {
         }
 
         snapshot.outdatedPackages.forEach { append($0.name) }
-        snapshot.homebrewOutdatedPackages.forEach { append($0.name) }
         packages
             .filter(isOutdated)
             .compactMap(\.packageName)
@@ -873,7 +872,6 @@ final class MainWindowModel: ObservableObject {
 
     var outdatedPackageNames: Set<String> {
         Set(snapshot.outdatedPackages.map(\.name))
-            .union(snapshot.homebrewOutdatedPackages.map(\.name))
     }
 
     private var allKnownPackages: [PackagePresentation] {
@@ -1364,7 +1362,6 @@ final class MainWindowModel: ObservableObject {
         let shouldKeepDaemonSnapshot =
             snapshot.installedCount == 0
             && snapshot.outdatedPackages.isEmpty
-            && snapshot.homebrewOutdatedPackages.isEmpty
             && packages.isEmpty == false
         self.snapshot = shouldKeepDaemonSnapshot
             ? self.snapshot.withRemoteDatabaseRefreshState(snapshot.remoteDatabaseRefreshState)
@@ -1401,7 +1398,6 @@ final class MainWindowModel: ObservableObject {
                 installedCount: installed.count,
                 hazardousPackageCount: installed.filter(\.hasMainWindowSecurityAlert).count,
                 outdatedPackages: snapshot.outdatedPackages,
-                homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
                 refreshedAt: Date(),
                 lastError: nil,
                 remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
@@ -1460,7 +1456,6 @@ final class MainWindowModel: ObservableObject {
             installedCount: snapshot.installedCount,
             hazardousPackageCount: snapshot.hazardousPackageCount,
             outdatedPackages: outdated,
-            homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
             refreshedAt: snapshot.refreshedAt,
             lastError: snapshot.lastError,
             remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
@@ -1562,9 +1557,6 @@ final class MainWindowModel: ObservableObject {
 
     private func normalizedDetail(_ detail: PackageDetail) -> PackageDetail {
         if let outdated = snapshot.outdatedPackagesByName[detail.packageName] {
-            return detail.applying(outdated: outdated)
-        }
-        if let outdated = homebrewOutdatedPackage(named: detail.packageName) {
             return detail.applying(outdated: outdated)
         }
         return detail
@@ -1793,9 +1785,6 @@ final class MainWindowModel: ObservableObject {
         if let outdated = snapshot.outdatedPackagesByName[record.name] {
             return record.applying(outdated: outdated)
         }
-        if let outdated = homebrewOutdatedPackage(named: record.name) {
-            return record.applying(outdated: outdated)
-        }
         return record
     }
 
@@ -1885,25 +1874,10 @@ final class MainWindowModel: ObservableObject {
             installedCount: snapshot.installedCount,
             hazardousPackageCount: hazardousPackageCount,
             outdatedPackages: snapshot.outdatedPackages,
-            homebrewOutdatedPackages: snapshot.homebrewOutdatedPackages,
             refreshedAt: snapshot.refreshedAt,
             lastError: snapshot.lastError,
             remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
         )
-    }
-
-    private func homebrewOutdatedPackage(named packageName: String) -> OutdatedPackageRecord? {
-        if let package = snapshot.homebrewOutdatedPackagesByName[packageName] {
-            return package
-        }
-        guard let formula = packageName.strippingPrefix("brew:"),
-              formula.contains("/") else {
-            return nil
-        }
-        guard let leafName = formula.split(separator: "/").last.map(String.init) else {
-            return nil
-        }
-        return snapshot.homebrewOutdatedPackagesByName["brew:\(leafName)"]
     }
 
     private func githubRepositoryURL(from url: URL?) -> URL? {

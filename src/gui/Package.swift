@@ -34,7 +34,6 @@ let package = Package(
                 "SecurityCatalog.swift",
                 "NucleusBridge.swift",
                 "NukeHelperBridge.swift",
-                "HomebrewUpdateChecker.swift",
                 "NucleusStatusStore.swift",
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
@@ -58,7 +57,6 @@ let package = Package(
             dependencies: ["AutomicVaultApp"],
             path: "Tests",
             sources: [
-                "HomebrewUpdateCheckerTests.swift",
                 "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
                 "UpdateProgressViewModelTests.swift",

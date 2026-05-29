@@ -16,7 +16,6 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         daemonOwnership: .owner
     )
     private let helperBridge = NukeHelperBridge()
-    private let homebrewUpdateChecker = HomebrewUpdateChecker()
     private let statusStore = NucleusStatusStore()
     private let automaticSecretApprovalToast = MenuBarInlineNotification()
     private lazy var vaultDaemon = VaultDaemon(
@@ -386,20 +385,6 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 let installedPackages = try self.bridge.fetchPackages()
                 let outdatedPackages = try self.bridge.fetchOutdatedPackages()
                     .sorted(by: { $0.name < $1.name })
-                let homebrewOutdatedPackages: [OutdatedPackageRecord]
-                let lastError: NucleusStatusSnapshot.ErrorSnapshot?
-                do {
-                    homebrewOutdatedPackages = try self.homebrewUpdateChecker
-                        .refreshOutdatedPackagesSync()
-                    lastError = nil
-                } catch {
-                    homebrewOutdatedPackages = []
-                    lastError = .init(
-                        message: "Homebrew refresh failed during \(reason): " +
-                            error.localizedDescription,
-                        refreshedAt: Date()
-                    )
-                }
                 nextSnapshot = NucleusStatusSnapshot(
                     installedCount: installedPackages.count,
                     hazardousPackageCount: Self.securityAlertCount(
@@ -407,9 +392,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         geigerAlertCount: self.geigerAlertCount()
                     ),
                     outdatedPackages: outdatedPackages,
-                    homebrewOutdatedPackages: homebrewOutdatedPackages,
                     refreshedAt: Date(),
-                    lastError: lastError,
+                    lastError: nil,
                     remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
                 )
             } catch {
@@ -417,7 +401,6 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     installedCount: previous.installedCount,
                     hazardousPackageCount: previous.hazardousPackageCount,
                     outdatedPackages: previous.outdatedPackages,
-                    homebrewOutdatedPackages: [],
                     refreshedAt: previous.refreshedAt,
                     lastError: .init(
                         message: "Refresh failed during \(reason): \(error.localizedDescription)",
@@ -463,29 +446,20 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             ]
         }
 
-        let nucleusItems = snapshot.outdatedPackages.map { package in
+        return snapshot.outdatedPackages.map { package in
             packageStatusItem(
                 name: package.name,
                 detail: "\(package.currentVersion) → \(package.latestVersion)"
             )
         }
-        let homebrewItems = snapshot.homebrewOutdatedPackages.map { package in
-            packageStatusItem(
-                name: package.name,
-                detail: "\(package.currentVersion) → \(package.latestVersion)",
-                source: "Homebrew"
-            )
-        }
-        return nucleusItems + homebrewItems
     }
 
     private func packageStatusItem(
         name: String,
-        detail: String,
-        source: String? = nil
+        detail: String
     ) -> NSMenuItem {
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        item.view = PackageStatusMenuItemView(name: name, detail: detail, source: source)
+        item.view = PackageStatusMenuItemView(name: name, detail: detail)
         return item
     }
 
@@ -657,31 +631,20 @@ private final class PackageStatusMenuItemView: NSView {
         static let leadingInset: CGFloat = 24
         static let trailingInset: CGFloat = 16
         static let gap: CGFloat = 12
-        static let minimumSourceWidth: CGFloat = 68
         static let maximumDetailWidth: CGFloat = 130
         static let measuredTextPadding: CGFloat = 3
     }
 
-    private let sourceLabel = NSTextField(labelWithString: "")
     private let nameLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
     private let rowWidth: CGFloat
 
-    init(name: String, detail: String, source: String?) {
-        rowWidth = Self.preferredWidth(name: name, detail: detail, source: source)
+    init(name: String, detail: String) {
+        rowWidth = Self.preferredWidth(name: name, detail: detail)
         super.init(frame: NSRect(x: 0, y: 0, width: rowWidth, height: Metrics.height))
 
         configureLabel(nameLabel)
         configureLabel(detailLabel)
-
-        if let source {
-            configureLabel(sourceLabel)
-            sourceLabel.stringValue = source
-            sourceLabel.font = .systemFont(ofSize: 10, weight: .medium)
-            sourceLabel.textColor = .secondaryLabelColor
-            sourceLabel.alignment = .left
-            addSubview(sourceLabel)
-        }
 
         nameLabel.stringValue = name
         nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -699,7 +662,7 @@ private final class PackageStatusMenuItemView: NSView {
         detailLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
         [nameLabel, detailLabel].forEach(addSubview)
-        activateConstraints(source: source)
+        activateConstraints()
     }
 
     @available(*, unavailable)
@@ -720,8 +683,14 @@ private final class PackageStatusMenuItemView: NSView {
         label.maximumNumberOfLines = 1
     }
 
-    private func activateConstraints(source: String?) {
-        var constraints: [NSLayoutConstraint] = [
+    private func activateConstraints() {
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(
+                equalTo: leadingAnchor,
+                constant: Metrics.leadingInset
+            ),
+            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+
             detailLabel.leadingAnchor.constraint(
                 equalTo: nameLabel.trailingAnchor,
                 constant: Metrics.gap
@@ -732,61 +701,21 @@ private final class PackageStatusMenuItemView: NSView {
             ),
             detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Metrics.maximumDetailWidth),
             detailLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ]
-
-        if source != nil {
-            constraints += [
-                sourceLabel.leadingAnchor.constraint(
-                    equalTo: leadingAnchor,
-                    constant: Metrics.leadingInset
-                ),
-                sourceLabel.widthAnchor.constraint(
-                    equalToConstant: Self.sourceWidth(source)
-                ),
-                sourceLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-                nameLabel.leadingAnchor.constraint(
-                    equalTo: sourceLabel.trailingAnchor,
-                    constant: Metrics.gap
-                ),
-            ]
-        } else {
-            constraints.append(
-                nameLabel.leadingAnchor.constraint(
-                    equalTo: leadingAnchor,
-                    constant: Metrics.leadingInset
-                )
-            )
-        }
-
-        NSLayoutConstraint.activate(constraints)
+        ])
     }
 
-    private static func preferredWidth(name: String, detail: String, source: String?) -> CGFloat {
+    private static func preferredWidth(name: String, detail: String) -> CGFloat {
         let detailWidth = min(
             measuredWidth(detail, font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular)),
             Metrics.maximumDetailWidth
         )
-        var width = Metrics.leadingInset
+        let width = Metrics.leadingInset
             + Metrics.trailingInset
             + measuredWidth(name, font: .systemFont(ofSize: 12, weight: .semibold))
             + Metrics.gap
             + detailWidth
 
-        if let source {
-            width += sourceWidth(source) + Metrics.gap
-        }
-
         return min(max(ceil(width), Metrics.minimumWidth), Metrics.maximumWidth)
-    }
-
-    private static func sourceWidth(_ source: String?) -> CGFloat {
-        guard let source else { return 0 }
-        return max(
-            Metrics.minimumSourceWidth,
-            ceil(measuredWidth(source, font: .systemFont(ofSize: 10, weight: .medium)))
-        )
     }
 
     private static func measuredWidth(_ string: String, font: NSFont) -> CGFloat {

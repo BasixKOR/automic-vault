@@ -172,7 +172,6 @@ SHARED_SWIFT_SOURCES=(
   "$GUI_DIR/SecurityCatalog.swift"
   "$GUI_DIR/NucleusBridge.swift"
   "$GUI_DIR/NukeHelperBridge.swift"
-  "$GUI_DIR/HomebrewUpdateChecker.swift"
   "$GUI_DIR/NucleusStatusStore.swift"
   "$GUI_DIR/VaultApprovalStore.swift"
   "$GUI_DIR/ContainmentLogStore.swift"

@@ -14,8 +14,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
     let installedCount: Int
     let hazardousPackageCount: Int
     let outdatedPackages: [OutdatedPackageRecord]
-    let homebrewOutdatedPackages: [OutdatedPackageRecord]
-    private let homebrewOutdatedPackagesFilteredToInstalledList: Bool
     let refreshedAt: Date
     let lastError: ErrorSnapshot?
     let remoteDatabaseRefreshState: RemoteDatabaseRefreshState
@@ -24,8 +22,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         installedCount: 0,
         hazardousPackageCount: 0,
         outdatedPackages: [],
-        homebrewOutdatedPackages: [],
-        homebrewOutdatedPackagesFilteredToInstalledList: true,
         refreshedAt: .distantPast,
         lastError: nil,
         remoteDatabaseRefreshState: .normal
@@ -35,12 +31,8 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         Dictionary(uniqueKeysWithValues: outdatedPackages.map { ($0.name, $0) })
     }
 
-    var homebrewOutdatedPackagesByName: [String: OutdatedPackageRecord] {
-        Dictionary(uniqueKeysWithValues: homebrewOutdatedPackages.map { ($0.name, $0) })
-    }
-
     var flaggedOutdatedPackageCount: Int {
-        outdatedPackages.count + homebrewOutdatedPackages.count
+        outdatedPackages.count
     }
 
     var appBadgeCount: Int {
@@ -51,8 +43,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         case installedCount
         case hazardousPackageCount
         case outdatedPackages
-        case homebrewOutdatedPackages
-        case homebrewOutdatedPackagesFilteredToInstalledList
         case refreshedAt
         case lastError
         case remoteDatabaseRefreshState
@@ -62,8 +52,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         installedCount: Int,
         hazardousPackageCount: Int,
         outdatedPackages: [OutdatedPackageRecord],
-        homebrewOutdatedPackages: [OutdatedPackageRecord] = [],
-        homebrewOutdatedPackagesFilteredToInstalledList: Bool = true,
         refreshedAt: Date,
         lastError: ErrorSnapshot?,
         remoteDatabaseRefreshState: RemoteDatabaseRefreshState = .normal
@@ -71,9 +59,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         self.installedCount = installedCount
         self.hazardousPackageCount = hazardousPackageCount
         self.outdatedPackages = outdatedPackages
-        self.homebrewOutdatedPackages = homebrewOutdatedPackages
-        self.homebrewOutdatedPackagesFilteredToInstalledList =
-            homebrewOutdatedPackagesFilteredToInstalledList
         self.refreshedAt = refreshedAt
         self.lastError = lastError
         self.remoteDatabaseRefreshState = remoteDatabaseRefreshState
@@ -90,17 +75,6 @@ struct NucleusStatusSnapshot: Codable, Equatable {
             [OutdatedPackageRecord].self,
             forKey: .outdatedPackages
         )
-        let decodedHomebrewOutdatedPackages = try container.decodeIfPresent(
-            [OutdatedPackageRecord].self,
-            forKey: .homebrewOutdatedPackages
-        ) ?? []
-        homebrewOutdatedPackagesFilteredToInstalledList = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .homebrewOutdatedPackagesFilteredToInstalledList
-        ) ?? false
-        homebrewOutdatedPackages = homebrewOutdatedPackagesFilteredToInstalledList
-            ? decodedHomebrewOutdatedPackages
-            : []
         refreshedAt = try container.decode(Date.self, forKey: .refreshedAt)
         lastError = try container.decodeIfPresent(
             ErrorSnapshot.self,
@@ -119,27 +93,9 @@ struct NucleusStatusSnapshot: Codable, Equatable {
             installedCount: installedCount,
             hazardousPackageCount: hazardousPackageCount,
             outdatedPackages: outdatedPackages,
-            homebrewOutdatedPackages: homebrewOutdatedPackages,
-            homebrewOutdatedPackagesFilteredToInstalledList:
-                homebrewOutdatedPackagesFilteredToInstalledList,
             refreshedAt: refreshedAt,
             lastError: lastError,
             remoteDatabaseRefreshState: state
-        )
-    }
-
-    func withHomebrewOutdatedPackages(
-        _ packages: [OutdatedPackageRecord]
-    ) -> NucleusStatusSnapshot {
-        NucleusStatusSnapshot(
-            installedCount: installedCount,
-            hazardousPackageCount: hazardousPackageCount,
-            outdatedPackages: outdatedPackages,
-            homebrewOutdatedPackages: packages,
-            homebrewOutdatedPackagesFilteredToInstalledList: true,
-            refreshedAt: refreshedAt,
-            lastError: lastError,
-            remoteDatabaseRefreshState: remoteDatabaseRefreshState
         )
     }
 }
@@ -237,10 +193,6 @@ final class NucleusStatusStore {
             return
         }
         try saveSnapshot(snapshot.withRemoteDatabaseRefreshState(state))
-    }
-
-    func saveHomebrewOutdatedPackages(_ packages: [OutdatedPackageRecord]) throws {
-        try saveSnapshot(loadSnapshot().withHomebrewOutdatedPackages(packages))
     }
 
     func loadStartAtLoginSnapshot() -> StartAtLoginSnapshot {
