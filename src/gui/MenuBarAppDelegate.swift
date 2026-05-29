@@ -615,13 +615,14 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 private final class PackageStatusMenuItemView: NSView {
     private enum Metrics {
         static let minimumWidth: CGFloat = 190
-        static let maximumWidth: CGFloat = 360
+        static let maximumWidth: CGFloat = 420
         static let height: CGFloat = 24
         static let leadingInset: CGFloat = 24
         static let trailingInset: CGFloat = 16
-        static let gap: CGFloat = 8
+        static let gap: CGFloat = 12
         static let minimumSourceWidth: CGFloat = 68
         static let maximumDetailWidth: CGFloat = 130
+        static let measuredTextPadding: CGFloat = 3
     }
 
     private let sourceLabel = NSTextField(labelWithString: "")
@@ -649,12 +650,13 @@ private final class PackageStatusMenuItemView: NSView {
         nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         nameLabel.textColor = .disabledControlTextColor
         nameLabel.lineBreakMode = .byTruncatingMiddle
+        nameLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         detailLabel.stringValue = detail
         detailLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         detailLabel.textColor = .secondaryLabelColor
-        detailLabel.alignment = .right
+        detailLabel.alignment = .left
         detailLabel.lineBreakMode = .byTruncatingHead
         detailLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         detailLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
@@ -683,18 +685,18 @@ private final class PackageStatusMenuItemView: NSView {
 
     private func activateConstraints(source: String?) {
         var constraints: [NSLayoutConstraint] = [
+            detailLabel.leadingAnchor.constraint(
+                equalTo: nameLabel.trailingAnchor,
+                constant: Metrics.gap
+            ),
             detailLabel.trailingAnchor.constraint(
-                equalTo: trailingAnchor,
+                lessThanOrEqualTo: trailingAnchor,
                 constant: -Metrics.trailingInset
             ),
             detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Metrics.maximumDetailWidth),
             detailLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            nameLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: detailLabel.leadingAnchor,
-                constant: -Metrics.gap
-            ),
         ]
 
         if source != nil {
@@ -752,6 +754,7 @@ private final class PackageStatusMenuItemView: NSView {
 
     private static func measuredWidth(_ string: String, font: NSFont) -> CGFloat {
         (string as NSString).size(withAttributes: [.font: font]).width
+            + Metrics.measuredTextPadding
     }
 }
 
