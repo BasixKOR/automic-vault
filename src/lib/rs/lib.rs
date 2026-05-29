@@ -10464,6 +10464,236 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             published_at: None,
         };
         assert!(isotope_is_installable(&archive_backed));
+
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let metadata_only = IsotopePackageData {
+            name: "isotope:metadata-only".to_string(),
+            replaces: None,
+            modifies: None,
+            ..archive_backed.clone()
+        };
+        assert!(
+            isotope_dependency_graph(&metadata_only, &config)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            isotope_stub_executables(
+                &metadata_only,
+                &[(
+                    "metadata-tool".to_string(),
+                    PathBuf::from("bin/metadata-tool")
+                )],
+            )
+            .unwrap(),
+            ["metadata-tool".to_string()]
+        );
+
+        let npm_replacement = IsotopePackageData {
+            name: "isotope:npm-replacement".to_string(),
+            replaces: Some("npm:not-radio".to_string()),
+            modifies: None,
+            ..archive_backed.clone()
+        };
+        assert!(
+            isotope_dependency_graph(&npm_replacement, &config)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            isotope_replaced_package_target(&npm_replacement).unwrap(),
+            None
+        );
+        assert_eq!(
+            isotope_modified_or_replaced_package_name(&npm_replacement).unwrap(),
+            Some("npm:not-radio".to_string())
+        );
+
+        let invalid_modification = IsotopePackageData {
+            name: "isotope:invalid-modification".to_string(),
+            replaces: None,
+            modifies: Some("npm:not-radio".to_string()),
+            ..archive_backed.clone()
+        };
+        assert!(
+            isotope_modified_package_target(&invalid_modification)
+                .unwrap_err()
+                .contains("radioisotopes may only modify")
+        );
+        assert!(
+            radioisotope_modified_install_name(&PackageAliasTarget::NpmPackage(
+                "not-radio".to_string()
+            ))
+            .unwrap_err()
+            .contains("radioisotopes may only modify")
+        );
+    }
+
+    #[test]
+    fn run_i_package_dispatches_current_cask_isotope_and_error_paths() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let config = Config {
+            bottle_tag: "all".to_string(),
+        };
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+
+        for package_name in ["codex", "isotope:gh"] {
+            let install_root = package_install_root(&opt_root, package_name).unwrap();
+            if fs::symlink_metadata(&install_root).is_ok() {
+                remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+            }
+        }
+
+        let cask = embedded_cask("codex").unwrap();
+        let cask_plan = InstallPlan::for_i("codex".to_string(), "codex".to_string());
+        fs::create_dir_all(&cask_plan.install_root).unwrap();
+        write_package_receipt(
+            &cask_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: "codex".to_string(),
+                version: cask.version.clone(),
+                source: PackageReceiptSource::Cask {
+                    cask_name: "codex".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_root_ownership_manifest(&cask_plan, Vec::new()).unwrap();
+
+        run_i_package(
+            &config,
+            RequestedPackage::HomebrewCask("codex".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Update,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            load_package_receipt(&cask_plan.root_receipt_path())
+                .unwrap()
+                .unwrap()
+                .source,
+            PackageReceiptSource::Cask {
+                cask_name: "codex".to_string()
+            }
+        );
+
+        let isotope_name = "gh";
+        let isotope_package = isotope_qualified_name(isotope_name);
+        let isotope = isotope_package_data(isotope_name).unwrap();
+        let isotope_plan = InstallPlan::for_i_isotope(isotope_package.clone(), isotope_name);
+        let gh_binary = isotope_plan.install_root.join("bin/gh");
+        fs::create_dir_all(gh_binary.parent().unwrap()).unwrap();
+        fs::write(&gh_binary, b"#!/bin/sh\nprintf gh\n").unwrap();
+        let mut permissions = fs::metadata(&gh_binary).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&gh_binary, permissions).unwrap();
+        write_root_executable_manifest(
+            &isotope_plan.root_executables_manifest_path(),
+            &["gh".to_string()],
+        )
+        .unwrap();
+        write_root_ownership_manifest(&isotope_plan, Vec::new()).unwrap();
+        write_package_receipt(
+            &isotope_plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: isotope_package.clone(),
+                version: isotope.version.clone(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: isotope_name.to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let formula_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "2.80.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": "0".repeat(64),
+                            "url": "https://example.invalid/gh.tar.gz",
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let mut formula_server =
+            start_counting_test_http_server(vec![("/gh.json".to_string(), formula_json)]);
+        let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
+            formula_api_root: Some(formula_server.base_url.clone()),
+            ..Default::default()
+        });
+
+        run_i_package(
+            &config,
+            RequestedPackage::Isotope("gh".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Update,
+            },
+        )
+        .unwrap();
+        assert!(is_executable(&bin_root.join("gh")));
+        assert_eq!(
+            load_package_receipt(&isotope_plan.root_receipt_path())
+                .unwrap()
+                .unwrap()
+                .version,
+            isotope.version
+        );
+        assert!(formula_server.request_count() >= 1);
+        formula_server.stop().unwrap();
+
+        if fs::symlink_metadata(bin_root.join("gh")).is_ok() {
+            remove_path(&bin_root.join("gh")).unwrap();
+        }
+        let stub_paths = install_isotope_stubs(isotope_name, None).unwrap();
+        assert_eq!(stub_paths, vec![bin_root.join("gh").display().to_string()]);
+        assert!(is_executable(&bin_root.join("gh")));
+
+        let non_radio = run_i_radioisotope(
+            &config,
+            isotope_package,
+            isotope_name.to_string(),
+            InstallIntent::Install,
+            None,
+        )
+        .unwrap_err();
+        assert!(non_radio.contains("isotope:gh is not a radioisotope"));
+
+        let invalid_modified_target = run_i_modified_package(
+            &config,
+            "npm:not-radio".to_string(),
+            &PackageAliasTarget::NpmPackage("not-radio".to_string()),
+            InstallIntent::Install,
+            None,
+        )
+        .unwrap_err();
+        assert!(invalid_modified_target.contains("radioisotopes may only modify"));
+
+        let err = run_i_package(
+            &config,
+            RequestedPackage::VendorPackage("not-a-registered-vendor".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("not-a-registered-vendor is not registered"));
+
+        for package_name in ["codex", "isotope:gh"] {
+            remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+        }
     }
 
     #[test]
@@ -16632,11 +16862,19 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         let _env_lock = test_env_lock().lock().unwrap();
         let _package_lock = acquire_package_mutation_lock().unwrap();
         let package_name = "archive-lifetime-test";
+        let auto_package_name = "auto-formula-dispatch-test";
         let opt_root = opt_pkg_root();
         let bin_root = managed_bin_root();
         let install_root = opt_root.join(package_name);
+        let auto_install_root = opt_root.join(auto_package_name);
         let stub_path = bin_root.join(package_name);
-        for path in [&install_root, &stub_path] {
+        let auto_stub_path = bin_root.join(auto_package_name);
+        for path in [
+            &install_root,
+            &auto_install_root,
+            &stub_path,
+            &auto_stub_path,
+        ] {
             if fs::symlink_metadata(path).is_ok() {
                 remove_path(path).unwrap();
             }
@@ -16652,8 +16890,22 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         );
         let bottle_bytes = fs::read(&bottle_archive).unwrap();
         let bottle_sha = format!("{:x}", Sha256::digest(&bottle_bytes));
-        let bottle_server =
-            start_counting_test_http_server(vec![("/bottle.tar.gz".to_string(), bottle_bytes)]);
+        let auto_bottle_archive = temp.path().join("auto-formula-dispatch-test.tar.gz");
+        write_test_bottle_archive(
+            &auto_bottle_archive,
+            auto_package_name,
+            "1.0.0",
+            &[(
+                "bin/auto-formula-dispatch-test",
+                b"#!/bin/sh\nprintf auto\n",
+            )],
+        );
+        let auto_bottle_bytes = fs::read(&auto_bottle_archive).unwrap();
+        let auto_bottle_sha = format!("{:x}", Sha256::digest(&auto_bottle_bytes));
+        let bottle_server = start_counting_test_http_server(vec![
+            ("/bottle.tar.gz".to_string(), bottle_bytes),
+            ("/auto-bottle.tar.gz".to_string(), auto_bottle_bytes),
+        ]);
         let formula_json = serde_json::to_vec(&serde_json::json!({
             "versions": { "stable": "1.0.0" },
             "dependencies": [],
@@ -16670,21 +16922,49 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             "disabled": false
         }))
         .unwrap();
-        let formula_server =
-            start_counting_test_http_server(vec![(format!("/{package_name}.json"), formula_json)]);
+        let auto_formula_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "1.0.0" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": auto_bottle_sha,
+                            "url": format!("{}/auto-bottle.tar.gz", bottle_server.base_url),
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let formula_server = start_counting_test_http_server(vec![
+            (format!("/{package_name}.json"), formula_json),
+            (format!("/{auto_package_name}.json"), auto_formula_json),
+        ]);
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(formula_server.base_url.clone()),
             ..Default::default()
         });
 
-        run_i_formula(
+        run_i_package(
             &Config {
                 bottle_tag: "all".to_string(),
             },
-            package_name.to_string(),
-            package_name.to_string(),
-            InstallIntent::Install,
-            None,
+            RequestedPackage::HomebrewFormula(package_name.to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
+        )
+        .unwrap();
+        run_i_package(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            RequestedPackage::Auto(auto_package_name.to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
         )
         .unwrap();
 
@@ -16692,8 +16972,17 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &install_root.join("bin/archive-lifetime-test")
         ));
         assert!(is_executable(&stub_path));
+        assert!(is_executable(
+            &auto_install_root.join("bin/auto-formula-dispatch-test")
+        ));
+        assert!(is_executable(&auto_stub_path));
 
-        for path in [&install_root, &stub_path] {
+        for path in [
+            &install_root,
+            &auto_install_root,
+            &stub_path,
+            &auto_stub_path,
+        ] {
             if fs::symlink_metadata(path).is_ok() {
                 remove_path(path).unwrap();
             }
@@ -17140,28 +17429,24 @@ fi
             ..Default::default()
         });
 
-        run_i_npm(
+        run_i_package(
             &Config {
                 bottle_tag: "all".to_string(),
             },
-            "npm:coverage-npm".to_string(),
-            "coverage-npm".to_string(),
-            Some("1.2.3".to_string()),
+            RequestedPackage::Auto("coverage-npm".to_string()),
             InstallOptions {
                 intent: InstallIntent::Install,
             },
-            InstallIntent::Install,
-            None,
         )
         .unwrap();
-        run_i_pip(
+        run_i_package(
             &Config {
                 bottle_tag: "all".to_string(),
             },
-            "pip:coverage-pip".to_string(),
-            "coverage-pip".to_string(),
-            InstallIntent::Install,
-            None,
+            RequestedPackage::PipPackage("coverage-pip".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Install,
+            },
         )
         .unwrap();
 
