@@ -693,6 +693,11 @@ private struct PackageWebView: NSViewRepresentable {
     }
 }
 
+private enum SidebarCountMetrics {
+    static let columnWidth: CGFloat = 18
+    static let pillHorizontalPadding: CGFloat = 8
+}
+
 private struct SidebarCountText: View {
     let count: Int
 
@@ -702,7 +707,7 @@ private struct SidebarCountText: View {
             .monospacedDigit()
             .foregroundStyle(AVGlassPalette.secondaryText)
             .lineLimit(1)
-            .frame(minWidth: 18, alignment: .trailing)
+            .frame(minWidth: SidebarCountMetrics.columnWidth, alignment: .trailing)
     }
 }
 
@@ -1132,12 +1137,15 @@ private struct CountPill: View {
     var body: some View {
         Text(count.formatted())
             .font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
             .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, SidebarCountMetrics.pillHorizontalPadding)
             .frame(height: 20)
             .background(background, in: Capsule())
             .overlay(Capsule().stroke(border, lineWidth: borderWidth))
             .shadow(color: shadow, radius: 5)
+            // The capsule extends into the row padding so its digit keeps the same trailing edge as plain counts.
+            .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 
     private var foreground: Color {
