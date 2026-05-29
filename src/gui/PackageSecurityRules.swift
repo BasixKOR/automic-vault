@@ -7,7 +7,6 @@ enum PackageSecurityRules {
     ) -> Bool {
         guard plan.isRadioisotope == true,
               detail.installed,
-              detail.isHomebrewInstall == false,
               let modifiesPackage = plan.modifiesPackage else {
             return false
         }

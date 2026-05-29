@@ -14,9 +14,8 @@ where those tools run.
 | Package catalog search | Searches installed packages and the available vault catalog, with prefix-aware names for Homebrew, casks, isotopes, npm, PyPI, vendor, system, and detected-gone packages. | Lets users find the real package surface instead of guessing which ecosystem owns a tool. |
 | Package dossier | Shows package source, version state, description, aliases, dependencies, executable paths, popularity, last update date, install destination, security notices, and action commands. | Gives enough context to install, update, remove, migrate, or remediate a package deliberately. |
 | External package surface | Embeds the package homepage or GitHub README/release page in a passive WebKit surface, with links opened explicitly in the browser. | Keeps upstream context visible while preserving app focus and avoiding hidden navigation surprises. |
-| Recommendations | Surfaces setup tasks such as installing the `av` command-line tool, installing Xcode Command Line Tools, installing agent-oriented package packs, and migrating Homebrew packages. | Turns first-run and maintenance gaps into visible, actionable rows in the app. |
+| Recommendations | Surfaces setup tasks such as installing the `av` command-line tool, installing Xcode Command Line Tools, and installing agent-oriented package packs. | Turns first-run and maintenance gaps into visible, actionable rows in the app. |
 | Updates and outdated checks | Lists Nucleus packages with newer versions, shows app update availability, and runs privileged update operations through the helper. | Keeps the agent toolchain current without hiding which packages are changing. |
-| Homebrew migration | Detects Homebrew installs that can move under Automic Vault control, displays hazards, installs replacements, and removes original Homebrew packages when migration completes. | Moves agent-used tools from ambient Homebrew roots into managed vault roots. |
 | Isotopes | Uses secured forks of open source tools with explicit approval gates and optional secret migration at risky execution points. | Moves security boundaries into the tools agents actually run. |
 | Radioisotopes and detectors | Uses package metadata and detectors to identify plaintext secret exposure before a full isotope exists. | Provides early warnings and remediation paths for known package risks. |
 | Local hazard detection | Promotes detected local secret exposure as `sys:` or `gone:` package rows when a detector finds risk outside the installed vault set. | Makes exposed system and previously installed tool credentials visible in the same package workflow. |
@@ -55,12 +54,12 @@ The current app is built around a single package console:
 3. Select a row to load its dossier and external package surface.
 4. Review source, version, install state, dependency, executable, destination,
    security, and homepage context.
-5. Take the visible action: install, update, uninstall, make default, migrate
-   from Homebrew, reinstall as isotope, migrate isotope secrets, install CLT,
-   or update the app.
+5. Take the visible action: install, update, uninstall, make default,
+   reinstall as isotope, migrate isotope secrets, install CLT, or update the
+   app.
 
 Rows may represent installed vault packages, available packages, setup
-recommendations, Homebrew migration candidates, unsupported Homebrew installs,
+recommendations,
 detected local hazards, system detector findings, or command-palette entries.
 
 ## CLI Workflows

@@ -523,22 +523,23 @@ final class PackageSecurityStateTests: XCTestCase {
     }
 
     func testInstalledHomebrewCurlKeepsBrewPrefix() {
-        let package = HomebrewMigrationPackage(
+        let record = PackageRecord(
             name: "brew:curl",
+            source: .formula(rootFormula: "curl"),
             version: "8.20.0",
             description: "Get a file from an HTTP, HTTPS or FTP server",
-            tap: "homebrew/core",
-            isMigratable: true,
             securityState: PackageSecurityState(
                 isotopeName: "curl",
                 installIsInsecure: true,
                 remediationAvailable: true,
                 reasons: ["curl netrc file contains plaintext credentials"],
                 error: nil
-            )
+            ),
+            installRoot: "/opt/homebrew/Cellar/curl",
+            installPackageNames: ["brew:curl"]
         )
         let presentation = PackagePresentation(
-            item: .installed(package.record),
+            item: .installed(record),
             detail: nil,
             freshness: 0
         )
@@ -600,7 +601,7 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertTrue(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
-    func testHomebrewModifiedPackageUsesInstallPathInsteadOfConversion() throws {
+    func testHomebrewModifiedPackageUsesRadioisotopeConversion() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:hf",
             formula: "hf",
@@ -624,7 +625,7 @@ final class PackageSecurityStateTests: XCTestCase {
             hasMigration: true
         )
 
-        XCTAssertFalse(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
+        XCTAssertTrue(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
     @MainActor
@@ -737,7 +738,6 @@ final class PackageSecurityStateTests: XCTestCase {
           "npmPackageInfoError": null,
           "securityState": \(securityState),
           "installPackageNames": null,
-          "homebrewMigration": null,
           "versionOptions": [],
         }
         """

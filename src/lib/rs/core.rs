@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.11";
+pub(crate) const PROTOCOL_VERSION: &str = "1.12";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -11,7 +11,6 @@ pub(crate) enum ProtocolMethod {
     PackagesInfo,
     PackagesSearch,
     PackagesListOutdated,
-    PackagesHomebrewMigrationRecommendation,
     PackagesIsotopeMigrationPlan,
     PackagesMigrateIsotope,
     PackagesMakeDefault,
@@ -28,9 +27,6 @@ impl ProtocolMethod {
             "packages.info" => Some(Self::PackagesInfo),
             "packages.search" => Some(Self::PackagesSearch),
             "packages.listOutdated" => Some(Self::PackagesListOutdated),
-            "packages.homebrewMigrationRecommendation" => {
-                Some(Self::PackagesHomebrewMigrationRecommendation)
-            }
             "packages.isotopeMigrationPlan" => Some(Self::PackagesIsotopeMigrationPlan),
             "packages.migrateIsotope" => Some(Self::PackagesMigrateIsotope),
             "packages.makeDefault" => Some(Self::PackagesMakeDefault),
@@ -118,34 +114,6 @@ pub(crate) struct ListOutdatedResponse {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
-pub(crate) struct HomebrewMigrationRecommendationResponse {
-    pub(crate) packages: Vec<HomebrewMigrationPackageSummary>,
-    pub(crate) hazards: Vec<HomebrewMigrationHazardSummary>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-pub(crate) struct HomebrewMigrationPackageSummary {
-    pub(crate) name: String,
-    pub(crate) version: Option<String>,
-    pub(crate) description: Option<String>,
-    pub(crate) tap: Option<String>,
-    #[serde(rename = "isMigratable")]
-    pub(crate) is_migratable: bool,
-    #[serde(rename = "securityState")]
-    pub(crate) security_state: Option<PackageSecurityState>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-pub(crate) struct HomebrewMigrationHazardSummary {
-    #[serde(rename = "packageName")]
-    pub(crate) package_name: String,
-    #[serde(rename = "isotopeName")]
-    pub(crate) isotope_name: String,
-    pub(crate) reasons: Vec<String>,
-    pub(crate) error: Option<String>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct OutdatedPackageSummary {
     #[serde(rename = "currentVersion")]
     pub(crate) current_version: String,
@@ -218,10 +186,6 @@ mod tests {
             (
                 "packages.listOutdated",
                 ProtocolMethod::PackagesListOutdated,
-            ),
-            (
-                "packages.homebrewMigrationRecommendation",
-                ProtocolMethod::PackagesHomebrewMigrationRecommendation,
             ),
             (
                 "packages.isotopeMigrationPlan",
@@ -330,17 +294,6 @@ mod tests {
         assert_eq!(plan_json["replacesPackage"], "brew:gh");
         assert_eq!(plan_json["isRadioisotope"], true);
         assert_eq!(plan_json["hasMigration"], false);
-
-        let hazard = HomebrewMigrationHazardSummary {
-            package_name: "gh".to_string(),
-            isotope_name: "gh".to_string(),
-            reasons: vec!["detector-only".to_string()],
-            error: Some("manual review".to_string()),
-        };
-        let hazard_json = serde_json::to_value(hazard).unwrap();
-        assert_eq!(hazard_json["packageName"], "gh");
-        assert_eq!(hazard_json["isotopeName"], "gh");
-        assert_eq!(hazard_json["reasons"], json!(["detector-only"]));
     }
 
     #[test]

@@ -189,12 +189,6 @@ fn dispatch_request(
                 ops::list_outdated_packages()
             })
         }
-        core::ProtocolMethod::PackagesHomebrewMigrationRecommendation => {
-            respond(request.id, request.params, |params: EmptyParams| {
-                let _ = params;
-                ops::homebrew_migration_recommendation()
-            })
-        }
         core::ProtocolMethod::PackagesIsotopeMigrationPlan => {
             respond(request.id, request.params, |params: IsotopeParams| {
                 ops::isotope_migration_plan(&params.isotope)
@@ -384,10 +378,6 @@ mod tests {
         assert_eq!(
             core::ProtocolMethod::parse("packages.migrateIsotope"),
             Some(core::ProtocolMethod::PackagesMigrateIsotope)
-        );
-        assert_eq!(
-            core::ProtocolMethod::parse("packages.homebrewMigrationRecommendation"),
-            Some(core::ProtocolMethod::PackagesHomebrewMigrationRecommendation)
         );
     }
 
@@ -653,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_request_covers_installed_outdated_package_info_and_migration_methods() {
+    fn dispatch_request_covers_installed_outdated_and_package_info_methods() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
 
         let installed = dispatch_request(core::ProtocolRequest {
@@ -682,33 +672,6 @@ mod tests {
         .unwrap();
         assert_eq!(outdated["id"], 14);
         assert!(outdated["result"]["packages"].is_array());
-
-        match dispatch_request(core::ProtocolRequest {
-            id: 15,
-            method: "packages.homebrewMigrationRecommendation".to_string(),
-            params: serde_json::json!({}),
-        }) {
-            Ok(migration) => {
-                assert_eq!(migration["id"], 15);
-                assert!(migration["result"]["packages"].is_array());
-            }
-            Err(error) => {
-                assert_eq!(error.id, 15);
-                assert_eq!(error.error.code, 500);
-                assert!(
-                    error
-                        .error
-                        .message
-                        .contains("/opt/homebrew/bin/brew info failed")
-                        || error
-                            .error
-                            .message
-                            .contains("failed to run /opt/homebrew/bin/brew"),
-                    "unexpected migration error: {}",
-                    error.error.message
-                );
-            }
-        }
     }
 
     #[test]

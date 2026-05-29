@@ -61,8 +61,6 @@ struct PackageRecord: Decodable, Equatable {
     let installRoot: String?
     let installPackageNames: [String]?
     let installedVersions: [String]
-    let isHomebrewMigrationCandidate: Bool
-    let isUnsupportedHomebrewInstall: Bool
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -75,8 +73,6 @@ struct PackageRecord: Decodable, Equatable {
         case installRoot
         case installPackageNames
         case installedVersions
-        case isHomebrewMigrationCandidate
-        case isUnsupportedHomebrewInstall
     }
 
     init(
@@ -89,9 +85,7 @@ struct PackageRecord: Decodable, Equatable {
         securityState: PackageSecurityState?,
         installRoot: String? = nil,
         installPackageNames: [String]? = nil,
-        installedVersions: [String] = [],
-        isHomebrewMigrationCandidate: Bool = false,
-        isUnsupportedHomebrewInstall: Bool = false
+        installedVersions: [String] = []
     ) {
         self.name = name
         self.source = source
@@ -103,8 +97,6 @@ struct PackageRecord: Decodable, Equatable {
         self.installRoot = installRoot
         self.installPackageNames = installPackageNames
         self.installedVersions = installedVersions
-        self.isHomebrewMigrationCandidate = isHomebrewMigrationCandidate
-        self.isUnsupportedHomebrewInstall = isUnsupportedHomebrewInstall
     }
 
     init(from decoder: Decoder) throws {
@@ -125,14 +117,6 @@ struct PackageRecord: Decodable, Equatable {
             [String].self,
             forKey: .installedVersions
         ) ?? []
-        isHomebrewMigrationCandidate = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .isHomebrewMigrationCandidate
-        ) ?? false
-        isUnsupportedHomebrewInstall = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .isUnsupportedHomebrewInstall
-        ) ?? false
     }
 
     var isOutdated: Bool {
@@ -161,9 +145,7 @@ struct PackageRecord: Decodable, Equatable {
             securityState: securityState,
             installRoot: installRoot,
             installPackageNames: installPackageNames,
-            installedVersions: installedVersions,
-            isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
-            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
+            installedVersions: installedVersions
         )
     }
 
@@ -178,9 +160,7 @@ struct PackageRecord: Decodable, Equatable {
             securityState: nil,
             installRoot: installRoot,
             installPackageNames: installPackageNames,
-            installedVersions: installedVersions,
-            isHomebrewMigrationCandidate: isHomebrewMigrationCandidate,
-            isUnsupportedHomebrewInstall: isUnsupportedHomebrewInstall
+            installedVersions: installedVersions
         )
     }
 
@@ -212,8 +192,7 @@ struct PackageRecord: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: installPackageNames,
-            homebrewMigration: nil
+            installPackageNames: installPackageNames
         )
     }
 }
@@ -293,7 +272,6 @@ struct PackageDetail: Decodable, Equatable {
     let npmPackageInfoError: String?
     let securityState: PackageSecurityState?
     let installPackageNames: [String]?
-    let homebrewMigration: HomebrewMigrationRecommendation?
     let versionOptions: [PackageVersionOption]
 
     enum CodingKeys: String, CodingKey {
@@ -318,7 +296,6 @@ struct PackageDetail: Decodable, Equatable {
         case npmPackageInfoError
         case securityState
         case installPackageNames
-        case homebrewMigration
         case versionOptions
     }
 
@@ -344,7 +321,6 @@ struct PackageDetail: Decodable, Equatable {
         npmPackageInfoError: String?,
         securityState: PackageSecurityState?,
         installPackageNames: [String]?,
-        homebrewMigration: HomebrewMigrationRecommendation?,
         versionOptions: [PackageVersionOption] = []
     ) {
         self.packageName = packageName
@@ -368,7 +344,6 @@ struct PackageDetail: Decodable, Equatable {
         self.npmPackageInfoError = npmPackageInfoError
         self.securityState = securityState
         self.installPackageNames = installPackageNames
-        self.homebrewMigration = homebrewMigration
         self.versionOptions = versionOptions
     }
 
@@ -409,10 +384,6 @@ struct PackageDetail: Decodable, Equatable {
         installPackageNames = try container.decodeIfPresent(
             [String].self,
             forKey: .installPackageNames
-        )
-        homebrewMigration = try container.decodeIfPresent(
-            HomebrewMigrationRecommendation.self,
-            forKey: .homebrewMigration
         )
         versionOptions = try container.decodeIfPresent(
             [PackageVersionOption].self,
@@ -481,15 +452,6 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var installCommand: String {
-        if isHomebrewInstall, installed {
-            return homebrewUninstallCommand
-        }
-        if isHomebrewMigrationCandidate {
-            return "av install \(helperPackageNames.joined(separator: " "))"
-        }
-        if isUnsupportedHomebrewInstall {
-            return "Homebrew install is not supported."
-        }
         if isAutomicVaultCLT {
             return "Install bundled av"
         }
@@ -497,23 +459,6 @@ struct PackageDetail: Decodable, Equatable {
             return "xcode-select --install"
         }
         return "av install \(helperPackageNames.joined(separator: " "))"
-    }
-
-    var homebrewUninstallCommand: String {
-        let packageName = helperPackageName
-        if let formula = packageName.strippingPrefix("brew:"), formula.isEmpty == false {
-            return "brew uninstall \(formula)"
-        }
-        if let cask = packageName.strippingPrefix("cask:"), cask.isEmpty == false {
-            return "brew uninstall --cask \(cask)"
-        }
-        if let formula = self.packageName.strippingPrefix("brew:"), formula.isEmpty == false {
-            return "brew uninstall \(formula)"
-        }
-        if let cask = self.packageName.strippingPrefix("cask:"), cask.isEmpty == false {
-            return "brew uninstall --cask \(cask)"
-        }
-        return "brew uninstall \(packageName)"
     }
 
     var helperPackageNames: [String] {
@@ -568,7 +513,6 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
             installPackageNames: [option.installPackageName],
-            homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
         )
     }
@@ -611,7 +555,6 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
             installPackageNames: installPackageNames,
-            homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
         )
     }
@@ -639,7 +582,6 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: nil,
             installPackageNames: installPackageNames,
-            homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
         )
     }
@@ -670,7 +612,6 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: securityState,
             installPackageNames: displayInstallPackageNames,
-            homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
         )
     }
@@ -704,7 +645,6 @@ struct PackageDetail: Decodable, Equatable {
             npmPackageInfoError: npmPackageInfoError,
             securityState: fallback.securityState,
             installPackageNames: fallback.installPackageNames ?? installPackageNames,
-            homebrewMigration: homebrewMigration,
             versionOptions: versionOptions
         )
     }
@@ -719,24 +659,6 @@ struct PackageDetail: Decodable, Equatable {
 
     var isXcodeCLT: Bool {
         packageName == PackageRecommendation.xcodeCLTName
-    }
-
-    var isHomebrewMigrationCandidate: Bool {
-        return installRoot.hasPrefix("/opt/homebrew/")
-            && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
-            && installPackageNames?.isEmpty == false
-            && installed
-    }
-
-    var isUnsupportedHomebrewInstall: Bool {
-        return installRoot.hasPrefix("/opt/homebrew/")
-            && (packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:"))
-            && !isHomebrewMigrationCandidate
-            && installed
-    }
-
-    var isHomebrewInstall: Bool {
-        isHomebrewMigrationCandidate || isUnsupportedHomebrewInstall
     }
 
     var isSystemDetectorOnlyHazard: Bool {
@@ -788,124 +710,6 @@ struct PackageVersionOption: Decodable, Equatable {
             title += " recommended"
         }
         return title
-    }
-}
-
-struct HomebrewMigrationRecommendation: Decodable, Equatable {
-    let packages: [HomebrewMigrationPackage]
-    let hazards: [HomebrewMigrationHazard]
-
-    var packageNames: [String] {
-        packages.map(\.name)
-    }
-
-    var installPackageNames: [String] {
-        packages.filter(\.isMigratable).map { package in
-            let packageName = package.name
-            return packageName.hasPrefix("brew:") || packageName.hasPrefix("cask:")
-                ? packageName
-                : "brew:\(packageName)"
-        }
-    }
-
-    var hazardSummaries: [String] {
-        hazards.map { hazard in
-            if let error = hazard.error, error.isEmpty == false {
-                return "\(hazard.packageName): isotope:\(hazard.isotopeName) detection failed (\(error))"
-            }
-            return "\(hazard.packageName): isotope:\(hazard.isotopeName) detector triggered"
-        }
-    }
-
-    var learnMoreURL: URL? {
-        hazards.lazy.compactMap(\.radioisotopeReadmeURL).first
-    }
-}
-
-struct HomebrewMigrationPackage: Decodable, Equatable {
-    let name: String
-    let version: String?
-    let description: String?
-    let tap: String?
-    let isMigratable: Bool
-    let securityState: PackageSecurityState?
-
-    var source: PackageSource {
-        if let caskName = name.strippingPrefix("cask:") {
-            return .cask(caskName: caskName)
-        }
-        if let formula = name.strippingPrefix("brew:") {
-            return .formula(rootFormula: formula)
-        }
-        return .formula(rootFormula: name)
-    }
-
-    var installRoot: String {
-        if let caskName = name.strippingPrefix("cask:") {
-            return "/opt/homebrew/Caskroom/\(caskName)"
-        }
-        let formula = (name.strippingPrefix("brew:") ?? name)
-            .split(separator: "/")
-            .last
-            .map(String.init)
-            ?? name
-        return "/opt/homebrew/Cellar/\(formula)"
-    }
-
-    var record: PackageRecord {
-        PackageRecord(
-            name: normalizedName,
-            source: source,
-            version: version ?? "installed",
-            description: description,
-            securityState: securityState,
-            installRoot: installRoot,
-            installPackageNames: isMigratable ? [normalizedName] : nil,
-            isHomebrewMigrationCandidate: isMigratable,
-            isUnsupportedHomebrewInstall: !isMigratable
-        )
-    }
-
-    private var normalizedName: String {
-        if name.hasPrefix("brew:") || name.hasPrefix("cask:") {
-            return name
-        }
-        return "brew:\(name)"
-    }
-}
-
-struct HomebrewMigrationHazard: Decodable, Equatable {
-    let packageName: String
-    let isotopeName: String
-    let reasons: [String]
-    let error: String?
-
-    enum CodingKeys: String, CodingKey {
-        case packageName
-        case isotopeName
-        case reasons
-        case error
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        packageName = try container.decode(String.self, forKey: .packageName)
-        isotopeName = try container.decode(String.self, forKey: .isotopeName)
-        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
-        error = try container.decodeIfPresent(String.self, forKey: .error)
-    }
-
-    var radioisotopeReadmeURL: URL? {
-        var pathAllowed = CharacterSet.urlPathAllowed
-        pathAllowed.remove("/")
-        guard let isotopePath = isotopeName.addingPercentEncoding(
-            withAllowedCharacters: pathAllowed
-        ) else {
-            return nil
-        }
-        return URL(
-            string: "https://github.com/automic-vault/radioisotopes/tree/main/\(isotopePath)#readme"
-        )
     }
 }
 
@@ -1093,8 +897,7 @@ struct PackageSearchResult: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: nil,
-            homebrewMigration: nil
+            installPackageNames: nil
         )
     }
 
@@ -1276,7 +1079,6 @@ struct PackageRecommendation: Equatable {
     static let agenticToolingPackName = "Agentic Toolkit"
     static let agentPackName = "Agent Pack"
     static let unixPlusPlusPackName = "UNIX++ Pack"
-    static let homebrewMigrationName = "Homebrew Migration"
     static let agenticToolingPackPackageNames = [
         "ffmpeg-full",
         "imagemagick-full",
@@ -1407,8 +1209,7 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: nil,
-            homebrewMigration: nil
+            installPackageNames: nil
         )
         return PackageRecommendation(
             packageName: automicVaultCLTName,
@@ -1450,8 +1251,7 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: nil,
-            homebrewMigration: nil
+            installPackageNames: nil
         )
         return PackageRecommendation(
             packageName: xcodeCLTName,
@@ -1496,8 +1296,7 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: missingPackageNames.map { "brew:\($0)" },
-            homebrewMigration: nil
+            installPackageNames: missingPackageNames.map { "brew:\($0)" }
         )
         return PackageRecommendation(
             packageName: agenticToolingPackName,
@@ -1542,8 +1341,7 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: missingPackageNames.map(agentPackInstallPackageName),
-            homebrewMigration: nil
+            installPackageNames: missingPackageNames.map(agentPackInstallPackageName)
         )
         return PackageRecommendation(
             packageName: agentPackName,
@@ -1597,8 +1395,7 @@ struct PackageRecommendation: Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: nil,
-            installPackageNames: missingPackageNames.map { "brew:\($0)" },
-            homebrewMigration: nil
+            installPackageNames: missingPackageNames.map { "brew:\($0)" }
         )
         return PackageRecommendation(
             packageName: unixPlusPlusPackName,
@@ -1610,59 +1407,6 @@ struct PackageRecommendation: Equatable {
         )
     }
 
-    static func homebrewMigration(
-        _ migration: HomebrewMigrationRecommendation
-    ) -> PackageRecommendation? {
-        let installPackageNames = migration.installPackageNames
-        guard installPackageNames.isEmpty == false else {
-            return nil
-        }
-        let packageCount = installPackageNames.count
-        let hazardCount = migration.hazards.count
-        let description = hazardCount > 0
-            ? "Migrate \(packageCount) Homebrew packages and casks; \(hazardCount) need radioisotope review."
-            : "Migrate \(packageCount) Homebrew packages and casks into the vault."
-        let detail = PackageDetail(
-            packageName: homebrewMigrationName,
-            qualifiedName: homebrewMigrationName,
-            installRoot: "/opt",
-            installed: false,
-            source: nil,
-            sourceError: nil,
-            aliases: [],
-            aliasesError: nil,
-            installedVersion: nil,
-            latestVersion: nil,
-            latestVersionError: nil,
-            executablePaths: [],
-            executablePathsError: nil,
-            popularity: nil,
-            lastUpdatedAt: nil,
-            homebrewInfo: HomebrewPackageInfo(
-                formula: homebrewMigrationName,
-                description: "Installs selected packages and casks from /opt/homebrew " +
-                    "into Automic Vault. After migration, their " +
-                    "Homebrew packages will be uninstalled.",
-                homepage: nil,
-                license: nil,
-                dependencies: migration.packageNames
-            ),
-            homebrewInfoError: nil,
-            npmHomepage: nil,
-            npmPackageInfoError: nil,
-            securityState: nil,
-            installPackageNames: installPackageNames,
-            homebrewMigration: migration
-        )
-        return PackageRecommendation(
-            packageName: homebrewMigrationName,
-            installedVersion: nil,
-            latestVersion: nil,
-            missingPackageNames: migration.packageNames,
-            detail: detail,
-            description: description
-        )
-    }
 }
 
 struct CommandPaletteItem: Equatable {
@@ -1721,24 +1465,6 @@ struct PackagePresentation: Equatable {
                 return true
             }
             return record.name.hasPrefix("isotope:")
-        case .recommendation, .available, .command:
-            return false
-        }
-    }
-
-    var isHomebrewMigrationCandidate: Bool {
-        switch item {
-        case .installed(let record):
-            return record.isHomebrewMigrationCandidate
-        case .recommendation, .available, .command:
-            return false
-        }
-    }
-
-    var isHomebrewInstall: Bool {
-        switch item {
-        case .installed(let record):
-            return record.isHomebrewMigrationCandidate || record.isUnsupportedHomebrewInstall
         case .recommendation, .available, .command:
             return false
         }
