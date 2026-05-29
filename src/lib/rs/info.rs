@@ -2676,7 +2676,7 @@ mod tests {
         let pip_package = opt_root.join("pip/My_Package.Name");
         fs::create_dir_all(&pip_package).unwrap();
 
-        let isotope_package = opt_root.join("isotopes/gh");
+        let isotope_package = opt_root.join("iso/gh");
         fs::create_dir_all(&isotope_package).unwrap();
 
         let mut names = installed_package_names(opt_root).unwrap();
@@ -2709,7 +2709,7 @@ mod tests {
         assert_eq!(pip_refs.len(), 1);
         assert_eq!(pip_refs[0].package_name, "pip:My_Package.Name");
 
-        let isotope_refs = installed_isotope_package_refs(&opt_root.join("isotopes")).unwrap();
+        let isotope_refs = installed_isotope_package_refs(&opt_root.join("iso")).unwrap();
         assert_eq!(isotope_refs.len(), 1);
         assert_eq!(isotope_refs[0].package_name, "isotope:gh");
     }

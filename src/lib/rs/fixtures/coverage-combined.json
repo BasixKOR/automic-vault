@@ -164,7 +164,7 @@
         "version": "detector-only"
       },
       "gh": {
-        "migrate": "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
+        "migrate": "/opt/iso/gh/bin/gh auth av-migrate \"$@\"",
         "name": "isotope:gh",
         "replaces": "brew:gh",
         "version": "2.80.0"

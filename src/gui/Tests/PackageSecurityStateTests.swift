@@ -657,7 +657,7 @@ final class PackageSecurityStateTests: XCTestCase {
         let package = installedPresentation(
             named: "isotope:rg",
             source: .isotope(isotopeName: "rg"),
-            installRoot: "/opt/isotopes/rg"
+            installRoot: "/opt/iso/rg"
         )
 
         XCTAssertEqual(model.packageBadge(for: package), .hardened)
@@ -670,7 +670,7 @@ final class PackageSecurityStateTests: XCTestCase {
         let package = installedPresentation(
             named: "isotope:flyctl",
             source: .isotope(isotopeName: "flyctl"),
-            installRoot: "/opt/isotopes/flyctl",
+            installRoot: "/opt/iso/flyctl",
             securityState: PackageSecurityState(
                 isotopeName: "flyctl",
                 installIsInsecure: true,

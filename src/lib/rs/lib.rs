@@ -139,7 +139,7 @@ const BREW_PACKAGE_PREFIX: &str = "brew:";
 const CASK_PACKAGE_PREFIX: &str = "cask:";
 const ISOTOPE_PACKAGE_PREFIX: &str = "isotope:";
 const VENDOR_PACKAGE_PREFIX: &str = "av:";
-const ISOTOPE_INSTALL_ROOT_DIR: &str = "isotopes";
+const ISOTOPE_INSTALL_ROOT_DIR: &str = "iso";
 const PKG_DISPLAY_NAME: &str = "av";
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const RELOCATABLE_HOMEBREW_PREFIX: &str = "/opt/homebrew";
@@ -9508,7 +9508,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let npm_root = opt_root.join("npm/openclaw");
         let scoped_npm_root = opt_root.join("npm/@scope/tool");
         let pip_root = opt_root.join("pip/psycopg2");
-        let isotope_root = opt_root.join("isotopes/gh");
+        let isotope_root = opt_root.join("iso/gh");
         fs::create_dir_all(&formula_root).unwrap();
         fs::create_dir_all(&npm_root).unwrap();
         fs::create_dir_all(&scoped_npm_root).unwrap();
@@ -10360,8 +10360,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     #[test]
     fn installed_package_names_include_isotopes_from_subdir() {
         let temp = TempDir::new().unwrap();
-        fs::create_dir_all(temp.path().join("isotopes/gh")).unwrap();
-        fs::create_dir_all(temp.path().join("isotopes/.tmp")).unwrap();
+        fs::create_dir_all(temp.path().join("iso/gh")).unwrap();
+        fs::create_dir_all(temp.path().join("iso/.tmp")).unwrap();
 
         let mut names = installed_package_names(temp.path()).unwrap();
         names.sort();
@@ -10809,17 +10809,14 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     fn isotope_stub_executables_use_replaced_formula_metadata() {
         let isotope = isotope_package_data("aws-cli").unwrap();
         let discovered = vec![
-            (
-                "aws".to_string(),
-                PathBuf::from("/opt/isotopes/aws-cli/bin/aws"),
-            ),
+            ("aws".to_string(), PathBuf::from("/opt/iso/aws-cli/bin/aws")),
             (
                 "aws_completer".to_string(),
-                PathBuf::from("/opt/isotopes/aws-cli/bin/aws_completer"),
+                PathBuf::from("/opt/iso/aws-cli/bin/aws_completer"),
             ),
             (
                 "python3.14".to_string(),
-                PathBuf::from("/opt/isotopes/aws-cli/bin/python3.14"),
+                PathBuf::from("/opt/iso/aws-cli/bin/python3.14"),
             ),
         ];
 
@@ -12122,7 +12119,7 @@ machine example.com login user password netrc-token
                 },
                 InstalledPackageRef {
                     package_name: "isotope:alpha".to_string(),
-                    install_root: PathBuf::from("/opt/isotopes/alpha"),
+                    install_root: PathBuf::from("/opt/iso/alpha"),
                 },
             ],
             |package| {
@@ -12558,7 +12555,7 @@ machine example.com login user password netrc-token
     #[test]
     fn rewrite_binary_uses_absolute_macho_path_when_loader_path_is_longer() {
         let root = PathBuf::from("/tmp/nucleus/.tmp08cFDL/python@3.14/3.14.4_1");
-        let future_root = PathBuf::from("/tmp/opt/isotopes/aws-cli");
+        let future_root = PathBuf::from("/tmp/opt/iso/aws-cli");
         let path = root.join(
             "Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/\
              _zstd.cpython-314-darwin.so",
@@ -12584,9 +12581,7 @@ machine example.com login user password netrc-token
         .unwrap();
 
         assert!(changed);
-        assert!(
-            find_subslice(&bytes, b"/tmp/opt/isotopes/aws-cli/lib/libzstd.1.dylib\0").is_some()
-        );
+        assert!(find_subslice(&bytes, b"/tmp/opt/iso/aws-cli/lib/libzstd.1.dylib\0").is_some());
         assert!(find_subslice(&bytes, b"@loader_path/../../../../../../../lib").is_none());
         assert!(find_subslice(&bytes, b"@@HOMEBREW_PREFIX@@/opt/zstd").is_none());
     }
@@ -14754,12 +14749,12 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
-    fn package_install_root_uses_isotopes_prefix() {
+    fn package_install_root_uses_iso_prefix() {
         let temp = TempDir::new().unwrap();
 
         let install_root = package_install_root(temp.path(), "isotope:gh").unwrap();
 
-        assert_eq!(install_root, temp.path().join("isotopes/gh"));
+        assert_eq!(install_root, temp.path().join("iso/gh"));
     }
 
     #[test]
@@ -15851,8 +15846,8 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             mode: Mode::I,
             package_name: "isotope:gh".to_string(),
             root_formula: "gh".to_string(),
-            stable_root: temp.path().join("opt/isotopes/gh"),
-            install_root: temp.path().join("opt/isotopes/gh"),
+            stable_root: temp.path().join("opt/iso/gh"),
+            install_root: temp.path().join("opt/iso/gh"),
             tmp_root: temp.path().join("tmp"),
         };
         let isotope = IsotopePackageData {
@@ -17925,8 +17920,8 @@ EOF
             mode: Mode::I,
             package_name: "isotope:gh".to_string(),
             root_formula: "gh".to_string(),
-            stable_root: temp.path().join("opt/isotopes/gh"),
-            install_root: temp.path().join("opt/isotopes/gh"),
+            stable_root: temp.path().join("opt/iso/gh"),
+            install_root: temp.path().join("opt/iso/gh"),
             tmp_root: tmp_root.clone(),
         };
         install_isotope_root(&gh_plan, &isotope, &[], None).unwrap();
@@ -17967,8 +17962,8 @@ EOF
             mode: Mode::I,
             package_name: "isotope:aws-cli".to_string(),
             root_formula: "awscli".to_string(),
-            stable_root: temp.path().join("opt/isotopes/aws-cli"),
-            install_root: temp.path().join("opt/isotopes/aws-cli"),
+            stable_root: temp.path().join("opt/iso/aws-cli"),
+            install_root: temp.path().join("opt/iso/aws-cli"),
             tmp_root: tmp_root.clone(),
         };
         install_isotope_root(&aws_plan, &radioisotope, &[], None).unwrap();

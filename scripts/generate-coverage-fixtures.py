@@ -182,7 +182,7 @@ def main():
                 "gh": {
                     "name": "isotope:gh",
                     "replaces": "brew:gh",
-                    "migrate": "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
+                    "migrate": "/opt/iso/gh/bin/gh auth av-migrate \"$@\"",
                     "version": "2.80.0",
                 },
                 "git": {
