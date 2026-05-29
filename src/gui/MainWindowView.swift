@@ -492,10 +492,13 @@ struct MainWindowView: View {
     }
 
     private var linksToolbar: some View {
-        HStack(spacing: 10) {
+        let hasSelectedPackage = model.selectedPackage != nil
+
+        return HStack(spacing: 10) {
             LinkTabBar(selection: $linkTab)
                 .frame(minWidth: 150, idealWidth: 162, maxWidth: 180)
                 .layoutPriority(3)
+                .disabled(!hasSelectedPackage)
 
             LinkURLBar(url: model.selectedURL(for: linkTab)) {
                 model.open(url: model.selectedURL(for: linkTab))
@@ -533,6 +536,7 @@ struct MainWindowView: View {
 }
 
 private struct LinkTabBar: View {
+    @Environment(\.isEnabled) private var isEnabled
     @Binding var selection: MainWindowLinkTab
 
     var body: some View {
@@ -577,6 +581,7 @@ private struct LinkTabBar: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(AVGlassPalette.controlBorder.opacity(0.14), lineWidth: 1)
         )
+        .opacity(isEnabled ? 1 : 0.45)
     }
 
     private func title(for tab: MainWindowLinkTab) -> String {
