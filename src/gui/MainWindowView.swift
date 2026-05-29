@@ -505,18 +505,18 @@ struct MainWindowView: View {
     }
 
     private var linksToolbar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             LinkTabBar(selection: $linkTab)
-                .frame(minWidth: 198, idealWidth: 228, maxWidth: 264)
-            .layoutPriority(3)
+                .frame(minWidth: 150, idealWidth: 162, maxWidth: 180)
+                .layoutPriority(3)
 
             LinkURLBar(url: model.selectedURL(for: linkTab)) {
                 model.open(url: model.selectedURL(for: linkTab))
             }
             .layoutPriority(1)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -557,22 +557,22 @@ private struct LinkTabBar: View {
                     }
                 } label: {
                     Text(title(for: tab))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(
                             selection == tab
-                                ? AVGlassPalette.tabBarSelectedText
+                                ? AVGlassPalette.primaryText
                                 : AVGlassPalette.secondaryText
                         )
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(height: 23)
+                        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .background {
                     if selection == tab {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(AVGlassPalette.tabBarSelectedFill)
                     }
                 }
@@ -580,15 +580,15 @@ private struct LinkTabBar: View {
                 .accessibilityAddTraits(selection == tab ? .isSelected : [])
             }
         }
-        .padding(3)
-        .frame(height: 36)
+        .padding(2)
+        .frame(height: 27)
         .background(
             AVGlassPalette.tabBarFill,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(AVGlassPalette.controlBorder.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(AVGlassPalette.controlBorder.opacity(0.14), lineWidth: 1)
         )
     }
 
@@ -1517,9 +1517,8 @@ private enum AVGlassPalette {
     static let controlBorder = Color.white.opacity(0.22)
     static let selectedFill = Color.white.opacity(0.095)
     static let sidebarSelectedFill = AVGlassPalette.selectedFill
-    static let tabBarFill = Color.white.opacity(0.075)
-    static let tabBarSelectedFill = Color(red: 0.06, green: 0.49, blue: 1.00)
-    static let tabBarSelectedText = Color.white.opacity(0.96)
+    static let tabBarFill = Color.white.opacity(0.055)
+    static let tabBarSelectedFill = AVGlassPalette.selectedFill
     static let hairline = Color.white.opacity(0.10)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.64)
