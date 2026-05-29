@@ -399,7 +399,7 @@ fn read_secret_line_no_echo(stdin: &mut io::Stdin, value: &mut String) -> Result
     let mut hidden = original;
     hidden.c_lflag &= !libc::ECHO;
     // SAFETY: fd is stdin and hidden is a valid termios value derived from tcgetattr.
-    if unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &hidden) } != 0 {
+    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &hidden) } != 0 {
         return Err(format!(
             "failed to disable terminal echo: {}",
             io::Error::last_os_error()
@@ -408,7 +408,7 @@ fn read_secret_line_no_echo(stdin: &mut io::Stdin, value: &mut String) -> Result
 
     let read_result = stdin.read_line(value);
     // SAFETY: original is the termios value returned by tcgetattr for this fd.
-    let restore_result = unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &original) };
+    let restore_result = unsafe { libc::tcsetattr(fd, libc::TCSANOW, &original) };
     if restore_result != 0 {
         return Err(format!(
             "failed to restore terminal echo: {}",

@@ -2062,13 +2062,13 @@ pub(crate) fn installed_isotope_package_refs(
         let entry =
             entry.map_err(|err| format!("failed to read {}: {err}", isotope_root.display()))?;
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let name = entry
             .file_name()
             .into_string()
             .map_err(|_| format!("non-utf8 directory name under {}", isotope_root.display()))?;
+        if name.starts_with('.') || !path.is_dir() {
+            continue;
+        }
         packages.push(InstalledPackageRef {
             package_name: format!("{ISOTOPE_PACKAGE_PREFIX}{name}"),
             install_root: path,

@@ -10361,6 +10361,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     fn installed_package_names_include_isotopes_from_subdir() {
         let temp = TempDir::new().unwrap();
         fs::create_dir_all(temp.path().join("isotopes/gh")).unwrap();
+        fs::create_dir_all(temp.path().join("isotopes/.tmp")).unwrap();
 
         let mut names = installed_package_names(temp.path()).unwrap();
         names.sort();
