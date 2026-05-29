@@ -13,6 +13,7 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
+        .preferredColorScheme(.dark)
     }
 
     private var background: some View {

@@ -695,6 +695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Automic Vault"
         window.backgroundColor = .clear
         window.isOpaque = false
+        window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
