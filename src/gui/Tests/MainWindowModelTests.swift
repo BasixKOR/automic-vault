@@ -175,6 +175,32 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testPacksSectionShowsPackagePackRecommendations() throws {
+        let recommendation = try XCTUnwrap(
+            PackageRecommendation.agentPack(missingPackageNames: ["codex", "mods"])
+        )
+        let model = MainWindowModel(initialPackRecommendations: [recommendation])
+        defer { model.stop() }
+
+        XCTAssertEqual(MainWindowSection.librarySections.firstIndex(of: .packs), 1)
+
+        model.selectedSection = .packs
+
+        XCTAssertEqual(model.count(for: .packs), 1)
+        let package = try XCTUnwrap(model.displayedPackages.first)
+        XCTAssertEqual(package.selectionID, PackageRecommendation.agentPackName)
+        XCTAssertEqual(model.displayName(for: package), PackageRecommendation.agentPackName)
+        XCTAssertEqual(model.dossierPrimaryPackageAction(for: recommendation.detail), .install)
+
+        model.requestDossierPackageAction(.install, detail: recommendation.detail, package: package)
+
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.kind, .install)
+        XCTAssertEqual(request.packageNames, ["cask:codex", "brew:mods"])
+        XCTAssertEqual(request.displayName, PackageRecommendation.agentPackName)
+    }
+
+    @MainActor
     func testSearchUsesNeutralVersionTextDespiteSelectedSection() {
         let model = MainWindowModel()
         defer { model.stop() }

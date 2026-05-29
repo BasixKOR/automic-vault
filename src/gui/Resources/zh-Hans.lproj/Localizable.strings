@@ -195,6 +195,7 @@
 "Package operation is unavailable" = "软件包操作不可用";
 "Package refresh failed" = "软件包刷新失败";
 "Packages" = "软件包";
+"Packs" = "套装";
 "PARENT PROCESS" = "父进程";
 "Paste" = "粘贴";
 "pending helper installation" = "等待帮助程序安装";

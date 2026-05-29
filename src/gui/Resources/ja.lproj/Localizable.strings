@@ -195,6 +195,7 @@
 "Package operation is unavailable" = "パッケージ操作を使用できません";
 "Package refresh failed" = "パッケージの更新に失敗しました";
 "Packages" = "パッケージ";
+"Packs" = "パック";
 "PARENT PROCESS" = "親プロセス";
 "Paste" = "ペースト";
 "pending helper installation" = "ヘルパーのインストール待ち";

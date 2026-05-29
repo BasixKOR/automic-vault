@@ -4,6 +4,7 @@ import Foundation
 
 enum MainWindowSection: String, CaseIterable, Identifiable {
     case installed
+    case packs
     case geigerCounter
     case newUpdated
     case outdated
@@ -22,6 +23,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     static let librarySections: [MainWindowSection] = [
         .installed,
+        .packs,
         .geigerCounter,
         .newUpdated,
         .outdated,
@@ -47,6 +49,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return L10n.string("Installed")
+        case .packs:
+            return L10n.string("Packs")
         case .geigerCounter:
             return L10n.string("Security Alerts")
         case .newUpdated:
@@ -80,6 +84,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return "shippingbox"
+        case .packs:
+            return "square.stack.3d.up"
         case .geigerCounter:
             return "exclamationmark.shield"
         case .newUpdated:
@@ -242,6 +248,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var geigerPackages: [PackagePresentation] = []
     @Published private(set) var catalogPackages: [PackagePresentation] = []
     @Published private(set) var pulsePackages: [PackagePresentation] = []
+    @Published private(set) var packRecommendations: [PackagePresentation] = []
     @Published private(set) var searchResults: [PackagePresentation] = []
     @Published private(set) var snapshot = NucleusStatusSnapshot.empty
     @Published private(set) var selectedItemID: String?
@@ -286,10 +293,14 @@ final class MainWindowModel: ObservableObject {
             NucleusBridge().cliToolsRecommendation()
         },
         initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
+        initialPackRecommendations: [PackageRecommendation] = [],
         securityCatalog: SecurityCatalog = .shared
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
         automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
+        packRecommendations = Self.packRecommendationPresentations(
+            for: initialPackRecommendations
+        )
         self.securityCatalog = securityCatalog
     }
 
@@ -692,6 +703,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             return installedCount
+        case .packs:
+            return packRecommendations.isEmpty ? nil : packRecommendations.count
         case .geigerCounter:
             return geigerCounterCount
         case .newUpdated:
@@ -883,6 +896,7 @@ final class MainWindowModel: ObservableObject {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
         for package in packages
+            + packRecommendations
             + localOutdatedPackages
             + geigerPackages
             + catalogPackages
@@ -1178,6 +1192,46 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
+    static func packagePackRecommendations(
+        installedPackageNames: Set<String>
+    ) -> [PackageRecommendation] {
+        [
+            PackageRecommendation.agenticToolingPack(
+                missingPackageNames: PackageRecommendation.agenticToolingPackPackageNames
+                    .filter { !installedPackageNames.contains($0) }
+            ),
+            PackageRecommendation.agentPack(
+                missingPackageNames: PackageRecommendation.agentPackPackageNames
+                    .filter { !installedPackageNames.contains($0) }
+            ),
+            PackageRecommendation.unixPlusPlusPack(
+                missingPackageNames: PackageRecommendation.unixPlusPlusPackPackageNames
+                    .filter { !installedPackageNames.contains($0) }
+            )
+        ]
+        .compactMap { $0 }
+    }
+
+    private static func packRecommendationPresentations(
+        for recommendations: [PackageRecommendation]
+    ) -> [PackagePresentation] {
+        recommendations.map { recommendation in
+            PackagePresentation(
+                item: .recommendation(recommendation),
+                detail: recommendation.detail,
+                freshness: Self.freshness(for: recommendation.detail.packageName)
+            )
+        }
+    }
+
+    private static var packagePackRecommendationNames: Set<String> {
+        [
+            PackageRecommendation.agenticToolingPackName,
+            PackageRecommendation.agentPackName,
+            PackageRecommendation.unixPlusPlusPackName
+        ]
+    }
+
     private func packages(for section: MainWindowSection) -> [PackagePresentation] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty == false {
@@ -1191,6 +1245,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             source = packages
+        case .packs:
+            source = packRecommendations
         case .geigerCounter:
             source = geigerActionPackages
         case .newUpdated:
@@ -1211,7 +1267,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func mergedSearchPackages(query: String) -> [PackagePresentation] {
-        let installedMatches = packages.filter {
+        let installedMatches = (packages + packRecommendations).filter {
             packageMatchesQuery($0, query: query)
         }
         return Self.mergedSearchPackages(
@@ -1225,7 +1281,7 @@ final class MainWindowModel: ObservableObject {
         package: PackagePresentation
     ) -> Bool {
         switch section {
-        case .installed, .allPackages:
+        case .installed, .packs, .allPackages:
             return true
         case .geigerCounter:
             return isGeigerActionPackage(package)
@@ -1417,6 +1473,7 @@ final class MainWindowModel: ObservableObject {
                     freshness: Self.freshness(for: merged.name)
                 )
             }
+            refreshPackRecommendations()
             let selectedPendingHardening = selectPendingHardeningPackageIfPossible()
             if !selectedPendingHardening {
                 if pendingHardeningSelection != nil,
@@ -1448,6 +1505,78 @@ final class MainWindowModel: ObservableObject {
             return
         }
         automicVaultCLTRecommendation = recommendation
+    }
+
+    private func refreshPackRecommendations() {
+        let recommendations = Self.packagePackRecommendations(
+            installedPackageNames: installedRecommendationPackageNames()
+        )
+        let activeNames = Set(recommendations.map(\.packageName))
+        packRecommendations = Self.packRecommendationPresentations(for: recommendations)
+
+        for package in packRecommendations {
+            guard let detail = package.detail else {
+                continue
+            }
+            detailsByPackageName[package.selectionID] = detail
+            detailsByPackageName[detail.packageName] = detail
+        }
+
+        for packageName in Self.packagePackRecommendationNames where !activeNames.contains(packageName) {
+            detailsByPackageName.removeValue(forKey: packageName)
+        }
+    }
+
+    private func installedRecommendationPackageNames() -> Set<String> {
+        var names = Set<String>()
+        for package in packages {
+            guard case .installed(let record) = package.item else {
+                continue
+            }
+
+            Self.insertRecommendationPackageAliases(record.name, into: &names)
+            Self.insertRecommendationPackageAliases(
+                Self.sourceQualifiedName(for: record.source),
+                into: &names
+            )
+            record.installPackageNames?.forEach {
+                Self.insertRecommendationPackageAliases($0, into: &names)
+            }
+
+            if let detail = package.detail {
+                Self.insertRecommendationPackageAliases(detail.packageName, into: &names)
+                Self.insertRecommendationPackageAliases(detail.qualifiedName, into: &names)
+                Self.insertRecommendationPackageAliases(
+                    Self.sourceQualifiedName(for: detail.source),
+                    into: &names
+                )
+                detail.installPackageNames?.forEach {
+                    Self.insertRecommendationPackageAliases($0, into: &names)
+                }
+            }
+        }
+        return names
+    }
+
+    private static func insertRecommendationPackageAliases(
+        _ packageName: String?,
+        into names: inout Set<String>
+    ) {
+        guard let packageName else {
+            return
+        }
+        let trimmed = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return
+        }
+
+        names.insert(trimmed)
+        for prefix in ["brew:", "cask:", "isotope:", "npm:", "pip:"] where trimmed.hasPrefix(prefix) {
+            let unqualified = String(trimmed.dropFirst(prefix.count))
+            if unqualified.isEmpty == false {
+                names.insert(unqualified)
+            }
+        }
     }
 
     private func finishOutdatedReload(
@@ -1688,7 +1817,7 @@ final class MainWindowModel: ObservableObject {
                  .security,
                  .other:
                 self = .catalog
-            case .installed, .outdated, .settings, .about:
+            case .installed, .packs, .outdated, .settings, .about:
                 return nil
             }
         }
@@ -1834,6 +1963,7 @@ final class MainWindowModel: ObservableObject {
             : nil
 
         packages = packages.retiringSecurityReview(matching: context)
+        packRecommendations = packRecommendations.retiringSecurityReview(matching: context)
         catalogPackages = catalogPackages.retiringSecurityReview(matching: context)
         pulsePackages = pulsePackages.retiringSecurityReview(matching: context)
         searchResults = searchResults.retiringSecurityReview(matching: context)

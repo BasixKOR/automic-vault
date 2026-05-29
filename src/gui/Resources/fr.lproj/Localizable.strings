@@ -195,6 +195,7 @@
 "Package operation is unavailable" = "Operation de paquet indisponible";
 "Package refresh failed" = "Echec de l actualisation des paquets";
 "Packages" = "Paquets";
+"Packs" = "Packs";
 "PARENT PROCESS" = "PROCESSUS PARENT";
 "Paste" = "Coller";
 "pending helper installation" = "installation du helper en attente";
