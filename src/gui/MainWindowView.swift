@@ -749,7 +749,7 @@ private struct HardenTraceStroke: View {
     private func traceLength(at phase: CGFloat) -> CGFloat {
         let growDuration: CGFloat = 0.36
         let holdDuration: CGFloat = 0.12
-        let wavePhase = (phase * 1.6).truncatingRemainder(dividingBy: 1)
+        let wavePhase = phase.truncatingRemainder(dividingBy: 1)
 
         let wave: CGFloat
         if wavePhase < growDuration {
