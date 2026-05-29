@@ -506,40 +506,8 @@ struct MainWindowView: View {
 
     private var linksToolbar: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                ForEach(MainWindowLinkTab.allCases) { tab in
-                    Button {
-                        linkTab = tab
-                    } label: {
-                        Text(linkToolbarTitle(for: tab))
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(
-                                linkTab == tab
-                                    ? AVGlassPalette.primaryText
-                                    : AVGlassPalette.quietText
-                            )
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                            .padding(.horizontal, 10)
-                            .frame(minWidth: 58)
-                            .frame(height: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .background {
-                        if linkTab == tab {
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(AVGlassPalette.selectedFill)
-                        }
-                    }
-                    .overlay {
-                        if linkTab == tab {
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(AVGlassPalette.controlBorder.opacity(0.28), lineWidth: 1)
-                        }
-                    }
-                }
-            }
-            .fixedSize(horizontal: true, vertical: false)
+            LinkTabBar(selection: $linkTab)
+                .frame(minWidth: 198, idealWidth: 228, maxWidth: 264)
             .layoutPriority(3)
 
             LinkURLBar(url: model.selectedURL(for: linkTab)) {
@@ -549,17 +517,6 @@ struct MainWindowView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-    }
-
-    private func linkToolbarTitle(for tab: MainWindowLinkTab) -> String {
-        switch tab {
-        case .homepage:
-            return "Home"
-        case .repository:
-            return "Repo"
-        case .documentation:
-            return "Docs"
-        }
     }
 
     @ViewBuilder
@@ -585,6 +542,65 @@ struct MainWindowView: View {
         Rectangle()
             .fill(AVGlassPalette.hairline)
             .frame(width: 1)
+    }
+}
+
+private struct LinkTabBar: View {
+    @Binding var selection: MainWindowLinkTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(MainWindowLinkTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.14)) {
+                        selection = tab
+                    }
+                } label: {
+                    Text(title(for: tab))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(
+                            selection == tab
+                                ? AVGlassPalette.tabBarSelectedText
+                                : AVGlassPalette.secondaryText
+                        )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .background {
+                    if selection == tab {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(AVGlassPalette.tabBarSelectedFill)
+                    }
+                }
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(selection == tab ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .frame(height: 36)
+        .background(
+            AVGlassPalette.tabBarFill,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(AVGlassPalette.controlBorder.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func title(for tab: MainWindowLinkTab) -> String {
+        switch tab {
+        case .homepage:
+            return "Home"
+        case .repository:
+            return "Repo"
+        case .documentation:
+            return "Docs"
+        }
     }
 }
 
@@ -1501,6 +1517,9 @@ private enum AVGlassPalette {
     static let controlBorder = Color.white.opacity(0.22)
     static let selectedFill = Color.white.opacity(0.095)
     static let sidebarSelectedFill = AVGlassPalette.selectedFill
+    static let tabBarFill = Color.white.opacity(0.075)
+    static let tabBarSelectedFill = Color(red: 0.06, green: 0.49, blue: 1.00)
+    static let tabBarSelectedText = Color.white.opacity(0.96)
     static let hairline = Color.white.opacity(0.10)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.64)
