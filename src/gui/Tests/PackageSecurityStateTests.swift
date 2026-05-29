@@ -661,6 +661,27 @@ final class PackageSecurityStateTests: XCTestCase {
         )
 
         XCTAssertEqual(model.packageBadge(for: package), .hardened)
+        XCTAssertTrue(model.isHardened(package))
+    }
+
+    @MainActor
+    func testInsecureIsotopePackageDoesNotShowHardenedBadge() {
+        let model = MainWindowModel()
+        let package = installedPresentation(
+            named: "isotope:flyctl",
+            source: .isotope(isotopeName: "flyctl"),
+            installRoot: "/opt/isotopes/flyctl",
+            securityState: PackageSecurityState(
+                isotopeName: "flyctl",
+                installIsInsecure: true,
+                remediationAvailable: true,
+                reasons: ["flyctl config file contains a plaintext access token"],
+                error: nil
+            )
+        )
+
+        XCTAssertEqual(model.packageBadge(for: package), .vulnerable)
+        XCTAssertFalse(model.isHardened(package))
     }
 
     @MainActor
@@ -748,7 +769,8 @@ final class PackageSecurityStateTests: XCTestCase {
     private func installedPresentation(
         named name: String,
         source: PackageSource? = nil,
-        installRoot: String? = nil
+        installRoot: String? = nil,
+        securityState: PackageSecurityState? = nil
     ) -> PackagePresentation {
         PackagePresentation(
             item: .installed(PackageRecord(
@@ -756,7 +778,7 @@ final class PackageSecurityStateTests: XCTestCase {
                 source: source,
                 version: "1.0",
                 description: nil,
-                securityState: nil,
+                securityState: securityState,
                 installRoot: installRoot
             )),
             detail: nil,

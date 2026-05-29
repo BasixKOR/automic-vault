@@ -704,11 +704,11 @@ final class MainWindowModel: ObservableObject {
     }
 
     func packageBadge(for package: PackagePresentation) -> MainWindowPackageBadge? {
-        if isInstalledAsIsotope(package) {
-            return .hardened
-        }
         if needsHardening(package) {
             return .vulnerable
+        }
+        if isInstalledAsIsotope(package) {
+            return .hardened
         }
         if isGeigerProtocolPackage(package) {
             return .vulnerable
@@ -780,15 +780,21 @@ final class MainWindowModel: ObservableObject {
             && !trimmedRoot.hasPrefix("/opt/homebrew/")
     }
 
-    func isHardened(_ package: PackagePresentation) -> Bool {
+    func isHardened(
+        _ package: PackagePresentation,
+        detail detailOverride: PackageDetail? = nil
+    ) -> Bool {
+        let detail = detailOverride ?? detailsByPackageName[package.selectionID] ?? package.detail
+        if package.hasMainWindowSecurityAlert(resolvedDetail: detail) {
+            return false
+        }
         if package.isInstalledIsotope {
             return true
         }
-        let detail = detailsByPackageName[package.selectionID] ?? package.detail
         if case .isotope = detail?.source {
             return true
         }
-        return detail?.securityState != nil && detail?.securityState?.installIsInsecure != true
+        return detail?.securityState != nil
     }
 
     func displayName(for package: PackagePresentation) -> String {

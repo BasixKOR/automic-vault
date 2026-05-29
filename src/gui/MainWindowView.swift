@@ -403,7 +403,7 @@ struct MainWindowView: View {
                     .padding(10)
                     .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
-                        if isIsotopeInstall(detail: detail, package: package) {
+                        if model.isHardened(package, detail: detail) {
                             Text("Hardened")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(AVGlassPalette.green)
@@ -421,20 +421,6 @@ struct MainWindowView: View {
                 }
             }
         }
-    }
-
-    private func isIsotopeInstall(
-        detail: PackageDetail,
-        package: PackagePresentation
-    ) -> Bool {
-        if package.isInstalledIsotope {
-            return true
-        }
-        if detail.installed,
-           case .isotope = detail.source {
-            return true
-        }
-        return false
     }
 
     private func permissionsSection(
