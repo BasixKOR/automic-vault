@@ -299,6 +299,14 @@ final class NucleusBridge {
         }
     }
 
+    func invalidateSharedProtocolDaemon() {
+        protocolQueue.sync {
+            resetProtocolConnection()
+            terminateDaemonIfNeeded()
+            try? stopStaleProtocolDaemon()
+        }
+    }
+
     private func performProtocolRequest<Params: Encodable, Result: Decodable>(
         method: String,
         params: Params,

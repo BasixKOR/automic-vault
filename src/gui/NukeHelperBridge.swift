@@ -343,7 +343,15 @@ final class NukeHelperBridge {
                         self.queue.async {
                             self.connection?.invalidate()
                             self.connection = nil
+                            NucleusBridge(
+                                compatibilityPolicy: .protocolOnly,
+                                daemonOwnership: .owner
+                            ).invalidateSharedProtocolDaemon()
+                            DispatchQueue.main.async {
+                                completion?(.success(.completed(updated: updated)))
+                            }
                         }
+                        return
                     }
                     DispatchQueue.main.async {
                         completion?(.success(.completed(updated: updated)))
