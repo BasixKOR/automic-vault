@@ -747,11 +747,26 @@ private struct HardenTraceStroke: View {
     }
 
     private func traceLength(at phase: CGFloat) -> CGFloat {
+        let growDuration: CGFloat = 0.36
+        let holdDuration: CGFloat = 0.12
         let wavePhase = (phase * 1.6).truncatingRemainder(dividingBy: 1)
-        let wave = wavePhase < 0.5
-            ? wavePhase * 2
-            : (1 - wavePhase) * 2
+
+        let wave: CGFloat
+        if wavePhase < growDuration {
+            wave = easedProgress(wavePhase / growDuration)
+        } else if wavePhase < growDuration + holdDuration {
+            wave = 1
+        } else {
+            let shrinkDuration = 1 - growDuration - holdDuration
+            let progress = (wavePhase - growDuration - holdDuration) / shrinkDuration
+            wave = 1 - easedProgress(progress)
+        }
         return minimumTraceLength + ((maximumTraceLength - minimumTraceLength) * wave)
+    }
+
+    private func easedProgress(_ progress: CGFloat) -> CGFloat {
+        let clamped = min(max(progress, 0), 1)
+        return clamped * clamped * (3 - (2 * clamped))
     }
 
     private func traceSegment(from start: CGFloat, to end: CGFloat) -> some View {
