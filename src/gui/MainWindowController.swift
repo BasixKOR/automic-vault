@@ -516,7 +516,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     ) throws -> NucleusBridge.IsotopeMigrationPlan {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
             .migrateIsotope(isotopeName: isotopeName)
     }
