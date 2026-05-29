@@ -12,18 +12,35 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private let model: MainWindowModel
     private let appUpdateCoordinator: AppUpdateCoordinator
     private let helperBridge = NukeHelperBridge()
+    private let statusStore = NucleusStatusStore()
     private var didStartModel = false
     private var searchShortcutMonitor: Any?
     private weak var mainToolbar: NSToolbar?
     private weak var searchToolbarItem: NSSearchToolbarItem?
     private weak var appUpdateToolbarItem: NSToolbarItem?
     private weak var automicVaultCLTInstallToolbarItem: NSToolbarItem?
+    private weak var helperMaintenanceToolbarItem: NSToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
     private var packageOperationRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
     private var searchDeactivationRequestCancellable: AnyCancellable?
     private var cltInstallToolbarStateCancellable: AnyCancellable?
+    private var helperMaintenanceToolbarStateCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
+    private var helperNeedsMaintenance = false
+    private var isRefreshingHelperMaintenanceState = false
+    private var isUpdatingHelper = false {
+        didSet {
+            syncAutomicVaultCLTInstallToolbarItem()
+            syncHelperMaintenanceToolbarItem()
+        }
+    }
+    private var isAuthorizingPrivilegedOperation = false {
+        didSet {
+            syncAutomicVaultCLTInstallToolbarItem()
+            updateHelperMaintenanceToolbarItemState()
+        }
+    }
 
     init(appUpdateCoordinator: AppUpdateCoordinator) {
         let model = MainWindowModel()
@@ -35,6 +52,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         installSearchTextObserver()
         installSearchDeactivationObserver()
         installAutomicVaultCLTInstallToolbarObserver()
+        installHelperMaintenanceToolbarObserver()
         installAppUpdateCallbacks()
     }
 
@@ -48,6 +66,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         installSearchTextObserver()
         installSearchDeactivationObserver()
         installAutomicVaultCLTInstallToolbarObserver()
+        installHelperMaintenanceToolbarObserver()
         installAppUpdateCallbacks()
     }
 
@@ -93,6 +112,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         model.requestAutomicVaultCLTInstall()
     }
 
+    @objc private func helperMaintenanceToolbarItemPressed(_ sender: Any?) {
+        beginHelperMaintenance()
+    }
+
     func requestSearchFocus() {
         startModelIfNeeded()
         model.requestSearchFocus()
@@ -115,6 +138,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         searchTextCancellable?.cancel()
         searchDeactivationRequestCancellable?.cancel()
         cltInstallToolbarStateCancellable?.cancel()
+        helperMaintenanceToolbarStateCancellable?.cancel()
         model.stop()
     }
 
@@ -195,6 +219,42 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
     }
 
+    private func installHelperMaintenanceToolbarObserver() {
+        let snapshotChanges = model.$snapshot.map { _ in () }
+        let operationChanges = model.$activePackageOperation.map { _ in () }
+        let updateAllChanges = model.$isUpdatingAll.map { _ in () }
+        helperMaintenanceToolbarStateCancellable = Publishers.Merge3(
+            snapshotChanges,
+            operationChanges,
+            updateAllChanges
+        )
+        .sink { [weak self] _ in
+            Task { @MainActor in
+                self?.syncHelperMaintenanceToolbarItem()
+                self?.refreshHelperMaintenanceState()
+            }
+        }
+    }
+
+    private func refreshHelperMaintenanceState() {
+        guard isRefreshingHelperMaintenanceState == false else {
+            return
+        }
+        isRefreshingHelperMaintenanceState = true
+        helperBridge.helperNeedsInstallationOrUpdate { [weak self] result in
+            guard let self else { return }
+            self.isRefreshingHelperMaintenanceState = false
+            switch result {
+            case .success(let needsMaintenance):
+                self.helperNeedsMaintenance = needsMaintenance
+            case .failure:
+                self.helperNeedsMaintenance =
+                    self.model.snapshot.remoteDatabaseRefreshState == .pendingHelperInstallation
+            }
+            self.syncHelperMaintenanceToolbarItem()
+        }
+    }
+
     private func deactivateSearchField() {
         guard let searchField = searchToolbarItem?.searchField else {
             return
@@ -204,8 +264,95 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         searchField.window?.makeFirstResponder(nil)
     }
 
+    private func authorizePrivilegedHelperOperation(
+        reason: String,
+        completion: @escaping () -> Void
+    ) {
+        guard isAuthorizingPrivilegedOperation == false else {
+            model.showTransientStatus("Authentication already in progress")
+            return
+        }
+        isAuthorizingPrivilegedOperation = true
+        model.showTransientStatus("Waiting for Touch ID authorization")
+        helperBridge.authenticateBiometrics(reason: reason) { [weak self] result in
+            guard let self else { return }
+            self.isAuthorizingPrivilegedOperation = false
+            switch result {
+            case .success:
+                completion()
+            case .failure(let error):
+                self.presentHelperError(error)
+            }
+        }
+    }
+
+    private func beginHelperMaintenance() {
+        guard isUpdatingHelper == false,
+              model.isPackageMutationInFlight == false else {
+            model.showTransientStatus("Privileged operation already in progress")
+            return
+        }
+
+        authorizePrivilegedHelperOperation(
+            reason: "Authorize privileged helper update for Automic Vault."
+        ) { [weak self] in
+            self?.installOrUpdateHelper()
+        }
+    }
+
+    private func installOrUpdateHelper() {
+        isUpdatingHelper = true
+        helperNeedsMaintenance = true
+        model.showTransientStatus("Updating privileged helper")
+        helperBridge.installOrUpdateHelper { [weak self] result in
+            guard let self else { return }
+            self.isUpdatingHelper = false
+            switch result {
+            case .success(let maintenanceResult):
+                self.helperNeedsMaintenance = false
+                try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+                self.statusStore.requestRefresh()
+                switch maintenanceResult {
+                case .completed(let updated):
+                    self.model.showTransientStatus(
+                        updated
+                            ? "Privileged helper updated"
+                            : "Privileged helper is current"
+                    )
+                case .pendingHelperInstallation:
+                    self.helperNeedsMaintenance = true
+                    self.model.showTransientStatus("Privileged helper still needs installation")
+                }
+            case .failure(let error):
+                self.helperNeedsMaintenance = true
+                self.presentHelperError(error)
+            }
+            self.syncHelperMaintenanceToolbarItem()
+            self.refreshHelperMaintenanceState()
+        }
+    }
+
     private func startUpdateAll(debugPlayback: Bool) {
-        guard !model.isUpdatingAll else {
+        #if DEBUG
+        if debugPlayback {
+            startAuthorizedUpdateAll(debugPlayback: true)
+            return
+        }
+        #endif
+
+        authorizePrivilegedHelperOperation(
+            reason: "Authorize privileged package updates for Automic Vault."
+        ) { [weak self] in
+            self?.startAuthorizedUpdateAll(debugPlayback: debugPlayback)
+        }
+    }
+
+    private func startAuthorizedUpdateAll(debugPlayback: Bool) {
+        guard !model.isUpdatingAll,
+              isUpdatingHelper == false else {
+            if isUpdatingHelper {
+                model.showTransientStatus("Privileged helper update already in progress")
+            }
             return
         }
 
@@ -371,13 +518,28 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     }
 
     private func startPackageOperation(_ request: PackageOperationRequest) {
-        guard !model.isPackageMutationInFlight else {
-            model.showTransientStatus("Package operation already in progress")
+        guard !model.isPackageMutationInFlight,
+              isUpdatingHelper == false else {
+            model.showTransientStatus("Privileged operation already in progress")
             return
         }
 
         if request.isXcodeCLT, request.kind == .install {
             startXcodeCommandLineToolsInstall(request)
+            return
+        }
+
+        authorizePrivilegedHelperOperation(
+            reason: privilegedAuthorizationReason(for: request)
+        ) { [weak self] in
+            self?.startAuthorizedPackageOperation(request)
+        }
+    }
+
+    private func startAuthorizedPackageOperation(_ request: PackageOperationRequest) {
+        guard !model.isPackageMutationInFlight,
+              isUpdatingHelper == false else {
+            model.showTransientStatus("Privileged operation already in progress")
             return
         }
 
@@ -488,6 +650,25 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 progress: handleProgress,
                 completion: handleCompletion
             )
+        }
+    }
+
+    private func privilegedAuthorizationReason(
+        for request: PackageOperationRequest
+    ) -> String {
+        if request.isAutomicVaultCLT {
+            return "Authorize installation of Automic Vault command line tools into /usr/local/bin."
+        }
+
+        switch request.kind {
+        case .install:
+            return "Authorize privileged package install for \(request.displayName)."
+        case .update:
+            return "Authorize privileged package update for \(request.displayName)."
+        case .uninstall:
+            return "Authorize privileged package uninstall for \(request.displayName)."
+        case .harden:
+            return "Authorize privileged security hardening for \(request.displayName)."
         }
     }
 
@@ -628,6 +809,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         mainToolbar = toolbar
         syncAppUpdateToolbarItem()
         syncAutomicVaultCLTInstallToolbarItem()
+        syncHelperMaintenanceToolbarItem()
+        refreshHelperMaintenanceState()
     }
 
     private func syncAppUpdateToolbarItem() {
@@ -735,6 +918,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let toolTip: String
         if isInstalling {
             toolTip = "Installing the bundled av command line tool"
+        } else if isAuthorizingPrivilegedOperation {
+            toolTip = "Complete Touch ID authorization before installing av"
+        } else if isUpdatingHelper {
+            toolTip = "Finish the privileged helper update before installing av"
         } else if model.isPackageMutationInFlight {
             toolTip = "Finish the current package operation before installing av"
         } else {
@@ -751,6 +938,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             accessibilityDescription: title
         )
         button.isEnabled = model.canRequestAutomicVaultCLTInstall
+            && isAuthorizingPrivilegedOperation == false
+            && isUpdatingHelper == false
         button.toolTip = toolTip
         button.sizeToFit()
 
@@ -759,6 +948,82 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             width: max(
                 ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
                 206
+            ),
+            height: max(ceil(fittingSize.height), 28)
+        )
+        button.frame.size = size
+        item.label = title
+        item.paletteLabel = title
+        item.toolTip = toolTip
+    }
+
+    private func syncHelperMaintenanceToolbarItem() {
+        guard let toolbar = mainToolbar else {
+            return
+        }
+
+        let itemIndex = toolbar.items.firstIndex {
+            $0.itemIdentifier == .automicVaultHelperUpdate
+        }
+        let shouldShow = isUpdatingHelper
+            || helperNeedsMaintenance
+            || model.snapshot.remoteDatabaseRefreshState == .pendingHelperInstallation
+
+        if shouldShow {
+            if itemIndex == nil {
+                let insertionIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == .automicVaultRefresh
+                } ?? toolbar.items.count
+                toolbar.insertItem(
+                    withItemIdentifier: .automicVaultHelperUpdate,
+                    at: insertionIndex
+                )
+            }
+            updateHelperMaintenanceToolbarItemState()
+        } else if let itemIndex {
+            toolbar.removeItem(at: itemIndex)
+            helperMaintenanceToolbarItem = nil
+        }
+    }
+
+    private func updateHelperMaintenanceToolbarItemState() {
+        guard let item = helperMaintenanceToolbarItem,
+              let button = item.view as? NSButton else {
+            return
+        }
+
+        let title = isUpdatingHelper ? "Updating Helper" : "Update Helper"
+        let toolTip: String
+        if isUpdatingHelper {
+            toolTip = "Installing the bundled privileged helper"
+        } else if isAuthorizingPrivilegedOperation {
+            toolTip = "Complete Touch ID authorization before updating the helper"
+        } else if model.isPackageMutationInFlight {
+            toolTip = "Finish the current package operation before updating the helper"
+        } else {
+            toolTip = "Install the bundled privileged helper"
+        }
+
+        button.title = Self.appUpdateToolbarIconTitleSpacing
+            + title
+            + Self.appUpdateToolbarTrailingPadding
+        button.image = NSImage(
+            systemSymbolName: isUpdatingHelper
+                ? "arrow.triangle.2.circlepath"
+                : "lock.shield.fill",
+            accessibilityDescription: title
+        )
+        button.isEnabled = isUpdatingHelper == false
+            && isAuthorizingPrivilegedOperation == false
+            && model.isPackageMutationInFlight == false
+        button.toolTip = toolTip
+        button.sizeToFit()
+
+        let fittingSize = button.fittingSize
+        let size = NSSize(
+            width: max(
+                ceil(fittingSize.width + Self.appUpdateToolbarHorizontalPadding),
+                158
             ),
             height: max(ceil(fittingSize.height), 28)
         )
@@ -808,6 +1073,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 "Finish the current package operation before updating Automic Vault."
             )
         }
+        if isUpdatingHelper {
+            return .busy(
+                "Finish the privileged helper update before updating Automic Vault."
+            )
+        }
+        if isAuthorizingPrivilegedOperation {
+            return .busy(
+                "Complete Touch ID authorization before updating Automic Vault."
+            )
+        }
         if view.window?.attachedSheet != nil {
             return .busy(
                 "Close the current sheet before updating Automic Vault."
@@ -820,6 +1095,24 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         let alert = NSAlert()
         alert.messageText = "Could Not Update Automic Vault"
         alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window, window.attachedSheet == nil {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func presentHelperError(_ error: Error) {
+        if case NukeHelperBridgeError.biometricCanceled = error {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Privileged Operation Failed"
+        alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
 
@@ -871,6 +1164,7 @@ extension MainWindowController: NSToolbarDelegate {
             .automicVaultRefresh,
             .automicVaultAppUpdate,
             .automicVaultCLTInstall,
+            .automicVaultHelperUpdate,
         ]
     }
 
@@ -957,6 +1251,28 @@ extension MainWindowController: NSToolbarDelegate {
             automicVaultCLTInstallToolbarItem = item
             updateAutomicVaultCLTInstallToolbarItemState()
             return item
+        case .automicVaultHelperUpdate:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Update Helper"
+            item.paletteLabel = "Update Helper"
+            item.visibilityPriority = .high
+
+            let button = NSButton(
+                title: "Update Helper",
+                target: self,
+                action: #selector(helperMaintenanceToolbarItemPressed(_:))
+            )
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.font = .systemFont(ofSize: 12, weight: .semibold)
+            button.imagePosition = .imageLeading
+            button.imageHugsTitle = true
+            button.imageScaling = .scaleProportionallyDown
+            button.setButtonType(.momentaryPushIn)
+            item.view = button
+            helperMaintenanceToolbarItem = item
+            updateHelperMaintenanceToolbarItemState()
+            return item
         default:
             return nil
         }
@@ -1023,4 +1339,5 @@ private extension NSToolbarItem.Identifier {
     static let automicVaultRefresh = NSToolbarItem.Identifier("AutomicVaultRefresh")
     static let automicVaultAppUpdate = NSToolbarItem.Identifier("AutomicVaultAppUpdate")
     static let automicVaultCLTInstall = NSToolbarItem.Identifier("AutomicVaultCLTInstall")
+    static let automicVaultHelperUpdate = NSToolbarItem.Identifier("AutomicVaultHelperUpdate")
 }

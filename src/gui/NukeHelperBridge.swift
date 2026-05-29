@@ -357,6 +357,41 @@ final class NukeHelperBridge {
         }
     }
 
+    func helperNeedsInstallationOrUpdate(completion: @escaping (Result<Bool, Error>) -> Void) {
+        queue.async {
+            do {
+                let needsInstallationOrUpdate = try self.helperRequiresBlessing()
+                DispatchQueue.main.async {
+                    completion(.success(needsInstallationOrUpdate))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func installOrUpdateHelper(
+        completion: @escaping (Result<NukeHelperMaintenanceResult, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                let hadPendingMaintenance = try self.helperRequiresBlessing()
+                let proxy = try self.privilegedRemoteProxy(progressHandler: nil)
+                proxy.checkForUpdates { _ in
+                    DispatchQueue.main.async {
+                        completion(.success(.completed(updated: hadPendingMaintenance)))
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
     func updateAll(
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
