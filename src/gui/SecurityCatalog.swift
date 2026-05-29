@@ -97,7 +97,8 @@ final class SecurityCatalog {
         }
         let matchedIsotopePackages = identifiers.compactMap { isotopePackages[$0] }
         if let matchedIsotope = matchedIsotopePackages.first {
-            let remediationAvailable = detail.securityState?.remediationAvailable ?? true
+            let remediationAvailable = matchedIsotope.isInstallable
+                || detail.securityState?.remediationAvailable == true
             if let securityState = detail.securityState,
                securityState.isotopeName == matchedIsotope.isotopeName {
                 guard securityState.installIsInsecure else {
@@ -291,6 +292,7 @@ private struct IsotopeRecord: Decodable {
     let modifies: String?
     let repository: String?
     let upstreamRepository: String?
+    let archiveUrl: String?
     let justification: IsotopeJustification?
     let caveats: IsotopeCaveats?
 
@@ -299,6 +301,10 @@ private struct IsotopeRecord: Decodable {
             return String(name[name.index(after: separator)...])
         }
         return name
+    }
+
+    var isInstallable: Bool {
+        archiveUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     var learnMoreURL: URL? {

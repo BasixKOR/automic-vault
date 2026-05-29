@@ -366,6 +366,76 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDossierPrimaryActionHidesDetectorOnlySecurityIssue() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let detail = PackageSearchResult(
+            name: "curl",
+            source: .formula(rootFormula: "curl"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "curl",
+                installIsInsecure: true,
+                remediationAvailable: false,
+                reasons: ["curl netrc file contains plaintext credentials"],
+                error: nil
+            ),
+            pulseKind: nil
+        )
+        .detectedLocalHazardPresentation(freshness: 0)?
+        .detail
+
+        let unwrappedDetail = try XCTUnwrap(detail)
+        XCTAssertNil(model.dossierPrimaryPackageAction(for: unwrappedDetail))
+        XCTAssertFalse(model.canRequestDossierPackageAction(.install, detail: unwrappedDetail))
+        XCTAssertFalse(model.canRequestDossierPackageAction(.harden, detail: unwrappedDetail))
+    }
+
+    @MainActor
+    func testDossierPrimaryActionHardensInstallableIsotopeWithoutMigration() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "sources": {
+            "isotopes": {
+              "supabase-cli": {
+                "name": "isotope:supabase-cli",
+                "replaces": "brew:supabase",
+                "archiveUrl": "https://example.test/supabase-cli.tgz"
+              }
+            }
+          }
+        }
+        """)
+        let model = MainWindowModel(securityCatalog: SecurityCatalog(bundle: bundle))
+        defer { model.stop() }
+        let detail = PackageSearchResult(
+            name: "supabase-cli",
+            source: .formula(rootFormula: "supabase-cli"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: PackageSecurityState(
+                isotopeName: "supabase-cli",
+                installIsInsecure: true,
+                remediationAvailable: false,
+                reasons: ["Supabase access token is readable by /usr/bin/security"],
+                error: nil
+            ),
+            pulseKind: nil
+        )
+        .detectedLocalHazardPresentation(freshness: 0)?
+        .detail
+
+        let unwrappedDetail = try XCTUnwrap(detail)
+        XCTAssertEqual(model.dossierPrimaryPackageAction(for: unwrappedDetail), .harden)
+        XCTAssertTrue(model.canRequestDossierPackageAction(.harden, detail: unwrappedDetail))
+    }
+
+    @MainActor
     func testDossierActionRequestUsesHelperPackageNames() throws {
         let model = MainWindowModel()
         defer { model.stop() }
@@ -424,6 +494,28 @@ final class MainWindowModelTests: XCTestCase {
             reasons: [reason],
             error: nil
         )
+    }
+
+    private func makeSecurityCatalogBundle(combinedJSON: String) throws -> Bundle {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MainWindowModelTests-\(UUID().uuidString).bundle")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let infoPlist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleIdentifier</key>
+          <string>com.automic-vault.MainWindowModelTests</string>
+          <key>CFBundlePackageType</key>
+          <string>BNDL</string>
+        </dict>
+        </plist>
+        """
+        try Data(combinedJSON.utf8).write(to: directory.appendingPathComponent("combined.json"))
+        try Data("[]".utf8).write(to: directory.appendingPathComponent("enrichment-manifests.json"))
+        try Data(infoPlist.utf8).write(to: directory.appendingPathComponent("Info.plist"))
+        return try XCTUnwrap(Bundle(url: directory))
     }
 
     private static func date(_ raw: String) -> Date? {

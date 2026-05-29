@@ -330,8 +330,14 @@ struct MainWindowView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                dossierActionButton(detail: detail, package: package)
+                if let primaryAction = model.dossierPrimaryPackageAction(for: detail) {
+                    dossierActionButton(
+                        action: primaryAction,
+                        detail: detail,
+                        package: package
+                    )
                     .fixedSize()
+                }
             }
 
             if let badge = model.packageBadge(for: package),
@@ -342,10 +348,10 @@ struct MainWindowView: View {
     }
 
     private func dossierActionButton(
+        action primaryAction: PackageOperationKind,
         detail: PackageDetail,
         package: PackagePresentation
     ) -> some View {
-        let primaryAction = model.dossierPrimaryPackageAction(for: detail)
         let primaryEnabled = model.canRequestDossierPackageAction(primaryAction, detail: detail)
         let isPrimaryActive = model.activePackageOperation?.kind == primaryAction
             && model.activePackageOperation?.displayName == model.displayName(for: package)

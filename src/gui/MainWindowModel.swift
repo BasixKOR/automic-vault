@@ -277,15 +277,18 @@ final class MainWindowModel: ObservableObject {
     private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
     private var loadingSectionKinds = Set<SectionPageKind>()
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
+    private let securityCatalog: SecurityCatalog
 
     init(
         cliToolsRecommendationProvider: @escaping () -> PackageRecommendation? = {
             NucleusBridge().cliToolsRecommendation()
         },
-        initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil
+        initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
+        securityCatalog: SecurityCatalog = .shared
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
         automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
+        self.securityCatalog = securityCatalog
     }
 
     var installedCount: Int {
@@ -534,9 +537,12 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
-    func dossierPrimaryPackageAction(for detail: PackageDetail) -> PackageOperationKind {
+    func dossierPrimaryPackageAction(for detail: PackageDetail) -> PackageOperationKind? {
         if securityHardeningPackageName(for: detail) != nil {
             return .harden
+        }
+        if detail.securityState?.installIsInsecure == true {
+            return nil
         }
         guard detail.installed else {
             return .install
@@ -550,6 +556,10 @@ final class MainWindowModel: ObservableObject {
     ) -> Bool {
         guard !isPackageMutationInFlight,
               hasPackageOperationTarget(for: detail, action: action) else {
+            return false
+        }
+        if action != .harden,
+           detail.securityState?.installIsInsecure == true {
             return false
         }
         switch action {
@@ -872,9 +882,11 @@ final class MainWindowModel: ObservableObject {
         if detail.isXcodeCLT {
             return [PackageRecommendation.xcodeCLTName]
         }
-        if action == .harden,
-           let packageName = securityHardeningPackageName(for: detail) {
-            return [packageName]
+        if action == .harden {
+            if let packageName = securityHardeningPackageName(for: detail) {
+                return [packageName]
+            }
+            return []
         }
         var seen = Set<String>()
         var names: [String] = []
@@ -891,15 +903,15 @@ final class MainWindowModel: ObservableObject {
 
     private func securityHardeningPackageName(for detail: PackageDetail) -> String? {
         guard let securityState = detail.securityState,
-              securityState.installIsInsecure,
-              securityState.remediationAvailable else {
+              securityState.installIsInsecure else {
             return nil
         }
-        let isotopeName = securityState.isotopeName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isotopeName.isEmpty == false else {
+        let packageName = securityCatalog.notice(for: detail)?.applyPackageName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard packageName?.isEmpty == false else {
             return nil
         }
-        return "isotope:\(isotopeName)"
+        return packageName
     }
 
     private var geigerCounterCount: Int? {
