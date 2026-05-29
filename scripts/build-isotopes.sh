@@ -379,17 +379,33 @@ manifest_homebrew_formula() {
   esac
 }
 
+manifest_upstream_branch() {
+  local manifest_path="$1"
+  local manifest
+
+  manifest="$(manifest_json "${manifest_path}")"
+  printf '%s\n' "${manifest}" | jq -r '
+    .upstreamBranch // .upstream_branch // .source.upstreamBranch //
+      .source.upstream_branch // empty
+  '
+}
+
 repo_source_json() {
   local repo_name="$1"
   local repo_json="$2"
   local repo_dir="$3"
   local manifest_path="${repo_dir}/automic-vault.yml"
-  local parent upstream_repo upstream_default formula release_json
+  local parent upstream_repo upstream_default upstream_branch formula release_json
+
+  upstream_branch="$(manifest_upstream_branch "${manifest_path}")"
 
   parent="$(printf '%s\n' "${repo_json}" | jq -r '.parent')"
   if [[ "${parent}" != "null" ]]; then
     upstream_repo="$(printf '%s\n' "${repo_json}" | jq -r '.parent.full_name')"
     upstream_default="$(printf '%s\n' "${repo_json}" | jq -r '.parent.default_branch')"
+    if [[ -n "${upstream_branch}" ]]; then
+      upstream_default="${upstream_branch}"
+    fi
     release_json="$(latest_release_json "${upstream_repo}")"
     jq -n \
       --arg kind "github" \
@@ -413,7 +429,7 @@ repo_source_json() {
     jq -n \
       --arg kind "homebrew" \
       --arg upstreamRepo "$(homebrew_formula_repository "${formula}")" \
-      --arg upstreamDefault "$(printf '%s\n' "${repo_json}" | jq -r '.default_branch')" \
+      --arg upstreamDefault "${upstream_branch:-$(printf '%s\n' "${repo_json}" | jq -r '.default_branch')}" \
       --arg upstreamName "${formula}" \
       --arg formula "${formula}" \
       --argjson release "${release_json}" \
