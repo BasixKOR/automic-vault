@@ -61,6 +61,7 @@ let package = Package(
                 "HomebrewUpdateCheckerTests.swift",
                 "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
+                "UpdateProgressViewModelTests.swift",
             ]
         ),
     ],

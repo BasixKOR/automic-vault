@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private enum PackageStage: String {
+enum PackageStage: String {
     case queued = "Queued"
     case resolving = "Resolving"
     case downloading = "Downloading"
@@ -45,6 +45,17 @@ private enum PackageStage: String {
     }
 }
 
+private enum PackageDisplayLifetime {
+    case planned
+    case discovered
+}
+
+private struct PackageDisplayItem {
+    let id: String
+    let addedIndex: Int
+    var lifetime: PackageDisplayLifetime
+}
+
 private struct PackageRuntimeState {
     var stage: PackageStage = .queued
     var progress: Double = 0.02
@@ -55,21 +66,21 @@ private struct PackageRuntimeState {
     var observedDownload = false
 }
 
-private struct PackageProgressRowState: Identifiable, Equatable {
+struct PackageProgressRowState: Identifiable, Equatable {
     let id: String
     var stage: PackageStage
     var progress: Double
     var speed: String?
 }
 
-private struct ProgressLogEntry: Identifiable, Equatable {
+struct ProgressLogEntry: Identifiable, Equatable {
     let id = UUID()
     let timestamp: String
     let message: String
 }
 
 @MainActor
-private final class UpdateProgressViewModel: ObservableObject {
+final class UpdateProgressViewModel: ObservableObject {
     private enum ProgressLayout {
         static let queued = 0.02
         static let resolving = 0.04
@@ -91,9 +102,9 @@ private final class UpdateProgressViewModel: ObservableObject {
     @Published var isTerminalState = false
     @Published var terminalStage: PackageStage?
 
-    private var orderedPackages: [String] = []
-    private var visiblePackages = Set<String>()
-    private var acceptsNewVisiblePackages = true
+    private var displayItems: [String: PackageDisplayItem] = [:]
+    private var nextDisplayIndex = 0
+    private var acceptsDiscoveredDisplayItems = true
     private var packageStates: [String: PackageRuntimeState] = [:]
     private var successOperationTitle = "Update Complete"
     private var failureOperationTitle = "Update Halted"
@@ -173,12 +184,14 @@ private final class UpdateProgressViewModel: ObservableObject {
         activationLog: String,
         initialOperation: String?
     ) {
-        orderedPackages = packages
-        visiblePackages = Set(packages)
-        acceptsNewVisiblePackages = packages.isEmpty
-        packageStates = Dictionary(
-            uniqueKeysWithValues: packages.map { ($0, PackageRuntimeState()) }
-        )
+        displayItems = [:]
+        nextDisplayIndex = 0
+        acceptsDiscoveredDisplayItems = packages.isEmpty
+        packageStates = [:]
+        packages.forEach {
+            addDisplayItem($0, lifetime: .planned)
+            packageStates[$0] = packageStates[$0] ?? PackageRuntimeState()
+        }
         hasLoggedResolving = false
         lastActivePackage = nil
         isTerminalState = false
@@ -186,14 +199,7 @@ private final class UpdateProgressViewModel: ObservableObject {
         primaryTitle = activePrimaryTitle
         primaryEnabled = false
         showSecondary = false
-        rows = packages.map { package in
-            PackageProgressRowState(
-                id: package,
-                stage: .queued,
-                progress: ProgressLayout.queued,
-                speed: nil
-            )
-        }
+        renderRows()
         logs = []
         status = packageCountText(packages.count)
         if let initialOperation {
@@ -217,20 +223,19 @@ private final class UpdateProgressViewModel: ObservableObject {
                 appendLog("Resolving package graph")
                 hasLoggedResolving = true
             }
-            orderedPackages.forEach {
+            displayItemIDs.forEach {
                 updateRow(package: $0, stage: .resolving, progress: ProgressLayout.resolving)
             }
         case .downloading(let package, let bytesPerSecond, let progress):
-            let visiblePackage = visiblePackageName(
-                forProgressPackage: package,
-                allowsNewProgressPackage: true
-            )
-            let rowPackage = visiblePackage ?? package
-            operation = "Updating \(package)"
+            let displayPackage = displayPackageName(forProgressPackage: package)
+            let rowPackage = displayPackage ?? package
+            if let displayPackage {
+                operation = "Updating \(displayPackage.progressDisplayName)"
+            }
             if shouldLogDownloadStart(for: rowPackage) {
                 appendLog("Downloading \(package)")
             }
-            guard visiblePackage != nil,
+            guard displayPackage != nil,
                   shouldRenderDownloadUpdate(for: rowPackage, progress: Double(progress)) else {
                 return
             }
@@ -241,27 +246,24 @@ private final class UpdateProgressViewModel: ObservableObject {
                 speed: Self.format(speed: bytesPerSecond)
             )
         case .installing(let package):
-            let visiblePackage = visiblePackageName(
-                forProgressPackage: package,
-                allowsNewProgressPackage: true
-            )
-            let rowPackage = visiblePackage ?? package
+            let displayPackage = displayPackageName(forProgressPackage: package)
+            let rowPackage = displayPackage ?? package
             let state = packageStates[rowPackage]
                 ?? packageStates[package]
                 ?? PackageRuntimeState()
             if state.observedDownload {
-                operation = "Extracting \(package)"
                 appendLog("Extracting \(package)")
-                guard visiblePackage != nil else { return }
+                guard let displayPackage else { return }
+                operation = "Extracting \(displayPackage.progressDisplayName)"
                 updateRow(
                     package: rowPackage,
                     stage: .extracting,
                     progress: extractProgress(from: state.progress)
                 )
             } else {
-                operation = "Installing \(package)"
                 appendLog("Installing \(package)")
-                guard visiblePackage != nil else { return }
+                guard let displayPackage else { return }
+                operation = "Installing \(displayPackage.progressDisplayName)"
                 updateRow(
                     package: rowPackage,
                     stage: .installing,
@@ -269,20 +271,17 @@ private final class UpdateProgressViewModel: ObservableObject {
                 )
             }
         case .log(let package, let message):
-            if let trackedPackage = visiblePackageName(
-                forProgressPackage: package,
-                allowsNewProgressPackage: true
-            ) {
-                track(trackedPackage)
+            if let displayPackage = displayPackageName(forProgressPackage: package) {
+                lastActivePackage = displayPackage
+                operation = Self.sentenceCase(message)
             }
-            operation = Self.sentenceCase(message)
             appendLog("\(package): \(message)")
         case .completed(let package):
-            let visiblePackage = visiblePackageName(forProgressPackage: package)
-            let rowPackage = visiblePackage ?? package
-            operation = "Finishing \(package)"
+            let displayPackage = displayPackageName(forProgressPackage: package)
+            let rowPackage = displayPackage ?? package
             appendLog("Completed \(package)")
-            guard visiblePackage != nil else { return }
+            guard let displayPackage else { return }
+            operation = "Finishing \(displayPackage.progressDisplayName)"
             updateRow(package: rowPackage, stage: .completed, progress: 1)
         case .error(let message):
             fail(message: message)
@@ -295,7 +294,7 @@ private final class UpdateProgressViewModel: ObservableObject {
         }
 
         packages
-            .compactMap { visiblePackageName(forProgressPackage: $0) }
+            .compactMap { displayPackageName(forProgressPackage: $0) }
             .forEach { updateRow(package: $0, stage: .completed, progress: 1) }
         isTerminalState = true
         terminalStage = .completed
@@ -317,7 +316,7 @@ private final class UpdateProgressViewModel: ObservableObject {
         operation = failureOperationTitle
         status = message
         appendLog("Failed: \(message)")
-        if let package = lastActivePackage ?? orderedPackages.last {
+        if let package = lastActivePackage ?? displayItemIDs.last {
             updateRow(package: package, stage: .failed, progress: 1)
         }
         primaryTitle = "Retry"
@@ -325,54 +324,67 @@ private final class UpdateProgressViewModel: ObservableObject {
         showSecondary = true
     }
 
+    private var displayItemIDs: [String] {
+        displayItems.values
+            .sorted { left, right in
+                if left.addedIndex == right.addedIndex {
+                    return left.id < right.id
+                }
+                return left.addedIndex < right.addedIndex
+            }
+            .map(\.id)
+    }
+
     @discardableResult
-    private func track(_ package: String) -> Bool {
-        if acceptsNewVisiblePackages {
-            visiblePackages.insert(package)
-        }
-        guard visiblePackages.contains(package) else {
-            packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+    private func addDisplayItem(
+        _ package: String,
+        lifetime: PackageDisplayLifetime
+    ) -> Bool {
+        let normalized = package.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.isEmpty == false else {
             return false
         }
-        guard orderedPackages.contains(package) == false else {
+        if var item = displayItems[normalized] {
+            if item.lifetime == .discovered, lifetime == .planned {
+                item.lifetime = .planned
+                displayItems[normalized] = item
+            }
             renderRows()
             return true
         }
-        orderedPackages.append(package)
-        packageStates[package] = packageStates[package] ?? PackageRuntimeState()
+        displayItems[normalized] = PackageDisplayItem(
+            id: normalized,
+            addedIndex: nextDisplayIndex,
+            lifetime: lifetime
+        )
+        nextDisplayIndex += 1
         renderRows()
         return true
     }
 
-    private func visiblePackageName(
-        forProgressPackage package: String,
-        allowsNewProgressPackage: Bool = false
-    ) -> String? {
-        if acceptsNewVisiblePackages {
-            visiblePackages.insert(package)
-        }
-        if visiblePackages.contains(package) {
+    private func displayPackageName(forProgressPackage package: String) -> String? {
+        if displayItems[package] != nil {
             return package
         }
-        let qualifiedCandidates = [
-            "brew:\(package)",
-            "cask:\(package)"
-        ].filter { visiblePackages.contains($0) }
+
+        let progressOrderName = package.packageSearchOrderName
+        let qualifiedCandidates = displayItemIDs.filter {
+            $0.packageSearchOrderName == progressOrderName
+        }
         guard qualifiedCandidates.count == 1 else {
-            if allowsNewProgressPackage {
-                visiblePackages.insert(package)
+            if acceptsDiscoveredDisplayItems {
+                addDisplayItem(package, lifetime: .discovered)
                 packageStates[package] = packageStates[package] ?? PackageRuntimeState()
-                track(package)
                 return package
             }
             packageStates[package] = packageStates[package] ?? PackageRuntimeState()
             return nil
         }
-        let visiblePackage = qualifiedCandidates[0]
-        packageStates[visiblePackage] = packageStates[visiblePackage]
+        let displayPackage = qualifiedCandidates[0]
+        packageStates[displayPackage] = packageStates[displayPackage]
             ?? packageStates[package]
             ?? PackageRuntimeState()
-        return visiblePackage
+        return displayPackage
     }
 
     private func updateRow(
@@ -381,7 +393,8 @@ private final class UpdateProgressViewModel: ObservableObject {
         progress: Double,
         speed: String? = nil
     ) {
-        guard track(package) else {
+        guard displayItems[package] != nil else {
+            packageStates[package] = packageStates[package] ?? PackageRuntimeState()
             return
         }
         lastActivePackage = package
@@ -400,7 +413,7 @@ private final class UpdateProgressViewModel: ObservableObject {
     }
 
     private func renderRows() {
-        rows = orderedPackages.map { package in
+        rows = displayItemIDs.map { package in
             let state = packageStates[package] ?? PackageRuntimeState()
             return PackageProgressRowState(
                 id: package,
@@ -902,5 +915,11 @@ private enum UpdateProgressPalette {
 private extension Comparable {
     func clamped(to limits: ClosedRange<Self>) -> Self {
         min(max(self, limits.lowerBound), limits.upperBound)
+    }
+}
+
+private extension String {
+    var progressDisplayName: String {
+        packageSearchOrderName
     }
 }
