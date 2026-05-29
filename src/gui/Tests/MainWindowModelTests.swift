@@ -102,6 +102,31 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["brew:uv"])
     }
 
+    func testAppBadgeCountCombinesOutdatedPackagesAndSecurityAlerts() {
+        let snapshot = NucleusStatusSnapshot(
+            installedCount: 10,
+            hazardousPackageCount: 2,
+            outdatedPackages: [
+                OutdatedPackageRecord(
+                    name: "brew:rg",
+                    currentVersion: "1.0",
+                    latestVersion: "2.0"
+                )
+            ],
+            homebrewOutdatedPackages: [
+                OutdatedPackageRecord(
+                    name: "brew:uv",
+                    currentVersion: "0.7.0",
+                    latestVersion: "0.8.0"
+                )
+            ],
+            refreshedAt: Date(),
+            lastError: nil
+        )
+
+        XCTAssertEqual(snapshot.appBadgeCount, 4)
+    }
+
     @MainActor
     func testSearchDeselectsAndRestoresSidebarSection() {
         let model = MainWindowModel()

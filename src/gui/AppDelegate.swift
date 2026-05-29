@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
     private var openWindowObserver: NSObjectProtocol?
     private var startAtLoginObserver: NSObjectProtocol?
+    private var statusSnapshotObserver: NSObjectProtocol?
     private var containmentLogObserver: NSObjectProtocol?
     private var pendingApprovalObserver: NSObjectProtocol?
     private var pendingIsotopeApprovalObserver: NSObjectProtocol?
@@ -40,11 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launchMenuBarHelperIfNeeded()
         installOpenWindowObserverIfNeeded()
         installStartAtLoginObserverIfNeeded()
+        installStatusSnapshotObserverIfNeeded()
         installContainmentLogObserverIfNeeded()
         installVaultApprovalObserverIfNeeded()
         installIsotopeApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
         startRemoteDatabaseRefreshTimer()
+        applyDockBadge(snapshot: statusStore.loadSnapshot())
         showMainWindow()
         appUpdateCoordinator.startAutomaticChecks()
         presentPendingVaultApprovalIfNeeded()
@@ -58,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let startAtLoginObserver {
             DistributedNotificationCenter.default().removeObserver(startAtLoginObserver)
+        }
+        if let statusSnapshotObserver {
+            DistributedNotificationCenter.default().removeObserver(statusSnapshotObserver)
         }
         if let containmentLogObserver {
             DistributedNotificationCenter.default().removeObserver(containmentLogObserver)
@@ -272,6 +278,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAtLoginObserver = statusStore.observeStartAtLoginToggleRequests { [weak self] _ in
             self?.toggleStartAtLoginFromHelper()
         }
+    }
+
+    private func installStatusSnapshotObserverIfNeeded() {
+        guard statusSnapshotObserver == nil else { return }
+        statusSnapshotObserver = statusStore.observeSnapshotChanges { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyDockBadge(snapshot: self.statusStore.loadSnapshot())
+            }
+        }
+    }
+
+    private func applyDockBadge(snapshot: NucleusStatusSnapshot) {
+        let badgeCount = snapshot.appBadgeCount
+        NSApp.dockTile.badgeLabel = badgeCount > 0 ? String(badgeCount) : nil
+        NSApp.dockTile.display()
     }
 
     private func installContainmentLogObserverIfNeeded() {

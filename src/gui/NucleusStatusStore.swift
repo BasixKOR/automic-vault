@@ -43,6 +43,10 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         outdatedPackages.count + homebrewOutdatedPackages.count
     }
 
+    var appBadgeCount: Int {
+        flaggedOutdatedPackageCount + hazardousPackageCount
+    }
+
     enum CodingKeys: String, CodingKey {
         case installedCount
         case hazardousPackageCount
