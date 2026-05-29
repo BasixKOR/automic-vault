@@ -23,7 +23,6 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     static let librarySections: [MainWindowSection] = [
         .installed,
-        .packs,
         .geigerCounter,
         .newUpdated,
         .outdated,
@@ -235,6 +234,9 @@ final class MainWindowModel: ObservableObject {
             if selectedSection != oldValue {
                 clearSelectedPackage()
             }
+            if selectedSection != .packs {
+                selectedPackID = nil
+            }
             ensureSelectedSectionLoaded()
             updateSelectedSectionLoadingState()
         }
@@ -252,6 +254,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var searchResults: [PackagePresentation] = []
     @Published private(set) var snapshot = NucleusStatusSnapshot.empty
     @Published private(set) var selectedItemID: String?
+    @Published private(set) var selectedPackID: String?
     @Published private(set) var isReloading = false
     @Published private(set) var isLoadingSectionPage = false
     @Published private(set) var isSearching = false
@@ -329,7 +332,11 @@ final class MainWindowModel: ObservableObject {
     }
 
     var activeSidebarSection: MainWindowSection? {
-        isSearchActive ? nil : selectedSection
+        isSearchActive || selectedSection == .packs ? nil : selectedSection
+    }
+
+    var activeSidebarPackID: String? {
+        isSearchActive ? nil : selectedPackID
     }
 
     var canUpdateAllOutdated: Bool {
@@ -486,7 +493,18 @@ final class MainWindowModel: ObservableObject {
     }
 
     func selectSection(_ section: MainWindowSection) {
+        selectedPackID = nil
         selectedSection = section
+        if isSearchActive {
+            searchText = ""
+        }
+        searchDeactivationRequestID += 1
+    }
+
+    func selectPack(_ package: PackagePresentation) {
+        selectedSection = .packs
+        selectedPackID = package.selectionID
+        select(package)
         if isSearchActive {
             searchText = ""
         }
@@ -723,6 +741,14 @@ final class MainWindowModel: ObservableObject {
                 sectionMatches(section, package: package)
             }.count
         }
+    }
+
+    func count(forPack package: PackagePresentation) -> Int? {
+        guard case .recommendation(let recommendation) = package.item,
+              recommendation.missingPackageNames.isEmpty == false else {
+            return nil
+        }
+        return recommendation.missingPackageNames.count
     }
 
     func packageBadge(for package: PackagePresentation) -> MainWindowPackageBadge? {
@@ -1246,7 +1272,11 @@ final class MainWindowModel: ObservableObject {
         case .installed:
             source = packages
         case .packs:
-            source = packRecommendations
+            if let selectedPackID {
+                source = packRecommendations.filter { $0.selectionID == selectedPackID }
+            } else {
+                source = packRecommendations
+            }
         case .geigerCounter:
             source = geigerActionPackages
         case .newUpdated:
@@ -1513,6 +1543,13 @@ final class MainWindowModel: ObservableObject {
         )
         let activeNames = Set(recommendations.map(\.packageName))
         packRecommendations = Self.packRecommendationPresentations(for: recommendations)
+        if let selectedPackID,
+           !packRecommendations.contains(where: { $0.selectionID == selectedPackID }) {
+            self.selectedPackID = nil
+            if selectedSection == .packs {
+                clearSelectedPackage()
+            }
+        }
 
         for package in packRecommendations {
             guard let detail = package.detail else {

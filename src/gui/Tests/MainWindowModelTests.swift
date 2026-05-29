@@ -175,24 +175,35 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testPacksSectionShowsPackagePackRecommendations() throws {
-        let recommendation = try XCTUnwrap(
+    func testPackSidebarRowsSelectPackagePackRecommendations() throws {
+        let agentPack = try XCTUnwrap(
             PackageRecommendation.agentPack(missingPackageNames: ["codex", "mods"])
         )
-        let model = MainWindowModel(initialPackRecommendations: [recommendation])
+        let unixPack = try XCTUnwrap(
+            PackageRecommendation.unixPlusPlusPack(missingPackageNames: ["eza"])
+        )
+        let model = MainWindowModel(initialPackRecommendations: [agentPack, unixPack])
         defer { model.stop() }
 
-        XCTAssertEqual(MainWindowSection.librarySections.firstIndex(of: .packs), 1)
+        XCTAssertFalse(MainWindowSection.librarySections.contains(.packs))
+        XCTAssertEqual(model.count(for: .packs), 2)
 
-        model.selectedSection = .packs
+        let package = try XCTUnwrap(model.packRecommendations.first)
+        model.selectPack(package)
 
-        XCTAssertEqual(model.count(for: .packs), 1)
-        let package = try XCTUnwrap(model.displayedPackages.first)
+        XCTAssertEqual(model.selectedSection, .packs)
+        XCTAssertNil(model.activeSidebarSection)
+        XCTAssertEqual(model.activeSidebarPackID, PackageRecommendation.agentPackName)
+        XCTAssertEqual(
+            model.displayedPackages.map(\.selectionID),
+            [PackageRecommendation.agentPackName]
+        )
         XCTAssertEqual(package.selectionID, PackageRecommendation.agentPackName)
         XCTAssertEqual(model.displayName(for: package), PackageRecommendation.agentPackName)
-        XCTAssertEqual(model.dossierPrimaryPackageAction(for: recommendation.detail), .install)
+        XCTAssertEqual(model.selectedPackage?.selectionID, PackageRecommendation.agentPackName)
+        XCTAssertEqual(model.dossierPrimaryPackageAction(for: agentPack.detail), .install)
 
-        model.requestDossierPackageAction(.install, detail: recommendation.detail, package: package)
+        model.requestDossierPackageAction(.install, detail: agentPack.detail, package: package)
 
         let request = try XCTUnwrap(model.packageOperationRequest)
         XCTAssertEqual(request.kind, .install)

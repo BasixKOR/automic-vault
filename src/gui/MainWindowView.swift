@@ -92,6 +92,15 @@ struct MainWindowView: View {
                 sidebarRow(section)
             }
 
+            if model.packRecommendations.isEmpty == false {
+                sidebarHeader(L10n.string("Packs"))
+                    .padding(.top, 22)
+                    .kerning(1.2)
+                ForEach(model.packRecommendations, id: \.selectionID) { package in
+                    sidebarPackRow(package)
+                }
+            }
+
             sidebarHeader(L10n.string("CATEGORIES"))
                 .padding(.top, 22)
                 .kerning(1.2)
@@ -158,6 +167,42 @@ struct MainWindowView: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .background {
                 if model.activeSidebarSection == section {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(AVGlassPalette.sidebarSelectedFill)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func sidebarPackRow(_ package: PackagePresentation) -> some View {
+        Button {
+            model.selectPack(package)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 17)
+                Text(model.displayName(for: package))
+                    .font(.system(size: 14, weight: .regular))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: 6)
+                if let count = model.count(forPack: package) {
+                    SidebarCountText(count: count)
+                        .fixedSize()
+                }
+            }
+            .foregroundStyle(
+                model.activeSidebarPackID == package.selectionID
+                    ? AVGlassPalette.primaryText
+                    : AVGlassPalette.secondaryText
+            )
+            .padding(.horizontal, 7)
+            .frame(height: 32)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background {
+                if model.activeSidebarPackID == package.selectionID {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(AVGlassPalette.sidebarSelectedFill)
                 }
