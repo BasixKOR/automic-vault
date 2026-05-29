@@ -706,7 +706,8 @@ private struct HardenTraceStroke: View {
 
     private let cornerRadius: CGFloat = 8
     private let cycleDuration: TimeInterval = 1.8
-    private let traceLength: CGFloat = 0.30
+    private let minimumTraceLength: CGFloat = 0.16
+    private let maximumTraceLength: CGFloat = 0.42
 
     var body: some View {
         Group {
@@ -726,22 +727,31 @@ private struct HardenTraceStroke: View {
     }
 
     private func strokeContent(phase: CGFloat) -> some View {
-        ZStack {
+        let traceLength = reduceMotion ? maximumTraceLength : traceLength(at: phase)
+        return ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(AVGlassPalette.hardenTrace.opacity(0.42), lineWidth: 1)
-            traceSegments(startingAt: phase)
+            traceSegments(endingAt: phase, length: traceLength)
         }
     }
 
     @ViewBuilder
-    private func traceSegments(startingAt start: CGFloat) -> some View {
-        let end = start + traceLength
-        if end <= 1 {
+    private func traceSegments(endingAt end: CGFloat, length: CGFloat) -> some View {
+        let start = end - length
+        if start >= 0 {
             traceSegment(from: start, to: end)
         } else {
-            traceSegment(from: start, to: 1)
-            traceSegment(from: 0, to: end - 1)
+            traceSegment(from: start + 1, to: 1)
+            traceSegment(from: 0, to: end)
         }
+    }
+
+    private func traceLength(at phase: CGFloat) -> CGFloat {
+        let wavePhase = (phase * 1.6).truncatingRemainder(dividingBy: 1)
+        let wave = wavePhase < 0.5
+            ? wavePhase * 2
+            : (1 - wavePhase) * 2
+        return minimumTraceLength + ((maximumTraceLength - minimumTraceLength) * wave)
     }
 
     private func traceSegment(from start: CGFloat, to end: CGFloat) -> some View {
