@@ -113,7 +113,6 @@ search_index_generator="${repo_root}/scripts/generate-search-index.py"
 www_i18n_generator="${repo_root}/scripts/generate-www-i18n.py"
 product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
-db_cache_control="public, max-age=3600"
 scan_log_source="${repo_root}/data/radioisotopes/SCAN_LOG.md"
 prepared_site_dir=""
 
@@ -134,6 +133,7 @@ distribution_comment="${WWW_DOMAIN} static site"
 oac_name="${WWW_DOMAIN}-s3-oac"
 redirect_function_name="${WWW_DOMAIN//./-}-redirect-to-canonical"
 response_headers_policy_name="${WWW_DOMAIN//./-}-security-headers"
+cache_policy_name="${WWW_DOMAIN//./-}-brotli-cache"
 
 cleanup() {
   if [[ -n "${prepared_site_dir}" && -d "${prepared_site_dir}" ]]; then
@@ -763,6 +763,65 @@ ensure_response_headers_policy() {
   printf '%s\n' "${policy_id}"
 }
 
+ensure_cache_policy() {
+  local policy_file policy_id etag response_file
+  log_step "Preparing CloudFront Brotli cache policy"
+  policy_file="$(mktemp)"
+  response_file="$(mktemp)"
+
+  jq -n \
+    --arg name "${cache_policy_name}" \
+    '{
+      Name: $name,
+      Comment: "Static site cache policy with Gzip and Brotli variants",
+      DefaultTTL: 86400,
+      MaxTTL: 31536000,
+      MinTTL: 0,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        EnableAcceptEncodingGzip: true,
+        EnableAcceptEncodingBrotli: true,
+        HeadersConfig: {
+          HeaderBehavior: "none"
+        },
+        CookiesConfig: {
+          CookieBehavior: "none"
+        },
+        QueryStringsConfig: {
+          QueryStringBehavior: "none"
+        }
+      }
+    }' >"${policy_file}"
+
+  policy_id="$(
+    aws cloudfront list-cache-policies \
+      --type custom \
+      --query "CachePolicyList.Items[?CachePolicy.CachePolicyConfig.Name == '${cache_policy_name}'].CachePolicy.Id | [0]" \
+      --output text
+  )"
+
+  if [[ "${policy_id}" == "None" ]]; then
+    policy_id="$(
+      aws cloudfront create-cache-policy \
+        --cache-policy-config "file://${policy_file}" \
+        --query 'CachePolicy.Id' \
+        --output text
+    )"
+    log_ok "Created cache policy ${policy_id}"
+    printf '%s\n' "${policy_id}"
+    return 0
+  fi
+
+  aws cloudfront get-cache-policy-config \
+    --id "${policy_id}" >"${response_file}"
+  etag="$(jq -r '.ETag' "${response_file}")"
+  aws cloudfront update-cache-policy \
+    --id "${policy_id}" \
+    --if-match "${etag}" \
+    --cache-policy-config "file://${policy_file}" >/dev/null
+  log_ok "Cache policy ready"
+  printf '%s\n' "${policy_id}"
+}
+
 
 distribution_id_for_alias() {
   local alias_csv
@@ -783,7 +842,8 @@ build_distribution_config() {
   local oac_id="$1"
   local function_arn="$2"
   local response_headers_policy_id="$3"
-  local output_file="$4"
+  local cache_policy_id="$4"
+  local output_file="$5"
 
   jq -n \
     --arg caller_reference "${WWW_DOMAIN}-$(date +%s)" \
@@ -793,6 +853,7 @@ build_distribution_config() {
     --arg oac_id "${oac_id}" \
     --arg function_arn "${function_arn}" \
     --arg response_headers_policy_id "${response_headers_policy_id}" \
+    --arg cache_policy_id "${cache_policy_id}" \
     --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
     --arg domain_a "${WWW_DOMAIN}" \
     --arg domain_b "${WWW_WWW_DOMAIN}" \
@@ -829,6 +890,7 @@ build_distribution_config() {
           }
         },
         Compress: true,
+        CachePolicyId: $cache_policy_id,
         ResponseHeadersPolicyId: $response_headers_policy_id,
         FunctionAssociations: {
           Quantity: 1,
@@ -837,21 +899,6 @@ build_distribution_config() {
             FunctionARN: $function_arn
           }]
         },
-        ForwardedValues: {
-          QueryString: false,
-          Cookies: {
-            Forward: "none"
-          },
-          Headers: {
-            Quantity: 0
-          },
-          QueryStringCacheKeys: {
-            Quantity: 0
-          }
-        },
-        MinTTL: 0,
-        DefaultTTL: 86400,
-        MaxTTL: 31536000
       },
       CustomErrorResponses: {
         Quantity: 1,
@@ -885,6 +932,7 @@ upsert_distribution() {
   local oac_id="$1"
   local function_arn="$2"
   local response_headers_policy_id="$3"
+  local cache_policy_id="$4"
   local distribution_id etag config_file response_file
   log_step "Preparing CloudFront distribution"
   config_file="$(mktemp)"
@@ -902,6 +950,7 @@ upsert_distribution() {
       --arg oac_id "${oac_id}" \
       --arg function_arn "${function_arn}" \
       --arg response_headers_policy_id "${response_headers_policy_id}" \
+      --arg cache_policy_id "${cache_policy_id}" \
       --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
       --arg domain_a "${WWW_DOMAIN}" \
       --arg domain_b "${WWW_WWW_DOMAIN}" \
@@ -934,6 +983,7 @@ upsert_distribution() {
           }
         }
       | .DistributionConfig.DefaultCacheBehavior.Compress = true
+      | .DistributionConfig.DefaultCacheBehavior.CachePolicyId = $cache_policy_id
       | .DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId = $response_headers_policy_id
       | .DistributionConfig.DefaultCacheBehavior.FunctionAssociations = {
           Quantity: 1,
@@ -942,15 +992,12 @@ upsert_distribution() {
             FunctionARN: $function_arn
           }]
         }
-      | .DistributionConfig.DefaultCacheBehavior.ForwardedValues = {
-          QueryString: false,
-          Cookies: {Forward: "none"},
-          Headers: {Quantity: 0},
-          QueryStringCacheKeys: {Quantity: 0}
-        }
-      | .DistributionConfig.DefaultCacheBehavior.MinTTL = 0
-      | .DistributionConfig.DefaultCacheBehavior.DefaultTTL = 86400
-      | .DistributionConfig.DefaultCacheBehavior.MaxTTL = 31536000
+      | del(
+          .DistributionConfig.DefaultCacheBehavior.ForwardedValues,
+          .DistributionConfig.DefaultCacheBehavior.MinTTL,
+          .DistributionConfig.DefaultCacheBehavior.DefaultTTL,
+          .DistributionConfig.DefaultCacheBehavior.MaxTTL
+        )
       | .DistributionConfig.CustomErrorResponses = {
           Quantity: 1,
           Items: [{
@@ -979,7 +1026,7 @@ upsert_distribution() {
   fi
 
   log "  Creating distribution for ${WWW_DOMAIN}, ${WWW_WWW_DOMAIN}"
-  build_distribution_config "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${config_file}"
+  build_distribution_config "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}" "${config_file}"
   aws cloudfront create-distribution \
     --distribution-config "file://${config_file}" \
     --query 'Distribution.Id' \
@@ -1226,6 +1273,7 @@ ensure_bucket
 oac_id="$(ensure_oac)"
 ensure_redirect_function
 response_headers_policy_id="$(ensure_response_headers_policy)"
+cache_policy_id="$(ensure_cache_policy)"
 log_step "Reading CloudFront function ARN"
 function_arn="$(
   aws cloudfront describe-function \
@@ -1236,7 +1284,7 @@ function_arn="$(
 )"
 log_ok "Function ARN resolved"
 ensure_certificate_issued
-distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}" "${response_headers_policy_id}")"
+distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}")"
 put_bucket_policy "${distribution_id}"
 log_step "Waiting for CloudFront deployment"
 aws cloudfront wait distribution-deployed --id "${distribution_id}"

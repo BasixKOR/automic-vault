@@ -60,6 +60,7 @@ trap cleanup EXIT
 
 cli_step "Downloading package database"
 curl --fail --location --silent --show-error \
+  --compressed \
   --output "${temp_path}" \
   "${source_url}"
 

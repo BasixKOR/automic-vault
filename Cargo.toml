@@ -33,7 +33,7 @@ sha2 = "0.10"
 tar = "0.4.45"
 tempfile = "3"
 time = { version = "0.3", features = ["parsing"] }
-ureq = "2"
+ureq = { version = "2", features = ["brotli"] }
 urlencoding = "2"
 walkdir = "2"
 

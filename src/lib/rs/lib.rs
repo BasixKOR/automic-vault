@@ -15356,6 +15356,16 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         server.join().unwrap();
         let requests = requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
+        assert!(
+            requests[0]
+                .to_ascii_lowercase()
+                .contains("accept-encoding: gzip, br")
+        );
+        assert!(
+            requests[1]
+                .to_ascii_lowercase()
+                .contains("accept-encoding: gzip, br")
+        );
         assert!(!requests[0].contains("If-None-Match"));
         assert!(requests[1].contains("If-None-Match: \"test-etag\""));
         let metadata = read_remote_combined_data_metadata(&meta_path);
