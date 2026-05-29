@@ -572,7 +572,6 @@ struct MainWindowView: View {
             PackageWebView(url: url)
                 .id(url)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.white.opacity(0.96))
         } else {
             Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -659,8 +658,11 @@ private struct PackageWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        configuration.userContentController.addUserScript(Self.defaultStyleScript)
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
+        webView.underPageBackgroundColor = .clear
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         return webView
@@ -676,6 +678,42 @@ private struct PackageWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
+
+    private static let defaultStyleScript = WKUserScript(
+        source: #"""
+        (() => {
+          const style = document.createElement("style");
+          style.dataset.automicVaultDefaults = "true";
+          style.textContent = `
+            html {
+              color-scheme: light;
+              background-color: white;
+              color: black;
+            }
+
+            body {
+              background-color: white;
+              color: black;
+            }
+          `;
+
+          const install = () => {
+            const target = document.head || document.documentElement;
+            if (!target) {
+              return false;
+            }
+            target.prepend(style);
+            return true;
+          };
+
+          if (!install()) {
+            document.addEventListener("DOMContentLoaded", install, { once: true });
+          }
+        })();
+        """#,
+        injectionTime: .atDocumentStart,
+        forMainFrameOnly: false
+    )
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var currentURL: URL?
