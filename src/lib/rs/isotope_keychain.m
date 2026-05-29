@@ -64,10 +64,7 @@ static bool isotope_create_password_access(NSString *service,
     return false;
   }
 
-  NSArray<NSString *> *injectionPaths = @[
-    @"/usr/local/bin/av",
-    @"/tmp/usr/local/bin/av",
-  ];
+  NSArray<NSString *> *injectionPaths = @[@"/usr/local/bin/av"];
   NSFileManager *fileManager = NSFileManager.defaultManager;
   for (NSString *path in injectionPaths) {
     if (![fileManager isExecutableFileAtPath:path]) {
