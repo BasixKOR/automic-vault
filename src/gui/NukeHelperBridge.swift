@@ -653,15 +653,21 @@ final class NukeHelperBridge {
         errorHandler: @escaping (Error) -> Void
     ) throws -> NukeHelperProtocol? {
         let requiresBlessing: Bool
-        do {
-            requiresBlessing = try helperRequiresBlessing(
-                allowOlderInstalledVersion: blessingPolicy == .compatibleInstalledOnly
-            )
-        } catch {
-            if blessingPolicy == .installedOnly {
+        switch blessingPolicy {
+        case .compatibleInstalledOnly:
+            guard compatibleInstalledHelperAvailable() else {
                 return nil
             }
-            throw error
+            requiresBlessing = false
+        case .blessIfNeeded, .installedOnly:
+            do {
+                requiresBlessing = try helperRequiresBlessing()
+            } catch {
+                if blessingPolicy == .installedOnly {
+                    return nil
+                }
+                throw error
+            }
         }
 
         if requiresBlessing {
@@ -685,9 +691,7 @@ final class NukeHelperBridge {
         FileManager.default.fileExists(atPath: helperToolURL().path)
     }
 
-    private func helperRequiresBlessing(
-        allowOlderInstalledVersion: Bool = false
-    ) throws -> Bool {
+    private func helperRequiresBlessing() throws -> Bool {
         guard helperToolInstalled() else {
             return true
         }
@@ -719,13 +723,27 @@ final class NukeHelperBridge {
         if installedIdentity.teamIdentifier != bundledIdentity.teamIdentifier {
             return true
         }
-        if allowOlderInstalledVersion {
-            return false
-        }
         return compareHelperVersion(
             installedIdentity.bundleVersion,
             bundledIdentity.bundleVersion
         ) == .orderedAscending
+    }
+
+    private func compatibleInstalledHelperAvailable() -> Bool {
+        guard helperToolInstalled(),
+              let installedIdentity = try? helperCodeIdentity(
+                at: helperToolURL(),
+                context: "installed"
+              ),
+              installedIdentity.identifier == Self.serviceName else {
+            return false
+        }
+
+        guard let expectedTeamIdentifier = currentBundleTeamIdentifier(),
+              !expectedTeamIdentifier.isEmpty else {
+            return true
+        }
+        return installedIdentity.teamIdentifier == expectedTeamIdentifier
     }
 
     private func helperToolURL() -> URL {
@@ -1027,6 +1045,16 @@ final class NukeHelperBridge {
 
     private func bundleStaticCode() throws -> SecStaticCode {
         try staticCode(at: Bundle.main.bundleURL, context: "app")
+    }
+
+    private func currentBundleTeamIdentifier() -> String? {
+        guard let signingInfo = try? copySigningInformation(
+            for: bundleStaticCode(),
+            context: "app"
+        ) else {
+            return nil
+        }
+        return signingInfo[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     private func copySigningInformation(

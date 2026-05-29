@@ -7,6 +7,7 @@ import sys
 
 
 SOURCE_FILES = (
+    "aliases.json",
     "db.json",
     "isotopes.json",
     "npm.json",
@@ -58,7 +59,10 @@ def _load_sources():
         path = os.path.join("data", name)
         if not os.path.exists(path):
             raise FileNotFoundError(path)
-        sources[_source_key(path)] = _prune(_read_json(path))
+        source = _prune(_read_json(path))
+        if name == "aliases.json" and source is None:
+            source = {}
+        sources[_source_key(path)] = source
     _validate_sources(sources)
     return sources
 
