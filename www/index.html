@@ -174,7 +174,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=26">
+  <link rel="stylesheet" href="./styles.css?v=25">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -197,7 +197,7 @@
       </button>
 
       <nav class="nav" aria-label="Main navigation">
-        <a href="#boundary-stack">Boundaries</a>
+        <a href="#ranked">Boundaries</a>
         <a href="#secrets">Secrets</a>
         <a href="#approval">Approval</a>
         <a href="#nucleus">Nucleus</a>
@@ -224,86 +224,52 @@
             <p class="lede">
               A hardened package manager and secrets boundary for the tools AI agents run on your Mac.
             </p>
-            <div class="hero-actions">
-              <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
-              <a class="button secondary" href="/docs/">Read docs</a>
-              <a class="button text" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
-            </div>
           </div>
 
-          <aside class="hero-terminal" aria-label="Example protected command boundary">
-            <div class="terminal-topline">
-              <span>boundary check</span>
-              <code>av gate request</code>
+          <aside class="hero-brief" aria-label="Current security posture">
+            <div>
+              <span class="tiny-icon" aria-hidden="true"></span>
+              <p>Secrets stay in Keychain-backed storage until the approved tool needs them.</p>
             </div>
-            <div class="terminal-command">
-              <span aria-hidden="true">$</span>
-              <code>npm publish --access public</code>
+            <div>
+              <span class="tiny-icon square" aria-hidden="true"></span>
+              <p>Dangerous tool actions can require human approval at execution time.</p>
             </div>
-            <dl class="terminal-facts">
-              <div>
-                <dt>requester</dt>
-                <dd>agent session</dd>
-              </div>
-              <div>
-                <dt>secret path</dt>
-                <dd>Keychain only</dd>
-              </div>
-              <div>
-                <dt>tool root</dt>
-                <dd>/opt/nucleus</dd>
-              </div>
-              <div>
-                <dt>mutation</dt>
-                <dd>approval required</dd>
-              </div>
-            </dl>
-            <div class="terminal-decision" aria-label="Approval decision options">
-              <span>Deny</span>
-              <strong>human checkpoint</strong>
-              <span>Approve</span>
+            <div>
+              <span class="tiny-icon triangle" aria-hidden="true"></span>
+              <p>Release installs live under <code>/opt</code> with stubs in <code>/usr/local/bin</code>.</p>
             </div>
           </aside>
         </div>
+
+        <div class="hero-actions">
+          <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
+          <a class="button secondary" href="/docs/">Read docs</a>
+          <a class="button text" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+        </div>
       </section>
 
-      <section class="boundary-stack-section" id="boundary-stack" aria-labelledby="boundary-title">
+      <section class="highlights" aria-labelledby="highlights-title">
         <div class="section-label">
-          <h2 id="boundary-title">Boundary Stack</h2>
-          <span>what gets controlled</span>
+          <h2 id="highlights-title">Highlights</h2>
+          <span>security map</span>
         </div>
-        <div class="boundary-stack" aria-label="Automic Vault control layers">
-          <a class="boundary-layer accent-hot" href="#secrets">
-            <span class="layer-index">01</span>
-            <div>
-              <strong>Secrets</strong>
-              <p>Credentials stay out of plaintext files and model context.</p>
-            </div>
-            <code>Keychain -> tool</code>
+        <div class="highlight-grid">
+          <a class="highlight-card accent-hot" href="#secrets">
+            <span>01 / secrets</span>
+            <strong>No plaintext credential file for agents to scrape.</strong>
           </a>
-          <a class="boundary-layer accent-blue" href="#approval">
-            <span class="layer-index">02</span>
-            <div>
-              <strong>Approvals</strong>
-              <p>Dangerous commands stop at the local execution layer.</p>
-            </div>
-            <code>gate -> decision</code>
+          <a class="highlight-card accent-blue" href="#approval">
+            <span>02 / approval</span>
+            <strong>Prompts live where sensitive tool actions execute.</strong>
           </a>
-          <a class="boundary-layer accent-green" href="#nucleus">
-            <span class="layer-index">03</span>
-            <div>
-              <strong>Packages <small data-secured-package-count>11,909</small></strong>
-              <p>Agent toolchains install under roots the agent cannot casually rewrite.</p>
-            </div>
-            <code>/opt -> stubs</code>
+          <a class="highlight-card accent-green" href="#nucleus">
+            <span>03 / packages <small class="package-count" data-secured-package-count>11,909</small></span>
+            <strong>Agent toolchains get hardened roots and transitive stacks.</strong>
           </a>
-          <a class="boundary-layer accent-gold" href="/av-trace/">
-            <span class="layer-index">04</span>
-            <div>
-              <strong>Trace</strong>
-              <p>Installer one-liners get explained before they touch disk.</p>
-            </div>
-            <code>curl | sh</code>
+          <a class="highlight-card accent-gold" href="/av-trace/">
+            <span>04 / trace</span>
+            <strong>Inspect curl-pipe-shell installers before they write files.</strong>
           </a>
         </div>
       </section>
