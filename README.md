@@ -78,8 +78,8 @@ secret protection.
 - [General Isotope Guidelines](./docs/isotopes.md)
 - [Radioisotope Considerations](https://github.com/automic-vault/radioisotopes/#readme)
 
-Current radioisotope inventory as of 2026-05-23:
+Current radioisotope inventory as of 2026-05-30:
 
-- 107 radioisotope manifests
+- 129 radioisotope manifests
 - Homebrew popularity scan coverage reached rank 17450
-- 95 radioisotopes added from the Homebrew scan log
+- 113 radioisotopes added from the Homebrew scan log
