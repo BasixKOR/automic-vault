@@ -17980,6 +17980,64 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
+    fn run_i_vendor_skips_current_root_and_syncs_stubs() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _package_lock = acquire_package_mutation_lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let bin_root = managed_bin_root();
+        let package_name = "coverage-vendor-current";
+        let install_root = package_install_root(&opt_root, package_name).unwrap();
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+        }
+        let stub = bin_root.join(package_name);
+        if fs::symlink_metadata(&stub).is_ok() {
+            remove_path(&stub).unwrap();
+        }
+
+        let plan = InstallPlan::for_i(package_name.to_string(), package_name.to_string());
+        fs::create_dir_all(plan.install_root.join("bin")).unwrap();
+        let executable = plan.install_root.join("bin").join(package_name);
+        fs::write(&executable, b"#!/bin/sh\nprintf vendor\n").unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).unwrap();
+        write_package_receipt(
+            &plan.root_receipt_path(),
+            &PackageReceipt {
+                package_name: package_name.to_string(),
+                version: "0.0.0".to_string(),
+                source: PackageReceiptSource::Vendor {
+                    vendor_name: package_name.to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_root_ownership_manifest(&plan, vec![package_name.to_string()]).unwrap();
+
+        let package = fake_vendor_install(
+            "coverage-vendor-current",
+            &["coverage-vendor-current"],
+            "0.0.0",
+        )
+        .package;
+        run_i_vendor(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            package_name.to_string(),
+            package,
+            InstallIntent::Update,
+            None,
+        )
+        .unwrap();
+
+        assert!(is_executable(&stub));
+        remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
+    }
+
+    #[test]
     fn run_i_npm_and_pip_install_with_local_formula_tools() {
         let _env_lock = test_env_lock().lock().unwrap();
         let _package_lock = acquire_package_mutation_lock().unwrap();
@@ -18062,7 +18120,7 @@ fi
                 ("/node.tar.gz".to_string(), node_bytes),
                 ("/python.tar.gz".to_string(), python_bytes),
             ],
-            10,
+            15,
         );
         let node_json = serde_json::to_vec(&serde_json::json!({
             "versions": { "stable": "1.0.0" },
@@ -18127,7 +18185,7 @@ fi
                     .to_vec(),
                 ),
             ],
-            20,
+            30,
         );
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(base.clone()),
@@ -18227,8 +18285,34 @@ fi
         assert!(reinstall_events.iter().any(
             |event| matches!(event, ProgressEvent::Completed { package } if package == "pip:coverage-pip")
         ));
-        drain_test_server(&base, "/coverage-npm", 20);
-        drain_test_server(&bottle_base, "/node.tar.gz", 10);
+
+        run_i_npm(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "npm:coverage-npm".to_string(),
+            "coverage-npm".to_string(),
+            None,
+            InstallOptions {
+                intent: InstallIntent::Update,
+            },
+            InstallIntent::Update,
+            None,
+        )
+        .unwrap();
+        run_i_pip(
+            &Config {
+                bottle_tag: "all".to_string(),
+            },
+            "pip:coverage-pip".to_string(),
+            "coverage-pip".to_string(),
+            InstallIntent::Update,
+            None,
+        )
+        .unwrap();
+
+        drain_test_server(&base, "/coverage-npm", 30);
+        drain_test_server(&bottle_base, "/node.tar.gz", 15);
         server.join().unwrap();
         bottle_server.join().unwrap();
         remove_existing_package_install(&opt_root, "npm:coverage-npm", &bin_root).unwrap();

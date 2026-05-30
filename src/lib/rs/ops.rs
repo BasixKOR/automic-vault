@@ -1158,6 +1158,56 @@ fn write_isotope_always_allow_store(
 mod tests {
     use super::*;
 
+    struct EndpointOverrideGuard;
+
+    impl Drop for EndpointOverrideGuard {
+        fn drop(&mut self) {
+            config::clear_test_endpoint_overrides();
+        }
+    }
+
+    fn set_formula_api_root(base: String) -> EndpointOverrideGuard {
+        config::set_test_endpoint_overrides(config::TestEndpointOverrides {
+            formula_api_root: Some(base),
+            ..Default::default()
+        });
+        EndpointOverrideGuard
+    }
+
+    fn start_ops_test_http_server(
+        routes: Vec<(String, Vec<u8>)>,
+        requests: usize,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let routes = Arc::new(routes.into_iter().collect::<HashMap<_, _>>());
+        let handle = thread::spawn(move || {
+            for _ in 0..requests {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 1024];
+                let count = stream.read(&mut request).unwrap_or(0);
+                let first_line = std::str::from_utf8(&request[..count])
+                    .unwrap_or_default()
+                    .lines()
+                    .next()
+                    .unwrap_or_default();
+                let path = first_line.split_whitespace().nth(1).unwrap_or("/");
+                let (status, body) = routes
+                    .get(path)
+                    .map(|body| ("200 OK", body.as_slice()))
+                    .unwrap_or(("404 Not Found", b"not found".as_slice()));
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .unwrap();
+                stream.write_all(body).unwrap();
+            }
+        });
+        (format!("http://{address}"), handle)
+    }
+
     fn write_test_receipt(
         package_name: &str,
         version: &str,
@@ -2022,6 +2072,68 @@ mod tests {
                     .unwrap_err()
                     .contains("must be run as root")
             );
+        }
+    }
+
+    #[test]
+    fn make_package_default_root_syncs_formula_stubs_and_reports_progress() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let formula_json = serde_json::to_vec(&serde_json::json!({
+            "versions": { "stable": "14.1.1" },
+            "dependencies": [],
+            "bottle": {
+                "stable": {
+                    "files": {
+                        "all": {
+                            "sha256": "0".repeat(64),
+                            "url": "https://example.invalid/ripgrep.tar.gz",
+                        }
+                    }
+                }
+            },
+            "disabled": false
+        }))
+        .unwrap();
+        let (base, server) =
+            start_ops_test_http_server(vec![("/ripgrep.json".to_string(), formula_json)], 1);
+        let _endpoint_guard = set_formula_api_root(base);
+        let install_root = write_test_receipt(
+            "ripgrep",
+            "14.1.1",
+            PackageReceiptSource::Formula {
+                root_formula: "ripgrep".to_string(),
+            },
+        );
+        fs::create_dir_all(install_root.join("bin")).unwrap();
+        let rg = install_root.join("bin/rg");
+        fs::write(&rg, b"#!/bin/sh\nprintf rg\n").unwrap();
+        let mut permissions = fs::metadata(&rg).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&rg, permissions).unwrap();
+
+        let events = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let callback_events = Arc::clone(&events);
+        let callback: Arc<Mutex<Box<ProgressCallback>>> =
+            Arc::new(Mutex::new(Box::new(move |event| {
+                callback_events.lock().unwrap().push(event);
+            })));
+
+        make_package_default_root("ripgrep", Some(callback)).unwrap();
+
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(
+            |event| matches!(event, ProgressEvent::Installing { package } if package == "ripgrep")
+        ));
+        assert!(events.iter().any(
+            |event| matches!(event, ProgressEvent::Completed { package } if package == "ripgrep")
+        ));
+        drop(events);
+        assert!(managed_bin_root().join("rg").exists());
+
+        server.join().unwrap();
+        remove_existing_package_install(&opt_pkg_root(), "ripgrep", &managed_bin_root()).unwrap();
+        if install_root.exists() {
+            remove_path(&install_root).unwrap();
         }
     }
 

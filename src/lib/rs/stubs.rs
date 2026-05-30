@@ -552,6 +552,28 @@ mod tests {
     }
 
     #[test]
+    fn write_stub_reports_unjoinable_path_entries() {
+        let temp = TempDir::new().unwrap();
+        let plan = InstallPlan {
+            mode: Mode::I,
+            package_name: "bad-path".to_string(),
+            root_formula: "bad-path".to_string(),
+            stable_root: temp.path().join("stable"),
+            install_root: temp.path().join("install"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        let error = write_stub(
+            &plan,
+            &temp.path().join("stub"),
+            &temp.path().join("bin/tool"),
+            &[PathBuf::from("bad:path")],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("failed to join PATH"));
+    }
+
+    #[test]
     fn load_stub_manifest_defaults_missing_file_and_reports_parse_errors() {
         let temp = TempDir::new().unwrap();
         let missing = temp.path().join("missing.json");
