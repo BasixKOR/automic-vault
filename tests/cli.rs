@@ -525,6 +525,7 @@ fn subs_query_commands_cover_success_and_output_modes() {
     );
     assert!(output.status.success(), "{}", stderr(&output));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["scope"], "full");
     assert_eq!(report["summary"]["findings"], 1);
     assert_eq!(report["findings"][0]["source"], "file-probe");
 
@@ -556,6 +557,7 @@ fn subs_query_commands_cover_success_and_output_modes() {
     );
     assert!(output.status.success(), "{}", stderr(&output));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["scope"], "isotopes-only");
     assert_eq!(report["summary"]["scanned_files"], 0);
     assert_eq!(report["summary"]["file_probes"], 0);
     assert!(
@@ -621,9 +623,36 @@ fn subs_query_commands_cover_success_and_output_modes() {
     let plain_stdout = stdout(&output);
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(plain_stdout.contains("Automic Vault scan"));
+    assert!(plain_stdout.contains("Scope: isotope detectors and file probes"));
     assert!(plain_stdout.contains("Findings:"));
     assert!(!plain_stdout.contains("\x1b["));
     assert!(!plain_stdout.contains("╭"));
+
+    let output = run_nuke_with_env(
+        &["scan", "--path", scan.to_str().unwrap(), "--isotopes-only"],
+        &[
+            ("HOME", home.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    let isotope_only_stdout = stdout(&output);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(isotope_only_stdout.contains("Scope: isotope detectors only"));
+    assert!(isotope_only_stdout.contains("file probes skipped"));
+    assert!(!isotope_only_stdout.contains("Findings:"));
 
     let output = run_nuke_with_env(
         &["scan", "--path", scan.to_str().unwrap()],
@@ -649,6 +678,7 @@ fn subs_query_commands_cover_success_and_output_modes() {
     let rich_stdout = stdout(&output);
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(rich_stdout.contains("╭─ Automic Vault Scan"));
+    assert!(rich_stdout.contains("Scope"));
     assert!(rich_stdout.contains("\x1b["));
     fs::remove_dir_all(temp).unwrap();
 }

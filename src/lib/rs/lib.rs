@@ -904,9 +904,17 @@ enum PackageSelection {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct SecretScannerReport {
+    scope: SecretScannerScope,
     findings: Vec<SecretScannerFinding>,
     errors: Vec<SecretScannerError>,
     summary: SecretScannerSummary,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum SecretScannerScope {
+    Full,
+    IsotopesOnly,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -3070,6 +3078,11 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
     errors.dedup();
 
     Ok(SecretScannerReport {
+        scope: if request.isotopes_only {
+            SecretScannerScope::IsotopesOnly
+        } else {
+            SecretScannerScope::Full
+        },
         summary: SecretScannerSummary {
             scanned_files,
             findings: findings.len(),
@@ -3093,6 +3106,7 @@ fn print_secret_scanner_report(report: &SecretScannerReport) {
 
 fn print_plain_secret_scanner_report(report: &SecretScannerReport) {
     println!("Automic Vault scan");
+    println!("Scope: {}", secret_scanner_scope_label(report.scope));
     if report.findings.is_empty() {
         println!("No plaintext secret exposure detected.");
     } else {
@@ -3120,15 +3134,11 @@ fn print_plain_secret_scanner_report(report: &SecretScannerReport) {
         pluralize(report.summary.findings, "finding", "findings"),
         pluralize(report.summary.errors, "warning", "warnings"),
         pluralize(
-            report.summary.scanned_files,
-            "file scanned",
-            "files scanned"
-        ),
-        pluralize(
             report.summary.isotope_detectors,
             "isotope detector",
             "isotope detectors"
-        )
+        ),
+        secret_scanner_file_probe_summary(report)
     );
 
     print_secret_scanner_warnings(report, false);
@@ -3155,19 +3165,28 @@ fn print_rich_secret_scanner_report(report: &SecretScannerReport) {
         )
     };
     let summary = format!(
-        "{} · {} · {}",
-        pluralize(report.summary.isotope_detectors, "detector", "detectors"),
+        "{} · {}",
         pluralize(
-            report.summary.scanned_files,
-            "file scanned",
-            "files scanned"
+            report.summary.isotope_detectors,
+            "isotope detector",
+            "isotope detectors"
         ),
+        secret_scanner_file_probe_summary(report),
+    );
+    let warnings = format!(
+        "{}: {}",
+        scan_paint("Warnings", ScanStyle::Dim, color),
         pluralize(report.summary.errors, "warning", "warnings")
+    );
+    let scope = format!(
+        "{}: {}",
+        scan_paint("Scope", ScanStyle::Dim, color),
+        secret_scanner_scope_label(report.scope)
     );
 
     print_scan_box(
         "Automic Vault Scan",
-        &[format!("{status} {headline}"), summary],
+        &[format!("{status} {headline}"), scope, summary, warnings],
         color,
     );
 
@@ -3224,7 +3243,7 @@ fn print_scan_box(title: &str, lines: &[String], color: bool) {
         scan_paint(
             &format!(
                 "╭─ {title} {}╮",
-                "─".repeat(width.saturating_sub(title.len() + 4))
+                "─".repeat(width.saturating_sub(title.len()))
             ),
             ScanStyle::Accent,
             color
@@ -3236,7 +3255,7 @@ fn print_scan_box(title: &str, lines: &[String], color: bool) {
     println!(
         "{}",
         scan_paint(
-            &format!("╰{}╯", "─".repeat(width + 2)),
+            &format!("╰{}╯", "─".repeat(width + 3)),
             ScanStyle::Accent,
             color
         )
@@ -3280,6 +3299,24 @@ fn secret_scanner_finding_location(finding: &SecretScannerFinding) -> Option<Str
         (Some(path), Some(line)) => Some(format!("{path}:{line}")),
         (Some(path), None) => Some(path.clone()),
         (None, _) => None,
+    }
+}
+
+fn secret_scanner_scope_label(scope: SecretScannerScope) -> &'static str {
+    match scope {
+        SecretScannerScope::Full => "isotope detectors and file probes",
+        SecretScannerScope::IsotopesOnly => "isotope detectors only",
+    }
+}
+
+fn secret_scanner_file_probe_summary(report: &SecretScannerReport) -> String {
+    match report.scope {
+        SecretScannerScope::Full => pluralize(
+            report.summary.scanned_files,
+            "file scanned",
+            "files scanned",
+        ),
+        SecretScannerScope::IsotopesOnly => "file probes skipped".to_string(),
     }
 }
 
@@ -9757,6 +9794,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     #[test]
     fn secret_scanner_warnings_cover_path_and_source_only_errors() {
         let report = SecretScannerReport {
+            scope: SecretScannerScope::Full,
             findings: Vec::new(),
             errors: vec![
                 SecretScannerError {
