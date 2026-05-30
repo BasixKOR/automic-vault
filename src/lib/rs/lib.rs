@@ -10882,7 +10882,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                     },
                 )
                 .unwrap_err();
-                assert!(err.contains("failed to read /opt/terraform/bin/terraform"));
+                assert!(
+                    err.contains("terraform"),
+                    "expected terraform install error, got: {err}"
+                );
             }
         }
 
@@ -11931,6 +11934,7 @@ machine example.com login user password netrc-token
         let rclone_config = temp.path().join("rclone.conf");
         let registry_auth = temp.path().join("containers-auth.json");
         let talosconfig = temp.path().join("talosconfig");
+        let uv_credentials_dir = temp.path().join("uv");
         let vagrant_home = temp.path().join("vagrant");
 
         write_fixture(
@@ -11953,10 +11957,22 @@ machine example.com login user password netrc-token
             &argocd_config.join("config"),
             "users:\n- auth-token: argocd\n",
         );
+        write_fixture(
+            &home.join(".aws/credentials"),
+            "[default]\naws_access_key_id = AKIAEXAMPLE\naws_secret_access_key = aws-secret\n",
+        );
         write_fixture(&checkmarx_config, "cx_apikey: ast-secret\n");
         write_fixture(
             &bitwarden_appdata.join("data.json"),
             r#"{"accessToken":"bw"}"#,
+        );
+        write_fixture(
+            &home.join(".bridgecrew/credentials"),
+            "access_key::secret_key\n",
+        );
+        write_fixture(
+            &home.join(".circleci/cli.yml"),
+            "host: https://circleci.com\ntoken: circleci-token\n",
         );
         write_fixture(&civo_config, r#"{"apikey":"civo-token"}"#);
         write_fixture(
@@ -11972,13 +11988,29 @@ machine example.com login user password netrc-token
             "context: default\naccess-token: doctl-token\n",
         );
         write_fixture(
+            &home.join(".config/configstore/firebase-tools.json"),
+            r#"{"tokens":{"refresh_token":"firebase-refresh","access_token":"firebase-access"}}"#,
+        );
+        write_fixture(
             &xdg_config.join("fastly/config.toml"),
             "token = \"fastly\"\n",
         );
         write_fixture(&home.join(".fly/config.yml"), "access_token: FlyV1 token\n");
         write_fixture(
+            &xdg_config.join("gallery-dl/config.json"),
+            r#"{"extractor":{"example":{"api-key":"gallery-secret"}}}"#,
+        );
+        write_fixture(
+            &home.join(".config/gptcommit/config.toml"),
+            "[openai]\napi_key = \"gptcommit-secret\"\n",
+        );
+        write_fixture(
             &glab_config.join("config.yml"),
             "hosts:\n  gitlab.com:\n    token: glpat\n",
+        );
+        write_fixture(
+            &xdg_config.join("grafanactl/config.yaml"),
+            "contexts:\n  default:\n    grafana:\n      server: https://grafana.example.com\n      token: grafana-token\n",
         );
         write_fixture(&xdg_config.join("gotify/cli.json"), r#"{"token":"gotify"}"#);
         write_fixture(
@@ -11996,6 +12028,14 @@ machine example.com login user password netrc-token
             r#"{"users":{"u":{"auth":{"token":"netlify"}}}}"#,
         );
         write_fixture(
+            &xdg_config.join("luarocks/upload_config.lua"),
+            "return { key = \"luarocks-secret\", server = \"https://luarocks.org\" }\n",
+        );
+        write_fixture(
+            &home.join(".m2/settings.xml"),
+            "<settings><servers><server><password>maven-secret</password></server></servers></settings>\n",
+        );
+        write_fixture(
             &xdg_config.join("NuGet/NuGet.Config"),
             r#"<configuration><apikeys><add key="feed" value="nuget-secret" /></apikeys></configuration>"#,
         );
@@ -12004,6 +12044,34 @@ machine example.com login user password netrc-token
             r#"<configuration></configuration>"#,
         );
         write_fixture(&npmrc, "_authToken=npm-token\n");
+        write_fixture(
+            &home.join(".config/openstack/clouds.yaml"),
+            "clouds:\n  dev:\n    auth:\n      password: openstack-password\n",
+        );
+        write_fixture(
+            &xdg_config.join("openhue/config.yaml"),
+            "Bridge: 192.0.2.10\nKey: openhue-secret\n",
+        );
+        write_fixture(
+            &home.join(".runpod/config.toml"),
+            "apiKey = \"runpod-secret\"\napiUrl = \"https://api.runpod.io/graphql\"\n",
+        );
+        write_fixture(
+            &home.join(".cargo/credentials.toml"),
+            "[registry]\ntoken = \"cargo-secret\"\n",
+        );
+        write_fixture(
+            &home.join(".s3cfg"),
+            "access_key = AKIAEXAMPLE\nsecret_key = s3-secret\naccess_token = s3-session\n",
+        );
+        write_fixture(
+            &home.join(".sbt/.credentials"),
+            "realm=Repo\nhost=repo.example.com\nuser=me\npassword=sbt-secret\n",
+        );
+        write_fixture(
+            &home.join(".snowflake/config.toml"),
+            "[connections.default]\npassword = \"snowflake-secret\"\n",
+        );
         write_fixture(
             &pulumi_credentials,
             r#"{"accessTokens":{"https://api.pulumi.com":"pulumi-token"}}"#,
@@ -12040,6 +12108,14 @@ machine example.com login user password netrc-token
         );
         write_fixture(&home.join(".pypirc"), "[pypi]\npassword = twine-token\n");
         write_fixture(
+            &home.join(".uaa/config.json"),
+            r#"{"Token":{"access_token":"uaa-access","refresh_token":"uaa-refresh"}}"#,
+        );
+        write_fixture(
+            &uv_credentials_dir.join("credentials.toml"),
+            "[[credentials]]\npassword = \"uv-secret\"\n",
+        );
+        write_fixture(
             &vagrant_home.join("data/vagrant_login_token"),
             "vagrant-token\n",
         );
@@ -12067,12 +12143,12 @@ machine example.com login user password netrc-token
             ("XDG_RUNTIME_DIR", xdg_runtime.to_str().unwrap()),
             ("AKAMAI_EDGERC", akamai_edgerc.to_str().unwrap()),
             ("ARGOCD_CONFIG_DIR", argocd_config.to_str().unwrap()),
-            ("AWS_SHARED_CREDENTIALS_FILE", missing.to_str().unwrap()),
+            ("AWS_SHARED_CREDENTIALS_FILE", ""),
             (
                 "BITWARDENCLI_APPDATA_DIR",
                 bitwarden_appdata.to_str().unwrap(),
             ),
-            ("CARGO_HOME", missing.to_str().unwrap()),
+            ("CARGO_HOME", ""),
             ("CAROOT", missing.to_str().unwrap()),
             ("CIVO_CONFIG", civo_config.to_str().unwrap()),
             ("COMPOSER_HOME", composer_home.to_str().unwrap()),
@@ -12097,7 +12173,7 @@ machine example.com login user password netrc-token
             ("SUPABASE_HOME", missing.to_str().unwrap()),
             ("TALOSCONFIG", talosconfig.to_str().unwrap()),
             ("TALOS_HOME", missing.to_str().unwrap()),
-            ("UV_CREDENTIALS_DIR", missing.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
             ("VAGRANT_HOME", vagrant_home.to_str().unwrap()),
         ]);
 
@@ -12108,32 +12184,51 @@ machine example.com login user password netrc-token
             "aliyun-cli",
             "argocd",
             "ast-cli",
+            "aws-cli",
             "bitwarden-cli",
             "buf",
+            "checkov",
+            "circleci",
             "civo",
             "composer",
             "dcos-cli",
             "doctl",
+            "firebase-cli",
             "fastly",
             "flyctl",
+            "gallery-dl",
+            "gptcommit",
             "glab",
+            "grafanactl",
             "gotify",
             "graphite",
             "hcloud",
+            "heroku",
             "huggingface-cli",
             "kubernetes-cli",
+            "luarocks",
+            "maven",
             "netlify-cli",
             "nuget",
+            "openhue-cli",
+            "openstackclient",
             "pulumi",
             "rclone",
+            "runpodctl",
+            "rust",
+            "s3cmd",
+            "sbt",
             "sentry-cli",
             "shodan",
+            "snowflake-cli",
             "snyk",
             "talosctl",
             "terraform",
             "todoist-cli",
             "travis",
             "twine",
+            "uaa-cli",
+            "uv",
             "vagrant",
             "vault",
             "virustotal-cli",

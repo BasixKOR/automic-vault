@@ -2420,6 +2420,7 @@ mod tests {
         assert!(!package_stubs_are_active(&install_root, "coverage-active").unwrap());
 
         let stub_path = managed_bin_root().join("coverage-active");
+        fs::create_dir_all(stub_path.parent().unwrap()).unwrap();
         if fs::symlink_metadata(&stub_path).is_ok() {
             remove_path(&stub_path).unwrap();
         }
