@@ -1277,20 +1277,12 @@ impl InstallPlan {
         }
     }
 
-    fn actual_target_dir(&self, formula: &str) -> PathBuf {
-        if self.mode == Mode::I || formula == self.root_formula {
-            self.install_root.clone()
-        } else {
-            self.install_root.clone()
-        }
+    fn actual_target_dir(&self, _formula: &str) -> PathBuf {
+        self.install_root.clone()
     }
 
-    fn stable_target_dir(&self, formula: &str) -> PathBuf {
-        if self.mode == Mode::I || formula == self.root_formula {
-            self.stable_root.clone()
-        } else {
-            self.stable_root.clone()
-        }
+    fn stable_target_dir(&self, _formula: &str) -> PathBuf {
+        self.stable_root.clone()
     }
 
     fn receipt_path(&self, formula: &str) -> PathBuf {
@@ -1356,13 +1348,6 @@ fn prepare_i_install_plan(
     plan: &InstallPlan,
     intent: InstallIntent,
 ) -> Result<PreparedInstallPlan, String> {
-    if plan.mode != Mode::I {
-        return Ok(PreparedInstallPlan {
-            plan: plan.clone(),
-            workspace: None,
-        });
-    }
-
     fs::create_dir_all(&plan.tmp_root)
         .map_err(|err| format!("failed to create {}: {err}", plan.tmp_root.display()))?;
     let workspace = TempDir::new_in(&plan.tmp_root).map_err(|err| {
@@ -5408,10 +5393,6 @@ fn prepare_clean_install_root(plan: &InstallPlan) -> Result<(), String> {
 }
 
 fn activate_install(plan: &InstallPlan) -> Result<(), String> {
-    if plan.mode != Mode::I {
-        return Ok(());
-    }
-
     if plan.install_root == plan.stable_root {
         return Ok(());
     }
@@ -6346,50 +6327,23 @@ fn stage_formula(
     install: &InstalledFormula,
     keg_root: &Path,
 ) -> Result<Vec<String>, String> {
-    if plan.mode == Mode::I {
-        let keep_root_entries = install.spec.name == plan.root_formula;
-        let owned_paths = collect_stageable_owned_paths(keg_root, keep_root_entries)?;
-        let root_executables = if install.spec.name == plan.root_formula {
-            Some(
-                collect_root_executables(keg_root)?
-                    .into_iter()
-                    .map(|(name, _)| name)
-                    .collect::<Vec<_>>(),
-            )
-        } else {
-            None
-        };
-        stage_root_formula(&plan.install_root, keg_root, keep_root_entries)?;
-        if let Some(root_executables) = root_executables {
-            write_root_executable_manifest(
-                &plan.root_executables_manifest_path(),
-                &root_executables,
-            )?;
-        }
-        Ok(owned_paths)
-    } else if install.spec.name == plan.root_formula {
-        let owned_paths = collect_stageable_owned_paths(keg_root, true)?;
-        stage_root_formula(&plan.install_root, keg_root, true)?;
-        Ok(owned_paths)
+    let keep_root_entries = install.spec.name == plan.root_formula;
+    let owned_paths = collect_stageable_owned_paths(keg_root, keep_root_entries)?;
+    let root_executables = if install.spec.name == plan.root_formula {
+        Some(
+            collect_root_executables(keg_root)?
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+        )
     } else {
-        let target = plan.actual_target_dir(&install.spec.name);
-        let owned_paths = collect_owned_paths(keg_root)?
-            .into_iter()
-            .collect::<Vec<_>>();
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
-        }
-        fs::rename(keg_root, &target)
-            .map_err(|err| {
-                format!(
-                    "failed to move {} to {}: {err}",
-                    keg_root.display(),
-                    target.display()
-                )
-            })
-            .map(|_| owned_paths)
+        None
+    };
+    stage_root_formula(&plan.install_root, keg_root, keep_root_entries)?;
+    if let Some(root_executables) = root_executables {
+        write_root_executable_manifest(&plan.root_executables_manifest_path(), &root_executables)?;
     }
+    Ok(owned_paths)
 }
 
 fn stage_root_formula(
@@ -10731,7 +10685,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let opt_root = opt_pkg_root();
         let bin_root = managed_bin_root();
 
-        for package_name in ["codex", "isotope:gh"] {
+        for package_name in ["codex", "terraform", "isotope:gh", "isotope:terraform"] {
             let install_root = package_install_root(&opt_root, package_name).unwrap();
             if fs::symlink_metadata(&install_root).is_ok() {
                 remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
@@ -10802,6 +10756,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         )
         .unwrap();
 
+        let mut bottle_server = start_counting_test_http_server(vec![(
+            "/gh.tar.gz".to_string(),
+            b"not a bottle".to_vec(),
+        )]);
         let formula_json = serde_json::to_vec(&serde_json::json!({
             "versions": { "stable": "2.80.0" },
             "dependencies": [],
@@ -10810,7 +10768,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                     "files": {
                         "all": {
                             "sha256": "0".repeat(64),
-                            "url": "https://example.invalid/gh.tar.gz",
+                            "url": format!("{}/gh.tar.gz", bottle_server.base_url),
                         }
                     }
                 }
@@ -10833,6 +10791,15 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             },
         )
         .unwrap();
+        let auto_err = run_i_package(
+            &config,
+            RequestedPackage::Auto("gh".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Update,
+            },
+        )
+        .unwrap_err();
+        assert!(auto_err.contains("gh"));
         assert!(is_executable(&bin_root.join("gh")));
         assert_eq!(
             load_package_receipt(&isotope_plan.root_receipt_path())
@@ -10842,6 +10809,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             isotope.version
         );
         assert!(formula_server.request_count() >= 1);
+        assert!(bottle_server.request_count() >= 1);
+        bottle_server.stop().unwrap();
         formula_server.stop().unwrap();
 
         if fs::symlink_metadata(bin_root.join("gh")).is_ok() {
@@ -10871,11 +10840,67 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         .unwrap_err();
         assert!(invalid_modified_target.contains("radioisotopes may only modify"));
 
+        let invalid_vendor_modification = run_i_modified_package(
+            &config,
+            "missing-vendor".to_string(),
+            &PackageAliasTarget::VendorPackage("not-a-registered-vendor".to_string()),
+            InstallIntent::Install,
+            None,
+        )
+        .unwrap_err();
+        assert!(invalid_vendor_modification.contains("not-a-registered-vendor is not registered"));
+
+        let terraform_launcher = Path::new("/opt/terraform/bin/terraform");
+        if !terraform_launcher.exists() {
+            let terraform_plan = InstallPlan::for_i_radioisotope(
+                "isotope:terraform".to_string(),
+                "terraform".to_string(),
+            );
+            fs::create_dir_all(&terraform_plan.install_root).unwrap();
+            write_package_receipt(
+                &terraform_plan.root_receipt_path(),
+                &PackageReceipt {
+                    package_name: "terraform".to_string(),
+                    version: "1.2.3".to_string(),
+                    source: PackageReceiptSource::Vendor {
+                        vendor_name: "terraform".to_string(),
+                    },
+                    metadata: PackageMetadata::default(),
+                },
+            )
+            .unwrap();
+
+            for requested in [
+                RequestedPackage::Auto("terraform".to_string()),
+                RequestedPackage::Isotope("terraform".to_string()),
+            ] {
+                let err = run_i_package(
+                    &config,
+                    requested,
+                    InstallOptions {
+                        intent: InstallIntent::Install,
+                    },
+                )
+                .unwrap_err();
+                assert!(err.contains("failed to read /opt/terraform/bin/terraform"));
+            }
+        }
+
         let err = run_i_package(
             &config,
             RequestedPackage::VendorPackage("not-a-registered-vendor".to_string()),
             InstallOptions {
                 intent: InstallIntent::Install,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("not-a-registered-vendor is not registered"));
+
+        let err = run_i_package(
+            &config,
+            RequestedPackage::VendorPackage("not-a-registered-vendor".to_string()),
+            InstallOptions {
+                intent: InstallIntent::Update,
             },
         )
         .unwrap_err();
@@ -10948,8 +10973,18 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             .unwrap_err()
             .contains("unknown isotope")
         );
+        assert!(
+            run_i_isotope_root_only(
+                &config,
+                "isotope:missing-root".to_string(),
+                "missing-root".to_string(),
+                None,
+            )
+            .unwrap_err()
+            .contains("unknown isotope")
+        );
 
-        for package_name in ["codex", "isotope:gh"] {
+        for package_name in ["codex", "terraform", "isotope:gh", "isotope:terraform"] {
             remove_existing_package_install(&opt_root, package_name, &bin_root).unwrap();
         }
     }
@@ -13039,6 +13074,31 @@ machine example.com login user password netrc-token
     }
 
     #[test]
+    fn java_placeholder_uses_staged_openjdk_layout() {
+        let plan = fixed_i_plan("scala", "scala");
+        let installs = vec![InstalledFormula {
+            spec: FormulaSpec {
+                name: "openjdk@21".to_string(),
+                bottle_sha256: "sha256".to_string(),
+                bottle_url: "https://example.invalid/openjdk.tar.gz".to_string(),
+            },
+            keg_dir_name: "21.0.8".to_string(),
+            archive_path: PathBuf::from("/tmp/openjdk.tar.gz"),
+        }];
+
+        let target = java_placeholder_target(&plan, &installs).unwrap();
+        if env::consts::OS == "macos" {
+            assert_eq!(
+                target,
+                "/opt/scala/libexec/openjdk.jdk/Contents/Home".to_string()
+            );
+        } else {
+            assert_eq!(target, "/opt/scala/libexec".to_string());
+        }
+        assert_eq!(java_placeholder_target(&plan, &[]), None);
+    }
+
+    #[test]
     fn rewrite_text_rewrites_homebrew_perl_shebang() {
         let plan = fixed_i_plan("ack", "ack");
         let rules = build_rewrite_rules(&plan, &[]);
@@ -13636,6 +13696,21 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
                 .unwrap_err()
                 .contains("has no download URL")
         );
+        assert!(
+            install_vendor_copy_file(
+                &plan,
+                &[],
+                &install,
+                "pkg/bin/codex",
+                "bin",
+                None,
+                0o755,
+                &[],
+                None
+            )
+            .unwrap_err()
+            .contains("has no download URL")
+        );
     }
 
     #[test]
@@ -13648,6 +13723,30 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         assert!(profile.contains(r#"(deny file-write* (subpath "/Library"))"#));
         assert!(profile.contains(r#"(allow file-read* (subpath "/opt/.tmp/pkg"))"#));
         assert!(profile.contains(r#"(allow file-write* (subpath "/opt/.tmp/pkg"))"#));
+    }
+
+    #[test]
+    fn render_npm_probe_error_reports_exit_codes_and_signals() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let exit_error = render_npm_probe_error(
+            "openclaw",
+            NpmProbeError {
+                status: ExitStatus::from_raw(2 << 8),
+                lines: vec!["npm ERR! denied".to_string()],
+            },
+        );
+        assert!(exit_error.contains("exit code 2"));
+        assert!(exit_error.contains("npm ERR! denied"));
+
+        let signal_error = render_npm_probe_error(
+            "openclaw",
+            NpmProbeError {
+                status: ExitStatus::from_raw(9),
+                lines: Vec::new(),
+            },
+        );
+        assert!(signal_error.contains("terminated by signal"));
     }
 
     #[test]
@@ -14321,6 +14420,12 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         let (home, name) = passwd_entry(uid);
 
         assert!(home.is_some() || name.is_some());
+
+        if !is_root() {
+            let identity = current_user_identity().unwrap();
+            assert_eq!(identity.uid, uid);
+            assert_eq!(identity.gid, unsafe { libc::getgid() });
+        }
     }
 
     #[test]

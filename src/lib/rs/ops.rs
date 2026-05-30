@@ -2015,6 +2015,17 @@ mod tests {
     }
 
     #[test]
+    fn make_package_default_requires_root_before_dispatching() {
+        if !is_root() {
+            assert!(
+                make_package_default("ripgrep")
+                    .unwrap_err()
+                    .contains("must be run as root")
+            );
+        }
+    }
+
+    #[test]
     fn always_allow_store_reports_decode_errors() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("always-allow.json");
