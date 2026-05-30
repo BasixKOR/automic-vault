@@ -842,6 +842,7 @@ struct SearchRequest {
 struct SecretScannerRequest {
     path: Option<PathBuf>,
     output: OutputMode,
+    isotopes_only: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -3029,23 +3030,26 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
         }
     }
 
-    let scan_paths = secret_scan_paths(request.path.as_deref())?;
-    errors.extend(scan_paths.errors);
-    let file_probes = scan_paths.paths.len();
     let mut scanned_files = 0;
-    for path in scan_paths.paths {
-        match scan_secret_file(&path) {
-            Ok(file_findings) => {
-                if path.is_file() {
-                    scanned_files += 1;
+    let mut file_probes = 0;
+    if !request.isotopes_only {
+        let scan_paths = secret_scan_paths(request.path.as_deref())?;
+        errors.extend(scan_paths.errors);
+        file_probes = scan_paths.paths.len();
+        for path in scan_paths.paths {
+            match scan_secret_file(&path) {
+                Ok(file_findings) => {
+                    if path.is_file() {
+                        scanned_files += 1;
+                    }
+                    findings.extend(file_findings);
                 }
-                findings.extend(file_findings);
+                Err(err) => errors.push(SecretScannerError {
+                    source: "file-probe".to_string(),
+                    path: Some(path.display().to_string()),
+                    message: err,
+                }),
             }
-            Err(err) => errors.push(SecretScannerError {
-                source: "file-probe".to_string(),
-                path: Some(path.display().to_string()),
-                message: err,
-            }),
         }
     }
 
@@ -10149,6 +10153,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             Some(SecretScannerRequest {
                 path: Some(PathBuf::from("/tmp/project")),
                 output: OutputMode::Json,
+                isotopes_only: false,
             })
         );
     }
@@ -10293,8 +10298,9 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         ]);
 
         let report = run_secret_scan(&SecretScannerRequest {
-            path: Some(scan_root),
+            path: Some(scan_root.clone()),
             output: OutputMode::Human,
+            isotopes_only: false,
         })
         .unwrap();
 
@@ -10323,6 +10329,22 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                 .findings
                 .iter()
                 .any(|finding| finding.source == "file-probe")
+        );
+
+        let isotope_only_report = run_secret_scan(&SecretScannerRequest {
+            path: Some(scan_root),
+            output: OutputMode::Human,
+            isotopes_only: true,
+        })
+        .unwrap();
+
+        assert_eq!(isotope_only_report.summary.scanned_files, 0);
+        assert_eq!(isotope_only_report.summary.file_probes, 0);
+        assert!(
+            isotope_only_report
+                .findings
+                .iter()
+                .all(|finding| !finding.source.starts_with("file-probe"))
         );
     }
 

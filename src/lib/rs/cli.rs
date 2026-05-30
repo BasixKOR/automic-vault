@@ -839,6 +839,7 @@ where
     let mut output = OutputMode::Human;
     let mut path = None;
     let mut pending_path = false;
+    let mut isotopes_only = false;
 
     for arg in args {
         if pending_path {
@@ -869,6 +870,9 @@ where
                 }
                 pending_path = true;
             }
+            Some("--isotopes-only") => {
+                isotopes_only = true;
+            }
             Some(value) if value.starts_with('-') => {
                 return Err(format!("unknown argument '{value}'"));
             }
@@ -886,7 +890,11 @@ where
         return Err("missing value for --path".to_string());
     }
 
-    Ok(Some(SecretScannerRequest { path, output }))
+    Ok(Some(SecretScannerRequest {
+        path,
+        output,
+        isotopes_only,
+    }))
 }
 
 pub(crate) fn parse_package_status_request_from_iter<I>(
@@ -1615,6 +1623,16 @@ mod tests {
         .unwrap();
         assert_eq!(request.output, OutputMode::Jsonl);
         assert_eq!(request.path, Some(PathBuf::from("/tmp/secrets")));
+        assert!(!request.isotopes_only);
+
+        let request = parse_secret_scanner_request_from_iter(
+            &invocation("av scan"),
+            vec![OsString::from("--isotopes-only")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(request.isotopes_only);
+        assert_eq!(request.path, None);
 
         assert_eq!(
             parse_secret_scanner_request_from_iter(
