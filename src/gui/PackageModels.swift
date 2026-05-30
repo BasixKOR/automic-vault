@@ -1529,6 +1529,12 @@ struct PackagePresentation: Equatable {
                ) {
                 return lookupName
             }
+            if let lookupName = Self.groupedVersionedFormulaLookupName(
+                record: record,
+                detail: detail
+            ) {
+                return lookupName
+            }
             return packageName ?? selectionID
         case .recommendation, .command:
             return packageName ?? selectionID
@@ -1666,6 +1672,49 @@ struct PackagePresentation: Equatable {
             }
         }
         return nil
+    }
+
+    private static func groupedVersionedFormulaLookupName(
+        record: PackageRecord,
+        detail: PackageDetail?
+    ) -> String? {
+        guard case .formula(let rootFormula) = record.source,
+              let base = formulaVersionedBase(rootFormula),
+              unqualifiedBrewPackageName(record.name) == base,
+              let lookupName = firstNonEmptyPackageName(
+                  record.installPackageNames,
+                  detail?.installPackageNames
+              ) else {
+            return nil
+        }
+
+        let formula = unqualifiedBrewPackageName(lookupName)
+        guard formulaVersionedBase(formula) == base else {
+            return nil
+        }
+        return "brew:\(formula)"
+    }
+
+    private static func formulaVersionedBase(_ formula: String) -> String? {
+        let formula = unqualifiedBrewPackageName(formula)
+        guard let separator = formula.lastIndex(of: "@") else {
+            return nil
+        }
+        let base = formula[..<separator]
+        let version = formula[formula.index(after: separator)...]
+        guard !base.isEmpty,
+              !version.isEmpty,
+              version.unicodeScalars.contains(where: { scalar in
+                  scalar.value >= 48 && scalar.value <= 57
+              }) else {
+            return nil
+        }
+        return String(base)
+    }
+
+    private static func unqualifiedBrewPackageName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.strippingPrefix("brew:") ?? trimmed
     }
 
     var listSecondaryText: String {

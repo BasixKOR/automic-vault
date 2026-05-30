@@ -152,6 +152,27 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["brew:uv"])
     }
 
+    func testGroupedVersionedFormulaLoadsDetailFromInstalledFormula() {
+        let record = PackageRecord(
+            name: "node",
+            source: .formula(rootFormula: "node@24"),
+            version: "24.11.1",
+            description: "Platform built on V8",
+            securityState: nil,
+            installPackageNames: ["node@24"],
+            installedVersions: ["24.11.1"]
+        )
+        let presentation = PackagePresentation(
+            item: .installed(record),
+            detail: record.fallbackDetail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(presentation.selectionID, "node")
+        XCTAssertEqual(presentation.preferredDetailLookupName, "brew:node@24")
+        XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["node@24"])
+    }
+
     func testPackagePackInstallTargetsUseSourceQualifiedNames() {
         XCTAssertEqual(
             PackagePack.agent.installPackageNames.prefix(2),

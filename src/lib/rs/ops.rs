@@ -222,9 +222,12 @@ fn group_installed_versioned_formulae(
         }
     }
 
-    passthrough.extend(grouped.into_iter().map(|(base, mut versions)| {
+    passthrough.extend(grouped.into_iter().flat_map(|(base, mut versions)| {
         versions
             .sort_by(|left, right| compare_versioned_package_names_desc(&left.name, &right.name));
+        if versions.len() == 1 {
+            return versions;
+        }
         let mut primary = versions
             .iter()
             .find(|package| package.name == base)
@@ -239,7 +242,7 @@ fn group_installed_versioned_formulae(
             .iter()
             .map(|package| package.name.clone())
             .collect();
-        primary
+        vec![primary]
     }));
     passthrough
         .sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
@@ -1513,6 +1516,19 @@ mod tests {
             grouped[0].install_package_names,
             ["python@3.14", "python@3.13"]
         );
+    }
+
+    #[test]
+    fn single_versioned_formula_keeps_precise_package_name() {
+        let grouped = group_installed_versioned_formulae(vec![installed_formula_summary(
+            "node@24", "24.11.1",
+        )]);
+
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0].name, "node@24");
+        assert_eq!(grouped[0].version, "24.11.1");
+        assert!(grouped[0].installed_versions.is_empty());
+        assert!(grouped[0].install_package_names.is_empty());
     }
 
     #[test]
