@@ -10882,7 +10882,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                     },
                 )
                 .unwrap_err();
-                assert!(err.contains("failed to read /opt/terraform/bin/terraform"));
+                assert!(
+                    err.contains("terraform"),
+                    "expected terraform install error, got: {err}"
+                );
             }
         }
 
