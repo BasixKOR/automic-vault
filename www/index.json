@@ -3,7 +3,8 @@
   "category": "AI agent security",
   "platform": "macOS",
   "license": "Apache License 2.0",
-  "description": "Automic Vault is a local macOS security layer for AI coding agents. It protects developer credentials by keeping secrets out of plaintext files and model context while approved command-line tools still receive the access they need at runtime.",
+  "description": "Automic Vault finds plaintext secrets and insecure dev-tool state on macOS, then hardens supported packages so credentials move out of easy-read files and into protected runtime access.",
+  "positioning": "The only safe way to use dev tools on a Mac with agents in the loop.",
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",
   "pricing": "Free open-source software",
@@ -14,10 +15,10 @@
   "llms_txt": "https://www.automicvault.com/llms.txt",
   "llms_full_txt": "https://www.automicvault.com/llms-full.txt",
   "use_cases": [
-    "Protect API keys, cloud credentials, and GitHub tokens from AI coding agents.",
-    "Replace plaintext .env, shell profile, and CLI config secrets with local keychain-backed storage.",
+    "Detect plaintext credentials in local dev-tool files such as .env, .netrc, .npmrc, GitHub CLI config, AWS credentials, and MCP config.",
+    "Harden supported Homebrew, npm, and PyPI tools so secrets are exposed only to approved executables at runtime.",
     "Require approval before sensitive commands mutate infrastructure, publish packages, reveal tokens, or run sensitive developer tools.",
-    "Trace shell installers before an agent or developer runs them.",
-    "Install agent-used packages under controlled roots."
+    "Keep hazard notifications visible while Automic Vault runs.",
+    "Trace shell installers before an agent or developer runs them."
   ]
 }

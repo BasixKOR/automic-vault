@@ -54,10 +54,10 @@ class WebsiteI18nTests(unittest.TestCase):
 
         html = module.render_home_page(record, fr, locales)
 
-        self.assertIn('<link rel="stylesheet" href="/styles.css?v=25">', html)
+        self.assertIn('<link rel="stylesheet" href="/styles.css?v=26">', html)
         self.assertNotIn("seo.css", html)
         self.assertNotIn("i18n-section", html)
-        self.assertIn('<a class="brand" href="/fr/" aria-label="Automic Vault home">', html)
+        self.assertIn('<a class="brand" href="/fr/" aria-label="Accueil Automic Vault">', html)
         self.assertIn('class="hero-grid"', html)
         self.assertIn('class="highlight-grid"', html)
         self.assertIn('class="ranked-story feature-section"', html)

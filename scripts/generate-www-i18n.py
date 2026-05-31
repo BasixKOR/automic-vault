@@ -782,7 +782,7 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
 {alternate_link_block("/", locales)}
   <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=25">
+  <link rel="stylesheet" href="/styles.css?v=26">
   <script type="application/ld+json">
   {{
     "@context": "https://schema.org",

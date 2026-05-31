@@ -12,29 +12,27 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automic Vault | From the creator of Homebrew</title>
+  <title>Automic Vault | Secure the tools you brew install</title>
   <meta
     name="description"
-    content="From the creator of Homebrew, Automic Vault protects AI agent runs
-    on macOS with local secret storage, approval gates, secret scanning, and
-    hardened package installs."
+    content="Automic Vault finds plaintext secrets and insecure dev-tool state
+    on your Mac, then hardens packages with protected storage and approval gates."
   >
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Automic Vault | From the creator of Homebrew">
+  <meta property="og:title" content="Automic Vault | Secure the tools you brew install">
   <meta
     property="og:description"
-    content="From the creator of Homebrew, Automic Vault protects AI agent runs
-    on macOS with local secret storage, approval gates, secret scanning, and
-    hardened package installs."
+    content="Automic Vault finds plaintext secrets and insecure dev-tool state
+    on your Mac, then hardens packages with protected storage and approval gates."
   >
   <meta property="og:url" content="https://www.automicvault.com/">
-  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta property="og:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
-  <meta name="twitter:title" content="Automic Vault | From the creator of Homebrew">
-  <meta name="twitter:description" content="From the creator of Homebrew, Automic Vault protects AI agent runs on macOS with local secret storage, approval gates, secret scanning, and hardened package installs.">
-  <meta property="twitter:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
+  <meta name="twitter:title" content="Automic Vault | Secure the tools you brew install">
+  <meta name="twitter:description" content="Automic Vault finds plaintext secrets and insecure dev-tool state on your Mac, then hardens packages with protected storage and approval gates.">
+  <meta property="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <link rel="canonical" href="https://www.automicvault.com/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/">
   <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/">
@@ -54,7 +52,7 @@
         "slogan": "From the creator of Homebrew",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
-        "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling for AI coding agents, including secret storage, approval gates, shell installer tracing, and hardened package installs.",
+        "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling that finds plaintext dev-tool secrets, hardens packages, and adds approval gates for sensitive actions.",
         "founder": {
           "@id": "https://www.automicvault.com/about/#max-howell"
         },
@@ -106,15 +104,17 @@
         "downloadUrl": "https://www.automicvault.com/Automic%20Vault.dmg",
         "codeRepository": "https://github.com/automic-vault/automic-vault",
         "license": "https://www.apache.org/licenses/LICENSE-2.0",
-        "screenshot": "https://www.automicvault.com/preview.jpg",
+        "screenshot": "https://www.automicvault.com/assets/app-hazard-journey.webp",
         "featureList": [
           "Local AI agent secrets manager",
           "Keychain-backed secret storage",
           "Approved secret injection into command-line tools",
           "Command approval gates",
           "AI agent secret scanner",
+          "Plaintext developer secret detection",
           "Shell installer tracing",
-          "Hardened package installation roots"
+          "Hardened package installation roots",
+          "Hazard notifications for installed dev tools"
         ],
         "offers": {
           "@type": "Offer",
@@ -123,7 +123,7 @@
           "availability": "https://schema.org/InStock",
           "url": "https://www.automicvault.com/pricing/"
         },
-        "description": "From the creator of Homebrew, Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.",
+        "description": "Automic Vault finds insecure dev-tool state on macOS, moves secrets out of plaintext files, and gates sensitive tool actions at runtime.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
         }
@@ -132,12 +132,12 @@
         "@type": "WebPage",
         "@id": "https://www.automicvault.com/#webpage",
         "url": "https://www.automicvault.com/",
-        "name": "Automic Vault | From the creator of Homebrew",
-        "headline": "Automic Vault | From the creator of Homebrew",
-        "description": "From the creator of Homebrew, Automic Vault protects AI agent runs on macOS with local secret storage, approval gates, secret scanning, and hardened package installs.",
+        "name": "Automic Vault | Secure the tools you brew install",
+        "headline": "Secure the tools you brew install",
+        "description": "Automic Vault finds plaintext secrets and insecure dev-tool state on your Mac, then hardens packages with protected storage and approval gates.",
         "datePublished": "2026-05-15",
-        "dateModified": "2026-05-30",
-        "image": "https://www.automicvault.com/preview.jpg",
+        "dateModified": "2026-05-31",
+        "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
         },
@@ -174,7 +174,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=25">
+  <link rel="stylesheet" href="./styles.css?v=26">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -197,10 +197,10 @@
       </button>
 
       <nav class="nav" aria-label="Main navigation">
-        <a href="#ranked">Boundaries</a>
-        <a href="#secrets">Secrets</a>
-        <a href="#approval">Approval</a>
-        <a href="#nucleus">Nucleus</a>
+        <a href="#hazards">Hazards</a>
+        <a href="#harden">Harden</a>
+        <a href="#approval">Gates</a>
+        <a href="#monitor">Monitor</a>
         <a href="/pkg/">Packages</a>
         <a href="/docs/">Docs</a>
         <a href="/download/">Download</a>
@@ -210,138 +210,174 @@
 
     <main>
       <section class="hero" aria-labelledby="hero-title">
+        <picture class="hero-product" aria-hidden="true">
+          <source srcset="./assets/app-hazard-journey.webp" type="image/webp">
+          <img
+            src="./assets/app-hazard-journey.webp"
+            alt=""
+            width="1672"
+            height="941"
+            fetchpriority="high"
+            decoding="async"
+          >
+        </picture>
+
         <div class="hero-meta">
           <span>macOS</span>
+          <span>Homebrew</span>
           <span>local-first</span>
-          <span>agent runtime security</span>
-          <span>updated May 30, 2026</span>
+          <span>updated May 31, 2026</span>
         </div>
 
-        <div class="hero-grid">
-          <div class="hero-copy">
-            <p class="eyebrow">From the creator of Homebrew</p>
-            <h1 id="hero-title">Automic Vault</h1>
-            <p class="lede">
-              A hardened package manager and secrets boundary for the tools AI agents run on your Mac.
-            </p>
-          </div>
-
-          <aside class="hero-brief" aria-label="Current security posture">
-            <div>
-              <span class="tiny-icon" aria-hidden="true"></span>
-              <p>Secrets stay in Keychain-backed storage until the approved tool needs them.</p>
-            </div>
-            <div>
-              <span class="tiny-icon square" aria-hidden="true"></span>
-              <p>Dangerous tool actions can require human approval at execution time.</p>
-            </div>
-            <div>
-              <span class="tiny-icon triangle" aria-hidden="true"></span>
-              <p>Release installs live under <code>/opt</code> with stubs in <code>/usr/local/bin</code>.</p>
-            </div>
-          </aside>
+        <div class="hero-copy">
+          <p class="eyebrow">From the creator of Homebrew</p>
+          <h1 id="hero-title">Secure the tools you brew install.</h1>
+          <p class="lede">
+            Homebrew is the front door. The risk is bigger: CLIs, SDKs, package
+            managers, and MCP servers leave tokens in files an agent or malware
+            can read. Automic Vault finds those hazards, hardens the package,
+            and gates sensitive actions at runtime.
+          </p>
         </div>
 
         <div class="hero-actions">
-          <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
-          <a class="button secondary" href="/docs/">Read docs</a>
-          <a class="button text" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+          <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
+          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+          <a class="button text" href="/docs/">Read docs</a>
+        </div>
+
+        <div class="hero-proof" aria-label="Developer tool hazards Automic Vault watches">
+          <span><code>brew install gh</code> can leave a token path</span>
+          <span><code>curl</code> can read <code>~/.netrc</code></span>
+          <span><code>aws</code> can expose cloud credentials</span>
+          <span><code>npm publish</code> needs a real approval gate</span>
         </div>
       </section>
 
       <section class="highlights" aria-labelledby="highlights-title">
         <div class="section-label">
-          <h2 id="highlights-title">Highlights</h2>
-          <span>security map</span>
+          <h2 id="highlights-title">One local boundary for the tools agents use.</h2>
+          <span>security loop</span>
         </div>
         <div class="highlight-grid">
-          <a class="highlight-card accent-hot" href="#secrets">
-            <span>01 / secrets</span>
-            <strong>No plaintext credential file for agents to scrape.</strong>
+          <a class="highlight-card accent-hot" href="#hazards">
+            <span>01 / detect</span>
+            <strong>Find insecure dev-tool state already sitting on your Mac.</strong>
+          </a>
+          <a class="highlight-card accent-green" href="#harden">
+            <span>02 / harden <small class="package-count" data-secured-package-count>11,909</small></span>
+            <strong>Move secrets out of plaintext files and into protected runtime access.</strong>
           </a>
           <a class="highlight-card accent-blue" href="#approval">
-            <span>02 / approval</span>
-            <strong>Prompts live where sensitive tool actions execute.</strong>
+            <span>03 / gate</span>
+            <strong>Put approvals in front of actions that use or expose secrets.</strong>
           </a>
-          <a class="highlight-card accent-green" href="#nucleus">
-            <span>03 / packages <small class="package-count" data-secured-package-count>11,909</small></span>
-            <strong>Agent toolchains get hardened roots and transitive stacks.</strong>
-          </a>
-          <a class="highlight-card accent-gold" href="/av-trace/">
-            <span>04 / trace</span>
-            <strong>Inspect curl-pipe-shell installers before they write files.</strong>
+          <a class="highlight-card accent-gold" href="#monitor">
+            <span>04 / monitor</span>
+            <strong>Leave Vault running so new hazards show up before the next agent run.</strong>
           </a>
         </div>
       </section>
 
-      <section class="story-layout" id="ranked" aria-label="Automic Vault ranked features">
+      <section class="problem-strip" id="hazards" aria-labelledby="hazards-title">
+        <div class="section-label">
+          <h2 id="hazards-title">Dev tools were built for trusted humans.</h2>
+          <span>agent era</span>
+        </div>
+
+        <div class="hazard-board">
+          <div class="hazard-copy">
+            <p>
+              A developer can remember which files hold power. An autonomous
+              agent just sees readable paths. That is the problem Automic Vault
+              treats as local infrastructure, not prompt etiquette.
+            </p>
+          </div>
+          <div class="hazard-list" aria-label="Plaintext credential examples">
+            <span><code>~/.netrc</code> HTTP passwords</span>
+            <span><code>~/.aws/credentials</code> cloud keys</span>
+            <span><code>~/.config/gh</code> GitHub tokens</span>
+            <span><code>.env</code> project secrets</span>
+            <span><code>~/.npmrc</code> registry tokens</span>
+            <span><code>mcp.json</code> server credentials</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="story-layout" id="harden" aria-label="Automic Vault user journey">
         <div class="story-main">
           <div class="list-heading">
             <div>
-              <h2>Top Boundaries</h2>
-              <p>What changes when an agent can run tools on your Mac.</p>
+              <h2>What changes after Automic Vault is installed.</h2>
+              <p>The same tools keep working. The easy secret paths disappear.</p>
             </div>
-            <span>v0 surface</span>
+            <span>local control</span>
           </div>
 
-          <article class="ranked-story" id="secrets">
+          <article class="ranked-story">
             <span class="rank">1</span>
             <div>
-              <p class="story-kicker">Keychain-backed secrets</p>
-              <h3>Tools get secrets. Agents do not.</h3>
+              <p class="story-kicker">Detect what is exposed</p>
+              <h3>Vault shows the secret file, package, and tool involved.</h3>
               <p>
-                Automic Vault patches critical tools so credentials can move out of plaintext files and into local protected storage. The tool still works; the agent loses the easy read path.
+                The app surfaces plaintext credential hazards by package, with the path and reason
+                visible before an agent gets broad filesystem access.
               </p>
               <ul class="story-tags" aria-label="Secret boundary details">
+                <li>curl</li>
                 <li>gh</li>
                 <li>aws-cli</li>
-                <li>av inject</li>
-                <li>secret scanner</li>
+                <li>mcp</li>
               </ul>
             </div>
           </article>
 
-          <article class="ranked-story" id="approval">
+          <article class="ranked-story">
             <span class="rank">2</span>
             <div>
-              <p class="story-kicker">Human approval gates</p>
-              <h3>Approval belongs beneath the agent, not inside it.</h3>
+              <p class="story-kicker">Harden the package</p>
+              <h3>Move credentials out of plaintext storage without breaking the tool.</h3>
               <p>
-                Built-in agent controls help, but a compromised agent controls its own policy surface. Automic Vault places gates at the local tool layer, where token export, package publishing, and other sensitive actions run.
+                Radioisotopes patch supported tools so secrets live in protected local storage
+                and get injected only when the approved executable needs them.
+              </p>
+              <div class="source-strip" aria-label="Package sources">
+                <span>Homebrew</span>
+                <span>npm</span>
+                <span>PyPI</span>
+                <span>Keychain-backed</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="ranked-story" id="approval">
+            <span class="rank">3</span>
+            <div>
+              <p class="story-kicker">Gate the sensitive action</p>
+              <h3>Approval happens where the command runs, below the agent.</h3>
+              <p>
+                Agent-side rules help, but the agent controls that policy surface. Vault gates
+                token export, package publishing, cloud mutation, and other risky actions at
+                the local tool layer.
               </p>
               <div class="inline-prompt" aria-label="Example approval request">
                 <span>Automic Vault</span>
-                <strong>Agent wants to run <code>npm publish</code>. Approve?</strong>
+                <strong>Agent wants to run <code>npm publish</code>. Approve this command?</strong>
                 <i>Deny</i>
                 <i>Approve</i>
               </div>
             </div>
           </article>
 
-          <article class="ranked-story" id="nucleus">
-            <span class="rank">3</span>
-            <div>
-              <p class="story-kicker">Nucleus package manager</p>
-              <h3>Install the agent's tools into a root it cannot rewrite.</h3>
-              <p>
-                Nucleus installs Homebrew, npm, and PyPI packages with hardened roots. Agents can run approved tools without turning the developer environment into writable ambient state.
-              </p>
-              <div class="source-strip" aria-label="Package sources">
-                <span>Homebrew</span>
-                <span>npm</span>
-                <span>PyPI</span>
-                <span>/opt</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="ranked-story" id="scanner">
+          <article class="ranked-story" id="monitor">
             <span class="rank">4</span>
             <div>
-              <p class="story-kicker">Plaintext exposure scan</p>
-              <h3>Find what an agent can see before you start the run.</h3>
+              <p class="story-kicker">Keep watching</p>
+              <h3>Leave Vault running so fresh hazards do not sit quietly.</h3>
               <p>
-                <a href="/secret-scanner-for-ai-agents/">av secret-scanner</a> searches for credentials that are already exposed in local files. Use it as a fast preflight before giving an autonomous run broad filesystem access.
+                After the first hardening pass, Automic Vault keeps reporting insecure package
+                state and plaintext exposures. New CLI installs, stale tools, and local
+                credential leaks stay visible.
               </p>
             </div>
           </article>
@@ -350,16 +386,17 @@
             <span class="rank">5</span>
             <div>
               <p class="story-kicker">Automic Vault.app</p>
-              <h3>A native Mac surface for package control.</h3>
+              <h3>A native Mac surface for the whole loop.</h3>
               <p>
-                Search packages, inspect metadata, approve installs with Touch ID, follow updates, and use the <code>av</code> CLI when the terminal is the right interface.
+                Search packages, inspect hazards, approve installs with Touch ID, follow
+                updates, and use the <code>av</code> CLI when the terminal is the right interface.
               </p>
               <figure class="app-shot">
                 <img
-                  src="./assets/gui-screenshot.webp"
-                  alt="Automic Vault app showing package search and package details"
-                  width="1693"
-                  height="929"
+                  src="./assets/app-hazard-journey.webp"
+                  alt="Automic Vault app showing a curl plaintext credential hazard beside its Homebrew formula page"
+                  width="1672"
+                  height="941"
                   loading="lazy"
                   decoding="async"
                 >
@@ -370,16 +407,21 @@
 
         <aside class="side-rail" aria-label="Operational notes">
           <section>
-            <h2>Runtime</h2>
+            <h2>Boundary</h2>
             <article>
-              <span>release</span>
-              <strong>/opt</strong>
-              <p>Root-owned package installs.</p>
+              <span>detect</span>
+              <strong>Plaintext hazards</strong>
+              <p>Files, packages, and reasons are shown before action.</p>
             </article>
             <article>
-              <span>stubs</span>
-              <strong>/usr/local/bin</strong>
-              <p>Stable command entrypoints.</p>
+              <span>harden</span>
+              <strong>Protected runtime access</strong>
+              <p>Secrets move out of easy-read files where supported.</p>
+            </article>
+            <article>
+              <span>gate</span>
+              <strong>Command approvals</strong>
+              <p>Actions that use power ask at execution time.</p>
             </article>
           </section>
 
@@ -403,54 +445,25 @@
 
       <section class="compare" aria-labelledby="compare-title">
         <div class="section-label">
-          <h2 id="compare-title">Fit</h2>
-          <span>not another wrapper</span>
+          <h2 id="compare-title">Below the agent.</h2>
+          <span>runtime layer</span>
         </div>
         <div class="compare-grid">
           <article>
             <span>Homebrew</span>
-            <h3>Package manager</h3>
-            <p>Automic Vault installs familiar packages, then limits what agents can rewrite underneath them.</p>
+            <h3>The familiar install path</h3>
+            <p>Automic Vault uses the package world developers already know, then adds hardening and hazard visibility around it.</p>
           </article>
           <article>
             <span>1Password</span>
-            <h3>Secrets manager</h3>
-            <p>Central vaults manage secrets. Automic Vault controls whether a local tool can receive one.</p>
+            <h3>Not a central vault replacement</h3>
+            <p>Team vaults manage the source of truth. Automic Vault controls what a local tool can read and when.</p>
           </article>
           <article>
             <span>Agent controls</span>
-            <h3>Execution policy</h3>
-            <p>Agent-level controls are useful. Tool-layer controls survive below the model and its prompt.</p>
+            <h3>Not prompt-based control</h3>
+            <p>Rules inside an agent are still inside the agent. Vault puts the decision at the command and credential boundary.</p>
           </article>
-        </div>
-      </section>
-
-      <section class="guides" aria-labelledby="guides-title">
-        <div class="section-label">
-          <h2 id="guides-title">Guides</h2>
-          <span>deeper reads</span>
-        </div>
-        <div class="guide-list">
-          <a href="/secrets-manager-for-ai-agents/">
-            <span>01</span>
-            <strong>Secrets Manager for AI Agents</strong>
-            <p>Store secrets locally and inject them only into approved tools.</p>
-          </a>
-          <a href="/stop-ai-agents-reading-env-files/">
-            <span>02</span>
-            <strong>Stop AI Agents Reading .env Files</strong>
-            <p>Remove the easiest plaintext target from agent sessions.</p>
-          </a>
-          <a href="/api-key-management-for-ai-agents/">
-            <span>03</span>
-            <strong>API Key Management for AI Agents</strong>
-            <p>Keep tokens out of chat while command-line tools still work.</p>
-          </a>
-          <a href="/mcp-secrets-management/">
-            <span>04</span>
-            <strong>MCP Secrets Management</strong>
-            <p>Give MCP tools access without giving models raw secrets.</p>
-          </a>
         </div>
       </section>
 
@@ -458,8 +471,8 @@
         <div class="secured-radar" aria-label="Secured package catalog">
           <div class="radar-copy">
             <span>131 secured or detected packages</span>
-            <strong id="secured-title">Known Homebrew secret escapes, closed or surfaced.</strong>
-            <p>17,450 formula and tap candidates reviewed; remaining known risks show as GUI hazards.</p>
+            <strong id="secured-title">Known dev-tool secret escapes, closed or surfaced.</strong>
+            <p>Homebrew formula and tap candidates are reviewed continuously. Remaining known risks show as GUI hazards.</p>
           </div>
 
           <div class="radar-feed" data-secured-feed>
@@ -487,12 +500,42 @@
         </div>
       </section>
 
+      <section class="guides" aria-labelledby="guides-title">
+        <div class="section-label">
+          <h2 id="guides-title">Deeper reads for the same problem.</h2>
+          <span>guides</span>
+        </div>
+        <div class="guide-list">
+          <a href="/secret-scanner-for-ai-agents/">
+            <span>01</span>
+            <strong>AI Agent Secret Scanner</strong>
+            <p>Find plaintext local credentials before an agent run starts.</p>
+          </a>
+          <a href="/secrets-manager-for-ai-agents/">
+            <span>02</span>
+            <strong>Secrets Manager for AI Agents</strong>
+            <p>Store secrets locally and inject them only into approved tools.</p>
+          </a>
+          <a href="/secure-aws-cli-credentials-ai-agents/">
+            <span>03</span>
+            <strong>Secure AWS CLI Credentials</strong>
+            <p>Keep cloud credentials out of ambient config files.</p>
+          </a>
+          <a href="/ai-agent-approval-gates/">
+            <span>04</span>
+            <strong>AI Agent Approval Gates</strong>
+            <p>Put approvals in front of risky tool actions.</p>
+          </a>
+        </div>
+      </section>
+
       <section class="final-cta" aria-labelledby="final-title">
         <p class="eyebrow">Free and open source</p>
-        <h2 id="final-title">Secure the tool layer before the next autonomous run.</h2>
+        <h2 id="final-title">Automic Vault is the only safe way to use dev tools on a Mac with agents in the loop.</h2>
         <div>
-          <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
-          <a class="button secondary" href="https://github.com/automic-vault/automic-vault">View source</a>
+          <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
+          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+          <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
         </div>
       </section>
     </main>
