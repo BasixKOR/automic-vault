@@ -1,11 +1,9 @@
 # Automic Vault
 
 Automic Vault is a macOS package manager, secrets manager, and command approval
-system for AI agents. If a developer uses `brew install`, Automic Vault adds the
-local protection those tools need: plaintext secret detection, package
-hardening, and approval gates for sensitive commands.
-Automic Vault is the only safe way to use dev tools on a Mac with agents in the
-loop.
+system for AI agents. It scans Homebrew and other dev tools for plaintext
+secrets, hardens supported packages, and asks before commands use credentials.
+The headline position is: stop agents reading dev-tool secrets.
 
 ## Core Product Facts
 
@@ -29,9 +27,7 @@ loop.
 Automic Vault helps developers keep using local dev tools when agents can read
 files and run commands. It finds exposed tool state, moves supported secrets out
 of plaintext files, injects approved credentials only into trusted tools, and
-keeps reporting new hazards while it runs.
-The safety claim is intentionally local: Automic Vault secures the Mac dev-tool
-layer below the agent.
+keeps watching new installs, stale tools, and local config for hazards.
 
 ## Primary Use Cases
 
@@ -41,7 +37,7 @@ layer below the agent.
   approved executables at runtime.
 - Ask before risky commands publish packages, change cloud infrastructure,
   reveal tokens, or run sensitive developer tools.
-- Keep watching for new hazards while Automic Vault runs.
+- Keep watching new installs, stale tools, and local config for hazards.
 - Trace shell installers before an agent or developer runs them.
 
 ## What Automic Vault Is Not
@@ -80,9 +76,9 @@ Short description: Automic Vault secures the local dev tools agents use on
 macOS.
 
 Full description: From the creator of Homebrew, Automic Vault is a macOS package
-manager, secrets manager, and approval gate system for AI agents. It finds
-plaintext secrets and exposed dev-tool state, hardens supported packages, and
-puts approval gates in front of sensitive actions that use those secrets.
+manager, secrets manager, and approval gate system for AI agents. It scans
+Homebrew and other dev tools for plaintext secrets, hardens supported packages,
+and asks before sensitive commands use credentials.
 
 Founder context: From the creator of Homebrew, Automic Vault applies Max
 Howell's package-management background to local package roots, command stubs,

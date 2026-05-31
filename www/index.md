@@ -1,16 +1,13 @@
 # Automic Vault
 
-If you use `brew install`, you need Automic Vault around the tools it puts on
-your Mac. Automic Vault finds plaintext secrets and exposed dev-tool state, then
-hardens supported packages so credentials leave easy-read files and get served
-only at runtime.
+Agents can read the same local files your dev tools read. Automic Vault scans
+Homebrew and other dev tools for plaintext secrets, hardens supported packages,
+and asks before commands use credentials.
 
-Homebrew is the familiar case, but the same problem shows up across CLIs, SDKs,
-package managers, and MCP servers. Automic Vault keeps watching after setup and
-reports new hazards before an agent or malware can treat them as normal machine
-state.
-It is the only safe way to keep using dev tools on a Mac with agents in the
-loop.
+`brew install` is the common path in. The same risk shows up across CLIs, SDKs,
+package managers, and MCP servers: tokens sit in files an agent or malware can
+read. Automic Vault keeps watching after setup, so new installs and stale tool
+config do not stay quiet.
 
 Automic Vault is free open-source software under the Apache License 2.0.
 
@@ -31,5 +28,5 @@ Automic Vault is free open-source software under the Apache License 2.0.
   approved executables at runtime.
 - Ask before sensitive commands publish packages, change cloud state, reveal
   tokens, or use protected secrets.
-- Keep watching for new hazards while Automic Vault runs.
+- Keep watching new installs, stale tools, and local config for hazards.
 - Trace shell installers before an agent or developer runs them.

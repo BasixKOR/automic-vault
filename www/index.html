@@ -12,26 +12,28 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automic Vault | Secure the tools you brew install</title>
+  <title>Automic Vault | Stop agents reading dev-tool secrets</title>
   <meta
     name="description"
-    content="Automic Vault finds plaintext secrets and insecure dev-tool state
-    on your Mac, then hardens packages with protected storage and approval gates."
+    content="Automic Vault scans Homebrew and other dev tools for plaintext
+    secrets, hardens supported packages, and gates commands before agents or
+    malware can use them."
   >
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Automic Vault | Secure the tools you brew install">
+  <meta property="og:title" content="Automic Vault | Stop agents reading dev-tool secrets">
   <meta
     property="og:description"
-    content="Automic Vault finds plaintext secrets and insecure dev-tool state
-    on your Mac, then hardens packages with protected storage and approval gates."
+    content="Automic Vault scans Homebrew and other dev tools for plaintext
+    secrets, hardens supported packages, and gates commands before agents or
+    malware can use them."
   >
   <meta property="og:url" content="https://www.automicvault.com/">
   <meta property="og:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
-  <meta name="twitter:title" content="Automic Vault | Secure the tools you brew install">
-  <meta name="twitter:description" content="Automic Vault finds plaintext secrets and insecure dev-tool state on your Mac, then hardens packages with protected storage and approval gates.">
+  <meta name="twitter:title" content="Automic Vault | Stop agents reading dev-tool secrets">
+  <meta name="twitter:description" content="Automic Vault scans Homebrew and other dev tools for plaintext secrets, hardens supported packages, and gates commands before agents or malware can use them.">
   <meta property="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <link rel="canonical" href="https://www.automicvault.com/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/">
@@ -52,7 +54,7 @@
         "slogan": "From the creator of Homebrew",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
-        "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling that finds plaintext dev-tool secrets, hardens packages, and adds approval gates for sensitive actions.",
+        "description": "From the creator of Homebrew, Automic Vault builds local macOS security tooling that scans dev tools for plaintext secrets, hardens supported packages, and gates sensitive commands.",
         "founder": {
           "@id": "https://www.automicvault.com/about/#max-howell"
         },
@@ -123,7 +125,7 @@
           "availability": "https://schema.org/InStock",
           "url": "https://www.automicvault.com/pricing/"
         },
-        "description": "Automic Vault finds insecure dev-tool state on macOS, moves secrets out of plaintext files, and gates sensitive tool actions at runtime.",
+        "description": "Automic Vault scans dev tools on macOS, moves supported secrets out of plaintext files, and gates sensitive commands at runtime.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
         }
@@ -132,9 +134,9 @@
         "@type": "WebPage",
         "@id": "https://www.automicvault.com/#webpage",
         "url": "https://www.automicvault.com/",
-        "name": "Automic Vault | Secure the tools you brew install",
-        "headline": "Secure the tools you brew install",
-        "description": "Automic Vault finds plaintext secrets and insecure dev-tool state on your Mac, then hardens packages with protected storage and approval gates.",
+        "name": "Automic Vault | Stop agents reading dev-tool secrets",
+        "headline": "Stop agents reading dev-tool secrets",
+        "description": "Automic Vault scans Homebrew and other dev tools for plaintext secrets, hardens supported packages, and gates commands before agents or malware can use them.",
         "datePublished": "2026-05-15",
         "dateModified": "2026-05-31",
         "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
@@ -219,66 +221,66 @@
 
         <div class="hero-copy">
           <p class="eyebrow">From the creator of Homebrew</p>
-          <h1 id="hero-title">Secure the tools you brew install.</h1>
+          <h1 id="hero-title">Stop agents reading dev-tool secrets.</h1>
           <p class="lede">
-            <code>brew install</code> is the familiar case. The same risk shows
-            up in CLIs, SDKs, package managers, and MCP servers: tokens sit in
-            files an agent or malware can read. Automic Vault finds the hazard,
-            hardens the package, and gates sensitive actions.
+            <code>brew install</code> is how many tools arrive. CLIs, SDKs,
+            package managers, and MCP servers leave tokens in files. Automic
+            Vault scans those tools, hardens supported packages, and asks before
+            commands use secrets.
           </p>
         </div>
 
         <div class="hero-actions">
           <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
-          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Scan for exposed secrets</a>
           <a class="button text" href="/docs/">Read docs</a>
         </div>
 
         <div class="hero-proof" aria-label="Developer tool hazards Automic Vault watches">
-          <span><code>brew install gh</code> can leave a token path</span>
+          <span><code>gh</code> can expose a token path</span>
           <span><code>curl</code> can read <code>~/.netrc</code></span>
-          <span><code>aws</code> can expose cloud credentials</span>
-          <span><code>npm publish</code> needs a real approval gate</span>
+          <span><code>aws</code> can expose cloud keys</span>
+          <span><code>npm publish</code> should ask first</span>
         </div>
       </section>
 
       <section class="highlights" aria-labelledby="highlights-title">
         <div class="section-label">
-          <h2 id="highlights-title">What Vault does on your Mac.</h2>
-          <span>security path</span>
+          <h2 id="highlights-title">Scan first. Harden what matters. Keep watching.</h2>
+          <span>how it works</span>
         </div>
         <div class="highlight-grid">
           <a class="highlight-card accent-hot" href="#hazards">
             <span>01 / detect</span>
-            <strong>Finds exposed dev-tool state already sitting on your Mac.</strong>
+            <strong>Finds readable tokens in files agents can reach.</strong>
           </a>
           <a class="highlight-card accent-green" href="#harden">
             <span>02 / harden <small class="package-count" data-secured-package-count>11,909</small></span>
-            <strong>Moves secrets out of plaintext files and serves them at runtime.</strong>
+            <strong>Moves supported secrets into protected runtime access.</strong>
           </a>
           <a class="highlight-card accent-blue" href="#approval">
             <span>03 / gate</span>
-            <strong>Puts approval gates in front of commands that use secrets.</strong>
+            <strong>Asks before commands publish, change, or reveal credentials.</strong>
           </a>
           <a class="highlight-card accent-gold" href="#monitor">
             <span>04 / monitor</span>
-            <strong>Keeps watching new installs and stale tools for hazards.</strong>
+            <strong>Reports new hazards from installs, stale tools, and local config.</strong>
           </a>
         </div>
       </section>
 
       <section class="problem-strip" id="hazards" aria-labelledby="hazards-title">
         <div class="section-label">
-          <h2 id="hazards-title">Dev tools were built for trusted humans.</h2>
+          <h2 id="hazards-title">Agents turn local files into reachable secrets.</h2>
           <span>agent era</span>
         </div>
 
         <div class="hazard-board">
           <div class="hazard-copy">
             <p>
-              A developer can remember not to open a credentials file. An agent
-              gets paths and permissions. Vault treats that as a Mac security
-              problem, not a prompt-writing problem.
+              A human knows <code>~/.aws/credentials</code> is sensitive. An
+              agent gets paths, permissions, and a task. Vault closes the secret
+              paths your tools left open.
             </p>
           </div>
           <div class="hazard-list" aria-label="Plaintext credential examples">
@@ -296,8 +298,8 @@
         <div class="story-main">
           <div class="list-heading">
             <div>
-              <h2>After you install Vault.</h2>
-              <p>Your tools still run. Secrets stop sitting in obvious files.</p>
+              <h2>The hardening pass.</h2>
+              <p>Install Vault, scan your Mac, harden supported packages, then leave it running.</p>
             </div>
             <span>local control</span>
           </div>
@@ -305,11 +307,11 @@
           <article class="ranked-story">
             <span class="rank">1</span>
             <div>
-              <p class="story-kicker">Detect what is exposed</p>
-              <h3>Vault shows the secret file, package, and tool involved.</h3>
+              <p class="story-kicker">Scan the machine</p>
+              <h3>See the package, file path, and reason.</h3>
               <p>
-                The app lists plaintext credential hazards by package, with the path and reason
-                visible before an agent gets broad filesystem access.
+                Vault ties readable credentials to the tool that can use them, so you know
+                which local paths need attention before the next agent run.
               </p>
               <ul class="story-tags" aria-label="Secret boundary details">
                 <li>curl</li>
@@ -324,10 +326,10 @@
             <span class="rank">2</span>
             <div>
               <p class="story-kicker">Harden the package</p>
-              <h3>Move credentials out of plaintext storage without breaking the tool.</h3>
+              <h3>Keep the command. Remove the easy-read secret.</h3>
               <p>
-                Radioisotopes patch supported tools so credentials stay in protected local
-                storage and get injected only when the approved executable needs them.
+                Radioisotopes patch supported tools so credentials stay in protected storage
+                and reach the approved executable only when it runs.
               </p>
               <div class="source-strip" aria-label="Package sources">
                 <span>Homebrew</span>
@@ -341,12 +343,11 @@
           <article class="ranked-story" id="approval">
             <span class="rank">3</span>
             <div>
-              <p class="story-kicker">Gate the sensitive action</p>
-              <h3>Approval happens where the command runs, below the agent.</h3>
+              <p class="story-kicker">Gate the command</p>
+              <h3>Ask at the moment a command wants power.</h3>
               <p>
-                Agent-side rules help, but a compromised agent can steer its own rules. Vault
-                asks from the local tool layer when a command wants a secret, publishes a
-                package, or changes cloud state.
+                Prompt rules can fail. Vault asks from the local tool layer when a command
+                wants a secret, publishes a package, or changes cloud state.
               </p>
               <div class="inline-prompt" aria-label="Example approval request">
                 <span>Automic Vault</span>
@@ -360,12 +361,11 @@
           <article class="ranked-story" id="monitor">
             <span class="rank">4</span>
             <div>
-              <p class="story-kicker">Keep watching</p>
-              <h3>Leave Vault running so new hazards do not sit around.</h3>
+              <p class="story-kicker">Keep Vault running</p>
+              <h3>New installs create new hazards.</h3>
               <p>
-                After the first hardening pass, Automic Vault keeps reporting insecure package
-                state and plaintext exposures. New CLI installs, stale tools, and credential
-                leaks stay visible.
+                After the first scan, Vault keeps watching for new CLIs, stale tools, and
+                credentials that slip back into local files.
               </p>
             </div>
           </article>
@@ -374,10 +374,10 @@
             <span class="rank">5</span>
             <div>
               <p class="story-kicker">Automic Vault.app</p>
-              <h3>A Mac app for the parts you need to see.</h3>
+              <h3>Inspect hazards without leaving the machine.</h3>
               <p>
-                Search packages, inspect hazards, approve installs with Touch ID, follow
-                updates, and use the <code>av</code> CLI when the terminal is the right interface.
+                Search packages, inspect hazards, approve installs with Touch ID, follow updates,
+                and use the <code>av</code> CLI when the terminal is faster.
               </p>
               <figure class="app-shot">
                 <img
@@ -398,18 +398,18 @@
             <h2>Boundary</h2>
             <article>
               <span>detect</span>
-              <strong>Plaintext hazards</strong>
-              <p>Vault shows the file, package, and reason before you act.</p>
+              <strong>Readable files</strong>
+              <p>Vault shows the path, package, and reason before you act.</p>
             </article>
             <article>
               <span>harden</span>
-              <strong>Protected runtime access</strong>
-              <p>Secrets move out of easy-read files where supported.</p>
+              <strong>Protected storage</strong>
+              <p>Supported tools get secrets only when the command runs.</p>
             </article>
             <article>
               <span>gate</span>
-              <strong>Command approvals</strong>
-              <p>Commands that use secrets ask at execution time.</p>
+              <strong>Approval gates</strong>
+              <p>Commands that use secrets ask before they proceed.</p>
             </article>
           </section>
 
@@ -418,24 +418,24 @@
 
       <section class="compare" aria-labelledby="compare-title">
         <div class="section-label">
-          <h2 id="compare-title">Below the agent.</h2>
+          <h2 id="compare-title">Fits under the tools you already use.</h2>
           <span>runtime layer</span>
         </div>
         <div class="compare-grid">
           <article>
             <span>Homebrew</span>
-            <h3>The familiar install path</h3>
-            <p>Automic Vault works with the package systems developers already use, then adds hardening and hazard visibility.</p>
+            <h3>Keep the install path</h3>
+            <p>Keep using Homebrew. Add a safety pass after tools land on your Mac.</p>
           </article>
           <article>
             <span>1Password</span>
-            <h3>Not a central vault replacement</h3>
-            <p>Team vaults store your team's secrets. Automic Vault controls what a local tool can read and when.</p>
+            <h3>Keep your team vault</h3>
+            <p>1Password stores shared secrets. Automic Vault controls the local command that asks for one.</p>
           </article>
           <article>
             <span>Agent controls</span>
-            <h3>Not prompt-based control</h3>
-            <p>Agent rules run inside the thing you are trying to constrain. Vault puts the decision at the command and credential boundary.</p>
+            <h3>Put the gate below the prompt</h3>
+            <p>A prompt can be bypassed. A local approval gate still asks when the command runs.</p>
           </article>
         </div>
       </section>
@@ -444,30 +444,30 @@
         <div class="secured-radar" aria-label="Homebrew package scan">
           <div class="radar-copy">
             <span>11,909 Homebrew packages scanned</span>
-            <strong id="secured-title">Known dev-tool secret leaks, fixed or shown.</strong>
-            <p>Automic Vault reviews Homebrew formula and tap candidates. Known risks that remain show as GUI hazards.</p>
+            <strong id="secured-title">A Homebrew scan you can act on.</strong>
+            <p>Vault reviews formula and tap candidates for local secret paths. Fixed packages get hardening. Remaining risks show as hazards.</p>
           </div>
 
           <div class="radar-feed" data-secured-feed>
             <a class="feed-row accent-hot" href="/pkg/brew/docker/">
               <span>docker</span>
-              <p>ambient registry credential helpers flagged as hazards</p>
+              <p>flags ambient registry credential helpers</p>
             </a>
             <a class="feed-row accent-green" href="/pkg/brew/awscli/">
               <span>aws-cli</span>
-              <p>AWS credentials served through av credential-helper</p>
+              <p>serves AWS credentials through av credential-helper</p>
             </a>
             <a class="feed-row accent-blue" href="/pkg/brew/tfenv/">
               <span>terraform</span>
-              <p>cloud tokens served through Terraform's helper protocol</p>
+              <p>serves cloud tokens through Terraform's helper protocol</p>
             </a>
             <a class="feed-row accent-gold" href="/pkg/brew/git/">
               <span>git</span>
-              <p>plaintext credential-store files detected in the GUI</p>
+              <p>detects plaintext credential-store files</p>
             </a>
             <a class="feed-row accent-hot" href="/pkg/brew/openssh/">
               <span>openssh</span>
-              <p>unencrypted private keys reported before agent runs</p>
+              <p>reports unencrypted private keys before agent runs</p>
             </a>
           </div>
         </div>
@@ -475,19 +475,19 @@
 
       <section class="guides" aria-labelledby="guides-title">
         <div class="section-label">
-          <h2 id="guides-title">More on the same problem.</h2>
+          <h2 id="guides-title">Need the details?</h2>
           <span>guides</span>
         </div>
         <div class="guide-list">
           <a href="/secret-scanner-for-ai-agents/">
             <span>01</span>
             <strong>AI Agent Secret Scanner</strong>
-            <p>Find plaintext local credentials before an agent run starts.</p>
+            <p>Find plaintext local credentials before an agent starts.</p>
           </a>
           <a href="/secrets-manager-for-ai-agents/">
             <span>02</span>
             <strong>Secrets Manager for AI Agents</strong>
-            <p>Store secrets locally and inject them only into approved tools.</p>
+            <p>Store secrets locally and serve them only to approved tools.</p>
           </a>
           <a href="/secure-aws-cli-credentials-ai-agents/">
             <span>03</span>
@@ -497,17 +497,17 @@
           <a href="/ai-agent-approval-gates/">
             <span>04</span>
             <strong>AI Agent Approval Gates</strong>
-            <p>Put approvals in front of risky tool actions.</p>
+            <p>Put approvals in front of commands that use power.</p>
           </a>
         </div>
       </section>
 
       <section class="final-cta" aria-labelledby="final-title">
         <p class="eyebrow">Free and open source</p>
-        <h2 id="final-title">Automic Vault is the only safe way to use dev tools on a Mac with agents in the loop.</h2>
+        <h2 id="final-title">Run Vault before your next agent run.</h2>
         <div>
           <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
-          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Scan for exposed secrets</a>
           <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
         </div>
       </section>
