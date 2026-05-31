@@ -293,7 +293,12 @@ class PackagePageEnrichmentTests(unittest.TestCase):
     def test_tracked_radioisotope_inventory_copy_matches_manifest_counts(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_tracked_inventory_copy_test")
         radioisotope_count = module.local_radioisotope_manifest_count()
-        isotope_count = radioisotope_count + module.local_full_isotope_manifest_count()
+        scan_log = ROOT / "data" / "radioisotopes" / "SCAN_LOG.md"
+        scanned_package_count = sum(
+            1
+            for line in scan_log.read_text(encoding="utf-8").splitlines()
+            if line.startswith("| ") and line.split("|", 3)[1].strip().isdigit()
+        )
 
         main_readme = (ROOT / "README.md").read_text(encoding="utf-8")
         radio_readme = (ROOT / "data/radioisotopes/README.md").read_text(encoding="utf-8")
@@ -301,7 +306,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
 
         self.assertIn(f"- {radioisotope_count} radioisotope manifests", main_readme)
         self.assertIn(f"- Total radioisotope manifests: {radioisotope_count}", radio_readme)
-        self.assertIn(f"<span>{isotope_count} secured or detected packages</span>", homepage)
+        self.assertIn(f"<span>{scanned_package_count:,} Homebrew packages scanned</span>", homepage)
 
     def test_package_page_scope_requires_executable_surface(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")
