@@ -12333,6 +12333,256 @@ machine example.com login user password netrc-token
     }
 
     #[test]
+    fn generated_radioisotope_migrations_cover_additional_default_paths() {
+        let _lock = test_env_lock().lock().unwrap();
+        if isotope_integrations::INTEGRATIONS
+            .iter()
+            .all(|integration| integration.migrate.is_none())
+        {
+            return;
+        }
+
+        fn write_fixture(path: &Path, contents: impl AsRef<[u8]>) {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, contents).unwrap();
+        }
+
+        fn detects_seeded_secret(
+            integration: &isotope_integrations::IsotopeIntegration,
+        ) -> Result<bool, String> {
+            if let Some(detect_reasons) = integration.detect_reasons {
+                return detect_reasons().map(|reasons| !reasons.is_empty());
+            }
+            if let Some(detect) = integration.detect {
+                return detect();
+            }
+            Ok(false)
+        }
+
+        fn run_case(name: &str, seed: fn(&Path, &Path, &Path, &Path, &Path, &Path)) {
+            let temp = TempDir::new().unwrap();
+            let home = temp.path().join("home");
+            let xdg_config = temp.path().join("xdg-config");
+            let xdg_cache = temp.path().join("xdg-cache");
+            let xdg_state = temp.path().join("xdg-state");
+            let xdg_runtime = temp.path().join("xdg-runtime");
+            let npmrc = temp.path().join("npmrc");
+            let oci_config = home.join(".oci/config");
+            let mcp_remote_config = home.join(".mcp-auth");
+
+            seed(
+                &home,
+                &xdg_config,
+                &xdg_cache,
+                &xdg_state,
+                &xdg_runtime,
+                &npmrc,
+            );
+
+            let _env = TestEnvGuard::set(&[
+                ("HOME", home.to_str().unwrap()),
+                ("XDG_CONFIG_HOME", xdg_config.to_str().unwrap()),
+                ("XDG_CACHE_HOME", xdg_cache.to_str().unwrap()),
+                ("XDG_STATE_HOME", xdg_state.to_str().unwrap()),
+                ("XDG_RUNTIME_DIR", xdg_runtime.to_str().unwrap()),
+                ("NPM_CONFIG_USERCONFIG", npmrc.to_str().unwrap()),
+                ("OCI_CLI_CONFIG_FILE", oci_config.to_str().unwrap()),
+                ("MCP_REMOTE_CONFIG_DIR", mcp_remote_config.to_str().unwrap()),
+            ]);
+
+            let integration = isotope_integrations::INTEGRATIONS
+                .iter()
+                .find(|integration| integration.name == name)
+                .unwrap_or_else(|| panic!("missing generated integration {name}"));
+            let migrate = integration
+                .migrate
+                .unwrap_or_else(|| panic!("missing generated migration {name}"));
+
+            assert!(
+                detects_seeded_secret(integration)
+                    .unwrap_or_else(|err| panic!("{name} detect failed before migration: {err}")),
+                "{name} should report its seeded secret before migration"
+            );
+            match migrate() {
+                Ok(()) => assert!(
+                    !detects_seeded_secret(integration).unwrap_or_else(|err| panic!(
+                        "{name} detect failed after migration: {err}"
+                    )),
+                    "{name} migration left its seeded secret detectable"
+                ),
+                Err(err) if err.contains("isotope keychain integration is only available") => {}
+                Err(err) => panic!("{name} migration failed: {err}"),
+            }
+        }
+
+        let cases: &[(&str, fn(&Path, &Path, &Path, &Path, &Path, &Path))] = &[
+            ("astra", |_, xdg_config, _, _, _, _| {
+                write_fixture(
+                    &xdg_config.join("astra/.astrarc"),
+                    "default=prod\ntoken=AstraCS:astra-secret\n",
+                );
+            }),
+            ("censys", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".config/censys/censys.cfg"),
+                    "[DEFAULT]\napi_id = fake-censys-id\napi_secret = fake-censys-secret\n",
+                );
+            }),
+            ("cloudsmith-cli", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".cloudsmith/credentials.ini"),
+                    "[default]\napi_key=fake-cloudsmith-key\n",
+                );
+            }),
+            ("dropbox-uploader", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".dropbox_uploader"),
+                    "APPKEY=fake-app\nOAUTH_ACCESS_TOKEN=fake-token\n",
+                );
+            }),
+            ("gcli", |_, xdg_config, _, _, _, _| {
+                write_fixture(
+                    &xdg_config.join("gcli/config"),
+                    "[github]\ntoken = fake-gcli-token\n",
+                );
+            }),
+            ("goat", |_, _, _, xdg_state, _, _| {
+                write_fixture(
+                    &xdg_state.join("goat/auth-session.json"),
+                    r#"{"password":"fake-app-password","access_token":"fake-access"}"#,
+                );
+            }),
+            ("imap-backup", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".imap-backup/config.json"),
+                    r#"{"accounts":[{"username":"a@example.com","password":"fake-password"}]}"#,
+                );
+            }),
+            ("jfrog-cli", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".jfrog/jfrog-cli.conf.v6"),
+                    r#"[{"serverId":"prod","url":"https://example.test","accessToken":"secret"}]"#,
+                );
+            }),
+            ("mcp-remote", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".mcp-auth/server_tokens.json"),
+                    r#"{"access_token":"mcp-access","refresh_token":"mcp-refresh"}"#,
+                );
+            }),
+            ("minio-mc", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".mc/config.json"),
+                    r#"{"aliases":{"minio":{"url":"https://minio.example.test","accessKey":"access","secretKey":"secret","sessionToken":"session"}}}"#,
+                );
+            }),
+            ("mysql", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".my.cnf"),
+                    "[client]\nuser = deploy\npassword = secret\n",
+                );
+            }),
+            ("mysql-client", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".my.cnf"),
+                    "[client]\nuser = deploy\npassword = secret\n",
+                );
+            }),
+            ("mysql@8.0", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".my.cnf"),
+                    "[client]\nuser = deploy\npassword = secret\n",
+                );
+            }),
+            ("mysql@8.4", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".my.cnf"),
+                    "[client]\nuser = deploy\npassword = secret\n",
+                );
+            }),
+            ("node@18", |_, _, _, _, _, npmrc| {
+                write_fixture(npmrc, "//registry.npmjs.org/:_authToken=npm_secret\n");
+            }),
+            ("oci-cli", |home, _, _, _, _, _| {
+                write_fixture(&home.join(".oci/key.pem"), "private-key\n");
+                write_fixture(
+                    &home.join(".oci/config"),
+                    "[DEFAULT]\nuser=ocid1.user\nkey_file=~/.oci/key.pem\n",
+                );
+            }),
+            ("ossutil", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".ossutilconfig"),
+                    "[Credentials]\naccessKeyID = LTAIEXAMPLE\naccessKeySecret = very-secret\n",
+                );
+            }),
+            ("oxide-cli", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".config/oxide/credentials.toml"),
+                    "[profile.prod]\nhost = \"https://oxide.example\"\ntoken = \"fake-oxide-token\"\n",
+                );
+            }),
+            ("phylum-cli", |_, xdg_config, _, _, _, _| {
+                write_fixture(
+                    &xdg_config.join("phylum/settings.yaml"),
+                    "offline_access: ph0_fake-token\n",
+                );
+            }),
+            ("plumber", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".batchsh/plumber.json"),
+                    r#"{"token":"plumber-token"}"#,
+                );
+            }),
+            ("pnpm", |_, _, _, _, _, npmrc| {
+                write_fixture(npmrc, "//registry.npmjs.org/:_authToken=pnpm_secret\n");
+            }),
+            ("qwen-code", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".qwen/settings.json"),
+                    r#"{"env":{"DASHSCOPE_API_KEY":"sk-test"}}"#,
+                );
+            }),
+            ("railway", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".railway/config.json"),
+                    r#"{"user":{"token":"rw_legacy"}}"#,
+                );
+            }),
+            ("soracom-cli", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".soracom/default.json"),
+                    r#"{"authKeyId":"keyId-example","authKey":"secret-example"}"#,
+                );
+            }),
+            ("sqlcmd", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".sqlcmd/sqlconfig"),
+                    "users:\n- user:\n    username: sa\n    password: c2VjcmV0\n",
+                );
+            }),
+            ("terraform-core", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".terraform.d/credentials.tfrc.json"),
+                    r#"{"credentials":{"app.terraform.io":{"token":"secret"}}}"#,
+                );
+            }),
+            ("transifex-cli", |home, _, _, _, _, _| {
+                write_fixture(
+                    &home.join(".transifexrc"),
+                    "[https://app.transifex.com]\nrest_hostname = https://rest.api.transifex.com\ntoken = fake-token\n",
+                );
+            }),
+        ];
+
+        for (name, seed) in cases {
+            run_case(name, *seed);
+        }
+    }
+
+    #[test]
     fn generated_credential_helpers_cover_help_and_reject_bad_tokens() {
         struct MissingCredentialStore;
 
