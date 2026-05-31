@@ -270,7 +270,7 @@ prepare_site_for_upload() {
       $count = $ENV{"SECURED_PACKAGE_COUNT"};
       $matches = 0;
     }
-    $matches += s{(<small\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</small>)}{$1$count$2}g;
+    $matches += s{(<([a-zA-Z][a-zA-Z0-9:-]*)\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</\2>)}{$1$count$3}g;
     END {
       die "Expected exactly one secured package count replacement, got $matches\n"
         unless $matches == 1;

@@ -621,13 +621,6 @@ h1 {
   color: var(--green);
 }
 
-.highlight-card .package-count {
-  margin-left: 0.52em;
-  color: var(--green);
-  font-size: 0.94em;
-  font-weight: 700;
-}
-
 .highlight-card.accent-gold span {
   color: var(--gold);
 }
