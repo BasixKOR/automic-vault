@@ -17,6 +17,10 @@ name = "av"
 path = "src/nucleus/main.rs"
 
 [[bin]]
+name = "scanner"
+path = "src/scanner/main.rs"
+
+[[bin]]
 name = "nuke-helper"
 path = "src/helper/main.rs"
 

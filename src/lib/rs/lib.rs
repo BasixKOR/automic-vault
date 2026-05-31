@@ -64,8 +64,8 @@ pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
     GLOBAL_TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-pub use cli::main_entry;
 pub(crate) use cli::*;
+pub use cli::{main_entry, scanner_main_entry};
 pub(crate) use cli_help::*;
 pub(crate) use info::*;
 pub(crate) use install::*;

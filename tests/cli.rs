@@ -17,6 +17,13 @@ fn run_nuke(args: &[&str]) -> Output {
         .unwrap()
 }
 
+fn run_scanner(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_scanner"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
 fn run_nuke_with_columns(args: &[&str], columns: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .env("COLUMNS", columns)
@@ -27,6 +34,16 @@ fn run_nuke_with_columns(args: &[&str], columns: &str) -> Output {
 
 fn run_nuke_with_env(args: &[&str], envs: &[(&str, &str)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
+    command.args(args);
+    command.env_remove("NO_COLOR");
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
+fn run_scanner_with_env(args: &[&str], envs: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scanner"));
     command.args(args);
     command.env_remove("NO_COLOR");
     for (key, value) in envs {
@@ -417,6 +434,14 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
     let output = run_nuke(&["scan", "--help"]);
     assert!(stdout(&output).contains("--isotopes-only"));
 
+    let output = run_scanner(&["--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: scanner"));
+
+    let output = run_scanner(&["--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("scanner {version}")));
+
     let output = run_nuke(&["info"]);
     assert!(!output.status.success());
     assert!(stdout(&output).contains("Usage: av info"));
@@ -556,17 +581,41 @@ fn subs_query_commands_cover_success_and_output_modes() {
         ],
     );
     assert!(output.status.success(), "{}", stderr(&output));
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["scope"], "isotopes-only");
-    assert_eq!(report["summary"]["scanned_files"], 0);
-    assert_eq!(report["summary"]["file_probes"], 0);
+    let isotope_only_report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(isotope_only_report["scope"], "isotopes-only");
+    assert_eq!(isotope_only_report["summary"]["scanned_files"], 0);
+    assert_eq!(isotope_only_report["summary"]["file_probes"], 0);
     assert!(
-        report["findings"]
+        isotope_only_report["findings"]
             .as_array()
             .unwrap()
             .iter()
             .all(|finding| finding["source"] != "file-probe")
     );
+
+    let output = run_scanner_with_env(
+        &["--path", scan.to_str().unwrap(), "--json"],
+        &[
+            ("HOME", home.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let scanner_report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(scanner_report, isotope_only_report);
 
     let output = run_nuke_with_env(
         &[

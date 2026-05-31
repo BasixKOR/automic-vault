@@ -25,6 +25,23 @@ pub fn main_entry() {
     }
 }
 
+pub fn scanner_main_entry() {
+    configure_debug_install_environment();
+    let mut args = env::args_os();
+    let program = args.next().unwrap_or_else(|| OsString::from("scanner"));
+    let invocation = Invocation::from_program(&program);
+
+    let result = run_secret_scanner_isotopes_only(&invocation, args);
+    if let Err(err) = result {
+        if let Some(rendered) = err.strip_prefix(RENDERED_ERROR_PREFIX) {
+            eprintln!("{rendered}");
+        } else {
+            eprintln!("{}: {err}", invocation.name);
+        }
+        process::exit(1);
+    }
+}
+
 impl Invocation {
     pub(crate) fn from_program(program: &OsString) -> Self {
         let binary_name = Path::new(program)
@@ -248,11 +265,23 @@ pub(crate) fn run_search(invocation: &Invocation, mut args: env::ArgsOs) -> Resu
     Ok(())
 }
 
-pub(crate) fn run_secret_scanner(
+pub(crate) fn run_secret_scanner(invocation: &Invocation, args: env::ArgsOs) -> Result<(), String> {
+    run_secret_scanner_from_iter(invocation, args)
+}
+
+pub(crate) fn run_secret_scanner_isotopes_only(
     invocation: &Invocation,
-    mut args: env::ArgsOs,
+    args: env::ArgsOs,
 ) -> Result<(), String> {
-    let request = match parse_secret_scanner_request(invocation, &mut args)? {
+    let args = std::iter::once(OsString::from("--isotopes-only")).chain(args);
+    run_secret_scanner_from_iter(invocation, args)
+}
+
+fn run_secret_scanner_from_iter<I>(invocation: &Invocation, args: I) -> Result<(), String>
+where
+    I: Iterator<Item = OsString>,
+{
+    let request = match parse_secret_scanner_request_from_iter(invocation, args)? {
         Some(request) => request,
         None => return Ok(()),
     };
@@ -774,13 +803,6 @@ pub(crate) fn parse_search_request(
     args: &mut env::ArgsOs,
 ) -> Result<Option<SearchRequest>, String> {
     parse_search_request_from_iter(invocation, args)
-}
-
-pub(crate) fn parse_secret_scanner_request(
-    invocation: &Invocation,
-    args: &mut env::ArgsOs,
-) -> Result<Option<SecretScannerRequest>, String> {
-    parse_secret_scanner_request_from_iter(invocation, args)
 }
 
 pub(crate) fn parse_search_request_from_iter<I>(
