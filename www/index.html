@@ -221,26 +221,26 @@
 
         <div class="hero-copy">
           <p class="eyebrow">From the creator of Homebrew</p>
-          <h1 id="hero-title">Stop agents reading dev-tool secrets.</h1>
+          <h1 id="hero-title">Secure the tools you brew install.</h1>
           <p class="lede">
-            <code>brew install</code> is how many tools arrive. CLIs, SDKs,
-            package managers, and MCP servers leave tokens in files. Automic
-            Vault scans those tools, hardens supported packages, and asks before
-            commands use secrets.
+            <code>brew install</code> is the familiar case. The same risk shows
+            up in CLIs, SDKs, package managers, and MCP servers: tokens sit in
+            files an agent or malware can read. Automic Vault finds the hazard,
+            hardens the package, and gates sensitive actions.
           </p>
         </div>
 
         <div class="hero-actions">
           <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
-          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Scan for exposed secrets</a>
+          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
           <a class="button text" href="/docs/">Read docs</a>
         </div>
 
         <div class="hero-proof" aria-label="Developer tool hazards Automic Vault watches">
-          <span><code>gh</code> can expose a token path</span>
+          <span><code>brew install gh</code> can leave a token path</span>
           <span><code>curl</code> can read <code>~/.netrc</code></span>
-          <span><code>aws</code> can expose cloud keys</span>
-          <span><code>npm publish</code> should ask first</span>
+          <span><code>aws</code> can expose cloud credentials</span>
+          <span><code>npm publish</code> needs a real approval gate</span>
         </div>
       </section>
 
