@@ -472,6 +472,26 @@ h1 {
   line-height: 1.26;
 }
 
+.hero-quote {
+  margin: 26px 0 0;
+}
+
+.hero-quote p {
+  margin: 0;
+}
+
+.hero-quote cite {
+  display: block;
+  margin-top: 18px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.45;
+  text-transform: uppercase;
+}
+
 .hero-actions {
   gap: 12px;
   margin-top: 0;

@@ -3,7 +3,7 @@
   "category": "AI agent security",
   "platform": "macOS",
   "license": "Apache License 2.0",
-  "description": "Homebrew puts tools on your Mac. Automic Vault checks what they can read, moves supported credentials out of plaintext files, and asks before commands use them.",
+  "description": "I built Homebrew. It was designed before AI agents existed. Install with Homebrew. Secure with Automic Vault. Stop agents, malware, and compromised tools from accessing secrets or performing sensitive actions without approval.",
   "positioning": "Secure the tools you brew install.",
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",
