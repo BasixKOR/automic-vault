@@ -1,10 +1,8 @@
 # Automic Vault
 
 Automic Vault is a macOS package manager, secrets manager, and command approval
-system for AI agents. Max Howell built Homebrew before AI agents existed.
-Install with Homebrew. Secure with Automic Vault. Automic Vault stops agents,
-malware, and compromised tools from accessing secrets or performing sensitive
-actions without approval.
+system for AI agents. It stops agents, malware, and compromised tools from
+accessing secrets or performing sensitive actions without approval.
 The headline position is: secure the tools you brew install.
 
 ## Core Product Facts
@@ -78,10 +76,9 @@ Short description: Automic Vault secures the local dev tools agents use on
 macOS.
 
 Full description: From the creator of Homebrew, Automic Vault is a macOS package
-manager, secrets manager, and approval gate system for AI agents. Max Howell
-built Homebrew before AI agents existed. Automic Vault stops agents, malware,
-and compromised tools from accessing secrets or performing sensitive actions
-without approval.
+manager, secrets manager, and approval gate system for AI agents. It stops
+agents, malware, and compromised tools from accessing secrets or performing
+sensitive actions without approval.
 
 Founder context: From the creator of Homebrew, Automic Vault applies Max
 Howell's package-management background to local package roots, command stubs,

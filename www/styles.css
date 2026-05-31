@@ -472,20 +472,27 @@ h1 {
   line-height: 1.26;
 }
 
-.hero-quote {
+.quote-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin: 26px 0 0;
+  gap: 18px;
+  max-width: 1040px;
+  margin: clamp(26px, 4vw, 48px) 0 0;
+  padding-left: clamp(18px, 3vw, 34px);
+  border-left: 2px solid var(--hot);
 }
 
-.hero-quote p {
+.quote-panel p {
   margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.35rem, 2.4vw, 2.45rem);
+  font-weight: 750;
+  line-height: 1.12;
 }
 
-.hero-quote cite {
+.quote-panel cite {
   display: block;
-  margin-top: 4px;
+  margin-top: 6px;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.82rem;
@@ -576,6 +583,7 @@ h1 {
 .compare,
 .guides,
 .secured-radar-section,
+.founder-quote,
 .final-cta {
   padding: clamp(28px, 4vw, 52px) clamp(20px, 3vw, 44px);
   border-bottom: 1px solid var(--line);

@@ -1,5 +1,14 @@
 # Automic Vault
 
+Stop agents, malware, and compromised tools from accessing secrets or performing
+sensitive actions without approval.
+
+The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
+tokens sit in files an agent or malware can read. Automic Vault keeps watching
+after setup, so new installs and stale tool config do not stay quiet.
+
+## Founder Note
+
 > I built Homebrew. It was designed before AI agents existed.
 >
 > Install with Homebrew. Secure with Automic Vault.
@@ -8,10 +17,6 @@
 > performing sensitive actions without approval.
 >
 > - Max Howell, Creator of Homebrew
-
-The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
-tokens sit in files an agent or malware can read. Automic Vault keeps watching
-after setup, so new installs and stale tool config do not stay quiet.
 
 Automic Vault is free open-source software under the Apache License 2.0.
 

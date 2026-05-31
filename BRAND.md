@@ -9,6 +9,15 @@ package managers, MCP servers, and local automation leave credentials and
 authority in places that made sense when a trusted human used the machine.
 Agents and malware change that risk.
 
+Stop agents, malware, and compromised tools from accessing secrets or performing
+sensitive actions without approval.
+
+## One-Line Promise
+
+Secure the tools you brew install.
+
+## Founder Quote
+
 > I built Homebrew. It was designed before AI agents existed.
 >
 > Install with Homebrew. Secure with Automic Vault.
@@ -17,10 +26,6 @@ Agents and malware change that risk.
 > performing sensitive actions without approval.
 >
 > - Max Howell, Creator of Homebrew
-
-## One-Line Promise
-
-Secure the tools you brew install.
 
 ## Audience
 
