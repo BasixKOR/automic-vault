@@ -617,6 +617,35 @@ fn subs_query_commands_cover_success_and_output_modes() {
     let scanner_report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(scanner_report, isotope_only_report);
 
+    let output = run_scanner_with_env(
+        &[],
+        &[
+            ("AUTOMIC_VAULT_SCANNER_WRAPPER_UI", "1"),
+            ("CLICOLOR_FORCE", "1"),
+            ("HOME", home.to_str().unwrap()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE",
+                aws_credentials.to_str().unwrap(),
+            ),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CAROOT", caroot.to_str().unwrap()),
+            ("HELM_CONFIG_HOME", helm_config_home.to_str().unwrap()),
+            (
+                "HELM_REPOSITORY_CONFIG",
+                helm_repository_config.to_str().unwrap(),
+            ),
+            ("KUBECONFIG", kubeconfig.to_str().unwrap()),
+            ("NPM_CONFIG_USERCONFIG", npm_config.to_str().unwrap()),
+            ("UV_CREDENTIALS_DIR", uv_credentials_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let scanner_stdout = stdout(&output);
+    assert!(scanner_stdout.contains("│"));
+    assert!(scanner_stdout.contains("Scope"));
+    assert!(scanner_stdout.contains("Checked"));
+    assert!(!scanner_stdout.contains("╭─ Automic Vault Scan"));
+
     let output = run_nuke_with_env(
         &[
             "secret-scanner",

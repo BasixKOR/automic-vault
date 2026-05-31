@@ -162,7 +162,8 @@ ok "Writes denied"
 ok "Network denied"
 step "Running isotope detectors"
 
-if /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null; then
+if AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
+  /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null; then
   done_line "Scan complete"
 else
   status="$?"
