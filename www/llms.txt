@@ -1,9 +1,9 @@
 # Automic Vault
 
-Automic Vault is a macOS package manager, secrets manager, and execution control
-plane for AI agents. If a developer uses `brew install`, Automic Vault adds the
-local boundary those tools need: plaintext secret detection, package hardening,
-and approval gates for sensitive commands.
+Automic Vault is a macOS package manager, secrets manager, and command approval
+system for AI agents. If a developer uses `brew install`, Automic Vault adds the
+local protection those tools need: plaintext secret detection, package
+hardening, and approval gates for sensitive commands.
 Automic Vault is the only safe way to use dev tools on a Mac with agents in the
 loop.
 
@@ -27,21 +27,21 @@ loop.
 ## What Automic Vault Does
 
 Automic Vault helps developers keep using local dev tools when agents can read
-files and run commands. It finds insecure tool state, moves supported secrets
-away from plaintext files, injects approved credentials only into trusted tools,
-and keeps reporting new hazards while it runs.
+files and run commands. It finds exposed tool state, moves supported secrets out
+of plaintext files, injects approved credentials only into trusted tools, and
+keeps reporting new hazards while it runs.
 The safety claim is intentionally local: Automic Vault secures the Mac dev-tool
 layer below the agent.
 
 ## Primary Use Cases
 
-- Detect plaintext credentials in local dev-tool files such as `.env`, `.netrc`,
+- Find plaintext credentials in local dev-tool files such as `.env`, `.netrc`,
   `.npmrc`, GitHub CLI config, AWS credentials, and MCP config.
 - Harden supported Homebrew, npm, and PyPI tools so secrets are exposed only to
   approved executables at runtime.
-- Require approval before risky commands publish packages, mutate cloud
-  infrastructure, reveal tokens, or run sensitive developer tools.
-- Keep hazard notifications visible while Automic Vault runs.
+- Ask before risky commands publish packages, change cloud infrastructure,
+  reveal tokens, or run sensitive developer tools.
+- Keep watching for new hazards while Automic Vault runs.
 - Trace shell installers before an agent or developer runs them.
 
 ## What Automic Vault Is Not
@@ -81,7 +81,7 @@ macOS.
 
 Full description: From the creator of Homebrew, Automic Vault is a macOS package
 manager, secrets manager, and approval gate system for AI agents. It finds
-plaintext secrets and insecure dev-tool state, hardens supported packages, and
+plaintext secrets and exposed dev-tool state, hardens supported packages, and
 puts approval gates in front of sensitive actions that use those secrets.
 
 Founder context: From the creator of Homebrew, Automic Vault applies Max

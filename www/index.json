@@ -3,7 +3,7 @@
   "category": "AI agent security",
   "platform": "macOS",
   "license": "Apache License 2.0",
-  "description": "Automic Vault finds plaintext secrets and insecure dev-tool state on macOS, then hardens supported packages so credentials move out of easy-read files and into protected runtime access.",
+  "description": "Automic Vault finds plaintext secrets and exposed dev-tool state on macOS, then hardens supported packages so credentials leave easy-read files and get served only at runtime.",
   "positioning": "The only safe way to use dev tools on a Mac with agents in the loop.",
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",
@@ -15,10 +15,10 @@
   "llms_txt": "https://www.automicvault.com/llms.txt",
   "llms_full_txt": "https://www.automicvault.com/llms-full.txt",
   "use_cases": [
-    "Detect plaintext credentials in local dev-tool files such as .env, .netrc, .npmrc, GitHub CLI config, AWS credentials, and MCP config.",
+    "Find plaintext credentials in local dev-tool files such as .env, .netrc, .npmrc, GitHub CLI config, AWS credentials, and MCP config.",
     "Harden supported Homebrew, npm, and PyPI tools so secrets are exposed only to approved executables at runtime.",
-    "Require approval before sensitive commands mutate infrastructure, publish packages, reveal tokens, or run sensitive developer tools.",
-    "Keep hazard notifications visible while Automic Vault runs.",
+    "Ask before sensitive commands publish packages, change cloud state, reveal tokens, or run sensitive developer tools.",
+    "Keep watching for new hazards while Automic Vault runs.",
     "Trace shell installers before an agent or developer runs them."
   ]
 }

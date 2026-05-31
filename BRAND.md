@@ -5,15 +5,15 @@
 If you use `brew install`, you need Automic Vault to secure the tools it puts on
 your Mac.
 
-Homebrew is the easiest door into the idea because developers already know it.
-The real scope is broader: CLIs, SDKs, package managers, MCP servers, and local
-automation all leave credentials and authority in places that were acceptable
-when a trusted human used the machine. Agents and malware change that risk.
+Homebrew is the familiar case because developers already know it. The real
+scope is broader: CLIs, SDKs, package managers, MCP servers, and local
+automation leave credentials and authority in places that made sense when a
+trusted human used the machine. Agents and malware change that risk.
 
-Automic Vault is the local security boundary for dev tools on macOS. It detects
+Automic Vault is the local security layer for dev tools on macOS. It finds
 insecure situations those tools leave in plain sight, hardens supported packages
-so secrets move out of plaintext storage, and puts approval gates in front of
-actions that use or expose those secrets.
+so secrets leave plaintext storage, and puts approval gates in front of actions
+that use or expose those secrets.
 
 Claim it directly: Automic Vault is the only safe way to use dev tools on a Mac
 with agents in the loop.
@@ -41,14 +41,14 @@ concrete package, path, credential, and approval semantics.
    config, and MCP config.
 3. Explain why the risk changed: agents and malware can read files and run tools
    without human memory or judgment.
-4. Show the product loop: detect the hazard, harden the package, gate sensitive
-   actions, keep watching.
+4. Show what the product does: find the hazard, harden the package, gate
+   sensitive actions, keep watching.
 5. End with the operating mode: install Automic Vault, harden what it finds, and
    leave it running for hazard notifications.
 
 ## Message Pillars
 
-- Detect what your dev tools left in plain sight.
+- Find what your dev tools left in plain sight.
 - Harden supported packages so secrets stop living in easy-read files.
 - Gate sensitive actions at the tool layer, below the agent.
 - Keep Automic Vault running so new local hazards show up quickly.
@@ -63,7 +63,7 @@ Good:
 - "curl can read `~/.netrc`."
 - "Agent wants to run `npm publish`. Approve this command?"
 - "Vault shows the package, file path, and reason."
-- "The same tool keeps working. The easy secret path disappears."
+- "The tool still runs. The easy secret path is gone."
 
 Avoid:
 
