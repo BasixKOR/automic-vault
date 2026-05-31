@@ -473,6 +473,9 @@ h1 {
 }
 
 .hero-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   margin: 26px 0 0;
 }
 
@@ -482,14 +485,13 @@ h1 {
 
 .hero-quote cite {
   display: block;
-  margin-top: 18px;
+  margin-top: 4px;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.82rem;
   font-style: normal;
   font-weight: 700;
   line-height: 1.45;
-  text-transform: uppercase;
 }
 
 .hero-actions {
