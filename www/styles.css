@@ -250,25 +250,10 @@ code {
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(90deg, oklch(7% 0.006 255 / 0.94), oklch(8% 0.006 255 / 0.72) 42%, oklch(9% 0.006 255 / 0.28) 72%),
-    linear-gradient(0deg, oklch(7% 0.006 255 / 0.94), transparent 46%),
+    linear-gradient(115deg, oklch(7% 0.006 255), oklch(10% 0.011 255) 58%, oklch(7% 0.006 255)),
+    linear-gradient(0deg, oklch(7% 0.006 255 / 0.92), transparent 46%),
     linear-gradient(var(--grid-line-soft) 1px, transparent 1px);
   background-size: auto, auto, 100% 4px;
-}
-
-.hero-product {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-}
-
-.hero-product img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center right;
-  opacity: 0.86;
-  filter: saturate(0.92) contrast(1.05);
 }
 
 .hero-meta,
@@ -450,7 +435,6 @@ code {
 .hero-copy {
   max-width: 950px;
   padding-top: 40px;
-  text-shadow: 0 2px 22px oklch(4% 0.006 255 / 0.72);
 }
 
 .eyebrow,
@@ -1218,11 +1202,6 @@ h1 {
 
   .hero-copy {
     padding-top: 18px;
-  }
-
-  .hero-product img {
-    opacity: 0.36;
-    object-position: center;
   }
 
   .hero-proof {
