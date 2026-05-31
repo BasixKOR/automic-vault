@@ -10,8 +10,12 @@ build_dir="${repo_root}/target/gui"
 target_dir="${repo_root}/target"
 default_background="${repo_root}/assets/dmg-bg@2x.png"
 release_s3_uri="s3://automicvault.com/Automic Vault.dmg"
+scanner_s3_uri="s3://automicvault.com/scanner.gz"
+scanner_script_s3_uri="s3://automicvault.com/scanner.sh"
+scanner_script_source="${repo_root}/www/scanner.sh"
 release_cloudfront_alias="${AUTOMIC_VAULT_RELEASE_DOMAIN:-automicvault.com}"
 release_cloudfront_path="/Automic%20Vault.dmg"
+release_cloudfront_paths=("${release_cloudfront_path}" "/scanner.gz" "/scanner.sh")
 finder_left=120
 finder_top=120
 finder_width=796
@@ -45,6 +49,7 @@ Options:
   --notorize          Alias for --notarize.
   --install           Install the built app bundle into /Applications.
   --publish           Create a GitHub release for vX.Y.Z with the DMG.
+                      Also uploads /scanner.gz and /scanner.sh to S3.
                       Requires --notarize.
   --clobber           Delete any existing GitHub release for vX.Y.Z before
                       publishing. Requires --publish.
@@ -58,6 +63,7 @@ publish_github_release() {
   local dmg_path="$3"
   local asset_label
   local release_notes_path
+  local scanner_gz_path
   local target_ref
   local -a release_args
 
@@ -67,6 +73,8 @@ publish_github_release() {
   if [[ "${target_ref}" == "HEAD" ]]; then
     target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
   fi
+
+  scanner_gz_path="$(build_public_scanner_artifact)"
 
   if [[ "${clobber_release}" == "true" ]]; then
     release_notes_path="$(clobber_github_release "${tag}")"
@@ -92,13 +100,21 @@ publish_github_release() {
     cli_die "Draft release remains unpublished: ${tag}"
   fi
 
-  publish_public_dmg "${dmg_path}" "${tag}"
+  publish_public_dmg "${dmg_path}" "${tag}" "${scanner_gz_path}"
 
   cli_step "Publishing GitHub release ${tag}"
   if ! gh release edit "${tag}" --draft=false >&2; then
     cli_error "Release publish failed"
     cli_die "Draft release remains unpublished: ${tag}"
   fi
+}
+
+build_public_scanner_artifact() {
+  if [[ ! -f "${scanner_script_source}" ]]; then
+    cli_die "Missing scanner shell script: ${scanner_script_source}"
+  fi
+
+  "${repo_root}/scripts/build-scanner.sh"
 }
 
 clobber_github_release() {
@@ -238,6 +254,7 @@ Use short bullets grouped under clear headings only when useful."
 publish_public_dmg() {
   local dmg_path="$1"
   local tag="$2"
+  local scanner_gz_path="$3"
   local distribution_id
 
   cli_require_tool aws
@@ -248,6 +265,28 @@ publish_public_dmg() {
     --content-type application/x-apple-diskimage \
     >&2; then
     cli_error "S3 upload failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
+
+  cli_step "Uploading scanner binary to ${scanner_s3_uri}"
+  if ! aws s3 cp \
+    "${scanner_gz_path}" \
+    "${scanner_s3_uri}" \
+    --content-type application/gzip \
+    --cache-control no-cache \
+    >&2; then
+    cli_error "Scanner upload failed"
+    cli_die "Draft release remains unpublished: ${tag}"
+  fi
+
+  cli_step "Uploading scanner shell entrypoint to ${scanner_script_s3_uri}"
+  if ! aws s3 cp \
+    "${scanner_script_source}" \
+    "${scanner_script_s3_uri}" \
+    --content-type "text/x-shellscript; charset=utf-8" \
+    --cache-control no-cache \
+    >&2; then
+    cli_error "Scanner script upload failed"
     cli_die "Draft release remains unpublished: ${tag}"
   fi
 
@@ -268,10 +307,10 @@ publish_public_dmg() {
     cli_die "Unable to find CloudFront distribution for ${release_cloudfront_alias}"
   fi
 
-  cli_step "Invalidating CloudFront path ${release_cloudfront_path}"
+  cli_step "Invalidating CloudFront release paths"
   if ! aws cloudfront create-invalidation \
     --distribution-id "${distribution_id}" \
-    --paths "${release_cloudfront_path}" \
+    --paths "${release_cloudfront_paths[@]}" \
     >&2; then
     cli_error "CloudFront invalidation failed"
     cli_die "Draft release remains unpublished: ${tag}"

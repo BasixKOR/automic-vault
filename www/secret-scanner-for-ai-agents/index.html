@@ -124,7 +124,7 @@
                   "headline": "AI Agent Secret Scanner",
                   "description": "Automic Vault secret scanner checks isotope detectors and local developer files for plaintext credentials before AI agents can read them.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-05-31",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -194,8 +194,9 @@
           <p class="kicker">Local credential discovery</p>
           <h1>The secret scanner for AI agent machines</h1>
           <p class="lede">Run <code>av secret-scanner</code> before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault isotope detectors.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: May 31, 2026</p>
           <div class="answer-box"><p>An AI agent secret scanner should find plaintext credentials before the agent run starts. Automic Vault scans likely local secret paths, then pairs detection with runtime controls that prevent repeated plaintext exposure.</p></div>
+          <div class="answer-box"><p>Run the lightweight isotope-only scanner in a read-only, offline sandbox: <code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
             <a class="button" href="../secret-scanning-vs-agent-secret-protection/">Compare protection <span aria-hidden="true">›</span></a>

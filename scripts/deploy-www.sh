@@ -568,7 +568,7 @@ function handler(event) {
     return location;
   }
 
-  if (request.uri === "/install.sh") {
+  if (request.uri === "/install.sh" || request.uri === "/scanner.sh" || request.uri === "/scanner.gz") {
     return request;
   }
   if (request.uri === "/av.dmg") {
@@ -1077,6 +1077,8 @@ sync_site() {
     --exclude ".DS_Store" \
     --exclude "*/.DS_Store" \
     --exclude "Automic Vault.dmg" \
+    --exclude "scanner.gz" \
+    --exclude "scanner.sh" \
     --exclude "db.json" \
     --exclude "pkg/*" \
     --exclude "*/pkg/*" \
@@ -1205,6 +1207,14 @@ sync_site() {
     --exclude "*/pkg/*" \
     --exclude "pagefind/*" \
     --content-type "application/json; charset=utf-8" \
+    --cache-control "${WWW_HTML_CACHE_CONTROL}"
+
+  log_step "Syncing scanner shell entrypoint"
+  if [[ ! -f "${upload_site_dir}/scanner.sh" ]]; then
+    die "Missing scanner shell entrypoint: ${upload_site_dir}/scanner.sh"
+  fi
+  aws s3 cp "${upload_site_dir}/scanner.sh" "s3://${WWW_BUCKET}/scanner.sh" \
+    --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
   sync_package_pages
