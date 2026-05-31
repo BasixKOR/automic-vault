@@ -54,7 +54,7 @@ TOPICS: dict[str, dict[str, dict[str, Any]]] = {
 
 HOME_DETAIL: dict[str, dict[str, Any]] = {
     "ja": {
-        "meta": ["macOS", "ローカル優先", "エージェント実行時セキュリティ", "2026年5月24日更新"],
+        "meta": ["macOS", "Homebrew", "ローカル優先", "2026年5月31日更新"],
         "brief": [
             "シークレットは、承認されたツールが必要とするまで Keychain-backed storage に残ります。",
             "危険なツール操作は、実行時に人間の承認を要求できます。",
@@ -91,7 +91,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "次の自律実行の前に、ツール層を保護する。",
     },
     "de": {
-        "meta": ["macOS", "lokal zuerst", "Agent-Laufzeitsicherheit", "aktualisiert am 24. Mai 2026"],
+        "meta": ["macOS", "Homebrew", "lokal zuerst", "aktualisiert am 31. Mai 2026"],
         "brief": [
             "Secrets bleiben im Keychain-gestützten Speicher, bis ein genehmigtes Tool sie benötigt.",
             "Riskante Tool-Aktionen können zur Laufzeit menschliche Freigabe verlangen.",
@@ -128,7 +128,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "Sichere die Tool-Schicht vor dem nächsten autonomen Lauf.",
     },
     "fr": {
-        "meta": ["macOS", "local d'abord", "sécurité d'exécution des agents", "mis à jour le 24 mai 2026"],
+        "meta": ["macOS", "Homebrew", "local d'abord", "mis à jour le 31 mai 2026"],
         "brief": [
             "Les secrets restent dans un stockage adossé au trousseau jusqu'à ce que l'outil approuvé en ait besoin.",
             "Les actions dangereuses des outils peuvent exiger une approbation humaine au moment de l'exécution.",
@@ -165,7 +165,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "Sécurisez la couche outil avant la prochaine exécution autonome.",
     },
     "zh-Hans": {
-        "meta": ["macOS", "本地优先", "代理运行时安全", "2026 年 5 月 24 日更新"],
+        "meta": ["macOS", "Homebrew", "本地优先", "2026 年 5 月 31 日更新"],
         "brief": [
             "密钥会留在 Keychain 支持的存储中，直到已批准的工具需要它们。",
             "危险工具操作可以在执行时要求人工审批。",
@@ -644,10 +644,10 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
 def render_llms(locale: Locale) -> str:
     ui = ui_copy(locale.code)
     lines = {
-        "ja": ["# Automic Vault", "Automic Vault は macOS 上の AI エージェント向けローカルセキュリティレイヤーです。", "シークレットを平文ファイルから離し、承認されたツールだけに渡します。"],
-        "de": ["# Automic Vault", "Automic Vault ist eine lokale Sicherheitsschicht für AI-Agents auf macOS.", "Secrets verlassen Klartextdateien und werden nur an genehmigte Tools weitergegeben."],
-        "fr": ["# Automic Vault", "Automic Vault est une couche de sécurité locale pour agents IA sur macOS.", "Les secrets quittent les fichiers en clair et ne sont transmis qu'aux outils approuvés."],
-        "zh-Hans": ["# Automic Vault", "Automic Vault 是 macOS 上面向 AI 代理的本地安全层。", "密钥不再保存在明文文件中，只会传递给已批准的工具。"],
+        "ja": ["# Automic Vault", "brew install したツールを安全に。", "Homebrew は Mac にツールを入れます。Automic Vault は、そのツールが何を読めるかを確認し、対応済みの認証情報を平文ファイルから移し、コマンドがそれらを使う前に確認します。"],
+        "de": ["# Automic Vault", "Sichere die Tools, die du mit brew install installierst.", "Homebrew bringt Tools auf deinen Mac. Automic Vault prüft, was sie lesen können, verschiebt unterstützte Zugangsdaten aus Klartextdateien und fragt, bevor Befehle sie verwenden."],
+        "fr": ["# Automic Vault", "Sécurisez les outils que vous installez avec brew.", "Homebrew installe les outils sur votre Mac. Automic Vault vérifie ce qu'ils peuvent lire, déplace les identifiants pris en charge hors des fichiers en clair et demande confirmation avant que les commandes les utilisent."],
+        "zh-Hans": ["# Automic Vault", "保护你用 brew install 装上的工具。", "Homebrew 把工具装到你的 Mac 上。Automic Vault 检查它们能读取什么，将支持的凭据移出明文文件，并在命令使用这些凭据前请求确认。"],
     }[locale.code]
     return "\n\n".join(lines) + f"\n\n- {ui['website']}: {href('/', locale)}\n- {ui['packages']}: {href('/pkg/', locale)}\n"
 
@@ -821,7 +821,7 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
         <div class="hero-grid">
           <div class="hero-copy">
             <p class="eyebrow">{html.escape(t["kicker"])}</p>
-            <h1 id="hero-title">Automic Vault</h1>
+            <h1 id="hero-title">{html.escape(t["h1"])}</h1>
             <p class="lede">{html.escape(t["lede"])}</p>
           </div>
           <aside class="hero-brief" aria-label="{html.escape(ui["currentSecurityPostureAria"], quote=True)}">

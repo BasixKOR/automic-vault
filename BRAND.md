@@ -2,20 +2,19 @@
 
 ## Core Position
 
-Stop agents reading dev-tool secrets.
+Secure the tools you brew install.
 
 `brew install` is the common path in. The real scope is broader: CLIs, SDKs,
 package managers, MCP servers, and local automation leave credentials and
 authority in places that made sense when a trusted human used the machine.
 Agents and malware change that risk.
 
-Automic Vault scans Homebrew and other dev tools for plaintext secrets, hardens
-supported packages so credentials leave easy-read files, and asks before
-commands use secrets.
+Homebrew puts tools on your Mac. Automic Vault checks what they can read, moves
+supported credentials out of plaintext files, and asks before commands use them.
 
 ## One-Line Promise
 
-Stop agents reading dev-tool secrets.
+Secure the tools you brew install.
 
 ## Audience
 

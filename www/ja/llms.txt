@@ -1,8 +1,8 @@
 # Automic Vault
 
-Automic Vault は macOS 上の AI エージェント向けローカルセキュリティレイヤーです。
+brew install したツールを安全に。
 
-シークレットを平文ファイルから離し、承認されたツールだけに渡します。
+Homebrew は Mac にツールを入れます。Automic Vault は、そのツールが何を読めるかを確認し、対応済みの認証情報を平文ファイルから移し、コマンドがそれらを使う前に確認します。
 
 - ウェブサイト: https://www.automicvault.com/ja/
 - パッケージ: https://www.automicvault.com/ja/pkg/

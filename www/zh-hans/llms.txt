@@ -1,8 +1,8 @@
 # Automic Vault
 
-Automic Vault 是 macOS 上面向 AI 代理的本地安全层。
+保护你用 brew install 装上的工具。
 
-密钥不再保存在明文文件中，只会传递给已批准的工具。
+Homebrew 把工具装到你的 Mac 上。Automic Vault 检查它们能读取什么，将支持的凭据移出明文文件，并在命令使用这些凭据前请求确认。
 
 - 网站: https://www.automicvault.com/zh-hans/
 - 软件包: https://www.automicvault.com/zh-hans/pkg/

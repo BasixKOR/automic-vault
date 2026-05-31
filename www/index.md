@@ -1,13 +1,11 @@
 # Automic Vault
 
-Agents can read the same local files your dev tools read. Automic Vault scans
-Homebrew and other dev tools for plaintext secrets, hardens supported packages,
-and asks before commands use credentials.
+Homebrew puts tools on your Mac. Automic Vault checks what they can read, moves
+supported credentials out of plaintext files, and asks before commands use them.
 
-`brew install` is the common path in. The same risk shows up across CLIs, SDKs,
-package managers, and MCP servers: tokens sit in files an agent or malware can
-read. Automic Vault keeps watching after setup, so new installs and stale tool
-config do not stay quiet.
+The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
+tokens sit in files an agent or malware can read. Automic Vault keeps watching
+after setup, so new installs and stale tool config do not stay quiet.
 
 Automic Vault is free open-source software under the Apache License 2.0.
 

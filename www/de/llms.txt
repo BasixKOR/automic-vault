@@ -1,8 +1,8 @@
 # Automic Vault
 
-Automic Vault ist eine lokale Sicherheitsschicht für AI-Agents auf macOS.
+Sichere die Tools, die du mit brew install installierst.
 
-Secrets verlassen Klartextdateien und werden nur an genehmigte Tools weitergegeben.
+Homebrew bringt Tools auf deinen Mac. Automic Vault prüft, was sie lesen können, verschiebt unterstützte Zugangsdaten aus Klartextdateien und fragt, bevor Befehle sie verwenden.
 
 - Website: https://www.automicvault.com/de/
 - Pakete: https://www.automicvault.com/de/pkg/
