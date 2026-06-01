@@ -50,6 +50,31 @@ extension String {
     }
 }
 
+enum CategoryPackageSortOrder: String, CaseIterable, Identifiable, Sendable {
+    case rank
+    case alphabetical
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rank:
+            return L10n.string("Rank")
+        case .alphabetical:
+            return L10n.string("A-Z")
+        }
+    }
+
+    var protocolValue: String {
+        switch self {
+        case .rank:
+            return "rank"
+        case .alphabetical:
+            return "az"
+        }
+    }
+}
+
 struct PackageRecord: Decodable, Equatable {
     let name: String
     let source: PackageSource?
