@@ -34,7 +34,6 @@ const sans =
   '"Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const mono =
   '"Geist Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
-const emoji = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -224,7 +223,7 @@ const CodePill: React.FC<{ tool: string; accent: string; large?: boolean }> = ({
   </span>
 );
 
-const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ item, index }) => {
+const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const frame = useCurrentFrame();
   const { fps: configFps } = useVideoConfig();
   const local = frame;
@@ -233,20 +232,12 @@ const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ it
     fps: configFps,
     config: { damping: 17, stiffness: 190, mass: 0.72 },
   });
-  const emojiPop = spring({
-    frame: local - 10,
-    fps: configFps,
-    config: { damping: 10, stiffness: 430, mass: 0.42 },
-  });
   const entrance = fade(local, 0, 16);
   const exit = fadeOut(local, notificationDuration - 20, notificationDuration - 6);
   const opacity = entrance * exit;
   const y = interpolate(card, [0, 1], [66, 0], clamp);
   const scale = interpolate(card, [0, 1], [0.92, 1], clamp);
   const tilt = interpolate(card, [0, 1], [2.6, 0], clamp);
-  const emojiScale = interpolate(emojiPop, [0, 1], [0.2, 1], clamp);
-  const emojiRotate = interpolate(emojiPop, [0, 1], [-20, 0], clamp);
-  const pulse = interpolate(local % 36, [0, 18, 36], [0.16, 0.44, 0.16], clamp);
   const titleOpacity = fade(local, 18, 34);
   const subOpacity = fade(local, 32, 48);
 
@@ -298,47 +289,10 @@ const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ it
             display: "flex",
             height: "100%",
             minHeight: 370,
-            gap: 34,
             alignItems: "center",
-            padding: "44px 54px",
+            padding: "52px 68px",
           }}
         >
-          <div
-            style={{
-              position: "relative",
-              width: 138,
-              height: 138,
-              borderRadius: 34,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: `linear-gradient(145deg, rgba(255,255,255,0.92), ${item.accent}18)`,
-              border: `1px solid ${item.accent}32`,
-              boxShadow: `0 26px 70px ${item.accent}24, inset 0 1px 0 rgba(255,255,255,0.86)`,
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: -18,
-                borderRadius: 44,
-                border: `2px solid ${item.accent}`,
-                opacity: pulse,
-                transform: `scale(${interpolate(local % 36, [0, 36], [0.76, 1.18], clamp)})`,
-              }}
-            />
-            <div
-              style={{
-                fontFamily: emoji,
-                fontSize: 76,
-                lineHeight: 1,
-                transform: `scale(${emojiScale}) rotate(${emojiRotate}deg)`,
-                filter: "drop-shadow(0 12px 24px rgba(17,24,39,0.18))",
-              }}
-            >
-              🚨
-            </div>
-          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -403,28 +357,6 @@ const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ it
               <CodePill tool={item.tool} accent={item.accent} />
               {item.suffix ? <span style={{ marginLeft: 8 }}>{item.suffix}</span> : null}
             </div>
-          </div>
-          <div
-            style={{
-              position: "absolute",
-              right: 34,
-              top: 34,
-              display: "flex",
-              gap: 8,
-            }}
-          >
-            {[red, amber, green].map((color) => (
-              <div
-                key={`${color}-${index}`}
-                style={{
-                  width: 11,
-                  height: 11,
-                  borderRadius: 11,
-                  background: color,
-                  opacity: 0.78,
-                }}
-              />
-            ))}
           </div>
         </div>
       </div>
@@ -659,7 +591,7 @@ export const BrewInstallSecurityComposition: React.FC = () => {
           from={index * notificationDuration}
           durationInFrames={notificationDuration}
         >
-          <NotificationScene item={item} index={index} />
+          <NotificationScene item={item} />
         </Sequence>
       ))}
       <Sequence from={actTwoStart} durationInFrames={actTwoDuration}>
