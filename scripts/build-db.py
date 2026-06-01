@@ -1344,7 +1344,7 @@ def _npm_packument_has_installable_cli(package, packument):
     return _npm_matching_executable(package, version_doc.get("bin")) is not None
 
 
-def _refresh_npm_packuments(packages, packuments, existing_packages):
+def _refresh_npm_packuments(packages, packuments, existing_packages, downloads=None):
     candidates = {}
     for fallback, packument in packuments.items():
         if not isinstance(packument, dict):
@@ -1355,7 +1355,8 @@ def _refresh_npm_packuments(packages, packuments, existing_packages):
             continue
         candidates[package] = packument
 
-    downloads = _npm_monthly_downloads_batch(sorted(candidates), existing_packages)
+    if downloads is None:
+        downloads = _npm_monthly_downloads_batch(sorted(candidates), existing_packages)
     for package, packument in candidates.items():
         metadata = _npm_metadata_from_packument(
             package,
@@ -1398,8 +1399,14 @@ def _run_npm_full_scan(state):
                 continue
             if isinstance(package, str) and package:
                 page_packages.append(package)
-        packuments = _fetch_npm_packuments_for_packages(page_packages)
-        _refresh_npm_packuments(packages, packuments, packages)
+        downloads = _npm_monthly_downloads_batch(page_packages, packages)
+        popular_packages = [
+            package
+            for package in page_packages
+            if (downloads.get(package) or 0) >= NPM_MIN_MONTHLY_DOWNLOADS
+        ]
+        packuments = _fetch_npm_packuments_for_packages(popular_packages)
+        _refresh_npm_packuments(packages, packuments, packages, downloads)
         next_cursor = rows[-1].get("id") or rows[-1].get("key")
         state["full_scan_cursor"] = next_cursor
         _write_npm_index_state(state)

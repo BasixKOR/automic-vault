@@ -275,6 +275,9 @@ class NpmIndexTests(unittest.TestCase):
                         "rows": [
                             {
                                 "id": "example-cli",
+                            },
+                            {
+                                "id": "tiny-cli",
                             }
                         ]
                     }
@@ -290,8 +293,13 @@ class NpmIndexTests(unittest.TestCase):
                         },
                         "time": {"1.0.0": "2026-01-01T00:00:00.000Z"},
                     }
+                if "registry.npmjs.org/tiny-cli" in url:
+                    raise AssertionError("low-download packages should not fetch packuments")
                 if "downloads/point" in url:
-                    return {"example-cli": {"downloads": 60000}}
+                    return {
+                        "example-cli": {"downloads": 60000},
+                        "tiny-cli": {"downloads": 100},
+                    }
                 raise AssertionError(url)
 
             with mock.patch.object(build_db, "_npm_fetch_json", fetch):
