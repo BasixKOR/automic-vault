@@ -156,6 +156,7 @@ final class MainWindowModelTests: XCTestCase {
                         packages: [
                             Self.packageSearchResult(
                                 name: "brew:uv",
+                                homepage: "https://docs.astral.sh/uv/",
                                 category: "developer-tools"
                             ),
                             Self.packageSearchResult(
@@ -193,6 +194,43 @@ final class MainWindowModelTests: XCTestCase {
             model.displayedPackages.map(\.selectionID),
             ["brew:uv", "brew:gh"]
         )
+
+        let package = try XCTUnwrap(model.displayedPackages.first)
+        model.select(package)
+
+        XCTAssertEqual(model.selectedPackage?.selectionID, "brew:uv")
+        XCTAssertEqual(model.selectedDetail?.packageName, "brew:uv")
+        XCTAssertEqual(
+            model.selectedURL(for: .homepage)?.absoluteString,
+            "https://docs.astral.sh/uv/"
+        )
+    }
+
+    @MainActor
+    func testNewUpdatedSectionCountsAndShowsUpdatedPackages() async throws {
+        let model = MainWindowModel(
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "npm:tsx",
+                            homepage: "https://tsx.is",
+                            category: nil,
+                            pulseKind: "updated"
+                        ),
+                    ],
+                    totalCount: 1,
+                    nextOffset: nil
+                )
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .newUpdated
+        await waitUntil(model.displayedPackages.count == 1)
+
+        XCTAssertEqual(model.count(for: .newUpdated), 1)
+        XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["pulse:npm:tsx"])
     }
 
     @MainActor
@@ -902,18 +940,20 @@ final class MainWindowModelTests: XCTestCase {
 
     private static func packageSearchResult(
         name: String,
-        category: String? = nil
+        homepage: String? = nil,
+        category: String? = nil,
+        pulseKind: String? = nil
     ) -> PackageSearchResult {
         PackageSearchResult(
             name: name,
             source: .formula(rootFormula: name.replacingOccurrences(of: "brew:", with: "")),
             version: "1.0",
             description: "\(name) package",
-            homepage: nil,
+            homepage: homepage,
             category: category,
             dependencies: [],
             securityState: nil,
-            pulseKind: nil
+            pulseKind: pulseKind
         )
     }
 

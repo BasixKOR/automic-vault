@@ -569,6 +569,7 @@ struct EmbeddedNpmMetadata {
     executable: String,
     popularity: Option<EmbeddedNpmPopularity>,
     last_updated_at: Option<String>,
+    pulse_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -17830,6 +17831,26 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                                 }
                             });
                             (pulse_kind, parsed, name)
+                        })
+                })
+            }))
+            .chain(db.npms.into_iter().filter_map(|(name, metadata)| {
+                metadata.last_updated_at.and_then(|last_updated_at| {
+                    OffsetDateTime::parse(&last_updated_at, &Rfc3339)
+                        .ok()
+                        .map(|parsed| {
+                            let pulse_kind = metadata.pulse_kind.and_then(|kind| {
+                                if kind.eq_ignore_ascii_case("new")
+                                    && pulse_reference_time.unix_timestamp()
+                                        - parsed.unix_timestamp()
+                                        > 7 * 24 * 60 * 60
+                                {
+                                    None
+                                } else {
+                                    Some(kind)
+                                }
+                            });
+                            (pulse_kind, parsed, npm_package_display_name(&name))
                         })
                 })
             }))

@@ -505,11 +505,11 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
-    private var pulseNewPackageCount: Int? {
+    private var pulsePackageCount: Int? {
         guard pulsePackages.isEmpty == false || pulseTotalCount != nil else {
             return nil
         }
-        return pulsePackages.filter(isNewPulsePackage).count
+        return pulseTotalCount ?? pulsePackages.count
     }
 
     func start() {
@@ -834,7 +834,7 @@ final class MainWindowModel: ObservableObject {
         case .geigerCounter:
             return geigerCounterCount
         case .newUpdated:
-            return pulseNewPackageCount
+            return pulsePackageCount
         case .outdated:
             return max(outdatedUpdatePackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
@@ -1026,10 +1026,12 @@ final class MainWindowModel: ObservableObject {
     private var allKnownPackages: [PackagePresentation] {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
+        let categoryPackages = categoryPackagesByIdentifier.values.flatMap { $0 }
         for package in packages
             + localOutdatedPackages
             + geigerPackages
             + catalogPackages
+            + categoryPackages
             + pulsePackages
             + searchResults {
             if seen.insert(package.selectionID).inserted {
@@ -1443,13 +1445,6 @@ final class MainWindowModel: ObservableObject {
         return outdatedPackageNames.contains(name)
     }
 
-    private func isNewPulsePackage(_ package: PackagePresentation) -> Bool {
-        guard case .available(let result) = package.item else {
-            return false
-        }
-        return result.isNewPulse
-    }
-
     private func installSnapshotObserverIfNeeded() {
         guard snapshotObserver == nil else {
             return
@@ -1639,6 +1634,9 @@ final class MainWindowModel: ObservableObject {
                 normalized,
                 for: package.selectionID
             )
+            categoryPackagesByIdentifier = categoryPackagesByIdentifier.mapValues {
+                $0.updatingDetail(normalized, for: package.selectionID)
+            }
             geigerPackages = geigerPackages.updatingDetail(
                 normalized,
                 for: package.selectionID

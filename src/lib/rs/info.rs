@@ -743,6 +743,19 @@ pub(crate) fn resolve_pulse_package_results(
             }
         })
     }));
+    results.extend(db.npms.into_iter().filter_map(|(name, metadata)| {
+        metadata.last_updated_at.clone().map(|last_updated_at| {
+            let pulse_kind = pulse_kind_for_timestamp(
+                metadata.pulse_kind.clone(),
+                &last_updated_at,
+                pulse_reference_time,
+            );
+            let mut result = npm_search_result(&name, &metadata);
+            result.last_updated_at = Some(last_updated_at);
+            result.pulse_kind = Some(pulse_kind);
+            result
+        })
+    }));
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
     results.sort_by(compare_pulse_package_results);
