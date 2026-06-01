@@ -1195,6 +1195,8 @@ def _read_npm_index_state():
     if not isinstance(packages, dict):
         packages = {}
     state["packages"] = packages
+    if state.get("last_full_scan_at") and not state.get("full_scan_cursor"):
+        state["full_scan_started_at"] = None
     return state
 
 
@@ -1436,17 +1438,20 @@ def _collect_npm_metadata():
     )
 
     try:
-        if (
+        needs_full_scan = (
             NPM_FULL_SCAN
             or not packages
             or state.get("full_scan_cursor")
             or not state.get("last_full_scan_at")
-        ):
+        )
+        changes_since = state.get("last_seq")
+        if needs_full_scan:
+            changes_since = _current_npm_changes_sequence()
             print("Starting npm full metadata scan...", file=sys.stderr)
             _run_npm_full_scan(state)
 
         changed, deleted, next_seq, has_more_changes = _fetch_npm_changes_since(
-            state.get("last_seq")
+            changes_since
         )
         for package in deleted:
             packages.pop(package, None)

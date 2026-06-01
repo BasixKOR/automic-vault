@@ -300,12 +300,37 @@ class NpmIndexTests(unittest.TestCase):
             self.assertIsNone(state["full_scan_cursor"])
             self.assertIn("example-cli", state["packages"])
 
+    def test_npm_read_state_clears_stale_started_marker_after_completed_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            build_db = load_build_db()
+            build_db.NPM_INDEX_STATE_PATH = os.path.join(tmp, "index.json")
+            os.makedirs(tmp, exist_ok=True)
+            with open(build_db.NPM_INDEX_STATE_PATH, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "full_scan_cursor": None,
+                        "full_scan_started_at": "2026-05-27T00:06:25+00:00",
+                        "last_full_scan_at": "2026-06-01T15:18:26+00:00",
+                        "packages": {},
+                    },
+                    handle,
+                )
+
+            state = build_db._read_npm_index_state()
+
+            self.assertIsNone(state["full_scan_started_at"])
+
     def test_npm_collect_fails_without_usable_cache_on_rate_limit(self):
         build_db = load_build_db()
         state = build_db._default_npm_index_state()
 
         with (
             mock.patch.object(build_db, "_read_npm_index_state", return_value=state),
+            mock.patch.object(
+                build_db,
+                "_current_npm_changes_sequence",
+                return_value="scan-start",
+            ),
             mock.patch.object(
                 build_db,
                 "_run_npm_full_scan",
@@ -373,17 +398,23 @@ class NpmIndexTests(unittest.TestCase):
 
         with (
             mock.patch.object(build_db, "_read_npm_index_state", return_value=state),
+            mock.patch.object(
+                build_db,
+                "_current_npm_changes_sequence",
+                return_value="scan-start",
+            ),
             mock.patch.object(build_db, "_run_npm_full_scan", side_effect=full_scan) as scan,
             mock.patch.object(
                 build_db,
                 "_fetch_npm_changes_since",
                 return_value=(set(), set(), "11", False),
-            ),
+            ) as changes,
             mock.patch.object(build_db, "_write_npm_index_state"),
         ):
             packages = build_db._collect_npm_metadata()
 
         scan.assert_called_once()
+        changes.assert_called_once_with("scan-start")
         self.assertIn("openclaw", packages)
         self.assertLess(
             packages["openclaw"]["popularity"]["rank"],
