@@ -307,6 +307,9 @@ struct PackageOperationRequest: Equatable {
 final class MainWindowModel: ObservableObject {
     @Published var selectedSection: MainWindowSection = .installed {
         didSet {
+            if selectedSection != .newUpdated {
+                newUpdatedSelectionDisplayCount = nil
+            }
             if selectedSection != oldValue {
                 clearSelectedPackage()
             }
@@ -340,7 +343,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var packageOperationRequest: PackageOperationRequest?
     @Published private(set) var activePackageOperation: PackageOperationRequest?
     @Published private(set) var automicVaultCLTRecommendation: PackageRecommendation?
-    @Published private(set) var newUpdatedLastClickedAt: Date?
+    private(set) var newUpdatedLastClickedAt: Date?
 
     nonisolated private static let pageSize = 96
     nonisolated private static let paginationPrefetchThreshold = 12
@@ -348,6 +351,7 @@ final class MainWindowModel: ObservableObject {
         "MainWindowModel.newUpdatedLastClickedAt"
     private let statusStore = NucleusStatusStore()
     private let userDefaults: UserDefaults
+    private var newUpdatedSelectionDisplayCount: Int?
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
     private var searchRequestID = 0
@@ -542,6 +546,14 @@ final class MainWindowModel: ObservableObject {
         return pulsePackages.filter(isNewPackageSinceLastNewUpdatedClick).count
     }
 
+    private var displayedNewUpdatedPackageCount: Int? {
+        if selectedSection == .newUpdated,
+           let count = positiveSidebarCount(newUpdatedSelectionDisplayCount) {
+            return count
+        }
+        return positiveSidebarCount(pulsePackageCount)
+    }
+
     func start() {
         installSnapshotObserverIfNeeded()
         applyStatusSnapshot(statusStore.loadSnapshot())
@@ -645,7 +657,14 @@ final class MainWindowModel: ObservableObject {
 
     func selectSection(_ section: MainWindowSection) {
         if section == .newUpdated {
+            newUpdatedSelectionDisplayCount = positiveSidebarCount(
+                selectedSection == .newUpdated
+                    ? (newUpdatedSelectionDisplayCount ?? pulsePackageCount)
+                    : pulsePackageCount
+            )
             recordNewUpdatedSidebarClick()
+        } else {
+            newUpdatedSelectionDisplayCount = nil
         }
         selectedSection = section
         if isSearchActive {
@@ -876,7 +895,7 @@ final class MainWindowModel: ObservableObject {
         case .geigerCounter:
             return geigerCounterCount
         case .newUpdated:
-            return pulsePackageCount
+            return displayedNewUpdatedPackageCount
         case .outdated:
             return max(outdatedUpdatePackageNames.count, snapshot.flaggedOutdatedPackageCount)
         case .allPackages:
@@ -1517,6 +1536,13 @@ final class MainWindowModel: ObservableObject {
         let clickedAt = Date()
         newUpdatedLastClickedAt = clickedAt
         userDefaults.set(clickedAt, forKey: Self.newUpdatedLastClickedAtDefaultsKey)
+    }
+
+    private func positiveSidebarCount(_ count: Int?) -> Int? {
+        guard let count, count > 0 else {
+            return nil
+        }
+        return count
     }
 
     private func installSnapshotObserverIfNeeded() {

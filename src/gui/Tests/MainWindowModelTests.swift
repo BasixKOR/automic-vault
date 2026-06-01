@@ -300,7 +300,7 @@ final class MainWindowModelTests: XCTestCase {
         model.selectedSection = .newUpdated
         await waitUntil(model.displayedPackages.count == 1)
 
-        XCTAssertEqual(model.count(for: .newUpdated), 0)
+        XCTAssertNil(model.count(for: .newUpdated))
         XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["pulse:npm:tsx"])
     }
 
@@ -353,7 +353,7 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testClickingNewUpdatedSidebarResetsNewPackageCount() async throws {
+    func testClickingNewUpdatedSidebarDefersResetDisplayUntilLeavingSection() async throws {
         let suiteName = "MainWindowModelTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -382,10 +382,14 @@ final class MainWindowModelTests: XCTestCase {
 
         model.selectSection(.newUpdated)
 
-        XCTAssertEqual(model.count(for: .newUpdated), 0)
+        XCTAssertEqual(model.count(for: .newUpdated), 1)
         XCTAssertNotNil(
             defaults.object(forKey: MainWindowModel.newUpdatedLastClickedAtDefaultsKey) as? Date
         )
+
+        model.selectSection(.installed)
+
+        XCTAssertNil(model.count(for: .newUpdated))
     }
 
     @MainActor

@@ -150,7 +150,7 @@ struct MainWindowView: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                 Spacer(minLength: 6)
-                if let count = model.count(for: section) {
+                if let count = model.count(for: section), count > 0 {
                     if section == .geigerCounter && count > 0 {
                         CountPill(count: count, prominence: .critical)
                             .fixedSize()
