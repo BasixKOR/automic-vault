@@ -161,14 +161,13 @@ fn dispatch_request(
         core::ProtocolMethod::PackagesListAvailable => respond(
             request.id,
             request.params,
-            |params: PageParams| match params.category.as_deref() {
-                Some(category) => ops::list_available_packages_matching_category(
+            |params: PageParams| {
+                ops::list_available_packages_matching_category(
                     params.offset,
                     params.limit,
-                    Some(category),
+                    params.category.as_deref(),
                     params.sort.as_deref(),
-                ),
-                None => ops::list_available_packages(params.offset, params.limit),
+                )
             },
         ),
         core::ProtocolMethod::PackagesListPulse => {
@@ -492,7 +491,7 @@ mod tests {
         let available = dispatch_request(core::ProtocolRequest {
             id: 1,
             method: "packages.listAvailable".to_string(),
-            params: serde_json::json!({"offset": 0, "limit": 1}),
+            params: serde_json::json!({"offset": 0, "limit": 1, "sort": "az"}),
         })
         .unwrap();
         assert_eq!(available["id"], 1);

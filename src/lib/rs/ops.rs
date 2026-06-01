@@ -353,13 +353,6 @@ fn compare_version_suffixes(left: &str, right: &str) -> std::cmp::Ordering {
     }
 }
 
-pub(crate) fn list_available_packages(
-    offset: usize,
-    limit: usize,
-) -> Result<core::SearchPackagesResponse, String> {
-    list_available_packages_matching_category(offset, limit, None, None)
-}
-
 pub(crate) fn list_available_packages_matching_category(
     offset: usize,
     limit: usize,
@@ -373,7 +366,7 @@ pub(crate) fn list_available_packages_matching_category(
     if let Some(category) = normalized_requested_category(category) {
         packages.retain(|package| package_category_identifier(package) == category);
     }
-    sort_available_packages(&mut packages, normalized_package_sort(sort));
+    sort_available_packages(&mut packages, normalized_package_sort(sort))?;
     Ok(search_packages_response_with_category_counts(
         packages,
         offset,
@@ -395,13 +388,25 @@ fn normalized_package_sort(sort: Option<&str>) -> PackageListSort {
     }
 }
 
-fn sort_available_packages(packages: &mut [PackageSearchResult], sort: PackageListSort) {
+fn sort_available_packages(
+    packages: &mut [PackageSearchResult],
+    sort: PackageListSort,
+) -> Result<(), String> {
     match sort {
-        PackageListSort::Rank => packages.sort_by(compare_package_rank_order),
+        PackageListSort::Rank => {
+            if let Some(package) = packages.iter().find(|package| package.rank.is_none()) {
+                return Err(format!(
+                    "package {} is missing rank metadata",
+                    package.package_name
+                ));
+            }
+            packages.sort_by(compare_package_rank_order);
+        }
         PackageListSort::Alphabetical => packages.sort_by(|left, right| {
             compare_package_names_for_search_order(&left.package_name, &right.package_name)
         }),
     }
+    Ok(())
 }
 
 fn compare_package_rank_order(
@@ -409,8 +414,8 @@ fn compare_package_rank_order(
     right: &PackageSearchResult,
 ) -> std::cmp::Ordering {
     match (left.rank, right.rank) {
-        (Some(left_rank), Some(right_rank)) => left_rank
-            .cmp(&right_rank)
+        (Some(left_rank), Some(right_rank)) => right_rank
+            .cmp(&left_rank)
             .then_with(|| left.package_name.cmp(&right.package_name)),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
@@ -1898,11 +1903,13 @@ mod tests {
         assert!(empty.packages.is_empty());
         assert_eq!(empty.next_offset, None);
 
-        let default_page = list_available_packages(0, 0).unwrap();
+        let default_page =
+            list_available_packages_matching_category(0, 0, None, Some("az")).unwrap();
         assert!(default_page.total_count >= default_page.packages.len());
         assert!(default_page.packages.len() <= DEFAULT_SEARCH_PAGE_SIZE);
 
-        let capped_page = list_available_packages(0, usize::MAX).unwrap();
+        let capped_page =
+            list_available_packages_matching_category(0, usize::MAX, None, Some("az")).unwrap();
         assert!(capped_page.packages.len() <= MAX_SEARCH_PAGE_SIZE);
 
         let past_end = search_packages("rg", usize::MAX / 2, 1).unwrap();
@@ -1916,6 +1923,57 @@ mod tests {
         let geiger = list_geiger_packages(0, 1).unwrap();
         assert!(geiger.total_count >= geiger.packages.len());
         assert!(geiger.packages.len() <= 1);
+    }
+
+    #[test]
+    fn package_rank_sort_is_descending_and_requires_rank_metadata() {
+        let mut packages = vec![
+            ranked_search_result("alpha", Some(1)),
+            ranked_search_result("zulu", Some(3)),
+            ranked_search_result("middle", Some(2)),
+        ];
+        sort_available_packages(&mut packages, PackageListSort::Rank).unwrap();
+        assert_eq!(
+            packages
+                .iter()
+                .map(|package| package.package_name.as_str())
+                .collect::<Vec<_>>(),
+            ["zulu", "middle", "alpha"]
+        );
+
+        packages.push(ranked_search_result("missing", None));
+        let error = sort_available_packages(&mut packages, PackageListSort::Rank).unwrap_err();
+        assert!(error.contains("missing rank metadata"));
+
+        sort_available_packages(&mut packages, PackageListSort::Alphabetical).unwrap();
+        assert_eq!(
+            packages
+                .iter()
+                .map(|package| package.package_name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "middle", "missing", "zulu"]
+        );
+    }
+
+    fn ranked_search_result(package_name: &str, rank: Option<u32>) -> PackageSearchResult {
+        PackageSearchResult {
+            package_name: package_name.to_string(),
+            source: PackageReceiptSource::Formula {
+                root_formula: package_name.to_string(),
+            },
+            summary: None,
+            latest_version: None,
+            homepage: None,
+            repository: None,
+            upstream_docs: None,
+            docs: Vec::new(),
+            category: None,
+            dependencies: Vec::new(),
+            security_state: None,
+            rank,
+            last_updated_at: None,
+            pulse_kind: None,
+        }
     }
 
     #[test]

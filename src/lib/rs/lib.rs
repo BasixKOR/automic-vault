@@ -17691,7 +17691,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
-    fn list_available_packages_paginates_ranked_results() {
+    fn list_available_packages_paginates_results_and_requires_rank_metadata() {
         let _env_lock = test_env_lock().lock().unwrap();
         let db = crate::cli::load_db().unwrap();
         crate::cli::ensure_db_schema(&db).unwrap();
@@ -17715,27 +17715,35 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                     .map(|popularity| (popularity.rank, npm_package_display_name(&name)))
             }))
             .collect::<Vec<_>>();
-        ranked.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        ranked.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
         ranked.dedup_by(|left, right| left.1 == right.1);
         assert!(
             ranked.len() >= 2,
             "embedded db should carry ranked packages"
         );
 
-        let first_page = ops::list_available_packages(0, 1).unwrap();
+        let rank_error =
+            ops::list_available_packages_matching_category(0, 1, None, None).unwrap_err();
+        assert!(
+            rank_error.contains("missing rank metadata"),
+            "unexpected rank error: {rank_error}"
+        );
+
+        let first_page =
+            ops::list_available_packages_matching_category(0, 1, None, Some("az")).unwrap();
         assert_eq!(first_page.packages.len(), 1);
         assert_eq!(
             first_page.total_count,
-            ops::list_available_packages(0, 0).unwrap().total_count
+            ops::list_available_packages_matching_category(0, 0, None, Some("az"))
+                .unwrap()
+                .total_count
         );
         assert_eq!(first_page.next_offset, Some(1));
-        assert_eq!(first_page.packages[0].name, ranked[0].1);
 
-        let second_page = ops::list_available_packages(1, 1).unwrap();
+        let second_page =
+            ops::list_available_packages_matching_category(1, 1, None, Some("az")).unwrap();
         assert_eq!(second_page.packages.len(), 1);
         assert_eq!(second_page.total_count, first_page.total_count);
-        assert_eq!(second_page.packages[0].name, ranked[1].1);
-        assert_eq!(first_page.packages[0].rank, Some(ranked[0].0));
 
         let category = first_page
             .category_counts
@@ -17745,7 +17753,8 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             .expect("available package response should include category counts")
             .to_string();
         let category_page =
-            ops::list_available_packages_matching_category(0, 2, Some(&category), None).unwrap();
+            ops::list_available_packages_matching_category(0, 2, Some(&category), Some("az"))
+                .unwrap();
         assert_eq!(
             category_page.total_count,
             first_page.category_counts[&category]
