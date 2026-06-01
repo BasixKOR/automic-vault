@@ -99,7 +99,7 @@
 "Downloading" = "Telechargement";
 "Downloading %@" = "Telechargement de %@";
 "Edit" = "Edition";
-"Ecosystem" = "Ecosysteme";
+"ECOSYSTEM" = "ECOSYSTEME";
 "Environment" = "Environnement";
 "error" = "erreur";
 "Executable: %@" = "Executable : %@";

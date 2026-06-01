@@ -92,7 +92,7 @@ struct MainWindowView: View {
                 sidebarRow(section)
             }
 
-            sidebarHeader(L10n.string("Ecosystem"))
+            sidebarHeader(L10n.string("ECOSYSTEM"))
                 .padding(.top, 22)
                 .kerning(1.2)
             ForEach(MainWindowSection.ecosystemSections) { section in

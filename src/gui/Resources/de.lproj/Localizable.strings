@@ -99,7 +99,7 @@
 "Downloading" = "Wird geladen";
 "Downloading %@" = "%@ wird geladen";
 "Edit" = "Bearbeiten";
-"Ecosystem" = "Oekosystem";
+"ECOSYSTEM" = "OEKOSYSTEM";
 "Environment" = "Umgebung";
 "error" = "Fehler";
 "Executable: %@" = "Ausfuehrbare Datei: %@";
