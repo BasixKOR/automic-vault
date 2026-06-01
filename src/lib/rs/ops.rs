@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 const MAX_HELPER_PACKAGES: usize = 50;
 const HELPER_AV_INSTALL_TARGET: &str = "/usr/local/bin/av";
@@ -171,12 +172,17 @@ pub(crate) fn list_installed_packages() -> Result<core::ListInstalledResponse, S
         let qualified_name = package_source_qualified_name(&receipt.source);
         let security_state =
             package_security_state_for_identifiers([receipt.package_name.clone(), qualified_name]);
+        let catalog_metadata = catalog_metadata_for_source(&receipt.source);
         results.push(core::InstalledPackageSummary {
             name: receipt.package_name,
             source: receipt.source,
             version: receipt.version,
-            description: receipt.metadata.description,
-            homepage: receipt.metadata.homepage,
+            description: catalog_metadata.summary.or(receipt.metadata.description),
+            homepage: catalog_metadata.homepage.or(receipt.metadata.homepage),
+            repository: catalog_metadata.repository,
+            upstream_docs: catalog_metadata.upstream_docs,
+            docs: catalog_metadata.docs,
+            category: catalog_metadata.category,
             installed_versions: Vec::new(),
             install_package_names: Vec::new(),
             security_state,
@@ -186,6 +192,80 @@ pub(crate) fn list_installed_packages() -> Result<core::ListInstalledResponse, S
     Ok(core::ListInstalledResponse {
         packages: group_installed_versioned_formulae(results),
     })
+}
+
+#[derive(Debug, Default)]
+struct CatalogPackageMetadata {
+    summary: Option<String>,
+    homepage: Option<String>,
+    repository: Option<String>,
+    upstream_docs: Option<String>,
+    docs: Vec<String>,
+    category: Option<String>,
+}
+
+fn catalog_metadata_for_source(source: &PackageReceiptSource) -> CatalogPackageMetadata {
+    match source {
+        PackageReceiptSource::Formula { root_formula } => formula_catalog_metadata(root_formula),
+        PackageReceiptSource::Cask { cask_name } => cask_catalog_metadata(cask_name),
+        PackageReceiptSource::Npm { package_name } => npm_catalog_metadata(package_name),
+        _ => CatalogPackageMetadata::default(),
+    }
+}
+
+fn formula_catalog_metadata(root_formula: &str) -> CatalogPackageMetadata {
+    let Ok(db) = crate::cli::load_db() else {
+        return CatalogPackageMetadata::default();
+    };
+    if crate::cli::ensure_db_schema(&db).is_err() {
+        return CatalogPackageMetadata::default();
+    }
+    let canonical =
+        canonical_formula_name(root_formula).unwrap_or_else(|_| root_formula.to_string());
+    let Some(metadata) = db.formulas.get(&canonical) else {
+        return CatalogPackageMetadata::default();
+    };
+    CatalogPackageMetadata {
+        summary: string_or_none(&metadata.summary),
+        homepage: string_or_none(&metadata.homepage),
+        repository: string_or_none(&metadata.repository),
+        upstream_docs: string_or_none(&metadata.upstream_docs)
+            .or_else(|| metadata.docs.iter().find_map(|doc| string_or_none(doc))),
+        docs: metadata
+            .docs
+            .iter()
+            .filter_map(|doc| string_or_none(doc))
+            .collect(),
+        category: string_or_none(&metadata.category),
+    }
+}
+
+fn cask_catalog_metadata(cask_name: &str) -> CatalogPackageMetadata {
+    let Ok(cask) = embedded_cask(cask_name) else {
+        return CatalogPackageMetadata::default();
+    };
+    CatalogPackageMetadata {
+        summary: string_or_none(&cask.summary),
+        homepage: string_or_none(&cask.homepage),
+        ..CatalogPackageMetadata::default()
+    }
+}
+
+fn npm_catalog_metadata(package_name: &str) -> CatalogPackageMetadata {
+    let Ok(db) = crate::cli::load_db() else {
+        return CatalogPackageMetadata::default();
+    };
+    if crate::cli::ensure_db_schema(&db).is_err() {
+        return CatalogPackageMetadata::default();
+    }
+    let Some(metadata) = db.npms.get(package_name) else {
+        return CatalogPackageMetadata::default();
+    };
+    CatalogPackageMetadata {
+        summary: string_or_none(&metadata.summary),
+        homepage: string_or_none(&metadata.homepage),
+        ..CatalogPackageMetadata::default()
+    }
 }
 
 fn group_installed_versioned_formulae(
@@ -324,6 +404,7 @@ fn search_packages_response(
 ) -> core::SearchPackagesResponse {
     let limit = search_page_size(limit);
     let total_count = packages.len();
+    let category_counts = package_category_counts(&packages);
     let packages = packages
         .into_iter()
         .map(search_package_summary)
@@ -335,7 +416,22 @@ fn search_packages_response(
         packages,
         total_count,
         next_offset,
+        category_counts,
     }
+}
+
+fn package_category_counts(packages: &[PackageSearchResult]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for package in packages {
+        let category = package
+            .category
+            .as_deref()
+            .map(str::trim)
+            .filter(|category| !category.is_empty())
+            .unwrap_or("other");
+        *counts.entry(category.to_string()).or_insert(0) += 1;
+    }
+    counts
 }
 
 fn search_page_size(limit: usize) -> usize {
@@ -356,6 +452,10 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         version: package.latest_version,
         description: package.summary,
         homepage: package.homepage,
+        repository: package.repository,
+        upstream_docs: package.upstream_docs,
+        docs: package.docs,
+        category: package.category,
         last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
         security_state,
@@ -1607,6 +1707,10 @@ mod tests {
                 version: "1.0.0".to_string(),
                 description: Some("Codex".to_string()),
                 homepage: Some("https://example.test/codex".to_string()),
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
                 installed_versions: Vec::new(),
                 install_package_names: Vec::new(),
                 security_state: None,
@@ -1636,6 +1740,10 @@ mod tests {
             version: version.to_string(),
             description: None,
             homepage: None,
+            repository: None,
+            upstream_docs: None,
+            docs: Vec::new(),
+            category: None,
             installed_versions: Vec::new(),
             install_package_names: Vec::new(),
             security_state: None,
@@ -1745,6 +1853,10 @@ mod tests {
                 summary: Some("Detector flagged local plaintext credential exposure".to_string()),
                 latest_version: None,
                 homepage: None,
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
                 dependencies: Vec::new(),
                 security_state: Some(PackageSecurityState {
                     isotope_name: "unmapped-isotope".to_string(),

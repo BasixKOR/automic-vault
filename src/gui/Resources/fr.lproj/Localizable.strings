@@ -66,6 +66,7 @@
 "CATEGORIES" = "CATEGORIES";
 "CAVEATS" = "RESERVES";
 "CLI Tools" = "Outils CLI";
+"Cloud Infrastructure" = "Infrastructure cloud";
 "Close" = "Fermer";
 "Close the current sheet before updating Automic Vault." = "Fermez la feuille actuelle avant de mettre a jour Automic Vault.";
 "Command" = "Commande";
@@ -88,7 +89,9 @@
 "DETECTION" = "DETECTION";
 "DETECTOR ERROR" = "ERREUR DU DETECTEUR";
 "DETECTOR NEEDS REVIEW" = "DETECTEUR A VERIFIER";
+"Data" = "Donnees";
 "Development" = "Developpement";
+"Developer Tools" = "Outils de developpement";
 "Direct executable; no interpreter script detected" = "Executable direct ; aucun script d interpreteur detecte";
 "Dismiss" = "Fermer";
 "Docs" = "Docs";
@@ -106,6 +109,7 @@
 "Failed" = "Echec";
 "Failed: %@" = "Echec : %@";
 "File System" = "Systeme de fichiers";
+"Games" = "Jeux";
 "Finish the current package operation before installing av" = "Terminez l operation de paquet actuelle avant d installer av";
 "Finish the current package operation before updating Automic Vault." = "Terminez l operation de paquet actuelle avant de mettre a jour Automic Vault.";
 "Finish the current package operation before updating the helper" = "Terminez l operation de paquet actuelle avant de mettre a jour le helper";
@@ -153,6 +157,7 @@
 "Last Refresh: %@" = "Derniere actualisation : %@";
 "Last Refresh: --" = "Derniere actualisation : --";
 "LAST UPDATED" = "DERNIERE MISE A JOUR";
+"Language Runtime" = "Environnement de langage";
 "latest %@" = "dernier %@";
 "launch" = "lancement";
 "LEARN MORE" = "EN SAVOIR PLUS";
@@ -166,6 +171,7 @@
 "manual only" = "manuel uniquement";
 "menu-open" = "ouverture du menu";
 "Message" = "Message";
+"Media" = "Medias";
 "migrating secrets" = "migration des secrets";
 "Minimize" = "Reduire";
 "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work." = "Remplacements et operateurs de ligne de commande UNIX modernes pour la recherche, l inspection de fichiers, la surveillance de processus, la manipulation de donnees et le travail HTTP/DNS.";
@@ -200,6 +206,7 @@
 "PARENT PROCESS" = "PROCESSUS PARENT";
 "Paste" = "Coller";
 "pending helper installation" = "installation du helper en attente";
+"Productivity" = "Productivite";
 "PERMISSIONS" = "AUTORISATIONS";
 "PID %d" = "PID %d";
 "PID: %d" = "PID : %d";
@@ -238,6 +245,7 @@
 "Retry" = "Reessayer";
 "root-controlled" = "controle par root";
 "Run Fake Update" = "Lancer une fausse mise a jour";
+"Science" = "Science";
 "Search" = "Rechercher";
 "Search packages" = "Rechercher des paquets";
 "Secret auto-approved" = "Secret approuve automatiquement";

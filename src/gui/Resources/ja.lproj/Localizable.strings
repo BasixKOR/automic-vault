@@ -66,6 +66,7 @@
 "CATEGORIES" = "カテゴリ";
 "CAVEATS" = "注意事項";
 "CLI Tools" = "CLIツール";
+"Cloud Infrastructure" = "クラウドインフラ";
 "Close" = "閉じる";
 "Close the current sheet before updating Automic Vault." = "Automic Vaultを更新する前に現在のシートを閉じてください。";
 "Command" = "コマンド";
@@ -88,7 +89,9 @@
 "DETECTION" = "検出";
 "DETECTOR ERROR" = "検出器エラー";
 "DETECTOR NEEDS REVIEW" = "検出器の確認が必要です";
+"Data" = "データ";
 "Development" = "開発";
+"Developer Tools" = "開発者ツール";
 "Direct executable; no interpreter script detected" = "直接実行ファイルです。インタープリタスクリプトは検出されませんでした";
 "Dismiss" = "閉じる";
 "Docs" = "ドキュメント";
@@ -106,6 +109,7 @@
 "Failed" = "失敗";
 "Failed: %@" = "失敗: %@";
 "File System" = "ファイルシステム";
+"Games" = "ゲーム";
 "Finish the current package operation before installing av" = "avをインストールする前に現在のパッケージ操作を完了してください";
 "Finish the current package operation before updating Automic Vault." = "Automic Vaultを更新する前に現在のパッケージ操作を完了してください。";
 "Finish the current package operation before updating the helper" = "ヘルパーを更新する前に現在のパッケージ操作を完了してください";
@@ -153,6 +157,7 @@
 "Last Refresh: %@" = "最終更新: %@";
 "Last Refresh: --" = "最終更新: --";
 "LAST UPDATED" = "最終更新";
+"Language Runtime" = "言語ランタイム";
 "latest %@" = "最新 %@";
 "launch" = "起動";
 "LEARN MORE" = "詳しく見る";
@@ -166,6 +171,7 @@
 "manual only" = "手動のみ";
 "menu-open" = "メニュー表示";
 "Message" = "メッセージ";
+"Media" = "メディア";
 "migrating secrets" = "シークレットを移行中";
 "Minimize" = "最小化";
 "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work." = "検索、ファイル検査、プロセス監視、データ処理、HTTP/DNS作業向けのモダンなUNIXコマンドライン代替ツール群です。";
@@ -200,6 +206,7 @@
 "PARENT PROCESS" = "親プロセス";
 "Paste" = "ペースト";
 "pending helper installation" = "ヘルパーのインストール待ち";
+"Productivity" = "生産性";
 "PERMISSIONS" = "権限";
 "PID %d" = "PID %d";
 "PID: %d" = "PID: %d";
@@ -238,6 +245,7 @@
 "Retry" = "再試行";
 "root-controlled" = "root管理";
 "Run Fake Update" = "偽の更新を実行";
+"Science" = "科学";
 "Search" = "検索";
 "Search packages" = "パッケージを検索";
 "Secret auto-approved" = "シークレットを自動承認しました";

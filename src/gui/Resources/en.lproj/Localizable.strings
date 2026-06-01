@@ -66,6 +66,7 @@
 "CATEGORIES" = "CATEGORIES";
 "CAVEATS" = "CAVEATS";
 "CLI Tools" = "CLI Tools";
+"Cloud Infrastructure" = "Cloud Infrastructure";
 "Close" = "Close";
 "Close the current sheet before updating Automic Vault." = "Close the current sheet before updating Automic Vault.";
 "Command" = "Command";
@@ -88,7 +89,9 @@
 "DETECTION" = "DETECTION";
 "DETECTOR ERROR" = "DETECTOR ERROR";
 "DETECTOR NEEDS REVIEW" = "DETECTOR NEEDS REVIEW";
+"Data" = "Data";
 "Development" = "Development";
+"Developer Tools" = "Developer Tools";
 "Direct executable; no interpreter script detected" = "Direct executable; no interpreter script detected";
 "Dismiss" = "Dismiss";
 "Docs" = "Docs";
@@ -106,6 +109,7 @@
 "Failed" = "Failed";
 "Failed: %@" = "Failed: %@";
 "File System" = "File System";
+"Games" = "Games";
 "Finish the current package operation before installing av" = "Finish the current package operation before installing av";
 "Finish the current package operation before updating Automic Vault." = "Finish the current package operation before updating Automic Vault.";
 "Finish the current package operation before updating the helper" = "Finish the current package operation before updating the helper";
@@ -153,6 +157,7 @@
 "Last Refresh: %@" = "Last Refresh: %@";
 "Last Refresh: --" = "Last Refresh: --";
 "LAST UPDATED" = "LAST UPDATED";
+"Language Runtime" = "Language Runtime";
 "latest %@" = "latest %@";
 "launch" = "launch";
 "LEARN MORE" = "LEARN MORE";
@@ -166,6 +171,7 @@
 "manual only" = "manual only";
 "menu-open" = "menu-open";
 "Message" = "Message";
+"Media" = "Media";
 "migrating secrets" = "migrating secrets";
 "Minimize" = "Minimize";
 "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work." = "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work.";
@@ -200,6 +206,7 @@
 "PARENT PROCESS" = "PARENT PROCESS";
 "Paste" = "Paste";
 "pending helper installation" = "pending helper installation";
+"Productivity" = "Productivity";
 "PERMISSIONS" = "PERMISSIONS";
 "PID %d" = "PID %d";
 "PID: %d" = "PID: %d";
@@ -238,6 +245,7 @@
 "Retry" = "Retry";
 "root-controlled" = "root-controlled";
 "Run Fake Update" = "Run Fake Update";
+"Science" = "Science";
 "Search" = "Search";
 "Search packages" = "Search packages";
 "Secret auto-approved" = "Secret auto-approved";

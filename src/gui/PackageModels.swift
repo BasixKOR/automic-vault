@@ -56,6 +56,10 @@ struct PackageRecord: Decodable, Equatable {
     let version: String
     let description: String?
     let homepage: String?
+    let repository: String?
+    let upstreamDocs: String?
+    let docs: [String]
+    let category: String?
     let latestVersion: String?
     let securityState: PackageSecurityState?
     let installRoot: String?
@@ -68,6 +72,10 @@ struct PackageRecord: Decodable, Equatable {
         case version
         case description
         case homepage
+        case repository
+        case upstreamDocs
+        case docs
+        case category
         case latestVersion
         case securityState
         case installRoot
@@ -81,6 +89,10 @@ struct PackageRecord: Decodable, Equatable {
         version: String,
         description: String?,
         homepage: String? = nil,
+        repository: String? = nil,
+        upstreamDocs: String? = nil,
+        docs: [String] = [],
+        category: String? = nil,
         latestVersion: String? = nil,
         securityState: PackageSecurityState?,
         installRoot: String? = nil,
@@ -92,6 +104,10 @@ struct PackageRecord: Decodable, Equatable {
         self.version = version
         self.description = description
         self.homepage = homepage
+        self.repository = repository
+        self.upstreamDocs = upstreamDocs
+        self.docs = docs
+        self.category = category
         self.latestVersion = latestVersion
         self.securityState = securityState
         self.installRoot = installRoot
@@ -106,6 +122,10 @@ struct PackageRecord: Decodable, Equatable {
         version = try container.decode(String.self, forKey: .version)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
+        docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
+        category = try container.decodeIfPresent(String.self, forKey: .category)
         latestVersion = try container.decodeIfPresent(String.self, forKey: .latestVersion)
         securityState = try container.decodeIfPresent(PackageSecurityState.self, forKey: .securityState)
         installRoot = try container.decodeIfPresent(String.self, forKey: .installRoot)
@@ -141,6 +161,10 @@ struct PackageRecord: Decodable, Equatable {
             version: version,
             description: description,
             homepage: homepage,
+            repository: repository,
+            upstreamDocs: upstreamDocs,
+            docs: docs,
+            category: category,
             latestVersion: outdated.latestVersion,
             securityState: securityState,
             installRoot: installRoot,
@@ -156,6 +180,10 @@ struct PackageRecord: Decodable, Equatable {
             version: version,
             description: description,
             homepage: homepage,
+            repository: repository,
+            upstreamDocs: upstreamDocs,
+            docs: docs,
+            category: category,
             latestVersion: latestVersion,
             securityState: nil,
             installRoot: installRoot,
@@ -185,6 +213,9 @@ struct PackageRecord: Decodable, Equatable {
                 formula: name,
                 description: description,
                 homepage: homepage,
+                repository: repository,
+                upstreamDocs: upstreamDocs,
+                docs: docs,
                 license: nil,
                 dependencies: []
             ),
@@ -421,13 +452,7 @@ struct PackageDetail: Decodable, Equatable {
         guard let raw = rawHomepage else {
             return nil
         }
-        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty,
-              let url = URL(string: normalized),
-              let scheme = url.scheme else {
-            return nil
-        }
-        guard scheme == "http" || scheme == "https" else {
+        guard let url = Self.externalURL(from: raw) else {
             return nil
         }
         guard !url.isHomebrewPackageManagerPage else {
@@ -437,6 +462,15 @@ struct PackageDetail: Decodable, Equatable {
             return latestReleaseURL
         }
         return url.githubRepositoryReadmeURL
+    }
+
+    var repositoryURL: URL? {
+        Self.externalURL(from: homebrewInfo?.repository)
+    }
+
+    var upstreamDocsURL: URL? {
+        let candidates = [homebrewInfo?.upstreamDocs, homebrewInfo?.docs.first, npmHomepage]
+        return candidates.lazy.compactMap(Self.externalURL).first
     }
 
     var isOutdated: Bool {
@@ -655,6 +689,17 @@ struct PackageDetail: Decodable, Equatable {
         homebrewInfo?.homepage ?? npmHomepage
     }
 
+    private static func externalURL(from raw: String?) -> URL? {
+        let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalized.isEmpty,
+              let url = URL(string: normalized),
+              let scheme = url.scheme,
+              scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        return url
+    }
+
     var isAutomicVaultCLT: Bool {
         packageName == PackageRecommendation.automicVaultCLTName
     }
@@ -794,8 +839,54 @@ struct HomebrewPackageInfo: Decodable, Equatable {
     let formula: String
     let description: String?
     let homepage: String?
+    let repository: String?
+    let upstreamDocs: String?
+    let docs: [String]
     let license: String?
     let dependencies: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case formula
+        case description
+        case homepage
+        case repository
+        case upstreamDocs
+        case docs
+        case license
+        case dependencies
+    }
+
+    init(
+        formula: String,
+        description: String?,
+        homepage: String?,
+        repository: String? = nil,
+        upstreamDocs: String? = nil,
+        docs: [String] = [],
+        license: String?,
+        dependencies: [String]
+    ) {
+        self.formula = formula
+        self.description = description
+        self.homepage = homepage
+        self.repository = repository
+        self.upstreamDocs = upstreamDocs
+        self.docs = docs
+        self.license = license
+        self.dependencies = dependencies
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        formula = try container.decode(String.self, forKey: .formula)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
+        docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
+        license = try container.decodeIfPresent(String.self, forKey: .license)
+        dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+    }
 }
 
 struct PackageSearchResult: Decodable, Equatable {
@@ -804,6 +895,10 @@ struct PackageSearchResult: Decodable, Equatable {
     let version: String?
     let description: String?
     let homepage: String?
+    let repository: String?
+    let upstreamDocs: String?
+    let docs: [String]
+    let category: String?
     let dependencies: [String]
     let lastUpdatedAt: String?
     let securityState: PackageSecurityState?
@@ -818,6 +913,10 @@ struct PackageSearchResult: Decodable, Equatable {
         case description = "summary"
         case legacyDescription = "description"
         case homepage
+        case repository
+        case upstreamDocs
+        case docs
+        case category
         case dependencies
         case lastUpdatedAt
         case securityState
@@ -830,6 +929,10 @@ struct PackageSearchResult: Decodable, Equatable {
         version: String?,
         description: String?,
         homepage: String?,
+        repository: String? = nil,
+        upstreamDocs: String? = nil,
+        docs: [String] = [],
+        category: String? = nil,
         dependencies: [String],
         lastUpdatedAt: String? = nil,
         securityState: PackageSecurityState?,
@@ -840,6 +943,10 @@ struct PackageSearchResult: Decodable, Equatable {
         self.version = version
         self.description = description
         self.homepage = homepage
+        self.repository = repository
+        self.upstreamDocs = upstreamDocs
+        self.docs = docs
+        self.category = category
         self.dependencies = dependencies
         self.lastUpdatedAt = lastUpdatedAt
         self.securityState = securityState
@@ -861,6 +968,10 @@ struct PackageSearchResult: Decodable, Equatable {
             try container.decodeIfPresent(String.self, forKey: .description)
             ?? container.decodeIfPresent(String.self, forKey: .legacyDescription)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
+        docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
+        category = try container.decodeIfPresent(String.self, forKey: .category)
         dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
         lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
         securityState = try container.decodeIfPresent(
@@ -892,6 +1003,9 @@ struct PackageSearchResult: Decodable, Equatable {
                 formula: name,
                 description: description,
                 homepage: homepage,
+                repository: repository,
+                upstreamDocs: upstreamDocs,
+                docs: docs,
                 license: nil,
                 dependencies: dependencies
             ),
@@ -946,6 +1060,11 @@ struct PackageSearchResult: Decodable, Equatable {
                 ?? version
                 ?? "",
             description: displayDetail.homebrewInfo?.description ?? description,
+            homepage: displayDetail.homebrewInfo?.homepage ?? homepage,
+            repository: displayDetail.homebrewInfo?.repository ?? repository,
+            upstreamDocs: displayDetail.homebrewInfo?.upstreamDocs ?? upstreamDocs,
+            docs: displayDetail.homebrewInfo?.docs ?? docs,
+            category: category,
             latestVersion: displayDetail.latestVersion,
             securityState: displayDetail.securityState,
             installRoot: displayDetail.installRoot,
@@ -969,6 +1088,10 @@ struct PackageSearchResult: Decodable, Equatable {
             version: version,
             description: description,
             homepage: homepage,
+            repository: repository,
+            upstreamDocs: upstreamDocs,
+            docs: docs,
+            category: category,
             dependencies: dependencies,
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,
@@ -994,6 +1117,37 @@ struct PackageSearchPage: Decodable, Equatable {
     let packages: [PackageSearchResult]
     let totalCount: Int
     let nextOffset: Int?
+    let categoryCounts: [String: Int]
+
+    enum CodingKeys: String, CodingKey {
+        case packages
+        case totalCount
+        case nextOffset
+        case categoryCounts
+    }
+
+    init(
+        packages: [PackageSearchResult],
+        totalCount: Int,
+        nextOffset: Int?,
+        categoryCounts: [String: Int] = [:]
+    ) {
+        self.packages = packages
+        self.totalCount = totalCount
+        self.nextOffset = nextOffset
+        self.categoryCounts = categoryCounts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        packages = try container.decode([PackageSearchResult].self, forKey: .packages)
+        totalCount = try container.decode(Int.self, forKey: .totalCount)
+        nextOffset = try container.decodeIfPresent(Int.self, forKey: .nextOffset)
+        categoryCounts = try container.decodeIfPresent(
+            [String: Int].self,
+            forKey: .categoryCounts
+        ) ?? [:]
+    }
 }
 
 struct PackageDetectedLocalHazard: Equatable {
@@ -1603,6 +1757,17 @@ struct PackagePresentation: Equatable {
         case .available(let result):
             return result.name
         case .command:
+            return nil
+        }
+    }
+
+    var categoryIdentifier: String? {
+        switch item {
+        case .installed(let record):
+            return record.category
+        case .available(let result):
+            return result.category
+        case .recommendation, .command:
             return nil
         }
     }

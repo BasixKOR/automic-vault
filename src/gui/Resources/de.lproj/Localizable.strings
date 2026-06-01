@@ -66,6 +66,7 @@
 "CATEGORIES" = "KATEGORIEN";
 "CAVEATS" = "HINWEISE";
 "CLI Tools" = "CLI-Tools";
+"Cloud Infrastructure" = "Cloud-Infrastruktur";
 "Close" = "Schliessen";
 "Close the current sheet before updating Automic Vault." = "Schliessen Sie das aktuelle Sheet, bevor Sie Automic Vault aktualisieren.";
 "Command" = "Befehl";
@@ -88,7 +89,9 @@
 "DETECTION" = "ERKENNUNG";
 "DETECTOR ERROR" = "DETEKTORFEHLER";
 "DETECTOR NEEDS REVIEW" = "DETEKTOR MUSS GEPRUEFT WERDEN";
+"Data" = "Daten";
 "Development" = "Entwicklung";
+"Developer Tools" = "Entwicklerwerkzeuge";
 "Direct executable; no interpreter script detected" = "Direkte ausfuehrbare Datei; kein Interpreter-Script erkannt";
 "Dismiss" = "Schliessen";
 "Docs" = "Doku";
@@ -106,6 +109,7 @@
 "Failed" = "Fehlgeschlagen";
 "Failed: %@" = "Fehlgeschlagen: %@";
 "File System" = "Dateisystem";
+"Games" = "Spiele";
 "Finish the current package operation before installing av" = "Beenden Sie die aktuelle Paketoperation, bevor Sie av installieren";
 "Finish the current package operation before updating Automic Vault." = "Beenden Sie die aktuelle Paketoperation, bevor Sie Automic Vault aktualisieren.";
 "Finish the current package operation before updating the helper" = "Beenden Sie die aktuelle Paketoperation, bevor Sie den Helper aktualisieren";
@@ -153,6 +157,7 @@
 "Last Refresh: %@" = "Letzte Aktualisierung: %@";
 "Last Refresh: --" = "Letzte Aktualisierung: --";
 "LAST UPDATED" = "ZULETZT AKTUALISIERT";
+"Language Runtime" = "Sprachlaufzeit";
 "latest %@" = "neueste %@";
 "launch" = "Start";
 "LEARN MORE" = "MEHR ERFAHREN";
@@ -166,6 +171,7 @@
 "manual only" = "nur manuell";
 "menu-open" = "Menueoeffnung";
 "Message" = "Nachricht";
+"Media" = "Medien";
 "migrating secrets" = "Secrets werden migriert";
 "Minimize" = "Minimieren";
 "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work." = "Moderne UNIX-Befehlszeilenersatztools und Operatoren fuer Suche, Dateiinspektion, Prozessueberwachung, Datenverarbeitung sowie HTTP/DNS-Arbeiten.";
@@ -200,6 +206,7 @@
 "PARENT PROCESS" = "ELTERNPROZESS";
 "Paste" = "Einfuegen";
 "pending helper installation" = "Helper-Installation ausstehend";
+"Productivity" = "Produktivitaet";
 "PERMISSIONS" = "BERECHTIGUNGEN";
 "PID %d" = "PID %d";
 "PID: %d" = "PID: %d";
@@ -238,6 +245,7 @@
 "Retry" = "Erneut versuchen";
 "root-controlled" = "root-kontrolliert";
 "Run Fake Update" = "Fake-Update ausfuehren";
+"Science" = "Wissenschaft";
 "Search" = "Suchen";
 "Search packages" = "Pakete suchen";
 "Secret auto-approved" = "Secret automatisch genehmigt";

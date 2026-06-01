@@ -54,6 +54,90 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testCategorySectionUsesDatabaseCategoryMetadata() async throws {
+        let model = MainWindowModel(
+            availablePackagesFetcher: { _, _ in
+                PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "brew:uv",
+                            category: "developer-tools"
+                        ),
+                        Self.packageSearchResult(
+                            name: "brew:gh",
+                            category: "developer-tools"
+                        ),
+                        Self.packageSearchResult(
+                            name: "brew:sops",
+                            category: "security"
+                        ),
+                        Self.packageSearchResult(
+                            name: "cask:codex",
+                            category: nil
+                        ),
+                    ],
+                    totalCount: 4,
+                    nextOffset: nil,
+                    categoryCounts: [
+                        "developer-tools": 2,
+                        "security": 1,
+                        "other": 1,
+                    ]
+                )
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .developerTools
+        await waitUntil(model.displayedPackages.count == 2)
+
+        XCTAssertEqual(model.count(for: .developerTools), 2)
+        XCTAssertEqual(model.count(for: .security), 1)
+        XCTAssertEqual(model.count(for: .other), 1)
+        XCTAssertEqual(
+            model.displayedPackages.map(\.selectionID),
+            ["brew:uv", "brew:gh"]
+        )
+
+        model.selectedSection = .security
+
+        XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["brew:sops"])
+    }
+
+    @MainActor
+    func testPackageLinksPreferExplicitRepositoryAndDocsMetadata() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let detail = PackageSearchResult(
+            name: "brew:uv",
+            source: .formula(rootFormula: "uv"),
+            version: "0.11.17",
+            description: "Python package manager",
+            homepage: "https://docs.astral.sh/uv/",
+            repository: "https://github.com/astral-sh/uv",
+            upstreamDocs: "https://docs.astral.sh/uv",
+            docs: ["https://docs.astral.sh/uv"],
+            category: "developer-tools",
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        ).fallbackDetail
+
+        XCTAssertEqual(
+            model.linkURL(for: .homepage, detail: detail)?.absoluteString,
+            "https://docs.astral.sh/uv/"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .repository, detail: detail)?.absoluteString,
+            "https://github.com/astral-sh/uv"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .documentation, detail: detail)?.absoluteString,
+            "https://docs.astral.sh/uv"
+        )
+    }
+
+    @MainActor
     func testPulseTimestampUsesHoursUntilSixtyHours() throws {
         let referenceDate = try XCTUnwrap(Self.date("2026-05-28T12:00:00Z"))
         let result = pulseResult(
@@ -725,13 +809,17 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
-    private static func packageSearchResult(name: String) -> PackageSearchResult {
+    private static func packageSearchResult(
+        name: String,
+        category: String? = nil
+    ) -> PackageSearchResult {
         PackageSearchResult(
             name: name,
             source: .formula(rootFormula: name.replacingOccurrences(of: "brew:", with: "")),
             version: "1.0",
             description: "\(name) package",
             homepage: nil,
+            category: category,
             dependencies: [],
             securityState: nil,
             pulseKind: nil

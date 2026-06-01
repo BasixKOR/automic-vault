@@ -397,6 +397,10 @@ pub(crate) fn resolve_package_search_results(
                 summary: string_or_none(&metadata.summary),
                 latest_version: Some(metadata.version.clone()),
                 homepage: string_or_none(&metadata.homepage),
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
                 dependencies: metadata.dependencies.clone(),
                 security_state: None,
                 rank: metadata
@@ -564,20 +568,7 @@ pub(crate) fn resolve_available_package_results(
 ) -> Result<Vec<PackageSearchResult>, String> {
     let mut results = formula_index_entries()?
         .iter()
-        .map(|entry| PackageSearchResult {
-            package_name: entry.name.clone(),
-            source: PackageReceiptSource::Formula {
-                root_formula: entry.name.clone(),
-            },
-            summary: string_or_none(&entry.summary),
-            latest_version: None,
-            homepage: None,
-            dependencies: Vec::new(),
-            security_state: None,
-            rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
-            last_updated_at: entry.last_updated_at.clone(),
-            pulse_kind: None,
-        })
+        .map(|entry| formula_search_result(entry, &entry.name))
         .collect::<Vec<_>>();
     let db = crate::cli::load_db()?;
     crate::cli::ensure_db_schema(&db)?;
@@ -592,6 +583,10 @@ pub(crate) fn resolve_available_package_results(
                 summary: string_or_none(&metadata.summary),
                 latest_version: Some(metadata.version),
                 homepage: string_or_none(&metadata.homepage),
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
                 dependencies: metadata.dependencies,
                 security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
@@ -657,6 +652,10 @@ fn npm_search_result(package_name: &str, metadata: &EmbeddedNpmMetadata) -> Pack
         summary: string_or_none(&metadata.summary),
         latest_version: Some(metadata.version.clone()),
         homepage: string_or_none(&metadata.homepage),
+        repository: None,
+        upstream_docs: None,
+        docs: Vec::new(),
+        category: None,
         dependencies: Vec::new(),
         security_state: None,
         rank: metadata
@@ -678,6 +677,10 @@ fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
         summary: None,
         latest_version: None,
         homepage: None,
+        repository: None,
+        upstream_docs: None,
+        docs: Vec::new(),
+        category: None,
         dependencies: entry
             .dependencies
             .map(|dependencies| {
@@ -703,27 +706,16 @@ pub(crate) fn resolve_pulse_package_results(
     let mut results = formula_index_entries()?
         .iter()
         .filter_map(|entry| {
-            entry
-                .last_updated_at
-                .as_ref()
-                .map(|last_updated_at| PackageSearchResult {
-                    package_name: entry.name.clone(),
-                    source: PackageReceiptSource::Formula {
-                        root_formula: entry.name.clone(),
-                    },
-                    summary: string_or_none(&entry.summary),
-                    latest_version: None,
-                    homepage: None,
-                    dependencies: Vec::new(),
-                    security_state: None,
-                    rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
-                    last_updated_at: Some(last_updated_at.clone()),
-                    pulse_kind: Some(pulse_kind_for_timestamp(
-                        entry.pulse_kind.clone(),
-                        last_updated_at,
-                        pulse_reference_time,
-                    )),
-                })
+            entry.last_updated_at.as_ref().map(|last_updated_at| {
+                let mut result = formula_search_result(entry, &entry.name);
+                result.last_updated_at = Some(last_updated_at.clone());
+                result.pulse_kind = Some(pulse_kind_for_timestamp(
+                    entry.pulse_kind.clone(),
+                    last_updated_at,
+                    pulse_reference_time,
+                ));
+                result
+            })
         })
         .collect::<Vec<_>>();
     results.extend(db.casks.into_iter().filter_map(|(name, metadata)| {
@@ -739,6 +731,10 @@ pub(crate) fn resolve_pulse_package_results(
                 summary: string_or_none(&metadata.summary),
                 latest_version: Some(metadata.version),
                 homepage: string_or_none(&metadata.homepage),
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
                 dependencies: metadata.dependencies,
                 security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
@@ -808,6 +804,10 @@ fn geiger_package_result_for_integration(
         summary: Some(geiger_package_summary(&state)),
         latest_version: None,
         homepage: isotope.and_then(|record| record.release_url.clone()),
+        repository: None,
+        upstream_docs: None,
+        docs: Vec::new(),
+        category: None,
         dependencies: Vec::new(),
         security_state: Some(state),
         rank: None,
@@ -915,13 +915,26 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
         },
         summary: string_or_none(&entry.summary),
         latest_version: None,
-        homepage: None,
+        homepage: string_or_none(&entry.homepage),
+        repository: string_or_none(&entry.repository),
+        upstream_docs: formula_upstream_docs(entry),
+        docs: non_empty_docs(&entry.docs),
+        category: string_or_none(&entry.category),
         dependencies: Vec::new(),
         security_state: None,
         rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
         last_updated_at: entry.last_updated_at.clone(),
         pulse_kind: None,
     }
+}
+
+fn formula_upstream_docs(entry: &FormulaIndexEntry) -> Option<String> {
+    string_or_none(&entry.upstream_docs)
+        .or_else(|| entry.docs.iter().find_map(|doc| string_or_none(doc)))
+}
+
+fn non_empty_docs(docs: &[String]) -> Vec<String> {
+    docs.iter().filter_map(|doc| string_or_none(doc)).collect()
 }
 
 pub(crate) fn formula_family_search_result(entry: &FormulaIndexEntry) -> PackageSearchResult {
@@ -1283,60 +1296,51 @@ pub(crate) fn populate_package_info_identity(info: &mut PackageInfo) {
 }
 
 pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut PackageInfo) {
-    let Some(source) = info.source.as_ref() else {
+    let Some(source) = info.source.clone() else {
         return;
     };
 
     match source {
-        PackageReceiptSource::Formula { root_formula } => match fetch_formula_info(root_formula) {
+        PackageReceiptSource::Formula { root_formula } => match fetch_formula_info(&root_formula) {
             Ok(formula_info) => {
                 info.homebrew_info = Some(homebrew_package_info_from_formula_info(
-                    root_formula,
+                    &root_formula,
                     &formula_info,
                 ));
-                if let Ok(db) = crate::cli::load_db() {
-                    if crate::cli::ensure_db_schema(&db).is_ok() {
-                        let canonical = canonical_formula_name(root_formula)
-                            .unwrap_or_else(|_| root_formula.clone());
-                        info.popularity = db
-                            .formulas
-                            .get(&canonical)
-                            .and_then(|metadata| metadata.popularity.clone());
-                        info.last_updated_at = db
-                            .formulas
-                            .get(&canonical)
-                            .and_then(|metadata| metadata.last_updated_at.clone());
-                    }
-                }
+                apply_formula_db_metadata(&root_formula, info);
                 if info.last_updated_at.is_none() {
-                    let canonical = canonical_formula_name(root_formula)
+                    let canonical = canonical_formula_name(&root_formula)
                         .unwrap_or_else(|_| root_formula.clone());
                     info.last_updated_at =
                         resolve_formula_last_updated_at(&canonical).ok().flatten();
                 }
-                match ensure_formula_has_bottle(root_formula, &formula_info, &config.bottle_tag) {
+                match ensure_formula_has_bottle(&root_formula, &formula_info, &config.bottle_tag) {
                     Ok(()) => info.latest_version = Some(formula_version_string(&formula_info)),
                     Err(err) => info.latest_version_error = Some(err),
                 }
             }
             Err(err) => {
+                apply_formula_db_metadata(&root_formula, info);
                 info.latest_version_error = Some(err.clone());
                 info.homebrew_info_error = Some(err);
             }
         },
-        PackageReceiptSource::Cask { cask_name } => match embedded_cask(cask_name) {
+        PackageReceiptSource::Cask { cask_name } => match embedded_cask(&cask_name) {
             Ok(cask_info) => {
                 info.homebrew_info = Some(HomebrewPackageInfo {
                     formula: cask_name.clone(),
                     description: string_or_none(&cask_info.summary),
                     homepage: string_or_none(&cask_info.homepage),
+                    repository: None,
+                    upstream_docs: None,
+                    docs: Vec::new(),
                     license: None,
                     dependencies: cask_info.dependencies.clone(),
                 });
                 info.popularity = cask_info.popularity.clone();
                 info.last_updated_at = cask_info.last_updated_at.clone();
                 if info.last_updated_at.is_none() {
-                    info.last_updated_at = resolve_cask_last_updated_at(cask_name).ok().flatten();
+                    info.last_updated_at = resolve_cask_last_updated_at(&cask_name).ok().flatten();
                 }
                 info.latest_version = Some(cask_info.version);
             }
@@ -1346,7 +1350,7 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
             }
         },
         PackageReceiptSource::Isotope { isotope_name } => {
-            match isotope_package_data(isotope_name) {
+            match isotope_package_data(&isotope_name) {
                 Ok(isotope) => {
                     info.last_updated_at = isotope.published_at.clone();
                     match isotope_modified_package_target(isotope) {
@@ -1378,7 +1382,7 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                                     info.latest_version_error = Some(err.clone());
                                     info.homebrew_info_error = Some(err);
                                     info.homebrew_info =
-                                        Some(isotope_homebrew_info(isotope_name, isotope));
+                                        Some(isotope_homebrew_info(&isotope_name, isotope));
                                 }
                             }
                         }
@@ -1387,11 +1391,13 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                                 Ok(version) => info.latest_version = Some(version),
                                 Err(err) => info.latest_version_error = Some(err),
                             }
-                            info.homebrew_info = Some(isotope_homebrew_info(isotope_name, isotope));
+                            info.homebrew_info =
+                                Some(isotope_homebrew_info(&isotope_name, isotope));
                         }
                         _ => {
                             info.latest_version = Some(isotope.version.clone());
-                            info.homebrew_info = Some(isotope_homebrew_info(isotope_name, isotope));
+                            info.homebrew_info =
+                                Some(isotope_homebrew_info(&isotope_name, isotope));
                         }
                     }
                 }
@@ -1401,8 +1407,8 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                 }
             }
         }
-        PackageReceiptSource::Npm { package_name } => {
-            match resolve_latest_version_for_source(config, source) {
+        PackageReceiptSource::Npm { ref package_name } => {
+            match resolve_latest_version_for_source(config, &source) {
                 Ok(latest_version) => info.latest_version = Some(latest_version),
                 Err(err) => info.latest_version_error = Some(err),
             }
@@ -1411,7 +1417,7 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                 Err(err) => info.npm_package_info_error = Some(err),
             }
         }
-        _ => match resolve_latest_version_for_source(config, source) {
+        _ => match resolve_latest_version_for_source(config, &source) {
             Ok(latest_version) => info.latest_version = Some(latest_version),
             Err(err) => info.latest_version_error = Some(err),
         },
@@ -1591,6 +1597,9 @@ pub(crate) fn homebrew_package_info_from_formula_info(
         formula: formula.to_string(),
         description: string_or_none(&info.desc),
         homepage: string_or_none(&info.homepage),
+        repository: None,
+        upstream_docs: None,
+        docs: Vec::new(),
         license: info
             .license
             .clone()
@@ -1616,9 +1625,62 @@ pub(crate) fn isotope_homebrew_info(
                     .map(|replaces| format!("Isotope mirror replacing {replaces}"))
             }),
         homepage: isotope.release_url.clone(),
+        repository: None,
+        upstream_docs: None,
+        docs: Vec::new(),
         license: None,
         dependencies: Vec::new(),
     }
+}
+
+fn apply_formula_db_metadata_to_info(
+    root_formula: &str,
+    metadata: &EmbeddedFormulaMetadata,
+    info: &mut PackageInfo,
+) {
+    let existing = info
+        .homebrew_info
+        .take()
+        .unwrap_or_else(|| HomebrewPackageInfo {
+            formula: root_formula.to_string(),
+            description: None,
+            homepage: None,
+            repository: None,
+            upstream_docs: None,
+            docs: Vec::new(),
+            license: None,
+            dependencies: Vec::new(),
+        });
+    let docs = non_empty_docs(&metadata.docs);
+    info.homebrew_info = Some(HomebrewPackageInfo {
+        formula: existing.formula,
+        description: string_or_none(&metadata.summary).or(existing.description),
+        homepage: string_or_none(&metadata.homepage).or(existing.homepage),
+        repository: string_or_none(&metadata.repository).or(existing.repository),
+        upstream_docs: string_or_none(&metadata.upstream_docs)
+            .or_else(|| metadata.docs.iter().find_map(|doc| string_or_none(doc)))
+            .or(existing.upstream_docs),
+        docs: if docs.is_empty() { existing.docs } else { docs },
+        license: existing.license,
+        dependencies: existing.dependencies,
+    });
+}
+
+fn apply_formula_db_metadata(root_formula: &str, info: &mut PackageInfo) {
+    let Ok(db) = crate::cli::load_db() else {
+        return;
+    };
+    if crate::cli::ensure_db_schema(&db).is_err() {
+        return;
+    }
+    let canonical =
+        canonical_formula_name(root_formula).unwrap_or_else(|_| root_formula.to_string());
+    let Some(metadata) = db.formulas.get(&canonical) else {
+        return;
+    };
+    apply_formula_db_metadata_to_info(root_formula, metadata, info);
+    info.popularity = metadata.popularity.clone();
+    info.last_updated_at = metadata.last_updated_at.clone();
 }
 
 pub(crate) fn formula_package_metadata(formula: &str) -> Result<PackageMetadata, String> {
@@ -1688,6 +1750,12 @@ pub(crate) fn format_package_info(info: &PackageInfo) -> String {
         }
         if let Some(homepage) = homebrew_info.homepage.as_deref() {
             push_wrapped_field(&mut metadata_lines, "Homepage", homepage);
+        }
+        if let Some(repository) = homebrew_info.repository.as_deref() {
+            push_wrapped_field(&mut metadata_lines, "Repository", repository);
+        }
+        if let Some(docs) = homebrew_info.upstream_docs.as_deref() {
+            push_wrapped_field(&mut metadata_lines, "Docs", docs);
         }
         if let Some(license) = homebrew_info.license.as_deref() {
             push_wrapped_field(&mut metadata_lines, "License", license);
@@ -2268,6 +2336,10 @@ mod tests {
             summary: summary.map(str::to_string),
             latest_version: None,
             homepage: None,
+            repository: None,
+            upstream_docs: None,
+            docs: Vec::new(),
+            category: None,
             dependencies: Vec::new(),
             security_state: None,
             rank,

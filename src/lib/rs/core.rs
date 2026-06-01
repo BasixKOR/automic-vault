@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 pub(crate) const PROTOCOL_VERSION: &str = "1.12";
 
@@ -75,6 +76,14 @@ pub(crate) struct InstalledPackageSummary {
     pub(crate) description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) homepage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) repository: Option<String>,
+    #[serde(rename = "upstreamDocs", skip_serializing_if = "Option::is_none")]
+    pub(crate) upstream_docs: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) docs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) category: Option<String>,
     #[serde(rename = "installedVersions", skip_serializing_if = "Vec::is_empty")]
     pub(crate) installed_versions: Vec<String>,
     #[serde(rename = "installPackageNames", skip_serializing_if = "Vec::is_empty")]
@@ -90,6 +99,8 @@ pub(crate) struct SearchPackagesResponse {
     pub(crate) total_count: usize,
     #[serde(rename = "nextOffset")]
     pub(crate) next_offset: Option<usize>,
+    #[serde(rename = "categoryCounts", skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) category_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -100,6 +111,14 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) homepage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) repository: Option<String>,
+    #[serde(rename = "upstreamDocs", skip_serializing_if = "Option::is_none")]
+    pub(crate) upstream_docs: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) docs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) category: Option<String>,
     #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
     pub(crate) last_updated_at: Option<String>,
     #[serde(rename = "pulseKind", skip_serializing_if = "Option::is_none")]
@@ -229,6 +248,10 @@ mod tests {
             version: "3.0.0".to_string(),
             description: Some("TLS toolkit".to_string()),
             homepage: Some("https://openssl-library.org".to_string()),
+            repository: Some("https://github.com/openssl/openssl".to_string()),
+            upstream_docs: Some("https://docs.openssl.org/".to_string()),
+            docs: vec!["https://docs.openssl.org/".to_string()],
+            category: Some("security".to_string()),
             installed_versions: vec!["3.0.0".to_string()],
             install_package_names: vec!["brew:openssl@3".to_string()],
             security_state: Some(PackageSecurityState {
@@ -242,6 +265,10 @@ mod tests {
 
         let value = serde_json::to_value(summary).unwrap();
         assert_eq!(value["homepage"], "https://openssl-library.org");
+        assert_eq!(value["repository"], "https://github.com/openssl/openssl");
+        assert_eq!(value["upstreamDocs"], "https://docs.openssl.org/");
+        assert_eq!(value["docs"], json!(["https://docs.openssl.org/"]));
+        assert_eq!(value["category"], "security");
         assert_eq!(value["installedVersions"], json!(["3.0.0"]));
         assert_eq!(value["installPackageNames"], json!(["brew:openssl@3"]));
         assert_eq!(
@@ -262,12 +289,17 @@ mod tests {
                 version: Some("1.2.3".to_string()),
                 description: None,
                 homepage: Some("https://example.test/pkg".to_string()),
+                repository: Some("https://github.com/example/pkg".to_string()),
+                upstream_docs: Some("https://docs.example.test/pkg".to_string()),
+                docs: vec!["https://docs.example.test/pkg".to_string()],
+                category: Some("developer-tools".to_string()),
                 last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
                 security_state: None,
             }],
             total_count: 1,
             next_offset: Some(25),
+            category_counts: BTreeMap::from([("developer-tools".to_string(), 1)]),
         };
         let search_json = serde_json::to_value(search).unwrap();
         assert_eq!(search_json["totalCount"], 1);
@@ -280,6 +312,16 @@ mod tests {
             search_json["packages"][0]["homepage"],
             "https://example.test/pkg"
         );
+        assert_eq!(
+            search_json["packages"][0]["repository"],
+            "https://github.com/example/pkg"
+        );
+        assert_eq!(
+            search_json["packages"][0]["upstreamDocs"],
+            "https://docs.example.test/pkg"
+        );
+        assert_eq!(search_json["packages"][0]["category"], "developer-tools");
+        assert_eq!(search_json["categoryCounts"]["developer-tools"], 1);
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");
 
         let plan = IsotopeMigrationPlanResponse {

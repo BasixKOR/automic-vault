@@ -8,12 +8,17 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     case newUpdated
     case outdated
     case allPackages
-    case shell
-    case cliTools
-    case development
-    case system
+    case developerTools
+    case cloudInfrastructure
     case networking
+    case system
     case security
+    case data
+    case languageRuntime
+    case media
+    case productivity
+    case science
+    case games
     case other
     case settings
     case about
@@ -29,12 +34,17 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     ]
 
     static let categorySections: [MainWindowSection] = [
-        .shell,
-        .cliTools,
-        .development,
-        .system,
+        .developerTools,
+        .cloudInfrastructure,
         .networking,
+        .system,
         .security,
+        .data,
+        .languageRuntime,
+        .media,
+        .productivity,
+        .science,
+        .games,
         .other
     ]
 
@@ -55,18 +65,28 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return L10n.string("Outdated")
         case .allPackages:
             return L10n.string("All Packages")
-        case .shell:
-            return L10n.string("Shell")
-        case .cliTools:
-            return L10n.string("CLI Tools")
-        case .development:
-            return L10n.string("Development")
-        case .system:
-            return L10n.string("System")
+        case .developerTools:
+            return L10n.string("Developer Tools")
+        case .cloudInfrastructure:
+            return L10n.string("Cloud Infrastructure")
         case .networking:
             return L10n.string("Networking")
+        case .system:
+            return L10n.string("System")
         case .security:
             return L10n.string("Security")
+        case .data:
+            return L10n.string("Data")
+        case .languageRuntime:
+            return L10n.string("Language Runtime")
+        case .media:
+            return L10n.string("Media")
+        case .productivity:
+            return L10n.string("Productivity")
+        case .science:
+            return L10n.string("Science")
+        case .games:
+            return L10n.string("Games")
         case .other:
             return L10n.string("Other")
         case .settings:
@@ -88,24 +108,66 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return "clock"
         case .allPackages:
             return "cube"
-        case .shell:
-            return "terminal"
-        case .cliTools:
+        case .developerTools:
             return "chevron.left.forwardslash.chevron.right"
-        case .development:
-            return "hammer"
-        case .system:
-            return "gearshape"
+        case .cloudInfrastructure:
+            return "cloud"
         case .networking:
             return "network"
+        case .system:
+            return "gearshape"
         case .security:
             return "shield"
+        case .data:
+            return "chart.bar.doc.horizontal"
+        case .languageRuntime:
+            return "curlybraces"
+        case .media:
+            return "play.rectangle"
+        case .productivity:
+            return "checklist"
+        case .science:
+            return "atom"
+        case .games:
+            return "gamecontroller"
         case .other:
             return "ellipsis"
         case .settings:
             return "gear"
         case .about:
             return "info.circle"
+        }
+    }
+
+    var categoryIdentifier: String? {
+        switch self {
+        case .developerTools:
+            return "developer-tools"
+        case .cloudInfrastructure:
+            return "cloud-infrastructure"
+        case .networking:
+            return "networking"
+        case .system:
+            return "system"
+        case .security:
+            return "security"
+        case .data:
+            return "data"
+        case .languageRuntime:
+            return "language-runtime"
+        case .media:
+            return "media"
+        case .productivity:
+            return "productivity"
+        case .science:
+            return "science"
+        case .games:
+            return "games"
+        case .other:
+            return "other"
+        case .installed, .geigerCounter, .newUpdated, .outdated, .allPackages,
+             .settings, .about:
+            return nil
         }
     }
 }
@@ -271,6 +333,7 @@ final class MainWindowModel: ObservableObject {
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
+    private var catalogCategoryCounts: [String: Int] = [:]
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
     private var sectionPageNextOffsets: [SectionPageKind: Int] = [:]
@@ -705,9 +768,9 @@ final class MainWindowModel: ObservableObject {
         case .homepage:
             return homepageURL
         case .repository:
-            return githubRepositoryURL(from: homepageURL)
+            return detail.repositoryURL ?? githubRepositoryURL(from: homepageURL)
         case .documentation:
-            return documentationURL(from: homepageURL)
+            return detail.upstreamDocsURL ?? documentationURL(from: homepageURL)
         }
     }
 
@@ -752,13 +815,14 @@ final class MainWindowModel: ObservableObject {
             return catalogTotalCount ?? (catalogPackages.isEmpty ? nil : catalogPackages.count)
         case .settings, .about:
             return nil
-        case .shell, .cliTools, .development, .system, .networking, .security, .other:
-            guard catalogPackages.isEmpty == false else {
-                return nil
+        case .developerTools, .cloudInfrastructure, .networking, .system, .security,
+             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
+            guard let category = section.categoryIdentifier else { return nil }
+            if let count = catalogCategoryCounts[category] {
+                return count
             }
-            return catalogSourcePackages.filter { package in
-                sectionMatches(section, package: package)
-            }.count
+            guard catalogPackages.isEmpty == false else { return nil }
+            return catalogSourcePackages.filter { sectionMatches(section, package: $0) }.count
         }
     }
 
@@ -1249,7 +1313,8 @@ final class MainWindowModel: ObservableObject {
             source = packages.filter(isOutdated) + localOutdatedPackages
         case .allPackages:
             source = catalogSourcePackages
-        case .shell, .cliTools, .development, .system, .networking, .security, .other:
+        case .developerTools, .cloudInfrastructure, .networking, .system, .security,
+             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
             source = catalogSourcePackages
         case .settings, .about:
             source = []
@@ -1283,31 +1348,12 @@ final class MainWindowModel: ObservableObject {
             return true
         case .outdated:
             return isOutdated(package)
-        case .shell:
-            return packageName(package, containsAny: [
-                "bash", "zsh", "fish", "shell", "shfmt", "shellcheck", "starship"
-            ])
-        case .cliTools:
-            return !isDevelopment(package)
-                && !isNetworking(package)
-                && !isSecurity(package)
-                && !isSystem(package)
-        case .development:
-            return isDevelopment(package)
-        case .system:
-            return isSystem(package)
-        case .networking:
-            return isNetworking(package)
-        case .security:
-            return isSecurity(package)
-        case .other:
-            return !isDevelopment(package)
-                && !isNetworking(package)
-                && !isSecurity(package)
-                && !isSystem(package)
-                && !packageName(package, containsAny: [
-                    "bash", "zsh", "fish", "shell", "shfmt", "shellcheck", "starship"
-                ])
+        case .developerTools, .cloudInfrastructure, .networking, .system, .security,
+             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
+            guard let category = section.categoryIdentifier else {
+                return false
+            }
+            return packageCategoryIdentifier(package) == category
         case .settings, .about:
             return false
         }
@@ -1315,6 +1361,15 @@ final class MainWindowModel: ObservableObject {
 
     private func isGeigerActionPackage(_ package: PackagePresentation) -> Bool {
         packageBadge(for: package) == .vulnerable
+    }
+
+    private func packageCategoryIdentifier(_ package: PackagePresentation) -> String {
+        if let trimmed = package.categoryIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
+        return "other"
     }
 
     private func isGeigerProtocolPackage(_ package: PackagePresentation) -> Bool {
@@ -1349,57 +1404,6 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         return result.isNewPulse
-    }
-
-    private func isDevelopment(_ package: PackagePresentation) -> Bool {
-        if case .npm = package.detail?.source {
-            return true
-        }
-        if case .pip = package.detail?.source {
-            return true
-        }
-        return packageName(package, containsAny: [
-            "git", "node", "python", "ruby", "go", "rust", "swift", "cmake", "make",
-            "llvm", "gcc", "cargo", "npm", "pnpm", "yarn", "deno", "bun"
-        ])
-    }
-
-    private func isNetworking(_ package: PackagePresentation) -> Bool {
-        packageName(package, containsAny: [
-            "curl", "wget", "http", "ssh", "openssl", "nginx", "dns", "net", "proxy",
-            "tailscale", "wireguard"
-        ])
-    }
-
-    private func isSecurity(_ package: PackagePresentation) -> Bool {
-        package.hasPlainTextSecretAlert
-            || package.detail?.securityState != nil
-            || packageName(package, containsAny: [
-                "vault", "secret", "token", "key", "pass", "gpg", "age", "sops",
-                "security", "cert"
-            ])
-    }
-
-    private func isSystem(_ package: PackagePresentation) -> Bool {
-        guard let name = package.packageName else {
-            return false
-        }
-        return name.hasPrefix("sys:")
-            || packageName(package, containsAny: [
-                "coreutils", "findutils", "grep", "sed", "awk", "pkgconf", "system"
-            ])
-    }
-
-    private func packageName(
-        _ package: PackagePresentation,
-        containsAny needles: [String]
-    ) -> Bool {
-        let haystack = [
-            package.displayName,
-            package.packageName ?? "",
-            package.listSecondaryText
-        ].joined(separator: " ").lowercased()
-        return needles.contains { haystack.contains($0) }
     }
 
     private func installSnapshotObserverIfNeeded() {
@@ -1781,6 +1785,9 @@ final class MainWindowModel: ObservableObject {
         loadingSectionKinds.remove(kind)
         sectionPageRequestIDs[kind] = (sectionPageRequestIDs[kind] ?? 0) + 1
         sectionPageNextOffsets[kind] = nil
+        if kind == .catalog {
+            catalogCategoryCounts = [:]
+        }
         updateSelectedSectionLoadingState()
     }
 
@@ -1796,12 +1803,17 @@ final class MainWindowModel: ObservableObject {
             case .newUpdated:
                 self = .pulse
             case .allPackages,
-                 .shell,
-                 .cliTools,
-                 .development,
-                 .system,
+                 .developerTools,
+                 .cloudInfrastructure,
                  .networking,
+                 .system,
                  .security,
+                 .data,
+                 .languageRuntime,
+                 .media,
+                 .productivity,
+                 .science,
+                 .games,
                  .other:
                 self = .catalog
             case .installed, .outdated, .settings, .about:
@@ -1895,6 +1907,9 @@ final class MainWindowModel: ObservableObject {
                     : geigerPackages.appendingUniquePackages(packages)
             case .catalog:
                 catalogTotalCount = page.totalCount
+                if !page.categoryCounts.isEmpty {
+                    catalogCategoryCounts = page.categoryCounts
+                }
                 let packages = page.packages.map {
                     presentation(for: $0, prefix: nil)
                 }
@@ -1913,6 +1928,11 @@ final class MainWindowModel: ObservableObject {
             if offset > 0,
                kind == SectionPageKind(section: selectedSection),
                displayedPackages.count == previousVisibleCount {
+                loadNextSectionPageIfNeeded(kind: kind)
+            } else if kind == .catalog,
+                      selectedSection.categoryIdentifier != nil,
+                      displayedPackages.isEmpty,
+                      page.nextOffset != nil {
                 loadNextSectionPageIfNeeded(kind: kind)
             }
         case .failure(let error):

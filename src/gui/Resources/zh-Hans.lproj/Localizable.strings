@@ -66,6 +66,7 @@
 "CATEGORIES" = "类别";
 "CAVEATS" = "注意事项";
 "CLI Tools" = "CLI工具";
+"Cloud Infrastructure" = "云基础设施";
 "Close" = "关闭";
 "Close the current sheet before updating Automic Vault." = "更新Automic Vault前请关闭当前表单。";
 "Command" = "命令";
@@ -88,7 +89,9 @@
 "DETECTION" = "检测";
 "DETECTOR ERROR" = "检测器错误";
 "DETECTOR NEEDS REVIEW" = "检测器需要检查";
+"Data" = "数据";
 "Development" = "开发";
+"Developer Tools" = "开发者工具";
 "Direct executable; no interpreter script detected" = "直接可执行文件；未检测到解释器脚本";
 "Dismiss" = "关闭";
 "Docs" = "文档";
@@ -106,6 +109,7 @@
 "Failed" = "失败";
 "Failed: %@" = "失败：%@";
 "File System" = "文件系统";
+"Games" = "游戏";
 "Finish the current package operation before installing av" = "安装av前请完成当前软件包操作";
 "Finish the current package operation before updating Automic Vault." = "更新Automic Vault前请完成当前软件包操作。";
 "Finish the current package operation before updating the helper" = "更新帮助程序前请完成当前软件包操作";
@@ -153,6 +157,7 @@
 "Last Refresh: %@" = "上次刷新：%@";
 "Last Refresh: --" = "上次刷新：--";
 "LAST UPDATED" = "上次更新";
+"Language Runtime" = "语言运行时";
 "latest %@" = "最新%@";
 "launch" = "启动";
 "LEARN MORE" = "了解更多";
@@ -166,6 +171,7 @@
 "manual only" = "仅手动";
 "menu-open" = "打开菜单";
 "Message" = "消息";
+"Media" = "媒体";
 "migrating secrets" = "正在迁移密钥";
 "Minimize" = "最小化";
 "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling and HTTP/DNS work." = "用于搜索、文件检查、进程监控、数据处理以及HTTP/DNS工作的现代UNIX命令行替代工具和操作工具。";
@@ -200,6 +206,7 @@
 "PARENT PROCESS" = "父进程";
 "Paste" = "粘贴";
 "pending helper installation" = "等待帮助程序安装";
+"Productivity" = "生产力";
 "PERMISSIONS" = "权限";
 "PID %d" = "PID %d";
 "PID: %d" = "PID：%d";
@@ -238,6 +245,7 @@
 "Retry" = "重试";
 "root-controlled" = "root控制";
 "Run Fake Update" = "运行模拟更新";
+"Science" = "科学";
 "Search" = "搜索";
 "Search packages" = "搜索软件包";
 "Secret auto-approved" = "密钥已自动批准";
