@@ -17,7 +17,8 @@ Usage: scripts/update-all [--skip-isotope-builds] [--skip-daily]
                           [--color auto|always|never] [--no-color]
 
 Run the full publishing cadence:
-  - update and upload /db.json at the top of every hour
+  - refresh av.db Homebrew authority, rebuild, and upload /db.json at the top
+    of every hour
   - refresh package-page enrichment, regenerate package pages, rebuild search,
     and deploy the static site daily during the 3 AM local-hour slot
 
@@ -213,13 +214,13 @@ run_step() {
 
 run_database_update() {
   local command=("${script_dir}/update-db.sh" "--color" "${color_mode}")
-  local step_name="hourly database update"
+  local step_name="hourly av.db Homebrew authority and database update"
 
   if [[ "${skip_isotope_builds}" == "true" ]]; then
     command+=(--skip-isotope-builds)
   fi
   if [[ "${run_once}" == "true" ]]; then
-    step_name="database update"
+    step_name="av.db Homebrew authority and database update"
   fi
   run_step "${step_name}" "${command[@]}"
 }
@@ -287,7 +288,7 @@ log INFO "${bold}Automic Vault publishing cadence${reset}"
 if [[ "${run_once}" == "true" ]]; then
   log INFO "Database update will run immediately and exit"
 else
-  log INFO "Database updates at the top of every hour"
+  log INFO "av.db Homebrew authority refresh and database upload run at the top of every hour"
   if [[ "${skip_daily}" == "true" ]]; then
     log WARN "Scheduled daily package-page deploy is disabled"
   else

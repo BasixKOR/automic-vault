@@ -226,7 +226,7 @@ pull_radioisotopes() {
 
 update_av_db_authority() {
   if [[ ! -x "${av_db_root}/scripts/build.py" ]]; then
-    log WARN "av.db checkout not found at ${av_db_root}; build-db.py will use any existing authority cache or legacy fallback"
+    log WARN "av.db checkout not found at ${av_db_root}; Homebrew authority will use any existing cache or legacy fallback"
     return 0
   fi
 
