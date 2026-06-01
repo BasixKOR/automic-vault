@@ -1063,12 +1063,10 @@ def _npm_downloads_batch_url(packages):
 
 def _npm_all_docs_url(startkey=None):
     params = {
-        "include_docs": "true",
         "limit": NPM_FULL_SCAN_PAGE_SIZE,
     }
     if startkey:
         params["startkey"] = json.dumps(startkey)
-        params["skip"] = 1
     return f"{NPM_REPLICATE_ALL_DOCS_URL}?{urllib.parse.urlencode(params)}"
 
 
@@ -1163,6 +1161,38 @@ def _fetch_npm_packument(package):
         _npm_package_url(package),
         accept="application/json",
     )
+
+
+def _fetch_npm_packuments_for_packages(packages, progress_label=None):
+    if not packages:
+        return {}
+    completed = 0
+    refreshed = {}
+    max_workers = max(1, min(NPM_MAX_WORKERS, len(packages)))
+
+    def fetch(package):
+        try:
+            return package, _fetch_npm_packument(package)
+        except NpmFetchError as err:
+            print(f"Keeping stale npm metadata for {package}: {err}", file=sys.stderr)
+            return package, None
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(fetch, package): package
+            for package in sorted(packages)
+        }
+        for future in as_completed(future_map):
+            package, packument = future.result()
+            if packument is not None:
+                refreshed[package] = packument
+            completed += 1
+            if progress_label and completed % 100 == 0:
+                print(
+                    f"Fetched {completed}/{len(packages)} {progress_label}...",
+                    file=sys.stderr,
+                )
+    return refreshed
 
 
 def _fetch_npm_monthly_downloads(package):
@@ -1359,26 +1389,28 @@ def _run_npm_full_scan(state):
             _write_npm_index_state(state)
             break
 
-        packuments = {}
+        page_packages = []
         for row in rows:
             if not isinstance(row, dict):
                 continue
             package = row.get("id") or row.get("key")
-            doc = row.get("doc")
-            if isinstance(package, str) and package and isinstance(doc, dict):
-                packuments[package] = doc
+            if package == cursor:
+                continue
+            if isinstance(package, str) and package:
+                page_packages.append(package)
+        packuments = _fetch_npm_packuments_for_packages(page_packages)
         _refresh_npm_packuments(packages, packuments, packages)
-        cursor = rows[-1].get("id") or rows[-1].get("key")
-        state["full_scan_cursor"] = cursor
+        next_cursor = rows[-1].get("id") or rows[-1].get("key")
+        state["full_scan_cursor"] = next_cursor
         _write_npm_index_state(state)
         page_count += 1
         if page_count % 20 == 0:
             print(
-                f"Scanned {page_count * NPM_FULL_SCAN_PAGE_SIZE} npm registry docs...",
+                f"Scanned {page_count * NPM_FULL_SCAN_PAGE_SIZE} npm registry package ids...",
                 file=sys.stderr,
             )
 
-        if len(rows) < NPM_FULL_SCAN_PAGE_SIZE:
+        if len(rows) < NPM_FULL_SCAN_PAGE_SIZE or next_cursor == cursor:
             state["full_scan_cursor"] = None
             state["full_scan_started_at"] = None
             state["last_full_scan_at"] = datetime.datetime.now(
@@ -1386,37 +1418,13 @@ def _run_npm_full_scan(state):
             ).isoformat()
             _write_npm_index_state(state)
             break
+        cursor = next_cursor
 
 
 def _refresh_changed_npm_packages(packages, changed):
     if not changed:
         return
-    completed = 0
-    refreshed = {}
-    max_workers = max(1, min(NPM_MAX_WORKERS, len(changed)))
-
-    def fetch(package):
-        try:
-            return package, _fetch_npm_packument(package)
-        except NpmFetchError as err:
-            print(f"Keeping stale npm metadata for {package}: {err}", file=sys.stderr)
-            return package, None
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {
-            executor.submit(fetch, package): package
-            for package in sorted(changed)
-        }
-        for future in as_completed(future_map):
-            package, packument = future.result()
-            if packument is not None:
-                refreshed[package] = packument
-            completed += 1
-            if completed % 100 == 0:
-                print(
-                    f"Fetched {completed}/{len(changed)} changed npm packages...",
-                    file=sys.stderr,
-                )
+    refreshed = _fetch_npm_packuments_for_packages(changed, "changed npm packages")
     _refresh_npm_packuments(packages, refreshed, packages)
 
 

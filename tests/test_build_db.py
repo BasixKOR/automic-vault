@@ -275,19 +275,20 @@ class NpmIndexTests(unittest.TestCase):
                         "rows": [
                             {
                                 "id": "example-cli",
-                                "doc": {
-                                    "name": "example-cli",
-                                    "dist-tags": {"latest": "1.0.0"},
-                                    "versions": {
-                                        "1.0.0": {
-                                            "bin": {"example-cli": "bin.js"},
-                                            "description": "example",
-                                        }
-                                    },
-                                    "time": {"1.0.0": "2026-01-01T00:00:00.000Z"},
-                                },
                             }
                         ]
+                    }
+                if "registry.npmjs.org/example-cli" in url:
+                    return {
+                        "name": "example-cli",
+                        "dist-tags": {"latest": "1.0.0"},
+                        "versions": {
+                            "1.0.0": {
+                                "bin": {"example-cli": "bin.js"},
+                                "description": "example",
+                            }
+                        },
+                        "time": {"1.0.0": "2026-01-01T00:00:00.000Z"},
                     }
                 if "downloads/point" in url:
                     return {"example-cli": {"downloads": 60000}}
@@ -297,6 +298,7 @@ class NpmIndexTests(unittest.TestCase):
                 build_db._run_npm_full_scan(state)
 
             self.assertTrue(any("startkey=%22left-off%22" in url for url in urls))
+            self.assertFalse(any("skip=" in url for url in urls))
             self.assertIsNone(state["full_scan_cursor"])
             self.assertIn("example-cli", state["packages"])
 
