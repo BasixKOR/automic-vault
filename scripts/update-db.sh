@@ -232,6 +232,8 @@ update_av_db_authority() {
 
   "${av_db_root}/scripts/build.py" --refresh || return 1
   export AV_DB_AUTHORITY_PATH="${AV_DB_AUTHORITY_PATH:-${av_db_root}/cache/automic-vault/db.json}"
+  export AV_DB_FORMULAE_PATH="${AV_DB_FORMULAE_PATH:-${av_db_root}/cache/brew/formulae.json}"
+  export AV_DB_CASKS_PATH="${AV_DB_CASKS_PATH:-${av_db_root}/cache/brew/casks.json}"
 }
 
 update_once() {

@@ -55,6 +55,7 @@ NPM_MIN_MONTHLY_DOWNLOADS = 50_000
 NPM_FULL_SCAN_PAGE_SIZE = 250
 NPM_DOWNLOADS_BATCH_SIZE = 64
 PULSE_NEW_WINDOW_DAYS = 7
+PULSE_HISTORY_WINDOW_DAYS = 90
 NPM_CHANGES_LIMIT = 5000
 NPM_CHANGE_REFRESH_LIMIT = 500
 NPM_INDEX_STATE_PATH = os.path.join(CACHE_DIR, NPM_ECOSYSTEM, "index.json")
@@ -730,9 +731,9 @@ def _git_pulse_events(repo, keyed_paths, scope):
 
     repo_path = _ensure_git_repo(repo)
     revision = _git_default_revision(repo_path)
-    new_cutoff = datetime.datetime.now(
-        datetime.timezone.utc
-    ) - datetime.timedelta(days=PULSE_NEW_WINDOW_DAYS)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    new_cutoff = now - datetime.timedelta(days=PULSE_NEW_WINDOW_DAYS)
+    history_cutoff = now - datetime.timedelta(days=PULSE_HISTORY_WINDOW_DAYS)
     pending_latest = set(keyed_paths.keys())
     pending_additions = set(keyed_paths.keys())
     events = {}
@@ -745,6 +746,7 @@ def _git_pulse_events(repo, keyed_paths, scope):
         repo_path,
         "log",
         revision,
+        f"--since={history_cutoff.isoformat()}",
         "--format=__DATE__%cI",
         "--name-status",
         "--",
@@ -1569,6 +1571,45 @@ def _collect_homebrew_authority_from_av_db(path=None):
     )
 
 
+def _overlay_homebrew_pulse_metadata(formulas, casks):
+    formula_paths = {
+        _formula_source_path(name): name
+        for name in formulas.keys()
+        if isinstance(name, str) and name
+    }
+    cask_paths = {
+        _cask_source_path(token): token
+        for token in casks.keys()
+        if isinstance(token, str) and token
+    }
+    formula_pulse_events = _git_pulse_events(
+        HOMEWBREW_CORE_REPO,
+        formula_paths,
+        "Formula",
+    )
+    cask_pulse_events = _git_pulse_events(
+        HOMEWBREW_CASK_REPO,
+        cask_paths,
+        "Casks",
+    )
+
+    formulas = {name: dict(metadata) for name, metadata in formulas.items()}
+    for name, pulse_event in formula_pulse_events.items():
+        if name not in formulas:
+            continue
+        formulas[name]["last_updated_at"] = pulse_event["last_updated_at"]
+        formulas[name]["pulse_kind"] = pulse_event["pulse_kind"]
+
+    casks = {token: dict(metadata) for token, metadata in casks.items()}
+    for token, pulse_event in cask_pulse_events.items():
+        if token not in casks:
+            continue
+        casks[token]["last_updated_at"] = pulse_event["last_updated_at"]
+        casks[token]["pulse_kind"] = pulse_event["pulse_kind"]
+
+    return formulas, casks
+
+
 def _collect_homebrew_authority_legacy(github_token):
     formulae = _fetch_json(FORMULA_URL, github_token)
     if not isinstance(formulae, list):
@@ -1736,6 +1777,7 @@ def main():
     if homebrew_authority is None:
         homebrew_authority = _collect_homebrew_authority_legacy(_github_token())
     ordered_entries, formulas, cask_metadata, missing_manifests = homebrew_authority
+    formulas, cask_metadata = _overlay_homebrew_pulse_metadata(formulas, cask_metadata)
     formulas = _overlay_formula_package_manager_metadata(formulas)
     cask_metadata = _overlay_cask_package_manager_metadata(cask_metadata)
     try:

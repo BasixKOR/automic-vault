@@ -468,6 +468,41 @@ class AvDbAuthorityTests(unittest.TestCase):
         self.assertEqual(result["awscli"]["version"], "2.34.54")
         self.assertEqual(result["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
 
+    def test_homebrew_pulse_overlay_adds_formula_and_cask_events(self):
+        build_db = load_build_db()
+
+        def git_pulse_events(repo, keyed_paths, scope):
+            if repo == build_db.HOMEWBREW_CORE_REPO:
+                self.assertEqual(keyed_paths, {"Formula/a/awscli.rb": "awscli"})
+                self.assertEqual(scope, "Formula")
+                return {
+                    "awscli": {
+                        "last_updated_at": "2026-06-01T12:00:00Z",
+                        "pulse_kind": "new",
+                    }
+                }
+            if repo == build_db.HOMEWBREW_CASK_REPO:
+                self.assertEqual(keyed_paths, {"Casks/1/1password-cli.rb": "1password-cli"})
+                self.assertEqual(scope, "Casks")
+                return {
+                    "1password-cli": {
+                        "last_updated_at": "2026-06-01T11:00:00Z",
+                        "pulse_kind": "updated",
+                    }
+                }
+            self.fail(f"unexpected repo {repo}")
+
+        with mock.patch.object(build_db, "_git_pulse_events", side_effect=git_pulse_events):
+            formulas, casks = build_db._overlay_homebrew_pulse_metadata(
+                {"awscli": {"summary": "AWS CLI"}},
+                {"1password-cli": {"summary": "1Password CLI"}},
+            )
+
+        self.assertEqual(formulas["awscli"]["last_updated_at"], "2026-06-01T12:00:00Z")
+        self.assertEqual(formulas["awscli"]["pulse_kind"], "new")
+        self.assertEqual(casks["1password-cli"]["last_updated_at"], "2026-06-01T11:00:00Z")
+        self.assertEqual(casks["1password-cli"]["pulse_kind"], "updated")
+
     def test_collect_homebrew_authority_from_av_db_validates_and_returns_db_sections(self):
         build_db = load_build_db()
         with tempfile.TemporaryDirectory() as tmp:
@@ -575,6 +610,23 @@ class AvDbAuthorityTests(unittest.TestCase):
                 }
             }
 
+            def git_pulse_events(repo, keyed_paths, scope):
+                if repo == build_db.HOMEWBREW_CORE_REPO:
+                    return {
+                        "awscli": {
+                            "last_updated_at": "2026-06-01T12:00:00Z",
+                            "pulse_kind": "new",
+                        }
+                    }
+                if repo == build_db.HOMEWBREW_CASK_REPO:
+                    return {
+                        "1password-cli": {
+                            "last_updated_at": "2026-06-01T11:00:00Z",
+                            "pulse_kind": "updated",
+                        }
+                    }
+                return {}
+
             with (
                 mock.patch.object(build_db, "AUTHORITY_DB_PATH", authority_path),
                 mock.patch.object(build_db, "AV_DB_FORMULAE_PATH", formulae_path),
@@ -582,6 +634,7 @@ class AvDbAuthorityTests(unittest.TestCase):
                 mock.patch.object(build_db, "DB_PATH", output_path),
                 mock.patch.object(build_db, "_ensure_cwd"),
                 mock.patch.object(build_db, "_fetch_json", side_effect=AssertionError("legacy Homebrew fetch should not run")),
+                mock.patch.object(build_db, "_git_pulse_events", side_effect=git_pulse_events),
                 mock.patch.object(build_db, "_collect_npm_metadata", return_value=npm_metadata),
                 mock.patch.object(build_db.sys, "argv", ["build-db.py"]),
             ):
@@ -600,9 +653,13 @@ class AvDbAuthorityTests(unittest.TestCase):
         self.assertEqual(db["formulas"]["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
         self.assertEqual(db["formulas"]["awscli"]["docs"], ["https://docs.aws.amazon.com/cli/latest/userguide"])
         self.assertEqual(db["formulas"]["awscli"]["category"], "cloud-infrastructure")
+        self.assertEqual(db["formulas"]["awscli"]["last_updated_at"], "2026-06-01T12:00:00Z")
+        self.assertEqual(db["formulas"]["awscli"]["pulse_kind"], "new")
         self.assertEqual(db["casks"]["1password-cli"]["url"], "https://example.com/op.zip")
         self.assertEqual(db["casks"]["1password-cli"]["sha256"], "abc123")
         self.assertEqual(db["casks"]["1password-cli"]["version"], "2.0.0")
+        self.assertEqual(db["casks"]["1password-cli"]["last_updated_at"], "2026-06-01T11:00:00Z")
+        self.assertEqual(db["casks"]["1password-cli"]["pulse_kind"], "updated")
         self.assertEqual(db["npms"], npm_metadata)
 
     def test_authority_db_rejects_dangling_cask_entries(self):
