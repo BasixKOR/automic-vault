@@ -680,7 +680,7 @@ run_manifest_build() {
 
   (
     cd "${repo_dir}"
-    TAG="${tag}" VERSION="${version}" bash -euo pipefail -c "${build_script}"
+    CI="${CI:-true}" TAG="${tag}" VERSION="${version}" bash -euo pipefail -c "${build_script}"
   )
 }
 
