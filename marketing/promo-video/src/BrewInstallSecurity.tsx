@@ -225,19 +225,14 @@ const CodePill: React.FC<{ tool: string; accent: string; large?: boolean }> = ({
 
 const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const frame = useCurrentFrame();
-  const { fps: configFps } = useVideoConfig();
   const local = frame;
-  const card = spring({
-    frame: local,
-    fps: configFps,
-    config: { damping: 17, stiffness: 190, mass: 0.72 },
-  });
   const entrance = fade(local, 0, 16);
   const exit = fadeOut(local, notificationDuration - 20, notificationDuration - 6);
   const opacity = entrance * exit;
-  const y = interpolate(card, [0, 1], [66, 0], clamp);
-  const scale = interpolate(card, [0, 1], [0.92, 1], clamp);
-  const tilt = interpolate(card, [0, 1], [2.6, 0], clamp);
+  const y = interpolate(local, [0, 18], [46, 0], {
+    ...clamp,
+    easing: easeOut,
+  });
   const titleOpacity = fade(local, 18, 34);
   const subOpacity = fade(local, 32, 48);
 
@@ -255,7 +250,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
           boxShadow:
             "0 50px 120px rgba(17,24,39,0.18), 0 18px 40px rgba(17,24,39,0.08), inset 0 1px 0 rgba(255,255,255,0.92), inset 0 -1px 0 rgba(255,255,255,0.34)",
           overflow: "hidden",
-          transform: `translateY(${y}px) scale(${scale}) rotate(${tilt}deg)`,
+          transform: `translateY(${y}px)`,
           backdropFilter: "blur(34px) saturate(1.32)",
           WebkitBackdropFilter: "blur(34px) saturate(1.32)",
         }}
@@ -332,7 +327,6 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 lineHeight: 1.02,
                 marginTop: 24,
                 opacity: titleOpacity,
-                transform: `translateY(${interpolate(titleOpacity, [0, 1], [22, 0], clamp)}px)`,
               }}
             >
               {item.title}
@@ -350,7 +344,6 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 lineHeight: 1.25,
                 marginTop: 18,
                 opacity: subOpacity,
-                transform: `translateY(${interpolate(subOpacity, [0, 1], [18, 0], clamp)}px)`,
               }}
             >
               <span>{item.prefix}</span>
