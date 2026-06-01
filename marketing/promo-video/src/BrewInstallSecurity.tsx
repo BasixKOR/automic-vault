@@ -418,34 +418,49 @@ const BrewInstallScene: React.FC = () => {
           color: ink,
         }}
       >
-        <ActTwoWord local={local} delay={4}>
-          Secure
-        </ActTwoWord>
-        <span> </span>
-        <ActTwoWord local={local} delay={18}>
-          the
-        </ActTwoWord>
-        <span> </span>
-        <ActTwoWord local={local} delay={32}>
-          tools
-        </ActTwoWord>
-        <span> </span>
-        <ActTwoWord local={local} delay={46}>
-          you
-        </ActTwoWord>
         <div
           style={{
-            marginTop: 34,
-            opacity: fade(local, 68, 86),
-            transform: `translateY(${interpolate(codePop, [0, 1], [36, 0], clamp)}) scale(${interpolate(
-              codePop,
-              [0, 1],
-              [0.86, 1],
-              clamp,
-            )})`,
+            minHeight: 122,
           }}
         >
-          <CodePill tool="brew install" accent={red} large />
+          <ActTwoWord local={local} delay={4}>
+            Secure
+          </ActTwoWord>
+          <span> </span>
+          <ActTwoWord local={local} delay={18}>
+            the
+          </ActTwoWord>
+          <span> </span>
+          <ActTwoWord local={local} delay={32}>
+            tools
+          </ActTwoWord>
+        </div>
+        <div
+          style={{
+            minHeight: 118,
+            marginTop: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 28,
+          }}
+        >
+          <ActTwoWord local={local} delay={46}>
+            you
+          </ActTwoWord>
+          <div
+            style={{
+              opacity: fade(local, 68, 86),
+              transform: `translateY(${interpolate(codePop, [0, 1], [36, 0], clamp)}) scale(${interpolate(
+                codePop,
+                [0, 1],
+                [0.86, 1],
+                clamp,
+              )})`,
+            }}
+          >
+            <CodePill tool="brew install" accent={red} large />
+          </div>
         </div>
       </div>
       <div
