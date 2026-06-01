@@ -409,7 +409,6 @@ const BrewInstallScene: React.FC = () => {
   const local = frame;
   const exit = fadeOut(local, actTwoDuration - 18, actTwoDuration);
   const marker = fade(local, 92, 118);
-  const installProgress = fade(local, 74, 88);
   const commandOpacity = fade(local, 58, 76);
   const commandY = softY(local, 58, 76, 22);
   const commandBlur = softBlur(local, 58, 76, 10);
@@ -464,7 +463,7 @@ const BrewInstallScene: React.FC = () => {
               alignItems: "center",
               justifyContent: "flex-start",
               flex: "0 0 auto",
-              width: interpolate(installProgress, [0, 1], [274, 610], clamp),
+              width: 610,
               borderRadius: 22,
               padding: "18px 26px",
               border: `1px solid ${red}2f`,
