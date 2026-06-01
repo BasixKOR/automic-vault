@@ -25,7 +25,7 @@ Useful still checks:
 npm run still -- out/stills/frame-14s.jpg --frame=421 --scale=0.25
 npm run still -- out/stills/frame-24s.jpg --frame=720 --scale=0.25
 npm run still -- out/stills/frame-33s.jpg --frame=990 --scale=0.25
-npm run still:brew-install-security -- out/stills/brew-act-1.jpg --frame=38 --scale=0.25
-npm run still:brew-install-security -- out/stills/brew-act-2.jpg --frame=410 --scale=0.25
-npm run still:brew-install-security -- out/stills/brew-act-3.jpg --frame=540 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-1.jpg --frame=70 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-2.jpg --frame=620 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-3.jpg --frame=790 --scale=0.25
 ```

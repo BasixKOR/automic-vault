@@ -13,12 +13,12 @@ import {
 const fps = 30;
 const sec = (value: number) => Math.round(value * fps);
 
-const notificationDuration = sec(2.45);
+const notificationDuration = sec(4.1);
 const actOneDuration = notificationDuration * 4;
 const actTwoStart = actOneDuration + sec(0.25);
-const actTwoDuration = sec(4.2);
+const actTwoDuration = sec(5.8);
 const actThreeStart = actTwoStart + actTwoDuration;
-const actThreeDuration = sec(4.8);
+const actThreeDuration = sec(6.2);
 
 export const brewInstallSecurityDurationInFrames = actThreeStart + actThreeDuration;
 
