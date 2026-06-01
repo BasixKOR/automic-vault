@@ -900,6 +900,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let docs: [String]
     let category: String?
     let dependencies: [String]
+    let rank: UInt32?
     let lastUpdatedAt: String?
     let securityState: PackageSecurityState?
     let pulseKind: String?
@@ -918,6 +919,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case docs
         case category
         case dependencies
+        case rank
         case lastUpdatedAt
         case securityState
         case pulseKind
@@ -934,6 +936,7 @@ struct PackageSearchResult: Decodable, Equatable {
         docs: [String] = [],
         category: String? = nil,
         dependencies: [String],
+        rank: UInt32? = nil,
         lastUpdatedAt: String? = nil,
         securityState: PackageSecurityState?,
         pulseKind: String?
@@ -948,6 +951,7 @@ struct PackageSearchResult: Decodable, Equatable {
         self.docs = docs
         self.category = category
         self.dependencies = dependencies
+        self.rank = rank
         self.lastUpdatedAt = lastUpdatedAt
         self.securityState = securityState
         self.pulseKind = pulseKind
@@ -973,6 +977,7 @@ struct PackageSearchResult: Decodable, Equatable {
         docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
         category = try container.decodeIfPresent(String.self, forKey: .category)
         dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+        rank = try container.decodeIfPresent(UInt32.self, forKey: .rank)
         lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
         securityState = try container.decodeIfPresent(
             PackageSecurityState.self,
@@ -1093,6 +1098,7 @@ struct PackageSearchResult: Decodable, Equatable {
             docs: docs,
             category: category,
             dependencies: dependencies,
+            rank: rank,
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,
             pulseKind: pulseKind
@@ -1767,6 +1773,17 @@ struct PackagePresentation: Equatable {
             return record.category
         case .available(let result):
             return result.category
+        case .recommendation, .command:
+            return nil
+        }
+    }
+
+    var popularityRank: UInt32? {
+        switch item {
+        case .installed:
+            return detail?.popularity?.rank
+        case .available(let result):
+            return result.rank
         case .recommendation, .command:
             return nil
         }

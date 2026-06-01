@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.14";
+pub(crate) const PROTOCOL_VERSION: &str = "1.15";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -119,6 +119,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) docs: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) rank: Option<u32>,
     #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
     pub(crate) last_updated_at: Option<String>,
     #[serde(rename = "pulseKind", skip_serializing_if = "Option::is_none")]
@@ -293,6 +295,7 @@ mod tests {
                 upstream_docs: Some("https://docs.example.test/pkg".to_string()),
                 docs: vec!["https://docs.example.test/pkg".to_string()],
                 category: Some("developer-tools".to_string()),
+                rank: Some(7),
                 last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
                 security_state: None,
@@ -321,6 +324,7 @@ mod tests {
             "https://docs.example.test/pkg"
         );
         assert_eq!(search_json["packages"][0]["category"], "developer-tools");
+        assert_eq!(search_json["packages"][0]["rank"], 7);
         assert_eq!(search_json["categoryCounts"]["developer-tools"], 1);
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");
 

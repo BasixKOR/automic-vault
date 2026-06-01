@@ -27,6 +27,7 @@
 "A command is waiting for approval." = "有一个命令正在等待批准。";
 "Abort" = "中止";
 "About" = "关于";
+"A-Z" = "A-Z";
 "About %@" = "关于%@";
 "Activity" = "活动";
 "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection." = "用于终端原生规划、编辑、审查、模型路由和用量检查的代理CLI与编码助手。";
@@ -69,6 +70,7 @@
 "Cloud Infrastructure" = "云基础设施";
 "Close" = "关闭";
 "Close the current sheet before updating Automic Vault." = "更新Automic Vault前请关闭当前表单。";
+"Choose category sort order" = "选择类别排序方式";
 "Command" = "命令";
 "command" = "命令";
 "Command Line Tools installer launched" = "已启动Command Line Tools安装器";
@@ -245,6 +247,7 @@
 "Resolving package graph" = "正在解析软件包图";
 "Retry" = "重试";
 "root-controlled" = "root控制";
+"Rank" = "排名";
 "Run Fake Update" = "运行模拟更新";
 "Science" = "科学";
 "Search" = "搜索";
@@ -260,6 +263,7 @@
 "Settings" = "设置";
 "Shell" = "Shell";
 "Show All" = "全部显示";
+"Sort: %@" = "排序：%@";
 "Start at Login" = "登录时启动";
 "System" = "系统";
 "The detector for %@ did not complete cleanly." = "%@的检测器未正常完成。";

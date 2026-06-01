@@ -27,6 +27,7 @@
 "A command is waiting for approval." = "コマンドが承認を待っています。";
 "Abort" = "中止";
 "About" = "情報";
+"A-Z" = "A-Z";
 "About %@" = "%@について";
 "Activity" = "アクティビティ";
 "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection." = "ターミナル上での計画、編集、レビュー、モデルルーティング、使用状況確認に使うエージェントCLIとコーディングアシスタントです。";
@@ -69,6 +70,7 @@
 "Cloud Infrastructure" = "クラウドインフラ";
 "Close" = "閉じる";
 "Close the current sheet before updating Automic Vault." = "Automic Vaultを更新する前に現在のシートを閉じてください。";
+"Choose category sort order" = "カテゴリの並び順を選択";
 "Command" = "コマンド";
 "command" = "コマンド";
 "Command Line Tools installer launched" = "Command Line Toolsインストーラを起動しました";
@@ -245,6 +247,7 @@
 "Resolving package graph" = "パッケージグラフを解決中";
 "Retry" = "再試行";
 "root-controlled" = "root管理";
+"Rank" = "ランク";
 "Run Fake Update" = "偽の更新を実行";
 "Science" = "科学";
 "Search" = "検索";
@@ -260,6 +263,7 @@
 "Settings" = "設定";
 "Shell" = "シェル";
 "Show All" = "すべて表示";
+"Sort: %@" = "並び替え: %@";
 "Start at Login" = "ログイン時に起動";
 "System" = "システム";
 "The detector for %@ did not complete cleanly." = "%@の検出器が正常に完了しませんでした。";

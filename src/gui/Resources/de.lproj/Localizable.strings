@@ -27,6 +27,7 @@
 "A command is waiting for approval." = "Ein Befehl wartet auf Genehmigung.";
 "Abort" = "Abbrechen";
 "About" = "Info";
+"A-Z" = "A-Z";
 "About %@" = "Info zu %@";
 "Activity" = "Aktivitaet";
 "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection." = "Agent-CLIs und Coding-Assistenten fuer terminalnahe Planung, Bearbeitung, Review, Modell-Routing und Nutzungspruefung.";
@@ -69,6 +70,7 @@
 "Cloud Infrastructure" = "Cloud-Infrastruktur";
 "Close" = "Schliessen";
 "Close the current sheet before updating Automic Vault." = "Schliessen Sie das aktuelle Sheet, bevor Sie Automic Vault aktualisieren.";
+"Choose category sort order" = "Sortierreihenfolge fuer Kategorie waehlen";
 "Command" = "Befehl";
 "command" = "Befehl";
 "Command Line Tools installer launched" = "Installer fuer Command Line Tools gestartet";
@@ -245,6 +247,7 @@
 "Resolving package graph" = "Paketgraph wird aufgeloest";
 "Retry" = "Erneut versuchen";
 "root-controlled" = "root-kontrolliert";
+"Rank" = "Rang";
 "Run Fake Update" = "Fake-Update ausfuehren";
 "Science" = "Wissenschaft";
 "Search" = "Suchen";
@@ -260,6 +263,7 @@
 "Settings" = "Einstellungen";
 "Shell" = "Shell";
 "Show All" = "Alle einblenden";
+"Sort: %@" = "Sortieren: %@";
 "Start at Login" = "Beim Anmelden starten";
 "System" = "System";
 "The detector for %@ did not complete cleanly." = "Der Detektor fuer %@ wurde nicht sauber abgeschlossen.";

@@ -27,6 +27,7 @@
 "A command is waiting for approval." = "A command is waiting for approval.";
 "Abort" = "Abort";
 "About" = "About";
+"A-Z" = "A-Z";
 "About %@" = "About %@";
 "Activity" = "Activity";
 "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection." = "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing and usage inspection.";
@@ -69,6 +70,7 @@
 "Cloud Infrastructure" = "Cloud Infrastructure";
 "Close" = "Close";
 "Close the current sheet before updating Automic Vault." = "Close the current sheet before updating Automic Vault.";
+"Choose category sort order" = "Choose category sort order";
 "Command" = "Command";
 "command" = "command";
 "Command Line Tools installer launched" = "Command Line Tools installer launched";
@@ -245,6 +247,7 @@
 "Resolving package graph" = "Resolving package graph";
 "Retry" = "Retry";
 "root-controlled" = "root-controlled";
+"Rank" = "Rank";
 "Run Fake Update" = "Run Fake Update";
 "Science" = "Science";
 "Search" = "Search";
@@ -260,6 +263,7 @@
 "Settings" = "Settings";
 "Shell" = "Shell";
 "Show All" = "Show All";
+"Sort: %@" = "Sort: %@";
 "Start at Login" = "Start at Login";
 "System" = "System";
 "The detector for %@ did not complete cleanly." = "The detector for %@ did not complete cleanly.";

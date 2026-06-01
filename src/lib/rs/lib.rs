@@ -17735,6 +17735,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert_eq!(second_page.packages.len(), 1);
         assert_eq!(second_page.total_count, first_page.total_count);
         assert_eq!(second_page.packages[0].name, ranked[1].1);
+        assert_eq!(first_page.packages[0].rank, Some(ranked[0].0));
 
         let category = first_page
             .category_counts
@@ -17744,7 +17745,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             .expect("available package response should include category counts")
             .to_string();
         let category_page =
-            ops::list_available_packages_matching_category(0, 2, Some(&category)).unwrap();
+            ops::list_available_packages_matching_category(0, 2, Some(&category), None).unwrap();
         assert_eq!(
             category_page.total_count,
             first_page.category_counts[&category]
@@ -17758,6 +17759,21 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                 .unwrap_or("other")
                 == category
         }));
+        let alphabetical_category_page = ops::list_available_packages_matching_category(
+            0,
+            4,
+            Some("developer-tools"),
+            Some("az"),
+        )
+        .unwrap();
+        let alphabetical_names = alphabetical_category_page
+            .packages
+            .iter()
+            .map(|package| package.name.as_str())
+            .collect::<Vec<_>>();
+        let mut sorted_names = alphabetical_names.clone();
+        sorted_names.sort_by(|left, right| compare_package_names_for_search_order(left, right));
+        assert_eq!(alphabetical_names, sorted_names);
 
         let available_packages = resolve_available_package_results(&Config {
             bottle_tag: "arm64_tahoe".to_string(),

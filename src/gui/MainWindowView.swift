@@ -183,11 +183,36 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
+                if model.shouldShowCategorySortControl {
+                    Menu {
+                        ForEach(CategoryPackageSortOrder.allCases) { sortOrder in
+                            Button {
+                                model.selectCategorySortOrder(sortOrder)
+                            } label: {
+                                if model.categoryPackageSortOrder == sortOrder {
+                                    Label(sortOrder.title, systemImage: "checkmark")
+                                } else {
+                                    Text(sortOrder.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        PackageListHeaderButtonLabel(
+                            systemImage: "arrow.up.arrow.down",
+                            title: model.categorySortButtonTitle
+                        )
+                    }
+                    .buttonStyle(.glass)
+                    .tint(.clear)
+                    .help(L10n.string("Choose category sort order"))
+                    .offset(y: 2)
+                }
                 if model.activeSidebarSection == .outdated {
                     Button {
                         model.requestOutdatedUpdateAll()
                     } label: {
-                        UpdateAllHeaderButtonLabel(
+                        PackageListHeaderButtonLabel(
+                            systemImage: "arrow.triangle.2.circlepath",
                             title: model.isUpdatingAll
                                 ? L10n.string("Updating")
                                 : L10n.string("Update All")
@@ -722,12 +747,13 @@ private struct SidebarCountText: View {
     }
 }
 
-private struct UpdateAllHeaderButtonLabel: View {
+private struct PackageListHeaderButtonLabel: View {
+    let systemImage: String
     let title: String
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.2.circlepath")
+            Image(systemName: systemImage)
                 .font(.system(size: 10, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
             Text(title)

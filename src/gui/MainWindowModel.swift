@@ -210,6 +210,31 @@ enum MainWindowLinkTab: String, CaseIterable, Identifiable {
     }
 }
 
+enum CategoryPackageSortOrder: String, CaseIterable, Identifiable, Sendable {
+    case rank
+    case alphabetical
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rank:
+            return L10n.string("Rank")
+        case .alphabetical:
+            return L10n.string("A-Z")
+        }
+    }
+
+    var protocolValue: String {
+        switch self {
+        case .rank:
+            return "rank"
+        case .alphabetical:
+            return "az"
+        }
+    }
+}
+
 enum MainWindowPackageBadge: Hashable {
     case new
     case vulnerable
@@ -319,6 +344,7 @@ final class MainWindowModel: ObservableObject {
             scheduleSearch()
         }
     }
+    @Published private(set) var categoryPackageSortOrder: CategoryPackageSortOrder = .rank
     @Published private(set) var packages: [PackagePresentation] = []
     @Published private(set) var geigerPackages: [PackagePresentation] = []
     @Published private(set) var catalogPackages: [PackagePresentation] = []
@@ -353,8 +379,8 @@ final class MainWindowModel: ObservableObject {
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var catalogCategoryCounts: [String: Int] = [:]
-    private var categoryPackagesByIdentifier: [String: [PackagePresentation]] = [:]
-    private var categoryTotalCountsByIdentifier: [String: Int] = [:]
+    private var categoryPackagesByPageKey: [CategoryCatalogPageKey: [PackagePresentation]] = [:]
+    private var categoryTotalCountsByPageKey: [CategoryCatalogPageKey: Int] = [:]
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
     private var sectionPageNextOffsets: [SectionPageKind: Int] = [:]
@@ -367,7 +393,12 @@ final class MainWindowModel: ObservableObject {
     private var pendingHardeningSelection: PackageHardeningContext?
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
     private let securityCatalog: SecurityCatalog
-    private let availablePackagesFetcher: (Int, Int, String?) throws -> PackageSearchPage
+    private let availablePackagesFetcher: (
+        Int,
+        Int,
+        String?,
+        CategoryPackageSortOrder
+    ) throws -> PackageSearchPage
     private let pulsePackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let geigerPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let searchPackagesFetcher: (String, Int, Int) throws -> PackageSearchPage
@@ -378,14 +409,21 @@ final class MainWindowModel: ObservableObject {
         },
         initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
         securityCatalog: SecurityCatalog = .shared,
-        availablePackagesFetcher: @escaping (Int, Int, String?) throws -> PackageSearchPage = {
+        availablePackagesFetcher: @escaping (
+            Int,
+            Int,
+            String?,
+            CategoryPackageSortOrder
+        ) throws -> PackageSearchPage = {
             offset,
             limit,
-            category in
+            category,
+            sortOrder in
             try MainWindowModel.fetchAvailablePackages(
                 offset: offset,
                 limit: limit,
-                category: category
+                category: category,
+                sortOrder: sortOrder
             )
         },
         pulsePackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
@@ -447,6 +485,14 @@ final class MainWindowModel: ObservableObject {
             && !isUpdatingAll
             && activePackageOperation == nil
             && !outdatedUpdatePackageNames.isEmpty
+    }
+
+    var shouldShowCategorySortControl: Bool {
+        !isSearchActive && selectedSection.categoryIdentifier != nil
+    }
+
+    var categorySortButtonTitle: String {
+        L10n.format("Sort: %@", categoryPackageSortOrder.title)
     }
 
     var isPackageMutationInFlight: Bool {
@@ -597,7 +643,7 @@ final class MainWindowModel: ObservableObject {
             return
         }
 
-        guard let kind = SectionPageKind(section: selectedSection) else {
+        guard let kind = sectionPageKind(for: selectedSection) else {
             return
         }
         loadNextSectionPageIfNeeded(kind: kind)
@@ -827,6 +873,15 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
+    func selectCategorySortOrder(_ sortOrder: CategoryPackageSortOrder) {
+        guard categoryPackageSortOrder != sortOrder else {
+            return
+        }
+        categoryPackageSortOrder = sortOrder
+        ensureSelectedSectionLoaded()
+        updateSelectedSectionLoadingState()
+    }
+
     func count(for section: MainWindowSection) -> Int? {
         switch section {
         case .installed:
@@ -847,7 +902,11 @@ final class MainWindowModel: ObservableObject {
             if let count = catalogCategoryCounts[category] {
                 return count
             }
-            if let count = categoryTotalCountsByIdentifier[category] {
+            let pageKey = CategoryCatalogPageKey(
+                category: category,
+                sortOrder: categoryPackageSortOrder
+            )
+            if let count = categoryTotalCountsByPageKey[pageKey] {
                 return count
             }
             let loadedPackages = categorySourcePackages(for: category)
@@ -1026,7 +1085,7 @@ final class MainWindowModel: ObservableObject {
     private var allKnownPackages: [PackagePresentation] {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
-        let categoryPackages = categoryPackagesByIdentifier.values.flatMap { $0 }
+        let categoryPackages = categoryPackagesByPageKey.values.flatMap { $0 }
         for package in packages
             + localOutdatedPackages
             + geigerPackages
@@ -1109,9 +1168,16 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func categorySourcePackages(for category: String) -> [PackagePresentation] {
-        if let packages = categoryPackagesByIdentifier[category],
-           packages.isEmpty == false || categoryTotalCountsByIdentifier[category] != nil {
+        let pageKey = CategoryCatalogPageKey(
+            category: category,
+            sortOrder: categoryPackageSortOrder
+        )
+        if let packages = categoryPackagesByPageKey[pageKey],
+           packages.isEmpty == false || categoryTotalCountsByPageKey[pageKey] != nil {
             return packages
+        }
+        guard categoryPackageSortOrder == .rank else {
+            return []
         }
         return catalogSourcePackages.filter {
             packageCategoryIdentifier($0) == category
@@ -1634,7 +1700,7 @@ final class MainWindowModel: ObservableObject {
                 normalized,
                 for: package.selectionID
             )
-            categoryPackagesByIdentifier = categoryPackagesByIdentifier.mapValues {
+            categoryPackagesByPageKey = categoryPackagesByPageKey.mapValues {
                 $0.updatingDetail(normalized, for: package.selectionID)
             }
             geigerPackages = geigerPackages.updatingDetail(
@@ -1803,7 +1869,7 @@ final class MainWindowModel: ObservableObject {
         guard query.isEmpty else {
             return
         }
-        guard let kind = SectionPageKind(section: selectedSection) else {
+        guard let kind = sectionPageKind(for: selectedSection) else {
             return
         }
         loadSectionPageIfNeeded(kind: kind)
@@ -1812,7 +1878,7 @@ final class MainWindowModel: ObservableObject {
     private func preloadSidebarCountData() {
         loadSectionPageIfNeeded(kind: .geiger)
         loadSectionPageIfNeeded(kind: .pulse)
-        loadSectionPageIfNeeded(kind: .catalog(category: nil))
+        loadSectionPageIfNeeded(kind: .catalog(category: nil, sortOrder: .rank))
     }
 
     private func markDynamicSectionPagesStale() {
@@ -1829,25 +1895,31 @@ final class MainWindowModel: ObservableObject {
         sectionPageNextOffsets[kind] = nil
         if case .catalog = kind {
             catalogCategoryCounts = [:]
-            categoryPackagesByIdentifier.removeAll()
-            categoryTotalCountsByIdentifier.removeAll()
+            categoryPackagesByPageKey.removeAll()
+            categoryTotalCountsByPageKey.removeAll()
         }
         updateSelectedSectionLoadingState()
     }
 
+    private struct CategoryCatalogPageKey: Sendable, Hashable {
+        let category: String
+        let sortOrder: CategoryPackageSortOrder
+    }
+
     private enum SectionPageKind: Sendable, Hashable {
         case geiger
-        case catalog(category: String?)
+        case catalog(category: String?, sortOrder: CategoryPackageSortOrder)
         case pulse
 
-        init?(section: MainWindowSection) {
+        init?(section: MainWindowSection, categorySortOrder: CategoryPackageSortOrder) {
             switch section {
             case .geigerCounter:
                 self = .geiger
             case .newUpdated:
                 self = .pulse
-            case .allPackages,
-                 .developerTools,
+            case .allPackages:
+                self = .catalog(category: nil, sortOrder: .rank)
+            case .developerTools,
                  .cloudInfrastructure,
                  .networking,
                  .system,
@@ -1859,11 +1931,18 @@ final class MainWindowModel: ObservableObject {
                  .science,
                  .games,
                  .other:
-                self = .catalog(category: section.categoryIdentifier)
+                self = .catalog(
+                    category: section.categoryIdentifier,
+                    sortOrder: categorySortOrder
+                )
             case .installed, .outdated, .settings, .about:
                 return nil
             }
         }
+    }
+
+    private func sectionPageKind(for section: MainWindowSection) -> SectionPageKind? {
+        SectionPageKind(section: section, categorySortOrder: categoryPackageSortOrder)
     }
 
     private func loadSectionPageIfNeeded(kind: SectionPageKind) {
@@ -1880,11 +1959,12 @@ final class MainWindowModel: ObservableObject {
         switch kind {
         case .geiger:
             return geigerPackages.isEmpty == false || geigerTotalCount != nil
-        case .catalog(nil):
+        case .catalog(nil, _):
             return catalogPackages.isEmpty == false || catalogTotalCount != nil
-        case .catalog(let category?):
-            return categoryPackagesByIdentifier[category]?.isEmpty == false
-                || categoryTotalCountsByIdentifier[category] != nil
+        case .catalog(let category?, let sortOrder):
+            let pageKey = CategoryCatalogPageKey(category: category, sortOrder: sortOrder)
+            return categoryPackagesByPageKey[pageKey]?.isEmpty == false
+                || categoryTotalCountsByPageKey[pageKey] != nil
         case .pulse:
             return pulsePackages.isEmpty == false || pulseTotalCount != nil
         }
@@ -1952,7 +2032,7 @@ final class MainWindowModel: ObservableObject {
                 geigerPackages = offset == 0
                     ? packages
                     : geigerPackages.appendingUniquePackages(packages)
-            case .catalog(let category):
+            case .catalog(let category, let sortOrder):
                 if !page.categoryCounts.isEmpty {
                     catalogCategoryCounts = page.categoryCounts
                 }
@@ -1960,10 +2040,14 @@ final class MainWindowModel: ObservableObject {
                     presentation(for: $0, prefix: nil)
                 }
                 if let category {
-                    categoryTotalCountsByIdentifier[category] = page.totalCount
-                    categoryPackagesByIdentifier[category] = offset == 0
+                    let pageKey = CategoryCatalogPageKey(
+                        category: category,
+                        sortOrder: sortOrder
+                    )
+                    categoryTotalCountsByPageKey[pageKey] = page.totalCount
+                    categoryPackagesByPageKey[pageKey] = offset == 0
                         ? packages
-                        : (categoryPackagesByIdentifier[category] ?? [])
+                        : (categoryPackagesByPageKey[pageKey] ?? [])
                             .appendingUniquePackages(packages)
                 } else {
                     catalogTotalCount = page.totalCount
@@ -1981,7 +2065,7 @@ final class MainWindowModel: ObservableObject {
                     : pulsePackages.appendingUniquePackages(packages)
             }
             if offset > 0,
-               kind == SectionPageKind(section: selectedSection),
+               kind == sectionPageKind(for: selectedSection),
                displayedPackages.count == previousVisibleCount {
                 loadNextSectionPageIfNeeded(kind: kind)
             } else if isSelectedCategoryCatalogPage(kind),
@@ -1999,7 +2083,7 @@ final class MainWindowModel: ObservableObject {
             isLoadingSectionPage = false
             return
         }
-        guard let kind = SectionPageKind(section: selectedSection) else {
+        guard let kind = sectionPageKind(for: selectedSection) else {
             isLoadingSectionPage = false
             return
         }
@@ -2007,7 +2091,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func isSelectedCategoryCatalogPage(_ kind: SectionPageKind) -> Bool {
-        guard case .catalog(let category?) = kind else {
+        guard case .catalog(let category?, _) = kind else {
             return false
         }
         return selectedSection.categoryIdentifier == category
@@ -2062,7 +2146,7 @@ final class MainWindowModel: ObservableObject {
 
         packages = packages.retiringSecurityReview(matching: context)
         catalogPackages = catalogPackages.retiringSecurityReview(matching: context)
-        categoryPackagesByIdentifier = categoryPackagesByIdentifier.mapValues {
+        categoryPackagesByPageKey = categoryPackagesByPageKey.mapValues {
             $0.retiringSecurityReview(matching: context)
         }
         pulsePackages = pulsePackages.retiringSecurityReview(matching: context)
@@ -2193,10 +2277,10 @@ final class MainWindowModel: ObservableObject {
         switch kind {
         case .geiger:
             return geigerPackagesFetcher
-        case .catalog(let category):
+        case .catalog(let category, let sortOrder):
             let availablePackagesFetcher = availablePackagesFetcher
             return { offset, limit in
-                try availablePackagesFetcher(offset, limit, category)
+                try availablePackagesFetcher(offset, limit, category, sortOrder)
             }
         case .pulse:
             return pulsePackagesFetcher
@@ -2206,7 +2290,8 @@ final class MainWindowModel: ObservableObject {
     private nonisolated static func fetchAvailablePackages(
         offset: Int,
         limit: Int,
-        category: String? = nil
+        category: String? = nil,
+        sortOrder: CategoryPackageSortOrder = .rank
     ) throws -> PackageSearchPage {
         let bridge = NucleusBridge(
             compatibilityPolicy: .protocolOnly,
@@ -2215,7 +2300,8 @@ final class MainWindowModel: ObservableObject {
         return try bridge.fetchAvailablePackages(
             offset: offset,
             limit: limit,
-            category: category
+            category: category,
+            sortOrder: sortOrder
         )
     }
 

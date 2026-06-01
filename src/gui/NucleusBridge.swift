@@ -49,6 +49,7 @@ final class NucleusBridge {
         let offset: Int
         let limit: Int
         let category: String?
+        let sort: String?
     }
 
     private struct PackageInfoParams: Encodable {
@@ -118,7 +119,7 @@ final class NucleusBridge {
     private let daemonOwnership: DaemonOwnership
     private let expectedProtocolVersion = Bundle.main.object(
         forInfoDictionaryKey: "NukeProtocolVersion"
-    ) as? String ?? "1.14"
+    ) as? String ?? "1.15"
     private let expectedBuildID = Bundle.main.object(
         forInfoDictionaryKey: "NukeBuildID"
     ) as? String ?? "unknown"
@@ -202,11 +203,17 @@ final class NucleusBridge {
     func fetchAvailablePackages(
         offset: Int,
         limit: Int,
-        category: String? = nil
+        category: String? = nil,
+        sortOrder: CategoryPackageSortOrder = .rank
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listAvailable",
-            params: PageParams(offset: offset, limit: limit, category: category),
+            params: PageParams(
+                offset: offset,
+                limit: limit,
+                category: category,
+                sort: sortOrder.protocolValue
+            ),
             as: PackageSearchPage.self
         )
     }
@@ -217,7 +224,7 @@ final class NucleusBridge {
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listPulse",
-            params: PageParams(offset: offset, limit: limit, category: nil),
+            params: PageParams(offset: offset, limit: limit, category: nil, sort: nil),
             as: PackageSearchPage.self
         )
     }
@@ -228,7 +235,7 @@ final class NucleusBridge {
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listGeiger",
-            params: PageParams(offset: offset, limit: limit, category: nil),
+            params: PageParams(offset: offset, limit: limit, category: nil, sort: nil),
             as: PackageSearchPage.self
         )
     }

@@ -357,31 +357,65 @@ pub(crate) fn list_available_packages(
     offset: usize,
     limit: usize,
 ) -> Result<core::SearchPackagesResponse, String> {
-    list_available_packages_matching_category(offset, limit, None)
+    list_available_packages_matching_category(offset, limit, None, None)
 }
 
 pub(crate) fn list_available_packages_matching_category(
     offset: usize,
     limit: usize,
     category: Option<&str>,
+    sort: Option<&str>,
 ) -> Result<core::SearchPackagesResponse, String> {
-    let packages = resolve_available_package_results(&Config {
+    let mut packages = resolve_available_package_results(&Config {
         bottle_tag: String::new(),
     })?;
     let category_counts = package_category_counts(&packages);
-    let packages = match normalized_requested_category(category) {
-        Some(category) => packages
-            .into_iter()
-            .filter(|package| package_category_identifier(package) == category)
-            .collect(),
-        None => packages,
-    };
+    if let Some(category) = normalized_requested_category(category) {
+        packages.retain(|package| package_category_identifier(package) == category);
+    }
+    sort_available_packages(&mut packages, normalized_package_sort(sort));
     Ok(search_packages_response_with_category_counts(
         packages,
         offset,
         limit,
         category_counts,
     ))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageListSort {
+    Rank,
+    Alphabetical,
+}
+
+fn normalized_package_sort(sort: Option<&str>) -> PackageListSort {
+    match sort.map(str::trim).filter(|sort| !sort.is_empty()) {
+        Some("az") | Some("a-z") | Some("alphabetical") => PackageListSort::Alphabetical,
+        _ => PackageListSort::Rank,
+    }
+}
+
+fn sort_available_packages(packages: &mut [PackageSearchResult], sort: PackageListSort) {
+    match sort {
+        PackageListSort::Rank => packages.sort_by(compare_package_rank_order),
+        PackageListSort::Alphabetical => packages.sort_by(|left, right| {
+            compare_package_names_for_search_order(&left.package_name, &right.package_name)
+        }),
+    }
+}
+
+fn compare_package_rank_order(
+    left: &PackageSearchResult,
+    right: &PackageSearchResult,
+) -> std::cmp::Ordering {
+    match (left.rank, right.rank) {
+        (Some(left_rank), Some(right_rank)) => left_rank
+            .cmp(&right_rank)
+            .then_with(|| left.package_name.cmp(&right.package_name)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => left.package_name.cmp(&right.package_name),
+    }
 }
 
 pub(crate) fn list_pulse_packages(
@@ -497,6 +531,7 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         upstream_docs: package.upstream_docs,
         docs: package.docs,
         category: package.category,
+        rank: package.rank,
         last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
         security_state,

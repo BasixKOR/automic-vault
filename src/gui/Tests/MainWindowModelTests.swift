@@ -30,7 +30,7 @@ final class MainWindowModelTests: XCTestCase {
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(
-            availablePackagesFetcher: { offset, _, _ in
+            availablePackagesFetcher: { offset, _, _, _ in
                 requests.append(offset)
                 switch offset {
                 case 0:
@@ -79,7 +79,7 @@ final class MainWindowModelTests: XCTestCase {
     @MainActor
     func testCategorySectionUsesDatabaseCategoryMetadata() async throws {
         let model = MainWindowModel(
-            availablePackagesFetcher: { _, _, _ in
+            availablePackagesFetcher: { _, _, _, _ in
                 PackageSearchPage(
                     packages: [
                         Self.packageSearchResult(
@@ -136,8 +136,8 @@ final class MainWindowModelTests: XCTestCase {
             "productivity": 1,
         ]
         let model = MainWindowModel(
-            availablePackagesFetcher: { offset, _, category in
-                requests.append(offset: offset, category: category)
+            availablePackagesFetcher: { offset, _, category, sortOrder in
+                requests.append(offset: offset, category: category, sortOrder: sortOrder)
                 switch category {
                 case nil:
                     return PackageSearchPage(
@@ -191,6 +191,10 @@ final class MainWindowModelTests: XCTestCase {
             [nil, "developer-tools"]
         )
         XCTAssertEqual(
+            requests.values.map(\.sortOrder),
+            [.rank, .rank]
+        )
+        XCTAssertEqual(
             model.displayedPackages.map(\.selectionID),
             ["brew:uv", "brew:gh"]
         )
@@ -204,6 +208,73 @@ final class MainWindowModelTests: XCTestCase {
             model.selectedURL(for: .homepage)?.absoluteString,
             "https://docs.astral.sh/uv/"
         )
+    }
+
+    @MainActor
+    func testCategorySortOrderCanSwitchFromRankToAlphabetical() async throws {
+        let requests = CategoryPageRequestRecorder()
+        let model = MainWindowModel(
+            availablePackagesFetcher: { offset, _, category, sortOrder in
+                requests.append(offset: offset, category: category, sortOrder: sortOrder)
+                guard category == "developer-tools" else {
+                    return PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+                }
+                switch sortOrder {
+                case .rank:
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(
+                                name: "brew:zulu",
+                                category: "developer-tools",
+                                rank: 1
+                            ),
+                            Self.packageSearchResult(
+                                name: "brew:alpha",
+                                category: "developer-tools",
+                                rank: 2
+                            ),
+                        ],
+                        totalCount: 2,
+                        nextOffset: nil
+                    )
+                case .alphabetical:
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(
+                                name: "brew:alpha",
+                                category: "developer-tools",
+                                rank: 2
+                            ),
+                            Self.packageSearchResult(
+                                name: "brew:zulu",
+                                category: "developer-tools",
+                                rank: 1
+                            ),
+                        ],
+                        totalCount: 2,
+                        nextOffset: nil
+                    )
+                }
+            }
+        )
+        defer { model.stop() }
+
+        XCTAssertEqual(model.categoryPackageSortOrder, .rank)
+
+        model.selectedSection = .developerTools
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:zulu", "brew:alpha"])
+
+        model.selectCategorySortOrder(.alphabetical)
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:alpha", "brew:zulu"])
+
+        XCTAssertEqual(
+            requests.values,
+            [
+                .init(offset: 0, category: "developer-tools", sortOrder: .rank),
+                .init(offset: 0, category: "developer-tools", sortOrder: .alphabetical),
+            ]
+        )
+        XCTAssertEqual(model.categorySortButtonTitle, "Sort: A-Z")
     }
 
     @MainActor
@@ -942,7 +1013,8 @@ final class MainWindowModelTests: XCTestCase {
         name: String,
         homepage: String? = nil,
         category: String? = nil,
-        pulseKind: String? = nil
+        pulseKind: String? = nil,
+        rank: UInt32? = nil
     ) -> PackageSearchResult {
         PackageSearchResult(
             name: name,
@@ -952,6 +1024,7 @@ final class MainWindowModelTests: XCTestCase {
             homepage: homepage,
             category: category,
             dependencies: [],
+            rank: rank,
             securityState: nil,
             pulseKind: pulseKind
         )
@@ -1018,6 +1091,7 @@ private final class CategoryPageRequestRecorder: @unchecked Sendable {
     struct Request: Equatable {
         let offset: Int
         let category: String?
+        let sortOrder: CategoryPackageSortOrder
     }
 
     private let lock = NSLock()
@@ -1027,9 +1101,15 @@ private final class CategoryPageRequestRecorder: @unchecked Sendable {
         lock.withLock { requests }
     }
 
-    func append(offset: Int, category: String?) {
+    func append(
+        offset: Int,
+        category: String?,
+        sortOrder: CategoryPackageSortOrder
+    ) {
         lock.withLock {
-            requests.append(Request(offset: offset, category: category))
+            requests.append(
+                Request(offset: offset, category: category, sortOrder: sortOrder)
+            )
         }
     }
 }

@@ -166,6 +166,7 @@ fn dispatch_request(
                     params.offset,
                     params.limit,
                     Some(category),
+                    params.sort.as_deref(),
                 ),
                 None => ops::list_available_packages(params.offset, params.limit),
             },
@@ -335,6 +336,8 @@ struct PageParams {
     limit: usize,
     #[serde(default)]
     category: Option<String>,
+    #[serde(default)]
+    sort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
