@@ -552,40 +552,14 @@ const ClosingScene: React.FC = () => {
             objectFit: "contain",
           }}
         />
-        <div
+        <Img
+          src={staticFile("site-wordmark.webp")}
           style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
+            width: 612,
+            height: 158,
+            objectFit: "contain",
           }}
-        >
-          <div
-            style={{
-              color: ink,
-              fontFamily: mono,
-              fontSize: 92,
-              fontWeight: 700,
-              letterSpacing: 0,
-              lineHeight: 0.94,
-              textTransform: "uppercase",
-            }}
-          >
-            AUTOMIC
-          </div>
-          <div
-            style={{
-              color: red,
-              fontFamily: mono,
-              fontSize: 92,
-              fontWeight: 700,
-              letterSpacing: 0,
-              lineHeight: 0.94,
-              textTransform: "uppercase",
-            }}
-          >
-            VAULT
-          </div>
-        </div>
+        />
       </div>
       <div
         style={{
