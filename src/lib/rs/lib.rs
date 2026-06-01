@@ -17735,6 +17735,29 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         assert_eq!(second_page.total_count, first_page.total_count);
         assert_eq!(second_page.packages[0].name, ranked[1].1);
 
+        let category = first_page
+            .category_counts
+            .keys()
+            .find(|category| category.as_str() != "other")
+            .or_else(|| first_page.category_counts.keys().next())
+            .expect("available package response should include category counts")
+            .to_string();
+        let category_page =
+            ops::list_available_packages_matching_category(0, 2, Some(&category)).unwrap();
+        assert_eq!(
+            category_page.total_count,
+            first_page.category_counts[&category]
+        );
+        assert!(category_page.packages.iter().all(|package| {
+            package
+                .category
+                .as_deref()
+                .map(str::trim)
+                .filter(|category| !category.is_empty())
+                .unwrap_or("other")
+                == category
+        }));
+
         let available_packages = resolve_available_package_results(&Config {
             bottle_tag: "arm64_tahoe".to_string(),
         })

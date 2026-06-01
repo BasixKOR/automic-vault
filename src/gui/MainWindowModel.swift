@@ -353,6 +353,8 @@ final class MainWindowModel: ObservableObject {
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var catalogCategoryCounts: [String: Int] = [:]
+    private var categoryPackagesByIdentifier: [String: [PackagePresentation]] = [:]
+    private var categoryTotalCountsByIdentifier: [String: Int] = [:]
     private var pulseTotalCount: Int?
     private var searchTotalCount = 0
     private var sectionPageNextOffsets: [SectionPageKind: Int] = [:]
@@ -365,7 +367,7 @@ final class MainWindowModel: ObservableObject {
     private var pendingHardeningSelection: PackageHardeningContext?
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
     private let securityCatalog: SecurityCatalog
-    private let availablePackagesFetcher: (Int, Int) throws -> PackageSearchPage
+    private let availablePackagesFetcher: (Int, Int, String?) throws -> PackageSearchPage
     private let pulsePackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let geigerPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let searchPackagesFetcher: (String, Int, Int) throws -> PackageSearchPage
@@ -376,10 +378,15 @@ final class MainWindowModel: ObservableObject {
         },
         initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
         securityCatalog: SecurityCatalog = .shared,
-        availablePackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
+        availablePackagesFetcher: @escaping (Int, Int, String?) throws -> PackageSearchPage = {
             offset,
-            limit in
-            try MainWindowModel.fetchAvailablePackages(offset: offset, limit: limit)
+            limit,
+            category in
+            try MainWindowModel.fetchAvailablePackages(
+                offset: offset,
+                limit: limit,
+                category: category
+            )
         },
         pulsePackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
             offset,
@@ -840,8 +847,12 @@ final class MainWindowModel: ObservableObject {
             if let count = catalogCategoryCounts[category] {
                 return count
             }
-            guard catalogPackages.isEmpty == false else { return nil }
-            return catalogSourcePackages.filter { sectionMatches(section, package: $0) }.count
+            if let count = categoryTotalCountsByIdentifier[category] {
+                return count
+            }
+            let loadedPackages = categorySourcePackages(for: category)
+            guard loadedPackages.isEmpty == false else { return nil }
+            return loadedPackages.count
         }
     }
 
@@ -1095,6 +1106,16 @@ final class MainWindowModel: ObservableObject {
         catalogPackages
     }
 
+    private func categorySourcePackages(for category: String) -> [PackagePresentation] {
+        if let packages = categoryPackagesByIdentifier[category],
+           packages.isEmpty == false || categoryTotalCountsByIdentifier[category] != nil {
+            return packages
+        }
+        return catalogSourcePackages.filter {
+            packageCategoryIdentifier($0) == category
+        }
+    }
+
     private func uniquePackages(_ source: [PackagePresentation]) -> [PackagePresentation] {
         var seen = Set<String>()
         var result: [PackagePresentation] = []
@@ -1334,7 +1355,11 @@ final class MainWindowModel: ObservableObject {
             source = catalogSourcePackages
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
              .data, .languageRuntime, .media, .productivity, .science, .games, .other:
-            source = catalogSourcePackages
+            if let category = section.categoryIdentifier {
+                source = categorySourcePackages(for: category)
+            } else {
+                source = []
+            }
         case .settings, .about:
             source = []
         }
@@ -1789,7 +1814,7 @@ final class MainWindowModel: ObservableObject {
     private func preloadSidebarCountData() {
         loadSectionPageIfNeeded(kind: .geiger)
         loadSectionPageIfNeeded(kind: .pulse)
-        loadSectionPageIfNeeded(kind: .catalog)
+        loadSectionPageIfNeeded(kind: .catalog(category: nil))
     }
 
     private func markDynamicSectionPagesStale() {
@@ -1804,15 +1829,17 @@ final class MainWindowModel: ObservableObject {
         loadingSectionKinds.remove(kind)
         sectionPageRequestIDs[kind] = (sectionPageRequestIDs[kind] ?? 0) + 1
         sectionPageNextOffsets[kind] = nil
-        if kind == .catalog {
+        if case .catalog = kind {
             catalogCategoryCounts = [:]
+            categoryPackagesByIdentifier.removeAll()
+            categoryTotalCountsByIdentifier.removeAll()
         }
         updateSelectedSectionLoadingState()
     }
 
     private enum SectionPageKind: Sendable, Hashable {
         case geiger
-        case catalog
+        case catalog(category: String?)
         case pulse
 
         init?(section: MainWindowSection) {
@@ -1834,7 +1861,7 @@ final class MainWindowModel: ObservableObject {
                  .science,
                  .games,
                  .other:
-                self = .catalog
+                self = .catalog(category: section.categoryIdentifier)
             case .installed, .outdated, .settings, .about:
                 return nil
             }
@@ -1855,8 +1882,11 @@ final class MainWindowModel: ObservableObject {
         switch kind {
         case .geiger:
             return geigerPackages.isEmpty == false || geigerTotalCount != nil
-        case .catalog:
+        case .catalog(nil):
             return catalogPackages.isEmpty == false || catalogTotalCount != nil
+        case .catalog(let category?):
+            return categoryPackagesByIdentifier[category]?.isEmpty == false
+                || categoryTotalCountsByIdentifier[category] != nil
         case .pulse:
             return pulsePackages.isEmpty == false || pulseTotalCount != nil
         }
@@ -1924,17 +1954,25 @@ final class MainWindowModel: ObservableObject {
                 geigerPackages = offset == 0
                     ? packages
                     : geigerPackages.appendingUniquePackages(packages)
-            case .catalog:
-                catalogTotalCount = page.totalCount
+            case .catalog(let category):
                 if !page.categoryCounts.isEmpty {
                     catalogCategoryCounts = page.categoryCounts
                 }
                 let packages = page.packages.map {
                     presentation(for: $0, prefix: nil)
                 }
-                catalogPackages = offset == 0
-                    ? packages
-                    : catalogPackages.appendingUniquePackages(packages)
+                if let category {
+                    categoryTotalCountsByIdentifier[category] = page.totalCount
+                    categoryPackagesByIdentifier[category] = offset == 0
+                        ? packages
+                        : (categoryPackagesByIdentifier[category] ?? [])
+                            .appendingUniquePackages(packages)
+                } else {
+                    catalogTotalCount = page.totalCount
+                    catalogPackages = offset == 0
+                        ? packages
+                        : catalogPackages.appendingUniquePackages(packages)
+                }
             case .pulse:
                 pulseTotalCount = page.totalCount
                 let packages = page.packages.map {
@@ -1948,8 +1986,7 @@ final class MainWindowModel: ObservableObject {
                kind == SectionPageKind(section: selectedSection),
                displayedPackages.count == previousVisibleCount {
                 loadNextSectionPageIfNeeded(kind: kind)
-            } else if kind == .catalog,
-                      selectedSection.categoryIdentifier != nil,
+            } else if isSelectedCategoryCatalogPage(kind),
                       displayedPackages.isEmpty,
                       page.nextOffset != nil {
                 loadNextSectionPageIfNeeded(kind: kind)
@@ -1969,6 +2006,13 @@ final class MainWindowModel: ObservableObject {
             return
         }
         isLoadingSectionPage = loadingSectionKinds.contains(kind)
+    }
+
+    private func isSelectedCategoryCatalogPage(_ kind: SectionPageKind) -> Bool {
+        guard case .catalog(let category?) = kind else {
+            return false
+        }
+        return selectedSection.categoryIdentifier == category
     }
 
     private func mergeOutdatedState(into record: PackageRecord) -> PackageRecord {
@@ -2020,6 +2064,9 @@ final class MainWindowModel: ObservableObject {
 
         packages = packages.retiringSecurityReview(matching: context)
         catalogPackages = catalogPackages.retiringSecurityReview(matching: context)
+        categoryPackagesByIdentifier = categoryPackagesByIdentifier.mapValues {
+            $0.retiringSecurityReview(matching: context)
+        }
         pulsePackages = pulsePackages.retiringSecurityReview(matching: context)
         searchResults = searchResults.retiringSecurityReview(matching: context)
         geigerPackages.removeAll { context.matches($0) }
@@ -2148,8 +2195,11 @@ final class MainWindowModel: ObservableObject {
         switch kind {
         case .geiger:
             return geigerPackagesFetcher
-        case .catalog:
-            return availablePackagesFetcher
+        case .catalog(let category):
+            let availablePackagesFetcher = availablePackagesFetcher
+            return { offset, limit in
+                try availablePackagesFetcher(offset, limit, category)
+            }
         case .pulse:
             return pulsePackagesFetcher
         }
@@ -2157,13 +2207,18 @@ final class MainWindowModel: ObservableObject {
 
     private nonisolated static func fetchAvailablePackages(
         offset: Int,
-        limit: Int
+        limit: Int,
+        category: String? = nil
     ) throws -> PackageSearchPage {
         let bridge = NucleusBridge(
             compatibilityPolicy: .protocolOnly,
             daemonOwnership: .owner
         )
-        return try bridge.fetchAvailablePackages(offset: offset, limit: limit)
+        return try bridge.fetchAvailablePackages(
+            offset: offset,
+            limit: limit,
+            category: category
+        )
     }
 
     private nonisolated static func fetchPulsePackages(

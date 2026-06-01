@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.13";
+pub(crate) const PROTOCOL_VERSION: &str = "1.14";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {

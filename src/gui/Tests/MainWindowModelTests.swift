@@ -30,7 +30,7 @@ final class MainWindowModelTests: XCTestCase {
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(
-            availablePackagesFetcher: { offset, _ in
+            availablePackagesFetcher: { offset, _, _ in
                 requests.append(offset)
                 switch offset {
                 case 0:
@@ -79,7 +79,7 @@ final class MainWindowModelTests: XCTestCase {
     @MainActor
     func testCategorySectionUsesDatabaseCategoryMetadata() async throws {
         let model = MainWindowModel(
-            availablePackagesFetcher: { _, _ in
+            availablePackagesFetcher: { _, _, _ in
                 PackageSearchPage(
                     packages: [
                         Self.packageSearchResult(
@@ -123,8 +123,76 @@ final class MainWindowModelTests: XCTestCase {
         )
 
         model.selectedSection = .security
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:sops"])
 
         XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["brew:sops"])
+    }
+
+    @MainActor
+    func testCategorySectionRequestsCategoryFilteredCatalogPage() async throws {
+        let requests = CategoryPageRequestRecorder()
+        let categoryCounts = [
+            "developer-tools": 2,
+            "productivity": 1,
+        ]
+        let model = MainWindowModel(
+            availablePackagesFetcher: { offset, _, category in
+                requests.append(offset: offset, category: category)
+                switch category {
+                case nil:
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(
+                                name: "brew:a2ps",
+                                category: "productivity"
+                            ),
+                        ],
+                        totalCount: 3,
+                        nextOffset: 1,
+                        categoryCounts: categoryCounts
+                    )
+                case "developer-tools":
+                    return PackageSearchPage(
+                        packages: [
+                            Self.packageSearchResult(
+                                name: "brew:uv",
+                                category: "developer-tools"
+                            ),
+                            Self.packageSearchResult(
+                                name: "brew:gh",
+                                category: "developer-tools"
+                            ),
+                        ],
+                        totalCount: 2,
+                        nextOffset: nil,
+                        categoryCounts: categoryCounts
+                    )
+                default:
+                    return PackageSearchPage(
+                        packages: [],
+                        totalCount: 0,
+                        nextOffset: nil,
+                        categoryCounts: categoryCounts
+                    )
+                }
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .allPackages
+        await waitUntil(model.displayedPackages.count == 1)
+
+        model.selectedSection = .developerTools
+        await waitUntil(model.displayedPackages.count == 2)
+
+        XCTAssertEqual(
+            requests.values.map(\.category),
+            [nil, "developer-tools"]
+        )
+        XCTAssertEqual(
+            model.displayedPackages.map(\.selectionID),
+            ["brew:uv", "brew:gh"]
+        )
     }
 
     @MainActor
@@ -902,6 +970,26 @@ private final class PageRequestRecorder: @unchecked Sendable {
     func append(_ offset: Int) {
         lock.withLock {
             offsets.append(offset)
+        }
+    }
+}
+
+private final class CategoryPageRequestRecorder: @unchecked Sendable {
+    struct Request: Equatable {
+        let offset: Int
+        let category: String?
+    }
+
+    private let lock = NSLock()
+    private var requests: [Request] = []
+
+    var values: [Request] {
+        lock.withLock { requests }
+    }
+
+    func append(offset: Int, category: String?) {
+        lock.withLock {
+            requests.append(Request(offset: offset, category: category))
         }
     }
 }

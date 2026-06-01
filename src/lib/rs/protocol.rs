@@ -158,11 +158,18 @@ fn dispatch_request(
                 ops::list_installed_packages()
             })
         }
-        core::ProtocolMethod::PackagesListAvailable => {
-            respond(request.id, request.params, |params: PageParams| {
-                ops::list_available_packages(params.offset, params.limit)
-            })
-        }
+        core::ProtocolMethod::PackagesListAvailable => respond(
+            request.id,
+            request.params,
+            |params: PageParams| match params.category.as_deref() {
+                Some(category) => ops::list_available_packages_matching_category(
+                    params.offset,
+                    params.limit,
+                    Some(category),
+                ),
+                None => ops::list_available_packages(params.offset, params.limit),
+            },
+        ),
         core::ProtocolMethod::PackagesListPulse => {
             respond(request.id, request.params, |params: PageParams| {
                 ops::list_pulse_packages(params.offset, params.limit)
@@ -326,6 +333,8 @@ struct PageParams {
     offset: usize,
     #[serde(default)]
     limit: usize,
+    #[serde(default)]
+    category: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -48,6 +48,7 @@ final class NucleusBridge {
     private struct PageParams: Encodable {
         let offset: Int
         let limit: Int
+        let category: String?
     }
 
     private struct PackageInfoParams: Encodable {
@@ -117,7 +118,7 @@ final class NucleusBridge {
     private let daemonOwnership: DaemonOwnership
     private let expectedProtocolVersion = Bundle.main.object(
         forInfoDictionaryKey: "NukeProtocolVersion"
-    ) as? String ?? "1.13"
+    ) as? String ?? "1.14"
     private let expectedBuildID = Bundle.main.object(
         forInfoDictionaryKey: "NukeBuildID"
     ) as? String ?? "unknown"
@@ -200,11 +201,12 @@ final class NucleusBridge {
 
     func fetchAvailablePackages(
         offset: Int,
-        limit: Int
+        limit: Int,
+        category: String? = nil
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listAvailable",
-            params: PageParams(offset: offset, limit: limit),
+            params: PageParams(offset: offset, limit: limit, category: category),
             as: PackageSearchPage.self
         )
     }
@@ -215,7 +217,7 @@ final class NucleusBridge {
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listPulse",
-            params: PageParams(offset: offset, limit: limit),
+            params: PageParams(offset: offset, limit: limit, category: nil),
             as: PackageSearchPage.self
         )
     }
@@ -226,7 +228,7 @@ final class NucleusBridge {
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listGeiger",
-            params: PageParams(offset: offset, limit: limit),
+            params: PageParams(offset: offset, limit: limit, category: nil),
             as: PackageSearchPage.self
         )
     }

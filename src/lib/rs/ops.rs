@@ -357,10 +357,31 @@ pub(crate) fn list_available_packages(
     offset: usize,
     limit: usize,
 ) -> Result<core::SearchPackagesResponse, String> {
+    list_available_packages_matching_category(offset, limit, None)
+}
+
+pub(crate) fn list_available_packages_matching_category(
+    offset: usize,
+    limit: usize,
+    category: Option<&str>,
+) -> Result<core::SearchPackagesResponse, String> {
     let packages = resolve_available_package_results(&Config {
         bottle_tag: String::new(),
     })?;
-    Ok(search_packages_response(packages, offset, limit))
+    let category_counts = package_category_counts(&packages);
+    let packages = match normalized_requested_category(category) {
+        Some(category) => packages
+            .into_iter()
+            .filter(|package| package_category_identifier(package) == category)
+            .collect(),
+        None => packages,
+    };
+    Ok(search_packages_response_with_category_counts(
+        packages,
+        offset,
+        limit,
+        category_counts,
+    ))
 }
 
 pub(crate) fn list_pulse_packages(
@@ -402,9 +423,18 @@ fn search_packages_response(
     offset: usize,
     limit: usize,
 ) -> core::SearchPackagesResponse {
+    let category_counts = package_category_counts(&packages);
+    search_packages_response_with_category_counts(packages, offset, limit, category_counts)
+}
+
+fn search_packages_response_with_category_counts(
+    packages: Vec<PackageSearchResult>,
+    offset: usize,
+    limit: usize,
+    category_counts: BTreeMap<String, usize>,
+) -> core::SearchPackagesResponse {
     let limit = search_page_size(limit);
     let total_count = packages.len();
-    let category_counts = package_category_counts(&packages);
     let packages = packages
         .into_iter()
         .map(search_package_summary)
@@ -420,16 +450,27 @@ fn search_packages_response(
     }
 }
 
+fn normalized_requested_category(category: Option<&str>) -> Option<&str> {
+    category
+        .map(str::trim)
+        .filter(|category| !category.is_empty())
+}
+
+fn package_category_identifier(package: &PackageSearchResult) -> &str {
+    package
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|category| !category.is_empty())
+        .unwrap_or("other")
+}
+
 fn package_category_counts(packages: &[PackageSearchResult]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for package in packages {
-        let category = package
-            .category
-            .as_deref()
-            .map(str::trim)
-            .filter(|category| !category.is_empty())
-            .unwrap_or("other");
-        *counts.entry(category.to_string()).or_insert(0) += 1;
+        *counts
+            .entry(package_category_identifier(package).to_string())
+            .or_insert(0) += 1;
     }
     counts
 }
