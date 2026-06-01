@@ -206,13 +206,14 @@ struct MainWindowView: View {
                         }
                     } label: {
                         PackageListHeaderButtonLabel(
-                            systemImage: "arrow.up.arrow.down",
+                            systemImage: nil,
                             title: model.categorySortButtonTitle
                         )
                     }
                     .buttonStyle(.glass)
                     .tint(.clear)
                     .help(L10n.string("Choose category sort order"))
+                    .fixedSize(horizontal: true, vertical: false)
                     .offset(y: 2)
                 }
                 if model.activeSidebarSection == .outdated {
@@ -764,14 +765,16 @@ private struct SidebarCountText: View {
 }
 
 private struct PackageListHeaderButtonLabel: View {
-    let systemImage: String
+    let systemImage: String?
     let title: String
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .regular))
-                .symbolRenderingMode(.hierarchical)
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .regular))
+                    .symbolRenderingMode(.hierarchical)
+            }
             Text(title)
                 .font(.system(size: 10, weight: .regular))
                 .lineLimit(1)
