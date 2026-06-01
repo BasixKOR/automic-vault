@@ -223,34 +223,6 @@ const sceneExit = (local: number, duration: number) => {
   };
 };
 
-const InlineCommand: React.FC<{
-  local: number;
-  start: number;
-  accent?: string;
-  instant?: boolean;
-}> = ({ local, start, accent = red, instant = false }) => (
-  <span
-    style={{
-      display: "inline-flex",
-      alignItems: "center",
-      borderRadius: 14,
-      padding: "5px 12px 6px",
-      margin: "0 8px",
-      border: `1px solid ${accent}30`,
-      background: `${accent}13`,
-      color: accent,
-      fontFamily: mono,
-      fontSize: 31,
-      fontWeight: 780,
-      lineHeight: 1,
-      whiteSpace: "nowrap",
-      ...(instant ? {} : revealStyle(local, start, 14, 12, 6)),
-    }}
-  >
-    {ghCommand}
-  </span>
-);
-
 const HardenButton: React.FC<{
   local: number;
   start: number;
@@ -384,7 +356,6 @@ const GhNotificationCard: React.FC<{
   const animateText = !withButton;
   const titleStart = 26;
   const messageStart = 58;
-  const commandStart = messageStart + 39;
   const hardenButtonStart = 44;
   const hardenClickStart = 106;
   const hardeningAppliedStart = hardenClickStart + 14;
@@ -520,7 +491,7 @@ const GhNotificationCard: React.FC<{
               <div style={{ minHeight: 46 }}>
                 {animateText ? (
                   <RevealWords
-                    text="Agents and malware can trivially grab"
+                    text="Your GitHub token is trivially available"
                     local={local}
                     start={messageStart}
                     stride={3}
@@ -530,13 +501,13 @@ const GhNotificationCard: React.FC<{
                     gap={8}
                   />
                 ) : (
-                  "Agents and malware can trivially grab"
+                  "Your GitHub token is trivially available"
                 )}
               </div>
               <div style={{ minHeight: 48, marginTop: 4 }}>
                 {animateText ? (
                   <RevealWords
-                    text="the GitHub token with"
+                    text="to agents and malware."
                     local={local}
                     start={messageStart + 18}
                     stride={3}
@@ -546,13 +517,8 @@ const GhNotificationCard: React.FC<{
                     gap={8}
                   />
                 ) : (
-                  "the GitHub token with"
+                  "to agents and malware."
                 )}
-                <InlineCommand
-                  local={local}
-                  start={commandStart}
-                  instant={!animateText}
-                />
               </div>
             </div>
             {withButton ? (
