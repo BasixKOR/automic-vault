@@ -52,6 +52,12 @@ const fadeOut = (frame: number, start: number, end: number) =>
     easing: Easing.bezier(0.7, 0, 0.84, 0),
   });
 
+const fadeOutEaseOut = (frame: number, start: number, end: number) =>
+  interpolate(frame, [start, end], [1, 0], {
+    ...clamp,
+    easing: easeOut,
+  });
+
 const softY = (frame: number, start: number, end: number, from: number, to = 0) =>
   interpolate(frame, [start, end], [from, to], {
     ...clamp,
@@ -234,7 +240,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const entrance = fade(local, 0, 16);
   const exitStart = notificationDuration - 30;
   const exitEnd = notificationDuration - 6;
-  const exit = fadeOut(local, exitStart, exitEnd);
+  const exit = fadeOutEaseOut(local, exitStart, exitEnd);
   const opacity = entrance * exit;
   const y = softY(local, 0, 24, 34) + softY(local, exitStart, exitEnd, 0, -22);
   const blur = Math.max(
