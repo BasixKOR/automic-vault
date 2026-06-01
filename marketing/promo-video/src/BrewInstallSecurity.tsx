@@ -200,64 +200,6 @@ const RevealWords: React.FC<{
   );
 };
 
-const NotificationAlarmBurst: React.FC<{ local: number; start: number }> = ({
-  local,
-  start,
-}) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 14,
-      height: 58,
-      marginTop: 26,
-    }}
-  >
-    {[0, 1, 2].map((index) => {
-      const itemStart = start + index * 16;
-      const opacity = fade(local, itemStart, itemStart + 7);
-      const shakePower = interpolate(
-        local,
-        [itemStart, itemStart + 6, itemStart + 24],
-        [0, 1, 0],
-        clamp,
-      );
-      const x = Math.sin((local - itemStart) * 1.8) * 7 * shakePower;
-      const y = Math.cos((local - itemStart) * 2.1) * 3 * shakePower;
-      const rotate = Math.sin((local - itemStart) * 2.4) * 7 * shakePower;
-      const scale = interpolate(
-        local,
-        [itemStart, itemStart + 8, itemStart + 24],
-        [0.72, 1.08, 1],
-        clamp,
-      );
-
-      return (
-        <span
-          key={index}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            background: `${red}10`,
-            border: `1px solid ${red}24`,
-            boxShadow: `0 16px 38px ${red}14`,
-            fontSize: 32,
-            lineHeight: 1,
-            opacity,
-            transform: `translate(${x}px, ${y}px) rotate(${rotate}deg) scale(${scale})`,
-          }}
-        >
-          🚨
-        </span>
-      );
-    })}
-  </div>
-);
-
 const MouseCursor: React.FC<{
   color?: string;
   outline?: string;
@@ -755,9 +697,6 @@ const GhNotificationCard: React.FC<{
             </div>
             {withButton ? (
               <AppliedStatus local={local} start={hardeningAppliedStart} />
-            ) : null}
-            {!withButton ? (
-              <NotificationAlarmBurst local={local} start={176} />
             ) : null}
           </div>
           {withButton ? (
