@@ -62,7 +62,6 @@ type Notification = {
   prefix: string;
   tool: string;
   suffix?: string;
-  detail: string;
 };
 
 const notifications: Notification[] = [
@@ -72,7 +71,6 @@ const notifications: Notification[] = [
     title: "Plain text secret exposure",
     prefix: "Exposure detected in",
     tool: "gh",
-    detail: "~/.config/gh/hosts.yml",
   },
   {
     accent: amber,
@@ -80,7 +78,6 @@ const notifications: Notification[] = [
     title: "Cloud key left readable",
     prefix: "AWS credentials found for",
     tool: "awscli",
-    detail: "~/.aws/credentials",
   },
   {
     accent: blue,
@@ -88,7 +85,6 @@ const notifications: Notification[] = [
     title: "Postinstall wants a token",
     prefix: "Script risk flagged in",
     tool: "node",
-    detail: "package scripts before they run",
   },
   {
     accent: green,
@@ -96,7 +92,6 @@ const notifications: Notification[] = [
     title: "Agent command needs approval",
     prefix: "Sensitive action gated in",
     tool: "gemini-cli",
-    detail: "tool calls with real authority",
   },
 ];
 
@@ -254,7 +249,6 @@ const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ it
   const pulse = interpolate(local % 36, [0, 18, 36], [0.16, 0.44, 0.16], clamp);
   const titleOpacity = fade(local, 18, 34);
   const subOpacity = fade(local, 32, 48);
-  const detailOpacity = fade(local, 50, 66);
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity }}>
@@ -408,21 +402,6 @@ const NotificationScene: React.FC<{ item: Notification; index: number }> = ({ it
               <span>{item.prefix}</span>
               <CodePill tool={item.tool} accent={item.accent} />
               {item.suffix ? <span style={{ marginLeft: 8 }}>{item.suffix}</span> : null}
-            </div>
-            <div
-              style={{
-                color: "rgba(17,24,39,0.48)",
-                fontFamily: mono,
-                fontSize: 22,
-                fontWeight: 640,
-                letterSpacing: 0,
-                lineHeight: 1.3,
-                marginTop: 24,
-                opacity: detailOpacity,
-                transform: `translateY(${interpolate(detailOpacity, [0, 1], [12, 0], clamp)}px)`,
-              }}
-            >
-              {item.detail}
             </div>
           </div>
           <div
