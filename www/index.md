@@ -1,7 +1,6 @@
 # Automic Vault
 
-Stop agents, malware, and compromised tools from accessing secrets or performing
-sensitive actions without approval.
+The secrets manager for the open source ecosystem.
 
 The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
 tokens sit in files an agent or malware can read. Automic Vault keeps watching

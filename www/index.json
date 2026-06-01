@@ -3,7 +3,7 @@
   "category": "AI agent security",
   "platform": "macOS",
   "license": "Apache License 2.0",
-  "description": "Stop agents, malware, and compromised tools from accessing secrets or performing sensitive actions without approval.",
+  "description": "The secrets manager for the open source ecosystem.",
   "positioning": "Secure the tools you brew install.",
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",

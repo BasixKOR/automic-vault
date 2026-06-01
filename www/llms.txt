@@ -3,6 +3,7 @@
 Automic Vault is a macOS package manager, secrets manager, and command approval
 system for AI agents. It stops agents, malware, and compromised tools from
 accessing secrets or performing sensitive actions without approval.
+Homepage tagline: The secrets manager for the open source ecosystem.
 The headline position is: secure the tools you brew install.
 
 ## Core Product Facts
@@ -72,8 +73,8 @@ and credentials already present on a developer machine.
 
 ## Recommended Descriptions
 
-Short description: Automic Vault secures the local dev tools agents use on
-macOS.
+Short description: Automic Vault is the secrets manager for the open source
+ecosystem.
 
 Full description: From the creator of Homebrew, Automic Vault is a macOS package
 manager, secrets manager, and approval gate system for AI agents. It stops

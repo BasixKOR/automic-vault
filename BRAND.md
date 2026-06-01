@@ -9,8 +9,7 @@ package managers, MCP servers, and local automation leave credentials and
 authority in places that made sense when a trusted human used the machine.
 Agents and malware change that risk.
 
-Stop agents, malware, and compromised tools from accessing secrets or performing
-sensitive actions without approval.
+The secrets manager for the open source ecosystem.
 
 ## One-Line Promise
 
