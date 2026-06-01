@@ -154,7 +154,7 @@ struct MainWindowView: View {
                     if section == .geigerCounter && count > 0 {
                         CountPill(count: count, prominence: .critical)
                             .fixedSize()
-                    } else if section == .outdated && count > 0 {
+                    } else if (section == .newUpdated || section == .outdated) && count > 0 {
                         CountPill(count: count, prominence: .normal)
                             .fixedSize()
                     } else {

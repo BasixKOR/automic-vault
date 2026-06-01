@@ -340,10 +340,14 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var packageOperationRequest: PackageOperationRequest?
     @Published private(set) var activePackageOperation: PackageOperationRequest?
     @Published private(set) var automicVaultCLTRecommendation: PackageRecommendation?
+    @Published private(set) var newUpdatedLastClickedAt: Date?
 
     nonisolated private static let pageSize = 96
     nonisolated private static let paginationPrefetchThreshold = 12
+    nonisolated static let newUpdatedLastClickedAtDefaultsKey =
+        "MainWindowModel.newUpdatedLastClickedAt"
     private let statusStore = NucleusStatusStore()
+    private let userDefaults: UserDefaults
     private var snapshotObserver: NSObjectProtocol?
     private var reloadRequestID = 0
     private var searchRequestID = 0
@@ -416,7 +420,8 @@ final class MainWindowModel: ObservableObject {
             offset,
             limit in
             try MainWindowModel.searchPackages(query: query, offset: offset, limit: limit)
-        }
+        },
+        userDefaults: UserDefaults = .standard
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
         automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
@@ -425,6 +430,10 @@ final class MainWindowModel: ObservableObject {
         self.pulsePackagesFetcher = pulsePackagesFetcher
         self.geigerPackagesFetcher = geigerPackagesFetcher
         self.searchPackagesFetcher = searchPackagesFetcher
+        self.userDefaults = userDefaults
+        newUpdatedLastClickedAt = userDefaults.object(
+            forKey: Self.newUpdatedLastClickedAtDefaultsKey
+        ) as? Date
     }
 
     var installedCount: Int {
@@ -530,7 +539,7 @@ final class MainWindowModel: ObservableObject {
         guard pulsePackages.isEmpty == false || pulseTotalCount != nil else {
             return nil
         }
-        return pulseTotalCount ?? pulsePackages.count
+        return pulsePackages.filter(isNewPackageSinceLastNewUpdatedClick).count
     }
 
     func start() {
@@ -635,6 +644,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     func selectSection(_ section: MainWindowSection) {
+        if section == .newUpdated {
+            recordNewUpdatedSidebarClick()
+        }
         selectedSection = section
         if isSearchActive {
             searchText = ""
@@ -1484,6 +1496,27 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         return outdatedPackageNames.contains(name)
+    }
+
+    private func isNewPackageSinceLastNewUpdatedClick(_ package: PackagePresentation) -> Bool {
+        guard case .available(let result) = package.item,
+              result.isNewPulse else {
+            return false
+        }
+        guard let newUpdatedLastClickedAt else {
+            return true
+        }
+        guard let raw = result.lastUpdatedAt,
+              let packageUpdatedAt = Self.parseISO8601Date(raw) else {
+            return false
+        }
+        return packageUpdatedAt > newUpdatedLastClickedAt
+    }
+
+    private func recordNewUpdatedSidebarClick() {
+        let clickedAt = Date()
+        newUpdatedLastClickedAt = clickedAt
+        userDefaults.set(clickedAt, forKey: Self.newUpdatedLastClickedAtDefaultsKey)
     }
 
     private func installSnapshotObserverIfNeeded() {

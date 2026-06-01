@@ -278,7 +278,7 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testNewUpdatedSectionCountsAndShowsUpdatedPackages() async throws {
+    func testNewUpdatedSectionShowsUpdatedPackagesWithoutCountingThemAsNew() async throws {
         let model = MainWindowModel(
             pulsePackagesFetcher: { _, _ in
                 PackageSearchPage(
@@ -300,8 +300,92 @@ final class MainWindowModelTests: XCTestCase {
         model.selectedSection = .newUpdated
         await waitUntil(model.displayedPackages.count == 1)
 
-        XCTAssertEqual(model.count(for: .newUpdated), 1)
+        XCTAssertEqual(model.count(for: .newUpdated), 0)
         XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["pulse:npm:tsx"])
+    }
+
+    @MainActor
+    func testNewUpdatedSidebarCountUsesNewPackagesSinceLastClick() async throws {
+        let suiteName = "MainWindowModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try XCTUnwrap(Self.date("2026-05-28T12:00:00Z")),
+            forKey: MainWindowModel.newUpdatedLastClickedAtDefaultsKey
+        )
+
+        let model = MainWindowModel(
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "brew:newer",
+                            pulseKind: "new",
+                            lastUpdatedAt: "2026-05-28T12:00:01Z"
+                        ),
+                        Self.packageSearchResult(
+                            name: "brew:older",
+                            pulseKind: "new",
+                            lastUpdatedAt: "2026-05-28T11:59:59Z"
+                        ),
+                        Self.packageSearchResult(
+                            name: "brew:undated",
+                            pulseKind: "new"
+                        ),
+                        Self.packageSearchResult(
+                            name: "brew:updated",
+                            pulseKind: "updated",
+                            lastUpdatedAt: "2026-05-28T12:30:00Z"
+                        ),
+                    ],
+                    totalCount: 4,
+                    nextOffset: nil
+                )
+            },
+            userDefaults: defaults
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .newUpdated
+        await waitUntil(model.displayedPackages.count == 4)
+
+        XCTAssertEqual(model.count(for: .newUpdated), 1)
+    }
+
+    @MainActor
+    func testClickingNewUpdatedSidebarResetsNewPackageCount() async throws {
+        let suiteName = "MainWindowModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let model = MainWindowModel(
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "brew:example",
+                            pulseKind: "new",
+                            lastUpdatedAt: "2001-01-01T00:00:00Z"
+                        ),
+                    ],
+                    totalCount: 1,
+                    nextOffset: nil
+                )
+            },
+            userDefaults: defaults
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .newUpdated
+        await waitUntil(model.displayedPackages.count == 1)
+        XCTAssertEqual(model.count(for: .newUpdated), 1)
+
+        model.selectSection(.newUpdated)
+
+        XCTAssertEqual(model.count(for: .newUpdated), 0)
+        XCTAssertNotNil(
+            defaults.object(forKey: MainWindowModel.newUpdatedLastClickedAtDefaultsKey) as? Date
+        )
     }
 
     @MainActor
@@ -1014,7 +1098,8 @@ final class MainWindowModelTests: XCTestCase {
         homepage: String? = nil,
         category: String? = nil,
         pulseKind: String? = nil,
-        rank: UInt32? = nil
+        rank: UInt32? = nil,
+        lastUpdatedAt: String? = nil
     ) -> PackageSearchResult {
         PackageSearchResult(
             name: name,
@@ -1025,6 +1110,7 @@ final class MainWindowModelTests: XCTestCase {
             category: category,
             dependencies: [],
             rank: rank,
+            lastUpdatedAt: lastUpdatedAt,
             securityState: nil,
             pulseKind: pulseKind
         )
