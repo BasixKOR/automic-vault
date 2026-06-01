@@ -28,8 +28,11 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     static let librarySections: [MainWindowSection] = [
         .installed,
         .geigerCounter,
+        .outdated
+    ]
+
+    static let ecosystemSections: [MainWindowSection] = [
         .newUpdated,
-        .outdated,
         .allPackages
     ]
 

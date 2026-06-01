@@ -92,6 +92,13 @@ struct MainWindowView: View {
                 sidebarRow(section)
             }
 
+            sidebarHeader(L10n.string("Ecosystem"))
+                .padding(.top, 22)
+                .kerning(1.2)
+            ForEach(MainWindowSection.ecosystemSections) { section in
+                sidebarRow(section)
+            }
+
             sidebarHeader(L10n.string("CATEGORIES"))
                 .padding(.top, 22)
                 .kerning(1.2)

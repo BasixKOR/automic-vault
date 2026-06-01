@@ -3,6 +3,17 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class MainWindowModelTests: XCTestCase {
+    func testSidebarGroupsMoveCatalogSectionsIntoEcosystem() {
+        XCTAssertEqual(
+            MainWindowSection.librarySections,
+            [.installed, .geigerCounter, .outdated]
+        )
+        XCTAssertEqual(
+            MainWindowSection.ecosystemSections,
+            [.newUpdated, .allPackages]
+        )
+    }
+
     func testCategorySectionsAreAlphabetizedByDisplayedTitleWithOtherLast() {
         let sections = MainWindowSection.categorySections
         XCTAssertEqual(sections.last, .other)
