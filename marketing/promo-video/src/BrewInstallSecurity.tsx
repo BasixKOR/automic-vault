@@ -9,7 +9,8 @@ import {
 const fps = 30;
 const sec = (value: number) => Math.round(value * fps);
 
-const ghStoryDuration = sec(26);
+const secretInterludeDuration = sec(4.4);
+const ghStoryDuration = sec(30.5) + secretInterludeDuration;
 const actOneDuration = ghStoryDuration;
 const actTwoStart = actOneDuration + sec(0.25);
 const actTwoDuration = sec(8.6);
@@ -73,7 +74,8 @@ const softBlur = (frame: number, start: number, end: number, from: number) =>
   });
 
 const ghCommand = "gh auth token";
-const leakedToken = "gho_x7v9zq2a8f0c1e4b6d3n5p";
+const redactedTokenPrefix = "gho_x7v9";
+const redactedTokenTail = "xxxxxxxxxxxxxxxx";
 
 const BackgroundTexture: React.FC = () => {
   const frame = useCurrentFrame();
@@ -198,6 +200,143 @@ const RevealWords: React.FC<{
   );
 };
 
+const NotificationAlarmBurst: React.FC<{ local: number; start: number }> = ({
+  local,
+  start,
+}) => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 14,
+      height: 58,
+      marginTop: 26,
+    }}
+  >
+    {[0, 1, 2].map((index) => {
+      const itemStart = start + index * 16;
+      const opacity = fade(local, itemStart, itemStart + 7);
+      const shakePower = interpolate(
+        local,
+        [itemStart, itemStart + 6, itemStart + 24],
+        [0, 1, 0],
+        clamp,
+      );
+      const x = Math.sin((local - itemStart) * 1.8) * 7 * shakePower;
+      const y = Math.cos((local - itemStart) * 2.1) * 3 * shakePower;
+      const rotate = Math.sin((local - itemStart) * 2.4) * 7 * shakePower;
+      const scale = interpolate(
+        local,
+        [itemStart, itemStart + 8, itemStart + 24],
+        [0.72, 1.08, 1],
+        clamp,
+      );
+
+      return (
+        <span
+          key={index}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 52,
+            height: 52,
+            borderRadius: 16,
+            background: `${red}10`,
+            border: `1px solid ${red}24`,
+            boxShadow: `0 16px 38px ${red}14`,
+            fontSize: 32,
+            lineHeight: 1,
+            opacity,
+            transform: `translate(${x}px, ${y}px) rotate(${rotate}deg) scale(${scale})`,
+          }}
+        >
+          🚨
+        </span>
+      );
+    })}
+  </div>
+);
+
+const MouseCursor: React.FC<{
+  color?: string;
+  outline?: string;
+  shadow?: string;
+  size?: number;
+}> = ({
+  color = "white",
+  outline = "rgba(17,24,39,0.72)",
+  shadow = "drop-shadow(0 8px 14px rgba(17,24,39,0.28))",
+  size = 38,
+}) => (
+  <svg
+    width={size}
+    height={Math.round(size * 1.22)}
+    viewBox="0 0 32 39"
+    style={{
+      display: "block",
+      filter: shadow,
+      overflow: "visible",
+    }}
+  >
+    <path
+      d="M3 2 L3 31 L11.7 22.8 L17.2 36.6 L23.2 34.2 L17.6 20.7 L29.4 20.7 Z"
+      fill={color}
+      stroke={outline}
+      strokeLinejoin="round"
+      strokeWidth={2}
+    />
+  </svg>
+);
+
+const TokenSimpleFlash: React.FC<{ local: number }> = ({ local }) => {
+  const start = 104;
+  const opacity = fade(local, start, start + 9);
+  const y = softY(local, start, start + 9, 18);
+  const scale = interpolate(
+    local,
+    [start, start + 8, start + 18],
+    [0.94, 1.05, 1],
+    clamp,
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: "calc(50% + 350px)",
+        display: "flex",
+        justifyContent: "center",
+        opacity,
+        transform: `translateY(${y}px) scale(${scale})`,
+      }}
+    >
+      <div
+        style={{
+          borderRadius: 999,
+          padding: "16px 26px",
+          color: ink,
+          background: "rgba(255,255,255,0.72)",
+          border: `1px solid ${glassBorder}`,
+          boxShadow:
+            "0 24px 70px rgba(17,24,39,0.14), inset 0 1px 0 rgba(255,255,255,0.86)",
+          fontFamily: sans,
+          fontSize: 34,
+          fontWeight: 820,
+          letterSpacing: 0,
+          lineHeight: 1,
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+        }}
+      >
+        It&apos;s that simple.
+      </div>
+    </div>
+  );
+};
+
 const typedText = (
   text: string,
   local: number,
@@ -241,6 +380,18 @@ const HardenButton: React.FC<{
   const cursorOpacity =
     fade(local, clickStart - 16, clickStart - 6) *
     fadeOut(local, clickStart + 16, clickStart + 28);
+  const cursorX = interpolate(
+    local,
+    [clickStart - 16, clickStart - 6],
+    [304, 226],
+    clamp,
+  );
+  const cursorY = interpolate(
+    local,
+    [clickStart - 16, clickStart - 6],
+    [126, 47],
+    clamp,
+  );
 
   return (
     <div
@@ -296,31 +447,47 @@ const HardenButton: React.FC<{
       <div
         style={{
           position: "absolute",
-          right: 18,
-          bottom: -46,
-          width: 34,
-          height: 34,
+          left: cursorX,
+          top: cursorY,
           opacity: cursorOpacity,
-          transform: `translate(${softY(local, clickStart - 16, clickStart - 6, 24)}px, ${softY(
-            local,
-            clickStart - 16,
-            clickStart - 6,
-            22,
-          )}px)`,
+          zIndex: 3,
+          transform: `scale(${interpolate(click, [0, 1], [1, 0.9], clamp)})`,
         }}
       >
-        <div
-          style={{
-            width: 0,
-            height: 0,
-            borderLeft: "18px solid white",
-            borderTop: "14px solid transparent",
-            borderBottom: "14px solid transparent",
-            filter: "drop-shadow(0 6px 12px rgba(17,24,39,0.28))",
-            transform: "rotate(38deg)",
-          }}
+        <MouseCursor
+          outline="rgba(12,60,45,0.74)"
+          shadow="drop-shadow(0 0 2px rgba(255,255,255,0.86)) drop-shadow(0 8px 14px rgba(17,24,39,0.26))"
         />
       </div>
+    </div>
+  );
+};
+
+const HardenButtonBrand: React.FC<{ local: number; start: number }> = ({
+  local,
+  start,
+}) => {
+  const opacity = fade(local, start, start + 18);
+
+  return (
+    <div
+      style={{
+        width: 340,
+        marginTop: 20,
+        color: ink,
+        fontFamily: mono,
+        fontSize: 22,
+        fontWeight: 860,
+        letterSpacing: "0.18em",
+        lineHeight: 1,
+        opacity,
+        textAlign: "center",
+        textTransform: "uppercase",
+        filter: `blur(${softBlur(local, start, start + 18, 6)}px)`,
+        transform: `translateY(${softY(local, start, start + 18, 12)}px)`,
+      }}
+    >
+      AUTOMIC VAULT
     </div>
   );
 };
@@ -328,31 +495,88 @@ const HardenButton: React.FC<{
 const AppliedStatus: React.FC<{ local: number; start: number }> = ({
   local,
   start,
-}) => (
-  <div
-    style={{
-      marginTop: 34,
-      color: green,
-      fontFamily: sans,
-      fontSize: 34,
-      fontWeight: 780,
-      letterSpacing: 0,
-      lineHeight: 1.1,
-      overflow: "hidden",
-    }}
-  >
-    <RevealWords
-      text="Automic Hardening Applied"
-      local={local}
-      start={start}
-      stride={4}
-      duration={16}
-      y={14}
-      blur={7}
-      gap={9}
-    />
-  </div>
-);
+}) => {
+  const spinnerEnd = start + sec(1.15);
+  const textStart = spinnerEnd + 3;
+  const spinnerOpacity =
+    fade(local, start, start + 8) *
+    fadeOutEaseOut(local, spinnerEnd - 3, spinnerEnd + 5);
+  const spinnerRotation = interpolate(
+    local,
+    [start, spinnerEnd],
+    [0, 360],
+    clamp,
+  );
+  const checkOpacity = fade(local, textStart, textStart + 12);
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        marginTop: 34,
+        height: 44,
+        color: green,
+        fontFamily: sans,
+        fontSize: 34,
+        fontWeight: 780,
+        letterSpacing: 0,
+        lineHeight: 1.1,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 3,
+          width: 32,
+          height: 32,
+          borderRadius: 999,
+          border: `4px solid ${green}24`,
+          borderTopColor: green,
+          opacity: spinnerOpacity,
+          transform: `rotate(${spinnerRotation}deg)`,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-block",
+            width: 18,
+            height: 30,
+            borderRight: `5px solid ${green}`,
+            borderBottom: `5px solid ${green}`,
+            opacity: checkOpacity,
+            filter: `blur(${softBlur(local, textStart, textStart + 12, 6)}px)`,
+            transform: `translateY(${softY(local, textStart, textStart + 12, 12)}px) rotate(45deg)`,
+          }}
+        />
+        <span style={{ display: "inline-block", overflow: "hidden" }}>
+          <RevealWords
+            text="Automic Hardening Applied"
+            local={local}
+            start={textStart}
+            stride={6}
+            duration={20}
+            y={14}
+            blur={7}
+            gap={9}
+          />
+        </span>
+      </div>
+    </div>
+  );
+};
 
 const GhNotificationCard: React.FC<{
   local: number;
@@ -361,11 +585,12 @@ const GhNotificationCard: React.FC<{
 }> = ({ local, duration, withButton = false }) => {
   const motion = sceneExit(local, duration);
   const animateText = !withButton;
-  const titleStart = 26;
-  const messageStart = 58;
+  const titleStart = 32;
+  const messageStart = 100;
+  const messageSecondLineStart = messageStart + 42;
   const hardenButtonStart = 44;
   const hardenClickStart = 106;
-  const hardeningAppliedStart = hardenClickStart + 14;
+  const hardeningAppliedStart = hardenClickStart + 6;
 
   return (
     <AbsoluteFill
@@ -473,8 +698,8 @@ const GhNotificationCard: React.FC<{
                   text="Plain Text Secret Detected"
                   local={local}
                   start={titleStart}
-                  stride={4}
-                  duration={16}
+                  stride={8}
+                  duration={24}
                   y={20}
                   blur={8}
                   gap={14}
@@ -501,8 +726,8 @@ const GhNotificationCard: React.FC<{
                     text="Your GitHub token is trivially available"
                     local={local}
                     start={messageStart}
-                    stride={3}
-                    duration={14}
+                    stride={7}
+                    duration={22}
                     y={12}
                     blur={6}
                     gap={8}
@@ -516,9 +741,9 @@ const GhNotificationCard: React.FC<{
                   <RevealWords
                     text="to agents and malware."
                     local={local}
-                    start={messageStart + 18}
-                    stride={3}
-                    duration={14}
+                    start={messageSecondLineStart}
+                    stride={7}
+                    duration={22}
                     y={12}
                     blur={6}
                     gap={8}
@@ -531,14 +756,18 @@ const GhNotificationCard: React.FC<{
             {withButton ? (
               <AppliedStatus local={local} start={hardeningAppliedStart} />
             ) : null}
+            {!withButton ? (
+              <NotificationAlarmBurst local={local} start={176} />
+            ) : null}
           </div>
           {withButton ? (
             <div
               style={{
                 flex: "0 0 360px",
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                justifyContent: "center",
                 paddingTop: 48,
               }}
             >
@@ -546,6 +775,10 @@ const GhNotificationCard: React.FC<{
                 local={local}
                 start={hardenButtonStart}
                 clickStart={hardenClickStart}
+              />
+              <HardenButtonBrand
+                local={local}
+                start={hardenButtonStart + 18}
               />
             </div>
           ) : null}
@@ -566,7 +799,8 @@ const TerminalAttempt: React.FC<{
   const command = typedText(ghCommand, local, typeStart, typeDuration);
   const commandComplete = local >= typeStart + typeDuration;
   const tokenOpacity = gated ? 0 : fade(local, 82, 98);
-  const approvalStart = 126;
+  const tokenBlur = Math.max(12, softBlur(local, 82, 98, 8));
+  const approvalStart = 92;
 
   return (
     <AbsoluteFill
@@ -638,11 +872,14 @@ const TerminalAttempt: React.FC<{
                 color: red,
                 fontSize: 40,
                 opacity: tokenOpacity,
-                filter: `blur(${softBlur(local, 82, 98, 8)}px)`,
                 transform: `translateY(${softY(local, 82, 98, 18)}px)`,
+                textShadow: `0 0 22px ${red}aa`,
               }}
             >
-              {leakedToken}
+              <span>{redactedTokenPrefix}</span>
+              <span style={{ filter: `blur(${tokenBlur}px)` }}>
+                {redactedTokenTail}
+              </span>
             </div>
           ) : null}
           {gated && commandComplete ? (
@@ -654,11 +891,12 @@ const TerminalAttempt: React.FC<{
                 opacity: fade(local, 70, 82),
               }}
             >
-              waiting for human approval...
+              human approval required…
             </div>
           ) : null}
         </div>
       </div>
+      {!gated ? <TokenSimpleFlash local={local} /> : null}
       {gated ? <ApprovalWindow local={local} start={approvalStart} /> : null}
     </AbsoluteFill>
   );
@@ -671,6 +909,32 @@ const ApprovalWindow: React.FC<{ local: number; start: number }> = ({
   const opacity = fade(local, start, start + 16);
   const y = softY(local, start, start + 16, 24);
   const blur = softBlur(local, start, start + 16, 10);
+  const cursorStart = start + 52;
+  const denyClickStart = start + 70;
+  const cursorOpacity =
+    fade(local, cursorStart, cursorStart + 10) *
+    fadeOut(local, denyClickStart + 18, denyClickStart + 30);
+  const cursorX = interpolate(
+    local,
+    [cursorStart, denyClickStart - 5],
+    [536, 420],
+    clamp,
+  );
+  const cursorY = interpolate(
+    local,
+    [cursorStart, denyClickStart - 5],
+    [358, 340],
+    clamp,
+  );
+  const denyClick =
+    fade(local, denyClickStart, denyClickStart + 4) *
+    fadeOut(local, denyClickStart + 11, denyClickStart + 22);
+  const denyPress = interpolate(
+    local,
+    [denyClickStart, denyClickStart + 5, denyClickStart + 14],
+    [1, 0.965, 1],
+    clamp,
+  );
 
   return (
     <div
@@ -734,7 +998,7 @@ const ApprovalWindow: React.FC<{ local: number; start: number }> = ({
           lineHeight: 1.32,
         }}
       >
-        Agent wants to see your GitHub token; {" "}
+        Agent wants to see your GitHub token;{" "}
         <span style={{ color: ink, fontFamily: mono, fontWeight: 780 }}>
           {ghCommand}
         </span>
@@ -754,10 +1018,22 @@ const ApprovalWindow: React.FC<{ local: number; start: number }> = ({
             padding: "15px 25px",
             color: muted,
             background: "rgba(255,255,255,0.66)",
-            border: "1px solid rgba(17,24,39,0.1)",
+            border: `1px solid rgba(216,58,47,${interpolate(
+              denyClick,
+              [0, 1],
+              [0.12, 0.42],
+              clamp,
+            )})`,
             fontFamily: sans,
             fontSize: 23,
             fontWeight: 740,
+            boxShadow: `0 0 0 ${interpolate(
+              denyClick,
+              [0, 1],
+              [0, 5],
+              clamp,
+            )}px rgba(216,58,47,0.13)`,
+            transform: `scale(${denyPress})`,
           }}
         >
           Deny
@@ -777,6 +1053,29 @@ const ApprovalWindow: React.FC<{ local: number; start: number }> = ({
         >
           Allow
         </div>
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: cursorX,
+          top: cursorY,
+          width: 34,
+          height: 34,
+          opacity: cursorOpacity,
+          zIndex: 3,
+          transform: `scale(${interpolate(
+            denyClick,
+            [0, 1],
+            [1, 0.9],
+            clamp,
+          )})`,
+        }}
+      >
+        <MouseCursor
+          color={ink}
+          outline="rgba(255,255,255,0.88)"
+          shadow="drop-shadow(0 0 2px rgba(255,255,255,0.9)) drop-shadow(0 8px 14px rgba(17,24,39,0.3))"
+        />
       </div>
     </div>
   );
@@ -798,26 +1097,133 @@ const Flash: React.FC<{ frame: number; at: number }> = ({ frame, at }) => {
   );
 };
 
+const SecretInterlude: React.FC<{ local: number; duration: number }> = ({
+  local,
+  duration,
+}) => {
+  const motion = sceneExit(local, duration);
+  const badge = fade(local, 10, 24);
+  const rule = fade(local, 28, 42);
+  const words = [
+    { text: "Keep", italic: false },
+    { text: "Secrets", italic: false },
+    { text: "Secret", italic: true },
+  ];
+
+  return (
+    <AbsoluteFill
+      style={{
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: motion.opacity,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          width: 1480,
+          textAlign: "center",
+          transform: `translateY(${motion.y}px)`,
+          filter: `blur(${motion.blur}px)`,
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            borderRadius: 999,
+            padding: "12px 20px",
+            color: green,
+            background: `${green}12`,
+            border: `1px solid ${green}2b`,
+            boxShadow: `0 18px 54px ${green}14`,
+            fontFamily: mono,
+            fontSize: 27,
+            fontWeight: 860,
+            letterSpacing: "0.14em",
+            lineHeight: 1,
+            opacity: badge,
+            textTransform: "uppercase",
+            transform: `translateY(${softY(local, 10, 24, 14)}px)`,
+          }}
+        >
+          <span
+            style={{
+              width: 15,
+              height: 18,
+              background: green,
+              clipPath:
+                "polygon(50% 0%, 88% 17%, 79% 73%, 50% 100%, 21% 73%, 12% 17%)",
+            }}
+          />
+          Automic Vault
+        </div>
+        <div
+          style={{
+            marginTop: 36,
+            color: ink,
+            fontFamily: sans,
+            fontSize: 112,
+            fontWeight: 820,
+            letterSpacing: 0,
+            lineHeight: 1.02,
+          }}
+        >
+          {words.map((word, index) => (
+            <span
+              key={word.text}
+              style={{
+                display: "inline-block",
+                fontStyle: word.italic ? "italic" : "normal",
+                marginRight: index === words.length - 1 ? 0 : 24,
+                ...revealStyle(local, 14 + index * 5, 16, 24, 10),
+              }}
+            >
+              {word.text}
+            </span>
+          ))}
+        </div>
+        <div
+          style={{
+            width: 760,
+            height: 8,
+            margin: "42px auto 0",
+            borderRadius: 999,
+            background: `linear-gradient(90deg, transparent, ${green}, ${blue}, ${green}, transparent)`,
+            opacity: rule,
+            transform: `scaleX(${interpolate(rule, [0, 1], [0.28, 1], clamp)})`,
+            boxShadow: `0 20px 64px ${green}20`,
+          }}
+        />
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 const GhStoryScene: React.FC = () => {
   const frame = useCurrentFrame();
   const firstNotificationStart = 0;
-  const firstTerminalStart = sec(6.7);
-  const hardenStart = sec(13.45);
-  const gatedTerminalStart = sec(19.15);
+  const firstTerminalStart = sec(8.5);
+  const secretInterludeStart = sec(15.65);
+  const hardenStart = secretInterludeStart + secretInterludeDuration;
+  const gatedTerminalStart = sec(23.7) + secretInterludeDuration;
 
   return (
     <AbsoluteFill>
       <GhNotificationCard
         local={frame - firstNotificationStart}
-        duration={sec(7)}
+        duration={sec(8.75)}
       />
-      <TerminalAttempt
-        local={frame - firstTerminalStart}
-        duration={sec(6.95)}
+      <TerminalAttempt local={frame - firstTerminalStart} duration={sec(7.3)} />
+      <SecretInterlude
+        local={frame - secretInterludeStart}
+        duration={secretInterludeDuration}
       />
       <GhNotificationCard
         local={frame - hardenStart}
-        duration={sec(5.95)}
+        duration={sec(8.2)}
         withButton
       />
       <TerminalAttempt
@@ -826,6 +1232,7 @@ const GhStoryScene: React.FC = () => {
         gated
       />
       <Flash frame={frame} at={firstTerminalStart} />
+      <Flash frame={frame} at={secretInterludeStart} />
       <Flash frame={frame} at={hardenStart} />
       <Flash frame={frame} at={gatedTerminalStart} />
     </AbsoluteFill>
