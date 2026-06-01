@@ -634,6 +634,18 @@ class AvDbAuthorityTests(unittest.TestCase):
                 mock.patch.object(build_db, "DB_PATH", output_path),
                 mock.patch.object(build_db, "_ensure_cwd"),
                 mock.patch.object(build_db, "_fetch_json", side_effect=AssertionError("legacy Homebrew fetch should not run")),
+                mock.patch.object(
+                    build_db,
+                    "_fetch_popularity",
+                    return_value={"awscli": {"installs_per_365_days": 1000, "rank": 3}},
+                ),
+                mock.patch.object(
+                    build_db,
+                    "_fetch_cask_popularity",
+                    return_value={
+                        "1password-cli": {"installs_per_365_days": 500, "rank": 7}
+                    },
+                ),
                 mock.patch.object(build_db, "_git_pulse_events", side_effect=git_pulse_events),
                 mock.patch.object(build_db, "_collect_npm_metadata", return_value=npm_metadata),
                 mock.patch.object(build_db.sys, "argv", ["build-db.py"]),
@@ -653,11 +665,19 @@ class AvDbAuthorityTests(unittest.TestCase):
         self.assertEqual(db["formulas"]["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
         self.assertEqual(db["formulas"]["awscli"]["docs"], ["https://docs.aws.amazon.com/cli/latest/userguide"])
         self.assertEqual(db["formulas"]["awscli"]["category"], "cloud-infrastructure")
+        self.assertEqual(
+            db["formulas"]["awscli"]["popularity"],
+            {"installs_per_365_days": 1000, "rank": 3},
+        )
         self.assertEqual(db["formulas"]["awscli"]["last_updated_at"], "2026-06-01T12:00:00Z")
         self.assertEqual(db["formulas"]["awscli"]["pulse_kind"], "new")
         self.assertEqual(db["casks"]["1password-cli"]["url"], "https://example.com/op.zip")
         self.assertEqual(db["casks"]["1password-cli"]["sha256"], "abc123")
         self.assertEqual(db["casks"]["1password-cli"]["version"], "2.0.0")
+        self.assertEqual(
+            db["casks"]["1password-cli"]["popularity"],
+            {"installs_per_365_days": 500, "rank": 7},
+        )
         self.assertEqual(db["casks"]["1password-cli"]["last_updated_at"], "2026-06-01T11:00:00Z")
         self.assertEqual(db["casks"]["1password-cli"]["pulse_kind"], "updated")
         self.assertEqual(db["npms"], npm_metadata)

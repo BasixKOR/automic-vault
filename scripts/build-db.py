@@ -531,6 +531,31 @@ def _fetch_cask_popularity(github_token):
     return popularity
 
 
+def _overlay_homebrew_popularity_metadata(formulas, casks, github_token):
+    formulas = {name: dict(metadata) for name, metadata in formulas.items()}
+    casks = {token: dict(metadata) for token, metadata in casks.items()}
+
+    try:
+        popularity_by_formula = _fetch_popularity(github_token)
+    except Exception as err:
+        print(f"Failed to fetch formula analytics data: {err}", file=sys.stderr)
+        popularity_by_formula = {}
+    for name, popularity in popularity_by_formula.items():
+        if name in formulas:
+            formulas[name]["popularity"] = popularity
+
+    try:
+        popularity_by_cask = _fetch_cask_popularity(github_token)
+    except Exception as err:
+        print(f"Failed to fetch cask analytics data: {err}", file=sys.stderr)
+        popularity_by_cask = {}
+    for token, popularity in popularity_by_cask.items():
+        if token in casks:
+            casks[token]["popularity"] = popularity
+
+    return formulas, casks
+
+
 def _parse_exec_paths(paths):
     executables = set()
     for entry in paths:
@@ -1777,6 +1802,11 @@ def main():
     if homebrew_authority is None:
         homebrew_authority = _collect_homebrew_authority_legacy(_github_token())
     ordered_entries, formulas, cask_metadata, missing_manifests = homebrew_authority
+    formulas, cask_metadata = _overlay_homebrew_popularity_metadata(
+        formulas,
+        cask_metadata,
+        _github_token(),
+    )
     formulas, cask_metadata = _overlay_homebrew_pulse_metadata(formulas, cask_metadata)
     formulas = _overlay_formula_package_manager_metadata(formulas)
     cask_metadata = _overlay_cask_package_manager_metadata(cask_metadata)

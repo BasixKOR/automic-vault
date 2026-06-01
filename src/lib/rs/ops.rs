@@ -406,8 +406,8 @@ fn compare_package_rank_order(
     right: &PackageSearchResult,
 ) -> std::cmp::Ordering {
     match (left.rank, right.rank) {
-        (Some(left_rank), Some(right_rank)) => right_rank
-            .cmp(&left_rank)
+        (Some(left_rank), Some(right_rank)) => left_rank
+            .cmp(&right_rank)
             .then_with(|| left.package_name.cmp(&right.package_name)),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
@@ -1918,7 +1918,7 @@ mod tests {
     }
 
     #[test]
-    fn package_rank_sort_is_descending_with_unranked_packages_last() {
+    fn package_rank_sort_is_ascending_with_unranked_packages_last() {
         let mut packages = vec![
             ranked_search_result("alpha", Some(1)),
             ranked_search_result("missing", None),
@@ -1931,7 +1931,7 @@ mod tests {
                 .iter()
                 .map(|package| package.package_name.as_str())
                 .collect::<Vec<_>>(),
-            ["zulu", "middle", "alpha", "missing"]
+            ["alpha", "middle", "zulu", "missing"]
         );
 
         sort_available_packages(&mut packages, PackageListSort::Alphabetical).unwrap();
