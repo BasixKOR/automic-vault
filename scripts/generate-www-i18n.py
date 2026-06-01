@@ -54,7 +54,7 @@ TOPICS: dict[str, dict[str, dict[str, Any]]] = {
 
 HOME_DETAIL: dict[str, dict[str, Any]] = {
     "ja": {
-        "meta": ["macOS", "Homebrew", "ローカル優先", "2026年5月31日更新"],
+        "meta": ["macOS", "Homebrew", "ローカル優先", "2026年6月1日更新"],
         "brief": [
             "シークレットは、承認されたツールが必要とするまで Keychain-backed storage に残ります。",
             "危険なツール操作は、実行時に人間の承認を要求できます。",
@@ -91,7 +91,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "次の自律実行の前に、ツール層を保護する。",
     },
     "de": {
-        "meta": ["macOS", "Homebrew", "lokal zuerst", "aktualisiert am 31. Mai 2026"],
+        "meta": ["macOS", "Homebrew", "lokal zuerst", "aktualisiert am 1. Juni 2026"],
         "brief": [
             "Secrets bleiben im Keychain-gestützten Speicher, bis ein genehmigtes Tool sie benötigt.",
             "Riskante Tool-Aktionen können zur Laufzeit menschliche Freigabe verlangen.",
@@ -128,7 +128,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "Sichere die Tool-Schicht vor dem nächsten autonomen Lauf.",
     },
     "fr": {
-        "meta": ["macOS", "Homebrew", "local d'abord", "mis à jour le 31 mai 2026"],
+        "meta": ["macOS", "Homebrew", "local d'abord", "mis à jour le 1er juin 2026"],
         "brief": [
             "Les secrets restent dans un stockage adossé au trousseau jusqu'à ce que l'outil approuvé en ait besoin.",
             "Les actions dangereuses des outils peuvent exiger une approbation humaine au moment de l'exécution.",
@@ -165,7 +165,7 @@ HOME_DETAIL: dict[str, dict[str, Any]] = {
         "final": "Sécurisez la couche outil avant la prochaine exécution autonome.",
     },
     "zh-Hans": {
-        "meta": ["macOS", "Homebrew", "本地优先", "2026 年 5 月 31 日更新"],
+        "meta": ["macOS", "Homebrew", "本地优先", "2026 年 6 月 1 日更新"],
         "brief": [
             "密钥会留在 Keychain 支持的存储中，直到已批准的工具需要它们。",
             "危险工具操作可以在执行时要求人工审批。",

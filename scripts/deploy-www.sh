@@ -424,6 +424,7 @@ ensure_redirect_function() {
 function handler(event) {
   var request = event.request;
   var host = request.headers.host.value;
+  var canonicalHost = "${WWW_CANONICAL_HOST}";
 
   function preferredContentType() {
     var header = request.headers.accept && request.headers.accept.value;
@@ -569,27 +570,35 @@ function handler(event) {
     return location;
   }
 
-  if (request.uri === "/install.sh" || request.uri === "/scanner.sh" || request.uri === "/scanner.gz") {
-    return request;
+  function viewerProtocol() {
+    var header = request.headers["cloudfront-forwarded-proto"];
+    return header && header.value ? header.value.toLowerCase() : "https";
   }
+
+  function canonicalLocation(uri) {
+    return appendQueryString("https://" + canonicalHost + uri);
+  }
+
   if (request.uri === "/av.dmg") {
     return {
       statusCode: 301,
       statusDescription: "Moved Permanently",
       headers: {
-        location: { value: appendQueryString("/Automic%20Vault.dmg") }
+        location: { value: canonicalLocation("/Automic%20Vault.dmg") }
       }
     };
   }
-  if (host === "${WWW_DOMAIN}") {
-    var location = appendQueryString("https://${WWW_CANONICAL_HOST}" + request.uri);
+  if (host !== canonicalHost || viewerProtocol() === "http") {
     return {
       statusCode: 301,
       statusDescription: "Moved Permanently",
       headers: {
-        location: { value: location }
+        location: { value: canonicalLocation(request.uri) }
       }
     };
+  }
+  if (request.uri === "/install.sh" || request.uri === "/scanner.sh" || request.uri === "/scanner.gz") {
+    return request;
   }
 
   var preferredType = preferredContentType();
@@ -774,7 +783,7 @@ ensure_cache_policy() {
     --arg name "${cache_policy_name}" \
     '{
       Name: $name,
-      Comment: "Static site cache policy with Gzip and Brotli variants",
+      Comment: "Static site cache policy with Gzip, Brotli, and viewer protocol for canonical redirects",
       DefaultTTL: 86400,
       MaxTTL: 31536000,
       MinTTL: 0,
@@ -782,7 +791,11 @@ ensure_cache_policy() {
         EnableAcceptEncodingGzip: true,
         EnableAcceptEncodingBrotli: true,
         HeadersConfig: {
-          HeaderBehavior: "none"
+          HeaderBehavior: "whitelist",
+          Headers: {
+            Quantity: 1,
+            Items: ["CloudFront-Forwarded-Proto"]
+          }
         },
         CookiesConfig: {
           CookieBehavior: "none"
@@ -881,7 +894,7 @@ build_distribution_config() {
       },
       DefaultCacheBehavior: {
         TargetOriginId: $origin_id,
-        ViewerProtocolPolicy: "redirect-to-https",
+        ViewerProtocolPolicy: "allow-all",
         AllowedMethods: {
           Quantity: 2,
           Items: ["HEAD", "GET"],
@@ -974,7 +987,7 @@ upsert_distribution() {
           Items: [$domain_a, $domain_b]
         }
       | .DistributionConfig.DefaultCacheBehavior.TargetOriginId = $origin_id
-      | .DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy = "redirect-to-https"
+      | .DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy = "allow-all"
       | .DistributionConfig.DefaultCacheBehavior.AllowedMethods = {
           Quantity: 2,
           Items: ["HEAD", "GET"],
