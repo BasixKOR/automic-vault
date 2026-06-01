@@ -801,6 +801,7 @@ const TerminalAttempt: React.FC<{
   const tokenOpacity = gated ? 0 : fade(local, 82, 98);
   const tokenBlur = Math.max(12, softBlur(local, 82, 98, 8));
   const approvalStart = 92;
+  const terminalDim = gated ? fade(local, approvalStart, approvalStart + 16) : 0;
 
   return (
     <AbsoluteFill
@@ -895,6 +896,15 @@ const TerminalAttempt: React.FC<{
             </div>
           ) : null}
         </div>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(3,7,14,0.58)",
+            opacity: terminalDim,
+            pointerEvents: "none",
+          }}
+        />
       </div>
       {!gated ? <TokenSimpleFlash local={local} /> : null}
       {gated ? <ApprovalWindow local={local} start={approvalStart} /> : null}
