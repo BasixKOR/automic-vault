@@ -358,6 +358,28 @@ const HardenButton: React.FC<{
   );
 };
 
+const AppliedStatus: React.FC<{ local: number; start: number }> = ({
+  local,
+  start,
+}) => (
+  <div
+    style={{
+      marginTop: 34,
+      color: green,
+      fontFamily: sans,
+      fontSize: 34,
+      fontWeight: 780,
+      letterSpacing: 0,
+      lineHeight: 1.1,
+      opacity: fade(local, start, start + 16),
+      filter: `blur(${softBlur(local, start, start + 16, 8)}px)`,
+      transform: `translateY(${softY(local, start, start + 16, 16)}px)`,
+    }}
+  >
+    Automic Hardening Applies
+  </div>
+);
+
 const GhNotificationCard: React.FC<{
   local: number;
   duration: number;
@@ -368,6 +390,9 @@ const GhNotificationCard: React.FC<{
   const titleStart = 26;
   const messageStart = 58;
   const commandStart = messageStart + 39;
+  const hardenButtonStart = 44;
+  const hardenClickStart = 106;
+  const hardeningAppliedStart = hardenClickStart + 14;
 
   return (
     <AbsoluteFill
@@ -380,7 +405,7 @@ const GhNotificationCard: React.FC<{
       <div
         style={{
           position: "absolute",
-          width: 1120,
+          width: withButton ? 1340 : 1120,
           minHeight: withButton ? 500 : 430,
           borderRadius: 38,
           border: `1px solid ${glassBorder}`,
@@ -425,6 +450,7 @@ const GhNotificationCard: React.FC<{
             height: "100%",
             minHeight: withButton ? 500 : 430,
             alignItems: "center",
+            gap: withButton ? 54 : 0,
             padding: "58px 72px",
           }}
         >
@@ -535,11 +561,26 @@ const GhNotificationCard: React.FC<{
               </div>
             </div>
             {withButton ? (
-              <div style={{ marginTop: 34 }}>
-                <HardenButton local={local} start={44} clickStart={106} />
-              </div>
+              <AppliedStatus local={local} start={hardeningAppliedStart} />
             ) : null}
           </div>
+          {withButton ? (
+            <div
+              style={{
+                flex: "0 0 360px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                paddingTop: 48,
+              }}
+            >
+              <HardenButton
+                local={local}
+                start={hardenButtonStart}
+                clickStart={hardenClickStart}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </AbsoluteFill>
