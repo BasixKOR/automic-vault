@@ -1221,7 +1221,6 @@ const ActTwoWord: React.FC<{
 const BrewInstallScene: React.FC = () => {
   const frame = useCurrentFrame();
   const local = frame;
-  const exit = fadeOut(local, actTwoDuration - 18, actTwoDuration);
   const marker = fade(local, 92, 118);
   const commandOpacity = fade(local, 58, 76);
   const commandY = softY(local, 58, 76, 22);
@@ -1242,7 +1241,6 @@ const BrewInstallScene: React.FC = () => {
       style={{
         alignItems: "center",
         justifyContent: "flex-start",
-        opacity: exit,
       }}
     >
       <div
