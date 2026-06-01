@@ -33,7 +33,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         .allPackages
     ]
 
-    static let categorySections: [MainWindowSection] = [
+    private static let unsortedCategorySections: [MainWindowSection] = [
         .developerTools,
         .cloudInfrastructure,
         .networking,
@@ -47,6 +47,16 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         .games,
         .other
     ]
+
+    static var categorySections: [MainWindowSection] {
+        unsortedCategorySections.sorted { left, right in
+            let comparison = left.title.localizedStandardCompare(right.title)
+            if comparison == .orderedSame {
+                return left.rawValue < right.rawValue
+            }
+            return comparison == .orderedAscending
+        }
+    }
 
     static let utilitySections: [MainWindowSection] = [
         .settings,

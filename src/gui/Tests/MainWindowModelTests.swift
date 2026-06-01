@@ -3,6 +3,15 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class MainWindowModelTests: XCTestCase {
+    func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
+        let titles = MainWindowSection.categorySections.map(\.title)
+        let sortedTitles = titles.sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+
+        XCTAssertEqual(titles, sortedTitles)
+    }
+
     @MainActor
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
