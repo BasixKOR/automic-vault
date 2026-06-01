@@ -9,7 +9,7 @@ import {
 const fps = 30;
 const sec = (value: number) => Math.round(value * fps);
 
-const secretInterludeDuration = sec(4.4);
+const secretInterludeDuration = sec(5.2);
 const ghStoryDuration = sec(30.5) + secretInterludeDuration;
 const actOneDuration = ghStoryDuration;
 const actTwoStart = actOneDuration + sec(0.25);
@@ -1112,12 +1112,16 @@ const SecretInterlude: React.FC<{ local: number; duration: number }> = ({
   duration,
 }) => {
   const motion = sceneExit(local, duration);
-  const badge = fade(local, 10, 24);
-  const rule = fade(local, 28, 42);
+  const badgeStart = 10;
+  const badgeEnd = 24;
+  const wordsStart = 54;
+  const ruleStart = wordsStart + 42;
+  const badge = fade(local, badgeStart, badgeEnd);
+  const rule = fade(local, ruleStart, ruleStart + 16);
   const words = [
-    { text: "Keep", italic: false },
-    { text: "Secrets", italic: false },
-    { text: "Secret", italic: true },
+    { text: "keep", italic: false },
+    { text: "secrets", italic: false },
+    { text: "secret", italic: true },
   ];
 
   return (
@@ -1156,7 +1160,7 @@ const SecretInterlude: React.FC<{ local: number; duration: number }> = ({
             lineHeight: 1,
             opacity: badge,
             textTransform: "uppercase",
-            transform: `translateY(${softY(local, 10, 24, 14)}px)`,
+            transform: `translateY(${softY(local, badgeStart, badgeEnd, 14)}px)`,
           }}
         >
           <span
@@ -1188,7 +1192,7 @@ const SecretInterlude: React.FC<{ local: number; duration: number }> = ({
                 display: "inline-block",
                 fontStyle: word.italic ? "italic" : "normal",
                 marginRight: index === words.length - 1 ? 0 : 24,
-                ...revealStyle(local, 14 + index * 5, 16, 24, 10),
+                ...revealStyle(local, wordsStart + index * 6, 18, 24, 10),
               }}
             >
               {word.text}
