@@ -24,8 +24,8 @@
   <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="av trace">
-  <meta property="og:description" content="Trace curl pipe shell installers before they touch disk. av trace summarizes downloads, writes, chmods, installs, and service changes.">
+  <meta property="og:title" content="av trace | Trace Shell Installers Before AI Agents Run Them">
+  <meta property="og:description" content="Use av trace to inspect curl pipe shell installers before they touch disk. Summarize downloads, writes, chmods, installs, and services.">
   <meta property="og:url" content="https://www.automicvault.com/av-trace/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -124,7 +124,7 @@
                   "headline": "av trace | Trace Shell Installers Before AI Agents Run Them",
                   "description": "Use av trace to statically inspect curl pipe shell installers and summarize the file-changing steps before an AI agent or developer runs them.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-01",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -162,6 +162,36 @@
                               "item": "https://www.automicvault.com/av-trace/"
                         }
                   ]
+            },
+            {
+                  "@type": "FAQPage",
+                  "@id": "https://www.automicvault.com/av-trace/#faq",
+                  "mainEntity": [
+                        {
+                              "@type": "Question",
+                              "name": "Does av trace run the installer?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "No. av trace downloads installer content for inspection and summarizes likely file-changing behavior instead of running the install command."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "What installer behavior does av trace report?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "It focuses on consequential actions such as downloads, writes, deletes, moves, chmods, package installs, service files, and generated executables."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "Why does this matter for AI agents?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "Agents may run installer one-liners during setup. Tracing makes the installer behavior reviewable before an autonomous run writes files or modifies the machine."
+                              }
+                        }
+                  ]
             }
       ]
 }
@@ -194,7 +224,7 @@
           <p class="kicker">Installer trace</p>
           <h1>Trace shell installers before they touch disk</h1>
           <p class="lede">Run <code>av trace</code> on a curl pipe shell one-liner to see the file-changing actions it is likely to perform: downloads, writes, chmods, installs, service changes, and generated executables.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 1, 2026</p>
           <div class="answer-box"><p>av trace helps developers inspect shell installers before an AI agent runs them. It summarizes file-changing behavior from installer scripts so risky curl-pipe-shell workflows can be reviewed before execution.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
@@ -227,6 +257,31 @@
           <article><span>Input</span><p><code>av trace 'curl https://example.com/install.sh | sh'</code></p></article>
           <article><span>Output</span><p>Concise numbered steps such as downloading and mounting a DMG, installing into <code>/Applications</code>, or writing a launcher under <code>~/.local/bin</code>.</p></article>
           <article><span>Automation</span><p>Use <code>--json</code> when another tool needs the traced command, selected agent, operation type, path, and related network URL.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Agent setup risk</p>
+          <h2>Installer one-liners are package decisions in disguise.</h2>
+          <p>AI agents often reach for install scripts when a tool is missing. The command looks small, but the script behind it can create directories, change permissions, add launch services, download binaries, and write shell startup files. <code>av trace</code> gives that hidden behavior a review step.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Preflight</span><h3>Review before execution</h3><p>Trace a one-liner before the agent runs it, especially when the script comes from a project README, issue thread, or package website.</p></article>
+          <article><span>Scope</span><h3>Focus on file changes</h3><p>The output deliberately emphasizes writes, deletes, moves, chmods, installers, services, and generated executables rather than every shell detail.</p></article>
+          <article><span>Boundary</span><h3>Pair with approvals</h3><p>After tracing, run risky tool execution through Automic Vault approval gates so the final write or privileged action is still visible.</p></article>
+          <article><span>Evidence</span><h3>Keep output readable</h3><p>Use normal text for human review or JSON when another local tool needs structured trace results.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split" id="faq">
+        <div class="section-heading">
+          <p class="kicker">FAQ</p>
+          <h2><code>av trace</code> questions.</h2>
+          <p>The goal is not to ban installer scripts. The goal is to make hidden install behavior visible before an agent turns a one-liner into local machine state.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Execution</span><p><code>av trace</code> does not run the installer. It inspects installer content and summarizes likely file-changing behavior.</p></article>
+          <article><span>Reports</span><p>It reports consequential actions such as downloads, writes, deletes, moves, chmods, package installs, service files, and generated executables.</p></article>
+          <article><span>Provenance</span><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>
         </div>
       </section>
       <section class="seo-section">

@@ -12,10 +12,10 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Download Automic Vault for macOS</title>
+  <title>Download Automic Vault for macOS - Secure Homebrew Tools</title>
   <meta
     name="description"
-    content="Download Automic Vault for macOS, the local package and secrets boundary for AI agent runs."
+    content="Download Automic Vault for macOS to scan Homebrew tools, move supported credentials out of plaintext files, and gate sensitive agent actions."
   >
   <link rel="canonical" href="https://www.automicvault.com/download/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/download/">
@@ -26,16 +26,16 @@
   <link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/download/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Download Automic Vault for macOS">
+  <meta property="og:title" content="Download Automic Vault for macOS - Secure Homebrew Tools">
   <meta
     property="og:description"
-    content="Download Automic Vault for macOS, the local package and secrets boundary for AI agent runs."
+    content="Download Automic Vault for macOS to scan Homebrew tools, move supported credentials out of plaintext files, and gate sensitive agent actions."
   >
   <meta property="og:url" content="https://www.automicvault.com/download/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Download Automic Vault for macOS">
-  <meta name="twitter:description" content="Download Automic Vault for macOS, the local package and secrets boundary for AI agent runs.">
+  <meta name="twitter:title" content="Download Automic Vault for macOS - Secure Homebrew Tools">
+  <meta name="twitter:description" content="Download Automic Vault for macOS to scan Homebrew tools, move supported credentials out of plaintext files, and gate sensitive agent actions.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <script type="application/ld+json">
   {
@@ -62,11 +62,11 @@
         "@type": "WebPage",
         "@id": "https://www.automicvault.com/download/#webpage",
         "url": "https://www.automicvault.com/download/",
-        "name": "Download Automic Vault for macOS",
-        "headline": "Download Automic Vault for macOS",
-        "description": "Download Automic Vault for macOS, the local package and secrets boundary for AI agent runs.",
+        "name": "Download Automic Vault for macOS - Secure Homebrew Tools",
+        "headline": "Download Automic Vault for macOS - Secure Homebrew Tools",
+        "description": "Download Automic Vault for macOS to scan Homebrew tools, move supported credentials out of plaintext files, and gate sensitive agent actions.",
         "datePublished": "2026-05-23",
-        "dateModified": "2026-05-31",
+        "dateModified": "2026-06-01",
         "image": "https://www.automicvault.com/preview.jpg",
         "isPartOf": {
           "@id": "https://www.automicvault.com/#website"
@@ -90,6 +90,36 @@
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
         }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://www.automicvault.com/download/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What does Automic Vault install on macOS?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The download includes the native Automic Vault app, the av command-line tool, scanner workflows, approval gates, and Nucleus package controls for local developer tools."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I still use Homebrew tools?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Automic Vault is built around the package world developers already use. It checks what installed tools can read, hardens supported credentials, and gates sensitive actions."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What should I do after installing Automic Vault?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Run the scanner, move supported credentials out of plaintext files, approve only the tool actions you intend, and leave Automic Vault running for new hazard notifications."
+            }
+          }
+        ]
       }
     ]
   }
@@ -282,7 +312,7 @@
         <img
           class="brand-mark"
           src="../assets/icon@2x.webp"
-          alt=""
+          alt="Automic Vault"
           width="54"
           height="54"
         >
@@ -312,9 +342,9 @@
             <span>updated May 31, 2026</span>
           </div>
           <p class="eyebrow">Download</p>
-          <h1 id="download-title">Automic Vault</h1>
+          <h1 id="download-title">Download Automic Vault for macOS</h1>
           <p class="lede">
-            Install the local package manager and secrets boundary for AI agent runs on macOS.
+            Install the local security layer for Homebrew packages, CLI secrets, and AI agent actions on macOS.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
@@ -372,6 +402,30 @@
         </div>
       </section>
 
+      <section class="download-section" aria-labelledby="why-download-title">
+        <div class="section-label">
+          <h2 id="why-download-title">Why install it</h2>
+          <span>before the next agent run</span>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <span>Homebrew tools</span>
+            <h2>Find what installed tools can read</h2>
+            <p>Homebrew makes developer tools easy to add. Automic Vault checks the tool layer those packages create and reports credential paths, package hazards, and approval opportunities before an agent reaches them.</p>
+          </article>
+          <article class="download-card">
+            <span>Plaintext files</span>
+            <h2>Move supported secrets out of easy reach</h2>
+            <p>Tokens in <code>.env</code>, <code>.npmrc</code>, <code>.netrc</code>, AWS config, and GitHub CLI state are convenient for humans and readable for local processes. Vault moves supported credentials into protected local storage.</p>
+          </article>
+          <article class="download-card">
+            <span>Approval gates</span>
+            <h2>Ask before commands use power</h2>
+            <p>Package publishing, token reveal, cloud mutation, and installer execution should not be silent agent side effects. Automic Vault puts the approval where the command runs, below the agent prompt.</p>
+          </article>
+        </div>
+      </section>
+
       <section class="download-terminal" aria-labelledby="terminal-title">
         <div class="section-label">
           <h2 id="terminal-title">Terminal</h2>
@@ -379,6 +433,78 @@
         </div>
         <pre class="command-line"><code>/usr/bin/curl -fsSL https://www.automicvault.com/install.sh | /bin/bash</code></pre>
         <pre class="command-line"><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
+      </section>
+
+      <section class="download-section" aria-labelledby="after-install-title">
+        <div class="section-label">
+          <h2 id="after-install-title">After install</h2>
+          <span>scan, harden, monitor</span>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <span>1 / scan</span>
+            <h2>Run the secret scanner first</h2>
+            <p>Use the scanner to surface plaintext credential files and package-specific hazards before an autonomous coding session starts.</p>
+          </article>
+          <article class="download-card">
+            <span>2 / harden</span>
+            <h2>Patch the package surface</h2>
+            <p>Move supported credentials into Vault, keep command stubs under a predictable root, and leave old easy-read file paths out of the agent's reach.</p>
+          </article>
+          <article class="download-card">
+            <span>3 / monitor</span>
+            <h2>Keep Vault running</h2>
+            <p>New installs, stale tools, and fresh local config can reopen holes. The running app keeps reporting hazards so you can close them quickly.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="download-section" aria-labelledby="works-with-title">
+        <div class="section-label">
+          <h2 id="works-with-title">Works with the tools already on your Mac</h2>
+          <span>local boundary</span>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <span>Package managers</span>
+            <h2>Homebrew, npm, and PyPI remain familiar</h2>
+            <p>Automic Vault does not ask you to abandon normal developer tooling. It adds scanner output, package metadata, hardened roots, and approval points around the tools agents are most likely to call.</p>
+          </article>
+          <article class="download-card">
+            <span>Team vaults</span>
+            <h2>Use central secret stores where they fit</h2>
+            <p>1Password, HashiCorp Vault, and cloud secret systems can remain the source of truth. Automic Vault controls the local moment when a CLI, script, or package command tries to receive those credentials.</p>
+          </article>
+          <article class="download-card">
+            <span>Agents</span>
+            <h2>Put the boundary below the prompt</h2>
+            <p>Agent-side policy is useful, but a compromised or confused agent controls its own prompt surface. Vault keeps the approval and secret boundary at the local tool layer where execution happens.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="download-section" aria-labelledby="download-faq-title">
+        <div class="section-label">
+          <h2 id="download-faq-title">Download FAQ</h2>
+          <span>install notes</span>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <span>What installs?</span>
+            <h2>App, CLI, scanner, and package controls</h2>
+            <p>The download includes the native app, <code>av</code>, scanner workflows, approval gates, and Nucleus package controls for local developer tools.</p>
+          </article>
+          <article class="download-card">
+            <span>Homebrew</span>
+            <h2>Keep the familiar install path</h2>
+            <p>You can keep using the tools developers already use. Automic Vault adds detection, hardening, and approval around the package and secret paths agents can reach.</p>
+          </article>
+          <article class="download-card">
+            <span>Provenance</span>
+            <h2>Maintained by Max Howell</h2>
+            <p>Automic Vault is maintained by Max Howell, creator of Homebrew. Source, issues, security disclosure, and licensing live in the public GitHub project.</p>
+          </article>
+        </div>
       </section>
 
     </main>

@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automic Vault 条款</title>
-  <meta name="description" content="Automic Vault 的使用条款、开源许可证和网站说明。">
+  <title>Automic Vault 条款 | AI 代理与开发工具安全</title>
+  <meta name="description" content="Automic Vault 的使用条款、开源许可证和网站说明。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Automic Vault 条款">
-  <meta property="og:description" content="Automic Vault 的使用条款、开源许可证和网站说明。">
+  <meta property="og:title" content="Automic Vault 条款 | AI 代理与开发工具安全">
+  <meta property="og:description" content="Automic Vault 的使用条款、开源许可证和网站说明。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta property="og:url" content="https://www.automicvault.com/zh-hans/terms/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Automic Vault 条款">
-  <meta name="twitter:description" content="Automic Vault 的使用条款、开源许可证和网站说明。">
+  <meta name="twitter:title" content="Automic Vault 条款 | AI 代理与开发工具安全">
+  <meta name="twitter:description" content="Automic Vault 的使用条款、开源许可证和网站说明。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/zh-hans/terms/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/terms/">
@@ -31,8 +31,8 @@
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "https://www.automicvault.com/zh-hans/terms/",
-    "name": "Automic Vault 条款",
-    "description": "Automic Vault 的使用条款、开源许可证和网站说明。",
+    "name": "Automic Vault 条款 | AI 代理与开发工具安全",
+    "description": "Automic Vault 的使用条款、开源许可证和网站说明。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。",
     "inLanguage": "zh-Hans",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -42,7 +42,7 @@
   <div class="site-shell i18n-page">
     <header class="masthead">
       <a class="brand" href="/zh-hans/" aria-label="Automic Vault 首页">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
       <nav class="nav" aria-label="主导航">
@@ -69,6 +69,42 @@
       <section class="i18n-section">
         <h2>使用</h2>
         <p>本网站提供产品信息、文档和软件包元数据。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>本地运行边界</h2>
+        <p>Automic Vault 将代理可读取的文件与只提供给已批准工具的凭据分开。控制发生在 Mac 的执行路径上，而不是只依赖代理提示词。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Homebrew 与 CLI</h2>
+        <p>许多开发工具来自 Homebrew、npm、PyPI 和云 CLI。Vault 会检测这些工具留下的凭据文件和高风险操作，并把审批放到实际执行位置。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>下一步</h2>
+        <p>先运行扫描器检查明文暴露，将支持的密钥移入受保护的本地存储，并保持 Automic Vault 运行，以便及时收到新的 hazard 通知。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>安装后的变化</h2>
+        <p>熟悉的 CLI 仍可继续使用。区别在于密钥不再作为容易读取的配置文件留在磁盘上，而是只交给真正需要它的已批准执行。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>与中心化 vault 配合</h2>
+        <p>1Password、HashiCorp Vault 和云端密钥系统仍可作为真实来源。Automic Vault 保护的是本地 Mac 工具使用这些值的那一刻。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>相关页面</h2>
+        <p>文档、下载、密钥扫描器和软件包目录展示完整流程：发现暴露、加固工具、加入审批门，并持续监控开发机器。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>持续监控</h2>
+        <p>新的软件包、过时工具和重新生成的配置文件可能在首次修复后重新带来风险。Automic Vault 会保持运行并提示新的 hazard。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>可信线索</h2>
+        <p>公开仓库、安全页面、许可证以及 Max Howell 的 Homebrew 背景都可查看。本地安全边界应该能够被验证。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>何时使用</h2>
+        <p>在让代理处理仓库之前、使用云 CLI 之前，以及允许 npm publish、gh release 或基础设施变更等高权限命令之前使用 Automic Vault。</p>
       </section>
       <nav class="language-links" aria-label="语言版本"><a href="/terms/" lang="en">English</a> <a href="/ja/terms/" lang="ja">日本語</a> <a href="/de/terms/" lang="de">Deutsch</a> <a href="/fr/terms/" lang="fr">Français</a> <a href="/zh-hans/terms/" lang="zh-Hans">简体中文</a></nav>
     </main>

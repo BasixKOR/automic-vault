@@ -124,7 +124,7 @@
                   "headline": "GitHub CLI Token Security for AI Agents",
                   "description": "Protect GitHub CLI tokens from AI agents with local keychain storage, approved token use, and command gates for source and release workflows.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-01",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -162,6 +162,36 @@
                               "item": "https://www.automicvault.com/github-cli-token-security-ai-agents/"
                         }
                   ]
+            },
+            {
+                  "@type": "FAQPage",
+                  "@id": "https://www.automicvault.com/github-cli-token-security-ai-agents/#faq",
+                  "mainEntity": [
+                        {
+                              "@type": "Question",
+                              "name": "Why are GitHub CLI tokens risky for AI agents?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "A GitHub CLI token can read private repositories, open pull requests, trigger CI, create releases, and publish packages. If an agent can read the raw token, the token can leave the local trust boundary."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "How does Automic Vault protect gh workflows?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "Automic Vault moves supported credentials out of plaintext storage, injects them only into approved tool executions, and places approval gates in front of sensitive gh actions."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "Does this replace GitHub permissions?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "No. GitHub scopes still matter. Automic Vault adds a local runtime boundary so the token is not simply readable by every agent-visible process on the Mac."
+                              }
+                        }
+                  ]
             }
       ]
 }
@@ -194,7 +224,7 @@
           <p class="kicker">Source control credentials</p>
           <h1>GitHub CLI token security for AI agents</h1>
           <p class="lede">A GitHub token can read private code, trigger CI, create releases, and publish packages. Automic Vault lets agents use GitHub workflows without handing them the raw token.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 1, 2026</p>
           <div class="answer-box"><p>GitHub CLI token security for AI agents means protecting source, release, and package authority from direct model access. Automic Vault keeps the token out of plaintext and gates high-risk gh commands before they run.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="https://github.com/automic-vault/gh-cli">View gh patches <span aria-hidden="true">›</span></a>
@@ -227,6 +257,31 @@
           <article><span>Read-only work</span><p>Low-risk queries can stay fast when the command and token scope are appropriate.</p></article>
           <article><span>Sensitive work</span><p>Token reveal, release, package publish, and privileged repository changes should prompt.</p></article>
           <article><span>Agent containment</span><p>Run coding agents through <code>av contain</code> when they can reach source-control tools.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Example workflow</p>
+          <h2>Keep <code>gh</code> useful without making the token ambient.</h2>
+          <p>Source-control work often starts as a harmless request and ends with real authority: a release tag, a package publish, a secret-bearing workflow run, or a repository mutation. Automic Vault treats that authority as local infrastructure instead of prompt etiquette.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Find</span><p>Scan for GitHub CLI hosts files, shell exports, project env files, and package configs that expose source-control tokens.</p></article>
+          <article><span>Move</span><p>Store supported token material in protected local storage so agents do not get a simple file path to read.</p></article>
+          <article><span>Gate</span><p>Approve the specific <code>gh</code> execution that needs release, package, or repository authority instead of approving a whole agent session.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split" id="faq">
+        <div class="section-heading">
+          <p class="kicker">FAQ</p>
+          <h2>GitHub CLI token security questions.</h2>
+          <p>These answers explain the local boundary Automic Vault adds around <code>gh</code> without replacing GitHub's own scopes, organization policies, or audit logs.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Risk</span><h3>Why are GitHub CLI tokens risky for AI agents?</h3><p>A token can read private code, open pull requests, trigger CI, create releases, and publish packages. If the raw value is readable, it can leak into logs or transcripts.</p></article>
+          <article><span>Protection</span><h3>How does Vault protect <code>gh</code> workflows?</h3><p>Vault removes supported plaintext storage, injects credentials only into approved executions, and gates commands that reveal or spend token authority.</p></article>
+          <article><span>Scopes</span><h3>Does this replace GitHub permissions?</h3><p>No. GitHub scopes and organization rules still matter. Automic Vault protects the local Mac path where tools and agents try to use those credentials.</p></article>
+          <article><span>Provenance</span><h3>Maintained by Max Howell</h3><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>
         </div>
       </section>
       <section class="seo-section">

@@ -12,8 +12,8 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Agent Secret Scanner | Automic Vault</title>
-  <meta name="description" content="Automic Vault secret scanner checks isotope detectors and local developer files for plaintext credentials before AI agents can read them.">
+  <title>AI Agent Secret Scanner for Local Developer Tools | Automic Vault</title>
+  <meta name="description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
   <link rel="canonical" href="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/">
@@ -24,14 +24,14 @@
   <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="AI Agent Secret Scanner">
-  <meta property="og:description" content="Scan local agent-visible files, tool configs, and Automic Vault isotope detectors for plaintext credentials.">
+  <meta property="og:title" content="AI Agent Secret Scanner for Local Developer Tools">
+  <meta property="og:description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
   <meta property="og:url" content="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
-  <meta name="twitter:description" content="Automic Vault secret scanner checks isotope detectors and local developer files for plaintext credentials before AI agents can read them.">
-  <meta name="twitter:title" content="AI Agent Secret Scanner | Automic Vault">
+  <meta name="twitter:description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
+  <meta name="twitter:title" content="AI Agent Secret Scanner for Local Developer Tools | Automic Vault">
   <script type="application/ld+json">
 {
       "@context": "https://schema.org",
@@ -120,11 +120,11 @@
                   "@type": "Article",
                   "@id": "https://www.automicvault.com/secret-scanner-for-ai-agents/#webpage",
                   "url": "https://www.automicvault.com/secret-scanner-for-ai-agents/",
-                  "name": "AI Agent Secret Scanner | Automic Vault",
-                  "headline": "AI Agent Secret Scanner",
-                  "description": "Automic Vault secret scanner checks isotope detectors and local developer files for plaintext credentials before AI agents can read them.",
+                  "name": "AI Agent Secret Scanner for Local Developer Tools | Automic Vault",
+                  "headline": "AI Agent Secret Scanner for Local Developer Tools",
+                  "description": "Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-31",
+                  "dateModified": "2026-06-01",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -162,6 +162,36 @@
                               "item": "https://www.automicvault.com/secret-scanner-for-ai-agents/"
                         }
                   ]
+            },
+            {
+                  "@type": "FAQPage",
+                  "@id": "https://www.automicvault.com/secret-scanner-for-ai-agents/#faq",
+                  "mainEntity": [
+                        {
+                              "@type": "Question",
+                              "name": "What does the AI agent secret scanner check?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "It checks likely local secret paths, tool configuration files, project files, and Automic Vault isotope detectors for plaintext credential exposure."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "Is scanning enough to protect agents?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "No. Scanning finds exposure. Automic Vault also moves supported credentials out of plaintext files and gates approved tool execution."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "When should I run the scanner?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "Run it before agent sessions, after installing new developer tools, and whenever local config changes may have introduced readable credentials."
+                              }
+                        }
+                  ]
             }
       ]
 }
@@ -194,7 +224,7 @@
           <p class="kicker">Local credential discovery</p>
           <h1>The secret scanner for AI agent machines</h1>
           <p class="lede">Run <code>av secret-scanner</code> before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault isotope detectors.</p>
-          <p class="updated">Last updated: May 31, 2026</p>
+          <p class="updated">Last updated: June 1, 2026</p>
           <div class="answer-box"><p>An AI agent secret scanner should find plaintext credentials before the agent run starts. Automic Vault scans likely local secret paths, then pairs detection with runtime controls that prevent repeated plaintext exposure.</p></div>
           <div class="answer-box"><p>Run the lightweight isotope-only scanner in a read-only, offline sandbox: <code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></p></div>
           <div class="hero-actions">
@@ -228,6 +258,31 @@
           <article><span>Find</span><p><code>av secret-scanner</code> reports high-confidence plaintext credentials without printing the secret value itself.</p></article>
           <article><span>Move</span><p><code>av save KEY</code> stores credentials outside files that an agent can casually read.</p></article>
           <article><span>Inject</span><p><code>av inject +KEY /abs/tool</code> gives the credential to the approved executable, not to the model transcript.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">When to scan</p>
+          <h2>Use scanning as a preflight, not as the only control.</h2>
+          <p>A scanner is useful because it catches mistakes already sitting on disk. It is not enough by itself. Once a secret is found, the next step is to move it out of the readable file path and make future use happen through an approved tool execution.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Before agent runs</span><p>Scan the workstation before giving an agent broad filesystem access or asking it to debug a local project.</p></article>
+          <article><span>After tool installs</span><p>New CLIs and package managers often create auth files. Leave Vault running so new hazards are visible quickly.</p></article>
+          <article><span>After remediation</span><p>Run the scanner again after moving credentials into Vault to confirm old plaintext paths are no longer the easy route.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split" id="faq">
+        <div class="section-heading">
+          <p class="kicker">FAQ</p>
+          <h2>Secret scanner questions.</h2>
+          <p>Automic Vault pairs discovery with hardening. The scanner tells you what an agent can see; Vault then helps remove supported plaintext paths and gate credential use.</p>
+        </div>
+        <div class="proof-list">
+          <article><span>Coverage</span><h3>What does the scanner check?</h3><p>It checks likely local secret paths, tool configs, project files, and package-specific isotope detectors for plaintext credential exposure.</p></article>
+          <article><span>Limits</span><h3>Is scanning enough?</h3><p>No. Scanning finds exposure. Automic Vault also moves supported credentials out of plaintext files and gates approved tool execution.</p></article>
+          <article><span>Timing</span><h3>When should I run it?</h3><p>Run it before agent sessions, after installing new developer tools, and when local configuration changes might expose credentials.</p></article>
+          <article><span>Provenance</span><h3>Maintained by Max Howell</h3><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>
         </div>
       </section>
       <section class="seo-section">

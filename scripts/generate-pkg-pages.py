@@ -1387,17 +1387,13 @@ def local_full_isotope_manifest_count() -> int:
 
 def source_files() -> list[Path]:
     files: list[Path] = []
-    files.extend(
-        path
-        for path in (
-            PKG_PAGE_ENRICHMENT_PATH,
-            PKG_VERSION_FRESHNESS_PATH,
-            PKG_GRAPH_PATH,
-            PKG_GRAPH_CURATION_PATH,
-            PKG_CROSS_ECOSYSTEM_PATH,
-        )
-        if path.exists()
-    )
+    files.extend((
+        PKG_PAGE_ENRICHMENT_PATH,
+        PKG_VERSION_FRESHNESS_PATH,
+        PKG_GRAPH_PATH,
+        PKG_GRAPH_CURATION_PATH,
+        PKG_CROSS_ECOSYSTEM_PATH,
+    ))
     data = Path("data")
     for path in data.iterdir() if data.exists() else []:
         if path.is_file() and path.suffix in {".json", ".jsonc", ".md"}:
@@ -1429,12 +1425,15 @@ def source_digest(files: list[Path]) -> tuple[str, int]:
     digest = hashlib.sha256()
     latest = 0
     for path in files:
-        stat = path.stat()
-        latest = max(latest, stat.st_mtime_ns)
         rel = path.as_posix()
         digest.update(rel.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        if path.exists():
+            stat = path.stat()
+            latest = max(latest, stat.st_mtime_ns)
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
         digest.update(b"\0")
     return digest.hexdigest(), latest
 
@@ -3213,6 +3212,7 @@ def render_related(page: PackagePage, locale: dict[str, Any] | None = None) -> s
     related = [related_link(item, locale) for item in page.related_packages]
     also = [related_link(item, locale) for item in page.also_available_via]
     hubs = [hub_link(item, locale) for item in page.package_hubs]
+    guides = core_security_guide_links(page, locale)
     if not related and not also:
         related = inferred_related_links(page, locale)
     return f"""
@@ -3235,9 +3235,57 @@ def render_related(page: PackagePage, locale: dict[str, Any] | None = None) -> s
       <h3>{html_escape(tx(locale, 'packageHubs', 'Package hubs'))}</h3>
       <ul>{''.join(hubs) or f'<li>{html_escape(tx(locale, "noHubMembership", "No package hub membership was generated."))}</li>'}</ul>
     </article>
+    <article>
+      <h3>{html_escape(tx(locale, 'agentSecurityGuides', 'Agent security guides'))}</h3>
+      <ul>{''.join(guides)}</ul>
+    </article>
   </div>
 </section>
 """
+
+
+def core_security_guide_links(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
+    links = [
+        (
+            locale_path("/secret-scanner-for-ai-agents/", locale),
+            tx(locale, "aiAgentSecretScanner", "AI agent secret scanner"),
+            tx(locale, "aiAgentSecretScannerCopy", "Find plaintext credentials before an agent run starts."),
+        ),
+        (
+            locale_path("/ai-agent-approval-gates/", locale),
+            tx(locale, "aiAgentApprovalGates", "AI agent approval gates"),
+            tx(locale, "aiAgentApprovalGatesCopy", "Put approvals in front of risky package and tool actions."),
+        ),
+        (
+            locale_path("/docs/#secrets", locale),
+            tx(locale, "secretInjectionDocs", "Secret injection docs"),
+            tx(locale, "secretInjectionDocsCopy", "Move supported secrets out of plaintext files and inject them into approved tools."),
+        ),
+    ]
+    provider = page.provider.lower()
+    haystack = " ".join([page.name, page.display_name, page.summary, " ".join(page.aliases), " ".join(page.keywords)]).lower()
+    if provider == "brew" or "homebrew" in haystack:
+        links.append((
+            locale_path("/download/", locale),
+            tx(locale, "secureHomebrewTools", "Secure Homebrew tools"),
+            tx(locale, "secureHomebrewToolsCopy", "Install Vault and scan the tools your Mac already uses."),
+        ))
+    if "aws" in haystack or "cloud" in haystack:
+        links.append((
+            locale_path("/secure-aws-cli-credentials-ai-agents/", locale),
+            tx(locale, "secureAwsCliCredentials", "Secure AWS CLI credentials"),
+            tx(locale, "secureAwsCliCredentialsCopy", "Keep cloud keys out of ambient config files."),
+        ))
+    if "github" in haystack or "gh" in page.aliases:
+        links.append((
+            locale_path("/github-cli-token-security-ai-agents/", locale),
+            tx(locale, "githubCliTokenSecurity", "GitHub CLI token security"),
+            tx(locale, "githubCliTokenSecurityCopy", "Protect source and release tokens used by local tools."),
+        ))
+    return [
+        f'<li><a href="{attr(url)}">{html_escape(label)}</a><span>{html_escape(copy)}</span></li>'
+        for url, label, copy in links[:5]
+    ]
 
 
 def inferred_related_links(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
@@ -3459,7 +3507,7 @@ def nav(root: str, locale: dict[str, Any] | None = None) -> str:
     return f"""
 <header class="masthead">
   <a class="brand" href="{root}" aria-label="Automic Vault home">
-    <img class="brand-mark" src="{root}assets/icon@2x.webp" alt="" width="54" height="54">
+    <img class="brand-mark" src="{root}assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
     <span class="brand-type">Automic Vault</span>
   </a>
   <nav class="nav" aria-label="Main navigation">
@@ -4033,7 +4081,7 @@ h1 {
   font-family: var(--font-mono);
 }
 .related-columns {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 .related-section {
   grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);

@@ -12,7 +12,7 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Security | Automic Vault</title>
+  <title>Automic Vault Security Model for Local AI Agent Runs</title>
   <meta name="description" content="Automic Vault security notes for local AI agent secret storage, command approval gates, package roots, disclosure, and current product boundaries.">
   <link rel="canonical" href="https://www.automicvault.com/security/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/">
@@ -24,13 +24,13 @@
   <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Automic Vault Security">
-  <meta property="og:description" content="Security notes for Automic Vault's local AI agent runtime controls.">
+  <meta property="og:title" content="Automic Vault Security Model for Local AI Agent Runs">
+  <meta property="og:description" content="Security notes for Automic Vault's local AI agent runtime controls, plaintext secret migration, package roots, and approval gates.">
   <meta property="og:url" content="https://www.automicvault.com/security/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Automic Vault Security">
-  <meta name="twitter:description" content="Security notes for Automic Vault's local AI agent runtime controls.">
+  <meta name="twitter:title" content="Automic Vault Security Model for Local AI Agent Runs">
+  <meta name="twitter:description" content="Security notes for Automic Vault's local AI agent runtime controls, plaintext secret migration, package roots, and approval gates.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <script type="application/ld+json">
 {
@@ -120,11 +120,11 @@
                   "@type": "Article",
                   "@id": "https://www.automicvault.com/security/#webpage",
                   "url": "https://www.automicvault.com/security/",
-                  "name": "Security | Automic Vault",
-                  "headline": "Security",
+                  "name": "Automic Vault Security Model for Local AI Agent Runs",
+                  "headline": "Automic Vault Security Model for Local AI Agent Runs",
                   "description": "Automic Vault security notes for local AI agent secret storage, command approval gates, package roots, disclosure, and current product boundaries.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-01",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -194,7 +194,7 @@
           <p class="kicker">Security model</p>
           <h1>Agent security belongs at the local runtime boundary</h1>
           <p class="lede">Automic Vault protects macOS developer machines by moving secrets out of plaintext files, injecting approved credentials into trusted tools, and gating sensitive commands before they execute.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 1, 2026</p>
           <div class="answer-box"><p>Automic Vault is a local macOS security layer for AI coding agents. Its security model assumes the agent may read project files and invoke local tools, so secrets are moved out of plaintext files, approved credentials are injected only into trusted executables, and sensitive commands can require human approval before they run.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Review commands <span aria-hidden="true">›</span></a>

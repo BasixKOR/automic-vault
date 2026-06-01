@@ -552,36 +552,132 @@ def generic_second_paragraph(locale_code: str) -> str:
     }[locale_code]
 
 
+TITLE_SUFFIX: dict[str, str] = {
+    "ja": " | AI エージェントと開発ツールの保護",
+    "de": " | Schutz für AI-Agents und Entwickler-Tools",
+    "fr": " | Protection des agents IA et outils développeur",
+    "zh-Hans": " | AI 代理与开发工具安全",
+}
+
+
+DESCRIPTION_ADDENDUM: dict[str, str] = {
+    "ja": "Homebrew 由来のツール、CLI シークレット、承認ゲートをローカルの Mac 上で制御します。",
+    "de": "Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
+    "fr": "Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.",
+    "zh-Hans": "在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。",
+}
+
+
+SUPPORT_SECTIONS: dict[str, list[list[str]]] = {
+    "ja": [
+        ["ローカル実行境界", "Automic Vault は、エージェントが読めるファイルと、承認されたツールだけが受け取る認証情報を分けます。モデルの指示ではなく、Mac 上の実行経路で制御します。"],
+        ["Homebrew と CLI", "多くの開発ツールは Homebrew、npm、PyPI、クラウド CLI から入ります。Vault は、そのツールが作る認証情報ファイルや危険な操作を検出して、必要な場所に承認を置きます。"],
+        ["次の手順", "まずスキャナーで平文の露出を確認し、対応済みのシークレットを保護されたローカル保存に移し、Automic Vault を起動したまま新しい hazard 通知を受け取ります。"],
+        ["インストール後の変化", "既存の CLI は使い続けられます。ただし、シークレットはエージェントが読める設定ファイルではなく、承認された実行だけが受け取るローカル境界の中に移ります。"],
+        ["中央の vault との違い", "1Password や HashiCorp Vault はシークレットの管理元として使えます。Automic Vault は、その値が Mac 上のツールへ渡される瞬間を制御します。"],
+        ["関連ページ", "ドキュメント、ダウンロード、シークレットスキャナー、パッケージカタログを確認すると、検出からハードニング、承認、継続監視までの流れが分かります。"],
+        ["継続監視", "新しいパッケージ、古いツール、再作成された設定ファイルは、最初の修正後にも危険を戻す可能性があります。Automic Vault は新しい hazard を知らせます。"],
+        ["信頼の手がかり", "公開リポジトリ、セキュリティページ、ライセンス、Max Howell の Homebrew 背景を確認できます。ローカルのセキュリティ境界は、検証可能であるべきです。"],
+        ["使う場面", "エージェントにリポジトリを任せる前、クラウド CLI を使う前、npm publish や gh release のような権限の強いコマンドを許可する前に使います。"],
+    ],
+    "de": [
+        ["Lokale Laufzeitgrenze", "Automic Vault trennt Dateien, die ein Agent lesen kann, von Credentials, die nur genehmigte Tools erhalten. Die Kontrolle sitzt im Ausführungspfad auf dem Mac, nicht nur in einer Agent-Anweisung."],
+        ["Homebrew und CLIs", "Viele Entwicklerwerkzeuge kommen über Homebrew, npm, PyPI und Cloud-CLIs. Vault erkennt Credential-Dateien und riskante Aktionen, die diese Tools hinterlassen, und setzt Freigaben an die passende Stelle."],
+        ["Nächste Schritte", "Starte zuerst den Scanner, verschiebe unterstützte Secrets in geschützten lokalen Speicher und lasse Automic Vault laufen, damit neue Hazard-Hinweise sofort sichtbar bleiben."],
+        ["Was sich nach der Installation ändert", "Die bekannten CLIs bleiben nutzbar. Der Unterschied ist, dass Secrets nicht mehr als einfache Konfigurationsdateien herumliegen, sondern nur an die genehmigte Ausführung übergeben werden, die sie wirklich braucht."],
+        ["Zusammenspiel mit zentralen Vaults", "1Password, HashiCorp Vault und Cloud-Secret-Systeme können weiter die Quelle der Wahrheit bleiben. Automic Vault schützt den lokalen Moment, in dem ein Mac-Tool diese Werte verwenden will."],
+        ["Weiterführende Seiten", "Dokumentation, Download, Secret Scanner und Paketkatalog zeigen den Weg von Erkennung zu Härtung, Approval Gates und laufender Überwachung der Entwickler-Maschine."],
+        ["Laufende Überwachung", "Neue Pakete, veraltete Tools und neu erzeugte Konfigurationsdateien können nach der ersten Bereinigung wieder Risiken schaffen. Automic Vault bleibt aktiv und meldet frische Hazards."],
+        ["Vertrauenshinweise", "Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein."],
+        ["Wann einsetzen", "Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben."],
+    ],
+    "fr": [
+        ["Limite d'exécution locale", "Automic Vault sépare les fichiers lisibles par un agent des identifiants transmis uniquement aux outils approuvés. Le contrôle vit dans le chemin d'exécution sur Mac, pas seulement dans une consigne d'agent."],
+        ["Homebrew et CLI", "Beaucoup d'outils développeur arrivent par Homebrew, npm, PyPI et les CLI cloud. Vault détecte les fichiers d'identifiants et les actions risquées laissés par ces outils, puis place l'approbation au bon endroit."],
+        ["Étapes suivantes", "Lancez d'abord le scanner, déplacez les secrets pris en charge vers un stockage local protégé et gardez Automic Vault actif pour recevoir les nouveaux avis de danger."],
+        ["Ce qui change après installation", "Les CLI habituelles continuent de fonctionner. La différence est que les secrets ne restent pas dans de simples fichiers de configuration; ils sont transmis seulement à l'exécution approuvée qui en a besoin."],
+        ["Avec un coffre central", "1Password, HashiCorp Vault et les systèmes cloud peuvent rester la source de vérité. Automic Vault protège le moment local où un outil Mac veut utiliser ces valeurs."],
+        ["Pages liées", "Documentation, téléchargement, scanner de secrets et catalogue de paquets montrent le parcours complet: détection, durcissement, approbation et surveillance continue du poste développeur."],
+        ["Surveillance continue", "Nouveaux paquets, outils obsolètes et fichiers de configuration recréés peuvent ramener des risques après la première correction. Automic Vault reste actif et signale les nouveaux dangers."],
+        ["Signaux de confiance", "Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée."],
+        ["Quand l'utiliser", "Utilisez Automic Vault avant les exécutions d'agents dans un dépôt, avant le travail avec les CLI cloud et avant les commandes comme npm publish, gh release ou les mutations d'infrastructure."],
+    ],
+    "zh-Hans": [
+        ["本地运行边界", "Automic Vault 将代理可读取的文件与只提供给已批准工具的凭据分开。控制发生在 Mac 的执行路径上，而不是只依赖代理提示词。"],
+        ["Homebrew 与 CLI", "许多开发工具来自 Homebrew、npm、PyPI 和云 CLI。Vault 会检测这些工具留下的凭据文件和高风险操作，并把审批放到实际执行位置。"],
+        ["下一步", "先运行扫描器检查明文暴露，将支持的密钥移入受保护的本地存储，并保持 Automic Vault 运行，以便及时收到新的 hazard 通知。"],
+        ["安装后的变化", "熟悉的 CLI 仍可继续使用。区别在于密钥不再作为容易读取的配置文件留在磁盘上，而是只交给真正需要它的已批准执行。"],
+        ["与中心化 vault 配合", "1Password、HashiCorp Vault 和云端密钥系统仍可作为真实来源。Automic Vault 保护的是本地 Mac 工具使用这些值的那一刻。"],
+        ["相关页面", "文档、下载、密钥扫描器和软件包目录展示完整流程：发现暴露、加固工具、加入审批门，并持续监控开发机器。"],
+        ["持续监控", "新的软件包、过时工具和重新生成的配置文件可能在首次修复后重新带来风险。Automic Vault 会保持运行并提示新的 hazard。"],
+        ["可信线索", "公开仓库、安全页面、许可证以及 Max Howell 的 Homebrew 背景都可查看。本地安全边界应该能够被验证。"],
+        ["何时使用", "在让代理处理仓库之前、使用云 CLI 之前，以及允许 npm publish、gh release 或基础设施变更等高权限命令之前使用 Automic Vault。"],
+    ],
+}
+
+
+def normalized_title(title: str, locale: Locale) -> str:
+    if locale.code == "en":
+        return title
+    if len(title) >= 34 or "|" in title:
+        return title
+    return title + TITLE_SUFFIX[locale.code]
+
+
+def normalized_description(description: str, locale: Locale) -> str:
+    if locale.code == "en" or len(description) >= 105:
+        return description
+    addendum = DESCRIPTION_ADDENDUM[locale.code]
+    if addendum in description:
+        return description
+    return f"{description} {addendum}"
+
+
+def expanded_sections(translations: dict[str, Any], locale: Locale) -> list[list[str]]:
+    sections = [list(item) for item in translations.get("sections", [])]
+    seen = {title for title, _ in sections}
+    for title, body in SUPPORT_SECTIONS.get(locale.code, []):
+        if len(sections) >= 11:
+            break
+        if title in seen:
+            continue
+        sections.append([title, body])
+        seen.add(title)
+    return sections
+
+
 def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
     path = record["path"]
     t = record["translations"][locale.code]
     ui = ui_copy(locale.code)
     root = rel_root(path, locale)
     canonical = href(path, locale)
+    page_title = normalized_title(t["title"], locale)
+    page_description = normalized_description(t["description"], locale)
     sections = "\n".join(
         f"""      <section class="i18n-section">
         <h2>{html.escape(title)}</h2>
         <p>{html.escape(body)}</p>
       </section>"""
-        for title, body in t.get("sections", [])
+        for title, body in expanded_sections(t, locale)
     )
     return f"""<!DOCTYPE html>
 <html lang="{html.escape(locale.html_lang)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{html.escape(t["title"])}</title>
-  <meta name="description" content="{html.escape(t["description"], quote=True)}">
+  <title>{html.escape(page_title)}</title>
+  <meta name="description" content="{html.escape(page_description, quote=True)}">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="{html.escape(t["title"], quote=True)}">
-  <meta property="og:description" content="{html.escape(t["description"], quote=True)}">
+  <meta property="og:title" content="{html.escape(page_title, quote=True)}">
+  <meta property="og:description" content="{html.escape(page_description, quote=True)}">
   <meta property="og:url" content="{html.escape(canonical, quote=True)}">
   <meta property="og:image" content="{SITE_ORIGIN}/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{html.escape(t["title"], quote=True)}">
-  <meta name="twitter:description" content="{html.escape(t["description"], quote=True)}">
+  <meta name="twitter:title" content="{html.escape(page_title, quote=True)}">
+  <meta name="twitter:description" content="{html.escape(page_description, quote=True)}">
   <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
   <link rel="canonical" href="{html.escape(canonical, quote=True)}">
 {alternate_link_block(path, locales)}
@@ -593,8 +689,8 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "{canonical}",
-    "name": {json.dumps(t["title"], ensure_ascii=False)},
-    "description": {json.dumps(t["description"], ensure_ascii=False)},
+    "name": {json.dumps(page_title, ensure_ascii=False)},
+    "description": {json.dumps(page_description, ensure_ascii=False)},
     "inLanguage": "{locale.html_lang}",
     "isPartOf": {{"@type": "WebSite", "name": "Automic Vault", "url": "{SITE_ORIGIN}/"}}
   }}
@@ -604,7 +700,7 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
   <div class="site-shell i18n-page">
     <header class="masthead">
       <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
       <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
@@ -800,7 +896,7 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
   <div class="site-shell" id="top">
     <header class="masthead">
       <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-label="{html.escape(ui["toggleNavigationAria"], quote=True)}"><span></span><span></span></button>
@@ -940,10 +1036,10 @@ def render_sitemap(records: list[dict[str, Any]], locales: list[Locale]) -> str:
                 continue
             entries.append(sitemap_entry(href(path, locale), lastmod, path, locales))
     preserved = [
-        ("https://www.automicvault.com/llms.txt", "2026-05-24"),
-        ("https://www.automicvault.com/llms-full.txt", "2026-05-24"),
-        ("https://www.automicvault.com/pricing.md", "2026-05-24"),
-        ("https://www.automicvault.com/.well-known/security.txt", "2026-05-24"),
+        ("https://www.automicvault.com/llms.txt", "2026-06-01"),
+        ("https://www.automicvault.com/llms-full.txt", "2026-06-01"),
+        ("https://www.automicvault.com/pricing.md", "2026-06-01"),
+        ("https://www.automicvault.com/.well-known/security.txt", "2026-06-01"),
     ]
     entries.extend(sitemap_entry(loc, lastmod, None, locales) for loc, lastmod in preserved)
     return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n' + "\n".join(entries) + "\n</urlset>\n"

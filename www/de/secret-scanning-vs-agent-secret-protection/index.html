@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Secret Scanning vs. Agent-Schutz</title>
-  <meta name="description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen.">
+  <title>Secret Scanning vs. Agent-Schutz | Schutz für AI-Agents und Entwickler-Tools</title>
+  <meta name="description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Secret Scanning vs. Agent-Schutz">
-  <meta property="og:description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen.">
+  <meta property="og:title" content="Secret Scanning vs. Agent-Schutz | Schutz für AI-Agents und Entwickler-Tools">
+  <meta property="og:description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta property="og:url" content="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Secret Scanning vs. Agent-Schutz">
-  <meta name="twitter:description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen.">
+  <meta name="twitter:title" content="Secret Scanning vs. Agent-Schutz | Schutz für AI-Agents und Entwickler-Tools">
+  <meta name="twitter:description" content="Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/">
@@ -31,8 +31,8 @@
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/secret-scanning-vs-agent-secret-protection/",
-    "name": "Secret Scanning vs. Agent-Schutz",
-    "description": "Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen.",
+    "name": "Secret Scanning vs. Agent-Schutz | Schutz für AI-Agents und Entwickler-Tools",
+    "description": "Warum Laufzeitschutz den Secret-Zugriff verhindert, statt ihn nur zu erkennen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -42,7 +42,7 @@
   <div class="site-shell i18n-page">
     <header class="masthead">
       <a class="brand" href="/de/" aria-label="Automic Vault Startseite">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
       <nav class="nav" aria-label="Hauptnavigation">
@@ -69,6 +69,42 @@
       <section class="i18n-section">
         <h2>Automic Vault</h2>
         <p>Es kontrolliert lokale Secrets, CLIs und Paketausführung, damit AI-Agents innerhalb klarer Grenzen arbeiten.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Lokale Laufzeitgrenze</h2>
+        <p>Automic Vault trennt Dateien, die ein Agent lesen kann, von Credentials, die nur genehmigte Tools erhalten. Die Kontrolle sitzt im Ausführungspfad auf dem Mac, nicht nur in einer Agent-Anweisung.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Homebrew und CLIs</h2>
+        <p>Viele Entwicklerwerkzeuge kommen über Homebrew, npm, PyPI und Cloud-CLIs. Vault erkennt Credential-Dateien und riskante Aktionen, die diese Tools hinterlassen, und setzt Freigaben an die passende Stelle.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Nächste Schritte</h2>
+        <p>Starte zuerst den Scanner, verschiebe unterstützte Secrets in geschützten lokalen Speicher und lasse Automic Vault laufen, damit neue Hazard-Hinweise sofort sichtbar bleiben.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Was sich nach der Installation ändert</h2>
+        <p>Die bekannten CLIs bleiben nutzbar. Der Unterschied ist, dass Secrets nicht mehr als einfache Konfigurationsdateien herumliegen, sondern nur an die genehmigte Ausführung übergeben werden, die sie wirklich braucht.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Zusammenspiel mit zentralen Vaults</h2>
+        <p>1Password, HashiCorp Vault und Cloud-Secret-Systeme können weiter die Quelle der Wahrheit bleiben. Automic Vault schützt den lokalen Moment, in dem ein Mac-Tool diese Werte verwenden will.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Weiterführende Seiten</h2>
+        <p>Dokumentation, Download, Secret Scanner und Paketkatalog zeigen den Weg von Erkennung zu Härtung, Approval Gates und laufender Überwachung der Entwickler-Maschine.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Laufende Überwachung</h2>
+        <p>Neue Pakete, veraltete Tools und neu erzeugte Konfigurationsdateien können nach der ersten Bereinigung wieder Risiken schaffen. Automic Vault bleibt aktiv und meldet frische Hazards.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Vertrauenshinweise</h2>
+        <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Wann einsetzen</h2>
+        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
       </section>
       <nav class="language-links" aria-label="Sprachversionen"><a href="/secret-scanning-vs-agent-secret-protection/" lang="en">English</a> <a href="/ja/secret-scanning-vs-agent-secret-protection/" lang="ja">日本語</a> <a href="/de/secret-scanning-vs-agent-secret-protection/" lang="de">Deutsch</a> <a href="/fr/secret-scanning-vs-agent-secret-protection/" lang="fr">Français</a> <a href="/zh-hans/secret-scanning-vs-agent-secret-protection/" lang="zh-Hans">简体中文</a></nav>
     </main>

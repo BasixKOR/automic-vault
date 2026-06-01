@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestion des secrets MCP</title>
-  <meta name="description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites.">
+  <title>Gestion des secrets MCP | Protection des agents IA et outils développeur</title>
+  <meta name="description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Gestion des secrets MCP">
-  <meta property="og:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites.">
+  <meta property="og:title" content="Gestion des secrets MCP | Protection des agents IA et outils développeur">
+  <meta property="og:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.">
   <meta property="og:url" content="https://www.automicvault.com/fr/mcp-secrets-management/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Gestion des secrets MCP">
-  <meta name="twitter:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites.">
+  <meta name="twitter:title" content="Gestion des secrets MCP | Protection des agents IA et outils développeur">
+  <meta name="twitter:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/fr/mcp-secrets-management/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/">
@@ -31,8 +31,8 @@
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "https://www.automicvault.com/fr/mcp-secrets-management/",
-    "name": "Gestion des secrets MCP",
-    "description": "Les outils MCP reçoivent les identifiants nécessaires dans des limites d'approbation explicites.",
+    "name": "Gestion des secrets MCP | Protection des agents IA et outils développeur",
+    "description": "Les outils MCP reçoivent les identifiants nécessaires dans des limites d'approbation explicites. Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.",
     "inLanguage": "fr",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -42,7 +42,7 @@
   <div class="site-shell i18n-page">
     <header class="masthead">
       <a class="brand" href="/fr/" aria-label="Accueil Automic Vault">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="" width="54" height="54">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
         <span class="brand-type">Automic Vault</span>
       </a>
       <nav class="nav" aria-label="Navigation principale">
@@ -69,6 +69,42 @@
       <section class="i18n-section">
         <h2>Automic Vault</h2>
         <p>Il contrôle les secrets locaux, les CLI et l&#x27;exécution des paquets afin que les agents IA restent dans des limites claires.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Limite d&#x27;exécution locale</h2>
+        <p>Automic Vault sépare les fichiers lisibles par un agent des identifiants transmis uniquement aux outils approuvés. Le contrôle vit dans le chemin d&#x27;exécution sur Mac, pas seulement dans une consigne d&#x27;agent.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Homebrew et CLI</h2>
+        <p>Beaucoup d&#x27;outils développeur arrivent par Homebrew, npm, PyPI et les CLI cloud. Vault détecte les fichiers d&#x27;identifiants et les actions risquées laissés par ces outils, puis place l&#x27;approbation au bon endroit.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Étapes suivantes</h2>
+        <p>Lancez d&#x27;abord le scanner, déplacez les secrets pris en charge vers un stockage local protégé et gardez Automic Vault actif pour recevoir les nouveaux avis de danger.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Ce qui change après installation</h2>
+        <p>Les CLI habituelles continuent de fonctionner. La différence est que les secrets ne restent pas dans de simples fichiers de configuration; ils sont transmis seulement à l&#x27;exécution approuvée qui en a besoin.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Avec un coffre central</h2>
+        <p>1Password, HashiCorp Vault et les systèmes cloud peuvent rester la source de vérité. Automic Vault protège le moment local où un outil Mac veut utiliser ces valeurs.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Pages liées</h2>
+        <p>Documentation, téléchargement, scanner de secrets et catalogue de paquets montrent le parcours complet: détection, durcissement, approbation et surveillance continue du poste développeur.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Surveillance continue</h2>
+        <p>Nouveaux paquets, outils obsolètes et fichiers de configuration recréés peuvent ramener des risques après la première correction. Automic Vault reste actif et signale les nouveaux dangers.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Signaux de confiance</h2>
+        <p>Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Quand l&#x27;utiliser</h2>
+        <p>Utilisez Automic Vault avant les exécutions d&#x27;agents dans un dépôt, avant le travail avec les CLI cloud et avant les commandes comme npm publish, gh release ou les mutations d&#x27;infrastructure.</p>
       </section>
       <nav class="language-links" aria-label="Versions linguistiques"><a href="/mcp-secrets-management/" lang="en">English</a> <a href="/ja/mcp-secrets-management/" lang="ja">日本語</a> <a href="/de/mcp-secrets-management/" lang="de">Deutsch</a> <a href="/fr/mcp-secrets-management/" lang="fr">Français</a> <a href="/zh-hans/mcp-secrets-management/" lang="zh-Hans">简体中文</a></nav>
     </main>
