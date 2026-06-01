@@ -343,7 +343,7 @@ const AppliedStatus: React.FC<{ local: number; start: number }> = ({
       transform: `translateY(${softY(local, start, start + 16, 16)}px)`,
     }}
   >
-    Automic Hardening Applies
+    Automic Hardening Applied
   </div>
 );
 
@@ -463,7 +463,7 @@ const GhNotificationCard: React.FC<{
             >
               {animateText ? (
                 <RevealWords
-                  text="Plain Text GitHub Token"
+                  text="Plain Text Secret Detected"
                   local={local}
                   start={titleStart}
                   stride={4}
@@ -727,7 +727,7 @@ const ApprovalWindow: React.FC<{ local: number; start: number }> = ({
           lineHeight: 1.32,
         }}
       >
-        Agent wants to read the GitHub CLI token by running{" "}
+        Agent wants to see your GitHub token; {" "}
         <span style={{ color: ink, fontFamily: mono, fontWeight: 780 }}>
           {ghCommand}
         </span>
