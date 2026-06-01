@@ -393,15 +393,7 @@ fn sort_available_packages(
     sort: PackageListSort,
 ) -> Result<(), String> {
     match sort {
-        PackageListSort::Rank => {
-            if let Some(package) = packages.iter().find(|package| package.rank.is_none()) {
-                return Err(format!(
-                    "package {} is missing rank metadata",
-                    package.package_name
-                ));
-            }
-            packages.sort_by(compare_package_rank_order);
-        }
+        PackageListSort::Rank => packages.sort_by(compare_package_rank_order),
         PackageListSort::Alphabetical => packages.sort_by(|left, right| {
             compare_package_names_for_search_order(&left.package_name, &right.package_name)
         }),
@@ -1926,9 +1918,10 @@ mod tests {
     }
 
     #[test]
-    fn package_rank_sort_is_descending_and_requires_rank_metadata() {
+    fn package_rank_sort_is_descending_with_unranked_packages_last() {
         let mut packages = vec![
             ranked_search_result("alpha", Some(1)),
+            ranked_search_result("missing", None),
             ranked_search_result("zulu", Some(3)),
             ranked_search_result("middle", Some(2)),
         ];
@@ -1938,12 +1931,8 @@ mod tests {
                 .iter()
                 .map(|package| package.package_name.as_str())
                 .collect::<Vec<_>>(),
-            ["zulu", "middle", "alpha"]
+            ["zulu", "middle", "alpha", "missing"]
         );
-
-        packages.push(ranked_search_result("missing", None));
-        let error = sort_available_packages(&mut packages, PackageListSort::Rank).unwrap_err();
-        assert!(error.contains("missing rank metadata"));
 
         sort_available_packages(&mut packages, PackageListSort::Alphabetical).unwrap();
         assert_eq!(

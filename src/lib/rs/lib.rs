@@ -17722,11 +17722,11 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             "embedded db should carry ranked packages"
         );
 
-        let rank_error =
-            ops::list_available_packages_matching_category(0, 1, None, None).unwrap_err();
+        let ranked_page = ops::list_available_packages_matching_category(0, 1, None, None).unwrap();
+        assert_eq!(ranked_page.packages.len(), 1);
         assert!(
-            rank_error.contains("missing rank metadata"),
-            "unexpected rank error: {rank_error}"
+            ranked_page.category_counts.is_empty() == false,
+            "ranked catalog response should include category counts"
         );
 
         let first_page =
