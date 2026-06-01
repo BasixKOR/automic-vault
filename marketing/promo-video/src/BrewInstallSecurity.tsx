@@ -239,7 +239,6 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
     softBlur(local, 0, 24, 14),
     interpolate(local, [notificationDuration - 30, notificationDuration - 6], [0, 10], clamp),
   );
-  const labelMotion = revealStyle(local, 14, 16, 9, 5);
   const titleStart = 26;
   const subtitleStart = 52;
   const prefixWordCount = item.prefix.split(" ").length;
@@ -315,7 +314,6 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 fontWeight: 820,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
-                ...labelMotion,
               }}
             >
               <span
@@ -327,7 +325,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                   boxShadow: `0 0 18px ${item.accent}`,
                 }}
               />
-              <RevealWords text={item.label} local={local} start={18} stride={2} duration={12} y={5} blur={4} gap={6} />
+              {item.label}
             </div>
             <div
               style={{
