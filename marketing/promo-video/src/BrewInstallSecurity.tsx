@@ -542,26 +542,28 @@ const ClosingScene: React.FC = () => {
           <div
             style={{
               color: ink,
-              fontFamily: sans,
+              fontFamily: mono,
               fontSize: 92,
-              fontWeight: 860,
+              fontWeight: 700,
               letterSpacing: 0,
               lineHeight: 0.94,
+              textTransform: "uppercase",
             }}
           >
-            Automic
+            AUTOMIC
           </div>
           <div
             style={{
               color: red,
-              fontFamily: sans,
+              fontFamily: mono,
               fontSize: 92,
-              fontWeight: 860,
+              fontWeight: 700,
               letterSpacing: 0,
               lineHeight: 0.94,
+              textTransform: "uppercase",
             }}
           >
-            Vault
+            VAULT
           </div>
         </div>
       </div>
