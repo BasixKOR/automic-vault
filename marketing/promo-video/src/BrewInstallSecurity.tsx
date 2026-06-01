@@ -338,12 +338,19 @@ const AppliedStatus: React.FC<{ local: number; start: number }> = ({
       fontWeight: 780,
       letterSpacing: 0,
       lineHeight: 1.1,
-      opacity: fade(local, start, start + 16),
-      filter: `blur(${softBlur(local, start, start + 16, 8)}px)`,
-      transform: `translateY(${softY(local, start, start + 16, 16)}px)`,
+      overflow: "hidden",
     }}
   >
-    Automic Hardening Applied
+    <RevealWords
+      text="Automic Hardening Applied"
+      local={local}
+      start={start}
+      stride={4}
+      duration={16}
+      y={14}
+      blur={7}
+      gap={9}
+    />
   </div>
 );
 
