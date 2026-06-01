@@ -872,13 +872,24 @@ const BrewInstallScene: React.FC = () => {
   const url = fade(local, urlStart, urlStart + 24);
   const urlY = softY(local, urlStart, urlStart + 24, 18);
   const urlBlur = softBlur(local, urlStart, urlStart + 24, 8);
+  const finalStackTop = 252;
+  const markerTop = finalStackTop + 316;
+  const eyebrowTop = finalStackTop + 382;
+  const urlTop = finalStackTop + 470;
 
   return (
     <AbsoluteFill
-      style={{ alignItems: "center", justifyContent: "center", opacity: exit }}
+      style={{
+        alignItems: "center",
+        justifyContent: "flex-start",
+        opacity: exit,
+      }}
     >
       <div
         style={{
+          position: "absolute",
+          left: "50%",
+          top: finalStackTop,
           width: 1480,
           textAlign: "center",
           fontFamily: sans,
@@ -887,6 +898,7 @@ const BrewInstallScene: React.FC = () => {
           letterSpacing: 0,
           lineHeight: 1.16,
           color: ink,
+          transform: "translateX(-50%)",
         }}
       >
         <div
@@ -958,7 +970,7 @@ const BrewInstallScene: React.FC = () => {
         style={{
           position: "absolute",
           left: "50%",
-          top: 720,
+          top: markerTop,
           width: 740,
           height: 8,
           borderRadius: 999,
@@ -971,7 +983,7 @@ const BrewInstallScene: React.FC = () => {
       <div
         style={{
           position: "absolute",
-          top: 786,
+          top: eyebrowTop,
           left: 0,
           right: 0,
           color: muted,
@@ -992,7 +1004,7 @@ const BrewInstallScene: React.FC = () => {
         style={{
           position: "absolute",
           left: "50%",
-          bottom: 98,
+          top: urlTop,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
