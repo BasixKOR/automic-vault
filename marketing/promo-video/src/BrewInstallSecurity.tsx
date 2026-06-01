@@ -1,10 +1,8 @@
 import {
   AbsoluteFill,
   Easing,
-  Img,
   Sequence,
   interpolate,
-  staticFile,
   useCurrentFrame,
 } from "remotion";
 
@@ -14,12 +12,9 @@ const sec = (value: number) => Math.round(value * fps);
 const ghStoryDuration = sec(26);
 const actOneDuration = ghStoryDuration;
 const actTwoStart = actOneDuration + sec(0.25);
-const actTwoDuration = sec(5.8);
-const actThreeStart = actTwoStart + actTwoDuration;
-const actThreeDuration = sec(6.2);
+const actTwoDuration = sec(8.6);
 
-export const brewInstallSecurityDurationInFrames =
-  actThreeStart + actThreeDuration;
+export const brewInstallSecurityDurationInFrames = actTwoStart + actTwoDuration;
 
 const ink = "#111827";
 const muted = "#667085";
@@ -898,6 +893,12 @@ const BrewInstallScene: React.FC = () => {
   const commandOpacity = fade(local, 58, 76);
   const commandY = softY(local, 58, 76, 22);
   const commandBlur = softBlur(local, 58, 76, 10);
+  const eyebrowStart = 128;
+  const eyebrow = fade(local, eyebrowStart, eyebrowStart + 22);
+  const urlStart = 166;
+  const url = fade(local, urlStart, urlStart + 24);
+  const urlY = softY(local, urlStart, urlStart + 24, 18);
+  const urlBlur = softBlur(local, urlStart, urlStart + 24, 8);
 
   return (
     <AbsoluteFill
@@ -994,73 +995,31 @@ const BrewInstallScene: React.FC = () => {
           boxShadow: "0 18px 54px rgba(71,118,242,0.2)",
         }}
       />
-    </AbsoluteFill>
-  );
-};
-
-const ClosingScene: React.FC = () => {
-  const frame = useCurrentFrame();
-  const local = frame;
-  const eyebrow = fade(local, 8, 30);
-  const logo = fade(local, 28, 52);
-  const url = fade(local, 76, 100);
-  const logoY = softY(local, 28, 52, 24);
-  const logoBlur = softBlur(local, 28, 52, 10);
-  const urlY = softY(local, 76, 100, 18);
-  const urlBlur = softBlur(local, 76, 100, 8);
-
-  return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
       <div
         style={{
           position: "absolute",
-          top: 190,
+          top: 786,
+          left: 0,
+          right: 0,
           color: muted,
           fontFamily: mono,
-          fontSize: 28,
+          fontSize: 25,
           fontWeight: 780,
-          letterSpacing: "0.12em",
+          letterSpacing: "0.1em",
+          textAlign: "center",
           textTransform: "uppercase",
           opacity: eyebrow,
-          filter: `blur(${softBlur(local, 8, 30, 7)}px)`,
-          transform: `translateY(${softY(local, 8, 30, 18)}px)`,
+          filter: `blur(${softBlur(local, eyebrowStart, eyebrowStart + 22, 7)}px)`,
+          transform: `translateY(${softY(local, eyebrowStart, eyebrowStart + 22, 16)}px)`,
         }}
       >
-        From the creator of Homebrew
+        from the creator of homebrew
       </div>
       <div
         style={{
           position: "absolute",
-          top: 302,
-          display: "flex",
-          alignItems: "center",
-          gap: 42,
-          opacity: logo,
-          filter: `blur(${logoBlur}px) drop-shadow(0 34px 62px rgba(17,24,39,0.18))`,
-          transform: `translateY(${logoY}px)`,
-        }}
-      >
-        <Img
-          src={staticFile("icon.png")}
-          style={{
-            width: 228,
-            height: 228,
-            objectFit: "contain",
-          }}
-        />
-        <Img
-          src={staticFile("site-wordmark.webp")}
-          style={{
-            width: 612,
-            height: 158,
-            objectFit: "contain",
-          }}
-        />
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          top: 695,
+          left: "50%",
+          bottom: 98,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1078,7 +1037,7 @@ const ClosingScene: React.FC = () => {
           letterSpacing: 0,
           opacity: url,
           filter: `blur(${urlBlur}px)`,
-          transform: `translateY(${urlY}px)`,
+          transform: `translateX(-50%) translateY(${urlY}px)`,
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
         }}
@@ -1098,9 +1057,6 @@ export const BrewInstallSecurityComposition: React.FC = () => {
       </Sequence>
       <Sequence from={actTwoStart} durationInFrames={actTwoDuration}>
         <BrewInstallScene />
-      </Sequence>
-      <Sequence from={actThreeStart} durationInFrames={actThreeDuration}>
-        <ClosingScene />
       </Sequence>
     </AbsoluteFill>
   );
