@@ -260,6 +260,7 @@ final class MainWindowModelTests: XCTestCase {
         defer { model.stop() }
 
         XCTAssertEqual(model.categoryPackageSortOrder, .rank)
+        XCTAssertEqual(model.categorySortButtonTitle, "Sort: Popularity")
 
         model.selectedSection = .developerTools
         await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:zulu", "brew:alpha"])

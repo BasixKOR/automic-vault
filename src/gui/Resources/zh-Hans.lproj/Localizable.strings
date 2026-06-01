@@ -246,6 +246,7 @@
 "Resolving package graph" = "正在解析软件包图";
 "Retry" = "重试";
 "root-controlled" = "root控制";
+"Popularity" = "热门度";
 "Rank" = "排名";
 "Run Fake Update" = "运行模拟更新";
 "Science" = "科学";

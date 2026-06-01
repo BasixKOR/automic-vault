@@ -246,6 +246,7 @@
 "Resolving package graph" = "Resolution du graphe de paquets";
 "Retry" = "Reessayer";
 "root-controlled" = "controle par root";
+"Popularity" = "Popularite";
 "Rank" = "Rang";
 "Run Fake Update" = "Lancer une fausse mise a jour";
 "Science" = "Science";

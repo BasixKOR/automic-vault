@@ -59,7 +59,7 @@ enum CategoryPackageSortOrder: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .rank:
-            return L10n.string("Rank")
+            return L10n.string("Popularity")
         case .alphabetical:
             return L10n.string("A-Z")
         }

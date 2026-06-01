@@ -188,6 +188,9 @@ struct MainWindowView: View {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11, weight: .bold))
                 Spacer()
+                if model.shouldShowCategorySortControl && shouldShowPackageListSpinner {
+                    packageListSpinner
+                }
                 if model.shouldShowCategorySortControl {
                     Menu {
                         ForEach(CategoryPackageSortOrder.allCases) { sortOrder in
@@ -230,12 +233,8 @@ struct MainWindowView: View {
                     .help(updateAllHelpText)
                     .offset(y: 2)
                 }
-                if model.isReloading
-                    || model.isSearching
-                    || model.isLoadingSectionPage
-                    || model.isUpdatingAll {
-                    ProgressView()
-                        .controlSize(.small)
+                if !model.shouldShowCategorySortControl && shouldShowPackageListSpinner {
+                    packageListSpinner
                 }
             }
             .font(.system(size: 13, weight: .bold))
@@ -276,6 +275,18 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
+    }
+
+    private var shouldShowPackageListSpinner: Bool {
+        model.isReloading
+            || model.isSearching
+            || model.isLoadingSectionPage
+            || model.isUpdatingAll
+    }
+
+    private var packageListSpinner: some View {
+        ProgressView()
+            .controlSize(.small)
     }
 
     private var updateAllHelpText: String {
