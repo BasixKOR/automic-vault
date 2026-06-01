@@ -3,13 +3,16 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class MainWindowModelTests: XCTestCase {
-    func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
-        let titles = MainWindowSection.categorySections.map(\.title)
-        let sortedTitles = titles.sorted {
+    func testCategorySectionsAreAlphabetizedByDisplayedTitleWithOtherLast() {
+        let sections = MainWindowSection.categorySections
+        XCTAssertEqual(sections.last, .other)
+
+        let regularTitles = sections.dropLast().map(\.title)
+        let sortedTitles = regularTitles.sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
 
-        XCTAssertEqual(titles, sortedTitles)
+        XCTAssertEqual(regularTitles, sortedTitles)
     }
 
     @MainActor
