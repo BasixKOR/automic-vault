@@ -398,8 +398,9 @@ const BrewInstallScene: React.FC = () => {
   const local = frame;
   const exit = fadeOut(local, actTwoDuration - 18, actTwoDuration);
   const marker = fade(local, 92, 118);
-  const codePop = spring({
-    frame: local - 70,
+  const installProgress = fade(local, 74, 88);
+  const commandPop = spring({
+    frame: local - 60,
     fps,
     config: { damping: 12, stiffness: 220, mass: 0.72 },
   });
@@ -450,16 +451,40 @@ const BrewInstallScene: React.FC = () => {
           </ActTwoWord>
           <div
             style={{
-              opacity: fade(local, 68, 86),
-              transform: `translateY(${interpolate(codePop, [0, 1], [36, 0], clamp)}) scale(${interpolate(
-                codePop,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              flex: "0 0 auto",
+              width: interpolate(installProgress, [0, 1], [274, 610], clamp),
+              borderRadius: 22,
+              padding: "18px 26px",
+              border: `1px solid ${red}2f`,
+              background: "rgba(255,255,255,0.66)",
+              boxShadow: `0 24px 70px ${red}24, inset 0 1px 0 rgba(255,255,255,0.88)`,
+              color: ink,
+              fontFamily: mono,
+              fontSize: 80,
+              fontWeight: 820,
+              lineHeight: 1,
+              letterSpacing: 0,
+              opacity: fade(local, 58, 72),
+              transform: `translateY(${interpolate(commandPop, [0, 1], [36, 0], clamp)}) scale(${interpolate(
+                commandPop,
                 [0, 1],
                 [0.86, 1],
                 clamp,
               )})`,
+              overflow: "hidden",
+              whiteSpace: "nowrap",
             }}
           >
-            <CodePill tool="brew install" accent={red} large />
+            <ActTwoWord local={local} delay={60}>
+              brew
+            </ActTwoWord>
+            <span style={{ display: "inline-block", width: 28 }} />
+            <ActTwoWord local={local} delay={74}>
+              install
+            </ActTwoWord>
           </div>
         </div>
       </div>
