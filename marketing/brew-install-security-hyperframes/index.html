@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Geist";
+        src: url("assets/fonts/geist-latin-400-normal.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist";
+        src: url("assets/fonts/geist-latin-500-normal.woff2") format("woff2");
+        font-weight: 500;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist";
+        src: url("assets/fonts/geist-latin-700-normal.woff2") format("woff2");
+        font-weight: 700;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist";
+        src: url("assets/fonts/geist-latin-800-normal.woff2") format("woff2");
+        font-weight: 800;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist";
+        src: url("assets/fonts/geist-latin-900-normal.woff2") format("woff2");
+        font-weight: 900;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("assets/fonts/geist-mono-latin-700-normal.woff2") format("woff2");
+        font-weight: 700;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("assets/fonts/geist-mono-latin-800-normal.woff2") format("woff2");
+        font-weight: 800;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("assets/fonts/geist-mono-latin-900-normal.woff2") format("woff2");
+        font-weight: 900;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Barlow Condensed";
+        src: url("assets/fonts/barlow-condensed-latin-800-normal.woff2") format("woff2");
+        font-weight: 800;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "Barlow Condensed";
+        src: url("assets/fonts/barlow-condensed-latin-900-normal.woff2") format("woff2");
+        font-weight: 900;
+        font-style: normal;
+      }
+
+      @font-face {
+        font-family: "-apple-system";
+        src: url("assets/fonts/geist-latin-400-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "BlinkMacSystemFont";
+        src: url("assets/fonts/geist-latin-400-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "Segoe UI";
+        src: url("assets/fonts/geist-latin-400-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "SFMono-Regular";
+        src: url("assets/fonts/geist-mono-latin-800-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "Consolas";
+        src: url("assets/fonts/geist-mono-latin-800-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "Arial Narrow";
+        src: url("assets/fonts/barlow-condensed-latin-800-normal.woff2") format("woff2");
+      }
+
+      @font-face {
+        font-family: "Impact";
+        src: url("assets/fonts/barlow-condensed-latin-800-normal.woff2") format("woff2");
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #030506;
+      }
+
+      body {
+        font-family:
+          "Geist",
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: #d6c7a1;
+      }
+
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #030506;
+        isolation: isolate;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #030506;
+        opacity: 0;
+        transform: translate3d(0, 0, 0);
+        filter: blur(0);
+      }
+
+      #scene-secret {
+        opacity: 1;
+        z-index: 1;
+      }
+
+      .background {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 76% 40%, rgba(216, 58, 47, 0.2), rgba(216, 58, 47, 0) 28%),
+          radial-gradient(circle at 20% 74%, rgba(58, 74, 82, 0.42), rgba(58, 74, 82, 0) 34%),
+          linear-gradient(180deg, #030506 0%, #0a0d10 54%, #030506 100%);
+      }
+
+      .rocket-grid {
+        position: absolute;
+        inset: -60px;
+        background-image: url("assets/rocket-grid.png");
+        background-size: cover;
+        background-position: center;
+        opacity: 0.2;
+        filter: contrast(1.12) saturate(0.62) sepia(0.18) brightness(0.54);
+        mix-blend-mode: screen;
+      }
+
+      .scan-grid {
+        position: absolute;
+        inset: 0;
+        opacity: 0.34;
+        background-image:
+          linear-gradient(rgba(214, 199, 161, 0.12) 1px, rgba(214, 199, 161, 0) 1px),
+          linear-gradient(90deg, rgba(214, 199, 161, 0.1) 1px, rgba(214, 199, 161, 0) 1px);
+        background-size: 82px 82px;
+        transform: perspective(920px) rotateX(58deg) scale(1.58);
+        transform-origin: 50% 76%;
+      }
+
+      .scanlines {
+        position: absolute;
+        inset: 0;
+        opacity: 0.18;
+        background: repeating-linear-gradient(
+          180deg,
+          rgba(214, 199, 161, 0.16) 0,
+          rgba(214, 199, 161, 0.16) 1px,
+          rgba(214, 199, 161, 0) 1px,
+          rgba(214, 199, 161, 0) 6px
+        );
+      }
+
+      .vignette {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at center, rgba(3, 5, 6, 0) 38%, rgba(3, 5, 6, 0.72) 88%),
+          linear-gradient(90deg, rgba(3, 5, 6, 0.72), rgba(3, 5, 6, 0) 32%, rgba(3, 5, 6, 0) 68%, rgba(3, 5, 6, 0.72));
+      }
+
+      .radial-main {
+        position: absolute;
+        width: 860px;
+        height: 860px;
+        right: -180px;
+        top: -260px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(216, 58, 47, 0.32), rgba(216, 58, 47, 0) 64%);
+        opacity: 0.54;
+      }
+
+      .ghost-word {
+        position: absolute;
+        left: 78px;
+        bottom: 18px;
+        font-family:
+          "Barlow Condensed",
+          "Arial Narrow",
+          Impact,
+          sans-serif;
+        font-size: 220px;
+        font-weight: 800;
+        line-height: 0.82;
+        letter-spacing: 0;
+        color: rgba(214, 199, 161, 0.42);
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .ghost-word::before {
+        content: attr(data-word);
+      }
+
+      .edge-rule {
+        position: absolute;
+        left: 88px;
+        right: 88px;
+        height: 2px;
+        background: rgba(214, 199, 161, 0.24);
+      }
+
+      .edge-rule.top {
+        top: 70px;
+      }
+
+      .edge-rule.bottom {
+        bottom: 70px;
+      }
+
+      .scene-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 100%;
+        height: 100%;
+        padding: 86px 112px;
+        gap: 40px;
+        box-sizing: border-box;
+      }
+
+      .topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 46px;
+        gap: 32px;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        color: #b89b73;
+        font-size: 21px;
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .topline .scene-index {
+        color: #b89b73;
+      }
+
+      .risk-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 430px;
+        align-items: center;
+        gap: 56px;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .risk-panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 640px;
+        padding: 60px 64px;
+        border: 2px solid rgba(214, 199, 161, 0.34);
+        border-radius: 12px;
+        background:
+          linear-gradient(135deg, rgba(23, 33, 38, 0.96), rgba(18, 25, 29, 0.86)),
+          #12191d;
+        box-shadow:
+          0 34px 90px rgba(3, 5, 6, 0.58),
+          inset 0 0 0 1px rgba(214, 199, 161, 0.08);
+        overflow: hidden;
+      }
+
+      .risk-panel::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(216, 58, 47, 0.18), rgba(216, 58, 47, 0) 44%),
+          repeating-linear-gradient(90deg, rgba(214, 199, 161, 0.04) 0, rgba(214, 199, 161, 0.04) 1px, rgba(214, 199, 161, 0) 1px, rgba(214, 199, 161, 0) 46px);
+        opacity: 0.72;
+      }
+
+      .risk-panel > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      .state-chip,
+      .source-chip,
+      .control-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-start;
+        min-height: 42px;
+        padding: 8px 15px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 19px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .risk-title {
+        max-width: 1040px;
+        margin-top: 28px;
+        color: #d6c7a1;
+        font-family:
+          "Barlow Condensed",
+          "Arial Narrow",
+          Impact,
+          sans-serif;
+        font-size: 112px;
+        font-weight: 800;
+        line-height: 0.9;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .risk-copy {
+        max-width: 940px;
+        margin-top: 26px;
+        color: #b89b73;
+        font-size: 35px;
+        font-weight: 500;
+        line-height: 1.24;
+        letter-spacing: 0;
+      }
+
+      .command-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+        max-width: 100%;
+        margin-top: 38px;
+        padding: 20px 22px;
+        border: 1px solid rgba(214, 199, 161, 0.22);
+        border-radius: 8px;
+        background: rgba(3, 5, 6, 0.58);
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 31px;
+        font-weight: 800;
+        line-height: 1.3;
+        letter-spacing: 0;
+        font-variant-ligatures: none;
+      }
+
+      .command-line .prompt {
+        color: #6bffb0;
+      }
+
+      .metric-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 28px;
+      }
+
+      .metric {
+        min-height: 104px;
+        padding: 18px 20px;
+        border: 1px solid rgba(214, 199, 161, 0.18);
+        border-radius: 8px;
+        background: rgba(10, 13, 16, 0.76);
+      }
+
+      .metric-label {
+        color: #b89b73;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 17px;
+        font-weight: 900;
+        line-height: 1.2;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .metric-value {
+        margin-top: 10px;
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 34px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .tool-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .tool-card {
+        min-height: 104px;
+        padding: 20px 22px;
+        border: 1px solid rgba(214, 199, 161, 0.2);
+        border-radius: 8px;
+        background: rgba(23, 33, 38, 0.74);
+        box-shadow: inset 0 0 0 1px rgba(214, 199, 161, 0.05);
+      }
+
+      .tool-name {
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 27px;
+        font-weight: 900;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      .tool-state {
+        margin-top: 9px;
+        color: #b89b73;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 17px;
+        font-weight: 800;
+        line-height: 1.25;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .meter {
+        position: relative;
+        height: 8px;
+        margin-top: 18px;
+        border-radius: 999px;
+        background: rgba(58, 74, 82, 0.7);
+        overflow: hidden;
+      }
+
+      .meter-fill {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        border-radius: inherit;
+        transform-origin: left center;
+        transform: scaleX(1);
+      }
+
+      .tool-mist {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .tool-chip {
+        position: absolute;
+        padding: 10px 18px;
+        border: 1px solid rgba(214, 199, 161, 0.2);
+        border-radius: 999px;
+        background: rgba(18, 25, 29, 0.7);
+        color: rgba(214, 199, 161, 0.64);
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 22px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .tone-red .state-chip,
+      .tone-red .source-chip {
+        color: #ff2e38;
+        background: rgba(255, 46, 56, 0.12);
+      }
+
+      .tone-red .meter-fill {
+        background: #ff2e38;
+        box-shadow: 0 0 28px rgba(255, 46, 56, 0.46);
+      }
+
+      .tone-amber .state-chip,
+      .tone-amber .source-chip {
+        color: #ffb347;
+        background: rgba(255, 179, 71, 0.12);
+      }
+
+      .tone-amber .meter-fill {
+        background: #ffb347;
+        box-shadow: 0 0 28px rgba(255, 179, 71, 0.42);
+      }
+
+      .tone-blue .state-chip,
+      .tone-blue .source-chip {
+        color: #8cabd1;
+        background: rgba(140, 171, 209, 0.12);
+      }
+
+      .tone-blue .meter-fill {
+        background: #1a85ff;
+        box-shadow: 0 0 28px rgba(26, 133, 255, 0.42);
+      }
+
+      .tone-green .state-chip,
+      .tone-green .source-chip,
+      .tone-green .control-chip {
+        color: #6bffb0;
+        background: rgba(107, 255, 176, 0.12);
+      }
+
+      .tone-green .meter-fill {
+        background: #6bffb0;
+        box-shadow: 0 0 28px rgba(107, 255, 176, 0.42);
+      }
+
+      .hero-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 460px;
+        align-items: center;
+        gap: 66px;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 26px;
+        min-height: 680px;
+      }
+
+      .hero-title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 24px 34px;
+        max-width: 1180px;
+        color: #d6c7a1;
+        font-family:
+          "Barlow Condensed",
+          "Arial Narrow",
+          Impact,
+          sans-serif;
+        font-size: 134px;
+        font-weight: 800;
+        line-height: 0.88;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .hero-title span {
+        display: inline-block;
+      }
+
+      .command-slab {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: max-content;
+        max-width: 100%;
+        min-height: 154px;
+        padding: 28px 38px;
+        border: 2px solid rgba(216, 58, 47, 0.7);
+        border-radius: 12px;
+        background:
+          linear-gradient(180deg, rgba(23, 33, 38, 0.98), rgba(10, 13, 16, 0.96)),
+          #172126;
+        box-shadow:
+          0 0 78px rgba(216, 58, 47, 0.22),
+          inset 0 0 0 1px rgba(214, 199, 161, 0.12);
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 74px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+        font-variant-ligatures: none;
+      }
+
+      .command-slab .cursor {
+        display: inline-block;
+        width: 12px;
+        height: 70px;
+        margin-left: 22px;
+        border-radius: 2px;
+        background: #d83a2f;
+        box-shadow: 0 0 26px rgba(216, 58, 47, 0.58);
+      }
+
+      .clamp-line {
+        height: 9px;
+        width: 760px;
+        max-width: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(216, 58, 47, 0), #d83a2f, #ffb347, rgba(216, 58, 47, 0));
+        box-shadow: 0 0 32px rgba(216, 58, 47, 0.34);
+        transform-origin: left center;
+      }
+
+      .hero-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .source-chip {
+        min-width: 230px;
+      }
+
+      .source-chip.alt {
+        color: #ffb347;
+        background: rgba(255, 179, 71, 0.12);
+      }
+
+      .source-chip.info {
+        color: #8cabd1;
+        background: rgba(140, 171, 209, 0.12);
+      }
+
+      .closing-layout {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
+      }
+
+      .brand-lockup {
+        display: grid;
+        grid-template-columns: 226px minmax(0, 1fr);
+        align-items: center;
+        gap: 48px;
+      }
+
+      .brand-icon {
+        width: 226px;
+        height: 226px;
+        object-fit: contain;
+        filter: drop-shadow(0 28px 54px rgba(216, 58, 47, 0.22));
+      }
+
+      .brand-word {
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 94px;
+        font-weight: 900;
+        line-height: 0.96;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .brand-word .red {
+        color: #d83a2f;
+      }
+
+      .proof {
+        color: #b89b73;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 25px;
+        font-weight: 900;
+        line-height: 1.2;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        text-align: center;
+      }
+
+      .url-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 760px;
+        min-height: 80px;
+        padding: 20px 34px;
+        border: 1px solid rgba(214, 199, 161, 0.26);
+        border-radius: 999px;
+        background: rgba(18, 25, 29, 0.92);
+        box-shadow:
+          0 24px 74px rgba(3, 5, 6, 0.5),
+          inset 0 0 0 1px rgba(214, 199, 161, 0.08);
+        color: #d6c7a1;
+        font-family:
+          "Geist Mono",
+          "SFMono-Regular",
+          Consolas,
+          monospace;
+        font-size: 35px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .brand-column {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 44px;
+      }
+
+      .boundary-labels {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+      }
+
+      .control-chip {
+        min-width: 172px;
+      }
+
+      .transition-blocks {
+        position: absolute;
+        inset: 0;
+        z-index: 40;
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .transition-block {
+        background: #d83a2f;
+        transform: scaleY(0);
+        transform-origin: bottom center;
+      }
+
+      #fade-black {
+        position: absolute;
+        inset: 0;
+        z-index: 60;
+        background: #030506;
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="28.65"
+      data-width="1920"
+      data-height="1080"
+    >
+      <section id="scene-secret" class="scene tone-red" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="secret scan" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="tool-mist" data-layout-ignore>
+          <div class="tool-chip" style="left: 152px; top: 174px">gh</div>
+          <div class="tool-chip" style="right: 210px; top: 196px">docker</div>
+          <div class="tool-chip" style="left: 310px; bottom: 152px">git</div>
+          <div class="tool-chip" style="right: 340px; bottom: 176px">gemini-cli</div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Automic Vault / Local Boundary</div>
+            <div class="scene-index">01 / Secret Scan</div>
+          </div>
+          <div class="risk-grid">
+            <div class="risk-panel">
+              <div class="state-chip">Secret scan</div>
+              <h1 class="risk-title">Plain text secret exposure</h1>
+              <p class="risk-copy">Exposure detected before an agent can pass credentials through a command-line tool.</p>
+              <div class="command-line">
+                <span class="prompt">$</span>
+                <span>vault inspect gh --secrets</span>
+              </div>
+              <div class="metric-row">
+                <div class="metric">
+                  <div class="metric-label">Tool</div>
+                  <div class="metric-value">gh</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Surface</div>
+                  <div class="metric-value">token</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Action</div>
+                  <div class="metric-value">hold</div>
+                </div>
+              </div>
+            </div>
+            <div class="tool-stack">
+              <div class="tool-card">
+                <div class="tool-name">gh</div>
+                <div class="tool-state">plain text exposure</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">awscli</div>
+                <div class="tool-state">credential path watched</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">node</div>
+                <div class="tool-state">postinstall pending</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-aws" class="scene tone-amber" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="credential hardening" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="tool-mist" data-layout-ignore>
+          <div class="tool-chip" style="left: 168px; top: 214px">awscli</div>
+          <div class="tool-chip" style="right: 246px; top: 152px">sops</div>
+          <div class="tool-chip" style="left: 370px; bottom: 176px">jq</div>
+          <div class="tool-chip" style="right: 296px; bottom: 150px">terraform</div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Package Dossier / Credential Hardening</div>
+            <div class="scene-index">02 / Cloud Key</div>
+          </div>
+          <div class="risk-grid">
+            <div class="risk-panel">
+              <div class="state-chip">Credential hardening</div>
+              <h1 class="risk-title">Cloud key left readable</h1>
+              <p class="risk-copy">AWS credentials stay local and visible instead of becoming background context for an agent run.</p>
+              <div class="command-line">
+                <span class="prompt">$</span>
+                <span>vault gate awscli --credential-path</span>
+              </div>
+              <div class="metric-row">
+                <div class="metric">
+                  <div class="metric-label">Tool</div>
+                  <div class="metric-value">awscli</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Path</div>
+                  <div class="metric-value">~/.aws</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Action</div>
+                  <div class="metric-value">gate</div>
+                </div>
+              </div>
+            </div>
+            <div class="tool-stack">
+              <div class="tool-card">
+                <div class="tool-name">awscli</div>
+                <div class="tool-state">readable cloud key</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">terraform</div>
+                <div class="tool-state">provider tokens watched</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">sops</div>
+                <div class="tool-state">secret file boundary</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-node" class="scene tone-blue" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="install guard" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="tool-mist" data-layout-ignore>
+          <div class="tool-chip" style="left: 182px; top: 196px">node</div>
+          <div class="tool-chip" style="right: 226px; top: 226px">npm</div>
+          <div class="tool-chip" style="left: 286px; bottom: 162px">bun</div>
+          <div class="tool-chip" style="right: 360px; bottom: 194px">pnpm</div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Install Guard / Postinstall Script</div>
+            <div class="scene-index">03 / Token Request</div>
+          </div>
+          <div class="risk-grid">
+            <div class="risk-panel">
+              <div class="state-chip">Install guard</div>
+              <h1 class="risk-title">Postinstall wants a token</h1>
+              <p class="risk-copy">Scripts are treated as executable requests, not invisible install noise.</p>
+              <div class="command-line">
+                <span class="prompt">$</span>
+                <span>vault scan node --postinstall-token</span>
+              </div>
+              <div class="metric-row">
+                <div class="metric">
+                  <div class="metric-label">Tool</div>
+                  <div class="metric-value">node</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Script</div>
+                  <div class="metric-value">post</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Action</div>
+                  <div class="metric-value">flag</div>
+                </div>
+              </div>
+            </div>
+            <div class="tool-stack">
+              <div class="tool-card">
+                <div class="tool-name">node</div>
+                <div class="tool-state">token request</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">npm</div>
+                <div class="tool-state">install script trace</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">bun</div>
+                <div class="tool-state">package mutation watched</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-agent" class="scene tone-green" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="approval gate" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="tool-mist" data-layout-ignore>
+          <div class="tool-chip" style="left: 148px; top: 204px">gemini-cli</div>
+          <div class="tool-chip" style="right: 214px; top: 186px">claude</div>
+          <div class="tool-chip" style="left: 320px; bottom: 182px">codex</div>
+          <div class="tool-chip" style="right: 302px; bottom: 160px">agent</div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Approval Gate / Sensitive Action</div>
+            <div class="scene-index">04 / Human Boundary</div>
+          </div>
+          <div class="risk-grid">
+            <div class="risk-panel">
+              <div class="state-chip">Approval gate</div>
+              <h1 class="risk-title">Agent command needs approval</h1>
+              <p class="risk-copy">Automic Vault pauses sensitive command execution at the local machine boundary.</p>
+              <div class="command-line">
+                <span class="prompt">$</span>
+                <span>vault approve gemini-cli --sensitive-action</span>
+              </div>
+              <div class="metric-row">
+                <div class="metric">
+                  <div class="metric-label">Tool</div>
+                  <div class="metric-value">agent</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Scope</div>
+                  <div class="metric-value">local</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Action</div>
+                  <div class="metric-value">ask</div>
+                </div>
+              </div>
+            </div>
+            <div class="tool-stack">
+              <div class="tool-card">
+                <div class="tool-name">gemini-cli</div>
+                <div class="tool-state">sensitive action gated</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">codex</div>
+                <div class="tool-state">command trace visible</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+              <div class="tool-card">
+                <div class="tool-name">human</div>
+                <div class="tool-state">approval required</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-brew" class="scene tone-red" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="brew install" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Command Surface / Brew Packages</div>
+            <div class="scene-index">05 / Secure Install</div>
+          </div>
+          <div class="hero-layout">
+            <div class="hero-copy">
+              <div class="hero-title">
+                <span class="hero-word">Secure</span>
+                <span class="hero-word">the</span>
+                <span class="hero-word">tools</span>
+                <span class="hero-word">you</span>
+              </div>
+              <div class="command-slab">
+                <span>brew install</span>
+                <span class="cursor"></span>
+              </div>
+              <div class="clamp-line"></div>
+            </div>
+            <div class="hero-stack">
+              <div class="source-chip">Brew</div>
+              <div class="source-chip alt">Cask</div>
+              <div class="source-chip info">NPM</div>
+              <div class="source-chip">PIP</div>
+              <div class="tool-card">
+                <div class="tool-name">local policy</div>
+                <div class="tool-state">packages, secrets, approvals</div>
+                <div class="meter"><div class="meter-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-close" class="scene tone-red" data-layout-allow-overflow>
+        <div class="background">
+          <div class="rocket-grid"></div>
+          <div class="scan-grid"></div>
+          <div class="radial-main"></div>
+          <div class="scanlines"></div>
+          <div class="vignette"></div>
+          <div class="ghost-word" data-word="automic vault" data-layout-ignore></div>
+          <div class="edge-rule top"></div>
+          <div class="edge-rule bottom"></div>
+        </div>
+        <div class="scene-content">
+          <div class="topline">
+            <div class="top-label">Mission Complete / Local Control</div>
+            <div class="scene-index">06 / Automic Vault</div>
+          </div>
+          <div class="closing-layout">
+            <div class="brand-column">
+              <div class="proof">From the creator of Homebrew</div>
+              <div class="brand-lockup">
+                <img class="brand-icon" src="assets/icon.png" alt="" />
+                <div class="brand-word">
+                  <div>AUTOMIC</div>
+                  <div class="red">VAULT</div>
+                </div>
+              </div>
+              <div class="boundary-labels">
+                <div class="control-chip">local</div>
+                <div class="control-chip">packages</div>
+                <div class="control-chip">approvals</div>
+              </div>
+              <div class="url-pill">automicvault.com</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div id="transition-blocks" class="transition-blocks" data-layout-ignore>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+        <div class="transition-block"></div>
+      </div>
+      <div id="fade-black"></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+
+      const DURATION = 28.65;
+      const tl = gsap.timeline({ paused: true });
+
+      function ambientTween(selector, vars, at, cycle) {
+        const remaining = Math.max(0.1, DURATION - at);
+        const duration = Math.min(cycle, remaining);
+        const repeat = Math.max(0, Math.floor(remaining / cycle) - 1);
+        tl.to(selector, { ...vars, duration, repeat, yoyo: true }, at);
+      }
+
+      const riskScenes = [
+        { id: "scene-secret", start: 0.18 },
+        { id: "scene-aws", start: 3.92 },
+        { id: "scene-node", start: 7.72 },
+        { id: "scene-agent", start: 11.56 },
+      ];
+
+      function enterRiskScene(id, start) {
+        const root = "#" + id;
+        tl.fromTo(root + " .ghost-word", { opacity: 0, x: -42 }, { opacity: 0.1, x: 0, duration: 1.05, ease: "sine.out", immediateRender: false }, start);
+        tl.fromTo(root + " .top-label", { opacity: 0, y: -22 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", immediateRender: false }, start + 0.02);
+        tl.fromTo(root + " .scene-index", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: 0.38, ease: "expo.out", immediateRender: false }, start + 0.08);
+        tl.fromTo(root + " .edge-rule.top", { scaleX: 0 }, { scaleX: 1, duration: 0.56, ease: "power2.out", transformOrigin: "left center", immediateRender: false }, start + 0.1);
+        tl.fromTo(root + " .edge-rule.bottom", { scaleX: 0 }, { scaleX: 1, duration: 0.62, ease: "power1.out", transformOrigin: "right center", immediateRender: false }, start + 0.15);
+        tl.fromTo(root + " .risk-panel", { opacity: 0, y: 76, scale: 0.965, filter: "blur(16px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.64, ease: "power4.out", immediateRender: false }, start + 0.18);
+        tl.fromTo(root + " .state-chip", { opacity: 0, x: -34, scale: 0.92 }, { opacity: 1, x: 0, scale: 1, duration: 0.36, ease: "back.out(1.6)", immediateRender: false }, start + 0.38);
+        tl.fromTo(root + " .risk-title", { opacity: 0, y: 54 }, { opacity: 1, y: 0, duration: 0.52, ease: "expo.out", immediateRender: false }, start + 0.46);
+        tl.fromTo(root + " .risk-copy", { opacity: 0, x: 36 }, { opacity: 1, x: 0, duration: 0.44, ease: "power2.out", immediateRender: false }, start + 0.62);
+        tl.fromTo(root + " .command-line", { opacity: 0, y: 34, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: 0.48, ease: "circ.out", immediateRender: false }, start + 0.76);
+        tl.fromTo(root + " .metric", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.36, stagger: 0.08, ease: "power3.out", immediateRender: false }, start + 0.92);
+        tl.fromTo(root + " .tool-card", { opacity: 0, x: 54, filter: "blur(10px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.42, stagger: 0.09, ease: "power2.out", immediateRender: false }, start + 0.58);
+        tl.fromTo(root + " .meter-fill", { scaleX: 0 }, { scaleX: 1, duration: 0.7, stagger: 0.07, ease: "power1.out", transformOrigin: "left center", immediateRender: false }, start + 0.98);
+        tl.fromTo(root + " .tool-chip", { opacity: 0, y: 18, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.06, ease: "sine.out", immediateRender: false }, start + 0.34);
+        ambientTween(root + " .radial-main", { scale: 1.08, opacity: 0.66, ease: "sine.inOut" }, start + 0.2, 3.8);
+        ambientTween(root + " .ghost-word", { x: 34, ease: "sine.inOut" }, start + 1.1, 6.3);
+        ambientTween(root + " .rocket-grid", { y: -52, ease: "sine.inOut" }, start + 0.1, 8.4);
+      }
+
+      function blurTransition(oldId, newId, time) {
+        const oldScene = "#" + oldId;
+        const newScene = "#" + newId;
+        tl.set(newScene, { zIndex: 3 }, time);
+        tl.to(oldScene, { y: -130, filter: "blur(18px)", duration: 0.48, ease: "power2.in" }, time);
+        tl.fromTo(newScene, { opacity: 0, y: 150, filter: "blur(24px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.76, ease: "power3.out", immediateRender: false }, time + 0.08);
+        tl.set(oldScene, { opacity: 0, y: 0, filter: "blur(0px)", zIndex: 0 }, time + 0.82);
+        tl.set(newScene, { zIndex: 2 }, time + 0.84);
+      }
+
+      function shutterTransition(oldId, newId, time) {
+        const oldScene = "#" + oldId;
+        const newScene = "#" + newId;
+        tl.set("#transition-blocks", { opacity: 1 }, time);
+        tl.fromTo(".transition-block", { scaleY: 0 }, { scaleY: 1, duration: 0.34, stagger: 0.025, ease: "power3.in", immediateRender: false }, time);
+        tl.set(newScene, { opacity: 1, zIndex: 3 }, time + 0.36);
+        tl.set(oldScene, { opacity: 0, zIndex: 0 }, time + 0.38);
+        tl.fromTo(newScene, { scale: 0.985, filter: "blur(12px)" }, { scale: 1, filter: "blur(0px)", duration: 0.62, ease: "power3.out", immediateRender: false }, time + 0.38);
+        tl.to(".transition-block", { scaleY: 0, duration: 0.34, stagger: 0.025, ease: "power2.out", transformOrigin: "top center", overwrite: "auto" }, time + 0.58);
+        tl.set("#transition-blocks", { opacity: 0 }, time + 1.22);
+      }
+
+      function enterHero(start) {
+        const root = "#scene-brew";
+        tl.fromTo(root + " .ghost-word", { opacity: 0, x: -50 }, { opacity: 0.11, x: 0, duration: 0.9, ease: "sine.out", immediateRender: false }, start);
+        tl.fromTo(root + " .top-label", { opacity: 0, y: -22 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out", immediateRender: false }, start + 0.04);
+        tl.fromTo(root + " .scene-index", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: 0.4, ease: "expo.out", immediateRender: false }, start + 0.08);
+        tl.fromTo(root + " .hero-word", { opacity: 0, y: 72, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.11, ease: "back.out(1.4)", immediateRender: false }, start + 0.18);
+        tl.fromTo(root + " .command-slab", { opacity: 0, y: 70, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.58, ease: "expo.out", immediateRender: false }, start + 0.78);
+        tl.fromTo(root + " .clamp-line", { opacity: 0, scaleX: 0.18 }, { opacity: 1, scaleX: 1, duration: 0.64, ease: "power2.out", transformOrigin: "left center", immediateRender: false }, start + 1.04);
+        tl.fromTo(root + " .source-chip", { opacity: 0, x: 46 }, { opacity: 1, x: 0, duration: 0.42, stagger: 0.08, ease: "power3.out", immediateRender: false }, start + 0.6);
+        tl.fromTo(root + " .tool-card", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.44, ease: "circ.out", immediateRender: false }, start + 1.04);
+        tl.fromTo(root + " .meter-fill", { scaleX: 0 }, { scaleX: 1, duration: 0.82, ease: "power1.out", transformOrigin: "left center", immediateRender: false }, start + 1.22);
+        ambientTween(root + " .cursor", { opacity: 0.28, ease: "steps(1)" }, start + 1.2, 0.46);
+        ambientTween(root + " .radial-main", { scale: 1.12, opacity: 0.68, ease: "sine.inOut" }, start + 0.2, 4.2);
+        ambientTween(root + " .rocket-grid", { y: -42, ease: "sine.inOut" }, start + 0.1, 7.8);
+      }
+
+      function enterClose(start) {
+        const root = "#scene-close";
+        tl.fromTo(root + " .ghost-word", { opacity: 0, x: -44 }, { opacity: 0.1, x: 0, duration: 0.9, ease: "sine.out", immediateRender: false }, start);
+        tl.fromTo(root + " .top-label", { opacity: 0, y: -22 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out", immediateRender: false }, start + 0.04);
+        tl.fromTo(root + " .scene-index", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: 0.4, ease: "expo.out", immediateRender: false }, start + 0.08);
+        tl.fromTo(root + " .proof", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.46, ease: "power2.out", immediateRender: false }, start + 0.2);
+        tl.fromTo(root + " .brand-icon", { opacity: 0, scale: 0.78, rotation: -4 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.58, ease: "back.out(1.5)", immediateRender: false }, start + 0.5);
+        tl.fromTo(root + " .brand-word", { opacity: 0, x: 44 }, { opacity: 1, x: 0, duration: 0.52, ease: "expo.out", immediateRender: false }, start + 0.62);
+        tl.fromTo(root + " .control-chip", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.38, stagger: 0.08, ease: "power3.out", immediateRender: false }, start + 1.02);
+        tl.fromTo(root + " .url-pill", { opacity: 0, y: 36, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "circ.out", immediateRender: false }, start + 1.36);
+        ambientTween(root + " .radial-main", { scale: 1.08, opacity: 0.62, ease: "sine.inOut" }, start + 0.2, 4.0);
+      }
+
+      riskScenes.forEach((scene) => enterRiskScene(scene.id, scene.start));
+      blurTransition("scene-secret", "scene-aws", 3.45);
+      blurTransition("scene-aws", "scene-node", 7.25);
+      blurTransition("scene-node", "scene-agent", 11.08);
+      shutterTransition("scene-agent", "scene-brew", 14.92);
+      enterHero(15.58);
+      blurTransition("scene-brew", "scene-close", 21.08);
+      enterClose(21.62);
+      tl.to("#fade-black", { opacity: 1, duration: 0.78, ease: "sine.inOut" }, 27.82);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
