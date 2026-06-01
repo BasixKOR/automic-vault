@@ -2103,7 +2103,7 @@ final class MainWindowModel: ObservableObject {
     private nonisolated static func fetchInstalledPackages() throws -> [PackageRecord] {
         let bridge = NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
         return try bridge.fetchPackages().sorted {
             let left = $0.name.packageSearchOrderName
@@ -2118,7 +2118,7 @@ final class MainWindowModel: ObservableObject {
     private nonisolated static func fetchOutdatedPackages() throws -> [OutdatedPackageRecord] {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
             .fetchOutdatedPackages()
     }
@@ -2142,7 +2142,7 @@ final class MainWindowModel: ObservableObject {
     ) throws -> PackageSearchPage {
         let bridge = NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
         return try bridge.fetchAvailablePackages(offset: offset, limit: limit)
     }
@@ -2153,7 +2153,7 @@ final class MainWindowModel: ObservableObject {
     ) throws -> PackageSearchPage {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
         .fetchPulsePackages(offset: offset, limit: limit)
     }
@@ -2164,7 +2164,7 @@ final class MainWindowModel: ObservableObject {
     ) throws -> PackageSearchPage {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
         .fetchGeigerPackages(offset: offset, limit: limit)
     }
@@ -2172,7 +2172,7 @@ final class MainWindowModel: ObservableObject {
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
             .fetchDetail(packageName: packageName)
     }
@@ -2184,7 +2184,7 @@ final class MainWindowModel: ObservableObject {
     ) throws -> PackageSearchPage {
         try NucleusBridge(
             compatibilityPolicy: .protocolOnly,
-            daemonOwnership: .client
+            daemonOwnership: .owner
         )
             .fetchSearchResults(query: query, offset: offset, limit: limit)
     }

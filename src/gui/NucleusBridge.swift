@@ -117,7 +117,7 @@ final class NucleusBridge {
     private let daemonOwnership: DaemonOwnership
     private let expectedProtocolVersion = Bundle.main.object(
         forInfoDictionaryKey: "NukeProtocolVersion"
-    ) as? String ?? "1.0"
+    ) as? String ?? "1.13"
     private let expectedBuildID = Bundle.main.object(
         forInfoDictionaryKey: "NukeBuildID"
     ) as? String ?? "unknown"
@@ -346,9 +346,8 @@ final class NucleusBridge {
             if self.shouldForceFreshDaemonOnLaunch,
                self.forcedFreshDaemonThisLaunch == false {
                 try self.stopStaleProtocolDaemon()
+                self.daemonProcess = nil
                 self.forcedFreshDaemonThisLaunch = true
-            } else if self.daemonProcess == nil {
-                try self.stopStaleProtocolDaemon()
             }
             return try self.startAndConnectToProtocolDaemon()
         }
@@ -372,9 +371,17 @@ final class NucleusBridge {
 
     private func startAndConnectToProtocolDaemon() throws -> ProtocolConnection {
         if let connected = try connectToProtocolSocket() {
-            try validateCompatibility(of: connected)
-            connection = connected
-            return connected
+            do {
+                try validateCompatibility(of: connected)
+                connection = connected
+                return connected
+            } catch {
+                guard isCompatibilityMismatch(error) else {
+                    throw error
+                }
+                try stopStaleProtocolDaemon()
+                daemonProcess = nil
+            }
         }
 
         try startProtocolDaemonIfNeeded()
@@ -464,14 +471,14 @@ final class NucleusBridge {
             params: EmptyParams(),
             as: SystemInfoResponse.self
         )
-        guard compatibilityPolicy == .strict else {
-            return
-        }
         guard info.protocolVersion == expectedProtocolVersion else {
             close(connection.descriptor)
             throw NucleusBridgeError.connectionFailed(
                 "protocol mismatch: expected \(expectedProtocolVersion), got \(info.protocolVersion)"
             )
+        }
+        guard compatibilityPolicy == .strict else {
+            return
         }
         guard info.buildId == expectedBuildID else {
             close(connection.descriptor)
@@ -617,6 +624,14 @@ final class NucleusBridge {
             return cocoaError.code == .fileReadUnknown || cocoaError.code == .fileWriteUnknown
         }
         return false
+    }
+
+    private func isCompatibilityMismatch(_ error: Error) -> Bool {
+        guard case NucleusBridgeError.connectionFailed(let reason) = error else {
+            return false
+        }
+        return reason.hasPrefix("protocol mismatch:")
+            || reason.hasPrefix("daemon build mismatch:")
     }
 
     private func protocolSocketURL() -> URL {
