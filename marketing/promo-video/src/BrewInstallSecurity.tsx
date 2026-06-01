@@ -165,48 +165,6 @@ const BackgroundTexture: React.FC = () => {
   );
 };
 
-const ToolMist: React.FC<{ visibleFrom: number; visibleTo: number }> = ({ visibleFrom, visibleTo }) => {
-  const frame = useCurrentFrame();
-  const opacity = fade(frame, visibleFrom, visibleFrom + 18) * fadeOut(frame, visibleTo - 18, visibleTo);
-  const tools = ["gh", "awscli", "node", "gemini-cli", "docker", "git"];
-
-  return (
-    <AbsoluteFill style={{ opacity }}>
-      {tools.map((tool, index) => {
-        const x = [198, 1420, 320, 1320, 1040, 620][index];
-        const y = [178, 214, 742, 726, 136, 878][index];
-        const drift = interpolate(frame + index * 11, [0, brewInstallSecurityDurationInFrames], [0, 46], clamp);
-
-        return (
-          <div
-            key={tool}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              padding: "12px 22px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.62)",
-              background: "rgba(255,255,255,0.34)",
-              boxShadow: "0 20px 60px rgba(17,24,39,0.08)",
-              color: "rgba(17,24,39,0.32)",
-              fontFamily: mono,
-              fontSize: 24,
-              fontWeight: 760,
-              letterSpacing: 0,
-              transform: `translateY(${drift * 0.18}px)`,
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-            }}
-          >
-            {tool}
-          </div>
-        );
-      })}
-    </AbsoluteFill>
-  );
-};
-
 const CodePill: React.FC<{ tool: string; accent: string; large?: boolean }> = ({ tool, accent, large = false }) => (
   <span
     style={{
@@ -596,7 +554,6 @@ export const BrewInstallSecurityComposition: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: paper }}>
       <BackgroundTexture />
-      <ToolMist visibleFrom={0} visibleTo={actTwoStart} />
       {notifications.map((item, index) => (
         <Sequence
           key={item.tool}
