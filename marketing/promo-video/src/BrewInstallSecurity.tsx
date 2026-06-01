@@ -778,7 +778,7 @@ const GhNotificationCard: React.FC<{
               />
               <HardenButtonBrand
                 local={local}
-                start={hardenButtonStart + 18}
+                start={hardenButtonStart}
               />
             </div>
           ) : null}
