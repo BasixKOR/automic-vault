@@ -248,11 +248,11 @@ stamp_product_version() {
 }
 
 prepare_site_for_upload() {
-  local product_version secured_package_count secured_package_display_count index_path
+  local product_version scanned_package_count scanned_package_display_count index_path
   log_step "Preparing deploy-time site content"
   product_version="$(read_product_version)"
-  secured_package_count="$(count_scan_log_entries)"
-  secured_package_display_count="$(format_count_for_display "${secured_package_count}")"
+  scanned_package_count="$(count_scan_log_entries)"
+  scanned_package_display_count="$(format_count_for_display "${scanned_package_count}")"
   prepared_site_dir="$(mktemp -d)"
   rsync -a \
     --exclude '/pkg/' \
@@ -265,14 +265,15 @@ prepare_site_for_upload() {
     die "Missing prepared index: ${index_path}"
   fi
 
-  SECURED_PACKAGE_COUNT="${secured_package_display_count}" perl -0pi -e '
+  SCANNED_PACKAGE_COUNT="${scanned_package_display_count}" perl -0pi -e '
     BEGIN {
-      $count = $ENV{"SECURED_PACKAGE_COUNT"};
+      $count = $ENV{"SCANNED_PACKAGE_COUNT"};
       $matches = 0;
     }
     $matches += s{(<([a-zA-Z][a-zA-Z0-9:-]*)\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</\2>)}{$1$count$3}g;
+    $matches += s{(<span>)[0-9,]+ Homebrew packages scanned(</span>)}{$1$count Homebrew packages scanned$2}g;
     END {
-      die "Expected exactly one secured package count replacement, got $matches\n"
+      die "Expected exactly one scanned package count replacement, got $matches\n"
         unless $matches == 1;
     }
   ' "${index_path}"
@@ -281,7 +282,7 @@ prepare_site_for_upload() {
   stamp_product_version "${product_version}"
 
   log_ok "Stamped Automic Vault ${product_version}"
-  log_ok "Stamped ${secured_package_display_count} secured packages"
+  log_ok "Stamped ${scanned_package_display_count} scanned packages"
 }
 
 assert_package_pages_current() {
