@@ -566,7 +566,7 @@ const TerminalAttempt: React.FC<{
   const command = typedText(ghCommand, local, typeStart, typeDuration);
   const commandComplete = local >= typeStart + typeDuration;
   const tokenOpacity = gated ? 0 : fade(local, 82, 98);
-  const approvalStart = 86;
+  const approvalStart = 126;
 
   return (
     <AbsoluteFill
