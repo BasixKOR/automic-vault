@@ -273,6 +273,7 @@
 "timer" = "タイマー";
 "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools." = "エージェントに必要なツールです。画像操作、メディア処理、言語ランタイム、検索、シェル、ビルド、OCR、文書変換ツールを含みます。";
 "Touch ID and password authentication are unavailable." = "Touch IDとパスワード認証を使用できません。";
+"Toys" = "おもちゃ";
 "Undo" = "取り消す";
 "Uninstall" = "アンインストール";
 "Uninstall Complete" = "アンインストール完了";

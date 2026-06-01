@@ -19,6 +19,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     case productivity
     case science
     case games
+    case toys
     case other
     case settings
     case about
@@ -43,6 +44,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         .productivity,
         .science,
         .games,
+        .toys,
         .other
     ]
 
@@ -106,6 +108,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return L10n.string("Science")
         case .games:
             return L10n.string("Games")
+        case .toys:
+            return L10n.string("Toys")
         case .other:
             return L10n.string("Other")
         case .settings:
@@ -149,6 +153,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return "atom"
         case .games:
             return "gamecontroller"
+        case .toys:
+            return "puzzlepiece"
         case .other:
             return "ellipsis"
         case .settings:
@@ -182,6 +188,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return "science"
         case .games:
             return "games"
+        case .toys:
+            return "toys"
         case .other:
             return "other"
         case .installed, .geigerCounter, .newUpdated, .outdated, .allPackages,
@@ -903,7 +911,7 @@ final class MainWindowModel: ObservableObject {
         case .settings, .about:
             return nil
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
-             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
+             .data, .languageRuntime, .media, .productivity, .science, .games, .toys, .other:
             guard let category = section.categoryIdentifier else { return nil }
             if let count = catalogCategoryCounts[category] {
                 return count
@@ -1428,7 +1436,7 @@ final class MainWindowModel: ObservableObject {
         case .allPackages:
             source = catalogSourcePackages
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
-             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
+             .data, .languageRuntime, .media, .productivity, .science, .games, .toys, .other:
             if let category = section.categoryIdentifier {
                 source = categorySourcePackages(for: category)
             } else {
@@ -1467,7 +1475,7 @@ final class MainWindowModel: ObservableObject {
         case .outdated:
             return isOutdated(package)
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
-             .data, .languageRuntime, .media, .productivity, .science, .games, .other:
+             .data, .languageRuntime, .media, .productivity, .science, .games, .toys, .other:
             guard let category = section.categoryIdentifier else {
                 return false
             }
@@ -1964,6 +1972,7 @@ final class MainWindowModel: ObservableObject {
                  .productivity,
                  .science,
                  .games,
+                 .toys,
                  .other:
                 self = .catalog(
                     category: section.categoryIdentifier,

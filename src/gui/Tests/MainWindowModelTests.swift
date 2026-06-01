@@ -17,6 +17,8 @@ final class MainWindowModelTests: XCTestCase {
     func testCategorySectionsAreAlphabetizedByDisplayedTitleWithOtherLast() {
         let sections = MainWindowSection.categorySections
         XCTAssertEqual(sections.last, .other)
+        XCTAssertTrue(sections.contains(.toys))
+        XCTAssertEqual(MainWindowSection.toys.categoryIdentifier, "toys")
 
         let regularTitles = sections.dropLast().map(\.title)
         let sortedTitles = regularTitles.sorted {
@@ -95,15 +97,20 @@ final class MainWindowModelTests: XCTestCase {
                             category: "security"
                         ),
                         Self.packageSearchResult(
+                            name: "brew:toybox",
+                            category: "toys"
+                        ),
+                        Self.packageSearchResult(
                             name: "cask:codex",
                             category: nil
                         ),
                     ],
-                    totalCount: 4,
+                    totalCount: 5,
                     nextOffset: nil,
                     categoryCounts: [
                         "developer-tools": 2,
                         "security": 1,
+                        "toys": 1,
                         "other": 1,
                     ]
                 )
@@ -116,6 +123,7 @@ final class MainWindowModelTests: XCTestCase {
 
         XCTAssertEqual(model.count(for: .developerTools), 2)
         XCTAssertEqual(model.count(for: .security), 1)
+        XCTAssertEqual(model.count(for: .toys), 1)
         XCTAssertEqual(model.count(for: .other), 1)
         XCTAssertEqual(
             model.displayedPackages.map(\.selectionID),
@@ -126,6 +134,11 @@ final class MainWindowModelTests: XCTestCase {
         await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:sops"])
 
         XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["brew:sops"])
+
+        model.selectedSection = .toys
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:toybox"])
+
+        XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["brew:toybox"])
     }
 
     @MainActor

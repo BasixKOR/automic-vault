@@ -273,6 +273,7 @@
 "timer" = "Timer";
 "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools." = "Werkzeuge, die Agenten brauchen: Bildbearbeitung, Medienverarbeitung, Sprachlaufzeiten, Suche, Shell, Build, OCR und Dokumentkonvertierung.";
 "Touch ID and password authentication are unavailable." = "Touch ID- und Passwortauthentifizierung sind nicht verfuegbar.";
+"Toys" = "Spielzeug";
 "Undo" = "Rueckgaengig";
 "Uninstall" = "Deinstallieren";
 "Uninstall Complete" = "Deinstallation abgeschlossen";
