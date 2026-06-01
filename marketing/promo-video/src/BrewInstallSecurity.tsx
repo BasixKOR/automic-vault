@@ -1105,9 +1105,9 @@ const SecretInterlude: React.FC<{ local: number; duration: number }> = ({
   const badge = fade(local, 10, 24);
   const rule = fade(local, 28, 42);
   const words = [
-    { text: "Keep", italic: false },
-    { text: "Secrets", italic: false },
-    { text: "Secret", italic: true },
+    { text: "keep", italic: false },
+    { text: "secrets", italic: false },
+    { text: "secret", italic: true },
   ];
 
   return (
