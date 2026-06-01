@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 combined_path="${repo_root}/data/combined.json"
 radioisotopes_dir="${repo_root}/data/radioisotopes"
+av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
 cache_control="public, no-cache"
 color_mode="auto"
 isotope_args=()
@@ -15,8 +16,8 @@ usage() {
 Usage: scripts/update-db.sh [--skip-isotope-builds] [--once]
                             [--color auto|always|never] [--no-color]
 
-Refresh isotope metadata, rebuild the Homebrew package database, rebuild
-data/combined.json, and upload it as /db.json.
+Refresh isotope metadata, refresh the av.db Homebrew authority, rebuild the
+package database, rebuild data/combined.json, and upload it as /db.json.
 
 This script runs one update and exits. Use scripts/update-all for the
 hourly database loop and daily package-page deploy cadence.
@@ -223,6 +224,16 @@ pull_radioisotopes() {
   git -C "${radioisotopes_dir}" pull --ff-only
 }
 
+update_av_db_authority() {
+  if [[ ! -x "${av_db_root}/scripts/build.py" ]]; then
+    log WARN "av.db checkout not found at ${av_db_root}; build-db.py will use any existing authority cache or legacy fallback"
+    return 0
+  fi
+
+  "${av_db_root}/scripts/build.py" --refresh || return 1
+  export AV_DB_AUTHORITY_PATH="${AV_DB_AUTHORITY_PATH:-${av_db_root}/cache/automic-vault/db.json}"
+}
+
 update_once() {
   local started_at elapsed size_bytes had_best_effort_failure
 
@@ -236,6 +247,7 @@ update_once() {
     had_best_effort_failure=true
     log WARN "Continuing after isotope update failure; existing isotope metadata will be reused"
   fi
+  run_step "av.db authority update" update_av_db_authority || return 1
   run_step "Homebrew database update" \
     "${script_dir}/build-db.py" --refresh || return 1
   run_step "combined database build" \

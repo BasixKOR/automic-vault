@@ -309,6 +309,7 @@ class PackagePage:
     package_manager_url: str = ""
     repository: str = ""
     upstream_docs: str = ""
+    category: str = ""
     license: str = ""
     source_archive: str = ""
     last_verified: str = ""
@@ -711,6 +712,12 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
             page = get_page(provider, name)
             page.summary = clean_summary(info.get("summary") or page.summary)
             page.homepage = info.get("homepage") or page.homepage
+            page.repository = info.get("repository") or info.get("repo") or page.repository
+            docs = info.get("docs")
+            if not page.upstream_docs and isinstance(docs, list) and docs:
+                page.upstream_docs = str(docs[0])
+            page.upstream_docs = info.get("upstreamDocs") or page.upstream_docs
+            page.category = info.get("category") or page.category
             page.version = info.get("version") or page.version
             page.last_updated_at = info.get("last_updated_at") or page.last_updated_at
             page.pulse_kind = info.get("pulse_kind") or page.pulse_kind
@@ -1508,6 +1515,7 @@ def package_index_signals(page: PackagePage) -> list[str]:
         "package_manager_url",
         "repository",
         "upstream_docs",
+        "category",
         "source_archive",
         "issue_tracker",
         "published_at",
@@ -1624,6 +1632,7 @@ def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
         for value in (
             page.name,
             clean_summary(page.summary),
+            page.category,
             " ".join(page.aliases),
         )
     ).lower()

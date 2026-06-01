@@ -24,6 +24,18 @@ ECOSYSTEM = "brew.sh"
 NPM_ECOSYSTEM = "npmjs"
 DB_PATH = os.path.join("data", "db.json")
 SCHEMA_VERSION = 7
+AUTHORITY_DB_PATH = os.environ.get(
+    "AV_DB_AUTHORITY_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "av.db", "cache", "automic-vault", "db.json")),
+)
+AV_DB_FORMULAE_PATH = os.environ.get(
+    "AV_DB_FORMULAE_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "av.db", "cache", "brew", "formulae.json")),
+)
+AV_DB_CASKS_PATH = os.environ.get(
+    "AV_DB_CASKS_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "av.db", "cache", "brew", "casks.json")),
+)
 HOMEWBREW_CORE_REPO = "Homebrew/homebrew-core"
 HOMEWBREW_CASK_REPO = "Homebrew/homebrew-cask"
 META_KEY = "__pkgdb_meta__"
@@ -429,6 +441,15 @@ def _stable_version(stable):
     return None
 
 
+def _source_archive(formula):
+    urls = formula.get("urls") or {}
+    stable = urls.get("stable") if isinstance(urls, dict) else None
+    if not isinstance(stable, dict):
+        return ""
+    url = stable.get("url")
+    return url if isinstance(url, str) else ""
+
+
 def _manifest_url(formula):
     name = formula.get("name")
     versions = formula.get("versions", {})
@@ -523,15 +544,130 @@ def _parse_exec_paths(paths):
     return executables
 
 
+def _strip_repository_suffix(name):
+    for suffix in (".git", ".tar.gz", ".zip"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _github_project_url(value):
+    if not isinstance(value, str) or not value:
+        return ""
+    parsed = urllib.parse.urlparse(value)
+    if parsed.netloc.lower() != "github.com":
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2:
+        return ""
+    owner = parts[0]
+    repo = _strip_repository_suffix(parts[1])
+    if not owner or not repo:
+        return ""
+    return f"https://github.com/{owner}/{repo}"
+
+
+def _repository_from_formula(formula):
+    repo = _github_project_url(formula.get("repository"))
+    if repo:
+        return repo
+    urls = formula.get("urls")
+    if not isinstance(urls, dict):
+        return ""
+    for key in ("head", "stable"):
+        source = urls.get(key)
+        if isinstance(source, dict):
+            repo = _github_project_url(source.get("url"))
+            if repo:
+                return repo
+    return ""
+
+
 def _formula_metadata(formula):
     name = formula.get("name")
     if not name:
         return None
-    return {
+    homepage = formula.get("homepage") or ""
+    repo = _repository_from_formula(formula)
+    version = _stable_version((formula.get("versions") or {}).get("stable"))
+    source_archive = _source_archive(formula)
+    metadata = {
         "summary": formula.get("desc") or "",
+        "homepage": homepage if isinstance(homepage, str) else "",
+        "repository": repo if isinstance(repo, str) else "",
+        "version": version or "",
+        "sourceArchive": source_archive,
         "aliases": formula.get("aliases") or [],
         "oldnames": formula.get("oldnames") or [],
     }
+    return {key: value for key, value in metadata.items() if value or key == "summary"}
+
+
+def _formula_package_manager_metadata(formula):
+    version = _stable_version((formula.get("versions") or {}).get("stable"))
+    source_archive = _source_archive(formula)
+    metadata = {
+        "version": version or "",
+        "sourceArchive": source_archive,
+    }
+    return {key: value for key, value in metadata.items() if value}
+
+
+def _formulae_from_av_db_cache(path=None):
+    path = path or AV_DB_FORMULAE_PATH
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if isinstance(payload, dict):
+        formulae = payload.get("formulae")
+    else:
+        formulae = payload
+    return [formula for formula in formulae if isinstance(formula, dict)] if isinstance(formulae, list) else []
+
+
+def _overlay_formula_package_manager_metadata(formulas, formulae=None):
+    if formulae is None:
+        formulae = _formulae_from_av_db_cache()
+    by_name = {
+        formula.get("name"): formula
+        for formula in formulae
+        if isinstance(formula.get("name"), str) and formula.get("name")
+    }
+    result = {name: dict(metadata) for name, metadata in formulas.items()}
+    for name, metadata in result.items():
+        formula = by_name.get(name)
+        if not formula:
+            continue
+        metadata.update(_formula_package_manager_metadata(formula))
+    return result
+
+
+def _casks_from_av_db_cache(path=None):
+    path = path or AV_DB_CASKS_PATH
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    casks = payload.get("casks") if isinstance(payload, dict) else payload
+    return [cask for cask in casks if isinstance(cask, dict)] if isinstance(casks, list) else []
+
+
+def _overlay_cask_package_manager_metadata(casks, cask_payloads=None):
+    if cask_payloads is None:
+        cask_payloads = _casks_from_av_db_cache()
+    result = {token: dict(metadata) for token, metadata in casks.items()}
+    for cask in cask_payloads:
+        token = cask.get("token")
+        if not isinstance(token, str) or token not in result:
+            continue
+        metadata = _cask_metadata(cask)
+        if metadata is None:
+            continue
+        for key in ("url", "sha256", "version"):
+            if metadata.get(key):
+                result[token][key] = metadata[key]
+    return result
 
 
 def _cask_url(token):
@@ -1377,38 +1513,63 @@ def _merge_entries(*groups):
     return merged
 
 
-def main():
-    global FORCE_REFRESH, NPM_FULL_SCAN
-
-    _ensure_cwd()
-
-    for arg in sys.argv[1:]:
-        if arg == "--refresh":
-            FORCE_REFRESH = True
-        elif arg == "--npm-full-scan":
-            NPM_FULL_SCAN = True
-        elif arg in ("--help", "-h"):
-            print("Usage: scripts/build-db.py [--refresh] [--npm-full-scan]")
-            print()
-            print("Environment knobs:")
-            print("  NPM_TOKEN, NODE_AUTH_TOKEN, NPM_REGISTRY_TOKEN")
-            print("  NPM_REGISTRY_RPS, NPM_DOWNLOADS_RPS, NPM_MAX_RETRIES")
-            print("  NPM_RATE_LIMIT_BUDGET_SECONDS, NPM_MAX_WORKERS")
-            print("  NPM_CHANGE_REFRESH_LIMIT")
-            return
-        else:
-            print(f"Unknown argument: {arg}", file=sys.stderr)
-            print(
-                "Usage: scripts/build-db.py [--refresh] [--npm-full-scan]",
-                file=sys.stderr,
+def _validate_authority_db(db):
+    if not isinstance(db, dict):
+        raise ValueError("authority db must contain an object")
+    schema = db.get("schema")
+    if not isinstance(schema, int) or schema > SCHEMA_VERSION:
+        raise ValueError(
+            f"authority db schema {schema!r} is unsupported (maximum {SCHEMA_VERSION})"
+        )
+    entries = db.get("entries")
+    formulas = db.get("formulas")
+    casks = db.get("casks")
+    if not isinstance(entries, dict) or not entries:
+        raise ValueError("authority db must contain executable entries")
+    if not isinstance(formulas, dict) or not formulas:
+        raise ValueError("authority db must contain formula metadata")
+    if not isinstance(casks, dict) or not casks:
+        raise ValueError("authority db must contain supported cask metadata")
+    for executable, provider in entries.items():
+        if not isinstance(executable, str) or not isinstance(provider, str):
+            raise ValueError("authority db entries must map strings to strings")
+        if provider.startswith("cask:") and provider[len("cask:") :] not in casks:
+            raise ValueError(
+                f"authority db entry {executable!r} points at missing cask {provider!r}"
             )
-            sys.exit(2)
+        if not provider.startswith(("cask:", "npm:")) and provider not in formulas:
+            raise ValueError(
+                f"authority db entry {executable!r} points at missing formula {provider!r}"
+            )
 
-    os.makedirs(os.path.join(CACHE_DIR, ECOSYSTEM), exist_ok=True)
-    os.makedirs(os.path.join(CACHE_DIR, NPM_ECOSYSTEM), exist_ok=True)
 
-    github_token = _github_token()
+def _load_authority_db(path=None):
+    if path is None:
+        path = AUTHORITY_DB_PATH
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as handle:
+        db = json.load(handle)
+    _validate_authority_db(db)
+    return db
 
+
+def _collect_homebrew_authority_from_av_db(path=None):
+    if path is None:
+        path = AUTHORITY_DB_PATH
+    db = _load_authority_db(path)
+    if db is None:
+        return None
+    print(f"Using Homebrew authority from {path}", file=sys.stderr)
+    return (
+        dict(sorted(db["entries"].items())),
+        dict(sorted(db["formulas"].items())),
+        dict(sorted(db["casks"].items())),
+        0,
+    )
+
+
+def _collect_homebrew_authority_legacy(github_token):
     formulae = _fetch_json(FORMULA_URL, github_token)
     if not isinstance(formulae, list):
         print("Formula list was not a list.", file=sys.stderr)
@@ -1532,12 +1693,56 @@ def main():
             file=sys.stderr,
         )
         sys.exit(2)
+    return (
+        _sorted_entries(_merge_entries(formula_entries, cask_entries)),
+        formulas,
+        cask_metadata,
+        missing_manifests,
+    )
+
+
+def main():
+    global FORCE_REFRESH, NPM_FULL_SCAN
+
+    _ensure_cwd()
+
+    for arg in sys.argv[1:]:
+        if arg == "--refresh":
+            FORCE_REFRESH = True
+        elif arg == "--npm-full-scan":
+            NPM_FULL_SCAN = True
+        elif arg in ("--help", "-h"):
+            print("Usage: scripts/build-db.py [--refresh] [--npm-full-scan]")
+            print()
+            print("Environment knobs:")
+            print("  NPM_TOKEN, NODE_AUTH_TOKEN, NPM_REGISTRY_TOKEN")
+            print("  NPM_REGISTRY_RPS, NPM_DOWNLOADS_RPS, NPM_MAX_RETRIES")
+            print("  NPM_RATE_LIMIT_BUDGET_SECONDS, NPM_MAX_WORKERS")
+            print("  NPM_CHANGE_REFRESH_LIMIT")
+            print("  AV_DB_AUTHORITY_PATH")
+            return
+        else:
+            print(f"Unknown argument: {arg}", file=sys.stderr)
+            print(
+                "Usage: scripts/build-db.py [--refresh] [--npm-full-scan]",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    os.makedirs(os.path.join(CACHE_DIR, ECOSYSTEM), exist_ok=True)
+    os.makedirs(os.path.join(CACHE_DIR, NPM_ECOSYSTEM), exist_ok=True)
+
+    homebrew_authority = _collect_homebrew_authority_from_av_db()
+    if homebrew_authority is None:
+        homebrew_authority = _collect_homebrew_authority_legacy(_github_token())
+    ordered_entries, formulas, cask_metadata, missing_manifests = homebrew_authority
+    formulas = _overlay_formula_package_manager_metadata(formulas)
+    cask_metadata = _overlay_cask_package_manager_metadata(cask_metadata)
     try:
         npm_metadata = _collect_npm_metadata()
     except NpmFetchError as err:
         print(f"Failed to collect npm metadata: {err}", file=sys.stderr)
         sys.exit(2)
-    ordered_entries = _sorted_entries(_merge_entries(formula_entries, cask_entries))
     ordered_entries = _apply_npm_entries(ordered_entries, npm_metadata)
 
     db = {

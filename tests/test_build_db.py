@@ -415,5 +415,208 @@ class NpmIndexTests(unittest.TestCase):
         self.assertTrue(has_more)
 
 
+class AvDbAuthorityTests(unittest.TestCase):
+    def test_formula_metadata_adds_optional_upstream_fields_without_schema_bump(self):
+        build_db = load_build_db()
+
+        metadata = build_db._formula_metadata(
+            {
+                "name": "awscli",
+                "desc": "AWS CLI",
+                "homepage": "https://aws.amazon.com/cli/",
+                "versions": {"stable": "2.34.54"},
+                "urls": {
+                    "stable": {
+                        "url": "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz",
+                    }
+                },
+                "aliases": ["awscli@2"],
+                "oldnames": [],
+            }
+        )
+
+        self.assertEqual(build_db.SCHEMA_VERSION, 7)
+        self.assertEqual(
+            metadata,
+            {
+                "summary": "AWS CLI",
+                "homepage": "https://aws.amazon.com/cli/",
+                "repository": "https://github.com/aws/aws-cli",
+                "version": "2.34.54",
+                "sourceArchive": "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz",
+                "aliases": ["awscli@2"],
+            },
+        )
+        self.assertNotIn("repo", metadata)
+
+    def test_package_manager_overlay_adds_volatile_formula_fields(self):
+        build_db = load_build_db()
+
+        formulas = {"awscli": {"summary": "AWS CLI", "repository": "https://github.com/aws/aws-cli"}}
+        result = build_db._overlay_formula_package_manager_metadata(
+            formulas,
+            [
+                {
+                    "name": "awscli",
+                    "versions": {"stable": "2.34.54"},
+                    "urls": {"stable": {"url": "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz"}},
+                }
+            ],
+        )
+
+        self.assertEqual(result["awscli"]["summary"], "AWS CLI")
+        self.assertEqual(result["awscli"]["version"], "2.34.54")
+        self.assertEqual(result["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
+
+    def test_collect_homebrew_authority_from_av_db_validates_and_returns_db_sections(self):
+        build_db = load_build_db()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "db.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "schema": build_db.SCHEMA_VERSION,
+                        "generated_at": "2026-06-01T00:00:00+00:00",
+                        "entries": {"aws": "awscli", "op": "cask:1password-cli"},
+                        "formulas": {
+                            "awscli": {
+                                "summary": "AWS CLI",
+                                "homepage": "https://aws.amazon.com/cli/",
+                                "repository": "https://github.com/aws/aws-cli",
+                                "docs": ["https://docs.aws.amazon.com/cli/latest/userguide"],
+                                "category": "cloud-infrastructure",
+                            }
+                        },
+                        "casks": {"1password-cli": {"binaries": [{"source": "op", "target": "op"}]}},
+                        "npms": {},
+                    },
+                    handle,
+                )
+
+            entries, formulas, casks, missing_manifests = build_db._collect_homebrew_authority_from_av_db(path)
+
+        self.assertEqual(entries["aws"], "awscli")
+        self.assertEqual(entries["op"], "cask:1password-cli")
+        self.assertEqual(formulas["awscli"]["summary"], "AWS CLI")
+        self.assertEqual(formulas["awscli"]["homepage"], "https://aws.amazon.com/cli/")
+        self.assertEqual(formulas["awscli"]["repository"], "https://github.com/aws/aws-cli")
+        self.assertNotIn("repo", formulas["awscli"])
+        self.assertEqual(formulas["awscli"]["docs"], ["https://docs.aws.amazon.com/cli/latest/userguide"])
+        self.assertEqual(formulas["awscli"]["category"], "cloud-infrastructure")
+        self.assertIn("1password-cli", casks)
+        self.assertEqual(missing_manifests, 0)
+
+    def test_main_uses_av_db_authority_and_overlays_npm_entries(self):
+        build_db = load_build_db()
+        with tempfile.TemporaryDirectory() as tmp:
+            authority_path = os.path.join(tmp, "authority.json")
+            formulae_path = os.path.join(tmp, "formulae.json")
+            casks_path = os.path.join(tmp, "casks.json")
+            output_path = os.path.join(tmp, "db.json")
+            with open(authority_path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "schema": build_db.SCHEMA_VERSION,
+                        "generated_at": "2026-06-01T00:00:00+00:00",
+                        "entries": {"aws": "awscli"},
+                        "formulas": {
+                            "awscli": {
+                                "summary": "AWS CLI",
+                                "homepage": "https://aws.amazon.com/cli/",
+                                "repository": "https://github.com/aws/aws-cli",
+                                "docs": ["https://docs.aws.amazon.com/cli/latest/userguide"],
+                                "category": "cloud-infrastructure",
+                            }
+                        },
+                        "casks": {"1password-cli": {"binaries": [{"source": "op", "target": "op"}]}},
+                        "npms": {},
+                    },
+                    handle,
+                )
+            with open(formulae_path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "schema": 1,
+                        "formulae": [
+                            {
+                                "name": "awscli",
+                                "versions": {"stable": "2.34.54"},
+                                "urls": {"stable": {"url": "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz"}},
+                            }
+                        ],
+                    },
+                    handle,
+                )
+            with open(casks_path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "schema": 1,
+                        "casks": [
+                            {
+                                "token": "1password-cli",
+                                "desc": "1Password CLI",
+                                "homepage": "https://developer.1password.com/docs/cli",
+                                "old_tokens": [],
+                                "url": "https://example.com/op.zip",
+                                "sha256": "abc123",
+                                "version": "2.0.0",
+                                "depends_on": {"formula": []},
+                                "artifacts": [{"binary": "op"}],
+                            }
+                        ],
+                    },
+                    handle,
+                )
+
+            npm_metadata = {
+                "eslint": {
+                    "executable": "eslint",
+                    "popularity": {"downloads_per_30_days": 100000},
+                }
+            }
+
+            with (
+                mock.patch.object(build_db, "AUTHORITY_DB_PATH", authority_path),
+                mock.patch.object(build_db, "AV_DB_FORMULAE_PATH", formulae_path),
+                mock.patch.object(build_db, "AV_DB_CASKS_PATH", casks_path),
+                mock.patch.object(build_db, "DB_PATH", output_path),
+                mock.patch.object(build_db, "_ensure_cwd"),
+                mock.patch.object(build_db, "_fetch_json", side_effect=AssertionError("legacy Homebrew fetch should not run")),
+                mock.patch.object(build_db, "_collect_npm_metadata", return_value=npm_metadata),
+                mock.patch.object(build_db.sys, "argv", ["build-db.py"]),
+            ):
+                build_db.main()
+
+            with open(output_path, "r", encoding="utf-8") as handle:
+                db = json.load(handle)
+
+        self.assertEqual(db["entries"]["aws"], "awscli")
+        self.assertEqual(db["entries"]["eslint"], "npm:eslint")
+        self.assertEqual(db["formulas"]["awscli"]["summary"], "AWS CLI")
+        self.assertEqual(db["formulas"]["awscli"]["homepage"], "https://aws.amazon.com/cli/")
+        self.assertEqual(db["formulas"]["awscli"]["repository"], "https://github.com/aws/aws-cli")
+        self.assertNotIn("repo", db["formulas"]["awscli"])
+        self.assertEqual(db["formulas"]["awscli"]["version"], "2.34.54")
+        self.assertEqual(db["formulas"]["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
+        self.assertEqual(db["formulas"]["awscli"]["docs"], ["https://docs.aws.amazon.com/cli/latest/userguide"])
+        self.assertEqual(db["formulas"]["awscli"]["category"], "cloud-infrastructure")
+        self.assertEqual(db["casks"]["1password-cli"]["url"], "https://example.com/op.zip")
+        self.assertEqual(db["casks"]["1password-cli"]["sha256"], "abc123")
+        self.assertEqual(db["casks"]["1password-cli"]["version"], "2.0.0")
+        self.assertEqual(db["npms"], npm_metadata)
+
+    def test_authority_db_rejects_dangling_cask_entries(self):
+        build_db = load_build_db()
+        with self.assertRaisesRegex(ValueError, "missing cask"):
+            build_db._validate_authority_db(
+                {
+                    "schema": build_db.SCHEMA_VERSION,
+                    "entries": {"op": "cask:1password-cli"},
+                    "formulas": {"awscli": {"summary": "AWS CLI"}},
+                    "casks": {"other-cli": {}},
+                }
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

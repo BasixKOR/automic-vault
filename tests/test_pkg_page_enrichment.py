@@ -334,7 +334,13 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             "db": {
                 "formulas": {
                     "abseil": {"summary": "Metadata-only library."},
-                    "ripgrep": {"summary": "Search tool."},
+                    "ripgrep": {
+                        "summary": "Search tool.",
+                        "homepage": "https://github.com/BurntSushi/ripgrep",
+                        "repository": "https://github.com/BurntSushi/ripgrep",
+                        "docs": ["https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md"],
+                        "category": "search",
+                    },
                 },
                 "casks": {
                     "iterm2": {
@@ -361,6 +367,10 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         pages = module.package_pages_from_sources(sources)
 
         self.assertIn("brew:ripgrep", pages)
+        self.assertEqual(pages["brew:ripgrep"].homepage, "https://github.com/BurntSushi/ripgrep")
+        self.assertEqual(pages["brew:ripgrep"].repository, "https://github.com/BurntSushi/ripgrep")
+        self.assertEqual(pages["brew:ripgrep"].upstream_docs, "https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md")
+        self.assertEqual(pages["brew:ripgrep"].category, "search")
         self.assertIn("cask:iterm2", pages)
         self.assertIn("npm:eslint", pages)
         self.assertNotIn("brew:abseil", pages)
