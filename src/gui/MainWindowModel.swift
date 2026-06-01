@@ -31,11 +31,6 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         .outdated
     ]
 
-    static let ecosystemSections: [MainWindowSection] = [
-        .newUpdated,
-        .allPackages
-    ]
-
     private static let unsortedCategorySections: [MainWindowSection] = [
         .developerTools,
         .cloudInfrastructure,
@@ -66,6 +61,11 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return comparison == .orderedAscending
         }
     }
+
+    static let categoryShortcutSections: [MainWindowSection] = [
+        .newUpdated,
+        .allPackages
+    ]
 
     static let utilitySections: [MainWindowSection] = [
         .settings,

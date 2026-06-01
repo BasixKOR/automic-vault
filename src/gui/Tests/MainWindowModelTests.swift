@@ -3,13 +3,13 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class MainWindowModelTests: XCTestCase {
-    func testSidebarGroupsMoveCatalogSectionsIntoEcosystem() {
+    func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,
             [.installed, .geigerCounter, .outdated]
         )
         XCTAssertEqual(
-            MainWindowSection.ecosystemSections,
+            MainWindowSection.categoryShortcutSections,
             [.newUpdated, .allPackages]
         )
     }

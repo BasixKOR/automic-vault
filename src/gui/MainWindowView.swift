@@ -92,17 +92,14 @@ struct MainWindowView: View {
                 sidebarRow(section)
             }
 
-            sidebarHeader(L10n.string("ECOSYSTEM"))
-                .padding(.top, 22)
-                .kerning(1.2)
-            ForEach(MainWindowSection.ecosystemSections) { section in
-                sidebarRow(section)
-            }
-
             sidebarHeader(L10n.string("CATEGORIES"))
                 .padding(.top, 22)
                 .kerning(1.2)
             ForEach(MainWindowSection.categorySections) { section in
+                sidebarRow(section)
+            }
+            sidebarDivider
+            ForEach(MainWindowSection.categoryShortcutSections) { section in
                 sidebarRow(section)
             }
 
@@ -130,6 +127,14 @@ struct MainWindowView: View {
             .foregroundStyle(AVGlassPalette.quietText)
             .tracking(0.5)
             .padding(.bottom, 6)
+    }
+
+    private var sidebarDivider: some View {
+        Rectangle()
+            .fill(AVGlassPalette.hairline)
+            .frame(height: 1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
     }
 
     private func sidebarRow(_ section: MainWindowSection) -> some View {
