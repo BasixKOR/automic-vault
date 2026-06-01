@@ -232,12 +232,14 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const frame = useCurrentFrame();
   const local = frame;
   const entrance = fade(local, 0, 16);
-  const exit = fadeOut(local, notificationDuration - 20, notificationDuration - 6);
+  const exitStart = notificationDuration - 30;
+  const exitEnd = notificationDuration - 6;
+  const exit = fadeOut(local, exitStart, exitEnd);
   const opacity = entrance * exit;
-  const y = softY(local, 0, 24, 34) + softY(local, notificationDuration - 30, notificationDuration - 6, 0, -22);
+  const y = softY(local, 0, 24, 34) + softY(local, exitStart, exitEnd, 0, -22);
   const blur = Math.max(
     softBlur(local, 0, 24, 14),
-    interpolate(local, [notificationDuration - 30, notificationDuration - 6], [0, 10], clamp),
+    interpolate(local, [exitStart, exitEnd], [0, 10], clamp),
   );
   const titleStart = 26;
   const subtitleStart = 52;
