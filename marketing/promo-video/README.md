@@ -1,9 +1,13 @@
 # Automic Vault Product Promo Video
 
-Remotion source for the Automic Vault product promo video.
+Remotion source for the Automic Vault product promo videos.
 
-The composition is `AutomicVaultPromo` at 1920x1080 and 30 fps. The rendered
-output is ignored under `out/`.
+The compositions are 1920x1080 at 30 fps. Rendered output is ignored under
+`out/`.
+
+- `AutomicVaultPromo`
+- `AutomicVaultSkillSecrets`
+- `AutomicVaultBrewInstallSecurity`
 
 ## Commands
 
@@ -12,6 +16,7 @@ npm i
 npm run dev
 npm run lint
 npm run render
+npm run render:brew-install-security
 ```
 
 Useful still checks:
@@ -20,4 +25,7 @@ Useful still checks:
 npm run still -- out/stills/frame-14s.jpg --frame=421 --scale=0.25
 npm run still -- out/stills/frame-24s.jpg --frame=720 --scale=0.25
 npm run still -- out/stills/frame-33s.jpg --frame=990 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-1.jpg --frame=38 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-2.jpg --frame=410 --scale=0.25
+npm run still:brew-install-security -- out/stills/brew-act-3.jpg --frame=540 --scale=0.25
 ```
