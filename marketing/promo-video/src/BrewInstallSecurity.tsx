@@ -4,10 +4,8 @@ import {
   Img,
   Sequence,
   interpolate,
-  spring,
   staticFile,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
 
 const fps = 30;
@@ -52,6 +50,18 @@ const fadeOut = (frame: number, start: number, end: number) =>
   interpolate(frame, [start, end], [1, 0], {
     ...clamp,
     easing: Easing.bezier(0.7, 0, 0.84, 0),
+  });
+
+const softY = (frame: number, start: number, end: number, from: number, to = 0) =>
+  interpolate(frame, [start, end], [from, to], {
+    ...clamp,
+    easing: easeOut,
+  });
+
+const softBlur = (frame: number, start: number, end: number, from: number) =>
+  interpolate(frame, [start, end], [from, 0], {
+    ...clamp,
+    easing: easeOut,
   });
 
 type Notification = {
@@ -184,7 +194,7 @@ const ToolMist: React.FC<{ visibleFrom: number; visibleTo: number }> = ({ visibl
               fontSize: 24,
               fontWeight: 760,
               letterSpacing: 0,
-              transform: `translateY(${Math.sin((frame + index * 19) / 34) * 10 + drift * 0.22}px)`,
+              transform: `translateY(${drift * 0.18}px)`,
               backdropFilter: "blur(20px)",
               WebkitBackdropFilter: "blur(20px)",
             }}
@@ -229,10 +239,11 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const entrance = fade(local, 0, 16);
   const exit = fadeOut(local, notificationDuration - 20, notificationDuration - 6);
   const opacity = entrance * exit;
-  const y = interpolate(local, [0, 18], [46, 0], {
-    ...clamp,
-    easing: easeOut,
-  });
+  const y = softY(local, 0, 24, 34) + softY(local, notificationDuration - 30, notificationDuration - 6, 0, -22);
+  const blur = Math.max(
+    softBlur(local, 0, 24, 14),
+    interpolate(local, [notificationDuration - 30, notificationDuration - 6], [0, 10], clamp),
+  );
   const titleOpacity = fade(local, 18, 34);
   const subOpacity = fade(local, 32, 48);
 
@@ -251,6 +262,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
             "0 50px 120px rgba(17,24,39,0.18), 0 18px 40px rgba(17,24,39,0.08), inset 0 1px 0 rgba(255,255,255,0.92), inset 0 -1px 0 rgba(255,255,255,0.34)",
           overflow: "hidden",
           transform: `translateY(${y}px)`,
+          filter: `blur(${blur}px)`,
           backdropFilter: "blur(34px) saturate(1.32)",
           WebkitBackdropFilter: "blur(34px) saturate(1.32)",
         }}
@@ -363,13 +375,9 @@ const ActTwoWord: React.FC<{
   delay: number;
   accent?: string;
 }> = ({ children, local, delay, accent = ink }) => {
-  const { fps: configFps } = useVideoConfig();
-  const pop = spring({
-    frame: local - delay,
-    fps: configFps,
-    config: { damping: 12, stiffness: 250, mass: 0.64 },
-  });
-  const opacity = fade(local, delay, delay + 12);
+  const opacity = fade(local, delay, delay + 18);
+  const y = softY(local, delay, delay + 18, 18);
+  const blur = softBlur(local, delay, delay + 18, 8);
 
   return (
     <span
@@ -377,7 +385,8 @@ const ActTwoWord: React.FC<{
         display: "inline-block",
         color: accent,
         opacity,
-        transform: `translateY(${interpolate(pop, [0, 1], [44, 0], clamp)}px) scale(${interpolate(pop, [0, 1], [0.9, 1], clamp)})`,
+        filter: `blur(${blur}px)`,
+        transform: `translateY(${y}px)`,
         whiteSpace: "nowrap",
       }}
     >
@@ -392,11 +401,9 @@ const BrewInstallScene: React.FC = () => {
   const exit = fadeOut(local, actTwoDuration - 18, actTwoDuration);
   const marker = fade(local, 92, 118);
   const installProgress = fade(local, 74, 88);
-  const commandPop = spring({
-    frame: local - 60,
-    fps,
-    config: { damping: 12, stiffness: 220, mass: 0.72 },
-  });
+  const commandOpacity = fade(local, 58, 76);
+  const commandY = softY(local, 58, 76, 22);
+  const commandBlur = softBlur(local, 58, 76, 10);
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: exit }}>
@@ -460,13 +467,9 @@ const BrewInstallScene: React.FC = () => {
               fontWeight: 820,
               lineHeight: 1,
               letterSpacing: 0,
-              opacity: fade(local, 58, 72),
-              transform: `translateY(${interpolate(commandPop, [0, 1], [36, 0], clamp)}) scale(${interpolate(
-                commandPop,
-                [0, 1],
-                [0.86, 1],
-                clamp,
-              )})`,
+              opacity: commandOpacity,
+              filter: `blur(${commandBlur}px)`,
+              transform: `translateY(${commandY}px)`,
               overflow: "hidden",
               whiteSpace: "nowrap",
             }}
@@ -502,15 +505,13 @@ const BrewInstallScene: React.FC = () => {
 const ClosingScene: React.FC = () => {
   const frame = useCurrentFrame();
   const local = frame;
-  const { fps: configFps } = useVideoConfig();
-  const logoPop = spring({
-    frame: local - 28,
-    fps: configFps,
-    config: { damping: 14, stiffness: 200, mass: 0.8 },
-  });
   const eyebrow = fade(local, 8, 30);
   const logo = fade(local, 28, 52);
   const url = fade(local, 76, 100);
+  const logoY = softY(local, 28, 52, 24);
+  const logoBlur = softBlur(local, 28, 52, 10);
+  const urlY = softY(local, 76, 100, 18);
+  const urlBlur = softBlur(local, 76, 100, 8);
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
@@ -525,7 +526,8 @@ const ClosingScene: React.FC = () => {
           letterSpacing: "0.12em",
           textTransform: "uppercase",
           opacity: eyebrow,
-          transform: `translateY(${interpolate(eyebrow, [0, 1], [18, 0], clamp)}px)`,
+          filter: `blur(${softBlur(local, 8, 30, 7)}px)`,
+          transform: `translateY(${softY(local, 8, 30, 18)}px)`,
         }}
       >
         From the creator of Homebrew
@@ -538,8 +540,8 @@ const ClosingScene: React.FC = () => {
           alignItems: "center",
           gap: 42,
           opacity: logo,
-          transform: `scale(${interpolate(logoPop, [0, 1], [0.82, 1], clamp)})`,
-          filter: "drop-shadow(0 34px 62px rgba(17,24,39,0.18))",
+          filter: `blur(${logoBlur}px) drop-shadow(0 34px 62px rgba(17,24,39,0.18))`,
+          transform: `translateY(${logoY}px)`,
         }}
       >
         <Img
@@ -604,7 +606,8 @@ const ClosingScene: React.FC = () => {
           fontWeight: 760,
           letterSpacing: 0,
           opacity: url,
-          transform: `translateY(${interpolate(url, [0, 1], [26, 0], clamp)})`,
+          filter: `blur(${urlBlur}px)`,
+          transform: `translateY(${urlY}px)`,
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
         }}
