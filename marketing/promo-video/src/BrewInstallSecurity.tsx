@@ -191,6 +191,43 @@ const CodePill: React.FC<{ tool: string; accent: string; large?: boolean }> = ({
   </span>
 );
 
+const revealStyle = (frame: number, start: number, duration = 16, y = 14, blur = 7) => ({
+  opacity: fade(frame, start, start + duration),
+  filter: `blur(${softBlur(frame, start, start + duration, blur)}px)`,
+  transform: `translateY(${softY(frame, start, start + duration, y)}px)`,
+});
+
+const RevealWords: React.FC<{
+  text: string;
+  local: number;
+  start: number;
+  stride?: number;
+  duration?: number;
+  y?: number;
+  blur?: number;
+  gap?: number;
+}> = ({ text, local, start, stride = 4, duration = 16, y = 14, blur = 7, gap = 10 }) => {
+  const words = text.split(" ");
+
+  return (
+    <>
+      {words.map((word, index) => (
+        <span
+          key={`${word}-${index}`}
+          style={{
+            display: "inline-block",
+            marginRight: index === words.length - 1 ? 0 : gap,
+            whiteSpace: "nowrap",
+            ...revealStyle(local, start + index * stride, duration, y, blur),
+          }}
+        >
+          {word}
+        </span>
+      ))}
+    </>
+  );
+};
+
 const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
   const frame = useCurrentFrame();
   const local = frame;
@@ -202,8 +239,12 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
     softBlur(local, 0, 24, 14),
     interpolate(local, [notificationDuration - 30, notificationDuration - 6], [0, 10], clamp),
   );
-  const titleOpacity = fade(local, 18, 34);
-  const subOpacity = fade(local, 32, 48);
+  const labelMotion = revealStyle(local, 14, 16, 9, 5);
+  const titleStart = 26;
+  const subtitleStart = 52;
+  const prefixWordCount = item.prefix.split(" ").length;
+  const toolStart = subtitleStart + prefixWordCount * 3 + 5;
+  const suffixStart = toolStart + 9;
 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity }}>
@@ -274,6 +315,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 fontWeight: 820,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
+                ...labelMotion,
               }}
             >
               <span
@@ -285,7 +327,7 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                   boxShadow: `0 0 18px ${item.accent}`,
                 }}
               />
-              {item.label}
+              <RevealWords text={item.label} local={local} start={18} stride={2} duration={12} y={5} blur={4} gap={6} />
             </div>
             <div
               style={{
@@ -296,10 +338,10 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 letterSpacing: 0,
                 lineHeight: 1.02,
                 marginTop: 24,
-                opacity: titleOpacity,
+                overflow: "hidden",
               }}
             >
-              {item.title}
+              <RevealWords text={item.title} local={local} start={titleStart} stride={4} duration={16} y={20} blur={8} gap={14} />
             </div>
             <div
               style={{
@@ -313,12 +355,23 @@ const NotificationScene: React.FC<{ item: Notification }> = ({ item }) => {
                 letterSpacing: 0,
                 lineHeight: 1.25,
                 marginTop: 18,
-                opacity: subOpacity,
+                overflow: "hidden",
               }}
             >
-              <span>{item.prefix}</span>
-              <CodePill tool={item.tool} accent={item.accent} />
-              {item.suffix ? <span style={{ marginLeft: 8 }}>{item.suffix}</span> : null}
+              <RevealWords text={item.prefix} local={local} start={subtitleStart} stride={3} duration={14} y={12} blur={6} gap={8} />
+              <span
+                style={{
+                  display: "inline-flex",
+                  ...revealStyle(local, toolStart, 14, 12, 6),
+                }}
+              >
+                <CodePill tool={item.tool} accent={item.accent} />
+              </span>
+              {item.suffix ? (
+                <span style={{ marginLeft: 8 }}>
+                  <RevealWords text={item.suffix} local={local} start={suffixStart} stride={3} duration={14} y={12} blur={6} gap={8} />
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
