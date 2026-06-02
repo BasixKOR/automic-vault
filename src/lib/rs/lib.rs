@@ -978,7 +978,7 @@ enum SecretScannerScope {
     IsotopesOnly,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 struct SecretScannerFinding {
     source: String,
     kind: String,
@@ -990,7 +990,7 @@ struct SecretScannerFinding {
     message: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 struct SecretScannerError {
     source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1007,10 +1007,10 @@ struct SecretScannerSummary {
     file_probes: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct SecretScanPaths {
-    paths: Vec<PathBuf>,
-    errors: Vec<SecretScannerError>,
+#[derive(Debug, Clone, Copy)]
+enum SecretScannerEvent<'a> {
+    Finding(&'a SecretScannerFinding),
+    Error(&'a SecretScannerError),
 }
 
 #[derive(Debug, Clone)]
@@ -3158,8 +3158,20 @@ fn package_security_state_for_isotope(isotope_name: &str) -> Option<PackageSecur
 }
 
 fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport, String> {
+    run_secret_scan_with_events(request, |_| Ok(()))
+}
+
+fn run_secret_scan_with_events<F>(
+    request: &SecretScannerRequest,
+    mut on_event: F,
+) -> Result<SecretScannerReport, String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
     let mut findings = Vec::new();
     let mut errors = Vec::new();
+    let mut seen_findings = HashSet::new();
+    let mut seen_errors = HashSet::new();
     let mut isotope_detectors = 0;
 
     for integration in isotope_integrations::INTEGRATIONS {
@@ -3188,44 +3200,46 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
 
         match result {
             Ok(reasons) => {
-                findings.extend(reasons.into_iter().map(|reason| SecretScannerFinding {
-                    source: format!("isotope:{}", integration.name),
-                    kind: "detector".to_string(),
-                    severity: "high".to_string(),
-                    path: None,
-                    line: None,
-                    message: reason,
-                }));
+                for reason in reasons {
+                    record_secret_scanner_finding(
+                        &mut findings,
+                        &mut seen_findings,
+                        SecretScannerFinding {
+                            source: format!("isotope:{}", integration.name),
+                            kind: "detector".to_string(),
+                            severity: "high".to_string(),
+                            path: None,
+                            line: None,
+                            message: reason,
+                        },
+                        &mut on_event,
+                    )?;
+                }
             }
-            Err(err) => errors.push(SecretScannerError {
-                source: format!("isotope:{}", integration.name),
-                path: None,
-                message: err,
-            }),
+            Err(err) => record_secret_scanner_error(
+                &mut errors,
+                &mut seen_errors,
+                SecretScannerError {
+                    source: format!("isotope:{}", integration.name),
+                    path: None,
+                    message: err,
+                },
+                &mut on_event,
+            )?,
         }
     }
 
     let mut scanned_files = 0;
     let mut file_probes = 0;
     if !request.isotopes_only {
-        let scan_paths = secret_scan_paths(request.path.as_deref())?;
-        errors.extend(scan_paths.errors);
-        file_probes = scan_paths.paths.len();
-        for path in scan_paths.paths {
-            match scan_secret_file(&path) {
-                Ok(file_findings) => {
-                    if path.is_file() {
-                        scanned_files += 1;
-                    }
-                    findings.extend(file_findings);
-                }
-                Err(err) => errors.push(SecretScannerError {
-                    source: "file-probe".to_string(),
-                    path: Some(path.display().to_string()),
-                    message: err,
-                }),
-            }
-        }
+        (scanned_files, file_probes) = scan_secret_file_probes(
+            request.path.as_deref(),
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut on_event,
+        )?;
     }
 
     findings.sort_by(|left, right| {
@@ -3262,258 +3276,360 @@ fn run_secret_scan(request: &SecretScannerRequest) -> Result<SecretScannerReport
     })
 }
 
-fn print_secret_scanner_report(report: &SecretScannerReport) {
-    if scanner_wrapper_ui_enabled() && scan_stdout_is_rich() {
-        print_wrapped_secret_scanner_report(report);
-        return;
+fn record_secret_scanner_finding<F>(
+    findings: &mut Vec<SecretScannerFinding>,
+    seen_findings: &mut HashSet<SecretScannerFinding>,
+    finding: SecretScannerFinding,
+    on_event: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
+    if seen_findings.insert(finding.clone()) {
+        on_event(SecretScannerEvent::Finding(&finding))?;
+        findings.push(finding);
+    }
+    Ok(())
+}
+
+fn record_secret_scanner_error<F>(
+    errors: &mut Vec<SecretScannerError>,
+    seen_errors: &mut HashSet<SecretScannerError>,
+    error: SecretScannerError,
+    on_event: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
+    if seen_errors.insert(error.clone()) {
+        on_event(SecretScannerEvent::Error(&error))?;
+        errors.push(error);
+    }
+    Ok(())
+}
+
+fn print_secret_scanner_report_streaming(request: &SecretScannerRequest) -> Result<(), String> {
+    let mut printer = SecretScannerStreamPrinter::new(request);
+    printer.begin()?;
+    let report = run_secret_scan_with_events(request, |event| printer.print_event(event))?;
+    printer.finish(&report)?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SecretScannerStreamFormat {
+    Plain,
+    Rich,
+    Wrapped,
+}
+
+struct SecretScannerStreamPrinter {
+    format: SecretScannerStreamFormat,
+    color: bool,
+    scope: SecretScannerScope,
+    finding_count: usize,
+    printed_findings_header: bool,
+    printed_warnings_header: bool,
+}
+
+impl SecretScannerStreamPrinter {
+    fn new(request: &SecretScannerRequest) -> Self {
+        let stdout_is_rich = scan_stdout_is_rich();
+        let format = if scanner_wrapper_ui_enabled() && stdout_is_rich {
+            SecretScannerStreamFormat::Wrapped
+        } else if stdout_is_rich {
+            SecretScannerStreamFormat::Rich
+        } else {
+            SecretScannerStreamFormat::Plain
+        };
+        Self {
+            format,
+            color: !matches!(format, SecretScannerStreamFormat::Plain)
+                && scan_stdout_supports_ansi(),
+            scope: if request.isotopes_only {
+                SecretScannerScope::IsotopesOnly
+            } else {
+                SecretScannerScope::Full
+            },
+            finding_count: 0,
+            printed_findings_header: false,
+            printed_warnings_header: false,
+        }
     }
 
-    if !scan_stdout_is_rich() {
-        print_plain_secret_scanner_report(report);
-        return;
+    fn begin(&mut self) -> Result<(), String> {
+        match self.format {
+            SecretScannerStreamFormat::Plain => {
+                println!("Automic Vault scan");
+                println!("Scope: {}", secret_scanner_scope_label(self.scope));
+            }
+            SecretScannerStreamFormat::Rich => {
+                let status = scan_paint(">", ScanStyle::Heading, self.color);
+                let scope = format!(
+                    "{}: {}",
+                    scan_paint("Scope", ScanStyle::Dim, self.color),
+                    secret_scanner_scope_label(self.scope)
+                );
+                print_scan_box(
+                    "Automic Vault Scan",
+                    &[
+                        format!("{status} Scanning plaintext credential exposure"),
+                        scope,
+                    ],
+                    self.color,
+                );
+            }
+            SecretScannerStreamFormat::Wrapped => {
+                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
+                println!("{rail}");
+                println!(
+                    "{rail} {} Scanning plaintext credential exposure",
+                    scan_paint(">", ScanStyle::Heading, self.color)
+                );
+                println!(
+                    "{rail}   {}     {}",
+                    scan_paint("Scope", ScanStyle::Dim, self.color),
+                    secret_scanner_scope_label(self.scope)
+                );
+            }
+        }
+        flush_secret_scanner_stdout()
     }
 
-    print_rich_secret_scanner_report(report);
+    fn print_event(&mut self, event: SecretScannerEvent<'_>) -> Result<(), String> {
+        match event {
+            SecretScannerEvent::Finding(finding) => self.print_finding(finding),
+            SecretScannerEvent::Error(error) => self.print_error(error),
+        }
+    }
+
+    fn print_finding(&mut self, finding: &SecretScannerFinding) -> Result<(), String> {
+        self.finding_count += 1;
+        match self.format {
+            SecretScannerStreamFormat::Plain => {
+                if !self.printed_findings_header {
+                    println!();
+                    println!("Findings:");
+                    self.printed_findings_header = true;
+                }
+                println!(
+                    "{}. {} {} - {}",
+                    self.finding_count, finding.severity, finding.source, finding.message
+                );
+                if let Some(location) = secret_scanner_finding_location(finding) {
+                    println!("   {location}");
+                }
+            }
+            SecretScannerStreamFormat::Rich => {
+                if !self.printed_findings_header {
+                    println!();
+                    println!("{}", scan_paint("Findings", ScanStyle::Heading, self.color));
+                    self.printed_findings_header = true;
+                }
+                let severity =
+                    scan_paint(&finding.severity, scan_severity_style(finding), self.color);
+                println!(
+                    "  {}. {} {}",
+                    self.finding_count,
+                    severity,
+                    scan_paint(&finding.source, ScanStyle::Dim, self.color)
+                );
+                if let Some(location) = secret_scanner_finding_location(finding) {
+                    println!(
+                        "     {}",
+                        scan_paint(&location, ScanStyle::Path, self.color)
+                    );
+                }
+                println!("     {}", finding.message);
+            }
+            SecretScannerStreamFormat::Wrapped => {
+                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
+                if !self.printed_findings_header {
+                    println!("{rail}");
+                    println!(
+                        "{rail} {}",
+                        scan_paint("Findings", ScanStyle::Heading, self.color)
+                    );
+                    self.printed_findings_header = true;
+                }
+                let severity =
+                    scan_paint(&finding.severity, scan_severity_style(finding), self.color);
+                println!(
+                    "{rail}   {}. {} {}",
+                    self.finding_count,
+                    severity,
+                    scan_paint(&finding.source, ScanStyle::Dim, self.color)
+                );
+                if let Some(location) = secret_scanner_finding_location(finding) {
+                    println!(
+                        "{rail}      {}",
+                        scan_paint(&location, ScanStyle::Path, self.color)
+                    );
+                }
+                println!("{rail}      {}", finding.message);
+            }
+        }
+        flush_secret_scanner_stdout()
+    }
+
+    fn print_error(&mut self, error: &SecretScannerError) -> Result<(), String> {
+        match self.format {
+            SecretScannerStreamFormat::Plain => {
+                if !self.printed_warnings_header {
+                    eprintln!();
+                    eprintln!("Warnings");
+                    self.printed_warnings_header = true;
+                }
+                print_secret_scanner_warning_line(error, false);
+                flush_secret_scanner_stderr()
+            }
+            SecretScannerStreamFormat::Rich => {
+                if !self.printed_warnings_header {
+                    eprintln!();
+                    eprintln!("{}", scan_paint("Warnings", ScanStyle::Warning, self.color));
+                    self.printed_warnings_header = true;
+                }
+                print_secret_scanner_warning_line(error, self.color);
+                flush_secret_scanner_stderr()
+            }
+            SecretScannerStreamFormat::Wrapped => {
+                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
+                if !self.printed_warnings_header {
+                    println!("{rail}");
+                    println!(
+                        "{rail} {}",
+                        scan_paint("Warnings", ScanStyle::Warning, self.color)
+                    );
+                    self.printed_warnings_header = true;
+                }
+                print_wrapped_secret_scanner_warning_line(error, self.color);
+                flush_secret_scanner_stdout()
+            }
+        }
+    }
+
+    fn finish(&mut self, report: &SecretScannerReport) -> Result<(), String> {
+        match self.format {
+            SecretScannerStreamFormat::Plain => {
+                if report.findings.is_empty() {
+                    println!("No plaintext secret exposure detected.");
+                }
+                println!(
+                    "Summary: {}, {}, {}, {}.",
+                    pluralize(report.summary.findings, "finding", "findings"),
+                    pluralize(report.summary.errors, "warning", "warnings"),
+                    pluralize(
+                        report.summary.isotope_detectors,
+                        "isotope detector",
+                        "isotope detectors"
+                    ),
+                    secret_scanner_file_probe_summary(report)
+                );
+            }
+            SecretScannerStreamFormat::Rich => {
+                println!();
+                if report.findings.is_empty() {
+                    println!(
+                        "{} No plaintext secret exposure detected",
+                        scan_paint("✓", ScanStyle::Success, self.color)
+                    );
+                }
+                println!("{}", scan_paint("Summary", ScanStyle::Heading, self.color));
+                println!(
+                    "  {} · {} · {} · {}",
+                    pluralize(report.summary.findings, "finding", "findings"),
+                    pluralize(report.summary.errors, "warning", "warnings"),
+                    pluralize(
+                        report.summary.isotope_detectors,
+                        "isotope detector",
+                        "isotope detectors"
+                    ),
+                    secret_scanner_file_probe_summary(report)
+                );
+            }
+            SecretScannerStreamFormat::Wrapped => {
+                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
+                if report.findings.is_empty() {
+                    println!("{rail}");
+                    println!(
+                        "{rail} {} No plaintext secret exposure detected",
+                        scan_paint("✓", ScanStyle::Success, self.color)
+                    );
+                }
+                println!("{rail}");
+                println!(
+                    "{rail}   {}   {}",
+                    scan_paint("Checked", ScanStyle::Dim, self.color),
+                    pluralize(
+                        report.summary.isotope_detectors,
+                        "isotope detector",
+                        "isotope detectors"
+                    )
+                );
+                println!(
+                    "{rail}   {}     {}",
+                    scan_paint("Files", ScanStyle::Dim, self.color),
+                    secret_scanner_file_probe_summary(report)
+                );
+                println!(
+                    "{rail}   {}  {}",
+                    scan_paint("Warnings", ScanStyle::Dim, self.color),
+                    pluralize(report.summary.errors, "warning", "warnings")
+                );
+            }
+        }
+        flush_secret_scanner_stdout()
+    }
+}
+
+fn flush_secret_scanner_stdout() -> Result<(), String> {
+    std::io::stdout()
+        .flush()
+        .map_err(|err| format!("failed to flush scan output: {err}"))
+}
+
+fn flush_secret_scanner_stderr() -> Result<(), String> {
+    std::io::stderr()
+        .flush()
+        .map_err(|err| format!("failed to flush scan warnings: {err}"))
 }
 
 fn scanner_wrapper_ui_enabled() -> bool {
     env::var(SCANNER_WRAPPER_UI_ENV).is_ok_and(|value| !value.is_empty() && value != "0")
 }
 
-fn print_plain_secret_scanner_report(report: &SecretScannerReport) {
-    println!("Automic Vault scan");
-    println!("Scope: {}", secret_scanner_scope_label(report.scope));
-    if report.findings.is_empty() {
-        println!("No plaintext secret exposure detected.");
-    } else {
-        println!(
-            "Plaintext secret exposure detected: {}.",
-            pluralize(report.findings.len(), "finding", "findings")
-        );
-        println!();
-        println!("Findings:");
-        for (index, finding) in report.findings.iter().enumerate() {
-            println!(
-                "{}. {} {} - {}",
-                index + 1,
-                finding.severity,
-                finding.source,
-                finding.message
-            );
-            if let Some(location) = secret_scanner_finding_location(finding) {
-                println!("   {location}");
-            }
-        }
-    }
-    println!(
-        "Summary: {}, {}, {}, {}.",
-        pluralize(report.summary.findings, "finding", "findings"),
-        pluralize(report.summary.errors, "warning", "warnings"),
-        pluralize(
-            report.summary.isotope_detectors,
-            "isotope detector",
-            "isotope detectors"
+fn print_secret_scanner_warning_line(error: &SecretScannerError, color: bool) {
+    let source = scan_paint(&error.source, ScanStyle::Dim, color);
+    match &error.path {
+        Some(path) => eprintln!(
+            "  {} {source} {} - {}",
+            scan_paint("⚠", ScanStyle::Warning, color),
+            scan_paint(path, ScanStyle::Path, color),
+            error.message
         ),
-        secret_scanner_file_probe_summary(report)
-    );
-
-    print_secret_scanner_warnings(report, false);
-}
-
-fn print_rich_secret_scanner_report(report: &SecretScannerReport) {
-    let color = scan_stdout_supports_ansi();
-    let status = if report.findings.is_empty() {
-        scan_paint("✓", ScanStyle::Success, color)
-    } else {
-        scan_paint("✗", ScanStyle::Error, color)
-    };
-    let headline = if report.findings.is_empty() {
-        "No plaintext secret exposure detected".to_string()
-    } else {
-        format!(
-            "{} plaintext credential {}",
-            report.findings.len(),
-            if report.findings.len() == 1 {
-                "finding"
-            } else {
-                "findings"
-            }
-        )
-    };
-    let summary = format!(
-        "{} · {}",
-        pluralize(
-            report.summary.isotope_detectors,
-            "isotope detector",
-            "isotope detectors"
+        None => eprintln!(
+            "  {} {source} - {}",
+            scan_paint("⚠", ScanStyle::Warning, color),
+            error.message
         ),
-        secret_scanner_file_probe_summary(report),
-    );
-    let warnings = format!(
-        "{}: {}",
-        scan_paint("Warnings", ScanStyle::Dim, color),
-        pluralize(report.summary.errors, "warning", "warnings")
-    );
-    let scope = format!(
-        "{}: {}",
-        scan_paint("Scope", ScanStyle::Dim, color),
-        secret_scanner_scope_label(report.scope)
-    );
-
-    print_scan_box(
-        "Automic Vault Scan",
-        &[format!("{status} {headline}"), scope, summary, warnings],
-        color,
-    );
-
-    if !report.findings.is_empty() {
-        println!();
-        println!("{}", scan_paint("Findings", ScanStyle::Heading, color));
-        for (index, finding) in report.findings.iter().enumerate() {
-            let severity = scan_paint(&finding.severity, scan_severity_style(finding), color);
-            println!(
-                "  {}. {} {}",
-                index + 1,
-                severity,
-                scan_paint(&finding.source, ScanStyle::Dim, color)
-            );
-            if let Some(location) = secret_scanner_finding_location(finding) {
-                println!("     {}", scan_paint(&location, ScanStyle::Path, color));
-            }
-            println!("     {}", finding.message);
-        }
     }
-
-    print_secret_scanner_warnings(report, scan_stderr_supports_ansi());
 }
 
-fn print_wrapped_secret_scanner_report(report: &SecretScannerReport) {
-    let color = scan_stdout_supports_ansi();
+fn print_wrapped_secret_scanner_warning_line(error: &SecretScannerError, color: bool) {
     let rail = scan_paint("│", ScanStyle::ShellAccent, color);
-    let status = if report.findings.is_empty() {
-        scan_paint("✓", ScanStyle::Success, color)
-    } else {
-        scan_paint("✗", ScanStyle::Error, color)
-    };
-    let headline = if report.findings.is_empty() {
-        "No plaintext secret exposure detected".to_string()
-    } else {
-        format!(
-            "{} plaintext credential {}",
-            report.findings.len(),
-            if report.findings.len() == 1 {
-                "finding"
-            } else {
-                "findings"
-            }
-        )
-    };
-
-    println!("{rail}");
-    println!("{rail} {status} {headline}");
-    println!(
-        "{rail}   {}     {}",
-        scan_paint("Scope", ScanStyle::Dim, color),
-        secret_scanner_scope_label(report.scope)
-    );
-    println!(
-        "{rail}   {}   {}",
-        scan_paint("Checked", ScanStyle::Dim, color),
-        pluralize(
-            report.summary.isotope_detectors,
-            "isotope detector",
-            "isotope detectors"
-        )
-    );
-    println!(
-        "{rail}   {}     {}",
-        scan_paint("Files", ScanStyle::Dim, color),
-        secret_scanner_file_probe_summary(report)
-    );
-    println!(
-        "{rail}   {}  {}",
-        scan_paint("Warnings", ScanStyle::Dim, color),
-        pluralize(report.summary.errors, "warning", "warnings")
-    );
-
-    if !report.findings.is_empty() {
-        println!("{rail}");
-        println!(
-            "{rail} {}",
-            scan_paint("Findings", ScanStyle::Heading, color)
-        );
-        for (index, finding) in report.findings.iter().enumerate() {
-            let severity = scan_paint(&finding.severity, scan_severity_style(finding), color);
-            println!(
-                "{rail}   {}. {} {}",
-                index + 1,
-                severity,
-                scan_paint(&finding.source, ScanStyle::Dim, color)
-            );
-            if let Some(location) = secret_scanner_finding_location(finding) {
-                println!(
-                    "{rail}      {}",
-                    scan_paint(&location, ScanStyle::Path, color)
-                );
-            }
-            println!("{rail}      {}", finding.message);
-        }
-    }
-
-    print_wrapped_secret_scanner_warnings(report, color);
-}
-
-fn print_secret_scanner_warnings(report: &SecretScannerReport, color: bool) {
-    if report.errors.is_empty() {
-        return;
-    }
-
-    eprintln!();
-    eprintln!("{}", scan_paint("Warnings", ScanStyle::Warning, color));
-    for error in &report.errors {
-        let source = scan_paint(&error.source, ScanStyle::Dim, color);
-        match &error.path {
-            Some(path) => eprintln!(
-                "  {} {source} {} - {}",
-                scan_paint("⚠", ScanStyle::Warning, color),
-                scan_paint(path, ScanStyle::Path, color),
-                error.message
-            ),
-            None => eprintln!(
-                "  {} {source} - {}",
-                scan_paint("⚠", ScanStyle::Warning, color),
-                error.message
-            ),
-        }
-    }
-}
-
-fn print_wrapped_secret_scanner_warnings(report: &SecretScannerReport, color: bool) {
-    if report.errors.is_empty() {
-        return;
-    }
-
-    let rail = scan_paint("│", ScanStyle::ShellAccent, color);
-    println!("{rail}");
-    println!(
-        "{rail} {}",
-        scan_paint("Warnings", ScanStyle::Warning, color)
-    );
-    for error in &report.errors {
-        let source = scan_paint(&error.source, ScanStyle::Dim, color);
-        match &error.path {
-            Some(path) => println!(
-                "{rail}   {} {source} {} - {}",
-                scan_paint("!", ScanStyle::Warning, color),
-                scan_paint(path, ScanStyle::Path, color),
-                error.message
-            ),
-            None => println!(
-                "{rail}   {} {source} - {}",
-                scan_paint("!", ScanStyle::Warning, color),
-                error.message
-            ),
-        }
+    let source = scan_paint(&error.source, ScanStyle::Dim, color);
+    match &error.path {
+        Some(path) => println!(
+            "{rail}   {} {source} {} - {}",
+            scan_paint("!", ScanStyle::Warning, color),
+            scan_paint(path, ScanStyle::Path, color),
+            error.message
+        ),
+        None => println!(
+            "{rail}   {} {source} - {}",
+            scan_paint("!", ScanStyle::Warning, color),
+            error.message
+        ),
     }
 }
 
@@ -3655,10 +3771,6 @@ fn scan_stdout_supports_ansi() -> bool {
     output_supports_ansi(std::io::stdout().is_terminal())
 }
 
-fn scan_stderr_supports_ansi() -> bool {
-    output_supports_ansi(std::io::stderr().is_terminal())
-}
-
 fn output_supports_ansi(is_terminal: bool) -> bool {
     if env::var_os("NO_COLOR").is_some() {
         return false;
@@ -3671,25 +3783,74 @@ fn output_supports_ansi(is_terminal: bool) -> bool {
     is_terminal && env::var("TERM").map_or(true, |term| term != "dumb")
 }
 
-fn secret_scan_paths(root: Option<&Path>) -> Result<SecretScanPaths, String> {
+fn scan_secret_file_probes<F>(
+    root: Option<&Path>,
+    findings: &mut Vec<SecretScannerFinding>,
+    errors: &mut Vec<SecretScannerError>,
+    seen_findings: &mut HashSet<SecretScannerFinding>,
+    seen_errors: &mut HashSet<SecretScannerError>,
+    on_event: &mut F,
+) -> Result<(usize, usize), String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
     match root {
-        Some(path) => secret_scan_paths_under_root(path),
-        None => Ok(SecretScanPaths {
-            paths: default_secret_scan_paths(),
-            errors: Vec::new(),
-        }),
+        Some(path) => scan_secret_file_probes_under_root(
+            path,
+            findings,
+            errors,
+            seen_findings,
+            seen_errors,
+            on_event,
+        ),
+        None => {
+            let mut scanned_files = 0;
+            let mut file_probes = 0;
+            for path in default_secret_scan_paths() {
+                scan_secret_probe_path(
+                    &path,
+                    findings,
+                    errors,
+                    seen_findings,
+                    seen_errors,
+                    on_event,
+                    &mut scanned_files,
+                    &mut file_probes,
+                )?;
+            }
+            Ok((scanned_files, file_probes))
+        }
     }
 }
 
-fn secret_scan_paths_under_root(root: &Path) -> Result<SecretScanPaths, String> {
+fn scan_secret_file_probes_under_root<F>(
+    root: &Path,
+    findings: &mut Vec<SecretScannerFinding>,
+    errors: &mut Vec<SecretScannerError>,
+    seen_findings: &mut HashSet<SecretScannerFinding>,
+    seen_errors: &mut HashSet<SecretScannerError>,
+    on_event: &mut F,
+) -> Result<(usize, usize), String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
     if !root.exists() {
         return Err(format!("scan path does not exist: {}", root.display()));
     }
     if root.is_file() {
-        return Ok(SecretScanPaths {
-            paths: vec![root.to_path_buf()],
-            errors: Vec::new(),
-        });
+        let mut scanned_files = 0;
+        let mut file_probes = 0;
+        scan_secret_probe_path(
+            root,
+            findings,
+            errors,
+            seen_findings,
+            seen_errors,
+            on_event,
+            &mut scanned_files,
+            &mut file_probes,
+        )?;
+        return Ok((scanned_files, file_probes));
     }
     if !root.is_dir() {
         return Err(format!(
@@ -3700,8 +3861,8 @@ fn secret_scan_paths_under_root(root: &Path) -> Result<SecretScanPaths, String> 
     fs::read_dir(root)
         .map_err(|err| format!("failed to read scan path {}: {err}", root.display()))?;
 
-    let mut paths = Vec::new();
-    let mut errors = Vec::new();
+    let mut scanned_files = 0;
+    let mut file_probes = 0;
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
@@ -3709,19 +3870,69 @@ fn secret_scan_paths_under_root(root: &Path) -> Result<SecretScanPaths, String> 
     {
         match entry {
             Ok(entry) if entry.file_type().is_file() => {
-                paths.push(entry.path().to_path_buf());
+                scan_secret_probe_path(
+                    entry.path(),
+                    findings,
+                    errors,
+                    seen_findings,
+                    seen_errors,
+                    on_event,
+                    &mut scanned_files,
+                    &mut file_probes,
+                )?;
             }
             Ok(_) => {}
-            Err(err) => errors.push(SecretScannerError {
-                source: "file-probe".to_string(),
-                path: err.path().map(|path| path.display().to_string()),
-                message: format!("failed to walk entry: {err}"),
-            }),
+            Err(err) => record_secret_scanner_error(
+                errors,
+                seen_errors,
+                SecretScannerError {
+                    source: "file-probe".to_string(),
+                    path: err.path().map(|path| path.display().to_string()),
+                    message: format!("failed to walk entry: {err}"),
+                },
+                on_event,
+            )?,
         }
     }
-    paths.sort();
-    paths.dedup();
-    Ok(SecretScanPaths { paths, errors })
+
+    Ok((scanned_files, file_probes))
+}
+
+fn scan_secret_probe_path<F>(
+    path: &Path,
+    findings: &mut Vec<SecretScannerFinding>,
+    errors: &mut Vec<SecretScannerError>,
+    seen_findings: &mut HashSet<SecretScannerFinding>,
+    seen_errors: &mut HashSet<SecretScannerError>,
+    on_event: &mut F,
+    scanned_files: &mut usize,
+    file_probes: &mut usize,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(SecretScannerEvent<'a>) -> Result<(), String>,
+{
+    *file_probes += 1;
+    match scan_secret_file(path) {
+        Ok(file_findings) => {
+            if path.is_file() {
+                *scanned_files += 1;
+            }
+            for finding in file_findings {
+                record_secret_scanner_finding(findings, seen_findings, finding, on_event)?;
+            }
+        }
+        Err(err) => record_secret_scanner_error(
+            errors,
+            seen_errors,
+            SecretScannerError {
+                source: "file-probe".to_string(),
+                path: Some(path.display().to_string()),
+                message: err,
+            },
+            on_event,
+        )?,
+    }
+    Ok(())
 }
 
 fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
@@ -10139,7 +10350,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             },
         };
 
-        print_secret_scanner_warnings(&report, false);
+        for error in &report.errors {
+            print_secret_scanner_warning_line(error, false);
+            print_wrapped_secret_scanner_warning_line(error, false);
+        }
     }
 
     #[test]
@@ -10591,7 +10805,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
     #[test]
     #[cfg(unix)]
-    fn secret_scan_paths_warns_for_unreadable_subdirectories() {
+    fn secret_file_probes_warn_for_unreadable_subdirectories() {
         let temp = TempDir::new().unwrap();
         let root = temp.path().join("project");
         let restricted = root.join("restricted");
@@ -10602,27 +10816,44 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         permissions.set_mode(0o000);
         fs::set_permissions(&restricted, permissions).unwrap();
 
-        let result = secret_scan_paths_under_root(&root).unwrap();
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let result = scan_secret_file_probes(
+            Some(&root),
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        );
 
         let mut permissions = fs::metadata(&restricted).unwrap().permissions();
         permissions.set_mode(0o700);
         fs::set_permissions(&restricted, permissions).unwrap();
-        assert!(result.paths.contains(&env_path));
+        result.unwrap();
+        let env_path_display = env_path.display().to_string();
+        assert!(findings.iter().any(|finding| {
+            finding
+                .path
+                .as_deref()
+                .is_some_and(|path| path == env_path_display)
+        }));
         if unsafe { libc::geteuid() } != 0 {
             assert!(
-                result.errors.iter().any(|error| error
+                errors.iter().any(|error| error
                     .path
                     .as_deref()
                     .is_some_and(|path| path.contains("restricted"))),
-                "{:?}",
-                result.errors
+                "{errors:?}"
             );
         }
     }
 
     #[test]
     #[cfg(unix)]
-    fn secret_scan_paths_errors_when_requested_root_is_unreadable() {
+    fn secret_file_probes_error_when_requested_root_is_unreadable() {
         if unsafe { libc::geteuid() } == 0 {
             return;
         }
@@ -10634,13 +10865,65 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         permissions.set_mode(0o000);
         fs::set_permissions(&root, permissions).unwrap();
 
-        let result = secret_scan_paths_under_root(&root);
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let result = scan_secret_file_probes(
+            Some(&root),
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        );
 
         let mut permissions = fs::metadata(&root).unwrap().permissions();
         permissions.set_mode(0o700);
         fs::set_permissions(&root, permissions).unwrap();
         let err = result.unwrap_err();
         assert!(err.contains("failed to read scan path"));
+    }
+
+    #[test]
+    fn secret_file_probes_emit_events_while_building_report_parts() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        let env_path = root.join(".env");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&env_path, "SERVICE_TOKEN=secret_secret\n").unwrap();
+
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let mut events = Vec::new();
+
+        let (scanned_files, file_probes) = scan_secret_file_probes(
+            Some(&root),
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |event| {
+                match event {
+                    SecretScannerEvent::Finding(finding) => {
+                        events.push(format!("finding:{}", finding.source));
+                    }
+                    SecretScannerEvent::Error(error) => {
+                        events.push(format!("error:{}", error.source));
+                    }
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(scanned_files, 1);
+        assert_eq!(file_probes, 1);
+        assert_eq!(findings.len(), 1);
+        assert!(errors.is_empty());
+        assert_eq!(events, vec!["finding:file-probe"]);
     }
 
     #[test]

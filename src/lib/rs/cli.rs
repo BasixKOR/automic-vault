@@ -286,10 +286,10 @@ where
         None => return Ok(()),
     };
 
-    let report = run_secret_scan(&request)?;
     match request.output {
-        OutputMode::Human => print_secret_scanner_report(&report),
+        OutputMode::Human => print_secret_scanner_report_streaming(&request)?,
         OutputMode::Json => {
+            let report = run_secret_scan(&request)?;
             println!(
                 "{}",
                 serde_json::to_string(&report)
@@ -297,21 +297,22 @@ where
             );
         }
         OutputMode::Jsonl => {
-            for finding in &report.findings {
-                println!(
-                    "{}",
-                    serde_json::to_string(finding)
-                        .map_err(|err| format!("failed to serialize secret finding: {err}"))?
-                );
-            }
-            for error in &report.errors {
-                println!(
-                    "{}",
-                    serde_json::to_string(error).map_err(|err| format!(
-                        "failed to serialize secret scanner error: {err}"
-                    ))?
-                );
-            }
+            run_secret_scan_with_events(&request, |event| {
+                match event {
+                    SecretScannerEvent::Finding(finding) => println!(
+                        "{}",
+                        serde_json::to_string(finding)
+                            .map_err(|err| format!("failed to serialize secret finding: {err}"))?
+                    ),
+                    SecretScannerEvent::Error(error) => println!(
+                        "{}",
+                        serde_json::to_string(error).map_err(|err| format!(
+                            "failed to serialize secret scanner error: {err}"
+                        ))?
+                    ),
+                }
+                flush_secret_scanner_stdout()
+            })?;
         }
     }
     Ok(())
