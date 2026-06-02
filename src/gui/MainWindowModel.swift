@@ -1120,7 +1120,7 @@ final class MainWindowModel: ObservableObject {
         if case .isotope = detail?.source {
             return true
         }
-        return detail?.securityState != nil
+        return false
     }
 
     func displayName(for package: PackagePresentation) -> String {

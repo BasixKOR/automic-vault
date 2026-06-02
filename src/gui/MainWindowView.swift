@@ -527,7 +527,7 @@ struct MainWindowView: View {
                 PermissionRow(
                     icon: "key",
                     title: L10n.string("Secrets Access"),
-                    allowed: model.isHardened(package) || detail.securityNotice != nil
+                    allowed: model.isHardened(package, detail: detail) || detail.securityNotice != nil
                 )
             }
         }
@@ -566,7 +566,7 @@ struct MainWindowView: View {
         detail: PackageDetail,
         package: PackagePresentation
     ) -> String {
-        if model.isHardened(package) {
+        if model.isHardened(package, detail: detail) {
             return L10n.string(
                 "This package is hardened. Binary execution is sandboxed and secret access is restricted."
             )
