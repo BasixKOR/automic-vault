@@ -1945,7 +1945,7 @@ def render_hub_page(
       {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
       {metric(tx(locale, 'radioisotopes', 'protected tools'), fmt_int(len(secured)))}
       {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
-      {metric(tx(locale, 'updated', 'updated'), updated)}
+      {metric(tx(locale, 'updated', 'updated'), updated, pagefind_ignore=True)}
     </aside>
   </section>
   <section class="pkg-section split-section">
@@ -2617,8 +2617,9 @@ def package_facts(page: PackagePage, locale: dict[str, Any] | None = None) -> st
     return "".join(facts)
 
 
-def metric(label: str, value: Any) -> str:
-    return f'<div class="metric"><span>{html_escape(label)}</span><strong>{html_escape(value)}</strong></div>'
+def metric(label: str, value: Any, *, pagefind_ignore: bool = False) -> str:
+    pagefind_attr = ' data-pagefind-ignore="all"' if pagefind_ignore else ""
+    return f'<div class="metric"{pagefind_attr}><span>{html_escape(label)}</span><strong>{html_escape(value)}</strong></div>'
 
 
 def package_manager_label(page: PackagePage) -> str:
@@ -3157,7 +3158,7 @@ def render_freshness(page: PackagePage, manifest: dict[str, Any], locale: dict[s
     if not warning_items:
         warning_items = f'<li class="freshness-item freshness-info"><strong>ok</strong><span>{html_escape(tx(locale, "noFreshnessWarnings", "No freshness warnings were generated."))}</span></li>'
     return f"""
-<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title">
+<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title" data-pagefind-ignore="all">
   <div>
     <p class="section-kicker">{html_escape(tx(locale, 'freshness', 'freshness'))}</p>
     <h2 id="freshness-title">{html_escape(tx(locale, 'freshnessTitle', 'Version and freshness'))}</h2>
