@@ -4016,7 +4016,17 @@ fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
     }
     matches!(
         entry.file_name().to_str(),
-        Some(".git" | ".hg" | ".svn" | "target" | "dist" | "node_modules" | ".cache")
+        Some(
+            ".git"
+                | ".hg"
+                | ".svn"
+                | "target"
+                | "dist"
+                | "node_modules"
+                | ".cache"
+                | "artifacts"
+                | "DerivedData"
+        )
     )
 }
 
@@ -4104,6 +4114,9 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
     }
 
     if trimmed.contains("BEGIN ") && trimmed.contains("PRIVATE KEY") {
+        if secret_private_key_line_is_fixture(path, trimmed) {
+            return None;
+        }
         return Some(secret_file_finding(
             path,
             line_number,
@@ -4236,13 +4249,18 @@ fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -
         return true;
     }
 
-    if secret_key_looks_like_source_code(key) {
+    if secret_key_looks_like_source_code(key)
+        || secret_key_looks_like_source_reference(key)
+        || secret_key_name_is_noncredential_metadata(key)
+        || secret_key_looks_like_freeform_text(key)
+    {
         return true;
     }
 
     if assignment.separator == SecretAssignmentSeparator::Colon
         && (key.contains('(')
             || secret_key_looks_like_freeform_text(key)
+            || secret_value_looks_like_freeform_text(value)
             || secret_value_looks_like_type_annotation(value))
     {
         return true;
@@ -4255,11 +4273,31 @@ fn secret_key_looks_like_source_code(key: &str) -> bool {
     let trimmed = key.trim_start();
     trimmed.starts_with("type ")
         || trimmed.starts_with("interface ")
+        || trimmed.starts_with("def ")
+        || trimmed.starts_with("function ")
+        || trimmed.starts_with("export function ")
         || trimmed.starts_with("return ")
         || trimmed.starts_with("if ")
         || trimmed.starts_with("if(")
+        || trimmed.starts_with('.')
         || trimmed.starts_with("WHERE ")
         || trimmed.starts_with("where ")
+}
+
+fn secret_key_looks_like_source_reference(key: &str) -> bool {
+    let key = key.trim();
+    if key.starts_with('"') || key.starts_with('\'') {
+        return false;
+    }
+    key.contains("->")
+        || key.contains("::")
+        || key.contains(',')
+        || (key.contains('[') && key.contains(']'))
+        || (key.contains('.') && key.chars().all(source_key_reference_char))
+}
+
+fn source_key_reference_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
 }
 
 fn secret_key_looks_like_freeform_text(key: &str) -> bool {
@@ -4267,6 +4305,17 @@ fn secret_key_looks_like_freeform_text(key: &str) -> bool {
         return false;
     }
     key.split_whitespace().count() > 2
+}
+
+fn secret_value_looks_like_freeform_text(value: &str) -> bool {
+    if secret_raw_value_is_quoted(value) {
+        return false;
+    }
+    let value = value
+        .split_once('#')
+        .map_or(value, |(before_comment, _)| before_comment)
+        .trim();
+    value.split_whitespace().count() >= 4 && value.chars().any(char::is_alphabetic)
 }
 
 fn secret_value_looks_like_type_annotation(value: &str) -> bool {
@@ -4279,6 +4328,10 @@ fn secret_value_looks_like_type_annotation(value: &str) -> bool {
             '?' | '!' | ')' | '(' | '[' | ']' | '<' | '>' | ',' | ';' | '{' | '}'
         )
     });
+    let first = first
+        .trim_start_matches('&')
+        .trim_start_matches('\'')
+        .trim_end_matches('\'');
     if first.is_empty() || first.starts_with('"') || first.starts_with('\'') {
         return false;
     }
@@ -4295,8 +4348,10 @@ fn secret_value_looks_like_type_annotation(value: &str) -> bool {
             | "Data"
             | "URL"
             | "UUID"
+            | "static"
             | "str"
             | "string"
+            | "bytes"
             | "bool"
             | "boolean"
             | "number"
@@ -4324,6 +4379,9 @@ fn secret_unquoted_value_looks_like_source_reference(value: &str) -> bool {
     {
         return true;
     }
+    if secret_value_has_known_token_shape(value) || secret_value_looks_like_jwt(value) {
+        return false;
+    }
     if value.contains('.') && value.chars().all(source_reference_char) {
         return true;
     }
@@ -4339,15 +4397,19 @@ fn secret_unquoted_value_looks_like_placeholder_or_pattern(value: &str) -> bool 
         || value.starts_with("//")
         || value.starts_with("{{")
         || value.starts_with("<%")
+        || value.starts_with('{')
         || (value.starts_with('{') && value.ends_with('}'))
         || (value.starts_with('/') && value.ends_with('/'))
 }
 
 fn secret_unquoted_value_looks_like_source_expression(value: &str) -> bool {
-    value.starts_with("process.env.")
+    value.starts_with("f\"")
+        || value.starts_with("f'")
+        || value.starts_with("process.env.")
         || value.starts_with("typeof ")
         || value.starts_with("ReturnType<")
         || value.contains(" as ")
+        || value.contains(" * ")
         || value.contains(" ? ")
         || value.contains(" : ")
         || value.contains(" && ")
@@ -4379,22 +4441,27 @@ fn source_reference_char(ch: char) -> bool {
 }
 
 fn normalized_secret_value(value: &str) -> &str {
-    value
+    let value = value
         .trim()
-        .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '}' | ']'))
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .trim()
+        .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '}' | ']' | ')' | ':'))
+        .trim();
+    let value = if secret_raw_value_is_quoted(value) {
+        value
+    } else {
+        value
+            .split_once('#')
+            .map_or(value, |(before_comment, _)| before_comment)
+            .trim()
+    };
+    value.trim_matches('"').trim_matches('\'').trim()
 }
 
 fn secret_key_name_is_sensitive(key: &str) -> bool {
-    let key = key
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .to_ascii_lowercase()
-        .replace('-', "_");
+    if secret_key_name_is_noncredential_metadata(key) {
+        return false;
+    }
+
+    let key = normalized_secret_key_name(key);
     key == "token"
         || key == "password"
         || key == "passwd"
@@ -4411,14 +4478,62 @@ fn secret_key_name_is_sensitive(key: &str) -> bool {
         || key.contains("client_secret")
 }
 
+fn secret_key_name_is_noncredential_metadata(key: &str) -> bool {
+    let key = normalized_secret_key_name(key);
+    let compact = key.replace('_', "");
+    let mentions_secretish_word = compact.contains("token")
+        || compact.contains("secret")
+        || compact.contains("password")
+        || compact.contains("key");
+
+    mentions_secretish_word
+        && (compact.ends_with("type")
+            || compact.ends_with("types")
+            || compact.ends_with("name")
+            || compact.ends_with("names")
+            || compact.ends_with("prefix")
+            || compact.ends_with("suffix")
+            || compact.ends_with("service")
+            || compact.ends_with("hash")
+            || compact.ends_with("label")
+            || compact.ends_with("labels")
+            || compact.ends_with("pattern")
+            || compact.ends_with("patterns")
+            || compact.ends_with("class")
+            || compact.ends_with("size")
+            || compact.ends_with("dir")
+            || compact.ends_with("path")
+            || compact.ends_with("file")
+            || compact.ends_with("url")
+            || compact.ends_with("uri"))
+}
+
+fn normalized_secret_key_name(key: &str) -> String {
+    key.trim()
+        .strip_prefix("export ")
+        .unwrap_or_else(|| key.trim())
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| match ch {
+            '-' | '.' | ' ' => '_',
+            _ => ch,
+        })
+        .collect()
+}
+
 fn secret_value_is_real(value: &str) -> bool {
     if value.len() < 6 || value.contains("${") {
         return false;
     }
 
     let lower = value.to_ascii_lowercase();
-    !matches!(
-        lower.as_str(),
+    let comparable =
+        lower.trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '_' | '-'));
+    if matches!(
+        comparable,
         "secret"
             | "password"
             | "token"
@@ -4436,24 +4551,63 @@ fn secret_value_is_real(value: &str) -> bool {
             | "null"
             | "true"
             | "false"
-    ) && !lower.contains("example")
-        && !lower.contains("placeholder")
-        && !lower.contains("your_")
-        && !lower.contains("your-")
-        && !lower.chars().all(|ch| ch == 'x' || ch == '*')
-        && !(value.starts_with('{') && value.ends_with('}'))
-        && !value.starts_with("{{")
-        && !value.starts_with('<')
+            | "string"
+            | "bytes"
+            | "write"
+            | "read"
+            | "hashed"
+            | "nullptr"
+            | "nil"
+    ) {
+        return false;
+    }
+
+    if lower.contains("example")
+        || lower.contains("placeholder")
+        || lower.contains("your_")
+        || lower.contains("your-")
+        || lower.contains("...")
+        || lower.contains("\\n")
+        || lower.contains("base64url")
+        || lower.chars().all(|ch| ch == 'x' || ch == '*')
+        || (value.starts_with('{') && value.ends_with('}'))
+        || value.starts_with("{{")
+        || value.starts_with('<')
+        || (value.starts_with('%') && value.ends_with('%'))
+        || secret_value_looks_like_file_path(value)
+        || secret_value_looks_like_public_url(value)
+        || secret_value_looks_like_version_requirement(value)
+    {
+        return false;
+    }
+
+    if secret_value_has_known_token_shape(value) || secret_value_looks_like_jwt(value) {
+        return true;
+    }
+    if lower == "secret_secret" {
+        return true;
+    }
+
+    !secret_value_looks_like_package_or_label(value)
 }
 
 fn secret_value_is_test_fixture(path: &Path, value: &str) -> bool {
+    if secret_path_looks_like_reference_fixture(path) {
+        return true;
+    }
+
     if !secret_path_looks_like_test_fixture(path) {
         return false;
     }
 
     matches!(
         value.to_ascii_lowercase().as_str(),
-        "password123" | "handoff-token" | "test-token" | "test-password"
+        "password123"
+            | "handoff-token"
+            | "test-token"
+            | "test-password"
+            | "polar_test_token"
+            | "polar_webhook_secret"
     )
 }
 
@@ -4465,6 +4619,131 @@ fn secret_path_looks_like_test_fixture(path: &Path) -> bool {
         || path.contains("\\tests\\")
         || path.contains(".test.")
         || path.contains(".spec.")
+}
+
+fn secret_path_looks_like_reference_fixture(path: &Path) -> bool {
+    let path = path.to_string_lossy().to_ascii_lowercase();
+    path.contains("/testdata/")
+        || path.contains("/fixtures/")
+        || path.contains("/fixture/")
+        || path.contains("/examples/")
+        || path.contains("/example/")
+        || path.contains("/samples/")
+        || path.contains("/sample/")
+        || path.contains("/cavs_samples/")
+        || path.contains("/wycheproof/")
+        || path.contains("/doc/")
+        || path.contains("/docs/")
+        || path.contains("/share/man/")
+        || path.contains("/share/info/")
+        || path.contains("/man/man")
+}
+
+fn secret_private_key_line_is_fixture(path: &Path, line: &str) -> bool {
+    secret_path_looks_like_reference_fixture(path)
+        || (secret_path_looks_like_source_file(path) && !line.starts_with("-----BEGIN "))
+}
+
+fn secret_path_looks_like_source_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some(
+            "c" | "cc"
+                | "cpp"
+                | "cxx"
+                | "h"
+                | "hh"
+                | "hpp"
+                | "hxx"
+                | "go"
+                | "rs"
+                | "swift"
+                | "js"
+                | "jsx"
+                | "ts"
+                | "tsx"
+                | "py"
+                | "rb"
+                | "pm"
+                | "erl"
+                | "hrl"
+        )
+    )
+}
+
+fn secret_value_looks_like_file_path(value: &str) -> bool {
+    value.starts_with("~/")
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.starts_with('/')
+        || value.ends_with(".pem")
+        || value.ends_with(".key")
+}
+
+fn secret_value_looks_like_public_url(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    (lower.starts_with("http://") || lower.starts_with("https://"))
+        && !value.contains('@')
+        && !lower.contains("token=")
+        && !lower.contains("access_token=")
+        && !lower.contains("api_key=")
+        && !lower.contains("apikey=")
+        && !lower.contains("secret=")
+}
+
+fn secret_value_looks_like_version_requirement(value: &str) -> bool {
+    value.contains('.')
+        && value.chars().all(|ch| {
+            ch.is_ascii_digit()
+                || matches!(
+                    ch,
+                    '.' | '^' | '~' | '*' | '|' | '&' | '<' | '>' | '=' | '!' | ' ' | '-'
+                )
+        })
+}
+
+fn secret_value_looks_like_package_or_label(value: &str) -> bool {
+    if value.len() > 48 {
+        return false;
+    }
+    let mut has_alpha = false;
+    let mut has_upper = false;
+    for ch in value.chars() {
+        if ch.is_ascii_alphabetic() {
+            has_alpha = true;
+            has_upper |= ch.is_ascii_uppercase();
+            continue;
+        }
+        if ch.is_ascii_digit() || matches!(ch, '_' | '-' | '.' | '/' | ':') {
+            continue;
+        }
+        return false;
+    }
+    has_alpha && (!has_upper || !value.chars().any(|ch| ch.is_ascii_digit()))
+}
+
+fn secret_value_looks_like_jwt(value: &str) -> bool {
+    if value.len() < 80 {
+        return false;
+    }
+    let mut parts = value.split('.');
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    let Some(second) = parts.next() else {
+        return false;
+    };
+    let Some(third) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none()
+        && [first, second, third]
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(base64_url_char))
+}
+
+fn base64_url_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '=')
 }
 
 fn secret_value_has_known_token_shape(value: &str) -> bool {
@@ -4479,6 +4758,7 @@ fn secret_value_has_known_token_shape(value: &str) -> bool {
         || value.starts_with("sk_live_")
         || (value.starts_with("npm_") && value.len() > 12)
         || (value.starts_with("sk-") && value.len() > 20)
+        || (value.starts_with("xai-") && value.len() > 20)
         || (value.starts_with("AKIA") && value.len() >= 16)
 }
 
@@ -11177,37 +11457,98 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let source_dir = temp.path().join("test");
         fs::create_dir_all(&source_dir).unwrap();
         let source_path = source_dir.join("clawlicious-fixtures.test.ts");
-        fs::write(
-            &source_path,
-            [
-                "token.fromMs <= absoluteTimeMs && token.toMs > absoluteTimeMs;",
-                "The user needs to create an access token by visiting https://console.mapbox.com/account/access-tokens/.",
-                "REMOTION_MAPBOX_TOKEN==pk.your-mapbox-access-token",
-                "mapboxgl.accessToken = process.env.REMOTION_MAPBOX_TOKEN as string;",
-                r#""xi-api-key": process.env.ELEVENLABS_API_KEY!,"#,
-                r#"const apiKey = typeof payload.apiKey === "string""#,
-                r#"apiKey: typeof stored.apiKey === "string" ? stored.apiKey : "","#,
-                r#"if (tokenScope === "full") {"#,
-                "type ByoClawPollTokenRecord = NonNullable<ReturnType<typeof getByoClawPollToken>>;",
-                "if (!forumToken || forumToken.forum_id !== parsedParams.data.forumId) {",
-                r#"const CHECKOUT_SUCCESS_TOKEN = "{CHECKOUT_SESSION_ID}";"#,
-                "WHERE poll_token_id = ? AND id != ?`,",
-                r#"data-api-key="{{ claw.api_key }}""#,
-                r#"password: "password123","#,
-                "const POLL_TOKEN_PATTERN = /^claw_poll_[a-f0-9]{48}$/;",
-                r#"token: "handoff-token","#,
-                "const renewedToken = tokenMatch[1];",
-                r#"const apiKey = "sk-test_1234567890abcdef""#,
-            ]
-            .join("\n"),
-        )
-        .unwrap();
+        let lines = [
+            "token.fromMs <= absoluteTimeMs && token.toMs > absoluteTimeMs;",
+            "The user needs to create an access token by visiting https://console.mapbox.com/account/access-tokens/.",
+            "REMOTION_MAPBOX_TOKEN==pk.your-mapbox-access-token",
+            "mapboxgl.accessToken = process.env.REMOTION_MAPBOX_TOKEN as string;",
+            r#""xi-api-key": process.env.ELEVENLABS_API_KEY!,"#,
+            r#"const apiKey = typeof payload.apiKey === "string""#,
+            r#"apiKey: typeof stored.apiKey === "string" ? stored.apiKey : "","#,
+            r#"if (tokenScope === "full") {"#,
+            "type ByoClawPollTokenRecord = NonNullable<ReturnType<typeof getByoClawPollToken>>;",
+            "if (!forumToken || forumToken.forum_id !== parsedParams.data.forumId) {",
+            r#"const CHECKOUT_SUCCESS_TOKEN = "{CHECKOUT_SESSION_ID}";"#,
+            "WHERE poll_token_id = ? AND id != ?`,",
+            r#"data-api-key="{{ claw.api_key }}""#,
+            r#"password: "password123","#,
+            "const POLL_TOKEN_PATTERN = /^claw_poll_[a-f0-9]{48}$/;",
+            r#"token: "handoff-token","#,
+            "const renewedToken = tokenMatch[1];",
+            r#"TOKEN_SERVICE = "https://ghcr.io/token""#,
+            "def _fetch_json(url, github_token=None):",
+            r#""Authorization": f"Bearer {token}","#,
+            r#""token": bearer,"#,
+            "metadata[token] = supported",
+            ".secret-art::before {",
+            "export AWS_SECRET_ACCESS_KEY=%awssecret%",
+            "password=mb_password",
+            r#""challengeToken": "f7D4...base64url...","#,
+            r#""tokenType": "integration","#,
+            r#""token": "clawlt_7wYx...base64url...","#,
+            "export OUTCLAW_SSH_PRIVATE_KEY=~/.ssh/smbh-api-ec2-us-east-2.pem",
+            r#"const TOKEN_PREFIX = "outclawclaw_";"#,
+            r#"challengeToken: "string","#,
+            "tokenHash: hashed,",
+            r#""js-tokens": "^4.0.0","#,
+            "id-token: write   # to verify the deployment originates from an appropriate source",
+            "self.md.toc_tokens = toc_tokens",
+            "MaxScanTokenSize = 64 * 1024",
+            "token: &'static str,",
+            "let executable = npm_package_executable_name(&npm_package);",
+            "package_name: npm_package.clone(),",
+            r#""[default]\naws_secret_access_key = secret\n","#,
+            r#"static const char TestTokenLabel[] = "Test PKCS11 Token Label";"#,
+            r#""input_token": "nextToken","#,
+            "password: bytes | None,",
+            "PASSWORD: optional password used to decrypt the structure",
+            r#""detect-secrets": "detect-secrets","#,
+            r#"export function randomToken(prefix = "pincerspace_", size = 24) {"#,
+            "char const* token_last = nullptr;",
+            "sso_token_cache=None):",
+            r#"const apiKey = "sk-test_1234567890abcdef""#,
+        ];
+        fs::write(&source_path, lines.join("\n")).unwrap();
 
         let findings = scan_secret_file(&source_path).unwrap();
 
         assert_eq!(findings.len(), 1, "{findings:?}");
-        assert_eq!(findings[0].line, Some(18));
+        assert_eq!(findings[0].line, Some(lines.len()));
         assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_jwt_tokens() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        fs::write(
+            &env_path,
+            "MAILERLITE_TOKEN=eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxMjM0NTY3ODkwIn0.signature_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890\n",
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&env_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_private_key_reference_fixtures() {
+        let temp = TempDir::new().unwrap();
+        let fixture_dir = temp.path().join("testdata");
+        fs::create_dir_all(&fixture_dir).unwrap();
+        let json_path = fixture_dir.join("wycheproof.json");
+        fs::write(
+            &json_path,
+            r#""privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nMIIEfixture\n-----END RSA PRIVATE KEY-----""#,
+        )
+        .unwrap();
+        let source_path = temp.path().join("pubkey_pem.erl");
+        fs::write(&source_path, r#"<<\"-----BEGIN RSA PRIVATE KEY-----\">>;"#).unwrap();
+
+        assert!(scan_secret_file(&json_path).unwrap().is_empty());
+        assert!(scan_secret_file(&source_path).unwrap().is_empty());
     }
 
     #[test]
