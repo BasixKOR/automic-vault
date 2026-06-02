@@ -202,7 +202,7 @@
   <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <link rel="stylesheet" href="../styles.css?v=33">
-  <link rel="stylesheet" href="../scanner-page.css?v=1">
+  <link rel="stylesheet" href="../scanner-page.css?v=2">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -269,7 +269,15 @@
             <span>Run this first</span>
             <strong>one-liner</strong>
           </div>
-          <pre><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
+          <div class="scanner-command-line">
+            <pre><code id="scanner-one-liner">/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
+            <button
+              class="scanner-copy-button"
+              type="button"
+              data-scanner-copy="scanner-one-liner"
+              aria-live="polite"
+            >Copy</button>
+          </div>
           <p>Detects secrets that tools leave accessible.</p>
         </div>
 
@@ -565,6 +573,72 @@
   </div>
   <nav class="language-links" aria-label="Language versions"><a href="/secret-scanner-for-ai-agents/" lang="en">English</a> <a href="/ja/secret-scanner-for-ai-agents/" lang="ja">日本語</a> <a href="/de/secret-scanner-for-ai-agents/" lang="de">Deutsch</a> <a href="/fr/secret-scanner-for-ai-agents/" lang="fr">Français</a> <a href="/zh-hans/secret-scanner-for-ai-agents/" lang="zh-Hans">简体中文</a></nav>
   <script src="../app.js?v=17"></script>
+  <script>
+    (() => {
+      const button = document.querySelector("[data-scanner-copy]");
+
+      if (!button) {
+        return;
+      }
+
+      const code = document.getElementById(button.dataset.scannerCopy);
+      const defaultLabel = button.textContent;
+      let restoreTimer;
+
+      const restore = () => {
+        window.clearTimeout(restoreTimer);
+        restoreTimer = window.setTimeout(() => {
+          button.textContent = defaultLabel;
+          button.removeAttribute("data-state");
+        }, 1700);
+      };
+
+      const mark = (label, state) => {
+        button.textContent = label;
+        button.dataset.state = state;
+        restore();
+      };
+
+      const fallbackCopy = (text) => {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.inset = "0 auto auto 0";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        try {
+          if (document.execCommand("copy")) {
+            mark("Copied", "copied");
+          } else {
+            mark("Failed", "failed");
+          }
+        } catch {
+          mark("Failed", "failed");
+        } finally {
+          textarea.remove();
+        }
+      };
+
+      button.addEventListener("click", async () => {
+        if (!code) {
+          mark("Missing", "failed");
+          return;
+        }
+
+        const text = code.textContent.trim();
+
+        try {
+          await navigator.clipboard.writeText(text);
+          mark("Copied", "copied");
+        } catch {
+          fallbackCopy(text);
+        }
+      });
+    })();
+  </script>
   <script src="/i18n.js" defer></script>
 </body>
 </html>

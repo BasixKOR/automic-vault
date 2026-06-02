@@ -58,12 +58,64 @@
   white-space: pre-wrap;
 }
 
+.scanner-command-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 12px;
+}
+
 .scanner-command-panel code {
   color: var(--ink);
   font-size: clamp(0.94rem, 1.45vw, 1.26rem);
   font-weight: 750;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.scanner-copy-button {
+  min-width: 92px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, oklch(94% 0.01 82 / 0.055), transparent),
+    var(--surface-deep);
+  color: var(--gold);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  transition:
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scanner-copy-button:hover {
+  border-color: var(--gold);
+  background:
+    linear-gradient(180deg, oklch(76% 0.13 82 / 0.12), transparent),
+    var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.scanner-copy-button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.scanner-copy-button[data-state="copied"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.scanner-copy-button[data-state="failed"] {
+  border-color: var(--hot);
+  color: var(--hot);
 }
 
 .scanner-command-panel p {
@@ -226,6 +278,14 @@
 
   .scanner-command-panel code {
     font-size: 0.92rem;
+  }
+
+  .scanner-command-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scanner-copy-button {
+    width: 100%;
   }
 
   .scanner-video-head {
