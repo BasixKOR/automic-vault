@@ -185,6 +185,8 @@ static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
 static NPM_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static PIP_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static ISOTOPE_DATA: OnceLock<HashMap<String, IsotopePackageData>> = OnceLock::new();
+static VIRTUAL_ISOTOPE_DATA: OnceLock<Mutex<HashMap<String, &'static IsotopePackageData>>> =
+    OnceLock::new();
 static SECURITY_RECOMMENDATIONS: OnceLock<SecurityRecommendationsData> = OnceLock::new();
 static COMBINED_DATA: OnceLock<CombinedData> = OnceLock::new();
 static FORMULA_INDEX: OnceLock<Result<Vec<FormulaIndexEntry>, String>> = OnceLock::new();
@@ -642,6 +644,8 @@ struct IsotopePackageData {
     archive_url: Option<String>,
     #[serde(default, rename = "publishedAt")]
     published_at: Option<String>,
+    #[serde(default, rename = "appliesToVersionedFormulae")]
+    applies_to_versioned_formulae: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -2853,9 +2857,52 @@ fn embedded_security_recommendations() -> &'static SecurityRecommendationsData {
 }
 
 fn isotope_package_data(name: &str) -> Result<&'static IsotopePackageData, String> {
-    embedded_isotope_data()
-        .get(&format!("{ISOTOPE_PACKAGE_PREFIX}{name}"))
-        .ok_or_else(|| format!("unknown isotope {ISOTOPE_PACKAGE_PREFIX}{name}"))
+    let name = isotope_unqualified_name(name);
+    if let Some(record) = embedded_isotope_data().get(&isotope_qualified_name(name)) {
+        return Ok(record);
+    }
+    if let Some(record) = virtual_versioned_isotope_package_data(name) {
+        return Ok(record);
+    }
+    Err(format!("unknown isotope {ISOTOPE_PACKAGE_PREFIX}{name}"))
+}
+
+fn virtual_versioned_isotope_package_data(name: &str) -> Option<&'static IsotopePackageData> {
+    let base = versioned_isotope_base(name)?;
+    let cache = VIRTUAL_ISOTOPE_DATA.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(record) = cache.lock().unwrap().get(name).copied() {
+        return Some(record);
+    }
+
+    let base_record = embedded_isotope_data()
+        .get(&isotope_qualified_name(base))?
+        .clone();
+    let mut record = base_record;
+    record.name = isotope_qualified_name(name);
+    record.modifies = Some(format!("brew:{name}"));
+    record.replaces = None;
+    record.release_url = Some(format!("https://formulae.brew.sh/formula/{name}"));
+    record.applies_to_versioned_formulae = false;
+
+    let record: &'static IsotopePackageData = Box::leak(Box::new(record));
+    let mut cache = cache.lock().unwrap();
+    Some(*cache.entry(name.to_string()).or_insert(record))
+}
+
+fn versioned_isotope_base(name: &str) -> Option<&str> {
+    let name = isotope_unqualified_name(name);
+    let base = formula_versioned_base(name)?;
+    let version = name.rsplit_once('@')?.1;
+    if version.is_empty() || !version.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+
+    let record = embedded_isotope_data().get(&isotope_qualified_name(base))?;
+    if !record.applies_to_versioned_formulae {
+        return None;
+    }
+    let modified_formula = record.modifies.as_deref()?.strip_prefix("brew:")?;
+    (modified_formula == base).then_some(base)
 }
 
 fn preferred_auto_isotope_name(package_name: &str) -> Result<Option<String>, String> {
@@ -2909,6 +2956,16 @@ fn installable_isotope_name_for_target(
         }
     }
 
+    if let PackageAliasTarget::HomebrewFormula(formula) = target {
+        if versioned_isotope_base(formula).is_some() {
+            if let Ok(record) = isotope_package_data(formula) {
+                if isotope_is_installable(record) {
+                    return Ok(Some(formula.clone()));
+                }
+            }
+        }
+    }
+
     Ok(None)
 }
 
@@ -2941,11 +2998,18 @@ fn isotope_unqualified_name(name: &str) -> &str {
     name.strip_prefix(ISOTOPE_PACKAGE_PREFIX).unwrap_or(name)
 }
 
-fn isotope_integration(name: &str) -> Option<&'static isotope_integrations::IsotopeIntegration> {
+fn exact_isotope_integration(
+    name: &str,
+) -> Option<&'static isotope_integrations::IsotopeIntegration> {
     let name = isotope_unqualified_name(name);
     isotope_integrations::INTEGRATIONS
         .iter()
         .find(|integration| integration.name == name)
+}
+
+fn isotope_integration(name: &str) -> Option<&'static isotope_integrations::IsotopeIntegration> {
+    exact_isotope_integration(name)
+        .or_else(|| versioned_isotope_base(name).and_then(exact_isotope_integration))
 }
 
 fn isotope_has_migration(name: &str) -> bool {
@@ -2970,8 +3034,15 @@ fn run_generated_isotope_migration(name: &str) -> Option<Result<(), String>> {
 }
 
 fn run_generated_isotope_post_install(name: &str) -> Option<Result<(), String>> {
-    let post_install = isotope_integration(name)?.post_install?;
-    Some(post_install())
+    if let Some(integration) = exact_isotope_integration(name) {
+        if let Some(post_install) = integration.post_install {
+            return Some(post_install());
+        }
+    }
+    let formula = isotope_unqualified_name(name);
+    let base = versioned_isotope_base(formula)?;
+    let post_install = exact_isotope_integration(base)?.post_install_for_formula?;
+    Some(post_install(formula))
 }
 
 fn detect_isotope_install_reasons(name: &str) -> Option<Result<Vec<String>, String>> {
@@ -3021,6 +3092,26 @@ where
             })
             .collect::<Vec<_>>(),
     );
+    let versioned_identifiers = identifiers
+        .iter()
+        .filter(|identifier| formula_versioned_base(identifier).is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    for identifier in &versioned_identifiers {
+        if embedded_isotope_data().contains_key(&isotope_qualified_name(identifier)) {
+            if let Some(state) = package_security_state_for_isotope(identifier) {
+                return Some(state);
+            }
+        }
+    }
+    for identifier in &versioned_identifiers {
+        if versioned_isotope_base(identifier).is_some() {
+            if let Some(state) = package_security_state_for_isotope(identifier) {
+                return Some(state);
+            }
+        }
+    }
+
     let mut isotopes = embedded_isotope_data().values().collect::<Vec<_>>();
     isotopes.sort_by(|left, right| left.name.cmp(&right.name));
 
@@ -10823,6 +10914,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             release_url: None,
             archive_url: None,
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         let progress = InstallProgress::with_callback("coverage-migrate", None);
 
@@ -10870,6 +10962,17 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn node_versioned_radioisotope_plan_reports_versioned_formula() {
+        let plan = ops::isotope_migration_plan("node@24").unwrap();
+
+        assert_eq!(plan.isotope_name, "node@24");
+        assert_eq!(plan.replaces_package, None);
+        assert_eq!(plan.modifies_package, Some("node@24".to_string()));
+        assert!(plan.is_radioisotope);
+        assert!(plan.has_migration);
+    }
+
+    #[test]
     fn terraform_radioisotope_plan_reports_modified_vendor_package() {
         let isotope = isotope_package_data("terraform").unwrap();
         let plan = ops::isotope_migration_plan("terraform").unwrap();
@@ -10900,6 +11003,13 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         );
         assert_eq!(
             installable_isotope_name_for_target(&PackageAliasTarget::HomebrewFormula(
+                "node@24".to_string()
+            ))
+            .unwrap(),
+            Some("node@24".to_string())
+        );
+        assert_eq!(
+            installable_isotope_name_for_target(&PackageAliasTarget::HomebrewFormula(
                 "curl".to_string()
             ))
             .unwrap(),
@@ -10927,6 +11037,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             release_url: None,
             archive_url: Some("https://example.test/archive.tgz".to_string()),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         assert!(isotope_is_installable(&archive_backed));
 
@@ -11437,6 +11548,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             release_url: Some("https://example.test/isotopes/supabase".to_string()),
             archive_url: Some("https://example.test/supabase-cli.tgz".to_string()),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         let plan = InstallPlan::for_i_isotope("isotope:supabase".to_string(), "supabase");
         let executable = executable_isotope_migration_script(
@@ -11785,6 +11897,60 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                 .iter()
                 .any(|reason| reason.contains("Hugging Face token file")),
             "expected Hugging Face token reason, got {:?}",
+            state.reasons
+        );
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn package_security_state_prefers_versioned_node_radioisotope() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join(".npmrc"),
+            "//registry.npmjs.org/:_authToken=npm_secret\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[("HOME", temp.path().to_str().unwrap())]);
+
+        let info = PackageInfo {
+            package_name: "node".to_string(),
+            qualified_name: "brew:node@24".to_string(),
+            install_root: PathBuf::from("/opt/homebrew/Cellar/node@24"),
+            installed: true,
+            source: Some(PackageReceiptSource::Formula {
+                root_formula: "node@24".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: Some("24.16.0".to_string()),
+            latest_version: Some("24.16.0".to_string()),
+            latest_version_error: None,
+            executable_paths: Vec::new(),
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: None,
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+            version_options: Vec::new(),
+        };
+
+        let state =
+            package_security_state(&info).expect("brew:node@24 should have node@24 security state");
+
+        assert_eq!(state.isotope_name, "node@24");
+        assert!(state.install_is_insecure);
+        assert!(state.remediation_available);
+        assert!(
+            state
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("npm user config")),
+            "expected npm user config reason, got {:?}",
             state.reasons
         );
         assert_eq!(state.error, None);
@@ -17257,6 +17423,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             release_url: Some("https://example.test/isotopes/gh".to_string()),
             archive_url: Some("https://example.test/isotopes/gh.tar.gz".to_string()),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         fs::create_dir_all(isotope_plan.install_root.join("bin")).unwrap();
         write_executable(&isotope_plan.install_root.join("bin/gh"));
@@ -19530,6 +19697,7 @@ EOF
             release_url: Some("https://example.test/isotopes/gh".to_string()),
             archive_url: Some(format!("{base}/gh.tar.gz")),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         let gh_plan = InstallPlan {
             mode: Mode::I,
@@ -19572,6 +19740,7 @@ EOF
             release_url: Some("https://example.test/isotopes/aws-cli".to_string()),
             archive_url: Some(format!("{base}/aws-cli.tgz")),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         let aws_plan = InstallPlan {
             mode: Mode::I,
@@ -19596,6 +19765,7 @@ EOF
             release_url: Some("https://example.test/isotopes/supabase-cli".to_string()),
             archive_url: Some(format!("{base}/supabase-cli.tgz")),
             published_at: None,
+            applies_to_versioned_formulae: false,
         };
         let bin_only_plan = InstallPlan {
             mode: Mode::I,

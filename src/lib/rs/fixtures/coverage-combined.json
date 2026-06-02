@@ -179,6 +179,12 @@
         "name": "isotope:huggingface-cli",
         "version": "1.0.0"
       },
+      "node": {
+        "appliesToVersionedFormulae": true,
+        "modifies": "brew:node",
+        "name": "isotope:node",
+        "version": "26.0.0"
+      },
       "openssh": {
         "modifies": "brew:openssh",
         "name": "isotope:openssh",

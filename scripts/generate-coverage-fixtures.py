@@ -195,6 +195,12 @@ def main():
                     "modifies": "brew:hf",
                     "version": "1.0.0",
                 },
+                "node": {
+                    "name": "isotope:node",
+                    "modifies": "brew:node",
+                    "version": "26.0.0",
+                    "appliesToVersionedFormulae": True,
+                },
                 "openssh": {
                     "name": "isotope:openssh",
                     "modifies": "brew:openssh",

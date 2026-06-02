@@ -1,9 +1,24 @@
 import Foundation
 
 private func radioisotopeReadmeURL(for isotopeName: String) -> URL? {
+    radioisotopeReadmeURL(for: isotopeName, fallbackToVersionedBase: false)
+}
+
+private func radioisotopeReadmeURL(
+    for isotopeName: String,
+    fallbackToVersionedBase: Bool
+) -> URL? {
+    let readmeName: String
+    if fallbackToVersionedBase,
+       let base = versionedFormulaBase(isotopeName) {
+        readmeName = base
+    } else {
+        readmeName = isotopeName
+    }
+
     var pathAllowed = CharacterSet.urlPathAllowed
     pathAllowed.remove("/")
-    guard let isotopePath = isotopeName.addingPercentEncoding(
+    guard let isotopePath = readmeName.addingPercentEncoding(
         withAllowedCharacters: pathAllowed
     ) else {
         return nil
@@ -95,7 +110,11 @@ final class SecurityCatalog {
             )
         }
         let matchedIsotopePackages = identifiers.compactMap { isotopePackages[$0] }
-        if let matchedIsotope = matchedIsotopePackages.first {
+        let matchedIsotope = preferredMatchedIsotope(
+            packages: matchedIsotopePackages,
+            securityState: detail.securityState
+        )
+        if let matchedIsotope {
             let remediationAvailable = matchedIsotope.isInstallable
                 || detail.securityState?.remediationAvailable == true
             if let securityState = detail.securityState,
@@ -138,7 +157,10 @@ final class SecurityCatalog {
                     ? PackageSecurityNotice.defaultBody
                     : PackageSecurityNotice.detectorOnlyBody,
                 reasons: securityState.reasons,
-                learnMoreURL: radioisotopeReadmeURL(for: securityState.isotopeName)
+                learnMoreURL: radioisotopeReadmeURL(
+                    for: securityState.isotopeName,
+                    fallbackToVersionedBase: true
+                )
                     ?? PackageSecurityNotice.defaultLearnMoreURL
             )
         }
@@ -157,6 +179,18 @@ final class SecurityCatalog {
     private func matchedIsotopePackages(for detail: PackageDetail) -> [IsotopeRecord] {
         let identifiers = packageIdentifiers(for: detail)
         return identifiers.compactMap { isotopePackages[$0] }
+    }
+
+    private func preferredMatchedIsotope(
+        packages: [IsotopeRecord],
+        securityState: PackageSecurityState?
+    ) -> IsotopeRecord? {
+        guard let securityState else {
+            return packages.first
+        }
+        let stateName = securityState.isotopeName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return packages.first { $0.isotopeName == stateName }
     }
 
     private func packageIdentifiers(for detail: PackageDetail) -> Set<String> {
@@ -287,6 +321,23 @@ final class SecurityCatalog {
         }
         return normalized
     }
+}
+
+private func versionedFormulaBase(_ formula: String) -> String? {
+    let formula = formula.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let separator = formula.lastIndex(of: "@") else {
+        return nil
+    }
+    let base = formula[..<separator]
+    let version = formula[formula.index(after: separator)...]
+    guard !base.isEmpty,
+          !version.isEmpty,
+          version.unicodeScalars.allSatisfy({ scalar in
+              scalar.value >= 48 && scalar.value <= 57
+          }) else {
+        return nil
+    }
+    return String(base)
 }
 
 private struct CombinedData: Decodable {

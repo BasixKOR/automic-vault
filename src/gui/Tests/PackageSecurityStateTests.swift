@@ -628,6 +628,125 @@ final class PackageSecurityStateTests: XCTestCase {
         XCTAssertTrue(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
     }
 
+    func testVersionedModifiedPackageUsesRadioisotopeConversion() throws {
+        let detail = try decodePackageDetail(
+            packageName: "node",
+            formula: "node@24",
+            installed: true,
+            installRoot: "/opt/homebrew/Cellar/node@24",
+            securityState: """
+            {
+              "isotopeName": "node@24",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["npm user config contains a plaintext auth token"],
+              "error": null
+            }
+            """
+        )
+        let plan = NucleusBridge.IsotopeMigrationPlan(
+            isotopeName: "node@24",
+            replacesPackage: nil,
+            modifiesPackage: "node",
+            isRadioisotope: true,
+            hasMigration: true
+        )
+
+        XCTAssertTrue(PackageSecurityRules.shouldConvertRadioisotope(detail: detail, plan: plan))
+    }
+
+    func testVersionedNodeNoticeUsesDetectorIsotopeOverBaseCatalog() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "sources": {
+            "isotopes": {
+              "node": {
+                "name": "isotope:node",
+                "modifies": "brew:node",
+                "repository": "automic-vault/radioisotopes"
+              }
+            }
+          }
+        }
+        """)
+        let detail = try decodePackageDetail(
+            packageName: "node",
+            formula: "node@24",
+            installed: true,
+            installRoot: "/opt/homebrew/Cellar/node@24",
+            securityState: """
+            {
+              "isotopeName": "node@24",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["npm user config contains a plaintext auth token"],
+              "error": null
+            }
+            """
+        )
+
+        let notice = try XCTUnwrap(SecurityCatalog(bundle: bundle).notice(for: detail))
+
+        XCTAssertEqual(notice.applyPackageName, "isotope:node@24")
+        XCTAssertEqual(
+            notice.learnMoreURL.absoluteString,
+            "https://github.com/automic-vault/radioisotopes/tree/main/node#readme"
+        )
+    }
+
+    @MainActor
+    func testVersionedNodeHardeningRequestUsesVersionedIsotope() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "sources": {
+            "isotopes": {
+              "node": {
+                "name": "isotope:node",
+                "modifies": "brew:node",
+                "repository": "automic-vault/radioisotopes"
+              }
+            }
+          }
+        }
+        """)
+        let model = MainWindowModel(securityCatalog: SecurityCatalog(bundle: bundle))
+        defer { model.stop() }
+        let detail = try decodePackageDetail(
+            packageName: "node",
+            formula: "node@24",
+            installed: true,
+            installRoot: "/opt/homebrew/Cellar/node@24",
+            securityState: """
+            {
+              "isotopeName": "node@24",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["npm user config contains a plaintext auth token"],
+              "error": null
+            }
+            """
+        )
+        let package = PackagePresentation(
+            item: .installed(PackageRecord(
+                name: "node",
+                source: .formula(rootFormula: "node@24"),
+                version: "24.16.0",
+                description: "JavaScript runtime",
+                securityState: detail.securityState,
+                installRoot: detail.installRoot,
+                installPackageNames: ["brew:node@24"]
+            )),
+            detail: detail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(model.dossierPrimaryPackageAction(for: detail), .harden)
+        model.requestDossierPackageAction(.harden, detail: detail, package: package)
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.packageNames, ["isotope:node@24"])
+        XCTAssertEqual(request.migrationIsotopeName, "node@24")
+    }
+
     @MainActor
     func testRootInstalledPackageShowsImmutableBadge() {
         let model = MainWindowModel()

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-02T00:34:42.060942+00:00",
+  "generated_at": "2026-06-02T12:34:29.496512+00:00",
   "packages": {
     "brew:aarch64-elf-gdb": {
       "geigerCategory": "escape-surveillance-offensive",
@@ -184,6 +184,21 @@
       ],
       "signals": [
         "geiger:orange"
+      ]
+    },
+    "brew:ansible": {
+      "installPackageName": "brew:ansible",
+      "isotope": "ansible",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:ansible",
+      "name": "ansible",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Ansible Galaxy Token"
+      ],
+      "signals": [
+        "isotope"
       ]
     },
     "brew:ansible-builder": {
@@ -526,14 +541,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:atuin",
+      "isotope": "atuin",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:atuin",
       "name": "atuin",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Atuin Sync Secrets",
         "formula declares a Homebrew service"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:atuin-server": {
@@ -669,14 +689,19 @@
       "geigerConfidence": "high",
       "geigerLevel": "orange",
       "installPackageName": "brew:azure-cli",
+      "isotope": "azure-cli",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:azure-cli",
       "name": "azure-cli",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Azure CLI Token Cache",
         "cloud infrastructure mutation tool"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:b2-tools": {
@@ -1429,6 +1454,21 @@
         "isotope"
       ]
     },
+    "brew:certbot": {
+      "installPackageName": "brew:certbot",
+      "isotope": "certbot",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:certbot",
+      "name": "certbot",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Certbot Account And Certificate Keys"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:cf-terraforming": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -1889,14 +1929,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:cloudflare-wrangler",
+      "isotope": "cloudflare-wrangler",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:cloudflare-wrangler",
       "name": "cloudflare-wrangler",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Wrangler OAuth Tokens",
         "infrastructure mutation or orchestration signal"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:cloudflared": {
@@ -1904,14 +1949,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:cloudflared",
+      "isotope": "cloudflared",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:cloudflared",
       "name": "cloudflared",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Cloudflare Tunnel Credentials",
         "formula declares a Homebrew service"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:cloudformation-cli": {
@@ -2785,6 +2835,21 @@
         "geiger:orange"
       ]
     },
+    "brew:databricks/tap/databricks": {
+      "installPackageName": "brew:databricks/tap/databricks",
+      "isotope": "databricks",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:databricks",
+      "name": "databricks/tap/databricks",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Databricks Profile Credentials"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:davmail": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -3163,14 +3228,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:docker-machine",
+      "isotope": "docker-machine",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:docker-machine",
       "name": "docker-machine",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Docker Machine TLS Keys",
         "formula declares a Homebrew service"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:docker-machine-driver-vultr": {
@@ -3651,6 +3721,21 @@
       ],
       "signals": [
         "geiger:orange"
+      ]
+    },
+    "brew:fastlane": {
+      "installPackageName": "brew:fastlane",
+      "isotope": "fastlane",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:fastlane",
+      "name": "fastlane",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text fastlane Spaceship Sessions"
+      ],
+      "signals": [
+        "isotope"
       ]
     },
     "brew:fastly": {
@@ -4996,6 +5081,21 @@
       ],
       "signals": [
         "geiger:red"
+      ]
+    },
+    "brew:httpie": {
+      "installPackageName": "brew:httpie",
+      "isotope": "httpie",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:httpie",
+      "name": "httpie",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text HTTPie Sessions"
+      ],
+      "signals": [
+        "isotope"
       ]
     },
     "brew:httpry": {
@@ -7670,6 +7770,21 @@
         "geiger:orange"
       ]
     },
+    "brew:mongodb-atlas-cli": {
+      "installPackageName": "brew:mongodb-atlas-cli",
+      "isotope": "mongodb-atlas-cli",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:mongodb-atlas-cli",
+      "name": "mongodb-atlas-cli",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text MongoDB Atlas CLI Fallback Credentials"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:monit": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -8273,6 +8388,51 @@
         "isotope"
       ]
     },
+    "brew:node@20": {
+      "installPackageName": "brew:node@20",
+      "isotope": "node@20",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:node@20",
+      "name": "node@20",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Publishing Token"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
+    "brew:node@22": {
+      "installPackageName": "brew:node@22",
+      "isotope": "node@22",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:node@22",
+      "name": "node@22",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Publishing Token"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
+    "brew:node@24": {
+      "installPackageName": "brew:node@24",
+      "isotope": "node@24",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:node@24",
+      "name": "node@24",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Publishing Token"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:node_exporter": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -8658,6 +8818,21 @@
         "geiger:orange"
       ]
     },
+    "brew:opencode": {
+      "installPackageName": "brew:opencode",
+      "isotope": "opencode",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:opencode",
+      "name": "opencode",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text opencode Auth State"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:openfortivpn": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -8851,14 +9026,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:openvpn",
+      "isotope": "openvpn",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:openvpn",
       "name": "openvpn",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text OpenVPN Client Secrets",
         "broad file, network, media, or database tool signal"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:operator-sdk": {
@@ -9416,6 +9596,21 @@
         "isotope"
       ]
     },
+    "brew:pianobar": {
+      "installPackageName": "brew:pianobar",
+      "isotope": "pianobar",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:pianobar",
+      "name": "pianobar",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text pianobar Password"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:picoclaw": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -9586,6 +9781,21 @@
       ],
       "signals": [
         "geiger:orange",
+        "isotope"
+      ]
+    },
+    "brew:poetry": {
+      "installPackageName": "brew:poetry",
+      "isotope": "poetry",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:poetry",
+      "name": "poetry",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Poetry Repository Credentials"
+      ],
+      "signals": [
         "isotope"
       ]
     },
@@ -11550,6 +11760,21 @@
         "geiger:orange"
       ]
     },
+    "brew:stripe-cli": {
+      "installPackageName": "brew:stripe-cli",
+      "isotope": "stripe-cli",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:stripe-cli",
+      "name": "stripe-cli",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Stripe CLI API Keys"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:stripe-mock": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -11720,14 +11945,19 @@
       "geigerConfidence": "medium",
       "geigerLevel": "orange",
       "installPackageName": "brew:tailscale",
+      "isotope": "tailscale",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:tailscale",
       "name": "tailscale",
-      "priority": 30,
+      "priority": 0,
       "provider": "brew",
       "reasons": [
+        "Plain Text Tailscale Node State",
         "formula declares a Homebrew service"
       ],
       "signals": [
-        "geiger:orange"
+        "geiger:orange",
+        "isotope"
       ]
     },
     "brew:talhelper": {
@@ -12788,6 +13018,21 @@
         "geiger:orange"
       ]
     },
+    "brew:vercel-cli": {
+      "installPackageName": "brew:vercel-cli",
+      "isotope": "vercel-cli",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:vercel-cli",
+      "name": "vercel-cli",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Vercel CLI Credentials"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:vfkit": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -13118,6 +13363,36 @@
         "geiger:orange"
       ]
     },
+    "brew:wget": {
+      "installPackageName": "brew:wget",
+      "isotope": "wget",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:wget",
+      "name": "wget",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Wget Credentials"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
+    "brew:wget2": {
+      "installPackageName": "brew:wget2",
+      "isotope": "wget2",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:wget2",
+      "name": "wget2",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text Wget2 Credentials"
+      ],
+      "signals": [
+        "isotope"
+      ]
+    },
     "brew:wildfly-as": {
       "geigerCategory": "infrastructure",
       "geigerConfidence": "medium",
@@ -13354,6 +13629,21 @@
       ],
       "signals": [
         "geiger:orange"
+      ]
+    },
+    "brew:yt-dlp": {
+      "installPackageName": "brew:yt-dlp",
+      "isotope": "yt-dlp",
+      "isotopeMode": "modifies",
+      "isotopePackage": "isotope:yt-dlp",
+      "name": "yt-dlp",
+      "priority": 0,
+      "provider": "brew",
+      "reasons": [
+        "Plain Text yt-dlp Auth Inputs"
+      ],
+      "signals": [
+        "isotope"
       ]
     },
     "brew:yubikey-agent": {

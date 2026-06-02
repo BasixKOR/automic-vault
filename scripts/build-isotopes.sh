@@ -252,6 +252,20 @@ homebrew_formula_release_json() {
     }'
 }
 
+homebrew_versioned_formulae() {
+  local formula="$1"
+
+  curl -fsSL "https://formulae.brew.sh/api/formula.json" |
+    jq -r --arg base "${formula}" '
+      .[]
+      | .name?
+      | select(type == "string")
+      | select(startswith($base + "@"))
+      | select(.[(($base | length) + 1):] | test("^[0-9]+$"))
+    ' |
+    sort -u
+}
+
 homebrew_tap_formula_release_json() {
   local formula="$1"
   local owner tap name repo formula_rb formula_path version html_url
@@ -489,6 +503,7 @@ append_isotope_version_entry() {
   local migrate_script="$9"
   local justification_json="${10}"
   local caveats_json="${11}"
+  local applies_to_versioned="${12}"
   local tag version
 
   tag="$(printf '%s\n' "${release_json}" | jq -r '.tag_name')"
@@ -509,6 +524,7 @@ append_isotope_version_entry() {
     --arg migrate "${migrate_script}" \
     --argjson justification "${justification_json}" \
     --argjson caveats "${caveats_json}" \
+    --argjson appliesToVersioned "${applies_to_versioned}" \
     '
       ([.assets[]? | select(.name | endswith(".tgz"))][0]) as $asset
       | {
@@ -528,6 +544,7 @@ append_isotope_version_entry() {
         }
       | if $justification == null then . else . + {justification: $justification} end
       | if $caveats == null then . else . + {caveats: $caveats} end
+      | if $appliesToVersioned then . + {appliesToVersionedFormulae: true} else . end
     ' >>"${entries_path}"
 }
 
@@ -590,7 +607,8 @@ generate_isotope_versions_json() {
       "" \
       "${migrate_script}" \
       "${justification_json}" \
-      "${caveats_json}"
+      "${caveats_json}" \
+      "false"
   done <<<"${repo_names}"
 
   append_radioisotope_version_entries "${entries_path}"
@@ -610,6 +628,7 @@ append_radioisotope_version_entries() {
   local entries_path="$1"
   local radio_dir manifest_path manifest isotope_name modifies formula release_json
   local justification_json caveats_json repo_name
+  local applies_to_versioned versioned_formula versioned_release_json
 
   if [[ ! -d "${radioisotopes_dir}" ]]; then
     return 0
@@ -625,6 +644,10 @@ append_radioisotope_version_entries() {
     modifies="$(printf '%s\n' "${manifest}" | jq -r '.modifies // empty')"
     justification_json="$(printf '%s\n' "${manifest}" | jq -c '.justification // null')"
     caveats_json="$(printf '%s\n' "${manifest}" | jq -c '.caveats // null')"
+    applies_to_versioned="$(
+      printf '%s\n' "${manifest}" |
+        jq -r 'if .appliesToVersionedFormulae == true then "true" else "false" end'
+    )"
 
     if [[ -z "${isotope_name}" ]]; then
       echo "Missing required manifest field 'name' in ${manifest_path}" >&2
@@ -661,7 +684,36 @@ append_radioisotope_version_entries() {
       "${modifies}" \
       "" \
       "${justification_json}" \
-      "${caveats_json}"
+      "${caveats_json}" \
+      "${applies_to_versioned}"
+
+    if [[ "${applies_to_versioned}" != "true" ]]; then
+      continue
+    fi
+
+    while IFS= read -r versioned_formula; do
+      [[ -n "${versioned_formula}" ]] || continue
+      if [[ -d "${radioisotopes_dir}/${versioned_formula}" ]]; then
+        continue
+      fi
+      if ! versioned_release_json="$(homebrew_formula_release_json "${versioned_formula}")"; then
+        echo "Skipping radioisotope ${isotope_name}: failed to resolve Homebrew formula ${versioned_formula}" >&2
+        continue
+      fi
+      append_isotope_version_entry \
+        "${entries_path}" \
+        "${versioned_formula}" \
+        "${radioisotopes_repo}" \
+        "$(homebrew_formula_repository "${versioned_formula}")" \
+        "${versioned_release_json}" \
+        "isotope:${versioned_formula}" \
+        "" \
+        "brew:${versioned_formula}" \
+        "" \
+        "${justification_json}" \
+        "${caveats_json}" \
+        "false"
+    done < <(homebrew_versioned_formulae "${formula}")
   done
 }
 

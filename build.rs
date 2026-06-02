@@ -118,6 +118,7 @@ fn generate_isotope_integrations() {
         "  pub(crate) detect_reasons: Option<fn() -> Result<Vec<String>, String>>,\n",
         "  pub(crate) migrate: Option<fn() -> Result<(), String>>,\n",
         "  pub(crate) post_install: Option<fn() -> Result<(), String>>,\n",
+        "  pub(crate) post_install_for_formula: Option<fn(&str) -> Result<(), String>>,\n",
         "  pub(crate) has_detect: bool,\n",
         "  pub(crate) has_migration: bool,\n",
         "  pub(crate) has_install_remediation: bool,\n",
@@ -208,6 +209,14 @@ fn generate_isotope_integrations() {
         } else {
             "None".to_string()
         };
+        let post_install_for_formula = if entry.has_post_install_for_formula {
+            format!(
+                "Some({}::post_install::post_install_for_formula)",
+                entry.module_name
+            )
+        } else {
+            "None".to_string()
+        };
         let credential_helper_name = if entry.credential_helper_path.is_some() {
             format!("Some({}::credential_helper::NAME)", entry.module_name)
         } else {
@@ -224,7 +233,8 @@ fn generate_isotope_integrations() {
         output.push_str(&format!(
             concat!(
                 "  IsotopeIntegration {{ name: {:?}, detect: {}, detect_reasons: {}, ",
-                "migrate: {}, post_install: {}, has_detect: {}, has_migration: {}, ",
+                "migrate: {}, post_install: {}, post_install_for_formula: {}, ",
+                "has_detect: {}, has_migration: {}, ",
                 "has_install_remediation: {}, credential_helper_name: {}, credential_helper: {} }},\n"
             ),
             entry.isotope_name,
@@ -232,6 +242,7 @@ fn generate_isotope_integrations() {
             detect_reasons,
             migrate,
             post_install,
+            post_install_for_formula,
             entry.detect_path.is_some(),
             entry.migrate_path.is_some(),
             entry.post_install_path.is_some(),
@@ -406,6 +417,10 @@ fn collect_isotope_integrations(
             .exists()
             .then(|| std::fs::read_to_string(&detect_path).unwrap_or_default())
             .is_some_and(|contents| contents.contains("pub fn install_insecurity_reasons"));
+        let has_post_install_for_formula = post_install_path
+            .exists()
+            .then(|| std::fs::read_to_string(&post_install_path).unwrap_or_default())
+            .is_some_and(|contents| contents.contains("pub fn post_install_for_formula"));
 
         entries.push(IsotopeIntegrationInput {
             module_name: rust_module_name(&isotope_name),
@@ -414,6 +429,7 @@ fn collect_isotope_integrations(
             has_detect_reasons,
             migrate_path: migrate_path.exists().then_some(migrate_path),
             post_install_path: post_install_path.exists().then_some(post_install_path),
+            has_post_install_for_formula,
             credential_helper_path: credential_helper_path
                 .exists()
                 .then_some(credential_helper_path),
@@ -428,6 +444,7 @@ struct IsotopeIntegrationInput {
     has_detect_reasons: bool,
     migrate_path: Option<std::path::PathBuf>,
     post_install_path: Option<std::path::PathBuf>,
+    has_post_install_for_formula: bool,
     credential_helper_path: Option<std::path::PathBuf>,
 }
 
