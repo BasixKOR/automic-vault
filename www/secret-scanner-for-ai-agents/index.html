@@ -198,121 +198,343 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
-  <link rel="stylesheet" href="../seo.css?v=3">
+  <link rel="stylesheet" href="../styles.css?v=33">
+  <link rel="stylesheet" href="../scanner-page.css?v=1">
 </head>
 <body>
-  <div class="seo-shell">
-    <header class="seo-masthead">
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <div class="site-shell" id="top">
+    <header class="masthead">
       <a class="brand" href="../" aria-label="Automic Vault home">
-        <img class="brand-mark" src="../assets/icon@2x.webp" alt="Automic Vault icon" width="54" height="54">
-        <img class="brand-wordmark" src="../assets/wordmark.webp" alt="Automic Vault" width="996" height="257">
+        <img
+          class="brand-mark"
+          src="../assets/icon@2x.webp"
+          alt="Automic Vault"
+          width="54"
+          height="54"
+        >
+        <span class="brand-type">Automic Vault</span>
       </a>
-      <nav class="seo-nav" aria-label="Main navigation">
-        <a href="../download/">Download</a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="nav" aria-label="Main navigation">
+        <a href="../#hazards">Hazards</a>
+        <a href="../#harden">Harden</a>
+        <a href="../#approval">Gates</a>
+        <a href="../#monitor">Monitor</a>
+        <a href="../pkg/">Packages</a>
+        <a href="../blog/">Blog</a>
         <a href="../docs/">Docs</a>
-        <a href="../secrets-manager-for-ai-agents/">Secrets</a>
-        <a href="../secret-scanning-vs-agent-secret-protection/">Scanning</a>
+        <a href="../download/">Download</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
       </nav>
     </header>
     <main>
-      <section class="seo-hero seo-hero-command">
+      <section class="hero scanner-hero" aria-labelledby="scanner-title">
+        <img
+          class="hero-visual"
+          src="../assets/hero-perspective-mock.webp"
+          alt=""
+          width="1915"
+          height="821"
+          aria-hidden="true"
+          decoding="async"
+          fetchpriority="high"
+        >
+        <div class="hero-meta">
+          <span>macOS</span>
+          <span>sandboxed</span>
+          <span>offline scan</span>
+        </div>
+
+        <div class="hero-copy scanner-hero-copy">
+          <p class="eyebrow">AI agent secret scanner</p>
+          <h1 id="scanner-title">Scan secrets before the agent reads them.</h1>
+          <p class="lede">
+            One curl command downloads the detector-only scanner, runs it in a read-only
+            offline sandbox, and shows plaintext credential exposure before the next
+            agent session starts.
+          </p>
+        </div>
+
+        <div class="scanner-command-panel" aria-label="Run the AI agent secret scanner">
+          <div class="command-panel-header">
+            <span>Run this first</span>
+            <strong>one-liner</strong>
+          </div>
+          <pre><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
+          <p>Downloads <code>scanner.gz</code>, denies writes, denies network access, then runs isotope-only detectors.</p>
+        </div>
+
+        <div class="hero-actions">
+          <a class="button primary" href="../download/">Download Automic Vault</a>
+          <a class="button secondary" href="../secret-scanning-vs-agent-secret-protection/">Compare protection</a>
+          <a class="button text" href="../docs/">Read docs</a>
+        </div>
+      </section>
+
+      <section class="highlights" aria-labelledby="scanner-flow-title">
+        <div class="section-label">
+          <h2 id="scanner-flow-title">A preflight for the files agents can reach.</h2>
+          <span>scanner flow</span>
+        </div>
+        <div class="highlight-grid">
+          <a class="highlight-card accent-blue" href="#sandbox">
+            <span>01 / fetch</span>
+            <strong>Downloads a small scanner binary from the public site.</strong>
+          </a>
+          <a class="highlight-card accent-green" href="#sandbox">
+            <span>02 / contain</span>
+            <strong>Runs with writes denied and network denied.</strong>
+          </a>
+          <a class="highlight-card accent-hot" href="#coverage">
+            <span>03 / detect</span>
+            <strong>Checks package-specific paths and common plaintext files.</strong>
+          </a>
+          <a class="highlight-card accent-gold" href="#fix">
+            <span>04 / fix</span>
+            <strong>Points exposed credentials toward Automic Vault hardening.</strong>
+          </a>
+        </div>
+      </section>
+
+      <section class="problem-strip" id="coverage" aria-labelledby="coverage-title">
+        <div class="section-label">
+          <h2 id="coverage-title">Agent exposure starts outside the repo.</h2>
+          <span>local files</span>
+        </div>
+
+        <div class="hazard-board">
+          <div class="hazard-copy">
+            <p>
+              Repository scanners help, but agent-readable secrets often live in the
+              home directory: CLI auth files, package manager config, cloud credentials,
+              shell profiles, and MCP server settings.
+            </p>
+          </div>
+          <div class="hazard-list" aria-label="Secret paths the scanner can report">
+            <span><code>~/.netrc</code> HTTP credentials</span>
+            <span><code>~/.aws/credentials</code> cloud keys</span>
+            <span><code>~/.npmrc</code> registry tokens</span>
+            <span><code>~/.config/gh</code> GitHub tokens</span>
+            <span><code>~/.ssh</code> unencrypted private keys</span>
+            <span><code>mcp.json</code> server credentials</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="story-layout" id="sandbox" aria-label="Scanner behavior">
+        <div class="story-main">
+          <div class="list-heading">
+            <div>
+              <h2>The scanner run.</h2>
+              <p>Fast enough for a preflight. Restricted enough for a curl one-liner.</p>
+            </div>
+            <span>detector-only</span>
+          </div>
+
+          <article class="ranked-story">
+            <span class="rank">1</span>
+            <div>
+              <p class="story-kicker">Download</p>
+              <h3>Fetches the scanner payload.</h3>
+              <p>
+                The script downloads <code>/scanner.gz</code>, unpacks it into a temporary
+                directory, and removes the temp directory when the run exits.
+              </p>
+            </div>
+          </article>
+
+          <article class="ranked-story">
+            <span class="rank">2</span>
+            <div>
+              <p class="story-kicker">Sandbox</p>
+              <h3>Denies writes and network access before scanning.</h3>
+              <p>
+                The scanner process runs through <code>sandbox-exec</code> with file writes
+                and outbound network blocked. The only network request is the wrapper's
+                initial scanner download.
+              </p>
+            </div>
+          </article>
+
+          <article class="ranked-story">
+            <span class="rank">3</span>
+            <div>
+              <p class="story-kicker">Report</p>
+              <h3>Shows findings without printing secret values.</h3>
+              <p>
+                Findings identify the source and path, such as <code>isotope:curl</code>
+                or <code>isotope:openssh</code>, while leaving credential contents out of
+                the terminal output.
+              </p>
+              <ul class="story-tags" aria-label="Scanner output modes">
+                <li>human output</li>
+                <li>json</li>
+                <li>jsonl</li>
+                <li>isotopes only</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="ranked-story" id="fix">
+            <span class="rank">4</span>
+            <div>
+              <p class="story-kicker">Next step</p>
+              <h3>Move supported secrets out of plaintext files.</h3>
+              <p>
+                After a finding, install Automic Vault to keep supported credentials in
+                protected storage and inject them only into trusted tool executions.
+              </p>
+              <div class="source-strip" aria-label="Automic Vault install command">
+                <span>/usr/bin/curl -fsSL https://www.automicvault.com/install.sh | /bin/bash</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <aside class="side-rail scanner-rail" aria-label="Example scanner output">
+          <section>
+            <h2>Terminal</h2>
+            <div class="scanner-terminal" aria-label="Example scanner output">
+              <p><span>$</span> /usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</p>
+              <p><i>◆</i> Downloading scanner</p>
+              <p><i>✓</i> Writes denied</p>
+              <p><i>✓</i> Network denied</p>
+              <p><i>◆</i> Running package-specific detectors</p>
+              <p><b>✗ 5 plaintext credential findings</b></p>
+              <p><em>high</em> isotope:curl</p>
+              <p>netrc file contains plaintext credentials</p>
+              <p><i>✓</i> Scan complete</p>
+            </div>
+          </section>
+
+          <section>
+            <h2>Use it when</h2>
+            <article>
+              <span>before agents</span>
+              <strong>Scan the workstation</strong>
+              <p>Run before broad filesystem access or local project debugging.</p>
+            </article>
+            <article>
+              <span>after installs</span>
+              <strong>Check fresh config</strong>
+              <p>New CLIs and package managers often create auth files.</p>
+            </article>
+          </section>
+        </aside>
+      </section>
+
+      <section class="compare" aria-labelledby="scanner-limits-title">
+        <div class="section-label">
+          <h2 id="scanner-limits-title">Scanning is a preflight, not the full control plane.</h2>
+          <span>from finding to fix</span>
+        </div>
+        <div class="compare-grid">
+          <article>
+            <span>Find</span>
+            <h3>Scanner output</h3>
+            <p><code>av secret-scanner</code> reports high-confidence plaintext exposure without printing the secret value.</p>
+          </article>
+          <article>
+            <span>Move</span>
+            <h3>Protected storage</h3>
+            <p><code>av save KEY</code> stores supported credentials outside files an agent can casually read.</p>
+          </article>
+          <article>
+            <span>Inject</span>
+            <h3>Trusted execution</h3>
+            <p><code>av inject +KEY /abs/tool</code> gives the credential to the approved executable, not to the model transcript.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="guides" id="faq" aria-labelledby="faq-title">
+        <div class="section-label">
+          <h2 id="faq-title">Secret scanner questions.</h2>
+          <span>faq</span>
+        </div>
+        <div class="guide-list">
+          <a href="#coverage">
+            <span>01</span>
+            <strong>What does it check?</strong>
+            <p>Likely local secret paths, tool config files, project files, and package-specific detectors.</p>
+          </a>
+          <a href="#scanner-limits-title">
+            <span>02</span>
+            <strong>Is scanning enough?</strong>
+            <p>No. Scanning finds exposure. Vault moves supported credentials and gates approved execution.</p>
+          </a>
+          <a href="#sandbox">
+            <span>03</span>
+            <strong>When should I run it?</strong>
+            <p>Before agent sessions, after installing new developer tools, and after local config changes.</p>
+          </a>
+          <a href="../about/">
+            <span>04</span>
+            <strong>Who maintains this?</strong>
+            <p>Automic Vault is maintained by Max Howell, creator of Homebrew.</p>
+          </a>
+        </div>
+      </section>
+
+      <section class="final-cta" aria-labelledby="final-title">
+        <p class="eyebrow">Free and open source</p>
+        <h2 id="final-title">Find plaintext secrets before your next agent run.</h2>
         <div>
-          <p class="kicker">Local credential discovery</p>
-          <h1>Scan AI agent secrets with one cURL command</h1>
-          <div class="hero-command" aria-label="Run the AI agent secret scanner">
-            <p>Run this first</p>
-            <pre><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
-            <span>Downloads the lightweight detector-only scanner and runs it in a read-only, offline sandbox.</span>
-          </div>
-          <p class="lede">Run the sandboxed scanner before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault package-specific detectors.</p>
-          <p class="updated">Last updated: June 2, 2026</p>
-          <div class="answer-box"><p>An AI agent secret scanner should find plaintext credentials before the agent run starts. Automic Vault scans likely local secret paths, then pairs detection with runtime controls that prevent repeated plaintext exposure.</p></div>
-          <div class="hero-actions">
-            <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
-            <a class="button" href="../secret-scanning-vs-agent-secret-protection/">Compare protection <span aria-hidden="true">›</span></a>
-          </div>
-        </div>
-        <figure class="seo-visual">
-          <img src="../assets/vault-console.webp" alt="Automic Vault secret scanner console" width="820" height="1024">
-        </figure>
-      </section>
-      <section class="seo-section seo-split">
-        <div class="section-heading">
-          <p class="kicker">Agent-visible files</p>
-          <h2>Scan the files local coding agents can read.</h2>
-          <p>Repository scanners are useful, but agent exposure often starts in the developer home directory: CLI auth files, package manager config, cloud credentials, and environment files.</p>
-        </div>
-        <div class="proof-list">
-          <article><span>Detectors</span><h3>Use every check</h3><p>The scanner runs Automic Vault package-specific checks for AWS CLI, npm, pnpm, uv, Kubernetes, Terraform, Maven, mkcert, Helm, Node, and Rust tooling.</p></article>
-          <article><span>Plaintext files</span><h3>Probe likely secret paths</h3><p>Look through <code>.env</code>, <code>.npmrc</code>, <code>.pypirc</code>, <code>.netrc</code>, shell profiles, GitHub CLI hosts, AWS credentials, and kubeconfig.</p></article>
-          <article><span>Project mode</span><h3>Point it at a repo</h3><p>Use <code>av secret-scanner --path ./repo</code> to scan small text files while skipping generated build and dependency directories.</p></article>
-          <article><span>Automation</span><h3>Emit machine-readable output</h3><p>Use <code>--json</code> or <code>--jsonl</code> for CI logs, local preflight checks, and agent startup scripts.</p></article>
+          <a class="button primary" href="../download/">Download Automic Vault</a>
+          <a class="button secondary" href="../secrets-manager-for-ai-agents/">Move secrets out of files</a>
+          <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
         </div>
       </section>
-      <section class="seo-section seo-split">
-        <div class="section-heading">
-          <p class="kicker">From finding to fix</p>
-          <h2>Find plaintext secrets, then move them.</h2>
+
+      <section class="guides" aria-labelledby="related-title">
+        <div class="section-label">
+          <h2 id="related-title">Close the local credential loop.</h2>
+          <span>related</span>
         </div>
-        <div class="compare-table">
-          <article><span>Find</span><p><code>av secret-scanner</code> reports high-confidence plaintext credentials without printing the secret value itself.</p></article>
-          <article><span>Move</span><p><code>av save KEY</code> stores credentials outside files that an agent can casually read.</p></article>
-          <article><span>Inject</span><p><code>av inject +KEY /abs/tool</code> gives the credential to the approved executable, not to the model transcript.</p></article>
-        </div>
-      </section>
-      <section class="seo-section seo-split">
-        <div class="section-heading">
-          <p class="kicker">When to scan</p>
-          <h2>Use scanning as a preflight, not as the only control.</h2>
-          <p>A scanner is useful because it catches mistakes already sitting on disk. It is not enough by itself. Once a secret is found, the next step is to move it out of the readable file path and make future use happen through an approved tool execution.</p>
-        </div>
-        <div class="compare-table">
-          <article><span>Before agent runs</span><p>Scan the workstation before giving an agent broad filesystem access or asking it to debug a local project.</p></article>
-          <article><span>After tool installs</span><p>New CLIs and package managers often create auth files. Leave Vault running so new hazards are visible quickly.</p></article>
-          <article><span>After remediation</span><p>Run the scanner again after moving credentials into Vault to confirm old plaintext paths are no longer the easy route.</p></article>
-        </div>
-      </section>
-      <section class="seo-section seo-split" id="faq">
-        <div class="section-heading">
-          <p class="kicker">FAQ</p>
-          <h2>Secret scanner questions.</h2>
-          <p>Automic Vault pairs discovery with hardening. The scanner tells you what an agent can see; Vault then helps remove supported plaintext paths and gate credential use.</p>
-        </div>
-        <div class="proof-list">
-          <article><span>Coverage</span><h3>What does the scanner check?</h3><p>It checks likely local secret paths, tool configs, project files, and package-specific detectors for plaintext credential exposure.</p></article>
-          <article><span>Limits</span><h3>Is scanning enough?</h3><p>No. Scanning finds exposure. Automic Vault also moves supported credentials out of plaintext files and gates approved tool execution.</p></article>
-          <article><span>Timing</span><h3>When should I run it?</h3><p>Run it before agent sessions, after installing new developer tools, and when local configuration changes might expose credentials.</p></article>
-          <article><span>Provenance</span><h3>Maintained by Max Howell</h3><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>
-        </div>
-      </section>
-      <section class="seo-section">
-        <div class="section-heading">
-          <p class="kicker">Related protections</p>
-          <h2>Close the local credential loop.</h2>
-        </div>
-        <div class="link-grid">
-          <a href="../secrets-manager-for-ai-agents/"><span>Secrets manager</span><strong>Secrets manager for AI agents</strong><p>Keep values out of files and inject them only at execution time.</p></a>
-          <a href="../stop-ai-agents-reading-env-files/"><span>Dotenv</span><strong>Stop agents reading .env files</strong><p>Replace the most common plaintext credential target.</p></a>
-          <a href="../github-cli-token-security-ai-agents/"><span>GitHub CLI</span><strong>GitHub token security for AI agents</strong><p>Control tokens exposed through local developer tools.</p></a>
+        <div class="guide-list">
+          <a href="../secrets-manager-for-ai-agents/">
+            <span>01</span>
+            <strong>Secrets manager for AI agents</strong>
+            <p>Keep values out of files and inject them only at execution time.</p>
+          </a>
+          <a href="../stop-ai-agents-reading-env-files/">
+            <span>02</span>
+            <strong>Stop agents reading .env files</strong>
+            <p>Replace the most common plaintext credential target.</p>
+          </a>
+          <a href="../github-cli-token-security-ai-agents/">
+            <span>03</span>
+            <strong>GitHub token security for AI agents</strong>
+            <p>Control tokens exposed through local developer tools.</p>
+          </a>
         </div>
       </section>
     </main>
-    <footer class="seo-footer">
+
+    <footer class="site-footer">
       <p>&copy; 2026 Automic Vault.</p>
       <div class="footer-links">
         <a href="../">Home</a>
         <a href="../about/">About</a>
+        <a href="../blog/">Blog</a>
         <a href="../security/">Security</a>
         <a href="../privacy/">Privacy</a>
         <a href="../terms/">Terms</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
       </div>
     </footer>
   </div>
   <nav class="language-links" aria-label="Language versions"><a href="/secret-scanner-for-ai-agents/" lang="en">English</a> <a href="/ja/secret-scanner-for-ai-agents/" lang="ja">日本語</a> <a href="/de/secret-scanner-for-ai-agents/" lang="de">Deutsch</a> <a href="/fr/secret-scanner-for-ai-agents/" lang="fr">Français</a> <a href="/zh-hans/secret-scanner-for-ai-agents/" lang="zh-Hans">简体中文</a></nav>
+  <script src="../app.js?v=17"></script>
   <script src="/i18n.js" defer></script>
 </body>
 </html>

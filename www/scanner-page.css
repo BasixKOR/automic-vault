@@ -1,0 +1,167 @@
+.scanner-hero {
+  min-height: 780px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.scanner-hero .hero-visual {
+  opacity: 0.58;
+  object-position: center right;
+}
+
+.scanner-hero-copy {
+  max-width: 980px;
+  padding-top: clamp(32px, 5vw, 58px);
+}
+
+.scanner-hero-copy h1 {
+  max-width: 11.2ch;
+}
+
+.scanner-hero-copy .lede {
+  max-width: 860px;
+}
+
+.scanner-command-panel {
+  width: min(100%, 980px);
+  margin-top: clamp(24px, 4vw, 38px);
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, oklch(76% 0.13 82 / 0.12), transparent 58%),
+    var(--surface-2);
+  box-shadow: inset 0 1px 0 oklch(94% 0.01 82 / 0.07);
+}
+
+.command-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.command-panel-header strong {
+  color: var(--dim);
+  font: inherit;
+}
+
+.scanner-command-panel pre {
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+}
+
+.scanner-command-panel code {
+  color: var(--ink);
+  font-size: clamp(0.94rem, 1.45vw, 1.26rem);
+  font-weight: 750;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.scanner-command-panel p {
+  max-width: 62rem;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.scanner-command-panel p code {
+  color: var(--gold);
+  font-size: 0.92em;
+}
+
+.scanner-rail {
+  display: grid;
+  gap: 28px;
+}
+
+.scanner-terminal {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+    var(--surface-deep);
+  background-size: 100% 31px;
+}
+
+.scanner-terminal p {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.scanner-terminal span,
+.scanner-terminal i {
+  color: var(--green);
+  font-style: normal;
+}
+
+.scanner-terminal b {
+  color: var(--hot);
+  font-weight: 800;
+}
+
+.scanner-terminal em {
+  color: var(--hot);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.scanner-rail section:first-child {
+  margin-top: 0;
+}
+
+#fix .source-strip {
+  justify-content: flex-start;
+}
+
+#fix .source-strip span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1060px) {
+  .scanner-hero {
+    min-height: 0;
+  }
+
+  .scanner-hero-copy {
+    padding-top: 26px;
+  }
+
+  .scanner-hero-copy h1 {
+    max-width: 12ch;
+  }
+}
+
+@media (max-width: 760px) {
+  .scanner-command-panel {
+    margin-top: 20px;
+  }
+
+  .scanner-command-panel code {
+    font-size: 0.92rem;
+  }
+
+  .command-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
