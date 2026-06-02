@@ -11,6 +11,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_for_package, taxonomy_terms
+
 
 SCHEMA_VERSION = 1
 GENERATED_DATA_DIR = Path("cache")
@@ -19,79 +25,7 @@ PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
 OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
 CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
-
-HUB_DEFINITIONS = {
-    "cloud-clis": {
-        "label": "Cloud CLI packages",
-        "terms": (
-            "amazon web services",
-            "aws",
-            "azure",
-            "cloudflare",
-            "digitalocean",
-            "docker",
-            "google cloud",
-            "kubernetes",
-            "oci",
-            "s3",
-            "terraform",
-        ),
-        "names": (
-            "awscli",
-            "aws-cdk",
-            "azure-cli",
-            "cloudflared",
-            "doctl",
-            "firebase-cli",
-            "flyctl",
-            "gcloud-cli",
-            "glab",
-            "google-cloud-sdk",
-            "helm",
-            "heroku",
-            "jfrog-cli",
-            "kubernetes-cli",
-            "minio-mc",
-            "netlify-cli",
-            "oci-cli",
-            "opentofu",
-            "podman",
-            "pulumi",
-            "s3cmd",
-            "s5cmd",
-            "snowflake-cli",
-            "terraform",
-            "tfenv",
-            "vercel-cli",
-            "wrangler",
-        ),
-        "reason": "Belongs to a cloud or infrastructure command family.",
-    },
-    "source-control-tools": {
-        "label": "Source-control packages",
-        "terms": ("source control", "version control"),
-        "names": ("fossil", "gh", "git", "git-lfs", "glab", "hub", "jj", "lazygit", "mercurial", "subversion", "svn"),
-        "reason": "Belongs to a source-control command family.",
-    },
-    "package-publishers": {
-        "label": "Package publisher tools",
-        "terms": ("package publish", "publish package", "registry token", "rubygems", "npm", "pypi", "cargo"),
-        "names": ("cargo", "gem", "go", "node", "npm", "pnpm", "poetry", "python", "ruby", "rubygems", "twine", "uv", "yarn"),
-        "reason": "Belongs to a package publishing or registry command family.",
-    },
-    "mcp-tools": {
-        "label": "MCP tool packages",
-        "terms": ("mcp", "model context protocol"),
-        "names": (),
-        "reason": "Mentions MCP or Model Context Protocol.",
-    },
-    "secret-risk-packages": {
-        "label": "Secret-risk packages",
-        "terms": (),
-        "names": (),
-        "reason": "Has protected-tool coverage, approval-gate, or non-low Geiger security signals.",
-    },
-}
+HUB_DEFINITIONS = graph_hub_definitions()
 
 RELATION_DEFINITIONS = {
     "runtime_dependency": "Homebrew declares the target as a runtime dependency.",
@@ -210,12 +144,16 @@ def input_files() -> list[Path]:
     files = [
         PKG_PAGE_ENRICHMENT_PATH,
         CROSS_ECOSYSTEM_PATH,
+        Path("data/pkg-hubs.json"),
+        Path("data/pkg-taxonomy.json"),
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
         Path("data/isotopes.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
         Path("scripts/generate-pkg-pages.py"),
+        Path("scripts/generate-pkg-graph.py"),
+        Path("scripts/pkg_hub_data.py"),
     ]
     if CURATION_PATH.exists():
         files.append(CURATION_PATH)
@@ -296,23 +234,91 @@ def append_unique(targets: list[dict[str, Any]], item: dict[str, Any], seen: set
     targets.append(item)
 
 
-def hub_memberships(name: str, info: dict[str, Any], geiger: dict[str, Any] | None, gated: bool, isotope: bool) -> list[dict[str, str]]:
+def shared_taxonomy_terms(left: dict[str, Any], right: dict[str, Any]) -> set[str]:
+    return taxonomy_terms(left) & taxonomy_terms(right)
+
+
+def taxonomy_peer_candidates(
+    package_key: str,
+    taxonomy: dict[str, Any],
+    taxonomy_by_key: dict[str, dict[str, Any]],
+    db: dict[str, Any],
+    candidate_keys: set[str],
+    limit: int = 8,
+) -> list[tuple[str, set[str], float]]:
+    provider, name = package_key_parts(package_key)
+    if provider != "brew" or not taxonomy:
+        return []
+    scored: list[tuple[float, int, str, set[str]]] = []
+    category = str(taxonomy.get("category") or "")
+    category_path = set(taxonomy.get("categoryPath") or [])
+    tags = set(taxonomy.get("tags") or [])
+    for other_key in sorted(candidate_keys):
+        other = taxonomy_by_key.get(other_key) or {}
+        other_provider, other_name = package_key_parts(other_key)
+        if other_key == package_key or other_provider != "brew":
+            continue
+        score = 0.0
+        shared = shared_taxonomy_terms(taxonomy, other)
+        if category and category == str(other.get("category") or ""):
+            score += 5
+        score += 2 * len(category_path & set(other.get("categoryPath") or []))
+        score += min(5, len(tags & set(other.get("tags") or [])))
+        if score < 5:
+            continue
+        scored.append((score, package_popularity(db, other_name), other_name, shared))
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [(other_name, shared, score) for score, _rank, other_name, shared in scored[:limit]]
+
+
+def taxonomy_peer_reason(shared: set[str]) -> str:
+    if shared:
+        return f"Shares av.db curated category or tags: {', '.join(sorted(shared)[:5])}."
+    return "Shares av.db curated package taxonomy."
+
+
+def hub_memberships(
+    provider: str,
+    name: str,
+    info: dict[str, Any],
+    geiger: dict[str, Any] | None,
+    gated: bool,
+    isotope: bool,
+    taxonomy: dict[str, Any],
+) -> list[dict[str, str]]:
     memberships = []
     names = {normalize_name(name)}
     for executable in info.get("executables") or []:
         if isinstance(executable, dict) and executable.get("name"):
             names.add(normalize_name(str(executable["name"])))
-    haystack = " ".join(str(info.get(key) or "") for key in ("summary", "homepage")).lower()
+    taxonomy_values = taxonomy_terms(taxonomy)
+    category = str(taxonomy.get("category") or "").strip()
+    category_path = {str(item).strip() for item in taxonomy.get("categoryPath") or [] if str(item or "").strip()}
+    tags = {str(item).strip() for item in taxonomy.get("tags") or [] if str(item or "").strip()}
+    haystack = " ".join([
+        *(str(info.get(key) or "") for key in ("summary", "homepage")),
+        " ".join(sorted(taxonomy_values)),
+    ]).lower()
     for slug, hub in HUB_DEFINITIONS.items():
+        providers = set(hub.get("providers") or ())
+        if providers and provider not in providers:
+            continue
         matched = False
-        if slug == "secret-risk-packages":
+        if hub.get("riskHub"):
             level = str((geiger or {}).get("level") or "").lower()
             matched = isotope or gated or level not in {"", "green", "low", "unknown"}
         else:
-            matched = any(normalize_name(item) in names for item in hub["names"]) or any(term_matches(haystack, term) for term in hub["terms"])
+            matched = (
+                any(normalize_name(item) in names for item in hub.get("names") or ())
+                or any(term_matches(haystack, term) for term in hub.get("terms") or ())
+                or (category and category in set(hub.get("categories") or ()))
+                or bool(category_path & set(hub.get("categoryPaths") or ()))
+                or bool(tags & set(hub.get("tags") or ()))
+            )
         if matched:
             memberships.append({"slug": slug, "label": str(hub["label"]), "reason": str(hub["reason"])})
-    return memberships
+    memberships.sort(key=lambda item: (int(HUB_DEFINITIONS.get(item["slug"], {}).get("priority") or 100), item["slug"]))
+    return memberships[:4]
 
 
 def curation_target_key(item: dict[str, Any]) -> str:
@@ -603,6 +609,16 @@ def build_graph() -> dict[str, Any]:
     if not isinstance(packages, dict):
         raise ValueError(f"{PKG_PAGE_ENRICHMENT_PATH} must contain packages")
     page_keys = page_keys_from_filtered_pages(db, geiger_data, isotopes, npm, pip, enrichment, freshness)
+    taxonomy_index = load_pkg_taxonomy_index()
+    taxonomy_by_key = {
+        key: taxonomy_for_package(taxonomy_index, *package_key_parts(key))
+        for key in page_keys
+        if taxonomy_for_package(taxonomy_index, *package_key_parts(key))
+    }
+    taxonomy_term_index: dict[str, set[str]] = defaultdict(set)
+    for key, taxonomy in taxonomy_by_key.items():
+        for term in taxonomy_terms(taxonomy):
+            taxonomy_term_index[term].add(key)
 
     provider_names = provider_packages(db, pip)
     normalized_by_provider: dict[str, dict[str, list[str]]] = {}
@@ -613,6 +629,7 @@ def build_graph() -> dict[str, Any]:
         normalized_by_provider[provider] = {key: sorted(value) for key, value in normalized.items()}
 
     brew_names = {key.split(":", 1)[1] for key in packages if key.startswith("brew:")}
+    brew_page_names = {key.split(":", 1)[1] for key in page_keys if key.startswith("brew:")}
     reverse_runtime: dict[str, list[str]] = defaultdict(list)
     reverse_build: dict[str, list[str]] = defaultdict(list)
     family_groups: dict[str, list[str]] = defaultdict(list)
@@ -661,38 +678,62 @@ def build_graph() -> dict[str, Any]:
         related_seen: set[tuple[str, str, str]] = set()
 
         for dep in sorted(info.get("dependencies") or [], key=lambda item: package_popularity(db, item))[:8]:
-            if dep in brew_names:
+            if dep in brew_page_names:
                 append_unique(related, link_target("brew", dep, "Runtime dependency declared by Homebrew.", "runtime_dependency", 1.0, "pkg-page-enrichment.dependencies"), related_seen)
         for dep in sorted(info.get("buildDependencies") or [], key=lambda item: package_popularity(db, item))[:4]:
-            if dep in brew_names:
+            if dep in brew_page_names:
                 append_unique(related, link_target("brew", dep, "Build dependency declared by Homebrew.", "build_dependency", 0.82, "pkg-page-enrichment.buildDependencies"), related_seen)
         for dependent in sorted(reverse_runtime.get(name, []), key=lambda item: package_popularity(db, item))[:8]:
-            append_unique(related, link_target("brew", dependent, "Popular package that depends on this formula.", "depended_on_by", 0.76, "reverse runtime dependency"), related_seen)
+            if dependent in brew_page_names:
+                append_unique(related, link_target("brew", dependent, "Popular package that depends on this formula.", "depended_on_by", 0.76, "reverse runtime dependency"), related_seen)
         for sibling in sorted(family_groups.get(family_key(name), []), key=lambda item: package_popularity(db, item))[:8]:
-            if sibling != name:
+            if sibling != name and sibling in brew_page_names:
                 append_unique(related, link_target("brew", sibling, "Package name indicates the same formula family.", "same_family", 0.68, "normalized package family"), related_seen)
         if repo:
             for sibling in sorted(repo_groups.get(repo, []), key=lambda item: package_popularity(db, item))[:8]:
-                if sibling != name:
+                if sibling != name and sibling in brew_page_names:
                     append_unique(related, link_target("brew", sibling, "Shares the same upstream source repository.", "same_repository", 0.9, repo), related_seen)
         homepage = info.get("homepage")
         if isinstance(homepage, str) and homepage:
             for sibling in sorted(homepage_groups.get(homepage, []), key=lambda item: package_popularity(db, item))[:6]:
-                if sibling != name:
+                if sibling != name and sibling in brew_page_names:
                     append_unique(related, link_target("brew", sibling, "Shares the same upstream homepage.", "same_homepage", 0.72, homepage), related_seen)
+        taxonomy = taxonomy_by_key.get(key) or {}
+        taxonomy_candidate_keys: set[str] = set()
+        for term in taxonomy_terms(taxonomy):
+            matches = taxonomy_term_index.get(term) or set()
+            if len(matches) <= 1200:
+                taxonomy_candidate_keys.update(matches)
+        if len(taxonomy_candidate_keys) > 300:
+            target_terms = taxonomy_terms(taxonomy)
+            taxonomy_candidate_keys = set(sorted(
+                taxonomy_candidate_keys,
+                key=lambda candidate_key: (
+                    -len(target_terms & taxonomy_terms(taxonomy_by_key.get(candidate_key) or {})),
+                    package_popularity(db, package_key_parts(candidate_key)[1]),
+                    candidate_key,
+                ),
+            )[:300])
+        for peer, shared, score in taxonomy_peer_candidates(key, taxonomy, taxonomy_by_key, db, taxonomy_candidate_keys):
+            append_unique(
+                related,
+                link_target("brew", peer, taxonomy_peer_reason(shared), "domain_peer", min(0.74, 0.58 + (score / 40)), "data/pkg-taxonomy.json"),
+                related_seen,
+            )
 
         also: list[dict[str, Any]] = []
         also_seen: set[tuple[str, str, str]] = set()
         normalized_name = normalize_name(name)
         for provider in ("cask", "npm", "pip"):
             for other in normalized_by_provider.get(provider, {}).get(normalized_name, [])[:4]:
-                append_unique(
-                    also,
-                    link_target(provider, other, "Same normalized package name in another local ecosystem.", "same_software_cross_ecosystem", 0.74, "normalized package name"),
-                    also_seen,
-                )
+                if f"{provider}:{other}" in page_keys:
+                    append_unique(
+                        also,
+                        link_target(provider, other, "Same normalized package name in another local ecosystem.", "same_software_cross_ecosystem", 0.74, "normalized package name"),
+                        also_seen,
+                    )
 
-        hubs = hub_memberships(name, {**info, "summary": summary}, geiger, gated, isotope)
+        hubs = hub_memberships("brew", name, {**info, "summary": summary}, geiger, gated, isotope, taxonomy)
 
         claims = []
         for item in related[:20]:
@@ -733,6 +774,12 @@ def build_graph() -> dict[str, Any]:
                 "repository": repo,
                 "sourceHost": source_host(info.get("sourceArchive") or info.get("homepage") or ""),
                 "packageManagerUrl": ((info.get("package") or {}).get("packageManagerUrl") or ""),
+                "taxonomy": {
+                    "category": taxonomy.get("category") or "",
+                    "categoryPath": list(taxonomy.get("categoryPath") or [])[:8],
+                    "categoryConfidence": taxonomy.get("categoryConfidence") or "",
+                    "tags": list(taxonomy.get("tags") or [])[:16],
+                },
             },
             "operationalContext": {
                 "runtimeDependencyCount": len(info.get("dependencies") or []),

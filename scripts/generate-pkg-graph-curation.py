@@ -13,10 +13,17 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_for_package, taxonomy_terms
+
 
 SCHEMA_VERSION = 1
 GENERATED_DATA_DIR = Path("cache")
 OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
+HUB_DEFINITIONS = graph_hub_definitions()
 CONTROLLED_RELS = {
     "alternative",
     "adjacent_workflow",
@@ -27,13 +34,7 @@ CONTROLLED_RELS = {
     "security_surface_peer",
     "domain_peer",
 }
-STATIC_HUB_SLUGS = {
-    "cloud-clis",
-    "source-control-tools",
-    "package-publishers",
-    "mcp-tools",
-    "secret-risk-packages",
-}
+STATIC_HUB_SLUGS = set(HUB_DEFINITIONS)
 STOPWORDS = {
     "a",
     "an",
@@ -63,134 +64,7 @@ STOPWORDS = {
     "with",
 }
 
-CURATED_HUBS = {
-    "terminal-utilities": {
-        "label": "Terminal utility packages",
-        "kicker": "command-line workflows",
-        "description": "Agent-curated command-line utilities with local package pages and install metadata.",
-        "terms": ("terminal", "command", "shell", "cli", "console", "text ui", "tui"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "text-processing-tools": {
-        "label": "Text processing packages",
-        "kicker": "files and streams",
-        "description": "Packages used to inspect, transform, search, render, or generate text and structured documents.",
-        "terms": ("text", "grep", "search", "markdown", "json", "yaml", "xml", "parser", "format", "document"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "archive-compression-tools": {
-        "label": "Archive and compression packages",
-        "kicker": "compressed artifacts",
-        "description": "Packages that create, inspect, extract, or transform archives and compressed files.",
-        "terms": ("archive", "compress", "compression", "zip", "tar", "gzip", "rar", "7z", "lzma", "zstd"),
-        "providers": ("brew",),
-    },
-    "developer-build-tools": {
-        "label": "Developer build packages",
-        "kicker": "compilers and build steps",
-        "description": "Build systems, compilers, generators, and developer tools that influence local source trees and artifacts.",
-        "terms": ("build", "compiler", "compile", "make", "cmake", "ninja", "generator", "sdk", "debug", "lint"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "language-runtime-packages": {
-        "label": "Language runtime packages",
-        "kicker": "runtime surfaces",
-        "description": "Language runtimes, package ecosystems, and interpreter-adjacent packages.",
-        "terms": ("language", "runtime", "compiler", "interpreter", "python", "ruby", "node", "javascript", "java", "go", "rust"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "networking-protocol-tools": {
-        "label": "Networking and protocol packages",
-        "kicker": "remote connections",
-        "description": "Network clients, protocol utilities, download tools, and remote-service helpers.",
-        "terms": ("network", "http", "https", "server", "client", "dns", "proxy", "socket", "ssh", "ftp", "websocket", "download"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "media-graphics-tools": {
-        "label": "Media and graphics packages",
-        "kicker": "images audio video",
-        "description": "Packages that process images, audio, video, fonts, diagrams, or other media assets.",
-        "terms": ("audio", "video", "image", "graphics", "font", "media", "render", "svg", "pdf", "png", "jpeg"),
-        "providers": ("brew", "npm", "pip", "cask"),
-    },
-    "database-data-tools": {
-        "label": "Database and data packages",
-        "kicker": "data stores",
-        "description": "Packages that query, migrate, inspect, or operate databases and data files.",
-        "terms": ("database", "data", "sql", "postgres", "mysql", "sqlite", "redis", "mongo", "query", "migration"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "security-crypto-tools": {
-        "label": "Security and crypto packages",
-        "kicker": "cryptographic surfaces",
-        "description": "Security, identity, cryptography, password, signing, and certificate-related packages.",
-        "terms": ("security", "crypto", "cryptography", "password", "secret", "encrypt", "decrypt", "certificate", "tls", "ssl", "hash"),
-        "providers": ("brew", "npm", "pip", "cask"),
-    },
-    "scientific-computing-tools": {
-        "label": "Scientific computing packages",
-        "kicker": "analysis and simulation",
-        "description": "Math, statistics, biology, chemistry, geospatial, and scientific computing packages.",
-        "terms": ("math", "science", "scientific", "statistics", "bio", "biology", "chemistry", "simulation", "matrix", "genome"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "game-emulation-tools": {
-        "label": "Game and emulation packages",
-        "kicker": "games and ROM workflows",
-        "description": "Game engines, emulators, ROM tooling, and game asset packages.",
-        "terms": ("game", "emulator", "emulation", "rom", "doom", "arcade", "chess", "roguelike"),
-        "providers": ("brew", "npm", "pip", "cask"),
-    },
-    "documentation-tools": {
-        "label": "Documentation packages",
-        "kicker": "docs and publishing",
-        "description": "Documentation generators, manual page tools, static site tools, and publishing helpers.",
-        "terms": ("documentation", "docs", "doc", "manual", "manpage", "site generator", "static site", "wiki"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "web-dev-tools": {
-        "label": "Web development packages",
-        "kicker": "frontend and web stacks",
-        "description": "Web servers, frontend build tools, JavaScript packages, CSS tools, and browser-adjacent utilities.",
-        "terms": ("web", "browser", "html", "css", "javascript", "typescript", "frontend", "node", "react", "http"),
-        "providers": ("brew", "npm", "pip", "cask"),
-    },
-    "desktop-app-packages": {
-        "label": "Desktop app packages",
-        "kicker": "macOS applications",
-        "description": "Homebrew Cask and desktop-app packages that are still useful package-page navigation targets.",
-        "terms": ("editor", "viewer", "browser", "client", "desktop", "gui", "macos"),
-        "providers": ("cask",),
-    },
-    "package-ecosystem-tools": {
-        "label": "Package ecosystem packages",
-        "kicker": "registries and installers",
-        "description": "Packages that install, publish, inspect, or automate other package ecosystems.",
-        "terms": ("package", "registry", "install", "installer", "dependency", "dependencies", "publish", "module"),
-        "providers": ("brew", "npm", "pip"),
-    },
-    "npm-cli-packages": {
-        "label": "npm command packages",
-        "kicker": "Node package commands",
-        "description": "npm packages with local package pages and command-line or developer workflow metadata.",
-        "terms": (),
-        "providers": ("npm",),
-    },
-    "python-cli-packages": {
-        "label": "Python command packages",
-        "kicker": "PyPI command surfaces",
-        "description": "PyPI packages with local package pages and command-line or developer workflow metadata.",
-        "terms": (),
-        "providers": ("pip",),
-    },
-    "brew-utility-packages": {
-        "label": "Homebrew utility packages",
-        "kicker": "Homebrew long tail",
-        "description": "Homebrew packages with local package pages that need at least one crawlable package-graph path.",
-        "terms": (),
-        "providers": ("brew",),
-    },
-}
+CURATED_HUBS = HUB_DEFINITIONS
 
 
 class Terminal:
@@ -246,11 +120,14 @@ def stable_hash(value: Any) -> str:
 def source_files() -> list[Path]:
     files = [
         GENERATED_DATA_DIR / "pkg-page-enrichment.json",
+        Path("data/pkg-hubs.json"),
+        Path("data/pkg-taxonomy.json"),
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
         Path("data/isotopes.json"),
         Path("data/npm.json"),
         Path("data/pip.json"),
+        Path("scripts/pkg_hub_data.py"),
         Path("scripts/generate-pkg-graph-curation.py"),
     ]
     for root in (Path("data/approval-gates"), Path("data/pkg-pages")):
@@ -323,12 +200,7 @@ def load_base_pages(existing_curation: dict[str, Any] | None = None) -> tuple[An
 
 
 def has_internal_navigation(pages_module: Any, page: Any) -> bool:
-    return bool(
-        page.related_packages
-        or page.also_available_via
-        or page.package_hubs
-        or pages_module.inferred_related_links(page)
-    )
+    return bool(pages_module.has_internal_package_navigation(page))
 
 
 def isolated_pages(pages_module: Any, pages: dict[str, Any]) -> list[Any]:
@@ -383,6 +255,8 @@ def executable_names(page: Any) -> list[str]:
 
 
 def page_facts(page: Any) -> dict[str, Any]:
+    taxonomy_index = load_pkg_taxonomy_index()
+    taxonomy = taxonomy_for_package(taxonomy_index, page.provider, page.name)
     return {
         "key": page.key,
         "provider": page.provider,
@@ -400,6 +274,10 @@ def page_facts(page: Any) -> dict[str, Any]:
         "keywords": list(page.keywords)[:24],
         "classifiers": list(page.classifiers)[:12],
         "geigerLevel": (page.geiger or {}).get("level") if page.geiger else "",
+        "taxonomyCategory": taxonomy.get("category") or "",
+        "taxonomyCategoryPath": list(taxonomy.get("categoryPath") or [])[:8],
+        "taxonomyTags": list(taxonomy.get("tags") or [])[:24],
+        "taxonomyConfidence": taxonomy.get("categoryConfidence") or "",
     }
 
 
@@ -412,6 +290,9 @@ def fact_tokens(facts: dict[str, Any]) -> set[str]:
         " ".join(facts.get("keywords") or []),
         " ".join(facts.get("classifiers") or []),
         " ".join(facts.get("dependencies") or []),
+        facts.get("taxonomyCategory"),
+        " ".join(facts.get("taxonomyCategoryPath") or []),
+        " ".join(facts.get("taxonomyTags") or []),
     ]
     return set().union(*(tokenize(piece) for piece in pieces))
 
@@ -476,18 +357,46 @@ def score_candidate(target: dict[str, Any], candidate: dict[str, Any], target_to
         score += 6
     if set(target.get("dependencies") or []) & set(candidate.get("dependencies") or []):
         score += 1.5
+    if target.get("taxonomyCategory") and target.get("taxonomyCategory") == candidate.get("taxonomyCategory"):
+        score += 5
+    shared_paths = set(target.get("taxonomyCategoryPath") or []) & set(candidate.get("taxonomyCategoryPath") or [])
+    shared_tags = set(target.get("taxonomyTags") or []) & set(candidate.get("taxonomyTags") or [])
+    score += 2 * len(shared_paths)
+    score += min(5, len(shared_tags))
+    shared.update(shared_paths)
+    shared.update(shared_tags)
     return score, shared
 
 
 def candidate_packets(pages: dict[str, Any], target_keys: set[str], limit: int = 18) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     facts = {key: page_facts(page) for key, page in pages.items()}
     tokens = {key: fact_tokens(value) for key, value in facts.items()}
+    token_index: dict[str, list[str]] = defaultdict(list)
+    name_index: dict[str, list[str]] = defaultdict(list)
+    for key, values in tokens.items():
+        for token in values:
+            token_index[token].append(key)
+        name_index[normalized(facts[key]["name"])].append(key)
     by_key: dict[str, list[dict[str, Any]]] = {}
     for key in sorted(target_keys):
         target = facts[key]
         scored: list[tuple[float, str, set[str]]] = []
         target_tokens = tokens[key]
-        for candidate_key, candidate in facts.items():
+        candidate_keys = set(name_index.get(normalized(target["name"]), []))
+        for token in target_tokens:
+            matches = token_index.get(token) or []
+            if len(matches) <= 1200:
+                candidate_keys.update(matches)
+        if len(candidate_keys) > 900:
+            candidate_keys = set(sorted(
+                candidate_keys,
+                key=lambda candidate_key: (
+                    -len(target_tokens & tokens[candidate_key]),
+                    candidate_key,
+                ),
+            )[:900])
+        for candidate_key in sorted(candidate_keys):
+            candidate = facts[candidate_key]
             score, shared = score_candidate(target, candidate, target_tokens, tokens[candidate_key])
             if score <= 0:
                 continue
@@ -511,13 +420,22 @@ def candidate_packets(pages: dict[str, Any], target_keys: set[str], limit: int =
 def choose_hub(facts: dict[str, Any], tokens: set[str]) -> dict[str, Any]:
     provider = facts["provider"]
     best_slug = ""
-    best_score = -1
+    best_score = -1.0
+    category = str(facts.get("taxonomyCategory") or "")
+    category_path = set(facts.get("taxonomyCategoryPath") or [])
+    tags = set(facts.get("taxonomyTags") or [])
     for slug, hub in CURATED_HUBS.items():
         providers = set(hub.get("providers") or ())
         if providers and provider not in providers:
             continue
         terms = set().union(*(tokenize(term) for term in hub.get("terms") or ()))
-        score = len(tokens & terms)
+        score = float(len(tokens & terms))
+        if category and category in set(hub.get("categories") or ()):
+            score += 8
+        score += 3 * len(category_path & set(hub.get("categoryPaths") or ()))
+        score += 2 * len(tags & set(hub.get("tags") or ()))
+        if hub.get("riskHub") and facts.get("geigerLevel"):
+            score += 3
         if score > best_score:
             best_score = score
             best_slug = slug
@@ -532,7 +450,7 @@ def choose_hub(facts: dict[str, Any], tokens: set[str]) -> dict[str, Any]:
     return {
         "slug": best_slug,
         "label": hub["label"],
-        "reason": "Agent-curated fallback hub from local package facts.",
+        "reason": "Matched curated package taxonomy and local package facts.",
         "kicker": hub["kicker"],
         "description": hub["description"],
     }

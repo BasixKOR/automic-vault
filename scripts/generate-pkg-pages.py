@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_brief, taxonomy_for_package, taxonomy_terms
+
 
 SCHEMA_VERSION = 1
 SITE_ORIGIN = "https://www.automicvault.com"
@@ -132,14 +138,22 @@ REQUIRED_I18N_PKG_KEYS = {
     "homepageMissing",
     "hubCounts",
     "hubDescription",
+    "hubApprovalGatedTitle",
+    "hubEcosystemGroupTitle",
+    "hubHighSignalTitle",
     "hubIndexedPagesTitle",
     "hubPackageReasonAlias",
     "hubPackageReasonApproval",
     "hubPackageReasonDefault",
+    "hubProtectedToolsTitle",
     "hubReviewCopy",
     "hubReviewModel",
+    "hubRelatedHubsTitle",
+    "hubRepresentativeSpokesTitle",
     "hubSchemaDescription",
+    "hubSecurityGroupTitle",
     "hubSummaryTitle",
+    "hubTopicalGroupTitle",
     "install",
     "installBehavior",
     "installBehaviorTitle",
@@ -185,6 +199,7 @@ REQUIRED_I18N_PKG_KEYS = {
     "packageMetadata",
     "packageMetadataKicker",
     "packageSummary",
+    "packageTaxonomy",
     "pageGenerated",
     "platformInstallCommands",
     "platformNotes",
@@ -201,6 +216,7 @@ REQUIRED_I18N_PKG_KEYS = {
     "related",
     "relatedLinks",
     "relatedPackages",
+    "relatedTools",
     "repository",
     "reviewed",
     "risk",
@@ -214,6 +230,7 @@ REQUIRED_I18N_PKG_KEYS = {
     "service",
     "serviceNone",
     "signals",
+    "sameWorkflow",
     "source",
     "sourceArchive",
     "sourceDatabaseAria",
@@ -224,6 +241,8 @@ REQUIRED_I18N_PKG_KEYS = {
     "sourcesCopy",
     "status",
     "summaryFallback",
+    "taxonomyEvidence",
+    "topicalHubs",
     "upstream",
     "upstreamDocs",
     "upstreamLatestDetected",
@@ -417,6 +436,12 @@ class PackageHub:
     query_terms: tuple[str, ...] = ()
     package_names: tuple[str, ...] = ()
     providers: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
+    category_paths: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    group: str = "topical"
+    priority: int = 100
+    reason: str = ""
     risk_hub: bool = False
 
     @property
@@ -424,127 +449,29 @@ class PackageHub:
         return f"/pkg/{self.slug}/"
 
 
-PACKAGE_HUBS = (
-    PackageHub(
-        slug="cloud-clis",
-        title="Cloud CLI packages",
-        kicker="cloud command surfaces",
-        description=(
-            "Cloud CLIs often hold access to accounts, deploys, registries, state, "
-            "and production infrastructure from a local shell."
-        ),
-        package_names=(
-            "awscli",
-            "aws-cdk",
-            "azure-cli",
-            "cloudflared",
-            "doctl",
-            "firebase-cli",
-            "flyctl",
-            "gcloud-cli",
-            "glab",
-            "google-cloud-sdk",
-            "helm",
-            "heroku",
-            "jfrog-cli",
-            "kubernetes-cli",
-            "minio-mc",
-            "netlify-cli",
-            "oci-cli",
-            "opentofu",
-            "podman",
-            "pulumi",
-            "s3cmd",
-            "s5cmd",
-            "snowflake-cli",
-            "terraform",
-            "tfenv",
-            "vercel-cli",
-            "wrangler",
-        ),
-        query_terms=(
-            "amazon web services",
-            "aws",
-            "azure",
-            "cloudflare",
-            "digitalocean",
-            "docker",
-            "google cloud",
-            "kubernetes",
-            "oci",
-            "s3",
-            "terraform",
-        ),
-    ),
-    PackageHub(
-        slug="source-control-tools",
-        title="Source-control packages",
-        kicker="repository authority",
-        description=(
-            "Source-control tools can read private repositories, move release tags, push commits, "
-            "and publish code changes. Agent runs should not do that work without review."
-        ),
-        package_names=(
-            "fossil",
-            "gh",
-            "git",
-            "git-lfs",
-            "glab",
-            "hub",
-            "jj",
-            "lazygit",
-            "mercurial",
-            "subversion",
-            "svn",
-        ),
-        query_terms=("source control", "version control"),
-    ),
-    PackageHub(
-        slug="package-publishers",
-        title="Package publisher tools",
-        kicker="publishing authority",
-        description=(
-            "Package publishing tools can use registry tokens to release new artifacts, "
-            "overwrite distribution metadata, and push a local agent run into the supply chain."
-        ),
-        package_names=(
-            "cargo",
-            "gem",
-            "go",
-            "node",
-            "npm",
-            "pnpm",
-            "poetry",
-            "python",
-            "ruby",
-            "rubygems",
-            "twine",
-            "uv",
-            "yarn",
-        ),
-        query_terms=("package publish", "publish package", "registry token", "rubygems", "npm", "pypi", "cargo"),
-    ),
-    PackageHub(
-        slug="mcp-tools",
-        title="MCP tool packages",
-        kicker="agent tool servers",
-        description=(
-            "Model Context Protocol tools sit between AI agents and local credentials, "
-            "files, APIs, or command execution."
-        ),
-        query_terms=("mcp", "model context protocol"),
-    ),
-    PackageHub(
-        slug="secret-risk-packages",
-        title="Secret-risk packages",
-        kicker="credential exposure",
-        description=(
-            "Secret-risk package pages group tools with protected-tool coverage, approval gates, or "
-            "Geiger classifier findings for tools an AI agent can invoke locally."
-        ),
-        risk_hub=True,
-    ),
-)
+def load_package_hubs() -> tuple[PackageHub, ...]:
+    hubs = []
+    for slug, info in graph_hub_definitions().items():
+        hubs.append(PackageHub(
+            slug=slug,
+            title=str(info.get("label") or slug),
+            kicker=str(info.get("kicker") or "package hub"),
+            description=str(info.get("description") or "Generated package hub."),
+            query_terms=tuple(info.get("terms") or ()),
+            package_names=tuple(info.get("names") or ()),
+            providers=tuple(info.get("providers") or ()),
+            categories=tuple(info.get("categories") or ()),
+            category_paths=tuple(info.get("categoryPaths") or ()),
+            tags=tuple(info.get("tags") or ()),
+            group=str(info.get("group") or "topical"),
+            priority=int(info.get("priority") or 100),
+            reason=str(info.get("reason") or ""),
+            risk_hub=bool(info.get("riskHub")),
+        ))
+    return tuple(sorted(hubs, key=lambda hub: (hub.priority, hub.title.lower(), hub.slug)))
+
+
+PACKAGE_HUBS = load_package_hubs()
 
 
 class Terminal:
@@ -849,12 +776,27 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     apply_package_page_enrichment(pages, sources.get("pkg_page_enrichment") or {})
     apply_package_version_freshness(pages, sources.get("pkg_version_freshness") or {})
     apply_package_page_supplements(pages)
+    apply_package_taxonomy(pages)
     pages = executable_package_pages(pages)
     apply_package_graph(pages, sources.get("pkg_graph") or {})
     apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
+    prune_missing_relationship_targets(pages)
     verify_local_install_commands(pages)
 
     return pages
+
+
+def apply_package_taxonomy(pages: dict[str, PackagePage]) -> None:
+    taxonomy_index = load_pkg_taxonomy_index()
+    for page in pages.values():
+        taxonomy = taxonomy_for_package(taxonomy_index, page.provider, page.name)
+        if not taxonomy:
+            continue
+        brief = taxonomy_brief(taxonomy)
+        page.extra["pkgTaxonomy"] = brief
+        if not page.category and brief.get("category"):
+            page.category = str(brief["category"])
+        page.source_notes.append("av.db category and tag curation")
 
 
 def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dict[str, Any]) -> None:
@@ -1015,6 +957,32 @@ def apply_package_cross_ecosystem(pages: dict[str, PackagePage], cross_ecosystem
             limit=12,
         )
         page.source_notes.append("cross-ecosystem install command graph")
+
+
+def prune_missing_relationship_targets(pages: dict[str, PackagePage]) -> None:
+    page_keys = set(pages)
+    for page in pages.values():
+        page.related_packages = valid_related_targets(page, page.related_packages, page_keys)
+        page.also_available_via = valid_related_targets(page, page.also_available_via, page_keys)
+
+
+def valid_related_targets(page: PackagePage, items: list[dict[str, Any]], page_keys: set[str]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider") or "").strip()
+        name = str(item.get("name") or "").strip()
+        target_key = f"{provider}:{name}"
+        if not provider or not name or target_key == page.key or target_key not in page_keys:
+            continue
+        key = (provider, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def merge_related_links(existing: list[dict[str, Any]], generated: list[Any], limit: int = 24) -> list[dict[str, Any]]:
@@ -1444,6 +1412,8 @@ def source_files() -> list[Path]:
         PKG_GRAPH_PATH,
         PKG_GRAPH_CURATION_PATH,
         PKG_CROSS_ECOSYSTEM_PATH,
+        Path("scripts/generate-pkg-pages.py"),
+        Path("scripts/pkg_hub_data.py"),
     ))
     data = Path("data")
     for path in data.iterdir() if data.exists() else []:
@@ -1621,7 +1591,7 @@ def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[P
     static_slugs = {hub.slug for hub in PACKAGE_HUBS}
     for hub in PACKAGE_HUBS:
         matches = sorted(
-            [page for page in pages if package_matches_hub(page, hub)],
+            [page for page in pages if package_matches_hub(page, hub) or page_has_hub(page, hub.slug)],
             key=hub_sort_key,
         )
         if matches:
@@ -1658,6 +1628,10 @@ def package_hub_pages(pages: list[PackagePage]) -> list[tuple[PackageHub, list[P
     return hubs
 
 
+def page_has_hub(page: PackagePage, slug: str) -> bool:
+    return any(isinstance(item, dict) and item.get("slug") == slug for item in page.package_hubs)
+
+
 def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
     if hub.providers and page.provider not in hub.providers:
         return False
@@ -1671,6 +1645,17 @@ def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
     names.update(str(item.get("name") or "").lower() for item in page.executables if isinstance(item, dict))
     if any(name in names for name in hub.package_names):
         return True
+    taxonomy = page.extra.get("pkgTaxonomy") if isinstance(page.extra.get("pkgTaxonomy"), dict) else {}
+    taxonomy_values = taxonomy_terms(taxonomy)
+    category = str(taxonomy.get("category") or page.category or "").strip()
+    category_path = {str(item).strip() for item in taxonomy.get("categoryPath") or [] if str(item or "").strip()}
+    tags = {str(item).strip() for item in taxonomy.get("tags") or [] if str(item or "").strip()}
+    if hub.categories and category in set(hub.categories):
+        return True
+    if hub.category_paths and category_path & set(hub.category_paths):
+        return True
+    if hub.tags and tags & set(hub.tags):
+        return True
     haystack = " ".join(
         str(value or "")
         for value in (
@@ -1678,6 +1663,7 @@ def package_matches_hub(page: PackagePage, hub: PackageHub) -> bool:
             clean_summary(page.summary),
             page.category,
             " ".join(page.aliases),
+            " ".join(sorted(taxonomy_values)),
         )
     ).lower()
     return any(hub_term_matches(haystack, term) for term in hub.query_terms)
@@ -1697,6 +1683,24 @@ def hub_sort_key(page: PackagePage) -> tuple[int, int, int, str, str]:
     gated = 0 if page.approval_gate else 1
     rank = int(page.popularity.get("rank") or 999999)
     return (coverage, gated, risk_rank.get(level, 6), rank, page.display_name.lower())
+
+
+def internal_package_link_count(page: PackagePage) -> int:
+    package_links = [
+        item for item in list(page.related_packages) + list(page.also_available_via)
+        if isinstance(item, dict)
+        and str(item.get("provider") or "").strip()
+        and str(item.get("name") or "").strip()
+        and f"{item.get('provider')}:{item.get('name')}" != page.key
+    ]
+    inferred = inferred_related_links(page)
+    hubs = [item for item in page.package_hubs if isinstance(item, dict) and str(item.get("slug") or "").strip()]
+    guides = core_security_guide_links(page)
+    return len(package_links) + len(inferred) + len(hubs) + len(guides)
+
+
+def has_strong_internal_package_navigation(page: PackagePage) -> bool:
+    return bool(page.package_hubs) and internal_package_link_count(page) >= 3
 
 
 def localized_package_output_dir(output_dir: Path, locale: dict[str, Any] | None) -> Path:
@@ -1814,10 +1818,7 @@ def render_index(
         f'<a class="package-row" href="{locale_path(page.path, locale)}"><span>{html_escape(page.display_name)}</span><small>{html_escape(label_for(page, locale))}</small></a>'
         for page in top_pages
     )
-    hub_links = "\n".join(
-        f'<a class="hub-card" href="{locale_path(hub.path, locale)}"><span>{html_escape(hub.title)}</span><strong>{fmt_int(len(hub_pages))}</strong><small>{html_escape(hub.kicker)}</small></a>'
-        for hub, hub_pages in hubs
-    )
+    hub_links = hub_group_sections(hubs, locale)
     search_placeholder = json.dumps(tx(locale, "searchPlaceholder", "Search awscli, gh, .env, npm publish"), ensure_ascii=False)
     return html_doc(
         title=tx(locale, "packageCatalogTitle", "Package security catalog") + " | Automic Vault",
@@ -1856,7 +1857,7 @@ def render_index(
     <p class="section-kicker">{html_escape(tx(locale, 'catalogHubsKicker', 'package hubs'))}</p>
     <h2 id="pkg-hubs-title">{html_escape(tx(locale, 'catalogHubsTitle', 'Package groups with security signals'))}</h2>
     <p>{html_escape(tx(locale, 'catalogHubsCopy', 'These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.'))}</p>
-    <div class="hub-grid" aria-label="{attr(tx(locale, 'catalogHubsAria', 'Package category hubs'))}">
+    <div class="hub-groups" aria-label="{attr(tx(locale, 'catalogHubsAria', 'Package category hubs'))}">
       {hub_links}
     </div>
   </section>
@@ -1902,6 +1903,31 @@ def render_index(
             "about": tx(locale, "packageCatalogDescription", "Nucleus packages, AI agent package security, approval gates, and secret migration metadata"),
         },
     )
+
+
+def hub_group_sections(
+    hubs: list[tuple[PackageHub, list[PackagePage]]],
+    locale: dict[str, Any] | None = None,
+) -> str:
+    labels = {
+        "security": tx(locale, "hubSecurityGroupTitle", "Security hubs"),
+        "topical": tx(locale, "hubTopicalGroupTitle", "Topical hubs"),
+        "ecosystem": tx(locale, "hubEcosystemGroupTitle", "Ecosystem hubs"),
+    }
+    groups: dict[str, list[tuple[PackageHub, list[PackagePage]]]] = {"security": [], "topical": [], "ecosystem": []}
+    for hub, pages in hubs:
+        groups.setdefault(hub.group, []).append((hub, pages))
+    sections = []
+    for group in ("security", "topical", "ecosystem"):
+        items = sorted(groups.get(group) or [], key=lambda item: (item[0].priority, item[0].title.lower()))
+        if not items:
+            continue
+        cards = "\n".join(
+            f'<a class="hub-card" href="{locale_path(hub.path, locale)}"><span>{html_escape(hub.title)}</span><strong>{fmt_int(len(hub_pages))}</strong><small>{html_escape(hub.kicker)}</small></a>'
+            for hub, hub_pages in items
+        )
+        sections.append(f'<section class="hub-group"><h3>{html_escape(labels.get(group, group.title()))}</h3><div class="hub-grid">{cards}</div></section>')
+    return "\n".join(sections)
 
 
 def render_hub_page(
@@ -1965,6 +1991,7 @@ def render_hub_page(
       </article>
     </div>
   </section>
+  {render_hub_cluster_sections(hub, pages, locale)}
   <section class="pkg-section">
     <p class="section-kicker">{html_escape(tx(locale, 'packages', 'packages'))}</p>
     <h2>{html_escape(tx(locale, 'hubIndexedPagesTitle', 'Indexed package pages'))}</h2>
@@ -1982,6 +2009,84 @@ def render_hub_page(
         favicon_href="/favicon.ico",
         schema=schema_for_hub(hub, pages, description, updated, locale),
     )
+
+
+def render_hub_cluster_sections(
+    hub: PackageHub,
+    pages: list[PackagePage],
+    locale: dict[str, Any] | None = None,
+) -> str:
+    high_signal = pages[:12]
+    protected = [page for page in pages if page.isotope][:8]
+    gated = [page for page in pages if page.approval_gate][:8]
+    spokes = sorted(pages, key=lambda page: (int(page.popularity.get("rank") or 999999), page.display_name.lower()))[:16]
+    related_hubs = related_hub_links(hub, pages, locale)
+    blocks = [
+        hub_cluster_block(tx(locale, "hubHighSignalTitle", "High-signal tools"), high_signal, locale),
+        hub_cluster_block(tx(locale, "hubProtectedToolsTitle", "Protected tools"), protected, locale),
+        hub_cluster_block(tx(locale, "hubApprovalGatedTitle", "Approval-gated tools"), gated, locale),
+        hub_related_block(tx(locale, "hubRelatedHubsTitle", "Related hubs"), related_hubs),
+        hub_cluster_block(tx(locale, "hubRepresentativeSpokesTitle", "Representative package spokes"), spokes, locale),
+    ]
+    return "\n".join(block for block in blocks if block)
+
+
+def hub_cluster_block(title: str, pages: list[PackagePage], locale: dict[str, Any] | None = None) -> str:
+    if not pages:
+        return ""
+    cards = "\n".join(hub_spoke_card(page, locale) for page in pages)
+    return f"""
+<section class="pkg-section hub-cluster">
+  <h2>{html_escape(title)}</h2>
+  <div class="package-list hub-spoke-list">{cards}</div>
+</section>
+"""
+
+
+def hub_related_block(title: str, links: list[str]) -> str:
+    if not links:
+        return ""
+    return f"""
+<section class="pkg-section hub-cluster">
+  <h2>{html_escape(title)}</h2>
+  <div class="hub-related-list">{''.join(links)}</div>
+</section>
+"""
+
+
+def hub_spoke_card(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    return (
+        f'<a class="package-row" href="{locale_path(page.path, locale)}">'
+        f"<span>{html_escape(page.display_name)}</span>"
+        f"<small>{html_escape(hub_package_reason(page, locale))}</small>"
+        "</a>"
+    )
+
+
+def related_hub_links(hub: PackageHub, pages: list[PackagePage], locale: dict[str, Any] | None = None) -> list[str]:
+    counts: dict[str, tuple[str, str, int]] = {}
+    for page in pages:
+        for item in page.package_hubs:
+            if not isinstance(item, dict):
+                continue
+            slug = str(item.get("slug") or "")
+            if not slug or slug == hub.slug:
+                continue
+            label = str(item.get("label") or slug.replace("-", " ").title())
+            reason = str(item.get("reason") or "")
+            _label, _reason, count = counts.get(slug, (label, reason, 0))
+            counts[slug] = (label, reason or _reason, count + 1)
+    ranked = sorted(counts.items(), key=lambda item: (-item[1][2], item[1][0].lower()))[:8]
+    return [
+        (
+            f'<a class="hub-related-card" href="{locale_path(f"/pkg/{slug}/", locale)}">'
+            f"<span>{html_escape(label)}</span>"
+            f"<small>{html_escape(reason or tx(locale, 'packageGraph', 'package graph'))}</small>"
+            f"<strong>{fmt_int(count)}</strong>"
+            "</a>"
+        )
+        for slug, (label, reason, count) in ranked
+    ]
 
 
 def hub_description_detail(hub: PackageHub, pages: list[PackagePage], locale: dict[str, Any] | None = None) -> str:
@@ -2069,6 +2174,7 @@ def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, 
                             "position": index + 1,
                             "url": f"{SITE_ORIGIN}{page.path}",
                             "name": page.display_name,
+                            "description": schema_item_description(page, locale),
                         }
                         for index, page in enumerate(pages[:50])
                     ],
@@ -2085,6 +2191,20 @@ def schema_for_hub(hub: PackageHub, pages: list[PackagePage], description: str, 
             },
         ],
     }
+
+
+def schema_item_description(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    taxonomy = page.extra.get("pkgTaxonomy") if isinstance(page.extra.get("pkgTaxonomy"), dict) else {}
+    parts = []
+    if taxonomy.get("category"):
+        parts.append(tx(locale, "packageTaxonomy", "Taxonomy: {value}", value=taxonomy["category"]))
+    tags = [str(item) for item in taxonomy.get("tags") or [] if str(item or "").strip()]
+    if tags:
+        parts.append(tx(locale, "taxonomyEvidence", "Tags: {value}", value=", ".join(tags[:5])))
+    reason = hub_package_reason(page, locale)
+    if reason:
+        parts.append(reason)
+    return short_text(" ".join(parts), 220)
 
 
 def render_package_page(
@@ -2455,11 +2575,23 @@ def md_security_section(page: PackagePage, locale: dict[str, Any] | None = None)
 
 
 def md_related_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
-    related = list(page.related_packages) + list(page.also_available_via)
-    if not related and not page.package_hubs:
+    workflow_rels = {"adjacent_workflow", "format_peer", "language_runtime_peer", "command_surface_peer", "security_surface_peer", "domain_peer"}
+    related = filtered_related_items(page, page.related_packages, exclude_rels=workflow_rels, limit=8)
+    workflow = filtered_related_items(page, page.related_packages, include_rels=workflow_rels, limit=6)
+    also = filtered_related_items(page, page.also_available_via, limit=4)
+    if not related and not workflow and not also and not page.package_hubs:
         return []
     lines = [f"## {md_text(tx(locale, 'relatedLinks', 'Related Links'))}", ""]
-    for item in related[:24]:
+    for hub in page.package_hubs[:4]:
+        if not isinstance(hub, dict):
+            continue
+        slug = str(hub.get("slug") or "").strip()
+        label = str(hub.get("label") or slug).strip()
+        reason = str(hub.get("reason") or "").strip()
+        if slug and label:
+            suffix = f" - {md_text(reason)}" if reason else ""
+            lines.append(f"- [{md_text(label)}]({SITE_ORIGIN}/pkg/{slug}/){suffix}")
+    for item in [*related, *workflow, *also][:18]:
         if not isinstance(item, dict):
             continue
         provider = str(item.get("provider") or "").strip()
@@ -2471,13 +2603,6 @@ def md_related_section(page: PackagePage, locale: dict[str, Any] | None = None) 
         href = f"{SITE_ORIGIN}/pkg/{provider}/{slugify(name)}/"
         suffix = f" - {md_text(reason)}" if reason else ""
         lines.append(f"- [{md_text(label)}]({href}){suffix}")
-    for hub in page.package_hubs[:12]:
-        if not isinstance(hub, dict):
-            continue
-        slug = str(hub.get("slug") or "").strip()
-        label = str(hub.get("label") or slug).strip()
-        if slug and label:
-            lines.append(f"- [{md_text(label)}]({SITE_ORIGIN}/pkg/{slug}/)")
     lines.append("")
     return lines
 
@@ -3262,39 +3387,86 @@ def render_install_metadata(page: PackagePage, locale: dict[str, Any] | None = N
 
 
 def render_related(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
-    related = [related_link(item, locale) for item in page.related_packages]
-    also = [related_link(item, locale) for item in page.also_available_via]
-    hubs = [hub_link(item, locale) for item in page.package_hubs]
+    workflow_rels = {"adjacent_workflow", "format_peer", "language_runtime_peer", "command_surface_peer", "security_surface_peer", "domain_peer"}
+    related_items = filtered_related_items(page, page.related_packages, exclude_rels=workflow_rels, limit=8)
+    workflow_items = filtered_related_items(page, page.related_packages, include_rels=workflow_rels, limit=6)
+    also_items = filtered_related_items(page, page.also_available_via, limit=4)
+    if not related_items and not workflow_items and not also_items:
+        related_items = inferred_related_items(page, limit=8)
+    hubs = [hub_link(item, locale) for item in page.package_hubs[:4] if isinstance(item, dict) and item.get("slug")]
     guides = core_security_guide_links(page, locale)
-    if not related and not also:
-        related = inferred_related_links(page, locale)
+    articles = [
+        related_article(tx(locale, "topicalHubs", "Topical hubs"), hubs),
+        related_article(tx(locale, "relatedTools", "Related tools"), [related_link(item, locale) for item in related_items]),
+        related_article(tx(locale, "sameWorkflow", "Same workflow"), [related_link(item, locale) for item in [*workflow_items, *also_items][:6]]),
+        related_article(tx(locale, "agentSecurityGuides", "Agent security guides"), guides),
+    ]
+    article_html = "".join(article for article in articles if article)
     return f"""
 <section class="pkg-section split-section related-section" aria-labelledby="related-title">
   <div>
     <p class="section-kicker">{html_escape(tx(locale, 'packageGraph', 'package graph'))}</p>
-    <h2 id="related-title">{html_escape(tx(locale, 'relatedPackages', 'Related packages'))}</h2>
-    <p>{html_escape(tx(locale, 'packageGraphCopy', 'Links come from the local package relationship graph, supplements, dependency edges, ecosystem matches, and package hub membership.'))}</p>
+    <h2 id="related-title">{html_escape(tx(locale, 'internalLinks', 'Internal package links'))}</h2>
+    <p>{html_escape(tx(locale, 'packageGraphCopy', 'Links come from deterministic package relationships, av.db category and tag curation, ecosystem matches, and package hub membership.'))}</p>
   </div>
   <div class="related-columns">
-    <article>
-      <h3>{html_escape(tx(locale, 'related', 'Related'))}</h3>
-      <ul>{''.join(related) or f'<li>{html_escape(tx(locale, "noRelated", "No related package links were present."))}</li>'}</ul>
-    </article>
-    <article>
-      <h3>{html_escape(tx(locale, 'alsoAvailableVia', 'Also available via'))}</h3>
-      <ul>{''.join(also) or f'<li>{html_escape(tx(locale, "noCrossEcosystem", "No cross-ecosystem equivalent was recorded."))}</li>'}</ul>
-    </article>
-    <article>
-      <h3>{html_escape(tx(locale, 'packageHubs', 'Package hubs'))}</h3>
-      <ul>{''.join(hubs) or f'<li>{html_escape(tx(locale, "noHubMembership", "No package hub membership was generated."))}</li>'}</ul>
-    </article>
-    <article>
-      <h3>{html_escape(tx(locale, 'agentSecurityGuides', 'Agent security guides'))}</h3>
-      <ul>{''.join(guides)}</ul>
-    </article>
+    {article_html}
   </div>
 </section>
 """
+
+
+def related_article(title: str, items: list[str]) -> str:
+    content = "".join(item for item in items if item)
+    if not content:
+        return ""
+    return f"<article><h3>{html_escape(title)}</h3><ul>{content}</ul></article>"
+
+
+def filtered_related_items(
+    page: PackagePage,
+    items: list[dict[str, Any]],
+    *,
+    include_rels: set[str] | None = None,
+    exclude_rels: set[str] | None = None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider") or "").strip()
+        name = str(item.get("name") or "").strip()
+        rel = str(item.get("rel") or "").strip()
+        if not provider or not name or f"{provider}:{name}" == page.key:
+            continue
+        if include_rels is not None and rel not in include_rels:
+            continue
+        if exclude_rels is not None and rel in exclude_rels:
+            continue
+        key = (provider, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def inferred_related_items(page: PackagePage, limit: int) -> list[dict[str, Any]]:
+    if page.provider != "brew":
+        return []
+    return [
+        {
+            "provider": page.provider,
+            "name": dependency,
+            "label": dependency,
+            "reason": f"{package_manager_label(page)} dependency.",
+        }
+        for dependency in page.dependencies[:limit]
+    ]
 
 
 def core_security_guide_links(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
@@ -3356,12 +3528,7 @@ def inferred_related_links(page: PackagePage, locale: dict[str, Any] | None = No
 
 
 def has_internal_package_navigation(page: PackagePage) -> bool:
-    return bool(
-        page.related_packages
-        or page.also_available_via
-        or page.package_hubs
-        or inferred_related_links(page)
-    )
+    return has_strong_internal_package_navigation(page)
 
 
 def related_link(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
@@ -4089,6 +4256,7 @@ h1 {
 .signal-grid,
 .related-columns {
   display: grid;
+  align-items: start;
   gap: 12px;
 }
 .install-notes-grid article,
@@ -4134,7 +4302,7 @@ h1 {
   font-family: var(--font-mono);
 }
 .related-columns {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 .related-section {
   grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
@@ -4436,6 +4604,25 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   border: 1px solid var(--line);
   background: var(--line);
 }
+.hub-groups {
+  display: grid;
+  gap: 28px;
+  margin-top: 24px;
+}
+.hub-group {
+  display: grid;
+  gap: 12px;
+}
+.hub-group h3,
+.hub-cluster h2 {
+  color: var(--ink);
+  font-size: clamp(1.15rem, 1.8vw, 1.7rem);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.hub-group .hub-grid {
+  margin-top: 0;
+}
 .hub-card {
   display: grid;
   min-height: 160px;
@@ -4468,6 +4655,39 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   text-transform: uppercase;
 }
 .hub-table td:first-child { min-width: 160px; font-weight: 700; }
+.hub-cluster {
+  display: grid;
+  gap: 18px;
+}
+.hub-spoke-list .package-row small {
+  text-transform: none;
+}
+.hub-related-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+.hub-related-card {
+  display: grid;
+  gap: 10px;
+  min-height: 120px;
+  padding: 16px;
+  background: var(--surface-2);
+}
+.hub-related-card span {
+  color: var(--ink);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.hub-related-card small {
+  color: var(--muted);
+}
+.hub-related-card strong {
+  color: var(--hot);
+  font-family: var(--font-mono);
+}
 .pkg-concept-install {
   background:
     linear-gradient(90deg, rgba(114, 182, 97, 0.058), transparent 38%),
@@ -4639,7 +4859,8 @@ td { color: var(--ink); overflow-wrap: anywhere; }
   h1 { font-size: clamp(2.8rem, 15vw, 4.8rem); }
   .lede { font-size: 1.32rem; }
   .package-list { grid-template-columns: 1fr; }
-  .hub-grid { grid-template-columns: 1fr; }
+  .hub-grid,
+  .hub-related-list { grid-template-columns: 1fr; }
   .metric { grid-template-columns: 1fr; gap: 6px; }
   th { width: 150px; }
 }
@@ -4696,6 +4917,35 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
         failures.append(
             f"{len(isolated_pages):,} indexable package pages have no internal package graph links: {', '.join(isolated_pages[:12])}"
         )
+    page_keys = {page.key for page in pages}
+    hub_slugs = {hub.slug for hub, _hub_pages in hubs}
+    weak_pages = [page.key for page in indexable_pages if internal_package_link_count(page) < 3]
+    if weak_pages:
+        failures.append(
+            f"{len(weak_pages):,} indexable package pages have fewer than 3 internal package/hub/guide links: {', '.join(weak_pages[:12])}"
+        )
+    no_hub_pages = [page.key for page in indexable_pages if not page.package_hubs]
+    if no_hub_pages:
+        failures.append(
+            f"{len(no_hub_pages):,} indexable package pages have no package hub link: {', '.join(no_hub_pages[:12])}"
+        )
+    for page in indexable_pages:
+        for item in list(page.related_packages) + list(page.also_available_via):
+            if not isinstance(item, dict):
+                continue
+            provider = str(item.get("provider") or "")
+            name = str(item.get("name") or "")
+            target_key = f"{provider}:{name}"
+            if target_key == page.key:
+                failures.append(f"package page links to itself: {page.key}")
+                break
+            if target_key not in page_keys:
+                failures.append(f"package page links to missing package: {page.key} -> {target_key}")
+                break
+        for item in page.package_hubs:
+            if isinstance(item, dict) and str(item.get("slug") or "") not in hub_slugs:
+                failures.append(f"package page links to missing hub: {page.key} -> {item.get('slug')}")
+                break
     noindex_page_count = int(manifest.get("noindex_page_count") or 0)
     if noindex_page_count != len(noindex_pages):
         failures.append(f"manifest noindex page count is {noindex_page_count}, but current data yields {len(noindex_pages)}")
