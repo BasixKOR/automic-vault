@@ -189,9 +189,7 @@ pub(crate) fn list_installed_packages() -> Result<core::ListInstalledResponse, S
         });
     }
 
-    Ok(core::ListInstalledResponse {
-        packages: group_installed_versioned_formulae(results),
-    })
+    Ok(core::ListInstalledResponse { packages: results })
 }
 
 #[derive(Debug, Default)]
@@ -265,91 +263,6 @@ fn npm_catalog_metadata(package_name: &str) -> CatalogPackageMetadata {
         summary: string_or_none(&metadata.summary),
         homepage: string_or_none(&metadata.homepage),
         ..CatalogPackageMetadata::default()
-    }
-}
-
-fn group_installed_versioned_formulae(
-    packages: Vec<core::InstalledPackageSummary>,
-) -> Vec<core::InstalledPackageSummary> {
-    let versioned_bases = packages
-        .iter()
-        .filter_map(|package| match &package.source {
-            PackageReceiptSource::Formula { root_formula } => formula_versioned_base(&package.name)
-                .or_else(|| formula_versioned_base(root_formula))
-                .map(str::to_string),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let mut grouped: HashMap<String, Vec<core::InstalledPackageSummary>> = HashMap::new();
-    let mut passthrough = Vec::new();
-    for package in packages {
-        let PackageReceiptSource::Formula { root_formula } = &package.source else {
-            passthrough.push(package);
-            continue;
-        };
-        let base = formula_versioned_base(&package.name)
-            .or_else(|| formula_versioned_base(root_formula))
-            .map(str::to_string);
-        if let Some(base) = base {
-            grouped.entry(base).or_default().push(package);
-        } else if versioned_bases.contains(&package.name) {
-            grouped
-                .entry(package.name.clone())
-                .or_default()
-                .push(package);
-        } else {
-            passthrough.push(package);
-        }
-    }
-
-    passthrough.extend(grouped.into_iter().flat_map(|(base, mut versions)| {
-        versions
-            .sort_by(|left, right| compare_versioned_package_names_desc(&left.name, &right.name));
-        if versions.len() == 1 {
-            return versions;
-        }
-        let mut primary = versions
-            .iter()
-            .find(|package| package.name == base)
-            .cloned()
-            .unwrap_or_else(|| versions[0].clone());
-        primary.name = base;
-        primary.installed_versions = versions
-            .iter()
-            .map(|package| package.version.clone())
-            .collect();
-        primary.install_package_names = versions
-            .iter()
-            .map(|package| package.name.clone())
-            .collect();
-        vec![primary]
-    }));
-    passthrough
-        .sort_by(|left, right| compare_package_names_for_search_order(&left.name, &right.name));
-    passthrough
-}
-
-fn compare_versioned_package_names_desc(left: &str, right: &str) -> std::cmp::Ordering {
-    let (left_base, left_version) = left.rsplit_once('@').unwrap_or((left, ""));
-    let (right_base, right_version) = right.rsplit_once('@').unwrap_or((right, ""));
-    left_base
-        .cmp(right_base)
-        .then_with(|| compare_version_suffixes(right_version, left_version))
-        .then_with(|| right.cmp(left))
-}
-
-fn compare_version_suffixes(left: &str, right: &str) -> std::cmp::Ordering {
-    let mut left_parts = left.split(['.', '_']).map(|part| part.parse::<u64>());
-    let mut right_parts = right.split(['.', '_']).map(|part| part.parse::<u64>());
-    loop {
-        match (left_parts.next(), right_parts.next()) {
-            (None, None) => return left.cmp(right),
-            (None, Some(_)) => return std::cmp::Ordering::Less,
-            (Some(_), None) => return std::cmp::Ordering::Greater,
-            (Some(Ok(left)), Some(Ok(right))) if left != right => return left.cmp(&right),
-            (Some(Ok(_)), Some(Ok(_))) => continue,
-            _ => return left.cmp(right),
-        }
     }
 }
 
@@ -1676,47 +1589,7 @@ mod tests {
     }
 
     #[test]
-    fn versioned_package_name_sort_places_newer_versions_first() {
-        let mut packages = vec![
-            "python@3.13".to_string(),
-            "python@3.14".to_string(),
-            "python@3.9".to_string(),
-        ];
-        packages.sort_by(|left, right| compare_versioned_package_names_desc(left, right));
-        assert_eq!(packages, ["python@3.14", "python@3.13", "python@3.9"]);
-    }
-
-    #[test]
-    fn grouped_versioned_formulae_report_versions_separately_from_package_names() {
-        let grouped = group_installed_versioned_formulae(vec![
-            installed_formula_summary("python@3.13", "3.13.9"),
-            installed_formula_summary("python@3.14", "3.14.1"),
-        ]);
-
-        assert_eq!(grouped.len(), 1);
-        assert_eq!(grouped[0].name, "python");
-        assert_eq!(grouped[0].installed_versions, ["3.14.1", "3.13.9"]);
-        assert_eq!(
-            grouped[0].install_package_names,
-            ["python@3.14", "python@3.13"]
-        );
-    }
-
-    #[test]
-    fn single_versioned_formula_keeps_precise_package_name() {
-        let grouped = group_installed_versioned_formulae(vec![installed_formula_summary(
-            "node@24", "24.11.1",
-        )]);
-
-        assert_eq!(grouped.len(), 1);
-        assert_eq!(grouped[0].name, "node@24");
-        assert_eq!(grouped[0].version, "24.11.1");
-        assert!(grouped[0].installed_versions.is_empty());
-        assert!(grouped[0].install_package_names.is_empty());
-    }
-
-    #[test]
-    fn list_installed_packages_groups_versioned_formulae_and_keeps_other_sources() {
+    fn list_installed_packages_keeps_versioned_formulae_separate() {
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let roots = [
             write_test_receipt(
@@ -1747,14 +1620,25 @@ mod tests {
         ];
 
         let packages = list_installed_packages().unwrap().packages;
-        let grouped = packages
+        let versioned = packages
             .iter()
-            .find(|package| package.name == "coverage-python")
-            .unwrap();
-        assert_eq!(grouped.installed_versions, ["3.14.1", "3.13.9"]);
+            .filter(|package| package.name.starts_with("coverage-python@"))
+            .collect::<Vec<_>>();
         assert_eq!(
-            grouped.install_package_names,
-            ["coverage-python@3.14", "coverage-python@3.13"]
+            versioned
+                .iter()
+                .map(|package| (package.name.as_str(), package.version.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("coverage-python@3.13", "3.13.9"),
+                ("coverage-python@3.14", "3.14.1")
+            ]
+        );
+        assert!(
+            versioned
+                .iter()
+                .all(|package| package.installed_versions.is_empty()
+                    && package.install_package_names.is_empty())
         );
 
         let cask = packages
@@ -1774,63 +1658,6 @@ mod tests {
 
         for root in roots {
             remove_path(&root).unwrap();
-        }
-    }
-
-    #[test]
-    fn grouped_versioned_formulae_prefers_unversioned_primary_and_sorted_passthrough() {
-        let grouped = group_installed_versioned_formulae(vec![
-            installed_formula_summary("python@3.12", "3.12.11"),
-            installed_formula_summary("python", "3.14.2"),
-            installed_formula_summary("python@3.14", "3.14.2"),
-            core::InstalledPackageSummary {
-                name: "codex".to_string(),
-                source: PackageReceiptSource::Cask {
-                    cask_name: "codex".to_string(),
-                },
-                version: "1.0.0".to_string(),
-                description: Some("Codex".to_string()),
-                homepage: Some("https://example.test/codex".to_string()),
-                repository: None,
-                upstream_docs: None,
-                docs: Vec::new(),
-                category: None,
-                installed_versions: Vec::new(),
-                install_package_names: Vec::new(),
-                security_state: None,
-            },
-        ]);
-
-        assert_eq!(grouped.len(), 2);
-        assert_eq!(grouped[0].name, "codex");
-        assert_eq!(grouped[1].name, "python");
-        assert_eq!(grouped[1].version, "3.14.2");
-        assert_eq!(
-            grouped[1].installed_versions,
-            ["3.14.2", "3.12.11", "3.14.2"]
-        );
-        assert_eq!(
-            grouped[1].install_package_names,
-            ["python@3.14", "python@3.12", "python"]
-        );
-    }
-
-    fn installed_formula_summary(name: &str, version: &str) -> core::InstalledPackageSummary {
-        core::InstalledPackageSummary {
-            name: name.to_string(),
-            source: PackageReceiptSource::Formula {
-                root_formula: name.to_string(),
-            },
-            version: version.to_string(),
-            description: None,
-            homepage: None,
-            repository: None,
-            upstream_docs: None,
-            docs: Vec::new(),
-            category: None,
-            installed_versions: Vec::new(),
-            install_package_names: Vec::new(),
-            security_state: None,
         }
     }
 
@@ -2123,30 +1950,6 @@ mod tests {
                 "isotope:gh".to_string(),
                 "pip:my-package-name".to_string()
             ]
-        );
-    }
-
-    #[test]
-    fn compare_version_suffixes_covers_numeric_and_text_paths() {
-        assert_eq!(
-            compare_version_suffixes("3.14.1", "3.14.1"),
-            std::cmp::Ordering::Equal
-        );
-        assert_eq!(
-            compare_version_suffixes("3.14", "3.14.1"),
-            std::cmp::Ordering::Less
-        );
-        assert_eq!(
-            compare_version_suffixes("3.14.1", "3.14"),
-            std::cmp::Ordering::Greater
-        );
-        assert_eq!(
-            compare_version_suffixes("3.14_a", "3.14_b"),
-            std::cmp::Ordering::Less
-        );
-        assert_eq!(
-            compare_version_suffixes("3.14.beta", "3.14.1"),
-            "3.14.beta".cmp("3.14.1")
         );
     }
 

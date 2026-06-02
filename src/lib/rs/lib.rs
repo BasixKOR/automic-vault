@@ -17864,7 +17864,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn resolve_package_search_results_surfaces_versioned_formula_aliases() {
         let _env_lock = test_env_lock().lock().unwrap();
-        let alias = formula_index_entries()
+        let (name, alias) = formula_index_entries()
             .unwrap()
             .iter()
             .find_map(|entry| {
@@ -17872,7 +17872,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                     .aliases
                     .iter()
                     .find(|alias| formula_versioned_base(alias).is_some())
-                    .cloned()
+                    .map(|alias| (entry.name.clone(), alias.clone()))
             })
             .expect("embedded db should carry at least one versioned formula alias");
 
@@ -17880,7 +17880,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             &Config {
                 bottle_tag: "arm64_tahoe".to_string(),
             },
-            &alias,
+            &name,
         )
         .unwrap();
         assert!(
@@ -17892,35 +17892,42 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     #[test]
     fn formula_search_results_preserve_versioned_display_names() {
         let versioned =
-            formula_search_result_for_query(&formula_index_entry("gcc@15", &[], &[]), "gcc");
+            formula_search_results_for_query(&formula_index_entry("gcc@15", &[], &[]), "gcc");
         assert_eq!(
-            (
-                versioned.package_name.as_str(),
-                package_source_qualified_name(&versioned.source)
-            ),
-            ("gcc@15", "brew:gcc@15".to_string())
+            versioned
+                .iter()
+                .map(|result| (
+                    result.package_name.as_str(),
+                    package_source_qualified_name(&result.source)
+                ))
+                .collect::<Vec<_>>(),
+            vec![("gcc@15", "brew:gcc@15".to_string())]
         );
-        let aliased = formula_search_result_for_query(
+        let aliased = formula_search_results_for_query(
             &formula_index_entry("node", &["node@25"], &[]),
             "node@25",
         );
         assert_eq!(
-            (
-                aliased.package_name.as_str(),
-                package_source_qualified_name(&aliased.source)
-            ),
-            ("node@25", "brew:node".to_string())
+            aliased
+                .iter()
+                .map(|result| (
+                    result.package_name.as_str(),
+                    package_source_qualified_name(&result.source)
+                ))
+                .collect::<Vec<_>>(),
+            vec![("node@25", "brew:node@25".to_string())]
         );
-        let family = formula_search_result_for_query(
+        assert_eq!(aliased[0].install_package_names, ["node@25"]);
+        let family = formula_search_results_for_query(
             &formula_index_entry("node", &["node@25"], &[]),
             "node",
         );
         assert_eq!(
-            (
-                family.package_name.as_str(),
-                package_source_qualified_name(&family.source)
-            ),
-            ("node", "brew:node".to_string())
+            family
+                .iter()
+                .map(|result| result.package_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["node", "node@25"]
         );
     }
 

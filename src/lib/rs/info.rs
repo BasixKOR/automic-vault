@@ -372,7 +372,7 @@ pub(crate) fn resolve_package_search_results(
     let mut results = formula_index_entries()?
         .iter()
         .filter(|entry| formula_index_entry_matches(entry, &lowered_query))
-        .map(|entry| formula_search_result_for_query(entry, &lowered_query))
+        .flat_map(|entry| formula_search_results_for_query(entry, &lowered_query))
         .collect::<Vec<_>>();
     let db = crate::cli::load_db()?;
     crate::cli::ensure_db_schema(&db)?;
@@ -1169,7 +1169,7 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
     PackageSearchResult {
         package_name: package_name.to_string(),
         source: PackageReceiptSource::Formula {
-            root_formula: entry.name.clone(),
+            root_formula: formula_search_result_root_formula(entry, package_name),
         },
         summary: string_or_none(&entry.summary),
         latest_version: None,
@@ -1179,12 +1179,38 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
         docs: non_empty_docs(&entry.docs),
         category: string_or_none(&entry.category),
         dependencies: Vec::new(),
-        install_package_names: Vec::new(),
+        install_package_names: formula_search_result_install_package_names(entry, package_name),
         security_state: None,
         rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
         last_updated_at: entry.last_updated_at.clone(),
         pulse_kind: None,
     }
+}
+
+fn formula_search_result_root_formula(entry: &FormulaIndexEntry, package_name: &str) -> String {
+    if formula_search_result_uses_display_name_as_install_target(entry, package_name) {
+        return package_name.to_string();
+    }
+    entry.name.clone()
+}
+
+fn formula_search_result_install_package_names(
+    entry: &FormulaIndexEntry,
+    package_name: &str,
+) -> Vec<String> {
+    if formula_search_result_uses_display_name_as_install_target(entry, package_name) {
+        return vec![package_name.to_string()];
+    }
+    Vec::new()
+}
+
+fn formula_search_result_uses_display_name_as_install_target(
+    entry: &FormulaIndexEntry,
+    package_name: &str,
+) -> bool {
+    package_name != entry.name
+        && !package_name.contains(':')
+        && formula_versioned_base(package_name).is_some()
 }
 
 fn formula_upstream_docs(entry: &FormulaIndexEntry) -> Option<String> {
@@ -1196,29 +1222,40 @@ fn non_empty_docs(docs: &[String]) -> Vec<String> {
     docs.iter().filter_map(|doc| string_or_none(doc)).collect()
 }
 
-pub(crate) fn formula_search_result_for_query(
+pub(crate) fn formula_search_results_for_query(
     entry: &FormulaIndexEntry,
     query: &str,
-) -> PackageSearchResult {
-    let package_name = formula_search_result_display_name(entry, query);
-    formula_search_result(entry, &package_name)
+) -> Vec<PackageSearchResult> {
+    formula_search_result_display_names(entry, query)
+        .into_iter()
+        .map(|package_name| formula_search_result(entry, &package_name))
+        .collect()
 }
 
-fn formula_search_result_display_name(entry: &FormulaIndexEntry, query: &str) -> String {
+fn formula_search_result_display_names(entry: &FormulaIndexEntry, query: &str) -> Vec<String> {
     let query = query.trim().to_ascii_lowercase();
+    let mut names = Vec::new();
     if query.is_empty() || entry.name.to_ascii_lowercase().contains(&query) {
-        return entry.name.clone();
+        names.push(entry.name.clone());
     }
 
-    entry
-        .aliases
-        .iter()
-        .chain(entry.oldnames.iter())
-        .find(|name| {
-            formula_versioned_base(name).is_some() && name.to_ascii_lowercase().contains(&query)
-        })
-        .cloned()
-        .unwrap_or_else(|| entry.name.clone())
+    names.extend(
+        entry
+            .aliases
+            .iter()
+            .chain(entry.oldnames.iter())
+            .filter(|name| {
+                formula_versioned_base(name).is_some() && name.to_ascii_lowercase().contains(&query)
+            })
+            .cloned(),
+    );
+
+    if names.is_empty() {
+        names.push(entry.name.clone());
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 #[cfg(test)]
