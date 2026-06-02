@@ -62,18 +62,18 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
-    func testCategorySectionsAreAlphabetizedByDisplayedTitleWithOtherLast() {
+    func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
         let sections = MainWindowSection.categorySections
-        XCTAssertEqual(sections.last, .other)
+        XCTAssertFalse(sections.contains(.other))
         XCTAssertTrue(sections.contains(.toys))
         XCTAssertEqual(MainWindowSection.toys.categoryIdentifier, "toys")
 
-        let regularTitles = sections.dropLast().map(\.title)
-        let sortedTitles = regularTitles.sorted {
+        let titles = sections.map(\.title)
+        let sortedTitles = titles.sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
 
-        XCTAssertEqual(regularTitles, sortedTitles)
+        XCTAssertEqual(titles, sortedTitles)
     }
 
     @MainActor

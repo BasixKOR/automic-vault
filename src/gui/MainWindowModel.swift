@@ -46,18 +46,11 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         .productivity,
         .science,
         .games,
-        .toys,
-        .other
+        .toys
     ]
 
     static var categorySections: [MainWindowSection] {
         unsortedCategorySections.sorted { left, right in
-            if left == .other {
-                return false
-            }
-            if right == .other {
-                return true
-            }
             let comparison = left.title.localizedStandardCompare(right.title)
             if comparison == .orderedSame {
                 return left.rawValue < right.rawValue
