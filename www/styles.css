@@ -463,6 +463,11 @@ h1 {
   text-transform: none;
 }
 
+h1 code {
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
 .lede {
   width: min(100%, 820px);
   margin-top: 26px;
