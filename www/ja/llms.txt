@@ -2,7 +2,7 @@
 
 brew install したツールを安全に。
 
-Homebrew は Mac にツールを入れます。Automic Vault は、そのツールが何を読めるかを確認し、対応済みの認証情報を平文ファイルから移し、コマンドがそれらを使う前に確認します。
+Automic Vault は、AI エージェントが使う前に、Homebrew ツール、CLI シークレット、コマンド承認ゲートを Mac 上でローカルに保護します。
 
 - ウェブサイト: https://www.automicvault.com/ja/
 - パッケージ: https://www.automicvault.com/ja/pkg/

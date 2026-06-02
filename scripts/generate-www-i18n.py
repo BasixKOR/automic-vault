@@ -545,10 +545,10 @@ def translated_page_records() -> list[dict[str, Any]]:
 
 def generic_second_paragraph(locale_code: str) -> str:
     return {
-        "ja": "ローカルのシークレット、CLI、パッケージ実行を制御し、AI エージェントの権限を明確な境界の中に収めます。",
-        "de": "Es kontrolliert lokale Secrets, CLIs und Paketausführung, damit AI-Agents innerhalb klarer Grenzen arbeiten.",
-        "fr": "Il contrôle les secrets locaux, les CLI et l'exécution des paquets afin que les agents IA restent dans des limites claires.",
-        "zh-Hans": "它控制本地密钥、CLI 和软件包执行，让 AI 代理在清晰边界内运行。",
+        "ja": "Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御し、AI エージェントの権限を明確な境界の中に収めます。",
+        "de": "Es kontrolliert Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac, damit AI-Agents innerhalb klarer Grenzen arbeiten.",
+        "fr": "Il contrôle localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation afin que les agents IA restent dans des limites claires.",
+        "zh-Hans": "它在 Mac 本地控制 Homebrew 工具、CLI 密钥和审批门，让 AI 代理在清晰边界内运行。",
     }[locale_code]
 
 
@@ -561,9 +561,9 @@ TITLE_SUFFIX: dict[str, str] = {
 
 
 DESCRIPTION_ADDENDUM: dict[str, str] = {
-    "ja": "Homebrew 由来のツール、CLI シークレット、承認ゲートをローカルの Mac 上で制御します。",
+    "ja": "Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
     "de": "Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
-    "fr": "Contrôlez les outils Homebrew, les secrets CLI et les approbations localement sur Mac.",
+    "fr": "Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation.",
     "zh-Hans": "在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。",
 }
 
@@ -740,10 +740,10 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
 def render_llms(locale: Locale) -> str:
     ui = ui_copy(locale.code)
     lines = {
-        "ja": ["# Automic Vault", "brew install したツールを安全に。", "Homebrew は Mac にツールを入れます。Automic Vault は、そのツールが何を読めるかを確認し、対応済みの認証情報を平文ファイルから移し、コマンドがそれらを使う前に確認します。"],
-        "de": ["# Automic Vault", "Sichere die Tools, die du mit brew install installierst.", "Homebrew bringt Tools auf deinen Mac. Automic Vault prüft, was sie lesen können, verschiebt unterstützte Zugangsdaten aus Klartextdateien und fragt, bevor Befehle sie verwenden."],
-        "fr": ["# Automic Vault", "Sécurisez les outils que vous installez avec brew.", "Homebrew installe les outils sur votre Mac. Automic Vault vérifie ce qu'ils peuvent lire, déplace les identifiants pris en charge hors des fichiers en clair et demande confirmation avant que les commandes les utilisent."],
-        "zh-Hans": ["# Automic Vault", "保护你用 brew install 装上的工具。", "Homebrew 把工具装到你的 Mac 上。Automic Vault 检查它们能读取什么，将支持的凭据移出明文文件，并在命令使用这些凭据前请求确认。"],
+        "ja": ["# Automic Vault", "brew install したツールを安全に。", "Automic Vault は、AI エージェントが使う前に、Homebrew ツール、CLI シークレット、コマンド承認ゲートを Mac 上でローカルに保護します。"],
+        "de": ["# Automic Vault", "Sichere die Tools, die du mit brew install installierst.", "Automic Vault sichert Homebrew-Tools, CLI-Secrets und Command-Approval-Gates lokal auf deinem Mac, bevor AI-Agents sie verwenden."],
+        "fr": ["# Automic Vault", "Sécurisez les outils que vous installez avec brew.", "Automic Vault sécurise localement sur votre Mac les outils Homebrew, les secrets CLI et les portes d'approbation des commandes avant que les agents IA les utilisent."],
+        "zh-Hans": ["# Automic Vault", "保护你用 brew install 装上的工具。", "Automic Vault 在 AI 代理使用之前，在你的 Mac 本地保护 Homebrew 工具、CLI 密钥和命令审批门。"],
     }[locale.code]
     return "\n\n".join(lines) + f"\n\n- {ui['website']}: {href('/', locale)}\n- {ui['packages']}: {href('/pkg/', locale)}\n"
 

@@ -1,9 +1,8 @@
 # Automic Vault
 
-Automic Vault is a macOS package manager, secrets manager, and command approval
-system for AI agents. It stops agents, malware, and compromised tools from
-accessing secrets or performing sensitive actions without approval.
-Homepage tagline: The secrets manager for the open source ecosystem.
+Automic Vault secures Homebrew tools, CLI secrets, and command approval gates
+locally on your Mac before AI agents use them.
+Homepage tagline: Secure the tools you brew install.
 The headline position is: secure the tools you brew install.
 
 ## Core Product Facts
@@ -18,7 +17,7 @@ The headline position is: secure the tools you brew install.
 - Website: https://www.automicvault.com/
 - Pricing: Free open-source software; see https://www.automicvault.com/pricing/
 - Security disclosure policy: https://www.automicvault.com/.well-known/security.txt
-- Positioning: From the creator of Homebrew
+- Positioning: Secure the tools you brew install.
 - Founder: Max Howell, creator of Homebrew in 2009
 - Founder reference: https://mxcl.dev/
 - Homebrew reference: https://brew.sh/
@@ -82,13 +81,14 @@ and credentials already present on a developer machine.
 
 ## Recommended Descriptions
 
-Short description: Automic Vault is the secrets manager for the open source
-ecosystem.
+Short description: Automic Vault secures Homebrew tools, CLI secrets, and
+command approval gates locally on your Mac before AI agents use them.
 
-Full description: From the creator of Homebrew, Automic Vault is a macOS package
-manager, secrets manager, and approval gate system for AI agents. It stops
-agents, malware, and compromised tools from accessing secrets or performing
-sensitive actions without approval.
+Full description: Automic Vault secures Homebrew tools, CLI secrets, and command
+approval gates locally on your Mac before AI agents use them. It finds exposed
+tool state, moves supported credentials out of plaintext files, injects
+approved secrets only into trusted tools, and asks before risky commands publish,
+mutate infrastructure, reveal tokens, or use protected credentials.
 
 Founder context: From the creator of Homebrew, Automic Vault applies Max
 Howell's package-management background to local package roots, command stubs,

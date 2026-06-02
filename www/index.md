@@ -1,12 +1,15 @@
 # Automic Vault
 
-The secrets manager for the open source ecosystem.
+Secure the tools you brew install.
+
+Automic Vault secures Homebrew tools, CLI secrets, and command approval gates
+locally on your Mac before AI agents use them.
 
 The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
 tokens sit in files an agent or malware can read. Automic Vault keeps watching
 after setup, so new installs and stale tool config do not stay quiet.
 
-## Founder Note
+## Founder Context
 
 > I built Homebrew. It was designed before AI agents existed.
 >

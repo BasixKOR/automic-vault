@@ -1,7 +1,10 @@
 # Automic Vault
 
-A macOS app and CLI for giving AI coding agents useful local tools without
-handing them every secret and writable package path on the machine.
+Secure the tools you brew install.
+
+Automic Vault is a macOS app and CLI for giving AI coding agents useful local
+tools without handing them every secret and writable package path on the
+machine.
 
 <a href="https://github.com/automic-vault/automic-vault/releases/latest"><img src="./assets/download-button.png" alt="Download Automic Vault .DMG" width="250"></a>
 

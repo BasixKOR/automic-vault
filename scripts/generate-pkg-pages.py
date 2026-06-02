@@ -3576,7 +3576,7 @@ def nav(root: str, locale: dict[str, Any] | None = None) -> str:
 def footer(root: str, locale: dict[str, Any] | None = None) -> str:
     return f"""
 <footer class="site-footer">
-  <p>{html_escape(tx(locale, 'footer', 'Automic Vault protects AI agent runs with local secret storage, approval gates, and hardened package installs.'))}</p>
+  <p>{html_escape(tx(locale, 'footer', 'Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.'))}</p>
   <div class="footer-links">
     <a href="{root}privacy/">{html_escape(tx(locale, 'privacy', 'Privacy'))}</a>
     <a href="{root}terms/">{html_escape(tx(locale, 'terms', 'Terms'))}</a>
