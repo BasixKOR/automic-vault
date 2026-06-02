@@ -2077,19 +2077,29 @@ fn run_i_package_with_progress(
         RequestedPackage::HomebrewFormula(formula) => {
             let package_name = formula_install_package_name(&formula)?;
             rollback_name = package_name.clone();
-            prepare_install_target(
-                &opt_pkg_root(),
-                &package_name,
-                options.intent,
-                &managed_bin_root(),
-            )?;
-            run_i_formula(
-                config,
-                package_name,
-                formula,
-                options.intent,
-                progress_callback.clone(),
-            )
+            if let Some(isotope_name) = radioisotope_name_for_homebrew_formula_install(&formula)? {
+                run_i_radioisotope(
+                    config,
+                    isotope_qualified_name(&isotope_name),
+                    isotope_name,
+                    options.intent,
+                    progress_callback.clone(),
+                )
+            } else {
+                prepare_install_target(
+                    &opt_pkg_root(),
+                    &package_name,
+                    options.intent,
+                    &managed_bin_root(),
+                )?;
+                run_i_formula(
+                    config,
+                    package_name,
+                    formula,
+                    options.intent,
+                    progress_callback.clone(),
+                )
+            }
         }
         RequestedPackage::HomebrewCask(cask) => {
             prepare_install_target(&opt_pkg_root(), &cask, options.intent, &managed_bin_root())?;
@@ -2917,6 +2927,13 @@ fn preferred_auto_isotope_name(package_name: &str) -> Result<Option<String>, Str
         return Ok(None);
     };
     installable_isotope_name_for_target(&target)
+}
+
+fn radioisotope_name_for_homebrew_formula_install(formula: &str) -> Result<Option<String>, String> {
+    let formula = formula_install_package_name(formula)?;
+    let target = PackageAliasTarget::HomebrewFormula(formula);
+    Ok(installable_isotope_name_for_target(&target)?
+        .filter(|isotope_name| isotope_has_post_install(&isotope_qualified_name(isotope_name))))
 }
 
 fn preferred_auto_homebrew_formula_target(
@@ -12885,6 +12902,18 @@ managed_secrets = ["dep:managed-secrets"]"#,
         assert_eq!(plan.modifies_package, Some("node@24".to_string()));
         assert!(plan.is_radioisotope);
         assert!(plan.has_migration);
+    }
+
+    #[test]
+    fn explicit_homebrew_formula_install_uses_radioisotope_when_available() {
+        assert_eq!(
+            radioisotope_name_for_homebrew_formula_install("node@24").unwrap(),
+            Some("node@24".to_string())
+        );
+        assert_eq!(
+            radioisotope_name_for_homebrew_formula_install("ripgrep").unwrap(),
+            None
+        );
     }
 
     #[test]
