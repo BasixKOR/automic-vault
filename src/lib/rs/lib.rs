@@ -4113,19 +4113,26 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
         ));
     }
 
-    let (key, value) = parse_secret_assignment(trimmed)?;
-    let value = normalized_secret_value(value);
+    let assignment = parse_secret_assignment(trimmed)?;
+    if secret_assignment_looks_like_source_code(&assignment) {
+        return None;
+    }
+
+    let value = normalized_secret_value(assignment.value);
     if !secret_value_is_real(value) {
         return None;
     }
 
-    if secret_key_name_is_sensitive(key) {
+    if secret_key_name_is_sensitive(assignment.key) {
         return Some(secret_file_finding(
             path,
             line_number,
             "secret-assignment",
             "high",
-            &format!("Plaintext-looking credential assigned to {}", key.trim()),
+            &format!(
+                "Plaintext-looking credential assigned to {}",
+                assignment.key.trim()
+            ),
         ));
     }
 
@@ -4159,15 +4166,136 @@ fn secret_file_finding(
     }
 }
 
-fn parse_secret_assignment(line: &str) -> Option<(&str, &str)> {
+struct SecretAssignment<'a> {
+    key: &'a str,
+    value: &'a str,
+    separator: SecretAssignmentSeparator,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SecretAssignmentSeparator {
+    Equals,
+    Colon,
+}
+
+fn parse_secret_assignment(line: &str) -> Option<SecretAssignment<'_>> {
     let line = line.strip_prefix("- ").unwrap_or(line);
     match (line.find('='), line.find(':')) {
-        (Some(eq), Some(colon)) if eq < colon => Some((&line[..eq], &line[eq + 1..])),
-        (Some(_), Some(colon)) => Some((&line[..colon], &line[colon + 1..])),
-        (Some(eq), None) => Some((&line[..eq], &line[eq + 1..])),
-        (None, Some(colon)) => Some((&line[..colon], &line[colon + 1..])),
+        (Some(eq), Some(colon)) if eq < colon => Some(SecretAssignment {
+            key: &line[..eq],
+            value: &line[eq + 1..],
+            separator: SecretAssignmentSeparator::Equals,
+        }),
+        (Some(_), Some(colon)) => Some(SecretAssignment {
+            key: &line[..colon],
+            value: &line[colon + 1..],
+            separator: SecretAssignmentSeparator::Colon,
+        }),
+        (Some(eq), None) => Some(SecretAssignment {
+            key: &line[..eq],
+            value: &line[eq + 1..],
+            separator: SecretAssignmentSeparator::Equals,
+        }),
+        (None, Some(colon)) => Some(SecretAssignment {
+            key: &line[..colon],
+            value: &line[colon + 1..],
+            separator: SecretAssignmentSeparator::Colon,
+        }),
         (None, None) => None,
     }
+}
+
+fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -> bool {
+    let key = assignment.key.trim();
+    let value = assignment.value.trim();
+    if key.starts_with("case ") {
+        return true;
+    }
+
+    if assignment.separator == SecretAssignmentSeparator::Colon
+        && (key.contains('(') || secret_value_looks_like_type_annotation(value))
+    {
+        return true;
+    }
+
+    secret_unquoted_value_looks_like_source_reference(value)
+}
+
+fn secret_value_looks_like_type_annotation(value: &str) -> bool {
+    let Some(first) = value.split_whitespace().next() else {
+        return false;
+    };
+    let first = first.trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '?' | '!' | ')' | '(' | '[' | ']' | '<' | '>' | ',' | ';' | '{' | '}'
+        )
+    });
+    if first.is_empty() || first.starts_with('"') || first.starts_with('\'') {
+        return false;
+    }
+    matches!(
+        first,
+        "String"
+            | "Bool"
+            | "Boolean"
+            | "Int"
+            | "Integer"
+            | "Double"
+            | "Float"
+            | "Date"
+            | "Data"
+            | "URL"
+            | "UUID"
+            | "str"
+            | "string"
+            | "bool"
+            | "boolean"
+            | "number"
+            | "object"
+            | "array"
+    ) || first.chars().next().is_some_and(char::is_uppercase)
+}
+
+fn secret_unquoted_value_looks_like_source_reference(value: &str) -> bool {
+    if secret_raw_value_is_quoted(value) {
+        return false;
+    }
+    let value = value
+        .trim()
+        .trim_end_matches(|ch: char| matches!(ch, ',' | ';'));
+    if value.is_empty() {
+        return false;
+    }
+    if value.starts_with('.') || value.contains('(') || value.contains("->") || value.contains("::")
+    {
+        return true;
+    }
+    if value.contains('.') && value.chars().all(source_reference_char) {
+        return true;
+    }
+    source_identifier(value).is_some_and(|identifier| {
+        !identifier.chars().any(|ch| ch.is_ascii_digit())
+            && identifier.chars().any(char::is_uppercase)
+            && secret_key_name_is_sensitive(identifier)
+    })
+}
+
+fn secret_raw_value_is_quoted(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with('"') || value.starts_with('\'')
+}
+
+fn source_identifier(value: &str) -> Option<&str> {
+    let value = value.trim();
+    if value.is_empty() || !value.chars().all(source_reference_char) {
+        return None;
+    }
+    Some(value.rsplit('.').next().unwrap_or(value))
+}
+
+fn source_reference_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
 }
 
 fn normalized_secret_value(value: &str) -> &str {
@@ -4213,6 +4341,11 @@ fn secret_value_is_real(value: &str) -> bool {
             | "change_me"
             | "replace_me"
             | "redacted"
+            | "access_token"
+            | "refresh_token"
+            | "id_token"
+            | "client_secret"
+            | "api_key"
             | "none"
             | "null"
             | "true"
@@ -10869,6 +11002,38 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings[0].kind, "secret-assignment");
         assert_eq!(findings[0].line, Some(1));
         assert!(!findings[0].message.contains("sk-test"));
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_source_code_token_references() {
+        let temp = TempDir::new().unwrap();
+        let swift_path = temp.path().join("SpotifyHelperBridge.swift");
+        fs::write(
+            &swift_path,
+            [
+                "private struct HelperEnvelope: Decodable {",
+                "    let accessToken: String?",
+                "    let refreshToken: String?",
+                "}",
+                "private enum HelperCommand: String {",
+                "    case accessToken = \"access_token\"",
+                "}",
+                "private func token(from response: HelperEnvelope) throws -> SpotifyToken {",
+                "    let accessToken = response.accessToken,",
+                "    let refreshToken = response.refreshToken,",
+                "    return SpotifyToken(accessToken: accessToken, refreshToken: refreshToken)",
+                "}",
+                "let apiKey = \"sk-test_1234567890abcdef\"",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&swift_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(13));
+        assert_eq!(findings[0].kind, "secret-assignment");
     }
 
     #[test]
