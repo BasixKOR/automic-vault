@@ -805,6 +805,37 @@ final class PackageSecurityStateTests: XCTestCase {
     }
 
     @MainActor
+    func testCleanDetectorStateDoesNotMakeAvailableFormulaHardened() {
+        let model = MainWindowModel()
+        let result = PackageSearchResult(
+            name: "brew:azure-cli",
+            source: .formula(rootFormula: "azure-cli"),
+            version: "2.87.0",
+            description: "Microsoft Azure CLI",
+            homepage: nil,
+            dependencies: [],
+            installsHardened: false,
+            securityState: PackageSecurityState(
+                isotopeName: "azure-cli",
+                installIsInsecure: false,
+                remediationAvailable: false,
+                reasons: [],
+                error: nil
+            ),
+            pulseKind: nil
+        )
+        let package = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+
+        XCTAssertFalse(package.hasMainWindowSecurityAlert())
+        XCTAssertNil(model.packageBadge(for: package))
+        XCTAssertFalse(model.isHardened(package))
+    }
+
+    @MainActor
     func testGeigerProtocolPackageShowsVulnerableBadgeWithoutSecurityState() {
         let model = MainWindowModel()
         let result = PackageSearchResult(
