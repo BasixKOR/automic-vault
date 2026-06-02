@@ -2,84 +2,115 @@
 
 # Automic Vault
 
-Package manager, secrets manager, and execution control plane for autonomous
-agents.
+A macOS app and CLI for giving AI coding agents useful local tools without
+handing them every secret and writable package path on the machine.
 
 <a href="https://github.com/automic-vault/automic-vault/releases/latest"><img src="./assets/download-button.png" alt="Download Automic Vault .DMG" width="250"></a>
 
-
-> [!NOTE]
->
-> - 20k⭐︎: We’ll add Linux support
-> - 50k⭐︎: We’ll add Windows support
-
 > [!IMPORTANT]
->
-> Automic Vault is NOT AFFILIATED with any cryptocurrency or token.
+> Automic Vault is not affiliated with any cryptocurrency or token.
 
-[![Coverage Status](https://shieldcn.dev/coveralls/github/automic-vault/automic-vault.svg?variant=outline)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+Homebrew made it normal for developer machines to install the tools they need.
+AI agents change the assumption underneath that: the thing running those tools
+may not be you.
 
-&nbsp;
+Automic Vault puts a local boundary under agent work:
 
+- packages install as self-contained packages under controlled roots
+- package metadata, install state, updates, and security notes are visible from
+  the app and `av`
+- secrets are stored in the Automic Vault keychain, not `.env`, shell startup
+  files, or model-readable config
+- approved secrets can be injected into a specific process when it actually
+  needs them
+- risky command execution can ask a human before it continues
+- local files and isotope detectors can be scanned for plaintext credentials
+- `av contain` can run an agent command through a vaulted sandbox and proxy
+  toolchain
 
-## What is This?
+No magic. Just fewer ambient privileges.
 
-If you got here first then go here before continuing:
-[www.automicvault.com](https://www.automicvault.com/).
+## Install
 
-&nbsp;
+```sh
+$ curl -fsSL https://automicvault.com/install.sh | sh -x
+# ^^ downloads the DMG, lets Gatekeeper inspect it, checks TeamIdentifier,
+#    copies Automic Vault.app into /Applications, then installs /usr/local/bin/av
+```
 
+If `curl | sh` gives you hives, fair:
 
-## Secure AI Agent Tooling
+```sh
+$ curl -fsSL https://automicvault.com/install.sh
+```
 
-Automic Vault is a package manager, secrets manager, and approval gate system
-for AI agents that run local developer tools. It is built for the moment where
-an autonomous coding agent can read files, call command-line tools, and act
-with credentials that were originally meant for a human.
+Or download the DMG from [GitHub releases][releases].
 
-Most agent security controls live inside the agent. Automic Vault puts the
-boundary beneath the agent: the tools, packages, and secrets it tries to use.
-Packages install under controlled roots, secrets stay out of plaintext files,
-and sensitive commands can require human approval at execution time.
+## Use It
 
-Use Automic Vault when you need:
+```sh
+$ av --help
+# package installs, secret storage/injection, containment, trace, approval gates
 
-- a package manager for AI agents that keeps installed tools harder to modify
-- a secrets manager for AI agents that keeps credentials out of model context
-- approval gates for commands such as package publishing, token reveal, and
-  cloud mutation
-- local protection for developer credentials used by GitHub CLI, AWS CLI,
-  MCP servers, and other automation tools
+$ av info jq
+# source, version, install state, dependencies, homepage, license
 
-Automic Vault is not a replacement for every enterprise secrets platform. It
-is the local runtime layer that keeps agent sessions from casually reading or
-misusing the credentials and tools already present on a developer machine.
+$ av install jq
+# installs a self-contained package
 
-&nbsp;
+$ av scan --path .
+# finds plaintext credentials visible to agents
 
+$ printf '%s\n' "$GITHUB_TOKEN" | av save GITHUB_TOKEN
+# stores a trimmed secret in the Automic Vault keychain
 
-## Isotope Contributor Docs
+$ av inject +GITHUB_TOKEN /opt/homebrew/bin/gh repo view
+# asks Automic Vault to approve injecting that key into that process
 
-- [Feature Map](./docs/features.md)
-- [General Isotope Guidelines](./docs/isotopes.md)
-- [Radioisotope Considerations](https://github.com/automic-vault/radioisotopes/#readme)
+$ av contain codex
+# runs codex with generated stubs that request approved host execution
+```
 
-Current radioisotope inventory as of 2026-05-30:
+For the rest:
 
-- 129 radioisotope manifests
-- Homebrew popularity scan coverage reached rank 17450
-- 113 radioisotopes added from the Homebrew scan log
+```sh
+$ av <subcommand> --help
+```
 
-&nbsp;
+## What Ships
 
+- `Automic Vault.app`: the package console, package dossiers, recommendations,
+  update UI, and approval prompts
+- `av`: the CLI for package, secret, approval, containment, trace, and local
+  daemon workflows
+- `nuke-helper`: the privileged helper for operations that need it
+- isotope and approval-gate metadata for package-specific security behavior
 
-## Appendix
+## What This Is Not
 
-- [AI agent secret scanner](https://www.automicvault.com/secret-scanner-for-ai-agents/) — use `av secret-scanner` to check isotope detectors and local files for plaintext credentials before an agent run.
-- [Secrets manager for AI agents](https://www.automicvault.com/secrets-manager-for-ai-agents/) — store credentials outside agent-readable files and inject them only into approved tools.
-- [Secret scanning vs agent secret protection](https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/) — explain why scanning and runtime prevention solve different parts of the exposure problem.
-- [API key management for AI agents](https://www.automicvault.com/api-key-management-for-ai-agents/) — protect CLI, SDK, MCP, and automation tokens used by local agent workflows.
+No, this does not make agents safe.
 
-Target search language: AI agent secret scanner, secret scanner for AI agents,
-secret scanning for coding agents, secrets manager for AI agents, and agent
-secret protection.
+No, this is not a replacement for your enterprise vault.
+
+No, this is not a cloud policy engine.
+
+It is a local macOS runtime boundary beneath agent sessions. That is already a
+lot, and it is the part we can actually ship.
+
+## Platform
+
+macOS first.
+
+Linux and Windows are not supported today.
+
+## Hacking
+
+```sh
+$ cargo test
+$ ./scripts/build-app.sh
+```
+
+The native app lives in `src/gui`. The CLI and package/security core live in
+`src/lib/rs` and `src/nucleus`.
+
+[releases]: https://github.com/automic-vault/automic-vault/releases/latest
