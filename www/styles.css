@@ -506,6 +506,10 @@ h1 {
   margin-top: 0;
 }
 
+.hero > .hero-actions {
+  margin-bottom: 58px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -1195,6 +1199,10 @@ h1 {
   .hero-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .hero > .hero-actions {
+    margin-bottom: 18px;
   }
 
   .button {
