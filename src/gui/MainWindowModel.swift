@@ -1096,6 +1096,23 @@ final class MainWindowModel: ObservableObject {
         }
     }
 
+    func dossierVersionText(
+        for package: PackagePresentation,
+        detail: PackageDetail
+    ) -> String {
+        if isSearchActive,
+           case .available(let result) = package.item {
+            if let version = Self.firstNonEmptyVersion(
+                detail.latestVersion,
+                result.version,
+                detail.installedVersion
+            ) {
+                return version
+            }
+        }
+        return versionText(for: package)
+    }
+
     func relativeLastUpdatedText(for detail: PackageDetail?) -> String {
         guard let raw = detail?.lastUpdatedAt,
               let date = Self.parseISO8601Date(raw) else {
@@ -1120,6 +1137,12 @@ final class MainWindowModel: ObservableObject {
         }
         let ageText = relativeAgeText(for: date, relativeTo: referenceDate)
         return result.isNewPulse ? ageText : L10n.format("Updated %@", ageText)
+    }
+
+    private static func firstNonEmptyVersion(_ versions: String?...) -> String? {
+        versions
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     var relativeRefreshText: String {

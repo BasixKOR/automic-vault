@@ -620,6 +620,61 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(presentation.versionText, "NPM")
     }
 
+    @MainActor
+    func testSearchDossierShowsVersionForAvailablePackage() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        model.searchText = "openclaw"
+        let result = PackageSearchResult(
+            name: "npm:openclaw",
+            source: .npm(packageName: "openclaw"),
+            version: nil,
+            description: "Multi-channel AI gateway",
+            homepage: nil,
+            dependencies: [],
+            securityState: nil,
+            pulseKind: nil
+        )
+        let detail = PackageRecord(
+            name: "npm:openclaw",
+            source: .npm(packageName: "openclaw"),
+            version: "",
+            description: "Multi-channel AI gateway",
+            latestVersion: "2026.5.22",
+            securityState: nil
+        ).fallbackDetail
+        let presentation = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+
+        XCTAssertEqual(model.versionText(for: presentation), "NPM")
+        XCTAssertEqual(
+            model.dossierVersionText(
+                for: presentation,
+                detail: detail
+            ),
+            "2026.5.22"
+        )
+    }
+
+    @MainActor
+    func testSearchDossierKeepsInstalledPackageVersion() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        model.searchText = "rg"
+        let package = installedPresentation(version: "1.0", latestVersion: "2.0")
+
+        XCTAssertEqual(
+            model.dossierVersionText(
+                for: package,
+                detail: try XCTUnwrap(package.detail)
+            ),
+            "1.0"
+        )
+    }
+
     func testUninstalledFormulaInstallsThroughUnqualifiedAutoTarget() {
         let result = PackageSearchResult(
             name: "uv",

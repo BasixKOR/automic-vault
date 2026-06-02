@@ -371,7 +371,7 @@ struct MainWindowView: View {
                         .foregroundStyle(AVGlassPalette.primaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(model.versionText(for: package))
+                    Text(model.dossierVersionText(for: package, detail: detail))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AVGlassPalette.quietText)
                         .lineLimit(1)
