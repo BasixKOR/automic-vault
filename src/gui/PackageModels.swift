@@ -61,21 +61,35 @@ struct PackageDisplayTitle: Equatable {
         self.versionSuffix = versionSuffix
     }
 
-    init(displayName: String) {
-        guard let separator = displayName.lastIndex(of: "@"),
-              separator != displayName.startIndex else {
+    init(displayName: String, latestVersionedBases: Set<String> = []) {
+        if latestVersionedBases.contains(displayName) {
+            self.init(name: displayName, versionSuffix: "@latest")
+            return
+        }
+        guard let split = Self.splitVersionSuffix(displayName) else {
             self.init(name: displayName)
             return
+        }
+        self.init(name: split.name, versionSuffix: split.versionSuffix)
+    }
+
+    static func versionedBase(displayName: String) -> String? {
+        splitVersionSuffix(displayName)?.name
+    }
+
+    private static func splitVersionSuffix(_ displayName: String) -> (name: String, versionSuffix: String)? {
+        guard let separator = displayName.lastIndex(of: "@"),
+              separator != displayName.startIndex else {
+            return nil
         }
 
         let suffixStart = displayName.index(after: separator)
         let suffix = displayName[suffixStart...]
         guard Self.isVersionSuffix(suffix) else {
-            self.init(name: displayName)
-            return
+            return nil
         }
 
-        self.init(
+        return (
             name: String(displayName[..<separator]),
             versionSuffix: String(displayName[separator...])
         )

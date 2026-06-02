@@ -24,6 +24,31 @@ final class MainWindowModelTests: XCTestCase {
             PackageDisplayTitle(displayName: "openssl@stable"),
             PackageDisplayTitle(name: "openssl@stable")
         )
+        XCTAssertEqual(
+            PackageDisplayTitle(
+                displayName: "node",
+                latestVersionedBases: ["node"]
+            ),
+            PackageDisplayTitle(name: "node", versionSuffix: "@latest")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(
+                displayName: "node@24",
+                latestVersionedBases: ["node"]
+            ),
+            PackageDisplayTitle(name: "node", versionSuffix: "@24")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(
+                displayName: "nodenv",
+                latestVersionedBases: ["node"]
+            ),
+            PackageDisplayTitle(name: "nodenv")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle.versionedBase(displayName: "node@24"),
+            "node"
+        )
     }
 
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {

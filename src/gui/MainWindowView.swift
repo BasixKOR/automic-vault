@@ -246,12 +246,16 @@ struct MainWindowView: View {
 
             hairline
 
+            let versionedPackageBases = packageListVersionedPackageBases
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(model.displayedPackages, id: \.selectionID) { package in
                         PackageRow(
                             package: package,
-                            title: packageRowTitle(for: package),
+                            title: packageRowTitle(
+                                for: package,
+                                versionedPackageBases: versionedPackageBases
+                            ),
                             description: model.packageDescription(for: package),
                             version: packageRowVersion(for: package),
                             inlineBadges: model.packageInlineBadges(for: package),
@@ -310,12 +314,29 @@ struct MainWindowView: View {
         return model.versionText(for: package)
     }
 
-    private func packageRowTitle(for package: PackagePresentation) -> PackageDisplayTitle {
+    private var packageListVersionedPackageBases: Set<String> {
+        guard model.isSearchActive else {
+            return []
+        }
+        return Set(
+            model.displayedPackages.compactMap { package in
+                PackageDisplayTitle.versionedBase(displayName: model.displayName(for: package))
+            }
+        )
+    }
+
+    private func packageRowTitle(
+        for package: PackagePresentation,
+        versionedPackageBases: Set<String>
+    ) -> PackageDisplayTitle {
         let title = model.displayName(for: package)
         guard model.isSearchActive else {
             return PackageDisplayTitle(name: title)
         }
-        return PackageDisplayTitle(displayName: title)
+        return PackageDisplayTitle(
+            displayName: title,
+            latestVersionedBases: versionedPackageBases
+        )
     }
 
     private func packageRowBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
