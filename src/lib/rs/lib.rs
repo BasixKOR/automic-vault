@@ -11381,7 +11381,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                     .to_vec(),
                 ),
             ],
-            5,
+            6,
         );
         let _endpoints = TestEndpointGuard::set(config::TestEndpointOverrides {
             formula_api_root: Some(base.clone()),
