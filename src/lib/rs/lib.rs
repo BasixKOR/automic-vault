@@ -4149,20 +4149,36 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
         ));
     }
 
-    let assignment = parse_secret_assignment(trimmed)?;
+    let Some(assignment) = parse_secret_assignment(trimmed) else {
+        if secret_line_contains_standalone_token_literal(path, trimmed) {
+            return Some(secret_file_finding(
+                path,
+                line_number,
+                "token-literal",
+                "high",
+                "Known token-shaped value appears in a readable file",
+            ));
+        }
+        return None;
+    };
     if secret_assignment_looks_like_source_code(&assignment) {
         return None;
     }
 
     let value = normalized_secret_value(assignment.value);
-    if !secret_value_is_real(value) || secret_value_is_test_fixture(path, value) {
+    let key_is_sensitive = secret_key_name_is_sensitive(assignment.key);
+    let value_is_real = secret_value_is_real(value)
+        || (key_is_sensitive
+            && secret_path_looks_like_env_file(path)
+            && secret_sensitive_env_value_is_real(value));
+    if !value_is_real || secret_value_is_test_fixture(path, value) {
         return None;
     }
-    if secret_path_looks_like_test_fixture(path) && secret_key_name_is_sensitive(assignment.key) {
+    if secret_path_looks_like_test_fixture(path) && key_is_sensitive {
         return None;
     }
 
-    if secret_key_name_is_sensitive(assignment.key) {
+    if key_is_sensitive {
         return Some(secret_file_finding(
             path,
             line_number,
@@ -4175,7 +4191,9 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
         ));
     }
 
-    if secret_value_has_known_token_shape(value) {
+    if secret_value_has_known_token_shape(value)
+        || secret_value_looks_like_posthog_project_key(value)
+    {
         return Some(secret_file_finding(
             path,
             line_number,
@@ -4628,13 +4646,41 @@ fn normalized_secret_key_name(key: &str) -> String {
 }
 
 fn secret_value_is_real(value: &str) -> bool {
-    if value.len() < 6 || value.contains("${") {
+    if secret_value_is_obviously_not_real(value) {
         return false;
     }
 
     let lower = value.to_ascii_lowercase();
-    if lower.starts_with("options:") {
+    if secret_value_has_known_token_shape(value)
+        || secret_value_looks_like_posthog_project_key(value)
+        || secret_value_looks_like_jwt(value)
+    {
+        return true;
+    }
+    if lower == "secret_secret" {
+        return true;
+    }
+
+    !secret_value_looks_like_package_or_label(value)
+}
+
+fn secret_sensitive_env_value_is_real(value: &str) -> bool {
+    if value.len() < 12 || secret_value_is_obviously_not_real(value) {
         return false;
+    }
+    let has_alpha = value.chars().any(|ch| ch.is_ascii_alphabetic());
+    let has_digit = value.chars().any(|ch| ch.is_ascii_digit());
+    (value.len() >= 16 && has_alpha) || (value.len() >= 12 && has_alpha && has_digit)
+}
+
+fn secret_value_is_obviously_not_real(value: &str) -> bool {
+    if value.len() < 6 || value.contains("${") {
+        return true;
+    }
+
+    let lower = value.to_ascii_lowercase();
+    if lower.starts_with("options:") {
+        return true;
     }
     let comparable =
         lower.trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '_' | '-'));
@@ -4665,10 +4711,10 @@ fn secret_value_is_real(value: &str) -> bool {
             | "nullptr"
             | "nil"
     ) {
-        return false;
+        return true;
     }
 
-    if lower.contains("example")
+    lower.contains("example")
         || lower.contains("placeholder")
         || lower.contains("your_")
         || lower.contains("your-")
@@ -4694,21 +4740,6 @@ fn secret_value_is_real(value: &str) -> bool {
         || secret_value_looks_like_file_path(value)
         || secret_value_looks_like_public_url(value)
         || secret_value_looks_like_version_requirement(value)
-    {
-        return false;
-    }
-
-    if secret_value_has_known_token_shape(value)
-        || secret_value_looks_like_posthog_project_key(value)
-        || secret_value_looks_like_jwt(value)
-    {
-        return true;
-    }
-    if lower == "secret_secret" {
-        return true;
-    }
-
-    !secret_value_looks_like_package_or_label(value)
 }
 
 fn secret_value_is_test_fixture(path: &Path, value: &str) -> bool {
@@ -4771,6 +4802,18 @@ fn secret_path_looks_like_reference_fixture(path: &Path) -> bool {
         || path.ends_with(".strings")
 }
 
+fn secret_path_looks_like_env_file(path: &Path) -> bool {
+    let Some(file_name) = path.file_name().and_then(|file_name| file_name.to_str()) else {
+        return false;
+    };
+    let file_name = file_name.to_ascii_lowercase();
+    file_name == ".env"
+        || file_name == ".envrc"
+        || file_name.starts_with(".env.")
+        || file_name.ends_with(".env")
+        || file_name.contains(".env.")
+}
+
 fn secret_private_key_line_is_fixture(path: &Path, line: &str) -> bool {
     secret_path_looks_like_reference_fixture(path)
         || (secret_path_looks_like_source_file(path) && !line.starts_with("-----BEGIN "))
@@ -4813,6 +4856,17 @@ fn secret_line_looks_like_source_string_fixture(path: &Path, line: &str) -> bool
         || line.starts_with("r\"")
         || line.starts_with("br#\""))
         && (line.contains('=') || line.contains(':'))
+}
+
+fn secret_line_contains_standalone_token_literal(path: &Path, line: &str) -> bool {
+    if secret_path_looks_like_test_fixture(path)
+        || secret_path_looks_like_reference_fixture(path)
+        || secret_path_looks_like_source_file(path)
+    {
+        return false;
+    }
+    line.split(|ch: char| !token_shape_char(ch))
+        .any(secret_value_looks_like_posthog_project_key)
 }
 
 fn secret_value_looks_like_file_path(value: &str) -> bool {
@@ -12146,6 +12200,64 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].line, Some(1));
         assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_lowercase_env_secret_values() {
+        let temp = TempDir::new().unwrap();
+        let envrc_path = temp.path().join(".envrc");
+        fs::write(
+            &envrc_path,
+            [
+                "export TMDB_API_KEY=5368abcd9012efab3456abcd9012efab",
+                "export TWITCH_CLIENT_SECRET=mbji9xv2qlemn8n2sk4pxh71r03j2x",
+                "export JEWELFORM_ADMIN_TOKEN=supervaultcodeqx",
+                "export AWS_REGION=us-east-1",
+                "export API_KEY=example",
+                "export API_KEY=nextToken",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&envrc_path).unwrap();
+
+        assert_eq!(findings.len(), 3, "{findings:?}");
+        assert_eq!(findings[0].line, Some(1));
+        assert_eq!(findings[1].line, Some(2));
+        assert_eq!(findings[2].line, Some(3));
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_standalone_posthog_key_literals_in_config() {
+        let temp = TempDir::new().unwrap();
+        let gradle_path = temp.path().join("build.gradle.kts");
+        fs::write(
+            &gradle_path,
+            r#"val posthogKey = providers.environmentVariable("POSTHOG_PROJECT_TOKEN").orNull
+        ?: "phc_1234567890abcdefghijklmnop""#,
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&gradle_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(2));
+        assert_eq!(findings[0].kind, "token-literal");
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_secret_named_cargo_dependencies() {
+        let temp = TempDir::new().unwrap();
+        let cargo_path = temp.path().join("Cargo.toml");
+        fs::write(
+            &cargo_path,
+            r#"warp_managed_secrets = { package = "warp-managed-secrets", workspace = true }
+managed_secrets = ["dep:managed-secrets"]"#,
+        )
+        .unwrap();
+
+        assert!(scan_secret_file(&cargo_path).unwrap().is_empty());
     }
 
     #[test]
