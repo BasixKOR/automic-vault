@@ -4622,7 +4622,7 @@ fn secret_value_is_real(value: &str) -> bool {
     }
 
     let lower = value.to_ascii_lowercase();
-    if lower.starts_with("phc_") || lower.starts_with("options:") {
+    if lower.starts_with("options:") {
         return false;
     }
     let comparable =
@@ -4687,7 +4687,10 @@ fn secret_value_is_real(value: &str) -> bool {
         return false;
     }
 
-    if secret_value_has_known_token_shape(value) || secret_value_looks_like_jwt(value) {
+    if secret_value_has_known_token_shape(value)
+        || secret_value_looks_like_posthog_project_key(value)
+        || secret_value_looks_like_jwt(value)
+    {
         return true;
     }
     if lower == "secret_secret" {
@@ -4903,6 +4906,11 @@ fn secret_value_has_known_token_shape(value: &str) -> bool {
         || (value.starts_with("sk-") && value.len() > 20)
         || (value.starts_with("xai-") && value.len() > 20)
         || (value.starts_with("AKIA") && value.len() >= 16)
+}
+
+fn secret_value_looks_like_posthog_project_key(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("phc_") && value.len() > 20 && value.chars().all(token_shape_char)
 }
 
 fn token_shape_char(ch: char) -> bool {
@@ -11929,7 +11937,6 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "env(OPENAI_API_KEY)",
             "$tokens",
             "200000",
-            "phc_1234567890abcdefghijkl",
             "options:name1: blue,red,green",
             r#""[default]\naws_secret_access_key = secret\n""#,
             "Bearer <temporary_token>",
@@ -11958,6 +11965,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         for value in [
             "secret_secret",
             "sk-test_1234567890abcdef",
+            "phc_1234567890abcdefghijkl",
             "xai-CaxcatEA921Wrn5N6GyOuEfUrWwK90J1yBvn5Ehou5pUxWzgh0vGFBHrWCXAiBn68Z",
             "Rdb0XGysWuBnveWaNkyi",
             "dY3v9zk5epFZDMgoxUfDNp7fO2bGKQW4tT8wy58gGmHgg5oHPOeT9TdPDnzCINj3",
@@ -12110,6 +12118,23 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         .unwrap();
 
         assert!(scan_secret_file(&test_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_posthog_keys_in_env_files() {
+        let temp = TempDir::new().unwrap();
+        let envrc_path = temp.path().join(".envrc");
+        fs::write(
+            &envrc_path,
+            "export POSTHOG_API_KEY=phc_1234567890abcdefghijklmnop\n",
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&envrc_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(1));
+        assert_eq!(findings[0].kind, "secret-assignment");
     }
 
     #[test]
