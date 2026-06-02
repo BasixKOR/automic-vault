@@ -440,6 +440,80 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testOutdatedPackageHomepageUsesRepositoryReleaseNotesWhenHomepageIsNotGitHub() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let detail = PackageRecord(
+            name: "brew:uv",
+            source: .formula(rootFormula: "uv"),
+            version: "0.8.0",
+            description: "Python package manager",
+            homepage: "https://docs.astral.sh/uv/",
+            repository: "https://github.com/astral-sh/uv",
+            latestVersion: "0.9.0",
+            securityState: nil
+        ).fallbackDetail
+
+        XCTAssertEqual(
+            model.linkURL(for: .homepage, detail: detail)?.absoluteString,
+            "https://github.com/astral-sh/uv/releases/latest"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .repository, detail: detail)?.absoluteString,
+            "https://github.com/astral-sh/uv"
+        )
+    }
+
+    @MainActor
+    func testPackageDetailDecodesRepoAliasForOutdatedReleaseNotes() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let json = """
+        {
+          "packageName": "brew:uv",
+          "qualifiedName": "brew:uv",
+          "installRoot": "/opt/homebrew/Cellar/uv",
+          "installed": true,
+          "source": {"kind": "formula", "rootFormula": "uv"},
+          "sourceError": null,
+          "aliases": [],
+          "aliasesError": null,
+          "installedVersion": "0.8.0",
+          "latestVersion": "0.9.0",
+          "latestVersionError": null,
+          "executablePaths": [],
+          "executablePathsError": null,
+          "popularity": null,
+          "lastUpdatedAt": null,
+          "homebrewInfo": {
+            "formula": "uv",
+            "description": "Python package manager",
+            "homepage": "https://docs.astral.sh/uv/",
+            "repo": "astral-sh/uv",
+            "license": null,
+            "dependencies": []
+          },
+          "homebrewInfoError": null,
+          "npmHomepage": null,
+          "npmPackageInfoError": null,
+          "securityState": null,
+          "installPackageNames": null,
+          "versionOptions": []
+        }
+        """
+        let detail = try JSONDecoder().decode(PackageDetail.self, from: Data(json.utf8))
+
+        XCTAssertEqual(
+            model.linkURL(for: .homepage, detail: detail)?.absoluteString,
+            "https://github.com/astral-sh/uv/releases/latest"
+        )
+        XCTAssertEqual(
+            model.linkURL(for: .repository, detail: detail)?.absoluteString,
+            "https://github.com/astral-sh/uv"
+        )
+    }
+
+    @MainActor
     func testPulseTimestampUsesHoursUntilSixtyHours() throws {
         let referenceDate = try XCTUnwrap(Self.date("2026-05-28T12:00:00Z"))
         let result = pulseResult(

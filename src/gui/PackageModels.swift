@@ -98,6 +98,7 @@ struct PackageRecord: Decodable, Equatable {
         case description
         case homepage
         case repository
+        case repo
         case upstreamDocs
         case docs
         case category
@@ -147,7 +148,9 @@ struct PackageRecord: Decodable, Equatable {
         version = try container.decode(String.self, forKey: .version)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
-        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        repository =
+            try container.decodeIfPresent(String.self, forKey: .repository)
+            ?? container.decodeIfPresent(String.self, forKey: .repo)
         upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
         docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
         category = try container.decodeIfPresent(String.self, forKey: .category)
@@ -474,23 +477,25 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var homepageURL: URL? {
-        guard let raw = rawHomepage else {
-            return nil
+        let homepage = Self.externalURL(from: rawHomepage)
+            .flatMap { $0.isHomebrewPackageManagerPage ? nil : $0 }
+
+        if isOutdated {
+            if let latestReleaseURL = homepage?.githubLatestReleaseURL {
+                return latestReleaseURL
+            }
+            if let latestReleaseURL = Self.githubRepositoryURL(
+                from: homebrewInfo?.repository
+            )?.githubLatestReleaseURL {
+                return latestReleaseURL
+            }
         }
-        guard let url = Self.externalURL(from: raw) else {
-            return nil
-        }
-        guard !url.isHomebrewPackageManagerPage else {
-            return nil
-        }
-        if isOutdated, let latestReleaseURL = url.githubLatestReleaseURL {
-            return latestReleaseURL
-        }
-        return url.githubRepositoryReadmeURL
+
+        return homepage?.githubRepositoryReadmeURL
     }
 
     var repositoryURL: URL? {
-        Self.externalURL(from: homebrewInfo?.repository)
+        Self.repositoryURL(from: homebrewInfo?.repository)
     }
 
     var upstreamDocsURL: URL? {
@@ -725,6 +730,33 @@ struct PackageDetail: Decodable, Equatable {
         return url
     }
 
+    private static func repositoryURL(from raw: String?) -> URL? {
+        if let url = externalURL(from: raw) {
+            return url
+        }
+        return githubRepositoryURL(from: raw)
+    }
+
+    private static func githubRepositoryURL(from raw: String?) -> URL? {
+        let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalized.isEmpty else {
+            return nil
+        }
+
+        if let url = externalURL(from: normalized) {
+            return url.githubRepositoryURL
+        }
+
+        let components = normalized
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard components.count == 2,
+              components.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0.isWhitespace }) }) else {
+            return nil
+        }
+        return URL(string: "https://github.com/\(components[0])/\(components[1])")
+    }
+
     var isAutomicVaultCLT: Bool {
         packageName == PackageRecommendation.automicVaultCLTName
     }
@@ -875,6 +907,7 @@ struct HomebrewPackageInfo: Decodable, Equatable {
         case description
         case homepage
         case repository
+        case repo
         case upstreamDocs
         case docs
         case license
@@ -906,7 +939,9 @@ struct HomebrewPackageInfo: Decodable, Equatable {
         formula = try container.decode(String.self, forKey: .formula)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
-        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        repository =
+            try container.decodeIfPresent(String.self, forKey: .repository)
+            ?? container.decodeIfPresent(String.self, forKey: .repo)
         upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
         docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
         license = try container.decodeIfPresent(String.self, forKey: .license)
@@ -940,6 +975,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case legacyDescription = "description"
         case homepage
         case repository
+        case repo
         case upstreamDocs
         case docs
         case category
@@ -997,7 +1033,9 @@ struct PackageSearchResult: Decodable, Equatable {
             try container.decodeIfPresent(String.self, forKey: .description)
             ?? container.decodeIfPresent(String.self, forKey: .legacyDescription)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
-        repository = try container.decodeIfPresent(String.self, forKey: .repository)
+        repository =
+            try container.decodeIfPresent(String.self, forKey: .repository)
+            ?? container.decodeIfPresent(String.self, forKey: .repo)
         upstreamDocs = try container.decodeIfPresent(String.self, forKey: .upstreamDocs)
         docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
         category = try container.decodeIfPresent(String.self, forKey: .category)
@@ -1199,25 +1237,33 @@ private extension URL {
     }
 
     var githubLatestReleaseURL: URL? {
+        guard let repositoryURL = githubRepositoryURL,
+              var components = URLComponents(url: repositoryURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        components.path = "\(components.path)/releases/latest"
+        return components.url
+    }
+
+    var githubRepositoryURL: URL? {
         guard host?.localizedCaseInsensitiveCompare("github.com") == .orderedSame else {
             return nil
         }
         guard fragment == nil else {
             return nil
         }
-
         let pathComponents = path
             .split(separator: "/", omittingEmptySubsequences: true)
             .map(String.init)
         guard pathComponents.count == 2 else {
             return nil
         }
-
         var components = URLComponents()
         components.scheme = scheme
         components.host = host
         components.port = port
-        components.path = "/\(pathComponents[0])/\(pathComponents[1])/releases/latest"
+        components.path = "/\(pathComponents[0])/\(pathComponents[1])"
         return components.url
     }
 

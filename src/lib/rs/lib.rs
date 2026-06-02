@@ -516,7 +516,7 @@ struct EmbeddedFormulaMetadata {
     category: String,
     #[serde(default)]
     homepage: String,
-    #[serde(default)]
+    #[serde(default, alias = "repo")]
     repository: String,
     #[serde(default, rename = "upstreamDocs")]
     upstream_docs: String,
@@ -674,7 +674,7 @@ struct FormulaIndexEntry {
     category: String,
     #[serde(default)]
     homepage: String,
-    #[serde(default)]
+    #[serde(default, alias = "repo")]
     repository: String,
     #[serde(default, rename = "upstreamDocs")]
     upstream_docs: String,
@@ -8299,6 +8299,18 @@ mod tests {
             last_updated_at: None,
             pulse_kind: None,
         }
+    }
+
+    #[test]
+    fn formula_metadata_decodes_repo_alias_as_repository() {
+        let metadata: EmbeddedFormulaMetadata =
+            serde_json::from_str(r#"{"repo":"https://github.com/astral-sh/uv"}"#).unwrap();
+        assert_eq!(metadata.repository, "https://github.com/astral-sh/uv");
+
+        let entry: FormulaIndexEntry =
+            serde_json::from_str(r#"{"name":"uv","repo":"https://github.com/astral-sh/uv"}"#)
+                .unwrap();
+        assert_eq!(entry.repository, "https://github.com/astral-sh/uv");
     }
 
     #[test]
