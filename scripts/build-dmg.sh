@@ -454,7 +454,7 @@ create_dmg_args=(
   --icon "${app_name}" "${app_icon_x}" "${app_icon_y}"
   --app-drop-link "${applications_icon_x}" "${applications_icon_y}"
   --format ULFO
-  --filesystem APFS
+  --filesystem HFS+
   --hdiutil-quiet
 )
 
