@@ -164,6 +164,32 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testAutomicVaultInstallBadgeShowsInSearchAndCategoryListings() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let result = Self.packageSearchResult(
+            name: "brew:node@24",
+            category: "language-runtime",
+            installsHardened: true
+        )
+        let package = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+
+        model.selectedSection = .languageRuntime
+        XCTAssertEqual(model.packageListBadges(for: package), [.automicVault])
+
+        model.searchText = "node"
+        XCTAssertEqual(model.packageListBadges(for: package), [.automicVault])
+
+        model.searchText = ""
+        model.selectedSection = .newUpdated
+        XCTAssertEqual(model.packageListBadges(for: package), [])
+    }
+
+    @MainActor
     func testCategorySectionUsesDatabaseCategoryMetadata() async throws {
         let model = MainWindowModel(
             availablePackagesFetcher: { _, _, _, _ in
@@ -1367,6 +1393,7 @@ final class MainWindowModelTests: XCTestCase {
         description: String? = nil,
         homepage: String? = nil,
         category: String? = nil,
+        installsHardened: Bool = false,
         pulseKind: String? = nil,
         rank: UInt32? = nil,
         lastUpdatedAt: String? = nil
@@ -1379,6 +1406,7 @@ final class MainWindowModelTests: XCTestCase {
             homepage: homepage,
             category: category,
             dependencies: [],
+            installsHardened: installsHardened,
             rank: rank,
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,

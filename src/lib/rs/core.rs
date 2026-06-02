@@ -3,6 +3,10 @@ use std::collections::BTreeMap;
 
 pub(crate) const PROTOCOL_VERSION: &str = "1.16";
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
     PackagesListInstalled,
@@ -125,6 +129,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) category: Option<String>,
     #[serde(rename = "installPackageNames", skip_serializing_if = "Vec::is_empty")]
     pub(crate) install_package_names: Vec<String>,
+    #[serde(rename = "installsHardened", skip_serializing_if = "is_false")]
+    pub(crate) installs_hardened: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rank: Option<u32>,
     #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
@@ -306,6 +312,7 @@ mod tests {
                 docs: vec!["https://docs.example.test/pkg".to_string()],
                 category: Some("developer-tools".to_string()),
                 install_package_names: vec!["npm:pkg".to_string()],
+                installs_hardened: true,
                 rank: Some(7),
                 last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
@@ -339,6 +346,7 @@ mod tests {
             search_json["packages"][0]["installPackageNames"],
             json!(["npm:pkg"])
         );
+        assert_eq!(search_json["packages"][0]["installsHardened"], true);
         assert_eq!(search_json["packages"][0]["rank"], 7);
         assert_eq!(search_json["categoryCounts"]["developer-tools"], 1);
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");

@@ -1031,6 +1031,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let category: String?
     let dependencies: [String]
     let installPackageNames: [String]?
+    let installsHardened: Bool
     let rank: UInt32?
     let lastUpdatedAt: String?
     let securityState: PackageSecurityState?
@@ -1052,6 +1053,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case category
         case dependencies
         case installPackageNames
+        case installsHardened
         case rank
         case lastUpdatedAt
         case securityState
@@ -1070,6 +1072,7 @@ struct PackageSearchResult: Decodable, Equatable {
         category: String? = nil,
         dependencies: [String],
         installPackageNames: [String]? = nil,
+        installsHardened: Bool = false,
         rank: UInt32? = nil,
         lastUpdatedAt: String? = nil,
         securityState: PackageSecurityState?,
@@ -1086,6 +1089,7 @@ struct PackageSearchResult: Decodable, Equatable {
         self.category = category
         self.dependencies = dependencies
         self.installPackageNames = installPackageNames
+        self.installsHardened = installsHardened
         self.rank = rank
         self.lastUpdatedAt = lastUpdatedAt
         self.securityState = securityState
@@ -1118,6 +1122,10 @@ struct PackageSearchResult: Decodable, Equatable {
             [String].self,
             forKey: .installPackageNames
         )
+        installsHardened = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .installsHardened
+        ) ?? false
         rank = try container.decodeIfPresent(UInt32.self, forKey: .rank)
         lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
         securityState = try container.decodeIfPresent(
@@ -1240,6 +1248,7 @@ struct PackageSearchResult: Decodable, Equatable {
             category: category,
             dependencies: dependencies,
             installPackageNames: installPackageNames,
+            installsHardened: installsHardened,
             rank: rank,
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,

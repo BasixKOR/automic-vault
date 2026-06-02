@@ -438,6 +438,8 @@ fn search_page_size(limit: usize) -> usize {
 
 fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSummary {
     let qualified_name = package_source_qualified_name(&package.source);
+    let installs_hardened =
+        search_package_installs_hardened(&package.source, &package.install_package_names);
     let security_state = package.security_state.or_else(|| {
         package_security_state_for_identifiers([package.package_name.clone(), qualified_name])
     });
@@ -452,10 +454,57 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         docs: package.docs,
         category: package.category,
         install_package_names: package.install_package_names,
+        installs_hardened,
         rank: package.rank,
         last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
         security_state,
+    }
+}
+
+fn search_package_installs_hardened(
+    source: &PackageReceiptSource,
+    install_package_names: &[String],
+) -> bool {
+    if !install_package_names.is_empty() {
+        return install_package_names
+            .iter()
+            .any(|package_name| install_package_name_installs_hardened(package_name));
+    }
+    source_default_install_installs_hardened(source)
+}
+
+fn source_default_install_installs_hardened(source: &PackageReceiptSource) -> bool {
+    match source {
+        PackageReceiptSource::Formula { root_formula } => installable_isotope_name_for_target(
+            &PackageAliasTarget::HomebrewFormula(root_formula.clone()),
+        )
+        .is_ok_and(|isotope_name| isotope_name.is_some()),
+        PackageReceiptSource::Isotope { .. } => true,
+        PackageReceiptSource::Vendor { vendor_name } => preferred_auto_isotope_name(vendor_name)
+            .is_ok_and(|isotope_name| isotope_name.is_some()),
+        PackageReceiptSource::Cask { .. }
+        | PackageReceiptSource::Npm { .. }
+        | PackageReceiptSource::Pip { .. } => false,
+    }
+}
+
+fn install_package_name_installs_hardened(package_name: &str) -> bool {
+    let Ok(requested) = cli::parse_package_name(&OsString::from(package_name)) else {
+        return false;
+    };
+    match requested {
+        RequestedPackage::Auto(package_name) => preferred_auto_isotope_name(&package_name)
+            .is_ok_and(|isotope_name| isotope_name.is_some()),
+        RequestedPackage::HomebrewFormula(formula) => {
+            radioisotope_name_for_homebrew_formula_install(&formula)
+                .is_ok_and(|isotope_name| isotope_name.is_some())
+        }
+        RequestedPackage::Isotope(_) => true,
+        RequestedPackage::HomebrewCask(_)
+        | RequestedPackage::VendorPackage(_)
+        | RequestedPackage::NpmPackage { .. }
+        | RequestedPackage::PipPackage(_) => false,
     }
 }
 
@@ -1844,6 +1893,22 @@ mod tests {
                 .map(|state| (state.isotope_name.as_str(), state.install_is_insecure)),
             Some(("unmapped-isotope", true))
         );
+    }
+
+    #[test]
+    fn search_package_response_marks_hardened_install_targets() {
+        let hardened = search_package_summary(ranked_search_result("node@24", None));
+        let mut explicit_hardened = ranked_search_result("brew:node@24", None);
+        explicit_hardened.source = PackageReceiptSource::Formula {
+            root_formula: "node@24".to_string(),
+        };
+        explicit_hardened.install_package_names = vec!["brew:node@24".to_string()];
+        let explicit_hardened = search_package_summary(explicit_hardened);
+        let plain = search_package_summary(ranked_search_result("ripgrep", None));
+
+        assert!(hardened.installs_hardened);
+        assert!(explicit_hardened.installs_hardened);
+        assert!(!plain.installs_hardened);
     }
 
     #[test]

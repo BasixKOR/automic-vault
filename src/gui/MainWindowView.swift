@@ -1418,6 +1418,8 @@ private struct PackageInlineBadgeText: View {
             return L10n.string("Vulnerable")
         case .hardened:
             return L10n.string("Hardened")
+        case .automicVault:
+            return "Automic Vault"
         case .immutable:
             return L10n.string("Immutable")
         case .outdated:
@@ -1433,6 +1435,8 @@ private struct PackageInlineBadgeText: View {
             return AVGlassPalette.vulnerableText
         case .hardened:
             return AVGlassPalette.green
+        case .automicVault:
+            return AVGlassPalette.green
         case .immutable:
             return AVGlassPalette.cyan
         }
@@ -1443,13 +1447,21 @@ private struct PackageBadgePill: View {
     let badge: MainWindowPackageBadge
 
     var body: some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(background, in: Capsule())
-            .overlay(Capsule().stroke(border, lineWidth: 1))
+        HStack(spacing: 4) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            Text(title)
+                .lineLimit(1)
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(background, in: Capsule())
+        .overlay(Capsule().stroke(border, lineWidth: 1))
     }
 
     private var title: String {
@@ -1460,10 +1472,21 @@ private struct PackageBadgePill: View {
             return L10n.string("Vulnerable")
         case .hardened:
             return L10n.string("Hardened")
+        case .automicVault:
+            return "Automic Vault"
         case .immutable:
             return L10n.string("Immutable")
         case .outdated:
             return L10n.string("Outdated")
+        }
+    }
+
+    private var systemImage: String? {
+        switch badge {
+        case .automicVault:
+            return "shield.fill"
+        case .new, .vulnerable, .hardened, .immutable, .outdated:
+            return nil
         }
     }
 
@@ -1474,6 +1497,8 @@ private struct PackageBadgePill: View {
         case .vulnerable:
             return AVGlassPalette.vulnerableText
         case .hardened:
+            return AVGlassPalette.green
+        case .automicVault:
             return AVGlassPalette.green
         case .immutable:
             return AVGlassPalette.cyan
@@ -1490,6 +1515,8 @@ private struct PackageBadgePill: View {
             return AVGlassPalette.vulnerableFill
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
+        case .automicVault:
+            return AVGlassPalette.green.opacity(0.14)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.14)
         case .outdated:
@@ -1504,6 +1531,8 @@ private struct PackageBadgePill: View {
         case .vulnerable:
             return AVGlassPalette.vulnerableBorder
         case .hardened:
+            return AVGlassPalette.green.opacity(0.22)
+        case .automicVault:
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.24)
@@ -1550,6 +1579,8 @@ private struct PackageBadgeBanner: View {
             return L10n.string("Vulnerable")
         case .hardened:
             return L10n.string("Hardened")
+        case .automicVault:
+            return "Automic Vault"
         case .immutable:
             return L10n.string("Immutable")
         case .outdated:
@@ -1564,6 +1595,8 @@ private struct PackageBadgeBanner: View {
         case .vulnerable:
             return "exclamationmark.shield.fill"
         case .hardened:
+            return "shield.fill"
+        case .automicVault:
             return "shield.fill"
         case .immutable:
             return "lock.fill"
@@ -1580,6 +1613,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.vulnerableText
         case .hardened:
             return AVGlassPalette.green
+        case .automicVault:
+            return AVGlassPalette.green
         case .immutable:
             return AVGlassPalette.cyan
         case .outdated:
@@ -1595,6 +1630,8 @@ private struct PackageBadgeBanner: View {
             return AVGlassPalette.vulnerableFill
         case .hardened:
             return AVGlassPalette.green.opacity(0.14)
+        case .automicVault:
+            return AVGlassPalette.green.opacity(0.14)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.14)
         case .outdated:
@@ -1609,6 +1646,8 @@ private struct PackageBadgeBanner: View {
         case .vulnerable:
             return AVGlassPalette.vulnerableBorder
         case .hardened:
+            return AVGlassPalette.green.opacity(0.22)
+        case .automicVault:
             return AVGlassPalette.green.opacity(0.22)
         case .immutable:
             return AVGlassPalette.cyan.opacity(0.24)

@@ -221,6 +221,7 @@ enum MainWindowPackageBadge: Hashable {
     case new
     case vulnerable
     case hardened
+    case automicVault
     case immutable
     case outdated
 }
@@ -1006,7 +1007,22 @@ final class MainWindowModel: ObservableObject {
         if let badge = packageBadge(for: package) {
             badges.append(badge)
         }
+        if packageShowsAutomicVaultInstallBadge(package) {
+            badges.append(.automicVault)
+        }
         return badges
+    }
+
+    private func packageShowsAutomicVaultInstallBadge(_ package: PackagePresentation) -> Bool {
+        guard case .available(let result) = package.item,
+              result.installsHardened else {
+            return false
+        }
+        if isSearchActive {
+            return true
+        }
+        return selectedSection == .allPackages
+            || selectedSection.categoryIdentifier != nil
     }
 
     func packageInlineBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
