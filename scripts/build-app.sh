@@ -505,6 +505,17 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <string>${APP_BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Automic Vault package links</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>automicvault</string>
+      </array>
+    </dict>
+  </array>
   <key>CFBundleName</key>
   <string>Automic Vault</string>
   <key>CFBundlePackageType</key>

@@ -185,6 +185,7 @@
 "NEW" = "新規";
 "New / Updated" = "新規 / 更新";
 "No explicit environment overrides" = "明示的な環境上書きはありません";
+"No packages to install" = "インストールするパッケージはありません";
 "No outdated packages to update" = "更新が必要なパッケージはありません";
 "No script file detected; flags or inline code are in use" = "スクリプトファイルは検出されませんでした。フラグまたはインラインコードが使用されています";
 "not a script" = "スクリプトではありません";

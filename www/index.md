@@ -23,6 +23,8 @@ Automic Vault is free open-source software under the Apache License 2.0.
 
 - [Documentation](/docs/): CLI commands and runtime patterns.
 - [Security](/security/): threat model and disclosure information.
+- [Blog](/blog/): notes on agent tooling, package hardening, and local developer security.
+- [The Agentic Toolkit](/blog/agentic-toolkit/): all the tools agents need in one installable pack.
 - [Pricing](/pricing/): free open-source software pricing.
 - [security.txt](/.well-known/security.txt): machine-readable security disclosure policy.
 - [llms.txt](/llms.txt): concise AI system navigation.
@@ -38,3 +40,9 @@ Automic Vault is free open-source software under the Apache License 2.0.
   tokens, or use protected secrets.
 - Keep watching new installs, stale tools, and local config for hazards.
 - Trace shell installers before an agent or developer runs them.
+
+## Blog
+
+- [The Agentic Toolkit](/blog/agentic-toolkit/): 26 Homebrew packages for
+  media processing, image manipulation, runtimes, search, shell, build, OCR,
+  metadata, and document conversion.

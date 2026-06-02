@@ -734,6 +734,29 @@ final class MainWindowModel: ObservableObject {
         )
     }
 
+    func requestPackageInstall(packageNames rawPackageNames: [String]) {
+        let packageNames = Self.normalizedRequestedPackageNames(rawPackageNames)
+        guard packageNames.isEmpty == false else {
+            showTransientStatus(L10n.string("No packages to install"))
+            return
+        }
+        guard !isPackageMutationInFlight else {
+            showTransientStatus(L10n.string("Package operation already in progress"))
+            return
+        }
+
+        packageOperationRequestID += 1
+        packageOperationRequest = PackageOperationRequest(
+            id: packageOperationRequestID,
+            kind: .install,
+            packageNames: packageNames,
+            displayName: Self.packageInstallDisplayName(packageNames),
+            isAutomicVaultCLT: false,
+            isXcodeCLT: false,
+            migrationIsotopeName: nil
+        )
+    }
+
     func beginOutdatedUpdateAll(packageCount: Int) {
         transientStatusTask?.cancel()
         isUpdatingAll = true
@@ -2602,6 +2625,28 @@ final class MainWindowModel: ObservableObject {
         count == 1
             ? L10n.string("1 outdated package")
             : L10n.format("%d outdated packages", count)
+    }
+
+    private static func packageInstallDisplayName(_ packageNames: [String]) -> String {
+        packageNames.count == 1
+            ? packageNames[0]
+            : L10n.format("%d packages", packageNames.count)
+    }
+
+    private static func normalizedRequestedPackageNames(_ rawPackageNames: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+
+        for rawPackageName in rawPackageNames {
+            let packageName = rawPackageName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard packageName.isEmpty == false,
+                  seen.insert(packageName).inserted else {
+                continue
+            }
+            result.append(packageName)
+        }
+
+        return result
     }
 }
 

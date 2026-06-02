@@ -2,7 +2,7 @@
 
 Sécurisez les outils que vous installez avec brew.
 
-Le gestionnaire de secrets pour l'écosystème open source.
+Homebrew installe les outils sur votre Mac. Automic Vault vérifie ce qu'ils peuvent lire, déplace les identifiants pris en charge hors des fichiers en clair et demande confirmation avant que les commandes les utilisent.
 
 - Site web: https://www.automicvault.com/fr/
 - Paquets: https://www.automicvault.com/fr/pkg/

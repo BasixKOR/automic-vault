@@ -97,6 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            handleDeepLink(url)
+        }
+    }
+
     private func makeMainMenu() -> NSMenu {
         let menu = NSMenu(title: L10n.string("Main Menu"))
         menu.addItem(makeAppMenuItem())
@@ -355,6 +361,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? MainWindowController)?.requestRefresh()
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard let deepLink = AutomicVaultDeepLink(url: url) else {
+            return
+        }
+
+        let window = makeOrRestoreMainWindow()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        switch deepLink.action {
+        case .install(let packageNames):
+            (window.contentViewController as? MainWindowController)?
+                .requestPackageInstall(packageNames: packageNames)
+        }
     }
 
     @objc private func openPackWindow(_ sender: NSMenuItem) {

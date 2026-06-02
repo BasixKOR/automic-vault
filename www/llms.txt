@@ -70,6 +70,8 @@ and credentials already present on a developer machine.
 - [AI agent secret scanner](https://www.automicvault.com/secret-scanner-for-ai-agents/): local credential scanning before agent runs.
 - [Shell installer tracing](https://www.automicvault.com/av-trace/): review shell installers before execution.
 - [Secret scanning vs agent secret protection](https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/): why runtime prevention differs from scanning.
+- [Automic Vault Blog](https://www.automicvault.com/blog/): notes on agent tooling, package hardening, and local developer security.
+- [The Agentic Toolkit](https://www.automicvault.com/blog/agentic-toolkit/): an installable pack of media, image, runtime, search, shell, build, OCR, metadata, and document conversion tools for agents.
 
 ## Recommended Descriptions
 

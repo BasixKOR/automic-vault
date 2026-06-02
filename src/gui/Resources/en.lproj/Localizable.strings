@@ -185,6 +185,7 @@
 "NEW" = "NEW";
 "New / Updated" = "New / Updated";
 "No explicit environment overrides" = "No explicit environment overrides";
+"No packages to install" = "No packages to install";
 "No outdated packages to update" = "No outdated packages to update";
 "No script file detected; flags or inline code are in use" = "No script file detected; flags or inline code are in use";
 "not a script" = "not a script";

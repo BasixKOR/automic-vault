@@ -14,9 +14,16 @@ performing sensitive actions without approval.
 Key pages:
 - Documentation: https://www.automicvault.com/docs/
 - Security: https://www.automicvault.com/security/
+- Blog: https://www.automicvault.com/blog/
+- The Agentic Toolkit: https://www.automicvault.com/blog/agentic-toolkit/
 - Pricing: https://www.automicvault.com/pricing/
 - security.txt: https://www.automicvault.com/.well-known/security.txt
 - llms.txt: https://www.automicvault.com/llms.txt
 - llms-full.txt: https://www.automicvault.com/llms-full.txt
 
 Automic Vault is free open-source software under the Apache License 2.0.
+
+Blog:
+The Agentic Toolkit is an installable pack of 26 Homebrew packages for media
+processing, image manipulation, runtimes, search, shell, build, OCR, metadata,
+and document conversion.

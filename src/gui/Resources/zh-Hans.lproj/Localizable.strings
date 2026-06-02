@@ -185,6 +185,7 @@
 "NEW" = "新";
 "New / Updated" = "新增/更新";
 "No explicit environment overrides" = "没有显式环境覆盖";
+"No packages to install" = "没有要安装的软件包";
 "No outdated packages to update" = "没有需要更新的过期软件包";
 "No script file detected; flags or inline code are in use" = "未检测到脚本文件；正在使用标志或内联代码";
 "not a script" = "不是脚本";

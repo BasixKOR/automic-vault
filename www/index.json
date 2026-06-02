@@ -10,6 +10,12 @@
   "pricing": "Free open-source software",
   "pricing_url": "https://www.automicvault.com/pricing/",
   "docs": "https://www.automicvault.com/docs/",
+  "blog": "https://www.automicvault.com/blog/",
+  "latest_blog_post": {
+    "title": "The Agentic Toolkit",
+    "url": "https://www.automicvault.com/blog/agentic-toolkit/",
+    "description": "An installable pack of 26 Homebrew packages for media, images, runtimes, search, shell, build, OCR, metadata, and document conversion."
+  },
   "security": "https://www.automicvault.com/security/",
   "security_txt": "https://www.automicvault.com/.well-known/security.txt",
   "llms_txt": "https://www.automicvault.com/llms.txt",

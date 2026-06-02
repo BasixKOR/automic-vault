@@ -185,6 +185,7 @@
 "NEW" = "NEU";
 "New / Updated" = "Neu / Aktualisiert";
 "No explicit environment overrides" = "Keine expliziten Umgebungsueberschreibungen";
+"No packages to install" = "Keine Pakete zum Installieren";
 "No outdated packages to update" = "Keine veralteten Pakete zum Aktualisieren";
 "No script file detected; flags or inline code are in use" = "Keine Scriptdatei erkannt; Flags oder Inline-Code werden verwendet";
 "not a script" = "kein Script";

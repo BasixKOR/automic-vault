@@ -122,6 +122,11 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         searchToolbarItem?.beginSearchInteraction()
     }
 
+    func requestPackageInstall(packageNames: [String]) {
+        startModelIfNeeded()
+        model.requestPackageInstall(packageNames: packageNames)
+    }
+
     @objc private func searchToolbarItemChanged(_ sender: NSSearchField) {
         updateSearchText(sender.stringValue)
     }

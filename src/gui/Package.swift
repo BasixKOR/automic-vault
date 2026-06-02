@@ -40,6 +40,7 @@ let package = Package(
                 "VaultApprovalStore.swift",
                 "ContainmentLogStore.swift",
                 "PostHogTelemetry.swift",
+                "DeepLink.swift",
                 "AppMain.swift",
                 "AppDelegate.swift",
                 "PackagePacks.swift",
@@ -65,6 +66,7 @@ let package = Package(
             path: "Tests",
             sources: [
                 "LocalizationResourceTests.swift",
+                "DeepLinkTests.swift",
                 "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
                 "UpdateProgressViewModelTests.swift",

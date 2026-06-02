@@ -1001,6 +1001,14 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/" />
   </url>
   <url>
+    <loc>https://www.automicvault.com/blog/</loc>
+    <lastmod>2026-06-02</lastmod>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/blog/agentic-toolkit/</loc>
+    <lastmod>2026-06-02</lastmod>
+  </url>
+  <url>
     <loc>https://www.automicvault.com/llms.txt</loc>
     <lastmod>2026-06-01</lastmod>
   </url>
