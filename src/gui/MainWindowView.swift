@@ -1202,6 +1202,8 @@ private struct CountPill: View {
             .background(background, in: Capsule())
             .overlay(Capsule().stroke(border, lineWidth: borderWidth))
             .shadow(color: shadow, radius: 5)
+            // The capsule extends into the row padding so its digit keeps the same trailing edge as plain counts.
+            .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 
     private var foreground: Color {
