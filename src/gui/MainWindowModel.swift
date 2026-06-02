@@ -1434,7 +1434,8 @@ final class MainWindowModel: ObservableObject {
             append(command.selectionID)
         }
 
-        if let detail = package.detail {
+        if let detail = package.detail,
+           shouldUseLoadedDetailIdentity(detail, for: package) {
             append(detail.packageName)
             append(detail.qualifiedName)
             detail.installPackageNames?.forEach(append)
@@ -1446,6 +1447,27 @@ final class MainWindowModel: ObservableObject {
         append(package.preferredDetailLookupName)
 
         return keys.isEmpty ? [package.selectionID.lowercased()] : keys
+    }
+
+    private static func shouldUseLoadedDetailIdentity(
+        _ detail: PackageDetail,
+        for package: PackagePresentation
+    ) -> Bool {
+        guard case .available(let result) = package.item,
+              case .formula = result.source else {
+            return true
+        }
+        let displayName = unqualifiedBrewPackageName(result.name)
+        guard let versionedBase = PackageDisplayTitle.versionedBase(displayName: displayName) else {
+            return true
+        }
+        return unqualifiedBrewPackageName(detail.packageName)
+            .localizedCaseInsensitiveCompare(versionedBase) != .orderedSame
+    }
+
+    private static func unqualifiedBrewPackageName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.strippingPrefix("brew:") ?? trimmed
     }
 
     private static func securityAlertSubjectName(for key: String?) -> String? {

@@ -927,6 +927,40 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchKeepsVersionedAliasAfterCanonicalDetailLoads() throws {
+        let node = searchPresentation(
+            name: "node",
+            formula: "node",
+            description: "JavaScript runtime"
+        )
+        let node26 = searchPresentation(
+            name: "node@26",
+            formula: "node@26",
+            description: "JavaScript runtime"
+        )
+        let loadedNode26Detail = try XCTUnwrap(node26.detail).withPackageIdentity(
+            packageName: "node",
+            installPackageNames: ["node"]
+        )
+        let loadedNode26 = PackagePresentation(
+            item: node26.item,
+            detail: loadedNode26Detail,
+            freshness: node26.freshness,
+            presentationID: node26.presentationID
+        )
+
+        let merged = MainWindowModel.mergedSearchPackages(
+            installed: [],
+            daemon: [node, loadedNode26]
+        )
+
+        XCTAssertEqual(
+            merged.map(\.selectionID),
+            ["search:node", "search:node@26"]
+        )
+    }
+
+    @MainActor
     func testSecurityAlertsPreferInstalledPackageOverMatchingDetectorRow() throws {
         let flyctlState = securityState(
             isotopeName: "flyctl",
