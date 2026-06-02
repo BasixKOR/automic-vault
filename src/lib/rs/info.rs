@@ -4,6 +4,7 @@ pub(crate) const INFO_WIDTH: usize = 64;
 pub(crate) const INFO_INNER_WIDTH: usize = INFO_WIDTH - 2;
 pub(crate) const INFO_LABEL_WIDTH: usize = 14;
 const PULSE_NEW_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
+const HOMEBREW_INSTALL_RECEIPT: &str = "INSTALL_RECEIPT.json";
 
 pub(crate) fn load_config() -> Result<Config, String> {
     let bottle_tag = current_bottle_tag()?;
@@ -402,6 +403,7 @@ pub(crate) fn resolve_package_search_results(
                 docs: Vec::new(),
                 category: None,
                 dependencies: metadata.dependencies.clone(),
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: metadata
                     .popularity
@@ -588,6 +590,7 @@ pub(crate) fn resolve_available_package_results(
                 docs: Vec::new(),
                 category: None,
                 dependencies: metadata.dependencies,
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: metadata.last_updated_at,
@@ -657,6 +660,7 @@ fn npm_search_result(package_name: &str, metadata: &EmbeddedNpmMetadata) -> Pack
         docs: Vec::new(),
         category: None,
         dependencies: Vec::new(),
+        install_package_names: Vec::new(),
         security_state: None,
         rank: metadata
             .popularity
@@ -690,6 +694,7 @@ fn vendor_search_result(entry: &vendor::VendorEntry) -> PackageSearchResult {
                     .collect()
             })
             .unwrap_or_default(),
+        install_package_names: Vec::new(),
         security_state: None,
         rank: None,
         last_updated_at: None,
@@ -736,6 +741,7 @@ pub(crate) fn resolve_pulse_package_results(
                 docs: Vec::new(),
                 category: None,
                 dependencies: metadata.dependencies,
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: metadata.popularity.map(|popularity| popularity.rank),
                 last_updated_at: Some(last_updated_at),
@@ -774,6 +780,244 @@ pub(crate) fn resolve_geiger_package_results(
     });
     results.dedup_by(|left, right| left.package_name == right.package_name);
     Ok(results)
+}
+
+pub(crate) fn resolve_security_recommendation_package_results(
+    _config: &Config,
+) -> Result<Vec<PackageSearchResult>, String> {
+    let homebrew_cellar = Path::new(RELOCATABLE_HOMEBREW_PREFIX).join("Cellar");
+    resolve_security_recommendation_package_results_at(&homebrew_cellar, &opt_pkg_root())
+}
+
+fn resolve_security_recommendation_package_results_at(
+    homebrew_cellar: &Path,
+    opt_root: &Path,
+) -> Result<Vec<PackageSearchResult>, String> {
+    let formulae = formula_index_entries()?;
+    let mut results = embedded_security_recommendations()
+        .packages
+        .iter()
+        .filter_map(|(package_key, recommendation)| {
+            let formula = security_recommendation_formula(package_key, recommendation)?;
+            if !homebrew_formula_is_installed_at(homebrew_cellar, &formula)
+                || security_recommendation_has_vault_install(opt_root, package_key, recommendation)
+            {
+                return None;
+            }
+            let result =
+                security_recommendation_package_result(package_key, recommendation, &formulae)?;
+            Some((recommendation.priority, result))
+        })
+        .collect::<Vec<_>>();
+
+    results.sort_by(|(left_priority, left), (right_priority, right)| {
+        left_priority
+            .cmp(right_priority)
+            .then_with(|| compare_security_recommendation_rank_order(left, right))
+            .then_with(|| {
+                compare_package_names_for_search_order(&left.package_name, &right.package_name)
+            })
+    });
+    let mut results = results
+        .into_iter()
+        .map(|(_, result)| result)
+        .collect::<Vec<_>>();
+    results.dedup_by(|left, right| left.package_name == right.package_name);
+    Ok(results)
+}
+
+fn security_recommendation_formula(
+    package_key: &str,
+    recommendation: &SecurityRecommendationPackage,
+) -> Option<String> {
+    string_or_none(&recommendation.name).or_else(|| {
+        package_key
+            .strip_prefix(BREW_PACKAGE_PREFIX)
+            .and_then(string_or_none)
+    })
+}
+
+fn homebrew_formula_cellar_name(formula: &str) -> &str {
+    formula
+        .strip_prefix(BREW_PACKAGE_PREFIX)
+        .unwrap_or(formula)
+        .rsplit('/')
+        .next()
+        .unwrap_or(formula)
+}
+
+fn homebrew_formula_is_installed_at(homebrew_cellar: &Path, formula: &str) -> bool {
+    let formula_dir = homebrew_cellar.join(homebrew_formula_cellar_name(formula));
+    let Ok(entries) = fs::read_dir(formula_dir) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+            && entry.path().join(HOMEBREW_INSTALL_RECEIPT).is_file()
+    })
+}
+
+fn security_recommendation_has_vault_install(
+    opt_root: &Path,
+    package_key: &str,
+    recommendation: &SecurityRecommendationPackage,
+) -> bool {
+    let mut candidates = Vec::new();
+    append_security_recommendation_install_candidate(&mut candidates, package_key);
+    append_security_recommendation_install_candidate(
+        &mut candidates,
+        &recommendation.install_package_name,
+    );
+    if let Some(isotope_package) = recommendation.isotope_package.as_deref() {
+        append_security_recommendation_install_candidate(&mut candidates, isotope_package);
+    }
+
+    candidates
+        .into_iter()
+        .any(|package_name| vault_package_receipt_exists(opt_root, &package_name))
+}
+
+fn append_security_recommendation_install_candidate(candidates: &mut Vec<String>, value: &str) {
+    let Some(trimmed) = string_or_none(value) else {
+        return;
+    };
+    let package_name = trimmed
+        .strip_prefix(BREW_PACKAGE_PREFIX)
+        .unwrap_or(&trimmed);
+    push_unique_string(candidates, package_name.to_string());
+    let cellar_name = homebrew_formula_cellar_name(package_name);
+    if cellar_name != package_name {
+        push_unique_string(candidates, cellar_name.to_string());
+    }
+}
+
+fn vault_package_receipt_exists(opt_root: &Path, package_name: &str) -> bool {
+    let Ok(install_root) = package_install_root(opt_root, package_name) else {
+        return false;
+    };
+    load_package_receipt(&install_root.join(ROOT_RECEIPT))
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+fn security_recommendation_package_result(
+    package_key: &str,
+    recommendation: &SecurityRecommendationPackage,
+    formulae: &[FormulaIndexEntry],
+) -> Option<PackageSearchResult> {
+    let formula = security_recommendation_formula(package_key, recommendation)?;
+    let source = PackageReceiptSource::Formula {
+        root_formula: formula.clone(),
+    };
+    let package_name = package_source_qualified_name(&source);
+    let mut result = formula_index_entry_for_security_recommendation(formulae, &formula)
+        .map(|entry| formula_search_result(entry, &package_name))
+        .unwrap_or_else(|| PackageSearchResult {
+            package_name,
+            source: source.clone(),
+            summary: None,
+            latest_version: None,
+            homepage: None,
+            repository: None,
+            upstream_docs: None,
+            docs: Vec::new(),
+            category: None,
+            dependencies: Vec::new(),
+            install_package_names: Vec::new(),
+            security_state: None,
+            rank: None,
+            last_updated_at: None,
+            pulse_kind: None,
+        });
+
+    result.source = source;
+    result.summary = Some(security_recommendation_summary(recommendation));
+    result.install_package_names = vec![security_recommendation_install_package_name(
+        package_key,
+        recommendation,
+    )];
+    if result.security_state.is_none()
+        && let Some(isotope) = recommendation.isotope.as_deref()
+    {
+        result.security_state = package_security_state_for_isotope(isotope);
+    }
+    Some(result)
+}
+
+fn formula_index_entry_for_security_recommendation<'a>(
+    formulae: &'a [FormulaIndexEntry],
+    formula: &str,
+) -> Option<&'a FormulaIndexEntry> {
+    let cellar_name = homebrew_formula_cellar_name(formula);
+    formulae
+        .iter()
+        .find(|entry| entry.name == formula || entry.name == cellar_name)
+        .or_else(|| {
+            formulae.iter().find(|entry| {
+                entry.aliases.iter().any(|alias| {
+                    alias == formula || homebrew_formula_cellar_name(alias) == cellar_name
+                })
+            })
+        })
+}
+
+fn security_recommendation_install_package_name(
+    package_key: &str,
+    recommendation: &SecurityRecommendationPackage,
+) -> String {
+    string_or_none(&recommendation.install_package_name).unwrap_or_else(|| package_key.to_string())
+}
+
+fn security_recommendation_summary(recommendation: &SecurityRecommendationPackage) -> String {
+    let mut summary = recommendation
+        .reasons
+        .iter()
+        .find_map(|reason| string_or_none(reason))
+        .unwrap_or_else(|| "Root-owned Automic Vault install recommended.".to_string());
+
+    if let Some(level) = recommendation
+        .geiger_level
+        .as_deref()
+        .and_then(string_or_none)
+    {
+        summary.push_str(&format!(" Geiger: {level}."));
+    }
+    if let Some(confidence) = recommendation
+        .geiger_confidence
+        .as_deref()
+        .and_then(string_or_none)
+    {
+        summary.push_str(&format!(" Confidence: {confidence}."));
+    }
+    if let Some(category) = recommendation
+        .geiger_category
+        .as_deref()
+        .and_then(string_or_none)
+    {
+        summary.push_str(&format!(" Category: {category}."));
+    }
+    if recommendation.approval_gate
+        && !recommendation
+            .signals
+            .iter()
+            .any(|signal| signal == "approval_gate")
+    {
+        summary.push_str(" Approval gate metadata is available.");
+    }
+    summary
+}
+
+fn compare_security_recommendation_rank_order(
+    left: &PackageSearchResult,
+    right: &PackageSearchResult,
+) -> std::cmp::Ordering {
+    match (left.rank, right.rank) {
+        (Some(left_rank), Some(right_rank)) => left_rank.cmp(&right_rank),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    }
 }
 
 fn geiger_package_result_for_integration(
@@ -822,6 +1066,7 @@ fn geiger_package_result_for_integration(
         docs: Vec::new(),
         category: None,
         dependencies: Vec::new(),
+        install_package_names: Vec::new(),
         security_state: Some(state),
         rank: None,
         last_updated_at: isotope.and_then(|record| record.published_at.clone()),
@@ -934,6 +1179,7 @@ fn formula_search_result(entry: &FormulaIndexEntry, package_name: &str) -> Packa
         docs: non_empty_docs(&entry.docs),
         category: string_or_none(&entry.category),
         dependencies: Vec::new(),
+        install_package_names: Vec::new(),
         security_state: None,
         rank: entry.popularity.as_ref().map(|popularity| popularity.rank),
         last_updated_at: entry.last_updated_at.clone(),
@@ -2354,11 +2600,77 @@ mod tests {
             docs: Vec::new(),
             category: None,
             dependencies: Vec::new(),
+            install_package_names: Vec::new(),
             security_state: None,
             rank,
             last_updated_at: None,
             pulse_kind: None,
         }
+    }
+
+    #[test]
+    fn homebrew_formula_is_installed_at_requires_version_receipt() {
+        let temp = TempDir::new().unwrap();
+        let cellar = temp.path().join("Cellar");
+
+        assert!(!homebrew_formula_is_installed_at(&cellar, "awscli"));
+
+        let formula_root = cellar.join("awscli");
+        fs::create_dir_all(&formula_root).unwrap();
+        assert!(!homebrew_formula_is_installed_at(&cellar, "awscli"));
+
+        let version_root = formula_root.join("2.27.0");
+        fs::create_dir_all(&version_root).unwrap();
+        assert!(!homebrew_formula_is_installed_at(&cellar, "awscli"));
+
+        fs::write(version_root.join(HOMEBREW_INSTALL_RECEIPT), "{}").unwrap();
+        assert!(homebrew_formula_is_installed_at(&cellar, "awscli"));
+
+        let tapped_root = cellar.join("acli").join("1.2.3");
+        fs::create_dir_all(&tapped_root).unwrap();
+        fs::write(tapped_root.join(HOMEBREW_INSTALL_RECEIPT), "{}").unwrap();
+        assert!(homebrew_formula_is_installed_at(
+            &cellar,
+            "atlassian/acli/acli"
+        ));
+    }
+
+    #[test]
+    fn security_recommendation_vault_filter_matches_formula_receipts() {
+        let temp = TempDir::new().unwrap();
+        let opt_root = temp.path().join("opt");
+        let recommendation = SecurityRecommendationPackage {
+            name: "awscli".to_string(),
+            install_package_name: "brew:awscli".to_string(),
+            ..SecurityRecommendationPackage::default()
+        };
+
+        assert!(!security_recommendation_has_vault_install(
+            &opt_root,
+            "brew:awscli",
+            &recommendation
+        ));
+
+        let install_root = package_install_root(&opt_root, "awscli").unwrap();
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "awscli".to_string(),
+                version: "2.27.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: "awscli".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        assert!(security_recommendation_has_vault_install(
+            &opt_root,
+            "brew:awscli",
+            &recommendation
+        ));
     }
 
     #[test]

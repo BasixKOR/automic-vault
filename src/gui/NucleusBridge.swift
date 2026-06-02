@@ -119,7 +119,7 @@ final class NucleusBridge {
     private let daemonOwnership: DaemonOwnership
     private let expectedProtocolVersion = Bundle.main.object(
         forInfoDictionaryKey: "NukeProtocolVersion"
-    ) as? String ?? "1.15"
+    ) as? String ?? "1.16"
     private let expectedBuildID = Bundle.main.object(
         forInfoDictionaryKey: "NukeBuildID"
     ) as? String ?? "unknown"
@@ -235,6 +235,17 @@ final class NucleusBridge {
     ) throws -> PackageSearchPage {
         try performProtocolRequest(
             method: "packages.listGeiger",
+            params: PageParams(offset: offset, limit: limit, category: nil, sort: nil),
+            as: PackageSearchPage.self
+        )
+    }
+
+    func fetchSecurityRecommendationPackages(
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
+        try performProtocolRequest(
+            method: "packages.listSecurityRecommendations",
             params: PageParams(offset: offset, limit: limit, category: nil, sort: nil),
             as: PackageSearchPage.self
         )

@@ -258,6 +258,7 @@
 "Secrets auto-approved: %@" = "Secrets approuves automatiquement : %@";
 "Security" = "Securite";
 "Security Alerts" = "Alertes de securite";
+"Security Recommendations" = "Recommandations de securite";
 "Select All" = "Tout selectionner";
 "session" = "session";
 "Settings" = "Reglages";

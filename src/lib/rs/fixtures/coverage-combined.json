@@ -239,6 +239,46 @@
         "pythonFormula": "python@3.12"
       }
     },
+    "security-recommendations": {
+      "generated_at": "2026-05-05T00:00:00Z",
+      "packages": {
+        "brew:awscli": {
+          "approvalGate": true,
+          "installPackageName": "brew:awscli",
+          "isotope": "aws-cli",
+          "isotopePackage": "isotope:aws-cli",
+          "name": "awscli",
+          "priority": 0,
+          "provider": "brew",
+          "reasons": [
+            "Official Amazon AWS command-line interface handles credentials."
+          ],
+          "signals": [
+            "isotope",
+            "approval_gate"
+          ]
+        },
+        "brew:gh": {
+          "geigerCategory": "infrastructure",
+          "geigerConfidence": "high",
+          "geigerLevel": "orange",
+          "installPackageName": "brew:gh",
+          "isotope": "gh",
+          "isotopePackage": "isotope:gh",
+          "name": "gh",
+          "priority": 0,
+          "provider": "brew",
+          "reasons": [
+            "GitHub CLI can mutate remote repositories."
+          ],
+          "signals": [
+            "isotope",
+            "geiger:orange"
+          ]
+        }
+      },
+      "schema": 1
+    },
     "stub_exclusions": {
       "brew:bash": [
         "bashbug"

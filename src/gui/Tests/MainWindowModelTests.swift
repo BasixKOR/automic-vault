@@ -6,7 +6,7 @@ final class MainWindowModelTests: XCTestCase {
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,
-            [.installed, .geigerCounter, .outdated]
+            [.installed, .securityRecommendations, .geigerCounter, .outdated]
         )
         XCTAssertEqual(
             MainWindowSection.categoryShortcutSections,
@@ -75,6 +75,39 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(
             model.displayedPackages.map(\.selectionID),
             ["brew:alpha", "brew:bravo", "brew:charlie"]
+        )
+    }
+
+    @MainActor
+    func testSecurityRecommendationsLoadsRecommendationPackages() async throws {
+        let requests = PageRequestRecorder()
+        let model = MainWindowModel(
+            securityRecommendationPackagesFetcher: { offset, _ in
+                requests.append(offset)
+                return PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "brew:awscli",
+                            description: "Plain Text AWS Credentials"
+                        )
+                    ],
+                    totalCount: 1,
+                    nextOffset: nil
+                )
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .securityRecommendations
+        await waitUntil(
+            model.displayedPackages.map(\.selectionID) == ["security-recommendation:brew:awscli"]
+        )
+
+        XCTAssertEqual(requests.values, [0])
+        XCTAssertEqual(model.count(for: .securityRecommendations), 1)
+        XCTAssertEqual(
+            model.displayedPackages.first?.detail?.homebrewInfo?.description,
+            "Plain Text AWS Credentials"
         )
     }
 
@@ -1187,6 +1220,7 @@ final class MainWindowModelTests: XCTestCase {
 
     private static func packageSearchResult(
         name: String,
+        description: String? = nil,
         homepage: String? = nil,
         category: String? = nil,
         pulseKind: String? = nil,
@@ -1197,7 +1231,7 @@ final class MainWindowModelTests: XCTestCase {
             name: name,
             source: .formula(rootFormula: name.replacingOccurrences(of: "brew:", with: "")),
             version: "1.0",
-            description: "\(name) package",
+            description: description ?? "\(name) package",
             homepage: homepage,
             category: category,
             dependencies: [],

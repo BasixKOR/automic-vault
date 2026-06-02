@@ -960,6 +960,7 @@ struct PackageSearchResult: Decodable, Equatable {
     let docs: [String]
     let category: String?
     let dependencies: [String]
+    let installPackageNames: [String]?
     let rank: UInt32?
     let lastUpdatedAt: String?
     let securityState: PackageSecurityState?
@@ -980,6 +981,7 @@ struct PackageSearchResult: Decodable, Equatable {
         case docs
         case category
         case dependencies
+        case installPackageNames
         case rank
         case lastUpdatedAt
         case securityState
@@ -997,6 +999,7 @@ struct PackageSearchResult: Decodable, Equatable {
         docs: [String] = [],
         category: String? = nil,
         dependencies: [String],
+        installPackageNames: [String]? = nil,
         rank: UInt32? = nil,
         lastUpdatedAt: String? = nil,
         securityState: PackageSecurityState?,
@@ -1012,6 +1015,7 @@ struct PackageSearchResult: Decodable, Equatable {
         self.docs = docs
         self.category = category
         self.dependencies = dependencies
+        self.installPackageNames = installPackageNames
         self.rank = rank
         self.lastUpdatedAt = lastUpdatedAt
         self.securityState = securityState
@@ -1040,6 +1044,10 @@ struct PackageSearchResult: Decodable, Equatable {
         docs = try container.decodeIfPresent([String].self, forKey: .docs) ?? []
         category = try container.decodeIfPresent(String.self, forKey: .category)
         dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+        installPackageNames = try container.decodeIfPresent(
+            [String].self,
+            forKey: .installPackageNames
+        )
         rank = try container.decodeIfPresent(UInt32.self, forKey: .rank)
         lastUpdatedAt = try container.decodeIfPresent(String.self, forKey: .lastUpdatedAt)
         securityState = try container.decodeIfPresent(
@@ -1081,7 +1089,7 @@ struct PackageSearchResult: Decodable, Equatable {
             npmHomepage: nil,
             npmPackageInfoError: nil,
             securityState: securityState,
-            installPackageNames: nil
+            installPackageNames: installPackageNames
         )
     }
 
@@ -1161,6 +1169,7 @@ struct PackageSearchResult: Decodable, Equatable {
             docs: docs,
             category: category,
             dependencies: dependencies,
+            installPackageNames: installPackageNames,
             rank: rank,
             lastUpdatedAt: lastUpdatedAt,
             securityState: nil,

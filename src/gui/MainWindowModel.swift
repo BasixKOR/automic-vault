@@ -4,6 +4,7 @@ import Foundation
 
 enum MainWindowSection: String, CaseIterable, Identifiable {
     case installed
+    case securityRecommendations
     case geigerCounter
     case newUpdated
     case outdated
@@ -28,6 +29,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     static let librarySections: [MainWindowSection] = [
         .installed,
+        .securityRecommendations,
         .geigerCounter,
         .outdated
     ]
@@ -78,6 +80,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return L10n.string("Installed")
+        case .securityRecommendations:
+            return L10n.string("Security Recommendations")
         case .geigerCounter:
             return L10n.string("Security Alerts")
         case .newUpdated:
@@ -123,6 +127,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         switch self {
         case .installed:
             return "shippingbox"
+        case .securityRecommendations:
+            return "lock.shield"
         case .geigerCounter:
             return "exclamationmark.shield"
         case .newUpdated:
@@ -192,8 +198,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return "toys"
         case .other:
             return "other"
-        case .installed, .geigerCounter, .newUpdated, .outdated, .allPackages,
-             .settings, .about:
+        case .installed, .securityRecommendations, .geigerCounter, .newUpdated, .outdated,
+             .allPackages, .settings, .about:
             return nil
         }
     }
@@ -332,6 +338,7 @@ final class MainWindowModel: ObservableObject {
     }
     @Published private(set) var categoryPackageSortOrder: CategoryPackageSortOrder = .rank
     @Published private(set) var packages: [PackagePresentation] = []
+    @Published private(set) var securityRecommendationPackages: [PackagePresentation] = []
     @Published private(set) var geigerPackages: [PackagePresentation] = []
     @Published private(set) var catalogPackages: [PackagePresentation] = []
     @Published private(set) var pulsePackages: [PackagePresentation] = []
@@ -367,6 +374,7 @@ final class MainWindowModel: ObservableObject {
     private var detailRequestID = 0
     private var packageOperationRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
+    private var securityRecommendationTotalCount: Int?
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var catalogCategoryCounts: [String: Int] = [:]
@@ -391,6 +399,7 @@ final class MainWindowModel: ObservableObject {
         CategoryPackageSortOrder
     ) throws -> PackageSearchPage
     private let pulsePackagesFetcher: (Int, Int) throws -> PackageSearchPage
+    private let securityRecommendationPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let geigerPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let searchPackagesFetcher: (String, Int, Int) throws -> PackageSearchPage
 
@@ -422,6 +431,14 @@ final class MainWindowModel: ObservableObject {
             limit in
             try MainWindowModel.fetchPulsePackages(offset: offset, limit: limit)
         },
+        securityRecommendationPackagesFetcher: @escaping (
+            Int,
+            Int
+        ) throws -> PackageSearchPage = {
+            offset,
+            limit in
+            try MainWindowModel.fetchSecurityRecommendationPackages(offset: offset, limit: limit)
+        },
         geigerPackagesFetcher: @escaping (Int, Int) throws -> PackageSearchPage = {
             offset,
             limit in
@@ -440,6 +457,7 @@ final class MainWindowModel: ObservableObject {
         self.securityCatalog = securityCatalog
         self.availablePackagesFetcher = availablePackagesFetcher
         self.pulsePackagesFetcher = pulsePackagesFetcher
+        self.securityRecommendationPackagesFetcher = securityRecommendationPackagesFetcher
         self.geigerPackagesFetcher = geigerPackagesFetcher
         self.searchPackagesFetcher = searchPackagesFetcher
         self.userDefaults = userDefaults
@@ -900,6 +918,11 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             return installedCount
+        case .securityRecommendations:
+            return securityRecommendationTotalCount
+                ?? (securityRecommendationPackages.isEmpty
+                    ? nil
+                    : securityRecommendationPackages.count)
         case .geigerCounter:
             return geigerCounterCount
         case .newUpdated:
@@ -1102,6 +1125,7 @@ final class MainWindowModel: ObservableObject {
         let categoryPackages = categoryPackagesByPageKey.values.flatMap { $0 }
         for package in packages
             + localOutdatedPackages
+            + securityRecommendationPackages
             + geigerPackages
             + catalogPackages
             + categoryPackages
@@ -1427,6 +1451,8 @@ final class MainWindowModel: ObservableObject {
         switch section {
         case .installed:
             source = packages
+        case .securityRecommendations:
+            source = securityRecommendationPackages
         case .geigerCounter:
             source = geigerActionPackages
         case .newUpdated:
@@ -1466,7 +1492,7 @@ final class MainWindowModel: ObservableObject {
         package: PackagePresentation
     ) -> Bool {
         switch section {
-        case .installed, .allPackages:
+        case .installed, .securityRecommendations, .allPackages:
             return true
         case .geigerCounter:
             return isGeigerActionPackage(package)
@@ -1742,6 +1768,10 @@ final class MainWindowModel: ObservableObject {
                 normalized,
                 for: package.selectionID
             )
+            securityRecommendationPackages = securityRecommendationPackages.updatingDetail(
+                normalized,
+                for: package.selectionID
+            )
             categoryPackagesByPageKey = categoryPackagesByPageKey.mapValues {
                 $0.updatingDetail(normalized, for: package.selectionID)
             }
@@ -1949,12 +1979,15 @@ final class MainWindowModel: ObservableObject {
     }
 
     private enum SectionPageKind: Sendable, Hashable {
+        case securityRecommendations
         case geiger
         case catalog(category: String?, sortOrder: CategoryPackageSortOrder)
         case pulse
 
         init?(section: MainWindowSection, categorySortOrder: CategoryPackageSortOrder) {
             switch section {
+            case .securityRecommendations:
+                self = .securityRecommendations
             case .geigerCounter:
                 self = .geiger
             case .newUpdated:
@@ -2000,6 +2033,9 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         switch kind {
+        case .securityRecommendations:
+            return securityRecommendationPackages.isEmpty == false
+                || securityRecommendationTotalCount != nil
         case .geiger:
             return geigerPackages.isEmpty == false || geigerTotalCount != nil
         case .catalog(nil, _):
@@ -2065,6 +2101,14 @@ final class MainWindowModel: ObservableObject {
             sectionPageNextOffsets[kind] = page.nextOffset
             let previousVisibleCount = displayedPackages.count
             switch kind {
+            case .securityRecommendations:
+                securityRecommendationTotalCount = page.totalCount
+                let packages = page.packages.map {
+                    presentation(for: $0, prefix: "security-recommendation")
+                }
+                securityRecommendationPackages = offset == 0
+                    ? packages
+                    : securityRecommendationPackages.appendingUniquePackages(packages)
             case .geiger:
                 geigerTotalCount = page.totalCount
                 let packages = page.packages.map { result in
@@ -2188,6 +2232,9 @@ final class MainWindowModel: ObservableObject {
             : nil
 
         packages = packages.retiringSecurityReview(matching: context)
+        securityRecommendationPackages = securityRecommendationPackages.retiringSecurityReview(
+            matching: context
+        )
         catalogPackages = catalogPackages.retiringSecurityReview(matching: context)
         categoryPackagesByPageKey = categoryPackagesByPageKey.mapValues {
             $0.retiringSecurityReview(matching: context)
@@ -2195,6 +2242,7 @@ final class MainWindowModel: ObservableObject {
         pulsePackages = pulsePackages.retiringSecurityReview(matching: context)
         searchResults = searchResults.retiringSecurityReview(matching: context)
         geigerPackages.removeAll { context.matches($0) }
+        staleSectionKinds.insert(.securityRecommendations)
         staleSectionKinds.insert(.geiger)
 
         detailsByPackageName = detailsByPackageName.filter { key, detail in
@@ -2318,6 +2366,8 @@ final class MainWindowModel: ObservableObject {
         for kind: SectionPageKind
     ) -> (Int, Int) throws -> PackageSearchPage {
         switch kind {
+        case .securityRecommendations:
+            return securityRecommendationPackagesFetcher
         case .geiger:
             return geigerPackagesFetcher
         case .catalog(let category, let sortOrder):
@@ -2368,6 +2418,17 @@ final class MainWindowModel: ObservableObject {
             daemonOwnership: .owner
         )
         .fetchGeigerPackages(offset: offset, limit: limit)
+    }
+
+    private nonisolated static func fetchSecurityRecommendationPackages(
+        offset: Int,
+        limit: Int
+    ) throws -> PackageSearchPage {
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .owner
+        )
+        .fetchSecurityRecommendationPackages(offset: offset, limit: limit)
     }
 
     private nonisolated static func fetchDetail(packageName: String) throws -> PackageDetail {

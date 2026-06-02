@@ -241,6 +241,38 @@ def main():
                     "pythonFormula": "python@3.12",
                 },
             },
+            "security-recommendations": {
+                "schema": 1,
+                "generated_at": "2026-05-05T00:00:00Z",
+                "packages": {
+                    "brew:awscli": {
+                        "provider": "brew",
+                        "name": "awscli",
+                        "installPackageName": "brew:awscli",
+                        "priority": 0,
+                        "signals": ["isotope", "approval_gate"],
+                        "reasons": [
+                            "Official Amazon AWS command-line interface handles credentials."
+                        ],
+                        "isotope": "aws-cli",
+                        "isotopePackage": "isotope:aws-cli",
+                        "approvalGate": True,
+                    },
+                    "brew:gh": {
+                        "provider": "brew",
+                        "name": "gh",
+                        "installPackageName": "brew:gh",
+                        "priority": 0,
+                        "signals": ["isotope", "geiger:orange"],
+                        "reasons": ["GitHub CLI can mutate remote repositories."],
+                        "isotope": "gh",
+                        "isotopePackage": "isotope:gh",
+                        "geigerLevel": "orange",
+                        "geigerConfidence": "high",
+                        "geigerCategory": "infrastructure",
+                    },
+                },
+            },
             "stub_exclusions": {
                 "brew:bash": ["bashbug"],
                 "brew:ffmpeg": ["ffmpeg-unused"],
@@ -271,6 +303,7 @@ def _validate(data):
     assert sources["isotopes"]["aws-cli"]["modifies"] == "brew:awscli"
     assert sources["npm"]["coverage-npm"]["homebrewDeps"] == ["node"]
     assert sources["pip"]["coverage-pip"]["pythonFormula"] == "python@3.14"
+    assert sources["security-recommendations"]["packages"]["brew:awscli"]["isotope"] == "aws-cli"
 
 
 if __name__ == "__main__":

@@ -185,6 +185,7 @@ static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
 static NPM_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static PIP_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
 static ISOTOPE_DATA: OnceLock<HashMap<String, IsotopePackageData>> = OnceLock::new();
+static SECURITY_RECOMMENDATIONS: OnceLock<SecurityRecommendationsData> = OnceLock::new();
 static COMBINED_DATA: OnceLock<CombinedData> = OnceLock::new();
 static FORMULA_INDEX: OnceLock<Result<Vec<FormulaIndexEntry>, String>> = OnceLock::new();
 static FORMULA_ALIAS_INDEX: OnceLock<Result<HashMap<String, String>, String>> = OnceLock::new();
@@ -258,6 +259,8 @@ struct CombinedDataSources {
     isotopes: HashMap<String, IsotopePackageData>,
     npm: HashMap<String, PackageInstallData>,
     pip: HashMap<String, PackageInstallData>,
+    #[serde(default, rename = "security-recommendations")]
+    security_recommendations: SecurityRecommendationsData,
     stub_exclusions: HashMap<String, Vec<String>>,
 }
 
@@ -585,6 +588,38 @@ struct PackageInstallData {
     homebrew_dependencies: Vec<String>,
     #[serde(default, rename = "pythonFormula")]
     python_formula: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct SecurityRecommendationsData {
+    #[serde(default)]
+    packages: HashMap<String, SecurityRecommendationPackage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct SecurityRecommendationPackage {
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "installPackageName")]
+    install_package_name: String,
+    #[serde(default)]
+    priority: u32,
+    #[serde(default)]
+    signals: Vec<String>,
+    #[serde(default)]
+    reasons: Vec<String>,
+    #[serde(default)]
+    isotope: Option<String>,
+    #[serde(default, rename = "isotopePackage")]
+    isotope_package: Option<String>,
+    #[serde(default, rename = "approvalGate")]
+    approval_gate: bool,
+    #[serde(default, rename = "geigerLevel")]
+    geiger_level: Option<String>,
+    #[serde(default, rename = "geigerConfidence")]
+    geiger_confidence: Option<String>,
+    #[serde(default, rename = "geigerCategory")]
+    geiger_category: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1113,6 +1148,7 @@ struct PackageSearchResult {
     docs: Vec<String>,
     category: Option<String>,
     dependencies: Vec<String>,
+    install_package_names: Vec<String>,
     security_state: Option<PackageSecurityState>,
     rank: Option<u32>,
     last_updated_at: Option<String>,
@@ -2804,6 +2840,15 @@ fn embedded_isotope_data() -> &'static HashMap<String, IsotopePackageData> {
             .into_values()
             .map(|record| (record.name.clone(), record))
             .collect()
+    })
+}
+
+fn embedded_security_recommendations() -> &'static SecurityRecommendationsData {
+    SECURITY_RECOMMENDATIONS.get_or_init(|| {
+        embedded_combined_data()
+            .sources
+            .security_recommendations
+            .clone()
     })
 }
 
@@ -8294,6 +8339,7 @@ mod tests {
             docs: Vec::new(),
             category: None,
             dependencies: Vec::new(),
+            install_package_names: Vec::new(),
             security_state: None,
             rank,
             last_updated_at: None,
@@ -10083,6 +10129,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                 docs: Vec::new(),
                 category: None,
                 dependencies: Vec::new(),
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: None,
                 last_updated_at: None,
@@ -10101,6 +10148,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                 docs: Vec::new(),
                 category: None,
                 dependencies: Vec::new(),
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: None,
                 last_updated_at: None,
@@ -10119,6 +10167,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
                 docs: Vec::new(),
                 category: None,
                 dependencies: Vec::new(),
+                install_package_names: Vec::new(),
                 security_state: None,
                 rank: None,
                 last_updated_at: None,

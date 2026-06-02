@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.15";
+pub(crate) const PROTOCOL_VERSION: &str = "1.16";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProtocolMethod {
@@ -9,6 +9,7 @@ pub(crate) enum ProtocolMethod {
     PackagesListAvailable,
     PackagesListPulse,
     PackagesListGeiger,
+    PackagesListSecurityRecommendations,
     PackagesInfo,
     PackagesSearch,
     PackagesListOutdated,
@@ -25,6 +26,9 @@ impl ProtocolMethod {
             "packages.listAvailable" => Some(Self::PackagesListAvailable),
             "packages.listPulse" => Some(Self::PackagesListPulse),
             "packages.listGeiger" => Some(Self::PackagesListGeiger),
+            "packages.listSecurityRecommendations" => {
+                Some(Self::PackagesListSecurityRecommendations)
+            }
             "packages.info" => Some(Self::PackagesInfo),
             "packages.search" => Some(Self::PackagesSearch),
             "packages.listOutdated" => Some(Self::PackagesListOutdated),
@@ -119,6 +123,8 @@ pub(crate) struct SearchPackageSummary {
     pub(crate) docs: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) category: Option<String>,
+    #[serde(rename = "installPackageNames", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) install_package_names: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rank: Option<u32>,
     #[serde(rename = "lastUpdatedAt", skip_serializing_if = "Option::is_none")]
@@ -202,6 +208,10 @@ mod tests {
             ),
             ("packages.listPulse", ProtocolMethod::PackagesListPulse),
             ("packages.listGeiger", ProtocolMethod::PackagesListGeiger),
+            (
+                "packages.listSecurityRecommendations",
+                ProtocolMethod::PackagesListSecurityRecommendations,
+            ),
             ("packages.info", ProtocolMethod::PackagesInfo),
             ("packages.search", ProtocolMethod::PackagesSearch),
             (
@@ -295,6 +305,7 @@ mod tests {
                 upstream_docs: Some("https://docs.example.test/pkg".to_string()),
                 docs: vec!["https://docs.example.test/pkg".to_string()],
                 category: Some("developer-tools".to_string()),
+                install_package_names: vec!["npm:pkg".to_string()],
                 rank: Some(7),
                 last_updated_at: Some("2026-05-27T12:00:00Z".to_string()),
                 pulse_kind: Some("release".to_string()),
@@ -324,6 +335,10 @@ mod tests {
             "https://docs.example.test/pkg"
         );
         assert_eq!(search_json["packages"][0]["category"], "developer-tools");
+        assert_eq!(
+            search_json["packages"][0]["installPackageNames"],
+            json!(["npm:pkg"])
+        );
         assert_eq!(search_json["packages"][0]["rank"], 7);
         assert_eq!(search_json["categoryCounts"]["developer-tools"], 1);
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");

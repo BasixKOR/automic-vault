@@ -12,6 +12,7 @@ SOURCE_FILES = (
     "isotopes.json",
     "npm.json",
     "pip.json",
+    "security-recommendations.json",
     "stub_exclusions.json",
 )
 OUTPUT_PATH = os.path.join("data", "combined.json")

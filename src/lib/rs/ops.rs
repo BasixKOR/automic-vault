@@ -435,6 +435,16 @@ pub(crate) fn list_geiger_packages(
     Ok(search_packages_response(packages, offset, limit))
 }
 
+pub(crate) fn list_security_recommendation_packages(
+    offset: usize,
+    limit: usize,
+) -> Result<core::SearchPackagesResponse, String> {
+    let packages = resolve_security_recommendation_package_results(&Config {
+        bottle_tag: String::new(),
+    })?;
+    Ok(search_packages_response(packages, offset, limit))
+}
+
 pub(crate) fn search_packages(
     query: &str,
     offset: usize,
@@ -528,6 +538,7 @@ fn search_package_summary(package: PackageSearchResult) -> core::SearchPackageSu
         upstream_docs: package.upstream_docs,
         docs: package.docs,
         category: package.category,
+        install_package_names: package.install_package_names,
         rank: package.rank,
         last_updated_at: package.last_updated_at,
         pulse_kind: package.pulse_kind,
@@ -1958,6 +1969,7 @@ mod tests {
             docs: Vec::new(),
             category: None,
             dependencies: Vec::new(),
+            install_package_names: Vec::new(),
             security_state: None,
             rank,
             last_updated_at: None,
@@ -1981,6 +1993,7 @@ mod tests {
                 docs: Vec::new(),
                 category: None,
                 dependencies: Vec::new(),
+                install_package_names: Vec::new(),
                 security_state: Some(PackageSecurityState {
                     isotope_name: "unmapped-isotope".to_string(),
                     install_is_insecure: true,
