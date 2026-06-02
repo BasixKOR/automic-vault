@@ -281,6 +281,24 @@
             "isotope",
             "geiger:orange"
           ]
+        },
+        "brew:node@24": {
+          "geigerCategory": "infrastructure",
+          "geigerConfidence": "high",
+          "geigerLevel": "orange",
+          "installPackageName": "brew:node@24",
+          "isotope": "node@24",
+          "isotopePackage": "isotope:node@24",
+          "name": "node@24",
+          "priority": 0,
+          "provider": "brew",
+          "reasons": [
+            "Node.js can execute package lifecycle scripts."
+          ],
+          "signals": [
+            "isotope",
+            "geiger:orange"
+          ]
         }
       },
       "schema": 1

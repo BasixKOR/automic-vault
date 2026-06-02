@@ -17887,6 +17887,16 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             results.iter().any(|result| result.package_name == alias),
             "search should include the versioned formula alias display name"
         );
+        assert!(
+            results.iter().any(|result| {
+                result.package_name == "brew:node@24"
+                    && result.source
+                        == PackageReceiptSource::Formula {
+                            root_formula: "node@24".to_string(),
+                        }
+            }),
+            "search should include versioned security recommendation formulae"
+        );
     }
 
     #[test]

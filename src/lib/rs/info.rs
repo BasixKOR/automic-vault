@@ -426,6 +426,9 @@ pub(crate) fn resolve_package_search_results(
             .filter(|entry| vendor_entry_matches(entry, &lowered_query))
             .map(vendor_search_result),
     );
+    results.extend(resolve_security_recommendation_search_results(
+        &lowered_query,
+    )?);
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
     results.sort_by(|left, right| {
@@ -943,6 +946,35 @@ fn security_recommendation_package_result(
         result.security_state = package_security_state_for_isotope(isotope);
     }
     Some(result)
+}
+
+fn resolve_security_recommendation_search_results(
+    query: &str,
+) -> Result<Vec<PackageSearchResult>, String> {
+    let formulae = formula_index_entries()?;
+    let mut results = embedded_security_recommendations()
+        .packages
+        .iter()
+        .filter_map(|(package_key, recommendation)| {
+            security_recommendation_package_result(package_key, recommendation, formulae)
+        })
+        .filter(|result| {
+            search_result_is_versioned_formula(result)
+                && search_result_match_rank(result, query) < 4
+        })
+        .collect::<Vec<_>>();
+    results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
+    results.dedup_by(|left, right| left.package_name == right.package_name);
+    Ok(results)
+}
+
+fn search_result_is_versioned_formula(result: &PackageSearchResult) -> bool {
+    match &result.source {
+        PackageReceiptSource::Formula { root_formula } => {
+            formula_versioned_base(root_formula).is_some()
+        }
+        _ => false,
+    }
 }
 
 fn formula_index_entry_for_security_recommendation<'a>(
