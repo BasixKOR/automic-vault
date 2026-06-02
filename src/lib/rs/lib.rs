@@ -4014,20 +4014,31 @@ fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
     if !entry.file_type().is_dir() {
         return false;
     }
-    matches!(
+    if matches!(
         entry.file_name().to_str(),
         Some(
             ".git"
                 | ".hg"
                 | ".svn"
+                | ".codex-worktrees"
+                | ".build"
+                | ".next"
                 | "target"
                 | "dist"
                 | "node_modules"
+                | "Vendor"
+                | "vendor"
                 | ".cache"
+                | "cache"
                 | "artifacts"
                 | "DerivedData"
         )
-    )
+    ) {
+        return true;
+    }
+
+    let path = entry.path().to_string_lossy();
+    path.contains("/data/isotopes/") || path.contains("/data/radioisotopes/")
 }
 
 fn default_secret_scan_paths() -> Vec<PathBuf> {
@@ -4109,6 +4120,7 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
         || trimmed.starts_with('#')
         || trimmed.starts_with(';')
         || trimmed.starts_with("//")
+        || secret_line_looks_like_source_string_fixture(path, trimmed)
     {
         return None;
     }
@@ -4133,6 +4145,9 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
 
     let value = normalized_secret_value(assignment.value);
     if !secret_value_is_real(value) || secret_value_is_test_fixture(path, value) {
+        return None;
+    }
+    if secret_path_looks_like_test_fixture(path) && secret_key_name_is_sensitive(assignment.key) {
         return None;
     }
 
@@ -4238,8 +4253,18 @@ fn find_secret_assignment_equals(line: &str) -> Option<usize> {
 }
 
 fn find_secret_assignment_colon(line: &str) -> Option<usize> {
-    line.char_indices()
-        .find_map(|(index, ch)| (ch == ':').then_some(index))
+    for (index, ch) in line.char_indices() {
+        if ch != ':' {
+            continue;
+        }
+        let previous = line[..index].chars().next_back();
+        let next = line[index + ch.len_utf8()..].chars().next();
+        if previous.is_some_and(|ch| ch == ':') || next.is_some_and(|ch| ch == ':' || ch == '/') {
+            continue;
+        }
+        return Some(index);
+    }
+    None
 }
 
 fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -> bool {
@@ -4249,7 +4274,17 @@ fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -
         return true;
     }
 
-    if secret_key_looks_like_source_code(key)
+    if assignment.separator == SecretAssignmentSeparator::Colon
+        && (key.starts_with("let ")
+            || key.starts_with("var ")
+            || key.starts_with("const ")
+            || key.starts_with("pub "))
+    {
+        return true;
+    }
+
+    if key.contains('(')
+        || secret_key_looks_like_source_code(key)
         || secret_key_looks_like_source_reference(key)
         || secret_key_name_is_noncredential_metadata(key)
         || secret_key_looks_like_freeform_text(key)
@@ -4266,6 +4301,10 @@ fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -
         return true;
     }
 
+    if secret_quoted_value_looks_like_source_expression(value) {
+        return true;
+    }
+
     secret_unquoted_value_looks_like_source_reference(value)
 }
 
@@ -4277,6 +4316,7 @@ fn secret_key_looks_like_source_code(key: &str) -> bool {
         || trimmed.starts_with("class ")
         || trimmed.starts_with("enum ")
         || trimmed.starts_with("protocol ")
+        || trimmed.starts_with("union ")
         || trimmed.starts_with("def ")
         || trimmed.starts_with("function ")
         || trimmed.starts_with("export function ")
@@ -4305,10 +4345,19 @@ fn source_key_reference_char(ch: char) -> bool {
 }
 
 fn secret_key_looks_like_freeform_text(key: &str) -> bool {
-    if key.starts_with('"') || key.starts_with('\'') {
+    let key = key.trim();
+    if key.starts_with("export ")
+        || key.starts_with("let ")
+        || key.starts_with("var ")
+        || key.starts_with("const ")
+    {
         return false;
     }
-    key.split_whitespace().count() > 2
+    let key = key.trim_matches('"').trim_matches('\'').trim_matches('`');
+    if key.starts_with('/') || key.ends_with('/') {
+        return true;
+    }
+    key.contains(',') || key.split_whitespace().count() > 1
 }
 
 fn secret_value_looks_like_freeform_text(value: &str) -> bool {
@@ -4344,6 +4393,12 @@ fn secret_value_looks_like_type_annotation(value: &str) -> bool {
     }
     if matches!(first, "Bearer" | "Basic") {
         return false;
+    }
+    if first.chars().next().is_some_and(char::is_uppercase)
+        && value.contains('=')
+        && value.contains("nil")
+    {
+        return true;
     }
     matches!(
         first,
@@ -4416,10 +4471,19 @@ fn secret_unquoted_value_looks_like_placeholder_or_pattern(value: &str) -> bool 
 fn secret_unquoted_value_looks_like_source_expression(value: &str) -> bool {
     value.starts_with("f\"")
         || value.starts_with("f'")
+        || value.starts_with('&')
+        || value.starts_with('!')
+        || value.starts_with("if ")
+        || value.starts_with("self.")
+        || value.starts_with("match ")
         || value.starts_with("process.env.")
         || value.starts_with("typeof ")
         || value.starts_with("ReturnType<")
         || value.contains(" as ")
+        || value.contains(" + ")
+        || value.contains(" - ")
+        || value.contains(" ?? ")
+        || value.contains("\\(")
         || value.contains(" * ")
         || value.contains(" ? ")
         || value.contains(" : ")
@@ -4432,6 +4496,17 @@ fn secret_unquoted_value_looks_like_source_expression(value: &str) -> bool {
         || value.contains(" <= ")
         || value.contains(" >= ")
         || (value.contains('[') && value.contains(']'))
+        || value.ends_with('?')
+        || value.ends_with('{')
+}
+
+fn secret_quoted_value_looks_like_source_expression(value: &str) -> bool {
+    secret_raw_value_is_quoted(value)
+        && (value.contains("\\(")
+            || value.contains(".into()")
+            || value.contains(".to_owned()")
+            || value.contains(".to_string()")
+            || value.contains(".spanned("))
 }
 
 fn secret_raw_value_is_quoted(value: &str) -> bool {
@@ -4512,6 +4587,12 @@ fn secret_key_name_is_noncredential_metadata(key: &str) -> bool {
             || compact.ends_with("patterns")
             || compact.ends_with("class")
             || compact.ends_with("size")
+            || compact.ends_with("margin")
+            || compact.ends_with("padding")
+            || compact.ends_with("width")
+            || compact.ends_with("threshold")
+            || compact.ends_with("version")
+            || compact.ends_with("color")
             || compact.ends_with("dir")
             || compact.ends_with("path")
             || compact.ends_with("file")
@@ -4541,6 +4622,9 @@ fn secret_value_is_real(value: &str) -> bool {
     }
 
     let lower = value.to_ascii_lowercase();
+    if lower.starts_with("phc_") || lower.starts_with("options:") {
+        return false;
+    }
     let comparable =
         lower.trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '_' | '-'));
     if matches!(
@@ -4578,10 +4662,19 @@ fn secret_value_is_real(value: &str) -> bool {
         || lower.contains("your_")
         || lower.contains("your-")
         || lower.contains("...")
+        || lower.contains("***")
+        || lower.contains("fake")
         || value.contains('…')
         || lower.contains("\\n")
         || lower.contains("base64url")
+        || value.starts_with('$')
+        || (lower.starts_with("env(") && lower.ends_with(')'))
+        || lower.contains(".into()")
+        || lower.contains(".to_string()")
+        || lower.contains(".spanned(")
+        || lower.contains("getenv(")
         || (value.contains('<') && value.contains('>'))
+        || lower.chars().all(|ch| ch.is_ascii_digit())
         || lower.chars().all(|ch| ch == 'x' || ch == '*')
         || (value.starts_with('{') && value.ends_with('}'))
         || value.starts_with("{{")
@@ -4613,8 +4706,16 @@ fn secret_value_is_test_fixture(path: &Path, value: &str) -> bool {
         return false;
     }
 
+    let lower = value.to_ascii_lowercase();
+    if secret_value_has_known_token_shape(value) || secret_value_looks_like_jwt(value) {
+        return true;
+    }
+    if lower.contains("token") || lower.contains("secret") {
+        return true;
+    }
+
     matches!(
-        value.to_ascii_lowercase().as_str(),
+        lower.as_str(),
         "password123"
             | "handoff-token"
             | "test-token"
@@ -4632,6 +4733,8 @@ fn secret_path_looks_like_test_fixture(path: &Path) -> bool {
         || path.contains("\\tests\\")
         || path.contains(".test.")
         || path.contains(".spec.")
+        || path.contains("_test.")
+        || path.contains("_tests.")
 }
 
 fn secret_path_looks_like_reference_fixture(path: &Path) -> bool {
@@ -4650,6 +4753,8 @@ fn secret_path_looks_like_reference_fixture(path: &Path) -> bool {
         || path.contains("/share/man/")
         || path.contains("/share/info/")
         || path.contains("/man/man")
+        || path.contains("/resources/bundled/")
+        || path.ends_with(".strings")
 }
 
 fn secret_private_key_line_is_fixture(path: &Path, line: &str) -> bool {
@@ -4682,6 +4787,18 @@ fn secret_path_looks_like_source_file(path: &Path) -> bool {
                 | "hrl"
         )
     )
+}
+
+fn secret_line_looks_like_source_string_fixture(path: &Path, line: &str) -> bool {
+    if !secret_path_looks_like_source_file(path) {
+        return false;
+    }
+    let line = line.trim_start();
+    (line.starts_with('"')
+        || (line.starts_with('r') && line.contains("#\""))
+        || line.starts_with("r\"")
+        || line.starts_with("br#\""))
+        && (line.contains('=') || line.contains(':'))
 }
 
 fn secret_value_looks_like_file_path(value: &str) -> bool {
@@ -4771,18 +4888,25 @@ fn base64_url_char(ch: char) -> bool {
 
 fn secret_value_has_known_token_shape(value: &str) -> bool {
     let value = value.trim();
-    value.starts_with("ghp_")
-        || value.starts_with("gho_")
-        || value.starts_with("ghs_")
-        || value.starts_with("github_pat_")
-        || value.starts_with("glpat-")
-        || value.starts_with("xoxb-")
-        || value.starts_with("xoxp-")
-        || value.starts_with("sk_live_")
+    if !value.chars().all(token_shape_char) {
+        return false;
+    }
+    (value.starts_with("ghp_") && value.len() > 20)
+        || (value.starts_with("gho_") && value.len() > 20)
+        || (value.starts_with("ghs_") && value.len() > 20)
+        || (value.starts_with("github_pat_") && value.len() > 30)
+        || (value.starts_with("glpat-") && value.len() > 20)
+        || (value.starts_with("xoxb-") && value.len() > 20)
+        || (value.starts_with("xoxp-") && value.len() > 20)
+        || (value.starts_with("sk_live_") && value.len() > 20)
         || (value.starts_with("npm_") && value.len() > 12)
         || (value.starts_with("sk-") && value.len() > 20)
         || (value.starts_with("xai-") && value.len() > 20)
         || (value.starts_with("AKIA") && value.len() >= 16)
+}
+
+fn token_shape_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')
 }
 
 fn isotope_replaced_package_name(record: &IsotopePackageData) -> Result<Option<String>, String> {
@@ -11538,9 +11662,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         let findings = scan_secret_file(&source_path).unwrap();
 
-        assert_eq!(findings.len(), 1, "{findings:?}");
-        assert_eq!(findings[0].line, Some(lines.len()));
-        assert_eq!(findings[0].kind, "secret-assignment");
+        assert!(findings.is_empty(), "{findings:?}");
     }
 
     #[test]
@@ -11617,6 +11739,9 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "token <= value",
             "token >= value",
             "token => value",
+            "SecretScannerStreamFormat::Plain => {",
+            ".secret-art::before {",
+            "https://example.test/token",
             "no assignment here",
         ] {
             assert!(parse_secret_assignment(line).is_none(), "{line}");
@@ -11629,13 +11754,13 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r#"case accessToken = "access_token""#,
             "type PollToken = string",
             "interface TokenRecord = {}",
+            "union APIKeyPropertiesResult = APIKeyPropertiesOutput | UserFacingError",
             "def _fetch_json(url, github_token=None):",
             "function randomToken(prefix = \"pkg_\") {",
             "export function randomToken(prefix = \"pkg_\") {",
             "return accessToken = response.accessToken",
             "if token = value",
             "if(token = value)",
-            ".secret-art::before {",
             "WHERE poll_token_id = ?",
             "where poll_token_id = ?",
             "fd->secret->state = _PR_FILEDESC_OPEN",
@@ -11643,6 +11768,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "metadata[token] = supported",
             "self.md.toc_tokens = toc_tokens",
             "This freeform token heading: has explanatory prose",
+            "`/secret-scanner-for-ai-agents/`: 332 words",
             "Authorization: optional bearer token used by the request",
             "token: &'static str,",
             "token: bytes | None,",
@@ -11656,10 +11782,19 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "token = f\"Bearer {token}\"",
             "token = f'Bearer {token}'",
             "token = process.env.API_TOKEN",
+            "token = &self.external_secret",
+            "token = !ready",
+            "token = if conv_summary.token_count > 0 {",
+            "token = self.apiKey!",
+            "token = match launch_mode {",
             "token = typeof payload.token",
             "token = ReturnType<TokenFactory>",
             "token = payload.token as string",
             "token = 64 * 1024",
+            "token = closeStart + closeDuration",
+            "token = argument_idx - 1",
+            r#"token = "\(editableNamePrefix)\(name)""#,
+            r#"token = Settings.apiKey ?? """#,
             "token = condition ? a : b",
             "token = a && b",
             "token = a || b",
@@ -11676,7 +11811,13 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "token = Namespace::Token",
             "token = response.accessToken",
             "token = RefreshToken",
+            "token = query?",
+            "token = SecretRange {",
             "token: BTreeMap<String, Result<String, String>>,",
+            "let token_syntax_color: AnsiColorIdentifier =",
+            "pub parsed_token: &'a ParsedToken,",
+            "token: FileIndexScanToken? = nil,",
+            r#"secret: "fixture".to_owned(),"#,
         ] {
             let assignment = parse_secret_assignment(line).unwrap();
             assert!(
@@ -11780,6 +11921,16 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "your_token_here",
             "your-token-here",
             "clawlt_7wYx...base64url...",
+            "gho_************************************",
+            "gho_******",
+            "fake-key",
+            "fake-admin-key",
+            "fake-token",
+            "env(OPENAI_API_KEY)",
+            "$tokens",
+            "200000",
+            "phc_1234567890abcdefghijkl",
+            "options:name1: blue,red,green",
             r#""[default]\naws_secret_access_key = secret\n""#,
             "Bearer <temporary_token>",
             "Bearer smbhclaw_\u{2026}",
@@ -11819,14 +11970,14 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     #[test]
     fn secret_file_scanner_helper_assumptions_cover_token_shapes_and_normalization() {
         for value in [
-            "ghp_1234567890abcdef",
-            "gho_1234567890abcdef",
-            "ghs_1234567890abcdef",
-            "github_pat_1234567890abcdef",
-            "glpat-1234567890abcdef",
-            "xoxb-1234567890abcdef",
-            "xoxp-1234567890abcdef",
-            "sk_live_1234567890abcdef",
+            "ghp_1234567890abcdefghijkl",
+            "gho_1234567890abcdefghijkl",
+            "ghs_1234567890abcdefghijkl",
+            "github_pat_1234567890abcdefghijklmnopqrstuvwxyz",
+            "glpat-1234567890abcdefghijkl",
+            "xoxb-1234567890abcdefghijkl",
+            "xoxp-1234567890abcdefghijkl",
+            "sk_live_1234567890abcdefghijkl",
             "npm_1234567890abcdef",
             "sk-proj-1234567890abcdef",
             "xai-1234567890abcdefghi",
@@ -11836,6 +11987,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         }
 
         assert!(!secret_value_has_known_token_shape("npm_pkg"));
+        assert!(!secret_value_has_known_token_shape("gho_abc123"));
+        assert!(!secret_value_has_known_token_shape("github_pat_abc123"));
         assert!(secret_value_looks_like_jwt(
             "eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxMjM0NTY3ODkwIn0.signature_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
         ));
@@ -11849,6 +12002,28 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             normalized_secret_key_name("export API-KEY.name"),
             "api_key_name"
         );
+        assert!(!secret_value_has_known_token_shape("npm_payloads or {}"));
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_source_string_fixtures() {
+        for line in [
+            r###""    let accessToken = response.accessToken,","###,
+            r###""TOKEN=secret_secret","#"###,
+            r###""OPENAI_API_KEY=sk-test_1234567890abcdef","#"###,
+            r###"r#""apiKey": "sk-test_1234567890abcdef","#,"###,
+            r#####"r###"r#""apiKey": "sk-test_1234567890abcdef","#,"#####,
+            r###"br#""token": "fake-token""#,"###,
+        ] {
+            assert!(
+                secret_line_looks_like_source_string_fixture(Path::new("/repo/src/lib.rs"), line),
+                "{line}"
+            );
+            assert!(
+                !secret_line_looks_like_source_string_fixture(Path::new("/repo/config.json"), line),
+                "{line}"
+            );
+        }
     }
 
     #[test]
@@ -11860,6 +12035,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r"C:\repo\tests\file.ts",
             "/repo/token.test.ts",
             "/repo/token.spec.ts",
+            "/repo/token_tests.rs",
         ] {
             assert!(
                 secret_path_looks_like_test_fixture(Path::new(path)),
@@ -11882,6 +12058,8 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "/repo/share/man/man5/key.5",
             "/repo/share/info/key.info",
             "/repo/man/man3/key.3",
+            "/repo/resources/bundled/skills/README.md",
+            "/repo/en.lproj/Localizable.strings",
         ] {
             assert!(
                 secret_path_looks_like_reference_fixture(Path::new(path)),
@@ -11911,6 +12089,27 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             Path::new("/repo/src/auth.ts"),
             "sk-test_1234567890abcdef"
         ));
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_sensitive_keys_in_test_fixtures() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        fs::create_dir_all(&root).unwrap();
+
+        let test_path = root.join("secrets_test.rs");
+        fs::write(
+            &test_path,
+            [
+                r#"api_key = "sk-live_1234567890abcdefghijklmnop""#,
+                r#"secret: "码1234".to_owned(),"#,
+                r#"stripe_restricted_api_key = "rk_live_1234567890abcdefghijklmnop""#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        assert!(scan_secret_file(&test_path).unwrap().is_empty());
     }
 
     #[test]
@@ -11963,8 +12162,30 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let root = temp.path().join("project");
         fs::create_dir_all(root.join("artifacts")).unwrap();
         fs::create_dir_all(root.join("DerivedData")).unwrap();
+        fs::create_dir_all(root.join(".codex-worktrees")).unwrap();
+        fs::create_dir_all(root.join(".build")).unwrap();
+        fs::create_dir_all(root.join(".next")).unwrap();
+        fs::create_dir_all(root.join("cache")).unwrap();
+        fs::create_dir_all(root.join("Vendor")).unwrap();
+        fs::create_dir_all(root.join("data/isotopes/example")).unwrap();
+        fs::create_dir_all(root.join("data/radioisotopes/example")).unwrap();
         fs::write(root.join("artifacts/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join("DerivedData/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join(".codex-worktrees/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join(".build/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join(".next/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join("cache/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join("Vendor/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(
+            root.join("data/isotopes/example/.env"),
+            "TOKEN=secret_secret\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("data/radioisotopes/example/.env"),
+            "TOKEN=secret_secret\n",
+        )
+        .unwrap();
         fs::write(root.join(".env"), "TOKEN=secret_secret\n").unwrap();
 
         let mut findings = Vec::new();
