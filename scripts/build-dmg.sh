@@ -21,13 +21,11 @@ finder_top=120
 finder_width=796
 finder_height=494
 icon_size=128
-app_icon_x=243
-applications_icon_x=553
+icon_gap_from_center=155
 
 output_path=""
 background_path=""
 volume_name=""
-prepared_background_path=""
 notarize=false
 install_app=false
 publish_release=false
@@ -375,17 +373,30 @@ if [[ -n "${background_path}" && ! -f "${background_path}" ]]; then
   cli_die "Background image not found: ${background_path}"
 fi
 
-# if [[ -n "${background_path}" ]]; then
-#   finder_width="$(
-#     sips -g pixelWidth "${background_path}" 2>/dev/null |
-#       awk '/pixelWidth:/ {print $2; exit}'
-#   )"
-#   finder_height="$(
-#     sips -g pixelHeight "${background_path}" 2>/dev/null |
-#       awk '/pixelHeight:/ {print $2; exit}'
-#   )"
-# fi
+if [[ -n "${background_path}" ]]; then
+  background_width="$(
+    sips -g pixelWidth "${background_path}" 2>/dev/null |
+      awk '/pixelWidth:/ {print $2; exit}'
+  )"
+  background_height="$(
+    sips -g pixelHeight "${background_path}" 2>/dev/null |
+      awk '/pixelHeight:/ {print $2; exit}'
+  )"
 
+  if [[ "${background_width}" =~ ^[0-9]+$ && "${background_height}" =~ ^[0-9]+$ ]]; then
+    if [[ "$(basename "${background_path}")" == *@2x.* ]]; then
+      finder_width=$((background_width / 2))
+      finder_height=$((background_height / 2))
+    else
+      finder_width="${background_width}"
+      finder_height="${background_height}"
+    fi
+  fi
+fi
+
+finder_center_x=$((finder_width / 2))
+app_icon_x=$((finder_center_x - icon_gap_from_center))
+applications_icon_x=$((finder_center_x + icon_gap_from_center))
 applications_icon_y=$(((finder_height / 2 - 60) * 6 / 5))
 app_icon_y="${applications_icon_y}"
 
@@ -484,7 +495,7 @@ if [[ "${notarize}" == "true" ]]; then
     cli_die "Expected an identity like: Developer ID Application: Name (TEAMID)"
   fi
 
-  av inject +APPLE_PASSWORD $repo_root/scripts/notarize.sh "${final_dmg}"
+  av inject +APPLE_PASSWORD "${repo_root}/scripts/notarize.sh" "${final_dmg}"
 
   cli_step "Stapling notarization ticket"
   xcrun stapler staple "${final_dmg}" >&2
