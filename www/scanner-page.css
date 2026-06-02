@@ -79,6 +79,75 @@
   font-size: 0.92em;
 }
 
+.scanner-video-showcase {
+  padding: clamp(34px, 6vw, 70px) clamp(20px, 4vw, 64px);
+  border-top: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, oklch(14% 0.014 245 / 0.62), transparent 52%),
+    var(--surface);
+}
+
+.scanner-video-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px;
+  margin-bottom: clamp(20px, 3vw, 30px);
+}
+
+.scanner-video-head h2 {
+  max-width: 13ch;
+  color: var(--ink);
+  font-size: clamp(2.4rem, 6vw, 5.4rem);
+  font-weight: 800;
+  line-height: 0.92;
+}
+
+.scanner-video-head > span {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scanner-video-frame {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-deep);
+  box-shadow:
+    inset 0 1px 0 oklch(94% 0.01 82 / 0.07),
+    0 28px 70px oklch(5% 0.005 255 / 0.42);
+}
+
+.scanner-video-frame video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-deep);
+}
+
+.scanner-video-frame figcaption {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.scanner-video-frame figcaption span {
+  padding: 14px 18px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scanner-video-frame figcaption span:not(:last-child) {
+  border-right: 1px solid var(--line);
+}
+
 .scanner-rail {
   display: grid;
   gap: 28px;
@@ -157,6 +226,26 @@
 
   .scanner-command-panel code {
     font-size: 0.92rem;
+  }
+
+  .scanner-video-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scanner-video-head h2 {
+    max-width: 10ch;
+  }
+
+  .scanner-video-frame figcaption {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scanner-video-frame figcaption span:nth-child(2) {
+    border-right: 0;
+  }
+
+  .scanner-video-frame figcaption span:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
   }
 
   .command-panel-header {
