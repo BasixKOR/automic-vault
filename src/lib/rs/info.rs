@@ -443,8 +443,11 @@ pub(crate) fn compare_package_search_results_for_query(
     right: &PackageSearchResult,
 ) -> std::cmp::Ordering {
     let query = query.trim().to_ascii_lowercase();
-    search_result_match_rank(left, &query)
-        .cmp(&search_result_match_rank(right, &query))
+    search_result_formula_family_rank(left, &query)
+        .cmp(&search_result_formula_family_rank(right, &query))
+        .then_with(|| {
+            search_result_match_rank(left, &query).cmp(&search_result_match_rank(right, &query))
+        })
         .then_with(|| {
             search_result_match_distance(left, &query)
                 .cmp(&search_result_match_distance(right, &query))
@@ -453,6 +456,26 @@ pub(crate) fn compare_package_search_results_for_query(
         .then_with(|| {
             compare_package_names_for_search_order(&left.package_name, &right.package_name)
         })
+}
+
+fn search_result_formula_family_rank(package: &PackageSearchResult, query: &str) -> u8 {
+    let query = package_search_order_name(query);
+    if query.is_empty() {
+        return 1;
+    }
+
+    let PackageReceiptSource::Formula { root_formula } = &package.source else {
+        return 1;
+    };
+
+    for candidate in [&package.package_name, root_formula] {
+        let order_name = package_search_order_name(candidate);
+        let family_base = formula_versioned_base(order_name).unwrap_or(order_name);
+        if family_base.eq_ignore_ascii_case(query) {
+            return 0;
+        }
+    }
+    1
 }
 
 fn compare_optional_popularity_rank(left: Option<u32>, right: Option<u32>) -> std::cmp::Ordering {
@@ -2937,6 +2960,78 @@ mod tests {
         assert_eq!(
             compare_package_search_results_for_query("ripgrep", &exact, &summary),
             std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn search_relevance_prioritizes_formula_family_for_base_query() {
+        let mut results = vec![
+            search_result(
+                "npm:@babel/node",
+                PackageReceiptSource::Npm {
+                    package_name: "@babel/node".to_string(),
+                },
+                Some("Babel command line"),
+                Some(105),
+            ),
+            search_result(
+                "node@20",
+                PackageReceiptSource::Formula {
+                    root_formula: "node@20".to_string(),
+                },
+                Some("JavaScript runtime"),
+                Some(348),
+            ),
+            search_result(
+                "nodenv",
+                PackageReceiptSource::Formula {
+                    root_formula: "nodenv".to_string(),
+                },
+                Some("Node.js version manager"),
+                Some(1318),
+            ),
+            search_result(
+                "node",
+                PackageReceiptSource::Formula {
+                    root_formula: "node".to_string(),
+                },
+                Some("JavaScript runtime"),
+                Some(5),
+            ),
+            search_result(
+                "node@24",
+                PackageReceiptSource::Formula {
+                    root_formula: "node@24".to_string(),
+                },
+                Some("JavaScript runtime"),
+                Some(481),
+            ),
+            search_result(
+                "npm:nodemon",
+                PackageReceiptSource::Npm {
+                    package_name: "nodemon".to_string(),
+                },
+                Some("Monitor script for Node.js apps"),
+                Some(29),
+            ),
+        ];
+
+        results
+            .sort_by(|left, right| compare_package_search_results_for_query("node", left, right));
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.package_name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "node",
+                "node@20",
+                "node@24",
+                "npm:@babel/node",
+                "nodenv",
+                "npm:nodemon",
+            ]
         );
     }
 
