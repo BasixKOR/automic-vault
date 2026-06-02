@@ -11,7 +11,7 @@ struct MainWindowView: View {
             mainContent
             titleBarBackdrop
         }
-        .frame(minWidth: 1380, minHeight: 600)
+        .frame(minWidth: 1380, minHeight: 760)
         .background(Color.clear)
         .preferredColorScheme(.dark)
     }
