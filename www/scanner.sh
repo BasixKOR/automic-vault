@@ -11,6 +11,8 @@ if [[ -t 2 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
   use_color=true
 fi
 
+scanner_use_color="${use_color}"
+
 if [[ "${use_color}" == true ]]; then
   reset=$'\033[0m'
   bold=$'\033[1m'
@@ -105,6 +107,16 @@ require_executable() {
   local label="$2"
   if [[ ! -x "${path}" ]]; then
     die "${label} is required at ${path}."
+  fi
+}
+
+run_wrapped_scanner() {
+  if [[ "${scanner_use_color}" == true ]]; then
+    CLICOLOR_FORCE=1 AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
+      /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null
+  else
+    AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
+      /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null
   fi
 }
 
@@ -205,9 +217,8 @@ ok "Network denied"
 step "Running package-specific detectors"
 
 if show_install_recommendation "$@"; then
-  if AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
-    /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null \
-    | /usr/bin/tee "${scanner_output_path}"; then
+  if run_wrapped_scanner "$@" \
+    | /usr/bin/tee "${scanner_output_path}" >&2; then
     separator_line
     done_line "Scan complete"
     recommend_install "${scanner_output_path}"
