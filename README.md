@@ -1,5 +1,3 @@
-![promo](./assets/gui-promo.webp)
-
 # Automic Vault
 
 A macOS app and CLI for giving AI coding agents useful local tools without
