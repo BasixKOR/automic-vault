@@ -98,7 +98,8 @@ refresh_local_cli "${app_path}"
 
 if [[ "${background}" == "true" ]]; then
   cli_step "Launching app"
-  /usr/bin/open -n "${app_path}"
+  nohup "${app_path}/Contents/MacOS/Automic Vault" \
+    >/tmp/automic-vault-gui.log 2>&1 &
   exit 0
 fi
 
