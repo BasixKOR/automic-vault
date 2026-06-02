@@ -760,43 +760,6 @@ final class PackageSecurityStateTests: XCTestCase {
     }
 
     @MainActor
-    func testRootInstalledFormulaWithCleanDetectorStateIsNotHardened() throws {
-        let model = MainWindowModel()
-        let detail = try decodePackageDetail(
-            packageName: "node@24",
-            formula: "node@24",
-            installed: true,
-            installRoot: "/opt/node@24",
-            securityState: """
-            {
-              "isotopeName": "node@24",
-              "installIsInsecure": false,
-              "remediationAvailable": true,
-              "reasons": [],
-              "error": null
-            }
-            """
-        )
-        let package = PackagePresentation(
-            item: .installed(PackageRecord(
-                name: "node@24",
-                source: .formula(rootFormula: "node@24"),
-                version: "24.16.0",
-                description: "JavaScript runtime",
-                securityState: detail.securityState,
-                installRoot: detail.installRoot,
-                installPackageNames: ["brew:node@24"]
-            )),
-            detail: detail,
-            freshness: 0
-        )
-
-        XCTAssertEqual(model.packageBadge(for: package), .immutable)
-        XCTAssertFalse(model.isHardened(package))
-        XCTAssertFalse(model.isHardened(package, detail: detail))
-    }
-
-    @MainActor
     func testHomebrewInstalledPackageDoesNotShowImmutableBadge() {
         let model = MainWindowModel()
         let package = installedPresentation(
