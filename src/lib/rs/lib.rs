@@ -4119,7 +4119,7 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
     }
 
     let value = normalized_secret_value(assignment.value);
-    if !secret_value_is_real(value) {
+    if !secret_value_is_real(value) || secret_value_is_test_fixture(path, value) {
         return None;
     }
 
@@ -4180,7 +4180,9 @@ enum SecretAssignmentSeparator {
 
 fn parse_secret_assignment(line: &str) -> Option<SecretAssignment<'_>> {
     let line = line.strip_prefix("- ").unwrap_or(line);
-    match (line.find('='), line.find(':')) {
+    let equals = find_secret_assignment_equals(line);
+    let colon = find_secret_assignment_colon(line);
+    match (equals, colon) {
         (Some(eq), Some(colon)) if eq < colon => Some(SecretAssignment {
             key: &line[..eq],
             value: &line[eq + 1..],
@@ -4205,6 +4207,28 @@ fn parse_secret_assignment(line: &str) -> Option<SecretAssignment<'_>> {
     }
 }
 
+fn find_secret_assignment_equals(line: &str) -> Option<usize> {
+    for (index, ch) in line.char_indices() {
+        if ch != '=' {
+            continue;
+        }
+        let previous = line[..index].chars().next_back();
+        let next = line[index + ch.len_utf8()..].chars().next();
+        if previous.is_some_and(|ch| matches!(ch, '!' | '<' | '>' | '='))
+            || next.is_some_and(|ch| matches!(ch, '=' | '>'))
+        {
+            continue;
+        }
+        return Some(index);
+    }
+    None
+}
+
+fn find_secret_assignment_colon(line: &str) -> Option<usize> {
+    line.char_indices()
+        .find_map(|(index, ch)| (ch == ':').then_some(index))
+}
+
 fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -> bool {
     let key = assignment.key.trim();
     let value = assignment.value.trim();
@@ -4212,13 +4236,37 @@ fn secret_assignment_looks_like_source_code(assignment: &SecretAssignment<'_>) -
         return true;
     }
 
+    if secret_key_looks_like_source_code(key) {
+        return true;
+    }
+
     if assignment.separator == SecretAssignmentSeparator::Colon
-        && (key.contains('(') || secret_value_looks_like_type_annotation(value))
+        && (key.contains('(')
+            || secret_key_looks_like_freeform_text(key)
+            || secret_value_looks_like_type_annotation(value))
     {
         return true;
     }
 
     secret_unquoted_value_looks_like_source_reference(value)
+}
+
+fn secret_key_looks_like_source_code(key: &str) -> bool {
+    let trimmed = key.trim_start();
+    trimmed.starts_with("type ")
+        || trimmed.starts_with("interface ")
+        || trimmed.starts_with("return ")
+        || trimmed.starts_with("if ")
+        || trimmed.starts_with("if(")
+        || trimmed.starts_with("WHERE ")
+        || trimmed.starts_with("where ")
+}
+
+fn secret_key_looks_like_freeform_text(key: &str) -> bool {
+    if key.starts_with('"') || key.starts_with('\'') {
+        return false;
+    }
+    key.split_whitespace().count() > 2
 }
 
 fn secret_value_looks_like_type_annotation(value: &str) -> bool {
@@ -4267,6 +4315,11 @@ fn secret_unquoted_value_looks_like_source_reference(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
+    if secret_unquoted_value_looks_like_placeholder_or_pattern(value)
+        || secret_unquoted_value_looks_like_source_expression(value)
+    {
+        return true;
+    }
     if value.starts_with('.') || value.contains('(') || value.contains("->") || value.contains("::")
     {
         return true;
@@ -4279,6 +4332,33 @@ fn secret_unquoted_value_looks_like_source_reference(value: &str) -> bool {
             && identifier.chars().any(char::is_uppercase)
             && secret_key_name_is_sensitive(identifier)
     })
+}
+
+fn secret_unquoted_value_looks_like_placeholder_or_pattern(value: &str) -> bool {
+    value == "?"
+        || value.starts_with("//")
+        || value.starts_with("{{")
+        || value.starts_with("<%")
+        || (value.starts_with('{') && value.ends_with('}'))
+        || (value.starts_with('/') && value.ends_with('/'))
+}
+
+fn secret_unquoted_value_looks_like_source_expression(value: &str) -> bool {
+    value.starts_with("process.env.")
+        || value.starts_with("typeof ")
+        || value.starts_with("ReturnType<")
+        || value.contains(" as ")
+        || value.contains(" ? ")
+        || value.contains(" : ")
+        || value.contains(" && ")
+        || value.contains(" || ")
+        || value.contains(" === ")
+        || value.contains(" !== ")
+        || value.contains(" == ")
+        || value.contains(" != ")
+        || value.contains(" <= ")
+        || value.contains(" >= ")
+        || (value.contains('[') && value.contains(']'))
 }
 
 fn secret_raw_value_is_quoted(value: &str) -> bool {
@@ -4359,8 +4439,32 @@ fn secret_value_is_real(value: &str) -> bool {
     ) && !lower.contains("example")
         && !lower.contains("placeholder")
         && !lower.contains("your_")
+        && !lower.contains("your-")
         && !lower.chars().all(|ch| ch == 'x' || ch == '*')
+        && !(value.starts_with('{') && value.ends_with('}'))
+        && !value.starts_with("{{")
         && !value.starts_with('<')
+}
+
+fn secret_value_is_test_fixture(path: &Path, value: &str) -> bool {
+    if !secret_path_looks_like_test_fixture(path) {
+        return false;
+    }
+
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "password123" | "handoff-token" | "test-token" | "test-password"
+    )
+}
+
+fn secret_path_looks_like_test_fixture(path: &Path) -> bool {
+    let path = path.to_string_lossy().to_ascii_lowercase();
+    path.contains("/test/")
+        || path.contains("/tests/")
+        || path.contains("\\test\\")
+        || path.contains("\\tests\\")
+        || path.contains(".test.")
+        || path.contains(".spec.")
 }
 
 fn secret_value_has_known_token_shape(value: &str) -> bool {
@@ -11064,6 +11168,45 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].line, Some(4));
+        assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_code_docs_and_fixture_false_positives() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("test");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source_path = source_dir.join("clawlicious-fixtures.test.ts");
+        fs::write(
+            &source_path,
+            [
+                "token.fromMs <= absoluteTimeMs && token.toMs > absoluteTimeMs;",
+                "The user needs to create an access token by visiting https://console.mapbox.com/account/access-tokens/.",
+                "REMOTION_MAPBOX_TOKEN==pk.your-mapbox-access-token",
+                "mapboxgl.accessToken = process.env.REMOTION_MAPBOX_TOKEN as string;",
+                r#""xi-api-key": process.env.ELEVENLABS_API_KEY!,"#,
+                r#"const apiKey = typeof payload.apiKey === "string""#,
+                r#"apiKey: typeof stored.apiKey === "string" ? stored.apiKey : "","#,
+                r#"if (tokenScope === "full") {"#,
+                "type ByoClawPollTokenRecord = NonNullable<ReturnType<typeof getByoClawPollToken>>;",
+                "if (!forumToken || forumToken.forum_id !== parsedParams.data.forumId) {",
+                r#"const CHECKOUT_SUCCESS_TOKEN = "{CHECKOUT_SESSION_ID}";"#,
+                "WHERE poll_token_id = ? AND id != ?`,",
+                r#"data-api-key="{{ claw.api_key }}""#,
+                r#"password: "password123","#,
+                "const POLL_TOKEN_PATTERN = /^claw_poll_[a-f0-9]{48}$/;",
+                r#"token: "handoff-token","#,
+                "const renewedToken = tokenMatch[1];",
+                r#"const apiKey = "sk-test_1234567890abcdef""#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&source_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(18));
         assert_eq!(findings[0].kind, "secret-assignment");
     }
 
