@@ -473,7 +473,7 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testOutdatedPackageHomepageUsesRepositoryReleaseNotesWhenHomepageIsNotGitHub() throws {
+    func testOutdatedPackageReleaseNotesHighlightRepositoryTabWhenHomepageIsNotGitHub() throws {
         let model = MainWindowModel()
         defer { model.stop() }
         let detail = PackageRecord(
@@ -495,6 +495,8 @@ final class MainWindowModelTests: XCTestCase {
             model.linkURL(for: .repository, detail: detail)?.absoluteString,
             "https://github.com/astral-sh/uv"
         )
+        XCTAssertEqual(model.highlightedLinkTab(for: .homepage, detail: detail), .repository)
+        XCTAssertEqual(model.highlightedLinkTab(for: .repository, detail: detail), .repository)
     }
 
     @MainActor
@@ -544,6 +546,7 @@ final class MainWindowModelTests: XCTestCase {
             model.linkURL(for: .repository, detail: detail)?.absoluteString,
             "https://github.com/astral-sh/uv"
         )
+        XCTAssertEqual(model.highlightedLinkTab(for: .homepage, detail: detail), .repository)
     }
 
     @MainActor

@@ -560,9 +560,10 @@ struct MainWindowView: View {
 
     private var linksToolbar: some View {
         let hasSelectedPackage = model.selectedPackage != nil
+        let highlightedTab = model.highlightedLinkTab(for: linkTab)
 
         return HStack(spacing: 10) {
-            LinkTabBar(selection: $linkTab)
+            LinkTabBar(selection: $linkTab, highlightedTab: highlightedTab)
                 .frame(minWidth: 150, idealWidth: 162, maxWidth: 180)
                 .layoutPriority(3)
                 .disabled(!hasSelectedPackage)
@@ -604,6 +605,7 @@ struct MainWindowView: View {
 private struct LinkTabBar: View {
     @Environment(\.isEnabled) private var isEnabled
     @Binding var selection: MainWindowLinkTab
+    let highlightedTab: MainWindowLinkTab
 
     var body: some View {
         HStack(spacing: 0) {
@@ -616,7 +618,7 @@ private struct LinkTabBar: View {
                     Text(title(for: tab))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(
-                            selection == tab
+                            highlightedTab == tab
                                 ? AVGlassPalette.primaryText
                                 : AVGlassPalette.secondaryText
                         )
@@ -628,7 +630,7 @@ private struct LinkTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .background {
-                    if selection == tab {
+                    if highlightedTab == tab {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(AVGlassPalette.tabBarSelectedFill)
                     }

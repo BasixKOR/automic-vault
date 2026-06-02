@@ -866,6 +866,23 @@ final class MainWindowModel: ObservableObject {
         return linkURL(for: tab, detail: detail)
     }
 
+    func highlightedLinkTab(for tab: MainWindowLinkTab) -> MainWindowLinkTab {
+        guard let detail = selectedDetail else {
+            return tab
+        }
+        return highlightedLinkTab(for: tab, detail: detail)
+    }
+
+    func highlightedLinkTab(
+        for tab: MainWindowLinkTab,
+        detail: PackageDetail
+    ) -> MainWindowLinkTab {
+        if tab == .homepage, detail.releaseNotesURL != nil {
+            return .repository
+        }
+        return tab
+    }
+
     func linkURL(for tab: MainWindowLinkTab, detail: PackageDetail) -> URL? {
         let homepageURL = detail.homepageURL ?? catalogHomepageURL(for: detail)
         switch tab {

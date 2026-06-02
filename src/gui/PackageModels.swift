@@ -477,21 +477,21 @@ struct PackageDetail: Decodable, Equatable {
     }
 
     var homepageURL: URL? {
-        let homepage = Self.externalURL(from: rawHomepage)
-            .flatMap { $0.isHomebrewPackageManagerPage ? nil : $0 }
-
-        if isOutdated {
-            if let latestReleaseURL = homepage?.githubLatestReleaseURL {
-                return latestReleaseURL
-            }
-            if let latestReleaseURL = Self.githubRepositoryURL(
-                from: homebrewInfo?.repository
-            )?.githubLatestReleaseURL {
-                return latestReleaseURL
-            }
+        if let releaseNotesURL {
+            return releaseNotesURL
         }
 
-        return homepage?.githubRepositoryReadmeURL
+        return homepageLinkURL?.githubRepositoryReadmeURL
+    }
+
+    var releaseNotesURL: URL? {
+        guard isOutdated else {
+            return nil
+        }
+        if let latestReleaseURL = homepageLinkURL?.githubLatestReleaseURL {
+            return latestReleaseURL
+        }
+        return Self.githubRepositoryURL(from: homebrewInfo?.repository)?.githubLatestReleaseURL
     }
 
     var repositoryURL: URL? {
@@ -719,6 +719,11 @@ struct PackageDetail: Decodable, Equatable {
         homebrewInfo?.homepage ?? npmHomepage
     }
 
+    private var homepageLinkURL: URL? {
+        Self.externalURL(from: rawHomepage)
+            .flatMap { $0.isHomebrewPackageManagerPage ? nil : $0 }
+    }
+
     private static func externalURL(from raw: String?) -> URL? {
         let normalized = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !normalized.isEmpty,
@@ -732,7 +737,7 @@ struct PackageDetail: Decodable, Equatable {
 
     private static func repositoryURL(from raw: String?) -> URL? {
         if let url = externalURL(from: raw) {
-            return url
+            return url.githubRepositoryURL ?? url
         }
         return githubRepositoryURL(from: raw)
     }
