@@ -10259,7 +10259,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         )
         .unwrap();
         let expected_node_summary = crate::cli::load_db()
-            .unwrap()
+            .expect("embedded DB fixture must be available")
             .formulas
             .get("node")
             .and_then(|metadata| string_or_none(&metadata.summary))
