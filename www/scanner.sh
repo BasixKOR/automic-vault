@@ -136,19 +136,37 @@ recommend_install() {
   local scan_output_path="$1"
   local scan_output
   local command_line
+  local headline
+  local detail
 
   command_line="/usr/bin/curl -fsSL ${install_url} | /bin/bash"
   scan_output="$(<"${scan_output_path}")"
 
-  log ""
   if [[ "${scan_output}" == *"Findings"* ]]; then
-    log "${bold}Fix these findings with Automic Vault.${reset}"
-    log "${dim}Move exposed credentials out of plaintext and inject them only when trusted tools run.${reset}"
+    headline="Fix these findings with Automic Vault."
+    detail="Move plaintext credentials into the vault, then inject them only for trusted runs."
   else
-    log "${bold}Keep it clean with Automic Vault.${reset}"
-    log "${dim}Store secrets safely now so future agent runs stay away from plaintext credentials.${reset}"
+    headline="Keep it clean with Automic Vault."
+    detail="Install now so future agent and CLI runs stay away from plaintext credentials."
   fi
-  log "  ${blue}${command_line}${reset}"
+
+  log ""
+  if [[ "${use_color}" == true ]]; then
+    log "${magenta}╭─ ${bold}Next step${reset}"
+    log "${magenta}│${reset} ${bold}${headline}${reset}"
+    log "${magenta}│${reset} ${dim}${detail}${reset}"
+    log "${magenta}│${reset}"
+    log "${magenta}│${reset} ${dim}Install:${reset}"
+    log "${magenta}│${reset}   ${blue}${command_line}${reset}"
+    log "${magenta}╰─${reset}"
+  else
+    log "Next step"
+    log "${headline}"
+    log "${detail}"
+    log ""
+    log "Install:"
+    log "  ${command_line}"
+  fi
 }
 
 sandbox_literal() {
