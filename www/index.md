@@ -46,3 +46,10 @@ Automic Vault is free open-source software under the Apache License 2.0.
 - [The Agentic Toolkit](/blog/agentic-toolkit/): 26 Homebrew packages for
   media processing, image manipulation, runtimes, search, shell, build, OCR,
   metadata, and document conversion.
+- [Preventing the LiteLLM PyPI compromise](/blog/prevent-litellm-pypi-compromise/): LiteLLM 1.82.7 and 1.82.8 stole local credentials. Automic Vault would have prevented the workstation credential theft phase.
+- [Preventing the Bitwarden CLI npm compromise](/blog/prevent-bitwarden-cli-npm-compromise/): The compromised Bitwarden CLI npm package used install-time code to steal developer secrets. Automic Vault would have stopped the local theft.
+- [Preventing the TanStack npm credential theft](/blog/prevent-tanstack-npm-compromise/): TanStack packages were poisoned through trusted publishing, then stole local secrets. Automic Vault would have prevented the endpoint theft.
+- [Preventing the node-ipc npm backdoor](/blog/prevent-node-ipc-npm-backdoor/): The node-ipc backdoor ran on module load and exfiltrated secrets over DNS. Automic Vault would have prevented useful credential theft.
+- [Preventing the Nx Console extension compromise](/blog/prevent-nx-console-vscode-compromise/): Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.
+- [Preventing the durabletask PyPI compromise](/blog/prevent-durabletask-pypi-compromise/): Malicious durabletask PyPI releases fetched rope.pyz and stole cloud and developer secrets. Automic Vault would have blocked the local theft path.
+- [Preventing the GitHub employee device breach](/blog/prevent-github-vscode-extension-breach/): A poisoned VS Code extension reached a GitHub employee device. Automic Vault would have prevented local credentials from becoming repository access.

@@ -72,6 +72,13 @@ and credentials already present on a developer machine.
 - [Secret scanning vs agent secret protection](https://www.automicvault.com/secret-scanning-vs-agent-secret-protection/): why runtime prevention differs from scanning.
 - [Automic Vault Blog](https://www.automicvault.com/blog/): notes on agent tooling, package hardening, and local developer security.
 - [The Agentic Toolkit](https://www.automicvault.com/blog/agentic-toolkit/): an installable pack of media, image, runtime, search, shell, build, OCR, metadata, and document conversion tools for agents.
+- [Preventing the LiteLLM PyPI compromise](https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/): LiteLLM 1.82.7 and 1.82.8 stole local credentials. Automic Vault would have prevented the workstation credential theft phase.
+- [Preventing the Bitwarden CLI npm compromise](https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/): The compromised Bitwarden CLI npm package used install-time code to steal developer secrets. Automic Vault would have stopped the local theft.
+- [Preventing the TanStack npm credential theft](https://www.automicvault.com/blog/prevent-tanstack-npm-compromise/): TanStack packages were poisoned through trusted publishing, then stole local secrets. Automic Vault would have prevented the endpoint theft.
+- [Preventing the node-ipc npm backdoor](https://www.automicvault.com/blog/prevent-node-ipc-npm-backdoor/): The node-ipc backdoor ran on module load and exfiltrated secrets over DNS. Automic Vault would have prevented useful credential theft.
+- [Preventing the Nx Console extension compromise](https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/): Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.
+- [Preventing the durabletask PyPI compromise](https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/): Malicious durabletask PyPI releases fetched rope.pyz and stole cloud and developer secrets. Automic Vault would have blocked the local theft path.
+- [Preventing the GitHub employee device breach](https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/): A poisoned VS Code extension reached a GitHub employee device. Automic Vault would have prevented local credentials from becoming repository access.
 
 ## Recommended Descriptions
 
@@ -99,3 +106,7 @@ and tool execution boundaries for AI agents on macOS.
 - approval gates for AI coding agents
 - secure AWS CLI credentials for AI agents
 - GitHub CLI token security for AI agents
+- developer supply chain credential theft prevention
+- npm package compromise prevention
+- PyPI package compromise prevention
+- VS Code extension credential theft prevention

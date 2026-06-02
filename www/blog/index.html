@@ -19,70 +19,91 @@
   <meta property="og:title" content="Automic Vault Blog">
   <meta property="og:description" content="Notes on agent tooling, package hardening, and local developer security.">
   <meta property="og:url" content="https://www.automicvault.com/blog/">
-  <meta property="og:image" content="https://www.automicvault.com/assets/agentic-toolkit/agentic-toolkit-pack.webp">
+  <meta property="og:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://www.automicvault.com/assets/agentic-toolkit/agentic-toolkit-pack.webp">
+  <meta name="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <meta name="twitter:title" content="Automic Vault Blog">
   <meta name="twitter:description" content="Notes on agent tooling, package hardening, and local developer security.">
   <link rel="canonical" href="https://www.automicvault.com/blog/">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://www.automicvault.com/#organization",
-        "name": "Automic Vault",
-        "url": "https://www.automicvault.com/",
-        "logo": "https://www.automicvault.com/assets/icon@2x.webp"
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://www.automicvault.com/#organization",
+      "name": "Automic Vault",
+      "url": "https://www.automicvault.com/",
+      "logo": "https://www.automicvault.com/assets/icon@2x.webp"
+    },
+    {
+      "@type": "Blog",
+      "@id": "https://www.automicvault.com/blog/#blog",
+      "name": "Automic Vault Blog",
+      "url": "https://www.automicvault.com/blog/",
+      "publisher": {
+        "@id": "https://www.automicvault.com/#organization"
       },
-      {
-        "@type": "Blog",
-        "@id": "https://www.automicvault.com/blog/#blog",
-        "name": "Automic Vault Blog",
-        "url": "https://www.automicvault.com/blog/",
-        "publisher": {
-          "@id": "https://www.automicvault.com/#organization"
+      "blogPost": [
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/#article"
         },
-        "blogPost": [
-          {
-            "@id": "https://www.automicvault.com/blog/agentic-toolkit/#article"
-          }
-        ]
-      },
-      {
-        "@type": "WebPage",
-        "@id": "https://www.automicvault.com/blog/#webpage",
-        "url": "https://www.automicvault.com/blog/",
-        "name": "Automic Vault Blog",
-        "description": "Automic Vault notes on agent tooling, package hardening, and local developer security.",
-        "isPartOf": {
-          "@id": "https://www.automicvault.com/#website"
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/#article"
         },
-        "breadcrumb": {
-          "@id": "https://www.automicvault.com/blog/#breadcrumb"
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-tanstack-npm-compromise/#article"
+        },
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-node-ipc-npm-backdoor/#article"
+        },
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#article"
+        },
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/#article"
+        },
+        {
+          "@id": "https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/#article"
+        },
+        {
+          "@id": "https://www.automicvault.com/blog/agentic-toolkit/#article"
         }
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://www.automicvault.com/blog/#webpage",
+      "url": "https://www.automicvault.com/blog/",
+      "name": "Automic Vault Blog",
+      "description": "Automic Vault notes on agent tooling, package hardening, and local developer security.",
+      "isPartOf": {
+        "@id": "https://www.automicvault.com/#website"
       },
-      {
-        "@type": "BreadcrumbList",
-        "@id": "https://www.automicvault.com/blog/#breadcrumb",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Automic Vault",
-            "item": "https://www.automicvault.com/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Blog",
-            "item": "https://www.automicvault.com/blog/"
-          }
-        ]
+      "breadcrumb": {
+        "@id": "https://www.automicvault.com/blog/#breadcrumb"
       }
-    ]
-  }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://www.automicvault.com/blog/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Automic Vault",
+          "item": "https://www.automicvault.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Blog",
+          "item": "https://www.automicvault.com/blog/"
+        }
+      ]
+    }
+  ]
+}
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -92,7 +113,7 @@
   >
   <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=34">
+  <link rel="stylesheet" href="/styles.css?v=35">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -133,28 +154,150 @@
       <section class="blog-index" aria-labelledby="latest-posts">
         <div class="section-label">
           <h2 id="latest-posts">Latest</h2>
-          <span>first post</span>
+          <span>8 posts</span>
         </div>
         <div class="post-list">
           <article class="post-card">
-            <a href="/blog/agentic-toolkit/" aria-label="Read The Agentic Toolkit">
+            <a href="/blog/prevent-litellm-pypi-compromise/" aria-label="Read Preventing the LiteLLM PyPI compromise">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">LiteLLM PyPI compromise</p>
+              <h2><a href="/blog/prevent-litellm-pypi-compromise/">Preventing the LiteLLM PyPI compromise</a></h2>
+              <p>LiteLLM 1.82.7 and 1.82.8 stole local credentials. Automic Vault would have prevented the workstation credential theft phase.</p>
+              <a class="button primary" href="/blog/prevent-litellm-pypi-compromise/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-bitwarden-cli-npm-compromise/" aria-label="Read Preventing the Bitwarden CLI npm compromise">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">Bitwarden CLI npm compromise</p>
+              <h2><a href="/blog/prevent-bitwarden-cli-npm-compromise/">Preventing the Bitwarden CLI npm compromise</a></h2>
+              <p>The compromised Bitwarden CLI npm package used install-time code to steal developer secrets. Automic Vault would have stopped the local theft.</p>
+              <a class="button primary" href="/blog/prevent-bitwarden-cli-npm-compromise/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-tanstack-npm-compromise/" aria-label="Read Preventing the TanStack npm credential theft">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">TanStack npm compromise</p>
+              <h2><a href="/blog/prevent-tanstack-npm-compromise/">Preventing the TanStack npm credential theft</a></h2>
+              <p>TanStack packages were poisoned through trusted publishing, then stole local secrets. Automic Vault would have prevented the endpoint theft.</p>
+              <a class="button primary" href="/blog/prevent-tanstack-npm-compromise/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-node-ipc-npm-backdoor/" aria-label="Read Preventing the node-ipc npm backdoor">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">node-ipc npm backdoor</p>
+              <h2><a href="/blog/prevent-node-ipc-npm-backdoor/">Preventing the node-ipc npm backdoor</a></h2>
+              <p>The node-ipc backdoor ran on module load and exfiltrated secrets over DNS. Automic Vault would have prevented useful credential theft.</p>
+              <a class="button primary" href="/blog/prevent-node-ipc-npm-backdoor/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-nx-console-vscode-compromise/" aria-label="Read Preventing the Nx Console extension compromise">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">Nx Console VS Code compromise</p>
+              <h2><a href="/blog/prevent-nx-console-vscode-compromise/">Preventing the Nx Console extension compromise</a></h2>
+              <p>Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.</p>
+              <a class="button primary" href="/blog/prevent-nx-console-vscode-compromise/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-durabletask-pypi-compromise/" aria-label="Read Preventing the durabletask PyPI compromise">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">durabletask PyPI compromise</p>
+              <h2><a href="/blog/prevent-durabletask-pypi-compromise/">Preventing the durabletask PyPI compromise</a></h2>
+              <p>Malicious durabletask PyPI releases fetched rope.pyz and stole cloud and developer secrets. Automic Vault would have blocked the local theft path.</p>
+              <a class="button primary" href="/blog/prevent-durabletask-pypi-compromise/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/prevent-github-vscode-extension-breach/" aria-label="Read Preventing the GitHub employee device breach">
+              <img
+                src="/assets/app-hazard-journey.webp"
+                alt="Automic Vault interface showing local package and secret hazard context"
+                width="1672"
+                height="941"
+                loading="lazy"
+                decoding="async"
+              >
+            </a>
+            <div class="post-card-copy">
+              <p class="story-kicker">GitHub employee device breach</p>
+              <h2><a href="/blog/prevent-github-vscode-extension-breach/">Preventing the GitHub employee device breach</a></h2>
+              <p>A poisoned VS Code extension reached a GitHub employee device. Automic Vault would have prevented local credentials from becoming repository access.</p>
+              <a class="button primary" href="/blog/prevent-github-vscode-extension-breach/">Read the incident post</a>
+            </div>
+          </article>
+          <article class="post-card">
+            <a href="/blog/agentic-toolkit/" aria-label="Read All the tools agents need.">
               <img
                 src="/assets/agentic-toolkit/agentic-toolkit-pack.webp"
                 alt="Agentic Toolkit package grid artwork"
-                width="1200"
-                height="675"
-                loading="eager"
+                width="1672"
+                height="941"
+                loading="lazy"
                 decoding="async"
               >
             </a>
             <div class="post-card-copy">
               <p class="story-kicker">Agentic Toolkit</p>
               <h2><a href="/blog/agentic-toolkit/">All the tools agents need.</a></h2>
-              <p>
-                The first Automic Vault pack gathers media processing, image work,
-                runtimes, search, shell, build, OCR, metadata, and document conversion
-                tools into one installable set.
-              </p>
+              <p>The first Automic Vault pack gathers media processing, image work, runtimes, search, shell, build, OCR, metadata, and document conversion tools into one installable set.</p>
               <a class="button primary" href="/blog/agentic-toolkit/">Read the post</a>
             </div>
           </article>

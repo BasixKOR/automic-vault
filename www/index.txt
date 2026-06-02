@@ -27,3 +27,10 @@ Blog:
 The Agentic Toolkit is an installable pack of 26 Homebrew packages for media
 processing, image manipulation, runtimes, search, shell, build, OCR, metadata,
 and document conversion.
+- Preventing the LiteLLM PyPI compromise: https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/
+- Preventing the Bitwarden CLI npm compromise: https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/
+- Preventing the TanStack npm credential theft: https://www.automicvault.com/blog/prevent-tanstack-npm-compromise/
+- Preventing the node-ipc npm backdoor: https://www.automicvault.com/blog/prevent-node-ipc-npm-backdoor/
+- Preventing the Nx Console extension compromise: https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/
+- Preventing the durabletask PyPI compromise: https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/
+- Preventing the GitHub employee device breach: https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/

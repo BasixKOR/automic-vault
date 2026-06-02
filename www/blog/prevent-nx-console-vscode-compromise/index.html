@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-Y78QKG1T9Y');
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise | Automic Vault Blog</title>
+  <meta name="description" content="Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise">
+  <meta property="og:description" content="Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.">
+  <meta property="og:url" content="https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/">
+  <meta property="og:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
+  <meta property="article:published_time" content="2026-06-02">
+  <meta property="article:modified_time" content="2026-06-02">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
+  <meta name="twitter:title" content="How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise">
+  <meta name="twitter:description" content="Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.">
+  <link rel="canonical" href="https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://www.automicvault.com/#organization",
+      "name": "Automic Vault",
+      "url": "https://www.automicvault.com/",
+      "logo": "https://www.automicvault.com/assets/icon@2x.webp",
+      "sameAs": [
+        "https://github.com/automic-vault/",
+        "https://github.com/automic-vault/automic-vault",
+        "https://mxcl.dev/",
+        "https://brew.sh/"
+      ]
+    },
+    {
+      "@type": "BlogPosting",
+      "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#article",
+      "headline": "How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise",
+      "description": "Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.",
+      "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
+      "datePublished": "2026-06-02",
+      "dateModified": "2026-06-02",
+      "author": {
+        "@id": "https://www.automicvault.com/#organization"
+      },
+      "publisher": {
+        "@id": "https://www.automicvault.com/#organization"
+      },
+      "mainEntityOfPage": {
+        "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#webpage"
+      },
+      "about": [
+        "developer supply chain security",
+        "local developer credential protection",
+        "AI agent security",
+        "Automic Vault"
+      ],
+      "mentions": [
+        "Nx official postmortem",
+        "StepSecurity Nx Console analysis",
+        "BleepingComputer GitHub downstream coverage"
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#webpage",
+      "url": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/",
+      "name": "How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise",
+      "description": "Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.",
+      "isPartOf": {
+        "@id": "https://www.automicvault.com/blog/#blog"
+      },
+      "breadcrumb": {
+        "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#breadcrumb"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Automic Vault",
+          "item": "https://www.automicvault.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Blog",
+          "item": "https://www.automicvault.com/blog/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise",
+          "item": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap"
+    rel="stylesheet"
+  >
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css?v=35">
+</head>
+<body>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <div class="site-shell" id="top">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Automic Vault home">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+        <span class="brand-type">Automic Vault</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="nav" aria-label="Main navigation">
+        <a href="/">Home</a>
+        <a href="/pkg/">Packages</a>
+        <a href="/blog/" aria-current="page">Blog</a>
+        <a href="/docs/">Docs</a>
+        <a href="/download/">Download</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <article>
+        <header class="article-hero incident-hero">
+          <div class="article-hero-copy">
+            <p class="eyebrow">Nx Console VS Code compromise</p>
+            <h1>How Automic Vault would have prevented the Nx Console extension compromise.</h1>
+            <p class="lede">The malicious Nx Console update ran from inside the editor, where developers keep the richest context: repositories, terminals, GitHub auth, cloud CLIs, and password-manager sessions. Automic Vault would have prevented the extension from inheriting that local authority.</p>
+            <div class="hero-actions">
+              <a class="button primary" href="/download/">Download Automic Vault</a>
+              <a class="button secondary" href="/security/">Security model</a>
+              <a class="button text" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+            </div>
+          </div>
+          <figure class="article-hero-image">
+            <img
+              src="/assets/app-hazard-journey.webp"
+              alt="Automic Vault interface showing local package and secret hazard context"
+              width="1672"
+              height="941"
+              decoding="async"
+              fetchpriority="high"
+            >
+          </figure>
+        </header>
+
+        <section class="incident-body" aria-label="Incident analysis">
+          <p class="story-kicker">Published June 2, 2026</p>
+          <p class="incident-answer">Automic Vault would have prevented the damaging local phase of this incident: the moment malicious package or extension code tried to read workstation secrets, use credential-bearing tools, or install persistence as the developer.</p>
+
+          <section class="incident-section" aria-labelledby="facts-title">
+            <div class="section-label">
+              <h2 id="facts-title">Incident Facts</h2>
+              <span>local execution</span>
+            </div>
+            <dl class="incident-panel">
+              <div>
+                <dt>Date</dt>
+                <dd>May 18, 2026</dd>
+              </div>
+              <div>
+                <dt>Trigger</dt>
+                <dd>nrwl.angular-console 18.95.0 was published to the Visual Studio Marketplace and Open VSX.</dd>
+              </div>
+              <div>
+                <dt>Local targets</dt>
+                <dd>GitHub auth stores, Vault tokens, npm tokens, cloud metadata and CLI state, SSH keys, .env files, Docker config, GCP ADC, and active 1Password CLI session contents.</dd>
+              </div>
+              <div>
+                <dt>Follow-on behavior</dt>
+                <dd>Payload download from a hidden commit, HTTPS/GitHub/DNS exfiltration, and persistence through local Python and LaunchAgent files.</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="incident-section" aria-labelledby="what-happened-title">
+            <div class="section-label">
+              <h2 id="what-happened-title">What Happened?</h2>
+              <span>incident record</span>
+            </div>
+            <p>Nx disclosed that a malicious Nx Console 18.95.0 extension was live on May 18, 2026 in the Visual Studio Marketplace and Open VSX. Nx tied the incident back to an earlier compromised contributor machine that had resolved malicious package content.</p>
+            <p>StepSecurity reported that the extension downloaded payload code from a hidden commit and ran a credential stealer when the editor opened a workspace. That activation path is especially dangerous because developers trust editor extensions with source trees, terminals, and project automation.</p>
+            <p>The local target set included GitHub credentials, npm tokens, cloud and Kubernetes material, .env files, Docker config, HashiCorp Vault tokens, and active 1Password CLI sessions. The extension also wrote persistence artifacts on the workstation.</p>
+          </section>
+
+          <section class="incident-section" aria-labelledby="failure-title">
+            <div class="section-label">
+              <h2 id="failure-title">What Actually Failed?</h2>
+              <span>root cause</span>
+            </div>
+            <p>The editor became the trust boundary, and the editor was too broad. A signed or marketplace-delivered extension update could run with access to the user session and the repository workspace, including auth stores that were never meant for arbitrary extension code.</p>
+            <p>This is the same ambient-authority failure as a poisoned package, but worse in practice. Editor extensions sit close to source control, agent tooling, terminals, and secrets. A bad update can cross from local workstation compromise into organization-wide source and credential exposure.</p>
+          </section>
+
+          <section class="incident-section" aria-labelledby="prevention-controls-title">
+            <div class="section-label">
+              <h2 id="prevention-controls-title">Where Automic Vault Would Have Stopped It</h2>
+              <span>prevention</span>
+            </div>
+            <div class="incident-controls">
+            <article class="incident-control">
+              <span>01 / files</span>
+              <h3>Editor-launched code would not read every secret</h3>
+              <p>Automic Vault keeps sensitive values out of plaintext files and model-visible context. A malicious extension would not get raw GitHub, cloud, Vault, and .env material by reading local config paths.</p>
+            </article>
+            <article class="incident-control">
+              <span>02 / secrets</span>
+              <h3>Password-manager and CLI access would be mediated</h3>
+              <p>Active sessions and credential helpers should not become ambient input to extension code. Automic Vault routes approved credential use to trusted tools and shows the target command before access is granted.</p>
+            </article>
+            <article class="incident-control">
+              <span>03 / execution</span>
+              <h3>Persistence writes would be treated as risky</h3>
+              <p>Writing LaunchAgents, backdoor scripts, or global editor and tool settings is not a normal package read. Those changes belong behind visible local approval and hazard detection.</p>
+            </article>
+            </div>
+          </section>
+
+          <section class="incident-section" aria-labelledby="prevention-title">
+            <div class="section-label">
+              <h2 id="prevention-title">Why This Is Prevention, Not Just Detection</h2>
+              <span>local boundary</span>
+            </div>
+            <p>Automic Vault would have prevented the Nx Console incident from becoming a workstation credential breach by denying the malicious extension the broad local secrets it expected.</p>
+            <p>The extension could still be bad. The marketplace could still ship version 18.95.0. But without readable GitHub auth stores, cloud secrets, password-manager session material, and silent persistence, the attacker loses the bridge from extension install to durable local compromise.</p>
+            <p>This is the product lesson: developer tools need a local runtime boundary because trust in an extension marketplace is not the same thing as trust in every extension process that starts on your machine.</p>
+            <p class="incident-note">Automic Vault does not claim to make npm, PyPI, GitHub Actions, or extension marketplaces impossible to compromise. The prevention claim is narrower and more useful: compromised tools should not inherit every credential and sensitive path on a developer machine.</p>
+          </section>
+
+          <section class="incident-sources" aria-labelledby="sources-title">
+            <h2 id="sources-title">Sources</h2>
+            <ul>
+              <li><a href="https://nx.dev/blog/nx-console-v18-95-0-postmortem">Nx official postmortem</a></li>
+              <li><a href="https://www.stepsecurity.io/blog/nx-console-vs-code-extension-compromised">StepSecurity Nx Console analysis</a></li>
+              <li><a href="https://www.bleepingcomputer.com/news/security/github-confirms-breach-of-3-800-repos-via-malicious-vscode-extension/">BleepingComputer GitHub downstream coverage</a></li>
+            </ul>
+          </section>
+        </section>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; 2026 Automic Vault.</p>
+      <div class="footer-links">
+        <a href="/about/">About</a>
+        <a href="/security/">Security</a>
+        <a href="/blog/">Blog</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/app.js?v=17"></script>
+</body>
+</html>
