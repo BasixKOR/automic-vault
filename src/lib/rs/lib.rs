@@ -4273,6 +4273,10 @@ fn secret_key_looks_like_source_code(key: &str) -> bool {
     let trimmed = key.trim_start();
     trimmed.starts_with("type ")
         || trimmed.starts_with("interface ")
+        || trimmed.starts_with("struct ")
+        || trimmed.starts_with("class ")
+        || trimmed.starts_with("enum ")
+        || trimmed.starts_with("protocol ")
         || trimmed.starts_with("def ")
         || trimmed.starts_with("function ")
         || trimmed.starts_with("export function ")
@@ -4319,9 +4323,12 @@ fn secret_value_looks_like_freeform_text(value: &str) -> bool {
 }
 
 fn secret_value_looks_like_type_annotation(value: &str) -> bool {
-    let Some(first) = value.split_whitespace().next() else {
+    let mut words = value.split_whitespace();
+    let Some(first) = words.next() else {
         return false;
     };
+    let has_more_words =
+        words.any(|word| !word.chars().all(|ch| matches!(ch, '{' | '}' | ',' | ';')));
     let first = first.trim_matches(|ch: char| {
         matches!(
             ch,
@@ -4333,6 +4340,9 @@ fn secret_value_looks_like_type_annotation(value: &str) -> bool {
         .trim_start_matches('\'')
         .trim_end_matches('\'');
     if first.is_empty() || first.starts_with('"') || first.starts_with('\'') {
+        return false;
+    }
+    if matches!(first, "Bearer" | "Basic") {
         return false;
     }
     matches!(
@@ -4357,7 +4367,8 @@ fn secret_value_looks_like_type_annotation(value: &str) -> bool {
             | "number"
             | "object"
             | "array"
-    ) || first.chars().next().is_some_and(char::is_uppercase)
+    ) || (first.chars().next().is_some_and(char::is_uppercase)
+        && (!has_more_words || first.contains('<')))
 }
 
 fn secret_unquoted_value_looks_like_source_reference(value: &str) -> bool {
@@ -4567,8 +4578,10 @@ fn secret_value_is_real(value: &str) -> bool {
         || lower.contains("your_")
         || lower.contains("your-")
         || lower.contains("...")
+        || value.contains('…')
         || lower.contains("\\n")
         || lower.contains("base64url")
+        || (value.contains('<') && value.contains('>'))
         || lower.chars().all(|ch| ch == 'x' || ch == '*')
         || (value.starts_with('{') && value.ends_with('}'))
         || value.starts_with("{{")
@@ -4708,18 +4721,28 @@ fn secret_value_looks_like_package_or_label(value: &str) -> bool {
     }
     let mut has_alpha = false;
     let mut has_upper = false;
+    let mut has_digit = false;
+    let mut has_space = false;
     for ch in value.chars() {
         if ch.is_ascii_alphabetic() {
             has_alpha = true;
             has_upper |= ch.is_ascii_uppercase();
             continue;
         }
-        if ch.is_ascii_digit() || matches!(ch, '_' | '-' | '.' | '/' | ':') {
+        if ch.is_ascii_digit() {
+            has_digit = true;
+            continue;
+        }
+        if ch.is_ascii_whitespace() {
+            has_space = true;
+            continue;
+        }
+        if matches!(ch, '_' | '-' | '.' | '/' | ':') {
             continue;
         }
         return false;
     }
-    has_alpha && (!has_upper || !value.chars().any(|ch| ch.is_ascii_digit()))
+    has_alpha && (!has_upper || !has_digit) && (!has_space || has_upper)
 }
 
 fn secret_value_looks_like_jwt(value: &str) -> bool {
@@ -11467,6 +11490,9 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r#"apiKey: typeof stored.apiKey === "string" ? stored.apiKey : "","#,
             r#"if (tokenScope === "full") {"#,
             "type ByoClawPollTokenRecord = NonNullable<ReturnType<typeof getByoClawPollToken>>;",
+            "struct SpotifyToken: Codable {",
+            "var plainTextSecretAlertSource: PackageSecurityNotice.Source? {",
+            "secrets: BTreeMap<String, Result<String, String>>,",
             "if (!forumToken || forumToken.forum_id !== parsedParams.data.forumId) {",
             r#"const CHECKOUT_SUCCESS_TOKEN = "{CHECKOUT_SESSION_ID}";"#,
             "WHERE poll_token_id = ? AND id != ?`,",
@@ -11549,6 +11575,421 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         assert!(scan_secret_file(&json_path).unwrap().is_empty());
         assert!(scan_secret_file(&source_path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_parser_edges() {
+        let assignment = parse_secret_assignment("- token: value").unwrap();
+        assert_eq!(assignment.key, "token");
+        assert_eq!(assignment.value, " value");
+        assert!(matches!(
+            assignment.separator,
+            SecretAssignmentSeparator::Colon
+        ));
+
+        let assignment = parse_secret_assignment("TOKEN=value").unwrap();
+        assert_eq!(assignment.key, "TOKEN");
+        assert_eq!(assignment.value, "value");
+        assert!(matches!(
+            assignment.separator,
+            SecretAssignmentSeparator::Equals
+        ));
+
+        let assignment = parse_secret_assignment("URL=http://example.test/token").unwrap();
+        assert_eq!(assignment.key, "URL");
+        assert_eq!(assignment.value, "http://example.test/token");
+        assert!(matches!(
+            assignment.separator,
+            SecretAssignmentSeparator::Equals
+        ));
+
+        let assignment = parse_secret_assignment(r#""token": "value""#).unwrap();
+        assert_eq!(assignment.key, r#""token""#);
+        assert_eq!(assignment.value, r#" "value""#);
+        assert!(matches!(
+            assignment.separator,
+            SecretAssignmentSeparator::Colon
+        ));
+
+        for line in [
+            "token == value",
+            "token != value",
+            "token <= value",
+            "token >= value",
+            "token => value",
+            "no assignment here",
+        ] {
+            assert!(parse_secret_assignment(line).is_none(), "{line}");
+        }
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_source_code_rejection() {
+        for line in [
+            r#"case accessToken = "access_token""#,
+            "type PollToken = string",
+            "interface TokenRecord = {}",
+            "def _fetch_json(url, github_token=None):",
+            "function randomToken(prefix = \"pkg_\") {",
+            "export function randomToken(prefix = \"pkg_\") {",
+            "return accessToken = response.accessToken",
+            "if token = value",
+            "if(token = value)",
+            ".secret-art::before {",
+            "WHERE poll_token_id = ?",
+            "where poll_token_id = ?",
+            "fd->secret->state = _PR_FILEDESC_OPEN",
+            "left, right = tokens",
+            "metadata[token] = supported",
+            "self.md.toc_tokens = toc_tokens",
+            "This freeform token heading: has explanatory prose",
+            "Authorization: optional bearer token used by the request",
+            "token: &'static str,",
+            "token: bytes | None,",
+            "token: ResponseToken,",
+            "token = ?",
+            "token = // comment",
+            "token = {{ template.token }}",
+            "token = <% template %>",
+            "token = {CHECKOUT_SESSION_ID}",
+            "token = /token-.*/",
+            "token = f\"Bearer {token}\"",
+            "token = f'Bearer {token}'",
+            "token = process.env.API_TOKEN",
+            "token = typeof payload.token",
+            "token = ReturnType<TokenFactory>",
+            "token = payload.token as string",
+            "token = 64 * 1024",
+            "token = condition ? a : b",
+            "token = a && b",
+            "token = a || b",
+            "token = a === b",
+            "token = a !== b",
+            "token = a == b",
+            "token = a != b",
+            "token = a <= b",
+            "token = a >= b",
+            "token = tokenMatch[1]",
+            "token = .leading.member",
+            "token = tokenFactory()",
+            "token = fd->secret",
+            "token = Namespace::Token",
+            "token = response.accessToken",
+            "token = RefreshToken",
+            "token: BTreeMap<String, Result<String, String>>,",
+        ] {
+            let assignment = parse_secret_assignment(line).unwrap();
+            assert!(
+                secret_assignment_looks_like_source_code(&assignment),
+                "{line}"
+            );
+        }
+
+        for line in [
+            "TOKEN=secret_secret",
+            "OPENAI_API_KEY=sk-test_1234567890abcdef",
+            "Authorization: Bearer realtoken1234567890",
+        ] {
+            let assignment = parse_secret_assignment(line).unwrap();
+            assert!(
+                !secret_assignment_looks_like_source_code(&assignment),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_sensitive_keys_and_metadata() {
+        for key in [
+            "token",
+            "password",
+            "passwd",
+            "authorization",
+            "API_KEY",
+            "api.key",
+            "apikey",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "auth_token",
+            "private_key",
+            "refresh_token",
+            "id_token",
+            "client_secret",
+            "export OPENAI_API_KEY",
+        ] {
+            assert!(secret_key_name_is_sensitive(key), "{key}");
+        }
+
+        for key in [
+            "tokenType",
+            "token-types",
+            "tokenName",
+            "token_names",
+            "TOKEN_PREFIX",
+            "TOKEN_SUFFIX",
+            "TOKEN_SERVICE",
+            "tokenHash",
+            "tokenLabel",
+            "tokenLabels",
+            "TOKEN_PATTERN",
+            "tokenPatterns",
+            "tokenClass",
+            "MaxScanTokenSize",
+            "SOFTOKEN_LIB_DIR",
+            "PRIVATE_KEY_PATH",
+            "private-key-file",
+            "token.url",
+            "token_uri",
+        ] {
+            assert!(secret_key_name_is_noncredential_metadata(key), "{key}");
+            assert!(!secret_key_name_is_sensitive(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_real_value_classification() {
+        for value in [
+            "short",
+            "${TOKEN}",
+            "secret",
+            "password",
+            "token",
+            "example",
+            "changeme",
+            "change_me",
+            "replace_me",
+            "redacted",
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "client_secret",
+            "api_key",
+            "none",
+            "null",
+            "true",
+            "false",
+            "string",
+            "bytes",
+            "write",
+            "read",
+            "hashed",
+            "nullptr",
+            "nil",
+            "example-token",
+            "placeholder-token",
+            "your_token_here",
+            "your-token-here",
+            "clawlt_7wYx...base64url...",
+            r#""[default]\naws_secret_access_key = secret\n""#,
+            "Bearer <temporary_token>",
+            "Bearer smbhclaw_\u{2026}",
+            "xxxxxxxx",
+            "********",
+            "{TOKEN}",
+            "{{ TOKEN }}",
+            "<TOKEN>",
+            "%awssecret%",
+            "~/secret.pem",
+            "./secret.key",
+            "../secret.key",
+            "/Users/me/secret.key",
+            "https://ghcr.io/token",
+            "^4.0.0",
+            "3.0.0 || ^4.0.0",
+            "cfengine",
+            "detect-secrets",
+            "nextToken",
+            "NSS Certificate DB",
+        ] {
+            assert!(!secret_value_is_real(value), "{value}");
+        }
+
+        for value in [
+            "secret_secret",
+            "sk-test_1234567890abcdef",
+            "xai-CaxcatEA921Wrn5N6GyOuEfUrWwK90J1yBvn5Ehou5pUxWzgh0vGFBHrWCXAiBn68Z",
+            "Rdb0XGysWuBnveWaNkyi",
+            "dY3v9zk5epFZDMgoxUfDNp7fO2bGKQW4tT8wy58gGmHgg5oHPOeT9TdPDnzCINj3",
+            "eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxMjM0NTY3ODkwIn0.signature_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+        ] {
+            assert!(secret_value_is_real(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_token_shapes_and_normalization() {
+        for value in [
+            "ghp_1234567890abcdef",
+            "gho_1234567890abcdef",
+            "ghs_1234567890abcdef",
+            "github_pat_1234567890abcdef",
+            "glpat-1234567890abcdef",
+            "xoxb-1234567890abcdef",
+            "xoxp-1234567890abcdef",
+            "sk_live_1234567890abcdef",
+            "npm_1234567890abcdef",
+            "sk-proj-1234567890abcdef",
+            "xai-1234567890abcdefghi",
+            "AKIA1234567890ABCDEF",
+        ] {
+            assert!(secret_value_has_known_token_shape(value), "{value}");
+        }
+
+        assert!(!secret_value_has_known_token_shape("npm_pkg"));
+        assert!(secret_value_looks_like_jwt(
+            "eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxMjM0NTY3ODkwIn0.signature_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+        ));
+        assert!(!secret_value_looks_like_jwt("response.accessToken"));
+        assert!(!secret_value_looks_like_jwt("one.two.three.four"));
+
+        assert_eq!(normalized_secret_value(r#" "false", "#), "false");
+        assert_eq!(normalized_secret_value(" write   # comment"), "write");
+        assert_eq!(normalized_secret_value("'secret');"), "secret");
+        assert_eq!(
+            normalized_secret_key_name("export API-KEY.name"),
+            "api_key_name"
+        );
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_fixture_paths() {
+        for path in [
+            "/repo/test/file.ts",
+            "/repo/tests/file.ts",
+            r"C:\repo\test\file.ts",
+            r"C:\repo\tests\file.ts",
+            "/repo/token.test.ts",
+            "/repo/token.spec.ts",
+        ] {
+            assert!(
+                secret_path_looks_like_test_fixture(Path::new(path)),
+                "{path}"
+            );
+        }
+
+        for path in [
+            "/repo/testdata/vector.json",
+            "/repo/fixtures/vector.json",
+            "/repo/fixture/vector.json",
+            "/repo/examples/key.rst",
+            "/repo/example/key.rst",
+            "/repo/samples/key.req",
+            "/repo/sample/key.req",
+            "/repo/cavs_samples/key.req",
+            "/repo/wycheproof/key.json",
+            "/repo/doc/key.rst",
+            "/repo/docs/key.rst",
+            "/repo/share/man/man5/key.5",
+            "/repo/share/info/key.info",
+            "/repo/man/man3/key.3",
+        ] {
+            assert!(
+                secret_path_looks_like_reference_fixture(Path::new(path)),
+                "{path}"
+            );
+            assert!(secret_value_is_test_fixture(
+                Path::new(path),
+                "sk-real_1234567890abcdef"
+            ));
+        }
+
+        for value in [
+            "password123",
+            "handoff-token",
+            "test-token",
+            "test-password",
+            "polar_test_token",
+            "polar_webhook_secret",
+        ] {
+            assert!(secret_value_is_test_fixture(
+                Path::new("/repo/test/auth.ts"),
+                value
+            ));
+        }
+
+        assert!(!secret_value_is_test_fixture(
+            Path::new("/repo/src/auth.ts"),
+            "sk-test_1234567890abcdef"
+        ));
+    }
+
+    #[test]
+    fn secret_file_scanner_helper_assumptions_cover_private_key_handling() {
+        for path in [
+            "/repo/pubkey_pem.c",
+            "/repo/pubkey_pem.cc",
+            "/repo/pubkey_pem.cpp",
+            "/repo/pubkey_pem.cxx",
+            "/repo/pubkey_pem.h",
+            "/repo/pubkey_pem.hh",
+            "/repo/pubkey_pem.hpp",
+            "/repo/pubkey_pem.hxx",
+            "/repo/pubkey_pem.go",
+            "/repo/pubkey_pem.rs",
+            "/repo/pubkey_pem.swift",
+            "/repo/pubkey_pem.js",
+            "/repo/pubkey_pem.jsx",
+            "/repo/pubkey_pem.ts",
+            "/repo/pubkey_pem.tsx",
+            "/repo/pubkey_pem.py",
+            "/repo/pubkey_pem.rb",
+            "/repo/pubkey_pem.pm",
+            "/repo/pubkey_pem.erl",
+            "/repo/pubkey_pem.hrl",
+        ] {
+            assert!(
+                secret_path_looks_like_source_file(Path::new(path)),
+                "{path}"
+            );
+            assert!(secret_private_key_line_is_fixture(
+                Path::new(path),
+                r#"<<\"-----BEGIN RSA PRIVATE KEY-----\">>;"#
+            ));
+        }
+
+        assert!(secret_private_key_line_is_fixture(
+            Path::new("/repo/testdata/key.pem"),
+            "-----BEGIN RSA PRIVATE KEY-----"
+        ));
+        assert!(!secret_private_key_line_is_fixture(
+            Path::new("/repo/.env"),
+            "-----BEGIN RSA PRIVATE KEY-----"
+        ));
+    }
+
+    #[test]
+    fn secret_file_probes_skip_generated_dependency_directories() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        fs::create_dir_all(root.join("artifacts")).unwrap();
+        fs::create_dir_all(root.join("DerivedData")).unwrap();
+        fs::write(root.join("artifacts/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join("DerivedData/.env"), "TOKEN=secret_secret\n").unwrap();
+        fs::write(root.join(".env"), "TOKEN=secret_secret\n").unwrap();
+
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        scan_secret_file_probes(
+            Some(&root),
+            &[],
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(
+            findings[0]
+                .path
+                .as_deref()
+                .is_some_and(|path| path.ends_with("/.env"))
+        );
     }
 
     #[test]
