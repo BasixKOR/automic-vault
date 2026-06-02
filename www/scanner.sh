@@ -16,22 +16,24 @@ scanner_use_color="${use_color}"
 if [[ "${use_color}" == true ]]; then
   reset=$'\033[0m'
   bold=$'\033[1m'
-  dim=$'\033[2m'
-  red=$'\033[31m'
-  green=$'\033[32m'
-  blue=$'\033[34m'
-  magenta=$'\033[35m'
+  ink=$'\033[38;2;214;199;161m'
+  muted=$'\033[38;2;184;155;115m'
+  red=$'\033[38;2;216;58;47m'
+  green=$'\033[38;2;107;255;176m'
+  blue=$'\033[38;2;106;169;255m'
+  amber=$'\033[38;2;255;179;71m'
   glyph_step="◆"
   glyph_ok="✓"
   glyph_error="✗"
 else
   reset=""
   bold=""
-  dim=""
+  ink=""
+  muted=""
   red=""
   green=""
   blue=""
-  magenta=""
+  amber=""
   glyph_step="*"
   glyph_ok="OK"
   glyph_error="ERROR"
@@ -43,8 +45,8 @@ log() {
 
 title() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}╭─ ${bold}Automic Vault scanner${reset}"
-    log "${magenta}│${reset} ${dim}detector-only secret exposure check${reset}"
+    log "${ink}╭─ ${bold}Automic Vault scanner${reset}"
+    log "${muted}│ detector-only secret exposure check${reset}"
   else
     log "Automic Vault scanner"
     log "detector-only secret exposure check"
@@ -53,7 +55,7 @@ title() {
 
 step() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}│${reset} ${blue}${glyph_step}${reset} $*"
+    log "${blue}│ ${glyph_step} $*${reset}"
   else
     log "${glyph_step} $*"
   fi
@@ -61,7 +63,7 @@ step() {
 
 ok() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}│${reset} ${green}${glyph_ok}${reset} $*"
+    log "${green}│ ${glyph_ok} $*${reset}"
   else
     log "${glyph_ok} $*"
   fi
@@ -69,7 +71,7 @@ ok() {
 
 error() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}│${reset} ${red}${glyph_error}${reset} $*"
+    log "${red}│ ${glyph_error} $*${reset}"
   else
     log "${glyph_error} $*"
   fi
@@ -77,7 +79,7 @@ error() {
 
 done_line() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}╰─${reset} ${green}${glyph_ok}${reset} $*"
+    log "${green}╰─ ${glyph_ok} $*${reset}"
   else
     log "${glyph_ok} $*"
   fi
@@ -85,7 +87,7 @@ done_line() {
 
 separator_line() {
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}│${reset}"
+    log "${muted}│${reset}"
   else
     log ""
   fi
@@ -152,13 +154,13 @@ recommend_install() {
 
   log ""
   if [[ "${use_color}" == true ]]; then
-    log "${magenta}╭─ ${bold}Next step${reset}"
-    log "${magenta}│${reset} ${bold}${headline}${reset}"
-    log "${magenta}│${reset} ${dim}${detail}${reset}"
-    log "${magenta}│${reset}"
-    log "${magenta}│${reset} ${dim}Install:${reset}"
-    log "${magenta}│${reset}   ${blue}${command_line}${reset}"
-    log "${magenta}╰─${reset}"
+    log "${ink}╭─ ${bold}Next step${reset}"
+    log "${ink}│ ${bold}${headline}${reset}"
+    log "${muted}│ ${detail}${reset}"
+    log "${muted}│${reset}"
+    log "${amber}│ Install:${reset}"
+    log "${blue}│ ${command_line}${reset}"
+    log "${muted}╰─${reset}"
   else
     log "Next step"
     log "${headline}"
