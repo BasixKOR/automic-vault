@@ -4299,7 +4299,13 @@ fn source_reference_char(ch: char) -> bool {
 }
 
 fn normalized_secret_value(value: &str) -> &str {
-    value.trim().trim_matches('"').trim_matches('\'').trim()
+    value
+        .trim()
+        .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '}' | ']'))
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
 }
 
 fn secret_key_name_is_sensitive(key: &str) -> bool {
@@ -11033,6 +11039,31 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].line, Some(13));
+        assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_json_boolean_and_null_values() {
+        let temp = TempDir::new().unwrap();
+        let json_path = temp.path().join("models.json");
+        fs::write(
+            &json_path,
+            [
+                r#"{"requiresAPIKey": false,"#,
+                r#""remoteAuthentication": true,"#,
+                r#""clientSecret": null,"#,
+                r#""apiKey": "sk-test_1234567890abcdef","#,
+                r#""token": "secret""#,
+                r#"}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&json_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(4));
         assert_eq!(findings[0].kind, "secret-assignment");
     }
 
