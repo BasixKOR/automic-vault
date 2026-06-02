@@ -581,6 +581,7 @@ h1 code {
 .secured-radar-section,
 .founder-quote,
 .final-cta,
+.endorsement,
 .blog-hero,
 .blog-index,
 .article-hero,
@@ -656,6 +657,98 @@ h1 code {
 
 .highlight-card.accent-gold span {
   color: var(--gold);
+}
+
+.endorsement {
+  background:
+    radial-gradient(circle at 78% 20%, oklch(64% 0.16 24 / 0.12), transparent 28rem),
+    linear-gradient(180deg, oklch(11% 0.008 255 / 0.62), oklch(8% 0.006 255 / 0.92));
+}
+
+.tweet-endorsement {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.16fr) minmax(0, 1fr) auto;
+  gap: clamp(18px, 4vw, 48px);
+  align-items: end;
+  padding: clamp(22px, 4vw, 42px);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, oklch(94% 0.016 78 / 0.045), transparent 68%),
+    var(--surface-2);
+  color: inherit;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.tweet-endorsement:hover {
+  border-color: var(--muted);
+  background:
+    linear-gradient(90deg, oklch(94% 0.016 78 / 0.068), transparent 68%),
+    var(--surface-3);
+  transform: translateY(-2px);
+}
+
+.tweet-endorsement:active {
+  transform: translateY(0);
+}
+
+.tweet-endorsement blockquote {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+}
+
+.tweet-endorsement-person {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  justify-items: start;
+  min-width: 0;
+}
+
+.tweet-endorsement-person img {
+  width: clamp(54px, 5.8vw, 72px);
+  height: auto;
+  aspect-ratio: 1;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-deep);
+  box-shadow: 0 12px 32px oklch(6% 0.006 255 / 0.32);
+}
+
+.tweet-endorsement p {
+  max-width: 900px;
+  color: var(--ink);
+  font-size: clamp(1.85rem, 4vw, 4.4rem);
+  font-weight: 800;
+  line-height: 0.98;
+}
+
+.tweet-endorsement cite,
+.tweet-endorsement-label,
+.tweet-endorsement-meta {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.45;
+  text-transform: uppercase;
+}
+
+.tweet-endorsement cite span {
+  color: var(--hot);
+}
+
+.tweet-endorsement-label {
+  align-self: start;
+  color: var(--hot);
+}
+
+.tweet-endorsement-meta {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .hazard-board {
@@ -1411,6 +1504,19 @@ h1 code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .tweet-endorsement {
+    grid-template-columns: 1fr;
+  }
+
+  .tweet-endorsement-person {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .tweet-endorsement-meta {
+    justify-self: start;
+  }
+
   .side-rail {
     position: static;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1646,6 +1752,7 @@ h1 code {
   .guides,
   .secured-radar-section,
   .final-cta,
+  .endorsement,
   .blog-hero,
   .blog-index,
   .article-hero,

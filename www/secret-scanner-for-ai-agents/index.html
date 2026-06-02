@@ -270,7 +270,7 @@
             <strong>one-liner</strong>
           </div>
           <pre><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
-          <p>Downloads <code>scanner.gz</code>, denies writes, denies network access, then runs isotope-only detectors.</p>
+          <p>Detects secrets that tools leave accessible.</p>
         </div>
 
         <div class="hero-actions">
@@ -401,15 +401,15 @@
               <p class="story-kicker">Report</p>
               <h3>Shows findings without printing secret values.</h3>
               <p>
-                Findings identify the source and path, such as <code>isotope:curl</code>
-                or <code>isotope:openssh</code>, while leaving credential contents out of
-                the terminal output.
+                Findings identify the tool and path, such as <code>curl</code> with
+                <code>~/.netrc</code> or <code>openssh</code> with private key files,
+                while leaving credential contents out of the terminal output.
               </p>
               <ul class="story-tags" aria-label="Scanner output modes">
                 <li>human output</li>
                 <li>json</li>
                 <li>jsonl</li>
-                <li>isotopes only</li>
+                <li>tool-aware</li>
               </ul>
             </div>
           </article>
@@ -440,7 +440,7 @@
               <p><i>✓</i> Network denied</p>
               <p><i>◆</i> Running package-specific detectors</p>
               <p><b>✗ 5 plaintext credential findings</b></p>
-              <p><em>high</em> isotope:curl</p>
+              <p><em>high</em> curl / ~/.netrc</p>
               <p>netrc file contains plaintext credentials</p>
               <p><i>✓</i> Scan complete</p>
             </div>
