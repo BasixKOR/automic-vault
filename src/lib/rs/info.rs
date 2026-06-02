@@ -2674,6 +2674,105 @@ mod tests {
     }
 
     #[test]
+    fn security_recommendation_results_require_homebrew_without_vault_install() {
+        let temp = TempDir::new().unwrap();
+        let cellar = temp.path().join("Cellar");
+        let opt_root = temp.path().join("opt");
+        for formula in ["awscli", "gh"] {
+            let version_root = cellar.join(formula).join("1.0.0");
+            fs::create_dir_all(&version_root).unwrap();
+            fs::write(version_root.join(HOMEBREW_INSTALL_RECEIPT), "{}").unwrap();
+        }
+
+        let results =
+            resolve_security_recommendation_package_results_at(&cellar, &opt_root).unwrap();
+        assert_eq!(results.len(), 2);
+        let awscli = results
+            .iter()
+            .find(|result| result.package_name == "brew:awscli")
+            .unwrap();
+        assert_eq!(awscli.install_package_names, vec!["brew:awscli"]);
+        assert!(awscli.summary.as_deref().unwrap().contains("AWS"));
+        assert!(awscli.security_state.is_some());
+
+        let gh = results
+            .iter()
+            .find(|result| result.package_name == "brew:gh")
+            .unwrap();
+        let gh_summary = gh.summary.as_deref().unwrap();
+        assert!(gh_summary.contains("GitHub CLI"));
+        assert!(gh_summary.contains("Geiger: orange."));
+        assert!(gh_summary.contains("Confidence: high."));
+        assert!(gh_summary.contains("Category: infrastructure."));
+
+        let isotope_root = package_install_root(&opt_root, "isotope:gh").unwrap();
+        fs::create_dir_all(&isotope_root).unwrap();
+        write_package_receipt(
+            &isotope_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "isotope:gh".to_string(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let filtered =
+            resolve_security_recommendation_package_results_at(&cellar, &opt_root).unwrap();
+        assert!(
+            filtered
+                .iter()
+                .all(|result| result.package_name != "brew:gh")
+        );
+        assert!(
+            filtered
+                .iter()
+                .any(|result| result.package_name == "brew:awscli")
+        );
+    }
+
+    #[test]
+    fn security_recommendation_result_falls_back_without_formula_index_match() {
+        let recommendation = SecurityRecommendationPackage {
+            install_package_name: "brew:tap/tool/tool".to_string(),
+            reasons: vec!["  ".to_string()],
+            approval_gate: true,
+            signals: vec!["isotope".to_string()],
+            ..SecurityRecommendationPackage::default()
+        };
+
+        let result =
+            security_recommendation_package_result("brew:tap/tool/tool", &recommendation, &[])
+                .unwrap();
+
+        assert_eq!(result.package_name, "brew:tap/tool/tool");
+        assert_eq!(
+            result.source,
+            PackageReceiptSource::Formula {
+                root_formula: "tap/tool/tool".to_string()
+            }
+        );
+        assert_eq!(result.install_package_names, vec!["brew:tap/tool/tool"]);
+        assert_eq!(
+            result.summary.as_deref(),
+            Some(
+                "Root-owned Automic Vault install recommended. Approval gate metadata is available."
+            )
+        );
+        assert_eq!(homebrew_formula_cellar_name("tap/tool/tool"), "tool");
+        assert_eq!(
+            compare_security_recommendation_rank_order(
+                &search_result("ranked", result.source.clone(), None, Some(1)),
+                &search_result("unranked", result.source, None, None),
+            ),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
     fn search_ranking_helpers_cover_names_summaries_sources_and_popularity() {
         let exact = search_result(
             "ripgrep",
