@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+#
+# Human note:
+# This shell entrypoint downloads the compressed Automic Vault scanner,
+# unpacks it in a private temporary directory, writes a macOS sandbox profile,
+# and launches the scanner with /usr/bin/sandbox-exec. The wrapper's setup
+# tools (curl, gzip, mktemp, tee, rm) run only to fetch, unpack, display, and
+# clean up the payload. All detector execution happens inside the sandbox,
+# which denies network access, file writes, process forking, and execution of
+# anything except the downloaded scanner binary.
 
 set -euo pipefail
 
