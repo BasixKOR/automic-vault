@@ -29,7 +29,7 @@ final class MainWindowModelTests: XCTestCase {
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,
-            [.installed, .securityRecommendations, .geigerCounter, .outdated]
+            [.installed, .geigerCounter, .securityRecommendations, .outdated]
         )
         XCTAssertEqual(
             MainWindowSection.categoryShortcutSections,
@@ -131,6 +131,10 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(
             model.displayedPackages.first?.detail?.homebrewInfo?.description,
             "Plain Text AWS Credentials"
+        )
+        XCTAssertEqual(
+            model.displayedPackages.first.map(model.securityRecommendationSeverityLevel),
+            3
         )
     }
 

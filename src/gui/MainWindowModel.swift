@@ -29,8 +29,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     static let librarySections: [MainWindowSection] = [
         .installed,
-        .securityRecommendations,
         .geigerCounter,
+        .securityRecommendations,
         .outdated
     ]
 
@@ -81,7 +81,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         case .installed:
             return L10n.string("Installed")
         case .securityRecommendations:
-            return L10n.string("Security Recommendations")
+            return L10n.string("Sec Recs")
         case .geigerCounter:
             return L10n.string("Security Alerts")
         case .newUpdated:
@@ -1000,6 +1000,50 @@ final class MainWindowModel: ObservableObject {
             return []
         }
         return [.outdated]
+    }
+
+    func securityRecommendationSeverityLevel(for package: PackagePresentation) -> Int? {
+        guard !isSearchActive,
+              selectedSection == .securityRecommendations,
+              case .available(let result) = package.item else {
+            return nil
+        }
+
+        var level = 1
+        if let rank = result.rank {
+            if rank <= 100 {
+                level = max(level, 3)
+            } else if rank <= 5_000 {
+                level = max(level, 2)
+            }
+        }
+
+        let signals = [
+            result.description,
+            result.securityState?.isotopeName,
+            result.securityState?.reasons.joined(separator: " "),
+            result.securityState?.error,
+        ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .localizedLowercase
+
+        if signals.contains("geiger: red")
+            || signals.contains("escape-surveillance-offensive")
+            || result.securityState?.needsMainWindowSecurityAlert == true {
+            level = 3
+        } else if signals.contains("geiger: orange")
+                    || signals.contains("infrastructure") {
+            level = max(level, 2)
+        }
+
+        if signals.contains("plain text")
+            || signals.contains("approval gate")
+            || result.securityState != nil {
+            level = max(level, 3)
+        }
+
+        return min(max(level, 1), 3)
     }
 
     private func needsHardening(_ package: PackagePresentation) -> Bool {

@@ -258,7 +258,7 @@
 "Secrets auto-approved: %@" = "シークレットを自動承認しました: %@";
 "Security" = "セキュリティ";
 "Security Alerts" = "セキュリティ警告";
-"Security Recommendations" = "セキュリティ推奨";
+"Sec Recs" = "Sec Recs";
 "Select All" = "すべてを選択";
 "session" = "セッション";
 "Settings" = "設定";

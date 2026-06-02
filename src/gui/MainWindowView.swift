@@ -255,6 +255,7 @@ struct MainWindowView: View {
                             description: model.packageDescription(for: package),
                             version: packageRowVersion(for: package),
                             inlineBadges: model.packageInlineBadges(for: package),
+                            severityLevel: model.securityRecommendationSeverityLevel(for: package),
                             badges: packageRowBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
@@ -1266,6 +1267,7 @@ private struct PackageRow: View {
     let description: String
     let version: String
     let inlineBadges: [MainWindowPackageBadge]
+    let severityLevel: Int?
     let badges: [MainWindowPackageBadge]
     let selected: Bool
     let action: () -> Void
@@ -1294,6 +1296,11 @@ private struct PackageRow: View {
                 }
 
                 Spacer(minLength: 8)
+
+                if let severityLevel {
+                    SeverityBars(level: severityLevel)
+                        .padding(.top, 1)
+                }
 
                 if badges.isEmpty == false {
                     VStack(alignment: .trailing, spacing: 4) {
@@ -1334,6 +1341,36 @@ private struct PackageRowTitleText: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .layoutPriority(1)
+    }
+}
+
+private struct SeverityBars: View {
+    let level: Int
+
+    private var clampedLevel: Int {
+        min(max(level, 1), 3)
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(barColor(for: index))
+                    .frame(width: 3, height: barHeight(for: index))
+            }
+        }
+        .frame(width: 13, height: 12, alignment: .bottom)
+        .accessibilityLabel("Severity \(clampedLevel) of 3")
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        [4, 7, 10][index]
+    }
+
+    private func barColor(for index: Int) -> Color {
+        index < clampedLevel
+            ? AVGlassPalette.primaryText.opacity(0.76)
+            : AVGlassPalette.quietText.opacity(0.18)
     }
 }
 
