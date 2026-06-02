@@ -10263,7 +10263,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             .formulas
             .get("node")
             .and_then(|metadata| string_or_none(&metadata.summary))
-            .unwrap();
+            .expect("expected embedded DB to include a non-empty summary for formula `node`");
         let formula_homebrew_info = formula.homebrew_info.unwrap();
         assert!(!formula.installed);
         assert_eq!(formula.latest_version, Some("22.0.0".to_string()));
