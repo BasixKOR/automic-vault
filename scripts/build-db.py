@@ -669,6 +669,22 @@ def _overlay_formula_package_manager_metadata(formulas, formulae=None):
     return result
 
 
+def _include_versioned_formula_metadata(formulas, formulae=None):
+    if formulae is None:
+        formulae = _formulae_from_av_db_cache()
+    result = {name: dict(metadata) for name, metadata in formulas.items()}
+    for formula in formulae:
+        name = formula.get("name")
+        if not isinstance(name, str) or not name or "@" not in name:
+            continue
+        if name in result:
+            continue
+        metadata = _formula_metadata(formula)
+        if metadata is not None:
+            result[name] = metadata
+    return result
+
+
 def _casks_from_av_db_cache(path=None):
     path = path or AV_DB_CASKS_PATH
     if not path or not os.path.exists(path):
@@ -1822,6 +1838,7 @@ def main():
     if homebrew_authority is None:
         homebrew_authority = _collect_homebrew_authority_legacy(_github_token())
     ordered_entries, formulas, cask_metadata, missing_manifests = homebrew_authority
+    formulas = _include_versioned_formula_metadata(formulas)
     formulas, cask_metadata = _overlay_homebrew_popularity_metadata(
         formulas,
         cask_metadata,

@@ -509,6 +509,35 @@ class AvDbAuthorityTests(unittest.TestCase):
         self.assertEqual(result["awscli"]["version"], "2.34.54")
         self.assertEqual(result["awscli"]["sourceArchive"], "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz")
 
+    def test_versioned_formulae_from_package_manager_cache_enter_catalog(self):
+        build_db = load_build_db()
+
+        result = build_db._include_versioned_formula_metadata(
+            {"node": {"summary": "Platform built on V8"}},
+            [
+                {
+                    "name": "node@24",
+                    "desc": "Platform built on V8 to build network applications",
+                    "homepage": "https://nodejs.org/",
+                    "versions": {"stable": "24.11.1"},
+                    "urls": {"stable": {"url": "https://github.com/nodejs/node/archive/refs/tags/v24.11.1.tar.gz"}},
+                },
+                {
+                    "name": "abseil",
+                    "desc": "C++ library code",
+                    "versions": {"stable": "20250814.1"},
+                },
+            ],
+        )
+
+        self.assertEqual(result["node"]["summary"], "Platform built on V8")
+        self.assertIn("node@24", result)
+        self.assertEqual(result["node@24"]["summary"], "Platform built on V8 to build network applications")
+        self.assertEqual(result["node@24"]["homepage"], "https://nodejs.org/")
+        self.assertEqual(result["node@24"]["version"], "24.11.1")
+        self.assertEqual(result["node@24"]["repository"], "https://github.com/nodejs/node")
+        self.assertNotIn("abseil", result)
+
     def test_homebrew_pulse_overlay_adds_formula_and_cask_events(self):
         build_db = load_build_db()
 
@@ -618,6 +647,13 @@ class AvDbAuthorityTests(unittest.TestCase):
                                 "name": "awscli",
                                 "versions": {"stable": "2.34.54"},
                                 "urls": {"stable": {"url": "https://github.com/aws/aws-cli/archive/refs/tags/2.34.54.tar.gz"}},
+                            },
+                            {
+                                "name": "node@24",
+                                "desc": "Platform built on V8 to build network applications",
+                                "homepage": "https://nodejs.org/",
+                                "versions": {"stable": "24.11.1"},
+                                "urls": {"stable": {"url": "https://github.com/nodejs/node/archive/refs/tags/v24.11.1.tar.gz"}},
                             }
                         ],
                     },
@@ -657,6 +693,10 @@ class AvDbAuthorityTests(unittest.TestCase):
                         "awscli": {
                             "last_updated_at": "2026-06-01T12:00:00Z",
                             "pulse_kind": "new",
+                        },
+                        "node@24": {
+                            "last_updated_at": "2026-06-01T13:00:00Z",
+                            "pulse_kind": "updated",
                         }
                     }
                 if repo == build_db.HOMEWBREW_CASK_REPO:
@@ -678,7 +718,10 @@ class AvDbAuthorityTests(unittest.TestCase):
                 mock.patch.object(
                     build_db,
                     "_fetch_popularity",
-                    return_value={"awscli": {"installs_per_365_days": 1000, "rank": 3}},
+                    return_value={
+                        "awscli": {"installs_per_365_days": 1000, "rank": 3},
+                        "node@24": {"installs_per_365_days": 2400, "rank": 24},
+                    },
                 ),
                 mock.patch.object(
                     build_db,
@@ -712,6 +755,16 @@ class AvDbAuthorityTests(unittest.TestCase):
         )
         self.assertEqual(db["formulas"]["awscli"]["last_updated_at"], "2026-06-01T12:00:00Z")
         self.assertEqual(db["formulas"]["awscli"]["pulse_kind"], "new")
+        self.assertEqual(db["formulas"]["node@24"]["summary"], "Platform built on V8 to build network applications")
+        self.assertEqual(db["formulas"]["node@24"]["homepage"], "https://nodejs.org/")
+        self.assertEqual(db["formulas"]["node@24"]["version"], "24.11.1")
+        self.assertEqual(db["formulas"]["node@24"]["repository"], "https://github.com/nodejs/node")
+        self.assertEqual(
+            db["formulas"]["node@24"]["popularity"],
+            {"installs_per_365_days": 2400, "rank": 24},
+        )
+        self.assertEqual(db["formulas"]["node@24"]["last_updated_at"], "2026-06-01T13:00:00Z")
+        self.assertEqual(db["formulas"]["node@24"]["pulse_kind"], "updated")
         self.assertEqual(db["casks"]["1password-cli"]["url"], "https://example.com/op.zip")
         self.assertEqual(db["casks"]["1password-cli"]["sha256"], "abc123")
         self.assertEqual(db["casks"]["1password-cli"]["version"], "2.0.0")

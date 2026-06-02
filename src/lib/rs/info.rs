@@ -956,6 +956,10 @@ fn resolve_security_recommendation_search_results(
         .packages
         .iter()
         .filter_map(|(package_key, recommendation)| {
+            let formula = security_recommendation_formula(package_key, recommendation)?;
+            if formula_index_contains_exact_formula(formulae, &formula) {
+                return None;
+            }
             security_recommendation_package_result(package_key, recommendation, formulae)
         })
         .filter(|result| {
@@ -966,6 +970,13 @@ fn resolve_security_recommendation_search_results(
     results.sort_by(|left, right| left.package_name.cmp(&right.package_name));
     results.dedup_by(|left, right| left.package_name == right.package_name);
     Ok(results)
+}
+
+fn formula_index_contains_exact_formula(formulae: &[FormulaIndexEntry], formula: &str) -> bool {
+    let cellar_name = homebrew_formula_cellar_name(formula);
+    formulae
+        .iter()
+        .any(|entry| entry.name == formula || entry.name == cellar_name)
 }
 
 fn search_result_is_versioned_formula(result: &PackageSearchResult) -> bool {

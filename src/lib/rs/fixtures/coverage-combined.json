@@ -79,6 +79,16 @@
           },
           "summary": "JavaScript runtime"
         },
+        "node@24": {
+          "aliases": [],
+          "last_updated_at": "2026-05-02T00:00:00Z",
+          "oldnames": [],
+          "popularity": {
+            "installs_per_365_days": 996,
+            "rank": 4
+          },
+          "summary": "JavaScript runtime"
+        },
         "portable-libffi": {
           "aliases": [],
           "last_updated_at": "2025-09-30T16:01:57+01:00",

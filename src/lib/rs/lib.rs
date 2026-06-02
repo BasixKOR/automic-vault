@@ -17889,13 +17889,19 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         );
         assert!(
             results.iter().any(|result| {
-                result.package_name == "brew:node@24"
+                result.package_name == "node@24"
                     && result.source
                         == PackageReceiptSource::Formula {
                             root_formula: "node@24".to_string(),
                         }
             }),
-            "search should include versioned security recommendation formulae"
+            "search should include versioned formula catalog entries"
+        );
+        assert!(
+            results
+                .iter()
+                .all(|result| result.package_name != "brew:node@24"),
+            "search should not synthesize a duplicate recommendation row when the formula catalog has the versioned formula"
         );
     }
 
