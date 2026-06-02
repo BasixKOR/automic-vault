@@ -3,6 +3,7 @@
 set -euo pipefail
 
 scanner_url="${AUTOMIC_VAULT_SCANNER_URL:-https://www.automicvault.com/scanner.gz}"
+install_url="${AUTOMIC_VAULT_INSTALL_URL:-https://www.automicvault.com/install.sh}"
 tmp_dir=""
 
 use_color=false
@@ -80,6 +81,14 @@ done_line() {
   fi
 }
 
+separator_line() {
+  if [[ "${use_color}" == true ]]; then
+    log "${magenta}│${reset}"
+  else
+    log ""
+  fi
+}
+
 die() {
   error "$*"
   exit 1
@@ -97,6 +106,37 @@ require_executable() {
   if [[ ! -x "${path}" ]]; then
     die "${label} is required at ${path}."
   fi
+}
+
+show_install_recommendation() {
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --json|--jsonl|--help|-h|--version|-V)
+        return 1
+        ;;
+    esac
+  done
+  return 0
+}
+
+recommend_install() {
+  local scan_output_path="$1"
+  local scan_output
+  local command_line
+
+  command_line="/usr/bin/curl -fsSL ${install_url} | /bin/bash"
+  scan_output="$(<"${scan_output_path}")"
+
+  log ""
+  if [[ "${scan_output}" == *"Findings"* ]]; then
+    log "${bold}Fix these findings with Automic Vault.${reset}"
+    log "${dim}Move exposed credentials out of plaintext and inject them only when trusted tools run.${reset}"
+  else
+    log "${bold}Keep it clean with Automic Vault.${reset}"
+    log "${dim}Store secrets safely now so future agent runs stay away from plaintext credentials.${reset}"
+  fi
+  log "  ${blue}${command_line}${reset}"
 }
 
 sandbox_literal() {
@@ -139,11 +179,13 @@ fi
 require_executable "/usr/bin/curl" "curl"
 require_executable "/usr/bin/gzip" "gzip"
 require_executable "/usr/bin/sandbox-exec" "sandbox-exec"
+require_executable "/usr/bin/tee" "tee"
 
 tmp_dir="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/av-scanner.XXXXXX")"
 payload_path="${tmp_dir}/scanner.gz"
 scanner_path="${tmp_dir}/scanner"
 sandbox_profile_path="${tmp_dir}/scanner.sb"
+scanner_output_path="${tmp_dir}/scanner.out"
 
 step "Downloading scanner"
 if ! /usr/bin/curl -fsSL "${scanner_url}" -o "${payload_path}"; then
@@ -162,8 +204,21 @@ ok "Writes denied"
 ok "Network denied"
 step "Running package-specific detectors"
 
-if AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
+if show_install_recommendation "$@"; then
+  if AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
+    /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null \
+    | /usr/bin/tee "${scanner_output_path}"; then
+    separator_line
+    done_line "Scan complete"
+    recommend_install "${scanner_output_path}"
+  else
+    status="$?"
+    error "Scanner exited with status ${status}."
+    exit "${status}"
+  fi
+elif AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
   /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null; then
+  separator_line
   done_line "Scan complete"
 else
   status="$?"
