@@ -643,6 +643,7 @@ fn subs_query_commands_cover_success_and_output_modes() {
     assert!(output.status.success(), "{}", stderr(&output));
     let scanner_stdout = stdout(&output);
     assert!(scanner_stdout.contains("│"));
+    assert!(!scanner_stdout.contains("\x1b[35"));
     assert!(scanner_stdout.contains("Scope"));
     assert!(scanner_stdout.contains("Checked"));
     assert!(!scanner_stdout.contains("╭─ Automic Vault Scan"));

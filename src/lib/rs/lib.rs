@@ -3382,12 +3382,14 @@ impl SecretScannerStreamPrinter {
                 );
             }
             SecretScannerStreamFormat::Wrapped => {
-                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
+                let rail = scan_rail(ScanStyle::Dim, self.color);
                 println!("{rail}");
+                let rail = scan_rail(ScanStyle::Heading, self.color);
                 println!(
                     "{rail} {} Scanning plaintext credential exposure",
                     scan_paint(">", ScanStyle::Heading, self.color)
                 );
+                let rail = scan_rail(ScanStyle::Dim, self.color);
                 println!(
                     "{rail}   {}     {}",
                     scan_paint("Scope", ScanStyle::Dim, self.color),
@@ -3445,9 +3447,10 @@ impl SecretScannerStreamPrinter {
                 println!("     {}", finding.message);
             }
             SecretScannerStreamFormat::Wrapped => {
-                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
                 if !self.printed_findings_header {
+                    let rail = scan_rail(ScanStyle::Dim, self.color);
                     println!("{rail}");
+                    let rail = scan_rail(ScanStyle::Heading, self.color);
                     println!(
                         "{rail} {}",
                         scan_paint("Findings", ScanStyle::Heading, self.color)
@@ -3456,6 +3459,7 @@ impl SecretScannerStreamPrinter {
                 }
                 let severity =
                     scan_paint(&finding.severity, scan_severity_style(finding), self.color);
+                let rail = scan_rail(scan_severity_style(finding), self.color);
                 println!(
                     "{rail}   {}. {} {}",
                     self.finding_count,
@@ -3463,11 +3467,13 @@ impl SecretScannerStreamPrinter {
                     scan_paint(&finding.source, ScanStyle::Dim, self.color)
                 );
                 if let Some(location) = secret_scanner_finding_location(finding) {
+                    let rail = scan_rail(ScanStyle::Path, self.color);
                     println!(
                         "{rail}      {}",
                         scan_paint(&location, ScanStyle::Path, self.color)
                     );
                 }
+                let rail = scan_rail(ScanStyle::Dim, self.color);
                 println!("{rail}      {}", finding.message);
             }
         }
@@ -3495,9 +3501,10 @@ impl SecretScannerStreamPrinter {
                 flush_secret_scanner_stderr()
             }
             SecretScannerStreamFormat::Wrapped => {
-                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
                 if !self.printed_warnings_header {
+                    let rail = scan_rail(ScanStyle::Dim, self.color);
                     println!("{rail}");
+                    let rail = scan_rail(ScanStyle::Warning, self.color);
                     println!(
                         "{rail} {}",
                         scan_paint("Warnings", ScanStyle::Warning, self.color)
@@ -3550,14 +3557,16 @@ impl SecretScannerStreamPrinter {
                 );
             }
             SecretScannerStreamFormat::Wrapped => {
-                let rail = scan_paint("│", ScanStyle::ShellAccent, self.color);
                 if report.findings.is_empty() {
+                    let rail = scan_rail(ScanStyle::Dim, self.color);
                     println!("{rail}");
+                    let rail = scan_rail(ScanStyle::Success, self.color);
                     println!(
                         "{rail} {} No plaintext secret exposure detected",
                         scan_paint("✓", ScanStyle::Success, self.color)
                     );
                 }
+                let rail = scan_rail(ScanStyle::Dim, self.color);
                 println!("{rail}");
                 println!(
                     "{rail}   {}   {}",
@@ -3618,7 +3627,7 @@ fn print_secret_scanner_warning_line(error: &SecretScannerError, color: bool) {
 }
 
 fn print_wrapped_secret_scanner_warning_line(error: &SecretScannerError, color: bool) {
-    let rail = scan_paint("│", ScanStyle::ShellAccent, color);
+    let rail = scan_rail(ScanStyle::Warning, color);
     let source = scan_paint(&error.source, ScanStyle::Dim, color);
     match &error.path {
         Some(path) => println!(
@@ -3734,7 +3743,6 @@ enum ScanStyle {
     Error,
     Heading,
     Path,
-    ShellAccent,
     Success,
     Warning,
 }
@@ -3757,11 +3765,14 @@ fn scan_paint(text: &str, style: ScanStyle, color: bool) -> String {
         ScanStyle::Error => "31;1",
         ScanStyle::Heading => "1",
         ScanStyle::Path => "36",
-        ScanStyle::ShellAccent => "35",
         ScanStyle::Success => "32;1",
         ScanStyle::Warning => "33;1",
     };
     format!("\x1b[{code}m{text}\x1b[0m")
+}
+
+fn scan_rail(style: ScanStyle, color: bool) -> String {
+    scan_paint("│", style, color)
 }
 
 fn scan_stdout_is_rich() -> bool {
