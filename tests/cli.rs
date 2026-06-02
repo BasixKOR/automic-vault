@@ -432,6 +432,7 @@ fn subs_subcommand_parsing_covers_help_version_and_non_root_failures() {
     }
 
     let output = run_nuke(&["scan", "--help"]);
+    assert!(stdout(&output).contains("--skip"));
     assert!(stdout(&output).contains("--isotopes-only"));
 
     let output = run_scanner(&["--help"]);

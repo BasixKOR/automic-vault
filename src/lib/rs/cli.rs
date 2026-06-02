@@ -861,13 +861,21 @@ where
 {
     let mut output = OutputMode::Human;
     let mut path = None;
+    let mut skip_paths = Vec::new();
     let mut pending_path = false;
+    let mut pending_skip = false;
     let mut isotopes_only = false;
 
     for arg in args {
         if pending_path {
             path = Some(PathBuf::from(arg));
             pending_path = false;
+            continue;
+        }
+
+        if pending_skip {
+            skip_paths.push(PathBuf::from(arg));
+            pending_skip = false;
             continue;
         }
 
@@ -893,6 +901,9 @@ where
                 }
                 pending_path = true;
             }
+            Some("--skip") => {
+                pending_skip = true;
+            }
             Some("--isotopes-only") => {
                 isotopes_only = true;
             }
@@ -912,9 +923,13 @@ where
     if pending_path {
         return Err("missing value for --path".to_string());
     }
+    if pending_skip {
+        return Err("missing value for --skip".to_string());
+    }
 
     Ok(Some(SecretScannerRequest {
         path,
+        skip_paths,
         output,
         isotopes_only,
     }))
@@ -1646,6 +1661,7 @@ mod tests {
         .unwrap();
         assert_eq!(request.output, OutputMode::Jsonl);
         assert_eq!(request.path, Some(PathBuf::from("/tmp/secrets")));
+        assert!(request.skip_paths.is_empty());
         assert!(!request.isotopes_only);
 
         let request = parse_secret_scanner_request_from_iter(
@@ -1656,6 +1672,24 @@ mod tests {
         .unwrap();
         assert!(request.isotopes_only);
         assert_eq!(request.path, None);
+        assert!(request.skip_paths.is_empty());
+
+        let request = parse_secret_scanner_request_from_iter(
+            &invocation("av scan"),
+            vec![
+                OsString::from("--skip"),
+                OsString::from("node_modules"),
+                OsString::from("--skip"),
+                OsString::from(".env.local"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            request.skip_paths,
+            vec![PathBuf::from("node_modules"), PathBuf::from(".env.local")]
+        );
 
         assert_eq!(
             parse_secret_scanner_request_from_iter(
@@ -1693,6 +1727,14 @@ mod tests {
             )
             .unwrap_err(),
             "missing value for --path"
+        );
+        assert_eq!(
+            parse_secret_scanner_request_from_iter(
+                &invocation("av scan"),
+                vec![OsString::from("--skip")].into_iter(),
+            )
+            .unwrap_err(),
+            "missing value for --skip"
         );
         #[cfg(unix)]
         assert_eq!(

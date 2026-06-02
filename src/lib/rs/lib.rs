@@ -902,6 +902,7 @@ struct SearchRequest {
 #[derive(Debug, PartialEq, Eq)]
 struct SecretScannerRequest {
     path: Option<PathBuf>,
+    skip_paths: Vec<PathBuf>,
     output: OutputMode,
     isotopes_only: bool,
 }
@@ -3234,6 +3235,7 @@ where
     if !request.isotopes_only {
         (scanned_files, file_probes) = scan_secret_file_probes(
             request.path.as_deref(),
+            &request.skip_paths,
             &mut findings,
             &mut errors,
             &mut seen_findings,
@@ -3783,8 +3785,66 @@ fn output_supports_ansi(is_terminal: bool) -> bool {
     is_terminal && env::var("TERM").map_or(true, |term| term != "dumb")
 }
 
+struct SecretScanSkips {
+    paths: HashSet<PathBuf>,
+    cwd: Option<PathBuf>,
+}
+
+impl SecretScanSkips {
+    fn new(root: Option<&Path>, skip_paths: &[PathBuf]) -> Self {
+        let cwd = env::current_dir().ok().map(|path| normalize_path(&path));
+        let raw_base = secret_scan_raw_skip_base(root);
+        let mut paths = HashSet::new();
+
+        for skip_path in skip_paths {
+            if skip_path.is_absolute() {
+                paths.insert(normalize_path(skip_path));
+                continue;
+            }
+
+            let raw_skip_path = normalize_path(&raw_base.join(skip_path));
+            paths.insert(raw_skip_path.clone());
+            if !raw_skip_path.is_absolute() {
+                if let Some(cwd) = &cwd {
+                    paths.insert(normalize_path(&cwd.join(&raw_skip_path)));
+                }
+            }
+        }
+
+        Self { paths, cwd }
+    }
+
+    fn should_skip(&self, path: &Path) -> bool {
+        if self.paths.is_empty() {
+            return false;
+        }
+
+        let normalized = normalize_path(path);
+        if self.paths.contains(&normalized) {
+            return true;
+        }
+
+        if normalized.is_absolute() {
+            return false;
+        }
+
+        self.cwd
+            .as_ref()
+            .is_some_and(|cwd| self.paths.contains(&normalize_path(&cwd.join(normalized))))
+    }
+}
+
+fn secret_scan_raw_skip_base(root: Option<&Path>) -> PathBuf {
+    match root {
+        Some(root) if root.is_dir() => root.to_path_buf(),
+        Some(root) => root.parent().map(Path::to_path_buf).unwrap_or_default(),
+        None => env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    }
+}
+
 fn scan_secret_file_probes<F>(
     root: Option<&Path>,
+    skip_paths: &[PathBuf],
     findings: &mut Vec<SecretScannerFinding>,
     errors: &mut Vec<SecretScannerError>,
     seen_findings: &mut HashSet<SecretScannerFinding>,
@@ -3797,6 +3857,7 @@ where
     match root {
         Some(path) => scan_secret_file_probes_under_root(
             path,
+            skip_paths,
             findings,
             errors,
             seen_findings,
@@ -3804,9 +3865,13 @@ where
             on_event,
         ),
         None => {
+            let skips = SecretScanSkips::new(None, skip_paths);
             let mut scanned_files = 0;
             let mut file_probes = 0;
             for path in default_secret_scan_paths() {
+                if skips.should_skip(&path) {
+                    continue;
+                }
                 scan_secret_probe_path(
                     &path,
                     findings,
@@ -3825,6 +3890,7 @@ where
 
 fn scan_secret_file_probes_under_root<F>(
     root: &Path,
+    skip_paths: &[PathBuf],
     findings: &mut Vec<SecretScannerFinding>,
     errors: &mut Vec<SecretScannerError>,
     seen_findings: &mut HashSet<SecretScannerFinding>,
@@ -3837,7 +3903,11 @@ where
     if !root.exists() {
         return Err(format!("scan path does not exist: {}", root.display()));
     }
+    let skips = SecretScanSkips::new(Some(root), skip_paths);
     if root.is_file() {
+        if skips.should_skip(root) {
+            return Ok((0, 0));
+        }
         let mut scanned_files = 0;
         let mut file_probes = 0;
         scan_secret_probe_path(
@@ -3858,6 +3928,9 @@ where
             root.display()
         ));
     }
+    if skips.should_skip(root) {
+        return Ok((0, 0));
+    }
     fs::read_dir(root)
         .map_err(|err| format!("failed to read scan path {}: {err}", root.display()))?;
 
@@ -3866,7 +3939,9 @@ where
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| !secret_scan_should_skip_entry(entry))
+        .filter_entry(|entry| {
+            !secret_scan_should_skip_entry(entry) && !skips.should_skip(entry.path())
+        })
     {
         match entry {
             Ok(entry) if entry.file_type().is_file() => {
@@ -10756,6 +10831,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             request,
             Some(SecretScannerRequest {
                 path: Some(PathBuf::from("/tmp/project")),
+                skip_paths: Vec::new(),
                 output: OutputMode::Json,
                 isotopes_only: false,
             })
@@ -10822,6 +10898,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let mut seen_errors = HashSet::new();
         let result = scan_secret_file_probes(
             Some(&root),
+            &[],
             &mut findings,
             &mut errors,
             &mut seen_findings,
@@ -10871,6 +10948,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let mut seen_errors = HashSet::new();
         let result = scan_secret_file_probes(
             Some(&root),
+            &[],
             &mut findings,
             &mut errors,
             &mut seen_findings,
@@ -10901,6 +10979,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         let (scanned_files, file_probes) = scan_secret_file_probes(
             Some(&root),
+            &[],
             &mut findings,
             &mut errors,
             &mut seen_findings,
@@ -10924,6 +11003,67 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings.len(), 1);
         assert!(errors.is_empty());
         assert_eq!(events, vec!["finding:file-probe"]);
+    }
+
+    #[test]
+    fn secret_file_probes_skip_files_and_prune_directories() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("project");
+        let ignored_dir = root.join("ignored");
+        let skipped_file = root.join("skip.env");
+        let kept_file = root.join("keep.env");
+        fs::create_dir_all(&ignored_dir).unwrap();
+        fs::write(&ignored_dir.join(".env"), "IGNORED_TOKEN=secret_secret\n").unwrap();
+        fs::write(&skipped_file, "SKIPPED_TOKEN=secret_secret\n").unwrap();
+        fs::write(&kept_file, "KEPT_TOKEN=secret_secret\n").unwrap();
+
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let (scanned_files, file_probes) = scan_secret_file_probes(
+            Some(&root),
+            &[PathBuf::from("ignored"), skipped_file.clone()],
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(scanned_files, 1);
+        assert_eq!(file_probes, 1);
+        assert!(errors.is_empty());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].path, Some(kept_file.display().to_string()));
+    }
+
+    #[test]
+    fn secret_file_probes_skip_direct_file_scan_targets() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        fs::write(&env_path, "SERVICE_TOKEN=secret_secret\n").unwrap();
+
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let (scanned_files, file_probes) = scan_secret_file_probes(
+            Some(&env_path),
+            &[env_path.clone()],
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(scanned_files, 0);
+        assert_eq!(file_probes, 0);
+        assert!(findings.is_empty());
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -10972,6 +11112,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         let report = run_secret_scan(&SecretScannerRequest {
             path: Some(scan_root.clone()),
+            skip_paths: Vec::new(),
             output: OutputMode::Human,
             isotopes_only: false,
         })
@@ -11006,6 +11147,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
 
         let isotope_only_report = run_secret_scan(&SecretScannerRequest {
             path: Some(scan_root),
+            skip_paths: Vec::new(),
             output: OutputMode::Human,
             isotopes_only: true,
         })

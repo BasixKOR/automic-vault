@@ -64,7 +64,9 @@ pub(crate) fn print_search_usage(program: &str) {
 }
 
 pub(crate) fn print_secret_scanner_usage(program: &str) {
-    println!("Usage: {program} [--path <path>] [--isotopes-only] [--json | --jsonl]");
+    println!(
+        "Usage: {program} [--path <path>] [--skip <path>]... [--isotopes-only] [--json | --jsonl]"
+    );
     println!();
     println!("Scans isotope detectors and likely local secret files for plaintext credentials.");
 }
