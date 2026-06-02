@@ -13,7 +13,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Agent Secret Scanner for Local Developer Tools | Automic Vault</title>
-  <meta name="description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
+  <meta name="description" content="Run a curl one-liner to scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read them.">
   <link rel="canonical" href="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secret-scanner-for-ai-agents/">
@@ -25,12 +25,12 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="AI Agent Secret Scanner for Local Developer Tools">
-  <meta property="og:description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
+  <meta property="og:description" content="Run a curl one-liner to scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read them.">
   <meta property="og:url" content="https://www.automicvault.com/secret-scanner-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
-  <meta name="twitter:description" content="Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.">
+  <meta name="twitter:description" content="Run a curl one-liner to scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read them.">
   <meta name="twitter:title" content="AI Agent Secret Scanner for Local Developer Tools | Automic Vault">
   <script type="application/ld+json">
 {
@@ -122,9 +122,9 @@
                   "url": "https://www.automicvault.com/secret-scanner-for-ai-agents/",
                   "name": "AI Agent Secret Scanner for Local Developer Tools | Automic Vault",
                   "headline": "AI Agent Secret Scanner for Local Developer Tools",
-                  "description": "Scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read or leak them.",
+                  "description": "Run a curl one-liner to scan local developer files, CLI configs, and package detectors for plaintext credentials before AI agents can read them.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-06-01",
+                  "dateModified": "2026-06-02",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -201,7 +201,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&amp;family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
-  <link rel="stylesheet" href="../seo.css?v=2">
+  <link rel="stylesheet" href="../seo.css?v=3">
 </head>
 <body>
   <div class="seo-shell">
@@ -219,14 +219,18 @@
       </nav>
     </header>
     <main>
-      <section class="seo-hero">
+      <section class="seo-hero seo-hero-command">
         <div>
           <p class="kicker">Local credential discovery</p>
-          <h1>The secret scanner for AI agent machines</h1>
-          <p class="lede">Run <code>av secret-scanner</code> before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault package-specific detectors.</p>
-          <p class="updated">Last updated: June 1, 2026</p>
+          <h1>Scan AI agent secrets with one cURL command</h1>
+          <div class="hero-command" aria-label="Run the AI agent secret scanner">
+            <p>Run this first</p>
+            <pre><code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></pre>
+            <span>Downloads the lightweight detector-only scanner and runs it in a read-only, offline sandbox.</span>
+          </div>
+          <p class="lede">Run the sandboxed scanner before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault package-specific detectors.</p>
+          <p class="updated">Last updated: June 2, 2026</p>
           <div class="answer-box"><p>An AI agent secret scanner should find plaintext credentials before the agent run starts. Automic Vault scans likely local secret paths, then pairs detection with runtime controls that prevent repeated plaintext exposure.</p></div>
-          <div class="answer-box"><p>Run the lightweight detector-only scanner in a read-only, offline sandbox: <code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
             <a class="button" href="../secret-scanning-vs-agent-secret-protection/">Compare protection <span aria-hidden="true">›</span></a>
