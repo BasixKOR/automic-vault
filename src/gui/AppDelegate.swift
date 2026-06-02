@@ -749,7 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = MainWindowController(appUpdateCoordinator: appUpdateCoordinator)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1380, height: 862),
+            contentRect: NSRect(x: 0, y: 0, width: 1380, height: 877),
             styleMask: [
                 .titled,
                 .closable,
