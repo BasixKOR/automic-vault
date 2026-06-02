@@ -20,7 +20,7 @@ Run the full publishing cadence:
   - refresh av.db Homebrew authority, rebuild, and upload /db.json at the top
     of every hour
   - refresh package-page enrichment, regenerate package pages, rebuild search,
-    and deploy the static site daily during the 3 AM local-hour slot
+    and deploy the static site once daily at or after the 3 AM local-hour mark
 
 Options:
   --skip-isotope-builds             Pass --skip-builds through to update-db.sh.
@@ -277,9 +277,14 @@ wait_until_next_hour() {
   printf '%s\n' "${target}"
 }
 
-is_daily_slot() {
-  local scheduled_epoch="$1"
-  [[ "$(date -r "${scheduled_epoch}" '+%H')" == "$(printf '%02d' "${daily_hour}")" ]]
+daily_publish_due() {
+  local epoch="$1"
+  local current_date current_hour
+
+  current_date="$(date -r "${epoch}" '+%Y-%m-%d')"
+  current_hour="$(date -r "${epoch}" '+%H')"
+
+  [[ $((10#${current_hour})) -ge "${daily_hour}" && "${last_daily_date}" != "${current_date}" ]]
 }
 
 trap 'log WARN "Stopping update-all"; exit 130' INT TERM
@@ -292,7 +297,7 @@ else
   if [[ "${skip_daily}" == "true" ]]; then
     log WARN "Scheduled daily package-page deploy is disabled"
   else
-    log INFO "Package-page deploy runs daily at 03:00 local time"
+    log INFO "Package-page deploy runs daily at or after 03:00 local time"
   fi
 fi
 
@@ -318,25 +323,32 @@ if [[ "${run_once}" == "true" ]]; then
 fi
 
 while true; do
-  scheduled_epoch="$(wait_until_next_hour)"
-  scheduled_date="$(date -r "${scheduled_epoch}" '+%Y-%m-%d')"
-  scheduled_label="$(date -r "${scheduled_epoch}" '+%Y-%m-%d %H:%M:%S %Z')"
+  wait_until_next_hour >/dev/null
   if run_database_update; then
     if [[ "${skip_daily}" != "true" ]]; then
-      if is_daily_slot "${scheduled_epoch}" && [[ "${last_daily_date}" != "${scheduled_date}" ]]; then
-        log INFO "Starting daily package-page publish for ${scheduled_label}"
+      daily_check_epoch="$(date +%s)"
+      daily_check_date="$(date -r "${daily_check_epoch}" '+%Y-%m-%d')"
+      daily_check_label="$(date -r "${daily_check_epoch}" '+%Y-%m-%d %H:%M:%S %Z')"
+      if daily_publish_due "${daily_check_epoch}"; then
+        log INFO "Starting daily package-page publish for ${daily_check_label}"
         if run_daily_publish; then
-          last_daily_date="${scheduled_date}"
+          last_daily_date="${daily_check_date}"
           log OK "Daily package-page publish completed"
         else
-          log ERROR "Daily package-page publish failed; next retry is tomorrow at 03:00"
+          log ERROR "Daily package-page publish failed; will retry after the next successful database update"
         fi
       else
-        log INFO "Daily package-page deploy is scheduled for 03:00 local time"
+        log INFO "Daily package-page deploy is due once per day at or after 03:00 local time"
       fi
     fi
   else
     log ERROR "Database update failed; retrying at the next hour"
+    if [[ "${skip_daily}" != "true" ]]; then
+      daily_check_epoch="$(date +%s)"
+      if daily_publish_due "${daily_check_epoch}"; then
+        log WARN "Daily package-page publish is due; will retry after the next successful database update"
+      fi
+    fi
   fi
 
   sleep 1
