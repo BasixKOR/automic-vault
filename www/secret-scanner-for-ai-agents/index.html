@@ -172,7 +172,7 @@
                               "name": "What does the AI agent secret scanner check?",
                               "acceptedAnswer": {
                                     "@type": "Answer",
-                                    "text": "It checks likely local secret paths, tool configuration files, project files, and Automic Vault isotope detectors for plaintext credential exposure."
+                                    "text": "It checks likely local secret paths, tool configuration files, project files, and Automic Vault package-specific detectors for plaintext credential exposure."
                               }
                         },
                         {
@@ -223,10 +223,10 @@
         <div>
           <p class="kicker">Local credential discovery</p>
           <h1>The secret scanner for AI agent machines</h1>
-          <p class="lede">Run <code>av secret-scanner</code> before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault isotope detectors.</p>
+          <p class="lede">Run <code>av secret-scanner</code> before an agent session to find plaintext credentials in tool configs, dotenv files, shell profiles, and Automic Vault package-specific detectors.</p>
           <p class="updated">Last updated: June 1, 2026</p>
           <div class="answer-box"><p>An AI agent secret scanner should find plaintext credentials before the agent run starts. Automic Vault scans likely local secret paths, then pairs detection with runtime controls that prevent repeated plaintext exposure.</p></div>
-          <div class="answer-box"><p>Run the lightweight isotope-only scanner in a read-only, offline sandbox: <code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></p></div>
+          <div class="answer-box"><p>Run the lightweight detector-only scanner in a read-only, offline sandbox: <code>/usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</code></p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/">Read the docs <span aria-hidden="true">›</span></a>
             <a class="button" href="../secret-scanning-vs-agent-secret-protection/">Compare protection <span aria-hidden="true">›</span></a>
@@ -243,7 +243,7 @@
           <p>Repository scanners are useful, but agent exposure often starts in the developer home directory: CLI auth files, package manager config, cloud credentials, and environment files.</p>
         </div>
         <div class="proof-list">
-          <article><span>Isotopes</span><h3>Use every detector</h3><p>The scanner runs Automic Vault isotope checks for AWS CLI, npm, pnpm, uv, Kubernetes, Terraform, Maven, mkcert, Helm, Node, and Rust tooling.</p></article>
+          <article><span>Detectors</span><h3>Use every check</h3><p>The scanner runs Automic Vault package-specific checks for AWS CLI, npm, pnpm, uv, Kubernetes, Terraform, Maven, mkcert, Helm, Node, and Rust tooling.</p></article>
           <article><span>Plaintext files</span><h3>Probe likely secret paths</h3><p>Look through <code>.env</code>, <code>.npmrc</code>, <code>.pypirc</code>, <code>.netrc</code>, shell profiles, GitHub CLI hosts, AWS credentials, and kubeconfig.</p></article>
           <article><span>Project mode</span><h3>Point it at a repo</h3><p>Use <code>av secret-scanner --path ./repo</code> to scan small text files while skipping generated build and dependency directories.</p></article>
           <article><span>Automation</span><h3>Emit machine-readable output</h3><p>Use <code>--json</code> or <code>--jsonl</code> for CI logs, local preflight checks, and agent startup scripts.</p></article>
@@ -279,7 +279,7 @@
           <p>Automic Vault pairs discovery with hardening. The scanner tells you what an agent can see; Vault then helps remove supported plaintext paths and gate credential use.</p>
         </div>
         <div class="proof-list">
-          <article><span>Coverage</span><h3>What does the scanner check?</h3><p>It checks likely local secret paths, tool configs, project files, and package-specific isotope detectors for plaintext credential exposure.</p></article>
+          <article><span>Coverage</span><h3>What does the scanner check?</h3><p>It checks likely local secret paths, tool configs, project files, and package-specific detectors for plaintext credential exposure.</p></article>
           <article><span>Limits</span><h3>Is scanning enough?</h3><p>No. Scanning finds exposure. Automic Vault also moves supported credentials out of plaintext files and gates approved tool execution.</p></article>
           <article><span>Timing</span><h3>When should I run it?</h3><p>Run it before agent sessions, after installing new developer tools, and when local configuration changes might expose credentials.</p></article>
           <article><span>Provenance</span><h3>Maintained by Max Howell</h3><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>

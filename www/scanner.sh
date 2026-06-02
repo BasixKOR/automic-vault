@@ -41,10 +41,10 @@ log() {
 title() {
   if [[ "${use_color}" == true ]]; then
     log "${magenta}╭─ ${bold}Automic Vault scanner${reset}"
-    log "${magenta}│${reset} ${dim}isotope-only secret exposure check${reset}"
+    log "${magenta}│${reset} ${dim}detector-only secret exposure check${reset}"
   else
     log "Automic Vault scanner"
-    log "isotope-only secret exposure check"
+    log "detector-only secret exposure check"
   fi
 }
 
@@ -160,7 +160,7 @@ write_sandbox_profile "${scanner_path}" "${sandbox_profile_path}"
 
 ok "Writes denied"
 ok "Network denied"
-step "Running isotope detectors"
+step "Running package-specific detectors"
 
 if AUTOMIC_VAULT_SCANNER_WRAPPER_UI=1 \
   /usr/bin/sandbox-exec -f "${sandbox_profile_path}" "${scanner_path}" "$@" </dev/null; then

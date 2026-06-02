@@ -191,7 +191,7 @@
                         },
                         {
                               "@type": "Question",
-                              "name": "Why are isotope credentials unavailable over SSH?",
+                              "name": "Why are protected tool credentials unavailable over SSH?",
                               "acceptedAnswer": {
                                     "@type": "Answer",
                                     "text": "The macOS login keychain may not be unlocked or trusted inside a fresh SSH session. Unlock the login keychain in that session before running commands that need injected secrets: security unlock-keychain ~/Library/Keychains/login.keychain-db . macOS will ask for your login password when it unlocks the keychain."
@@ -724,8 +724,8 @@ av contain sandbox-profile --allow /usr/local/bin/av</code></pre>
                 <p><code>ripgrep</code>, <code>brew:ffmpeg</code>, <code>cask:visual-studio-code</code></p>
               </div>
               <div>
-                <strong>Agent-oriented packages</strong>
-                <p><code>isotope:gh</code>, <code>isotope:aws-cli</code></p>
+                <strong>Protected tool packages</strong>
+                <p><code>brew:gh</code>, <code>brew:awscli</code></p>
               </div>
               <div>
                 <strong>Language registries</strong>
@@ -807,7 +807,7 @@ av contain sandbox-profile --allow /usr/local/bin/av</code></pre>
               </details>
 
               <details>
-                <summary>Why are isotope credentials unavailable over SSH?</summary>
+                <summary>Why are protected tool credentials unavailable over SSH?</summary>
                 <p>
                   The macOS login keychain may not be unlocked or trusted inside
                   a fresh SSH session. Unlock the login keychain in that session

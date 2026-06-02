@@ -127,7 +127,7 @@ def _apply_isotope_metadata(package, isotope, mode, reason):
         package,
         "isotope",
         0,
-        reason or "Automic Vault isotope coverage is available.",
+        reason or "Automic Vault protected-tool coverage is available.",
     )
 
 

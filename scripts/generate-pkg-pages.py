@@ -38,6 +38,50 @@ GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
     gtag('config', 'G-Y78QKG1T9Y');
   </script>"""
 
+PUBLIC_COPY_REPLACEMENTS = (
+    ("isotopes-only", "detector-only"),
+    ("isotope-only", "detector-only"),
+    ("Radioisotope coverage", "Protected-tool coverage"),
+    ("radioisotope coverage", "protected-tool coverage"),
+    ("Radioisotope Coverage", "Protected-tool Coverage"),
+    ("Radioisotope secret handling", "protected-tool secret handling"),
+    ("radioisotope secret handling", "protected-tool secret handling"),
+    ("Radioisotope security manifest", "Secret-handling manifest"),
+    ("radioisotope security manifest", "secret-handling manifest"),
+    ("Radioisotope manifests", "secret-handling manifests"),
+    ("radioisotope manifests", "secret-handling manifests"),
+    ("Radioisotope manifest", "secret-handling manifest"),
+    ("radioisotope manifest", "secret-handling manifest"),
+    ("Radioisotope READMEs", "secret-handling READMEs"),
+    ("radioisotope READMEs", "secret-handling READMEs"),
+    ("Radioisotope README", "secret-handling README"),
+    ("radioisotope README", "secret-handling README"),
+    ("Radioisotopes", "Protected tools"),
+    ("radioisotopes", "protected tools"),
+    ("Radioisotope", "Protected-tool coverage"),
+    ("radioisotope", "protected-tool coverage"),
+    ("Automic Vault isotope checks", "Automic Vault package-specific checks"),
+    ("Automic Vault isotope detectors", "Automic Vault package-specific detectors"),
+    ("package-specific isotope detectors", "package-specific detectors"),
+    ("isotope detectors", "package-specific detectors"),
+    ("Isotope detectors", "Package-specific detectors"),
+    ("isotope checks", "package-specific checks"),
+    ("Isotope checks", "Package-specific checks"),
+    ("local isotope README", "local coverage README"),
+    ("Local isotope README", "Local coverage README"),
+    ("isotopes", "protected tools"),
+    ("Isotopes", "Protected tools"),
+    ("isotope", "protected tool"),
+    ("Isotope", "Protected tool"),
+)
+
+
+def public_copy(value: Any) -> str:
+    text = str(value or "")
+    for old, new in PUBLIC_COPY_REPLACEMENTS:
+        text = text.replace(old, new)
+    return text
+
 _I18N_LOCALES_CACHE: list[dict[str, Any]] | None = None
 _I18N_PKG_TEMPLATES_CACHE: dict[str, dict[str, str]] | None = None
 
@@ -495,7 +539,7 @@ PACKAGE_HUBS = (
         title="Secret-risk packages",
         kicker="credential exposure",
         description=(
-            "Secret-risk package pages group tools with radioisotope coverage, approval gates, or "
+            "Secret-risk package pages group tools with protected-tool coverage, approval gates, or "
             "Geiger classifier findings for tools an AI agent can invoke locally."
         ),
         risk_hub=True,
@@ -778,7 +822,7 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
         provider, name = package_key.split(":", 1)
         page = get_page(provider, name)
         page.isotope = isotope
-        page.source_notes.append("radioisotope security manifest")
+        page.source_notes.append("secret-handling manifest")
 
     readmes = radioisotope_readmes()
     fork_readmes = isotope_fork_readmes()
@@ -793,8 +837,8 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
             if readme:
                 page.isotope_readme = readme.summary
                 page.isotope_readme_html = readme.html
-                page.isotope_readme_source = readme.source
-                page.source_notes.append("local isotope README")
+                page.isotope_readme_source = tx(None, "localCoverageNotes", "local coverage notes")
+                page.source_notes.append("local coverage README")
 
     for package_key, gate in approval_gate_metadata_by_package().items():
         provider, name = package_key.split(":", 1)
@@ -1538,7 +1582,7 @@ def package_index_signals(page: PackagePage) -> list[str]:
     if page.bottle and (page.bottle.get("available") or page.bottle.get("platforms")):
         signals.append("bottle")
     if page.isotope:
-        signals.append("radioisotope")
+        signals.append("protected_tool_coverage")
     if page.approval_gate:
         signals.append("approval_gate")
     if page.geiger:
@@ -1778,7 +1822,7 @@ def render_index(
     return html_doc(
         title=tx(locale, "packageCatalogTitle", "Package security catalog") + " | Automic Vault",
         description=tx(locale, "packageCatalogDescription", (
-            "Automic Vault package catalog for executable Nucleus packages, radioisotope "
+            "Automic Vault package catalog for executable Nucleus packages, protected-tool "
             "secret handling, approval gates, install metadata, and agent security notes."
         )),
         canonical=locale_url("/pkg/", locale),
@@ -1791,11 +1835,11 @@ def render_index(
     <div class="hero-copy">
       <p class="eyebrow">{html_escape(tx(locale, 'catalogEyebrow', 'Nucleus package intelligence'))}</p>
       <h1 id="pkg-title">{html_escape(tx(locale, "packageCatalogTitle", "Package security catalog"))}</h1>
-      <p class="lede">{html_escape(tx(locale, 'catalogPagesCopy', 'Generated pages for executable packages Nucleus knows about, with local radioisotope manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.'))}</p>
+      <p class="lede">{html_escape(tx(locale, 'catalogPagesCopy', 'Generated pages for executable packages Nucleus knows about, with local secret-handling manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.'))}</p>
     </div>
     <aside class="hero-panel" aria-label="{attr(tx(locale, 'catalogCounts', 'Catalog counts'))}">
       {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
-      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(radioisotope_count))}
+      {metric(tx(locale, 'radioisotopes', 'protected tools'), fmt_int(radioisotope_count))}
       {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
       {metric(tx(locale, 'sourceFiles', 'source files'), fmt_int(manifest.get('source_file_count')))}
     </aside>
@@ -1820,7 +1864,7 @@ def render_index(
     <div>
       <p class="section-kicker">{html_escape(tx(locale, 'catalogPagesKicker', 'crawlable catalog'))}</p>
       <h2>{html_escape(tx(locale, 'catalogPagesTitle', 'Package pages from local source data'))}</h2>
-      <p>{html_escape(tx(locale, 'crawlableCatalog', 'Nucleus package metadata, generated package inventories, radioisotope READMEs, secret migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.'))}</p>
+      <p>{html_escape(tx(locale, 'crawlableCatalog', 'Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.'))}</p>
     </div>
     <div class="package-list" aria-label="{attr(tx(locale, 'popularPackages', 'Popular packages'))}">
       {package_links}
@@ -1899,7 +1943,7 @@ def render_hub_page(
     </div>
     <aside class="hero-panel" aria-label="{attr(tx(locale, 'hubCounts', 'Hub counts'))}">
       {metric(tx(locale, 'packages', 'packages'), fmt_int(len(pages)))}
-      {metric(tx(locale, 'radioisotopes', 'radioisotopes'), fmt_int(len(secured)))}
+      {metric(tx(locale, 'radioisotopes', 'protected tools'), fmt_int(len(secured)))}
       {metric(tx(locale, 'approvalGates', 'approval gates'), fmt_int(len(gated)))}
       {metric(tx(locale, 'updated', 'updated'), updated)}
     </aside>
@@ -1913,7 +1957,7 @@ def render_hub_page(
     <div class="detail-stack">
       <article>
         <h3>{html_escape(tx(locale, 'generatedSource', 'Generated source'))}</h3>
-        <p>{html_escape(tx(locale, 'generatedSourceCopy', 'This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, radioisotope manifests, and approval-gate seeds where available.'))}</p>
+        <p>{html_escape(tx(locale, 'generatedSourceCopy', 'This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available.'))}</p>
       </article>
       <article>
         <h3>{html_escape(tx(locale, 'hubReviewModel', 'Review model'))}</h3>
@@ -1947,7 +1991,7 @@ def hub_description_detail(hub: PackageHub, pages: list[PackagePage], locale: di
     return tx(
         locale,
         "hubDescription",
-        "{title} currently includes {count} generated package pages. {secured} have radioisotope coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+        "{title} currently includes {count} generated package pages. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
         title=hub.title,
         count=len(pages),
         secured=secured,
@@ -1959,7 +2003,7 @@ def hub_description_detail(hub: PackageHub, pages: list[PackagePage], locale: di
 def hub_package_row(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     signals = []
     if page.isotope:
-        signals.append("radioisotope")
+        signals.append(tx(locale, "radioisotopeKicker", "protected-tool coverage"))
     if page.approval_gate:
         signals.append(tx(locale, "approvalGatesKicker", "approval gate"))
     if page.geiger:
@@ -1979,7 +2023,7 @@ def hub_package_reason(page: PackagePage, locale: dict[str, Any] | None = None) 
     if page.isotope:
         title = (page.isotope.get("justification") or {}).get("title")
         if title:
-            return str(title)
+            return public_copy(title)
     if page.approval_gate:
         return tx(locale, "hubPackageReasonApproval", "{count} approval-gate rules are present.", count=page.approval_gate.get("rule_count") or "Local")
     if page.geiger:
@@ -2402,8 +2446,8 @@ def md_security_section(page: PackagePage, locale: dict[str, Any] | None = None)
             lines.append(f"- {md_value(reason)}")
     if page.isotope:
         justification = page.isotope.get("justification") or {}
-        title = justification.get("title") or tx(locale, "radioisotopeCoverage", "Radioisotope coverage")
-        lines.append(f"- **{md_text(tx(locale, 'radioisotopeKicker', 'Radioisotope'))}:** {md_value(title)}")
+        title = public_copy(justification.get("title") or tx(locale, "radioisotopeCoverage", "Protected-tool coverage"))
+        lines.append(f"- **{md_text(tx(locale, 'radioisotopeKicker', 'Protected-tool coverage'))}:** {md_value(title)}")
     if page.approval_gate:
         lines.append(f"- **{md_text(tx(locale, 'approvalRules', 'Approval gate rules'))}:** {md_value(page.approval_gate.get('rule_count'))}")
     lines.append("")
@@ -2457,7 +2501,7 @@ def hero_sentence(page: PackagePage) -> str:
         return f"{sentence_text(summary)} Version {page.version or 'unknown'} via {package_manager_label(page)}; verified {fmt_date(page.last_verified) or fmt_date(page.last_updated_at) or 'from local package data'}.{alternate_text}"
     if page.isotope:
         title = ((page.isotope.get("justification") or {}).get("title") or "secret handling").rstrip(".")
-        return f"Automic Vault tracks {page.display_name} because {title.lower()} affects agent-run command-line tools on macOS."
+        return f"Automic Vault tracks {page.display_name} because {public_copy(title).lower()} affects agent-run command-line tools on macOS."
     if page.approval_gate:
         return f"Automic Vault has approval-gate metadata for {page.display_name}, including high-risk commands and recommended human review points."
     if summary:
@@ -2504,7 +2548,7 @@ def meta_description(page: PackagePage) -> str:
     if page.isotope:
         title = (page.isotope.get("justification") or {}).get("title")
         if title:
-            parts.append(f"Radioisotope coverage: {title}.")
+            parts.append(f"Protected-tool coverage: {public_copy(title)}.")
     if page.approval_gate:
         parts.append(f"Includes {page.approval_gate.get('rule_count')} approval-gate rules.")
     return short_text(" ".join(parts), 155)
@@ -2537,7 +2581,7 @@ def alternate_install_sentence(page: PackagePage) -> str:
 def label_for(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     labels = [page.provider]
     if page.isotope:
-        labels.append(tx(locale, "radioisotopeKicker", "radioisotope"))
+        labels.append(tx(locale, "radioisotopeKicker", "protected-tool coverage"))
     if page.approval_gate:
         labels.append(tx(locale, "approvalGatesKicker", "approval gates"))
     rank = page.popularity.get("rank")
@@ -2563,7 +2607,7 @@ def package_facts(page: PackagePage, locale: dict[str, Any] | None = None) -> st
         label = tx(locale, "installs365d", "365d installs") if page.popularity.get("installs_per_365_days") else tx(locale, "downloads30d", "30d downloads")
         facts.append(metric(label, fmt_int(installs)))
     if page.isotope:
-        facts.append(metric(tx(locale, "radioisotopeKicker", "radioisotope"), tx(locale, "covered", "covered")))
+        facts.append(metric(tx(locale, "radioisotopeKicker", "protected-tool coverage"), tx(locale, "covered", "covered")))
     if page.approval_gate:
         facts.append(metric(tx(locale, "approvalRules", "approval rules"), fmt_int(page.approval_gate.get("rule_count"))))
     if page.last_verified:
@@ -2869,17 +2913,16 @@ def render_security(page: PackagePage, locale: dict[str, Any] | None = None) -> 
     install_signals = render_install_behavior_signals(page, locale)
     if page.isotope:
         justification = page.isotope.get("justification") or {}
-        title = html_escape(justification.get("title") or tx(locale, "radioisotopeCoverage", "Radioisotope coverage"))
-        detail = html_escape(paragraph_text(justification.get("detail") or page.isotope_readme or tx(locale, "radioisotopeManifestFallback", "Automic Vault has a local radioisotope manifest for this package.")))
+        title = html_escape(public_copy(justification.get("title") or tx(locale, "radioisotopeCoverage", "Protected-tool coverage")))
+        detail = html_escape(public_copy(paragraph_text(justification.get("detail") or page.isotope_readme or tx(locale, "radioisotopeManifestFallback", "Automic Vault has a local secret-handling manifest for this package."))))
         caveats = page.isotope.get("caveats") or []
-        caveat_items = "".join(f"<li>{html_escape(item)}</li>" for item in caveats[:8])
+        caveat_items = "".join(f"<li>{html_escape(public_copy(item))}</li>" for item in caveats[:8])
         readme = render_readme_excerpt(page, locale)
-        release = page.isotope.get("releaseUrl") or ""
-        release_html = f'<a href="{attr(release)}">{html_escape(release)}</a>' if release else html_escape(tx(locale, "localRadioisotopeManifest", "Local radioisotope manifest"))
+        release_html = html_escape(tx(locale, "localRadioisotopeManifest", "Local secret-handling manifest"))
         return f"""
 <section id="security" class="pkg-section security-section">
   <div>
-    <p class="section-kicker">{html_escape(tx(locale, 'radioisotopeKicker', 'radioisotope'))}</p>
+    <p class="section-kicker">{html_escape(tx(locale, 'radioisotopeKicker', 'protected-tool coverage'))}</p>
     <h2>{title}</h2>
     <p>{detail}</p>
     {geiger}
@@ -2921,7 +2964,7 @@ def render_security(page: PackagePage, locale: dict[str, Any] | None = None) -> 
 def security_heading(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     if page.geiger:
         return tx(locale, "riskLevel", "Risk level: {level}", level=geiger_level_label(page.geiger))
-    return tx(locale, "radioisotopeMissingHeading", "No radioisotope coverage found yet")
+    return tx(locale, "radioisotopeMissingHeading", "No protected-tool coverage found yet")
 
 
 def security_summary(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
@@ -2932,7 +2975,7 @@ def security_summary(page: PackagePage, locale: dict[str, Any] | None = None) ->
     return tx(
         locale,
         "radioisotopeMissingSummary",
-        "No matching local radioisotope manifest was found for {name}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
+        "No matching local secret-handling manifest was found for {name}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
         name=page.display_name,
     )
 
@@ -3013,7 +3056,7 @@ def render_readme_excerpt(page: PackagePage, locale: dict[str, Any] | None = Non
     return f"""
 <div class="readme-excerpt">
   <p class="readme-label">{html_escape(tx(locale, 'localReadmeExcerpt', 'Local README excerpt'))}</p>
-  {page.isotope_readme_html}
+  {public_copy(page.isotope_readme_html)}
   {source}
 </div>
 """
@@ -3348,7 +3391,7 @@ def link_value(value: str) -> str:
 
 def render_sources(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
     notes = sorted(set(page.source_notes)) or [tx(locale, "localPackageGenerator", "local package generator")]
-    note_html = "".join(f"<li>{html_escape(note)}</li>" for note in notes)
+    note_html = "".join(f"<li>{html_escape(public_copy(note))}</li>" for note in notes)
     return f"""
 <section class="pkg-section split-section sources-section">
   <div>

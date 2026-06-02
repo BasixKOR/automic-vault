@@ -89,7 +89,7 @@ HUB_DEFINITIONS = {
         "label": "Secret-risk packages",
         "terms": (),
         "names": (),
-        "reason": "Has radioisotope, approval-gate, or non-low Geiger security signals.",
+        "reason": "Has protected-tool coverage, approval-gate, or non-low Geiger security signals.",
     },
 }
 
