@@ -54,7 +54,7 @@ final class MainWindowModelTests: XCTestCase {
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,
-            [.installed, .geigerCounter, .securityRecommendations, .outdated]
+            [.installed, .geigerCounter, .outdated]
         )
         XCTAssertEqual(
             MainWindowSection.categoryShortcutSections,

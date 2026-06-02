@@ -30,7 +30,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     static let librarySections: [MainWindowSection] = [
         .installed,
         .geigerCounter,
-        .securityRecommendations,
+        // .securityRecommendations,
         .outdated
     ]
 
