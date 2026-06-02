@@ -17862,9 +17862,9 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
     }
 
     #[test]
-    fn resolve_package_search_results_collapses_versioned_formula_aliases_to_family_base() {
+    fn resolve_package_search_results_surfaces_versioned_formula_aliases() {
         let _env_lock = test_env_lock().lock().unwrap();
-        let (alias, base) = formula_index_entries()
+        let alias = formula_index_entries()
             .unwrap()
             .iter()
             .find_map(|entry| {
@@ -17872,10 +17872,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
                     .aliases
                     .iter()
                     .find(|alias| formula_versioned_base(alias).is_some())
-                    .and_then(|alias| {
-                        formula_versioned_base(alias)
-                            .map(|base| (alias.to_string(), base.to_string()))
-                    })
+                    .cloned()
             })
             .expect("embedded db should carry at least one versioned formula alias");
 
@@ -17887,30 +17884,41 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         )
         .unwrap();
         assert!(
-            results.iter().any(|result| result.package_name == base),
-            "search should include the family base for matching versioned aliases"
-        );
-        assert!(
-            results.iter().all(|result| result.package_name != alias),
-            "search should not surface versioned aliases as separate display results"
+            results.iter().any(|result| result.package_name == alias),
+            "search should include the versioned formula alias display name"
         );
     }
 
     #[test]
-    fn formula_family_search_results_use_unversioned_family_base() {
-        let versioned = formula_family_search_result(&formula_index_entry("gcc@15", &[], &[]));
+    fn formula_search_results_preserve_versioned_display_names() {
+        let versioned =
+            formula_search_result_for_query(&formula_index_entry("gcc@15", &[], &[]), "gcc");
         assert_eq!(
             (
                 versioned.package_name.as_str(),
                 package_source_qualified_name(&versioned.source)
             ),
-            ("gcc", "brew:gcc@15".to_string())
+            ("gcc@15", "brew:gcc@15".to_string())
         );
-        let aliased = formula_family_search_result(&formula_index_entry("node", &["node@25"], &[]));
+        let aliased = formula_search_result_for_query(
+            &formula_index_entry("node", &["node@25"], &[]),
+            "node@25",
+        );
         assert_eq!(
             (
                 aliased.package_name.as_str(),
                 package_source_qualified_name(&aliased.source)
+            ),
+            ("node@25", "brew:node".to_string())
+        );
+        let family = formula_search_result_for_query(
+            &formula_index_entry("node", &["node@25"], &[]),
+            "node",
+        );
+        assert_eq!(
+            (
+                family.package_name.as_str(),
+                package_source_qualified_name(&family.source)
             ),
             ("node", "brew:node".to_string())
         );

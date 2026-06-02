@@ -22,6 +22,8 @@ private let macOSSystemDetectorPackageNames: Set<String> = [
     "ruby",
 ]
 
+private let packageDisplayVersionSuffixScalars = CharacterSet(charactersIn: ".-_")
+
 extension String {
     func strippingPrefix(_ prefix: String) -> String? {
         guard hasPrefix(prefix) else {
@@ -47,6 +49,55 @@ extension String {
 
     var isLocalDetectorDisplayPackageName: Bool {
         hasPrefix("gone:") || hasPrefix("sys:")
+    }
+}
+
+struct PackageDisplayTitle: Equatable {
+    let name: String
+    let versionSuffix: String?
+
+    init(name: String, versionSuffix: String? = nil) {
+        self.name = name
+        self.versionSuffix = versionSuffix
+    }
+
+    init(displayName: String) {
+        guard let separator = displayName.lastIndex(of: "@"),
+              separator != displayName.startIndex else {
+            self.init(name: displayName)
+            return
+        }
+
+        let suffixStart = displayName.index(after: separator)
+        let suffix = displayName[suffixStart...]
+        guard Self.isVersionSuffix(suffix) else {
+            self.init(name: displayName)
+            return
+        }
+
+        self.init(
+            name: String(displayName[..<separator]),
+            versionSuffix: String(displayName[separator...])
+        )
+    }
+
+    private static func isVersionSuffix(_ suffix: Substring) -> Bool {
+        guard suffix.isEmpty == false else {
+            return false
+        }
+
+        var containsDigit = false
+        for scalar in suffix.unicodeScalars {
+            if CharacterSet.decimalDigits.contains(scalar) {
+                containsDigit = true
+                continue
+            }
+            if packageDisplayVersionSuffixScalars.contains(scalar) {
+                continue
+            }
+            return false
+        }
+        return containsDigit
     }
 }
 

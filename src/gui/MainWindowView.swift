@@ -251,7 +251,7 @@ struct MainWindowView: View {
                     ForEach(model.displayedPackages, id: \.selectionID) { package in
                         PackageRow(
                             package: package,
-                            title: model.displayName(for: package),
+                            title: packageRowTitle(for: package),
                             description: model.packageDescription(for: package),
                             version: packageRowVersion(for: package),
                             inlineBadges: model.packageInlineBadges(for: package),
@@ -307,6 +307,14 @@ struct MainWindowView: View {
             return model.pulseListTimestampText(for: result)
         }
         return model.versionText(for: package)
+    }
+
+    private func packageRowTitle(for package: PackagePresentation) -> PackageDisplayTitle {
+        let title = model.displayName(for: package)
+        guard model.isSearchActive else {
+            return PackageDisplayTitle(name: title)
+        }
+        return PackageDisplayTitle(displayName: title)
     }
 
     private func packageRowBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
@@ -1254,7 +1262,7 @@ private struct CountPill: View {
 
 private struct PackageRow: View {
     let package: PackagePresentation
-    let title: String
+    let title: PackageDisplayTitle
     let description: String
     let version: String
     let inlineBadges: [MainWindowPackageBadge]
@@ -1267,12 +1275,7 @@ private struct PackageRow: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AVGlassPalette.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .layoutPriority(1)
+                        PackageRowTitleText(title: title)
                         if version.isEmpty == false {
                             Text(version)
                                 .font(.system(size: 12, weight: .regular))
@@ -1308,6 +1311,29 @@ private struct PackageRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct PackageRowTitleText: View {
+    let title: PackageDisplayTitle
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(title.name)
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let versionSuffix = title.versionSuffix {
+                Text(versionSuffix)
+                    .foregroundStyle(AVGlassPalette.quietText.opacity(0.68))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .layoutPriority(1)
     }
 }
 

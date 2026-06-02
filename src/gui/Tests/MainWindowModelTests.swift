@@ -3,6 +3,29 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class MainWindowModelTests: XCTestCase {
+    func testPackageDisplayTitleSplitsVersionSuffixes() {
+        XCTAssertEqual(
+            PackageDisplayTitle(displayName: "python@3.13"),
+            PackageDisplayTitle(name: "python", versionSuffix: "@3.13")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(displayName: "openssl@3"),
+            PackageDisplayTitle(name: "openssl", versionSuffix: "@3")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(displayName: "@openai/codex"),
+            PackageDisplayTitle(name: "@openai/codex")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(displayName: "@openai/codex@1.2.3"),
+            PackageDisplayTitle(name: "@openai/codex", versionSuffix: "@1.2.3")
+        )
+        XCTAssertEqual(
+            PackageDisplayTitle(displayName: "openssl@stable"),
+            PackageDisplayTitle(name: "openssl@stable")
+        )
+    }
+
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,

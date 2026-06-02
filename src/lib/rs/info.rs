@@ -372,7 +372,7 @@ pub(crate) fn resolve_package_search_results(
     let mut results = formula_index_entries()?
         .iter()
         .filter(|entry| formula_index_entry_matches(entry, &lowered_query))
-        .map(formula_family_search_result)
+        .map(|entry| formula_search_result_for_query(entry, &lowered_query))
         .collect::<Vec<_>>();
     let db = crate::cli::load_db()?;
     crate::cli::ensure_db_schema(&db)?;
@@ -1196,17 +1196,29 @@ fn non_empty_docs(docs: &[String]) -> Vec<String> {
     docs.iter().filter_map(|doc| string_or_none(doc)).collect()
 }
 
-pub(crate) fn formula_family_search_result(entry: &FormulaIndexEntry) -> PackageSearchResult {
-    let package_name = formula_versioned_base(&entry.name)
-        .map(str::to_string)
-        .or_else(|| {
-            entry
-                .aliases
-                .iter()
-                .find_map(|alias| formula_versioned_base(alias).map(str::to_string))
-        })
-        .unwrap_or_else(|| entry.name.clone());
+pub(crate) fn formula_search_result_for_query(
+    entry: &FormulaIndexEntry,
+    query: &str,
+) -> PackageSearchResult {
+    let package_name = formula_search_result_display_name(entry, query);
     formula_search_result(entry, &package_name)
+}
+
+fn formula_search_result_display_name(entry: &FormulaIndexEntry, query: &str) -> String {
+    let query = query.trim().to_ascii_lowercase();
+    if query.is_empty() || entry.name.to_ascii_lowercase().contains(&query) {
+        return entry.name.clone();
+    }
+
+    entry
+        .aliases
+        .iter()
+        .chain(entry.oldnames.iter())
+        .find(|name| {
+            formula_versioned_base(name).is_some() && name.to_ascii_lowercase().contains(&query)
+        })
+        .cloned()
+        .unwrap_or_else(|| entry.name.clone())
 }
 
 #[cfg(test)]
