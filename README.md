@@ -103,6 +103,10 @@ macOS first.
 
 Linux and Windows are not supported today.
 
+> [!NOTE]
+> - 20k stars: we ship Linux
+> - 50k stars: we ship Windows
+
 ## Hacking
 
 ```sh
