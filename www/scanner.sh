@@ -154,7 +154,7 @@ recommend_install() {
 
   log ""
   if [[ "${use_color}" == true ]]; then
-    log "${ink}╭─ ${bold}Next step${reset}"
+    log "${ink}╭─ ${bold}👏 NO 👏 MORE 👏 PLAINTEXT 👏 SECRETS 👏${reset}"
     log "${ink}│ ${bold}${headline}${reset}"
     log "${muted}│ ${detail}${reset}"
     log "${muted}│${reset}"
@@ -162,7 +162,7 @@ recommend_install() {
     log "${blue}│ ${command_line}${reset}"
     log "${muted}╰─${reset}"
   else
-    log "Next step"
+    log "👏 NO 👏 MORE 👏 PLAINTEXT 👏 SECRETS 👏"
     log "${headline}"
     log "${detail}"
     log ""
