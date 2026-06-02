@@ -10258,11 +10258,23 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             &RequestedPackage::HomebrewFormula("node".to_string()),
         )
         .unwrap();
+        let expected_node_summary = crate::cli::load_db()
+            .unwrap()
+            .formulas
+            .get("node")
+            .and_then(|metadata| string_or_none(&metadata.summary))
+            .unwrap();
+        let formula_homebrew_info = formula.homebrew_info.unwrap();
         assert!(!formula.installed);
         assert_eq!(formula.latest_version, Some("22.0.0".to_string()));
         assert_eq!(
-            formula.homebrew_info.unwrap().description,
-            Some("Node runtime".to_string())
+            formula_homebrew_info.description,
+            Some(expected_node_summary)
+        );
+        assert_eq!(formula_homebrew_info.license, Some("MIT".to_string()));
+        assert_eq!(
+            formula_homebrew_info.dependencies,
+            vec!["openssl@3".to_string()]
         );
 
         let cask = resolve_package_info(
@@ -11942,6 +11954,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         let home = temp.path().join("home");
         let xdg_config = temp.path().join("xdg-config");
         let xdg_cache = temp.path().join("xdg-cache");
+        let xdg_data = temp.path().join("xdg-data");
         let xdg_state = temp.path().join("xdg-state");
         let xdg_runtime = temp.path().join("xdg-runtime");
         let missing = temp.path().join("missing");
@@ -11980,6 +11993,16 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         write_fixture(
             &home.join(".config/acli/jira_config.yaml"),
             "token: atlassian\n",
+        );
+        write_fixture(&xdg_data.join("atuin/key"), "atuin-secret\n");
+        write_fixture(
+            &xdg_config.join("atuin/config.toml"),
+            "session_path = \"~/atuin-session\"\n",
+        );
+        write_fixture(&home.join("atuin-session"), "atuin-session-secret\n");
+        write_fixture(
+            &home.join(".config/letsencrypt/live/example/privkey.pem"),
+            "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
         );
         write_fixture(
             &akamai_edgerc,
@@ -12022,8 +12045,28 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}},"credsStore":"osxkeychain","credHelpers":{"ghcr.io":"desktop"}}"#,
         );
         write_fixture(
+            &home.join(".docker/machine/machines/default/id_rsa"),
+            "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----\n",
+        );
+        write_fixture(
+            &home.join(".fastlane/spaceship/default/cookie"),
+            "---\n- !ruby/object:HTTP::Cookie\n  name: myacinfo\n  value: secret\n",
+        );
+        write_fixture(
             &xdg_config.join("fastly/config.toml"),
             "token = \"fastly\"\n",
+        );
+        write_fixture(
+            &home.join(".cloudflared/cert.pem"),
+            "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+        );
+        write_fixture(
+            &xdg_config.join("cloudflared/credentials.json"),
+            r#"{"TunnelSecret":"cloudflared-secret"}"#,
+        );
+        write_fixture(
+            &xdg_config.join(".wrangler/config/default.toml"),
+            "oauth_token = \"wrangler-oauth\"\nrefresh_token = \"wrangler-refresh\"\n",
         );
         write_fixture(&home.join(".fly/config.yml"), "access_token: FlyV1 token\n");
         write_fixture(
@@ -12056,6 +12099,14 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         write_fixture(
             &home.join(".nuget/NuGet/NuGet.Config"),
             r#"<configuration></configuration>"#,
+        );
+        write_fixture(
+            &xdg_config.join("openvpn/prod.auth"),
+            "openvpn-user\nopenvpn-password\n",
+        );
+        write_fixture(
+            &xdg_config.join("openvpn/prod.ovpn"),
+            "auth-user-pass prod.auth\n<tls-crypt>\nline1\nline2\n</tls-crypt>\n",
         );
         write_fixture(&npmrc, "_authToken=npm-token\n");
         write_fixture(
@@ -12101,6 +12152,10 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             &vagrant_home.join("data/vagrant_login_token"),
             "vagrant-token\n",
         );
+        write_fixture(
+            &xdg_data.join("com.vercel.cli/auth.json"),
+            r#"{"token":"vercel-token","refreshToken":"vercel-refresh"}"#,
+        );
         write_fixture(&home.join(".vault-token"), "hvs.secret\n");
         write_fixture(&home.join(".vt.toml"), "apikey=\"vt-key\"\n");
         write_fixture(&home.join(".vultr-cli.yaml"), "api-key: vultr-key\n");
@@ -12126,6 +12181,7 @@ machine example.com login user password netrc-token
             ("HOME", home.to_str().unwrap()),
             ("XDG_CONFIG_HOME", xdg_config.to_str().unwrap()),
             ("XDG_CACHE_HOME", xdg_cache.to_str().unwrap()),
+            ("XDG_DATA_HOME", xdg_data.to_str().unwrap()),
             ("XDG_STATE_HOME", xdg_state.to_str().unwrap()),
             ("XDG_RUNTIME_DIR", xdg_runtime.to_str().unwrap()),
             ("AKAMAI_EDGERC", akamai_edgerc.to_str().unwrap()),
@@ -12190,12 +12246,20 @@ machine example.com login user password netrc-token
             "akamai",
             "algolia",
             "argocd",
+            "atuin",
             "bitwarden-cli",
+            "certbot",
+            "cloudflare-wrangler",
+            "cloudflared",
             "docker",
+            "docker-machine",
+            "fastlane",
             "gh",
             "kubernetes-cli",
+            "openvpn",
             "supabase",
             "terraform",
+            "vercel-cli",
         ] {
             assert!(
                 triggered.contains(&expected),
