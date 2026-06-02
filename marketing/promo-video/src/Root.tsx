@@ -5,6 +5,10 @@ import {
   brewInstallSecurityDurationInFrames,
 } from "./BrewInstallSecurity";
 import { MyComposition, durationInFrames } from "./Composition";
+import {
+  ScannerOneLinerComposition,
+  scannerOneLinerDurationInFrames,
+} from "./ScannerOneLiner";
 import { SecretSkillsComposition, secretSkillsDurationInFrames } from "./SecretSkills";
 
 export const RemotionRoot: React.FC = () => {
@@ -30,6 +34,14 @@ export const RemotionRoot: React.FC = () => {
         id="AutomicVaultBrewInstallSecurity"
         component={BrewInstallSecurityComposition}
         durationInFrames={brewInstallSecurityDurationInFrames}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="AutomicVaultScannerOneLiner"
+        component={ScannerOneLinerComposition}
+        durationInFrames={scannerOneLinerDurationInFrames}
         fps={30}
         width={1920}
         height={1080}

@@ -25,9 +25,11 @@
     "render": "remotion render AutomicVaultPromo out/automic-vault-promo.mp4 --muted",
     "render:skill-secrets": "remotion render AutomicVaultSkillSecrets out/automic-vault-skill-secrets.mp4 --muted",
     "render:brew-install-security": "remotion render AutomicVaultBrewInstallSecurity out/automic-vault-brew-install-security.mp4 --muted",
+    "render:scanner-one-liner": "remotion render AutomicVaultScannerOneLiner out/automic-vault-scanner-one-liner.mp4 --muted",
     "still": "remotion still AutomicVaultPromo",
     "still:skill-secrets": "remotion still AutomicVaultSkillSecrets",
     "still:brew-install-security": "remotion still AutomicVaultBrewInstallSecurity",
+    "still:scanner-one-liner": "remotion still AutomicVaultScannerOneLiner",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"
   },

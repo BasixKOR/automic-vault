@@ -8,6 +8,7 @@ The compositions are 1920x1080 at 30 fps. Rendered output is ignored under
 - `AutomicVaultPromo`
 - `AutomicVaultSkillSecrets`
 - `AutomicVaultBrewInstallSecurity`
+- `AutomicVaultScannerOneLiner`
 
 ## Commands
 
@@ -17,6 +18,7 @@ npm run dev
 npm run lint
 npm run render
 npm run render:brew-install-security
+npm run render:scanner-one-liner
 ```
 
 Useful still checks:
@@ -28,4 +30,7 @@ npm run still -- out/stills/frame-33s.jpg --frame=990 --scale=0.25
 npm run still:brew-install-security -- out/stills/brew-act-1.jpg --frame=70 --scale=0.25
 npm run still:brew-install-security -- out/stills/brew-act-2.jpg --frame=620 --scale=0.25
 npm run still:brew-install-security -- out/stills/brew-act-3.jpg --frame=790 --scale=0.25
+npm run still:scanner-one-liner -- out/stills/scanner-command.jpg --frame=96 --scale=0.25
+npm run still:scanner-one-liner -- out/stills/scanner-findings.jpg --frame=420 --scale=0.25
+npm run still:scanner-one-liner -- out/stills/scanner-end-card.jpg --frame=600 --scale=0.25
 ```
