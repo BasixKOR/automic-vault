@@ -113,6 +113,8 @@ fn generate_isotope_integrations() {
     entries.sort_by(|left, right| left.isotope_name.cmp(&right.isotope_name));
     entries.dedup_by(|left, right| left.isotope_name == right.isotope_name);
     let mut output = String::from(concat!(
+        "#[cfg(not(target_os = \"macos\"))]\n",
+        "compile_error!(\"radioisotope av-inject shebang wrappers are macOS-only for now\");\n\n",
         "pub(crate) struct IsotopeIntegration {\n",
         "  pub(crate) name: &'static str,\n",
         "  pub(crate) detect: Option<fn() -> Result<bool, String>>,\n",
