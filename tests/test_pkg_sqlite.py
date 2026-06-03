@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import closing
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -55,6 +56,8 @@ class FakeBuildPageModule(FakePageModule):
                 display_name=name,
                 key=f"brew:{name}",
                 summary=f"{name} summary",
+                package_manager_url=f"https://brew.example/{name}",
+                version="1.0.0",
                 category="developer-tools",
                 license="MIT",
                 repository="",
@@ -152,6 +155,14 @@ class FakeBuildPageModule(FakePageModule):
         return page.provider
 
     @staticmethod
+    def install_command(page):
+        return f"av install {page.name}"
+
+    @staticmethod
+    def native_install_command(page):
+        return f"brew install {page.name}"
+
+    @staticmethod
     def clean_summary(value):
         return value
 
@@ -215,6 +226,42 @@ class PackageSqliteTests(unittest.TestCase):
                         search_text="awscli brew:awscli aws cloud cli",
                     )
                 ],
+                [
+                    module.PackageRecord(
+                        path="/pkg/brew/awscli/",
+                        provider="brew",
+                        slug="awscli",
+                        package_key="brew:awscli",
+                        name="awscli",
+                        display_name="awscli",
+                        summary="AWS command line interface.",
+                        provider_label="Homebrew",
+                        package_manager_url="https://brew.example/awscli",
+                        install_command="av install awscli",
+                        native_install_command="brew install awscli",
+                        version="2.0.0",
+                        category="developer-tools",
+                        license="Apache-2.0",
+                        homepage="https://aws.amazon.com/cli/",
+                        repository="",
+                        rank=2,
+                        last_updated_at="2026-06-02",
+                        indexable=True,
+                        data={"aliases": ["aws"]},
+                        search_text="awscli brew:awscli aws cloud cli",
+                    )
+                ],
+                [
+                    module.HubRecord(
+                        path="/pkg/cloud/",
+                        slug="cloud",
+                        title="Cloud",
+                        description="Cloud tools",
+                        group="topical",
+                        data={},
+                    )
+                ],
+                [module.HubPackageRecord("cloud", "brew:awscli", 1, "Cloud CLI")],
                 {
                     "schema": module.SCHEMA_VERSION,
                     "source_hash": "hash-a",
@@ -232,6 +279,15 @@ class PackageSqliteTests(unittest.TestCase):
                 search_rows = connection.execute(
                     "SELECT path, locale, title FROM search_documents"
                 ).fetchall()
+                package_rows = connection.execute(
+                    "SELECT path, package_key, data_json FROM packages"
+                ).fetchall()
+                hub_rows = connection.execute(
+                    "SELECT path, slug, title FROM hubs"
+                ).fetchall()
+                hub_package_rows = connection.execute(
+                    "SELECT hub_slug, package_key, reason FROM hub_packages"
+                ).fetchall()
                 integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
             finally:
                 connection.close()
@@ -242,6 +298,10 @@ class PackageSqliteTests(unittest.TestCase):
         self.assertEqual(rows["/pkg/brew/awscli/index.md"], "text/markdown; charset=utf-8")
         self.assertEqual(metadata["source_hash"], "hash-a")
         self.assertEqual(search_rows, [("/pkg/brew/awscli/", "en", "awscli")])
+        self.assertEqual(package_rows[0][0:2], ("/pkg/brew/awscli/", "brew:awscli"))
+        self.assertEqual(json.loads(package_rows[0][2])["aliases"], ["aws"])
+        self.assertEqual(hub_rows, [("/pkg/cloud/", "cloud", "Cloud")])
+        self.assertEqual(hub_package_rows, [("cloud", "brew:awscli", "Cloud CLI")])
 
     def test_source_hash_metadata_changes_between_artifacts(self):
         module = load_module(SQLITE_SCRIPT, "pkg_sqlite_hash_test")
@@ -253,17 +313,20 @@ class PackageSqliteTests(unittest.TestCase):
                     output,
                     [],
                     [],
+                    [],
+                    [],
+                    [],
                     {
                         "schema": module.SCHEMA_VERSION,
                         "source_hash": source_hash,
                         "manifest": {"source_hash": source_hash},
                     },
                 )
-            with sqlite3.connect(first) as connection:
+            with closing(sqlite3.connect(first)) as connection:
                 first_hash = connection.execute(
                     "SELECT value FROM metadata WHERE key = 'source_hash'"
                 ).fetchone()[0]
-            with sqlite3.connect(second) as connection:
+            with closing(sqlite3.connect(second)) as connection:
                 second_hash = connection.execute(
                     "SELECT value FROM metadata WHERE key = 'source_hash'"
                 ).fetchone()[0]
@@ -296,23 +359,23 @@ class PackageSqliteTests(unittest.TestCase):
     def test_build_records_includes_localized_sitemaps_and_indexable_markdown(self):
         module = load_module(SQLITE_SCRIPT, "pkg_sqlite_build_test")
         with tempfile.TemporaryDirectory() as tmp:
-            responses, documents, metadata = module.build_records(
+            responses, documents, packages, hubs, hub_packages, metadata = module.build_records(
                 FakeBuildPageModule,
                 pathlib.Path(tmp) / "pkg.sqlite",
             )
 
         response_by_path = {record.path: record for record in responses}
-        self.assertIn("/pkg/brew/ripgrep/index.md", response_by_path)
-        self.assertIn("/de/pkg/brew/ripgrep/index.md", response_by_path)
-        self.assertNotIn("/pkg/brew/thin/index.md", response_by_path)
-        self.assertIn("/de/pkg/sitemap.xml", response_by_path)
-        self.assertIn("/de/pkg/sitemap-brew.xml", response_by_path)
-        self.assertIn(
-            'hreflang="de"',
-            response_by_path["/de/pkg/sitemap-brew.xml"].body.decode("utf-8"),
-        )
+        package_by_key = {record.package_key: record for record in packages}
+        self.assertIn("/pkg/styles.css", response_by_path)
+        self.assertIn("/de/pkg/search.js", response_by_path)
+        self.assertEqual(package_by_key["brew:ripgrep"].indexable, True)
+        self.assertEqual(package_by_key["brew:thin"].indexable, False)
+        self.assertEqual(package_by_key["brew:ripgrep"].install_command, "av install ripgrep")
+        self.assertEqual(hubs, [])
+        self.assertEqual(hub_packages, [])
         self.assertEqual({document.locale for document in documents}, {"en", "de"})
         self.assertEqual(metadata["source_hash"], "fixture-hash")
+        self.assertIn("last_modified", metadata)
 
 
 if __name__ == "__main__":

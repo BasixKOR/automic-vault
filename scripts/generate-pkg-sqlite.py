@@ -45,6 +45,49 @@ class SearchDocument:
     search_text: str
 
 
+@dataclass(frozen=True)
+class PackageRecord:
+    path: str
+    provider: str
+    slug: str
+    package_key: str
+    name: str
+    display_name: str
+    summary: str
+    provider_label: str
+    package_manager_url: str
+    install_command: str
+    native_install_command: str
+    version: str
+    category: str
+    license: str
+    homepage: str
+    repository: str
+    rank: int | None
+    last_updated_at: str
+    indexable: bool
+    data: dict[str, Any]
+    search_text: str
+
+
+@dataclass(frozen=True)
+class HubRecord:
+    path: str
+    slug: str
+    title: str
+    description: str
+    group: str
+    data: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class HubPackageRecord:
+    hub_slug: str
+    package_key: str
+    position: int
+    reason: str
+
+
 class Terminal:
     def __init__(self, json_mode: bool = False):
         self.json_mode = json_mode
@@ -152,6 +195,55 @@ def create_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX search_documents_locale_idx
           ON search_documents(locale);
+
+        CREATE TABLE packages (
+          path TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          slug TEXT NOT NULL,
+          package_key TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          provider_label TEXT NOT NULL,
+          package_manager_url TEXT NOT NULL,
+          install_command TEXT NOT NULL,
+          native_install_command TEXT NOT NULL,
+          version TEXT NOT NULL,
+          category TEXT NOT NULL,
+          license TEXT NOT NULL,
+          homepage TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          rank INTEGER,
+          last_updated_at TEXT NOT NULL,
+          indexable INTEGER NOT NULL,
+          data_json TEXT NOT NULL,
+          search_text TEXT NOT NULL
+        );
+
+        CREATE INDEX packages_provider_slug_idx
+          ON packages(provider, slug);
+        CREATE INDEX packages_rank_idx
+          ON packages(rank);
+
+        CREATE TABLE hubs (
+          path TEXT PRIMARY KEY,
+          slug TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          group_name TEXT NOT NULL,
+          data_json TEXT NOT NULL
+        );
+
+        CREATE TABLE hub_packages (
+          hub_slug TEXT NOT NULL,
+          package_key TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          PRIMARY KEY(hub_slug, package_key)
+        );
+
+        CREATE INDEX hub_packages_hub_idx
+          ON hub_packages(hub_slug, position);
         """
     )
 
@@ -160,6 +252,9 @@ def write_sqlite(
     output_path: Path,
     responses: list[ResponseRecord],
     search_documents: list[SearchDocument],
+    packages: list[PackageRecord],
+    hubs: list[HubRecord],
+    hub_packages: list[HubPackageRecord],
     metadata: dict[str, Any],
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +308,70 @@ def write_sqlite(
                         document.search_text,
                     )
                     for document in search_documents
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO packages(
+                  path, provider, slug, package_key, name, display_name, summary,
+                  provider_label, package_manager_url, install_command, native_install_command,
+                  version, category, license, homepage, repository, rank, last_updated_at,
+                  indexable, data_json, search_text
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        package.path,
+                        package.provider,
+                        package.slug,
+                        package.package_key,
+                        package.name,
+                        package.display_name,
+                        package.summary,
+                        package.provider_label,
+                        package.package_manager_url,
+                        package.install_command,
+                        package.native_install_command,
+                        package.version,
+                        package.category,
+                        package.license,
+                        package.homepage,
+                        package.repository,
+                        package.rank,
+                        package.last_updated_at,
+                        1 if package.indexable else 0,
+                        json.dumps(package.data, sort_keys=True, separators=(",", ":")),
+                        package.search_text,
+                    )
+                    for package in packages
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO hubs(path, slug, title, description, group_name, data_json)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        hub.path,
+                        hub.slug,
+                        hub.title,
+                        hub.description,
+                        hub.group,
+                        json.dumps(hub.data, sort_keys=True, separators=(",", ":")),
+                    )
+                    for hub in hubs
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO hub_packages(hub_slug, package_key, position, reason)
+                VALUES(?, ?, ?, ?)
+                """,
+                [
+                    (record.hub_slug, record.package_key, record.position, record.reason)
+                    for record in hub_packages
                 ],
             )
             connection.execute("PRAGMA optimize")
@@ -407,6 +566,7 @@ def manifest_metadata(manifest: dict[str, Any]) -> dict[str, Any]:
         "manifest": manifest,
         "source_hash": manifest.get("source_hash", ""),
         "generated_at": manifest.get("generated_at", ""),
+        "last_modified": http_date(manifest.get("generated_at")),
     }
 
 
@@ -463,7 +623,106 @@ def page_search_text(page_module: Any, page: Any, locale: dict[str, Any] | None)
     return page_module.normalize_space(" ".join(str(piece or "") for piece in pieces))
 
 
-def build_records(page_module: Any, output_path: Path) -> tuple[list[ResponseRecord], list[SearchDocument], dict[str, Any]]:
+def string_items(values: Any, keys: tuple[str, ...] = ("name", "target", "source", "label", "title")) -> list[str]:
+    items: list[str] = []
+    if not isinstance(values, list | tuple | set):
+        return items
+    for value in values:
+        if isinstance(value, dict):
+            for key in keys:
+                text = str(value.get(key) or "").strip()
+                if text:
+                    items.append(text)
+                    break
+        else:
+            text = str(value or "").strip()
+            if text:
+                items.append(text)
+    return sorted(dict.fromkeys(items))
+
+
+def package_security_signals(page_module: Any, page: Any) -> list[str]:
+    signals: list[str] = []
+    if page.isotope:
+        justification = page.isotope.get("justification") or {}
+        title = page_module.public_copy(justification.get("title") or "")
+        if title:
+            signals.append(title)
+    if page.geiger:
+        signals.extend(str(item) for item in page.geiger.get("reasons") or [])
+    if page.approval_gate:
+        rule_count = page.approval_gate.get("rule_count")
+        if rule_count:
+            signals.append(f"{rule_count} approval-gate rules")
+        signals.extend(str(item) for item in page.approval_gate.get("rules") or [])
+    return sorted(dict.fromkeys(item.strip() for item in signals if item and item.strip()))
+
+
+def package_data(page_module: Any, page: Any) -> dict[str, Any]:
+    return {
+        "aliases": sorted(str(item) for item in getattr(page, "aliases", [])),
+        "binaries": string_items(getattr(page, "binaries", [])),
+        "classifiers": string_items(getattr(page, "classifiers", [])),
+        "executables": string_items(getattr(page, "executables", [])),
+        "hubs": [
+            {
+                "slug": str(hub.get("slug") or ""),
+                "label": str(hub.get("label") or ""),
+                "reason": str(hub.get("reason") or ""),
+            }
+            for hub in getattr(page, "package_hubs", [])
+            if isinstance(hub, dict)
+        ],
+        "keywords": string_items(getattr(page, "keywords", [])),
+        "related": string_items(getattr(page, "related_packages", []), ("label", "name", "target", "package", "key")),
+        "security": package_security_signals(page_module, page),
+    }
+
+
+def package_record(page_module: Any, page: Any, search_text: str) -> PackageRecord:
+    return PackageRecord(
+        path=page.path,
+        provider=page.provider,
+        slug=page.slug,
+        package_key=page.key,
+        name=page.name,
+        display_name=page.display_name,
+        summary=page_module.short_text(page_module.clean_summary(page.summary) or page_module.hero_sentence(page), 320),
+        provider_label=page_module.package_manager_label(page),
+        package_manager_url=getattr(page, "package_manager_url", ""),
+        install_command=page_module.install_command(page),
+        native_install_command=page_module.native_install_command(page),
+        version=getattr(page, "version", ""),
+        category=getattr(page, "category", ""),
+        license=getattr(page, "license", ""),
+        homepage=getattr(page, "homepage", ""),
+        repository=getattr(page, "repository", ""),
+        rank=page.popularity.get("rank") if isinstance(page.popularity, dict) else None,
+        last_updated_at=getattr(page, "last_updated_at", ""),
+        indexable=page_module.is_indexable_package_page(page),
+        data=package_data(page_module, page),
+        search_text=search_text,
+    )
+
+
+def hub_record(hub: Any) -> HubRecord:
+    return HubRecord(
+        path=hub.path,
+        slug=hub.slug,
+        title=hub.title,
+        description=hub.description,
+        group=hub.group,
+        data={
+            "match": getattr(hub, "match", ""),
+            "source": getattr(hub, "source", ""),
+        },
+    )
+
+
+def build_records(
+    page_module: Any,
+    output_path: Path,
+) -> tuple[list[ResponseRecord], list[SearchDocument], list[PackageRecord], list[HubRecord], list[HubPackageRecord], dict[str, Any]]:
     sources = page_module.load_sources()
     pages_by_key = page_module.package_pages_from_sources(sources)
     if not pages_by_key:
@@ -478,39 +737,37 @@ def build_records(page_module: Any, output_path: Path) -> tuple[list[ResponseRec
     css = css_with_search_styles(page_module)
     responses: list[ResponseRecord] = []
     documents: list[SearchDocument] = []
+    package_rows: list[PackageRecord] = []
+    hub_rows: list[HubRecord] = [hub_record(hub) for hub, _hub_pages in hubs]
+    hub_package_rows: list[HubPackageRecord] = []
     indexable_pages = [page for page in pages if page_module.is_indexable_package_page(page)]
-    sitemap_names = ["sitemap-hubs.xml"] + [
-        f"sitemap-{provider}.xml"
-        for provider in ("brew", "cask", "npm", "pip")
-        if any(page.provider == provider for page in indexable_pages)
-    ]
 
     def add(path: str, content: str | bytes, content_type: str) -> None:
         responses.append(response_record(path, content, content_type, last_modified))
+
+    for page in pages:
+        search_text = page_search_text(page_module, page, None)
+        package_rows.append(package_record(page_module, page, search_text))
+
+    for hub, hub_pages in hubs:
+        for position, page in enumerate(hub_pages, start=1):
+            hub_package_rows.append(HubPackageRecord(
+                hub_slug=hub.slug,
+                package_key=page.key,
+                position=position,
+                reason=page_module.hub_package_reason(page),
+            ))
 
     for locale in page_module.i18n_locales():
         locale_code = page_module.locale_code(locale)
         add(page_module.locale_path("/pkg/styles.css", locale), css, "text/css; charset=utf-8")
         add(page_module.locale_path("/pkg/search.js", locale), search_script(locale_code), "application/javascript; charset=utf-8")
-        index_html = page_module.render_index(pages, hubs, manifest, locale)
-        add(
-            page_module.locale_path("/pkg/", locale),
-            adapt_package_index_search(index_html, page_module, locale),
-            "text/html; charset=utf-8",
-        )
         add(
             page_module.locale_path("/pkg/.manifest.json", locale),
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             "application/json; charset=utf-8",
         )
         for page in pages:
-            add(page_module.locale_path(page.path, locale), page_module.render_package_page(page, manifest, locale), "text/html; charset=utf-8")
-            if page_module.is_indexable_package_page(page):
-                add(
-                    page_module.locale_path(f"{page.path}index.md", locale),
-                    page_module.render_package_markdown(page, manifest, locale),
-                    "text/markdown; charset=utf-8",
-                )
             documents.append(SearchDocument(
                 path=page_module.locale_path(page.path, locale),
                 locale=locale_code,
@@ -521,29 +778,11 @@ def build_records(page_module: Any, output_path: Path) -> tuple[list[ResponseRec
                 rank=page.popularity.get("rank") if isinstance(page.popularity, dict) else None,
                 search_text=page_search_text(page_module, page, locale),
             ))
-        for hub, hub_pages in hubs:
-            add(page_module.locale_path(hub.path, locale), page_module.render_hub_page(hub, hub_pages, manifest, locale), "text/html; charset=utf-8")
 
-        add(
-            page_module.locale_path("/pkg/sitemap.xml", locale),
-            page_module.render_sitemap_index(sitemap_names, manifest),
-            "application/xml; charset=utf-8",
-        )
-        add(
-            page_module.locale_path("/pkg/sitemap-hubs.xml", locale),
-            page_module.render_hub_sitemap(hubs, manifest),
-            "application/xml; charset=utf-8",
-        )
-        for provider in ("brew", "cask", "npm", "pip"):
-            provider_pages = [page for page in indexable_pages if page.provider == provider]
-            if provider_pages:
-                add(
-                    page_module.locale_path(f"/pkg/sitemap-{provider}.xml", locale),
-                    page_module.render_package_sitemap(provider_pages, manifest),
-                    "application/xml; charset=utf-8",
-                )
-
-    return responses, documents, manifest_metadata(manifest)
+    metadata = manifest_metadata(manifest)
+    metadata["locales"] = page_module.i18n_locales()
+    metadata["providers"] = sorted({page.provider for page in indexable_pages})
+    return responses, documents, package_rows, hub_rows, hub_package_rows, metadata
 
 
 def check_current(page_module: Any, output_path: Path, terminal: Terminal) -> int:
@@ -603,13 +842,18 @@ def main() -> int:
         return check_current(page_module, output_path, terminal)
 
     terminal.step("Rendering package pages into SQLite")
-    responses, documents, metadata = build_records(page_module, output_path)
-    write_sqlite(output_path, responses, documents, metadata)
-    terminal.ok(f"Wrote {len(responses):,} responses and {len(documents):,} search documents to {output_path}")
+    responses, documents, packages, hubs, hub_packages, metadata = build_records(page_module, output_path)
+    write_sqlite(output_path, responses, documents, packages, hubs, hub_packages, metadata)
+    terminal.ok(
+        f"Wrote {len(packages):,} packages, {len(hubs):,} hubs, "
+        f"{len(documents):,} search documents, and {len(responses):,} static responses to {output_path}"
+    )
     if args.json:
         print(json.dumps({
             "ok": True,
             "output": str(output_path),
+            "packages": len(packages),
+            "hubs": len(hubs),
             "responses": len(responses),
             "search_documents": len(documents),
             "source_hash": metadata.get("source_hash"),
