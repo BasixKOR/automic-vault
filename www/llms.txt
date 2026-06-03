@@ -27,8 +27,10 @@ The headline position is: Secure the tools you brew install.
 
 Automic Vault helps developers keep using local dev tools when agents can read
 files and run commands. It finds exposed tool state, moves supported secrets out
-of plaintext files, injects approved credentials only into trusted tools, and
-keeps watching new installs, stale tools, and local config for hazards.
+of plaintext files, exposes credentials through native credential-helper
+protocols where tools support them, injects approved credentials only into
+trusted tools, and keeps watching new installs, stale tools, and local config
+for hazards.
 
 ## Primary Use Cases
 
@@ -36,6 +38,9 @@ keeps watching new installs, stale tools, and local config for hazards.
   `.npmrc`, GitHub CLI config, AWS credentials, and MCP config.
 - Harden supported Homebrew, npm, and PyPI tools so secrets are exposed only to
   approved executables at runtime.
+- Use native credential-helper protocols such as AWS `credential_process`,
+  Kubernetes `ExecCredential`, Cargo credential providers, Docker-compatible
+  registry helpers, and WakaTime `api_key_vault_cmd`.
 - Ask before risky commands publish packages, change cloud infrastructure,
   reveal tokens, or run sensitive developer tools.
 - Keep watching new installs, stale tools, and local config for hazards.

@@ -13,7 +13,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Automic Vault Security Methods and Gaps</title>
-  <meta name="description" content="A candid Automic Vault security white paper covering local runtime controls, keychain-backed injection, command approval, containment, privileged helper boundaries, caveats, and remaining gaps.">
+  <meta name="description" content="A candid Automic Vault security white paper covering local runtime controls, credential-helper adapters, keychain-backed injection, command approval, containment, privileged helper boundaries, caveats, and remaining gaps.">
   <link rel="canonical" href="https://www.automicvault.com/security/whitepaper/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/whitepaper/">
   <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/whitepaper/">
@@ -85,7 +85,7 @@
                   "url": "https://www.automicvault.com/security/whitepaper/",
                   "name": "Automic Vault Security Methods and Gaps",
                   "headline": "Automic Vault Security Methods and Gaps",
-                  "description": "A candid Automic Vault security white paper covering local runtime controls, keychain-backed injection, command approval, containment, privileged helper boundaries, caveats, and remaining gaps.",
+                  "description": "A candid Automic Vault security white paper covering local runtime controls, credential-helper adapters, keychain-backed injection, command approval, containment, privileged helper boundaries, caveats, and remaining gaps.",
                   "datePublished": "2026-06-03",
                   "dateModified": "2026-06-03",
                   "image": "https://www.automicvault.com/preview.jpg",
@@ -162,7 +162,7 @@
           <p class="lede">A candid implementation-oriented paper on what Automic Vault protects, where the local runtime boundary succeeds, and where the current model still has holes.</p>
           <p class="updated">Last updated: June 3, 2026</p>
           <div class="answer-box">
-            <p>Automic Vault is not a claim that AI agents are safe. It is a local macOS boundary that removes some ambient privileges, stores supported secrets behind keychain-backed injection, and asks before local tools receive sensitive authority.</p>
+            <p>Automic Vault is not a claim that AI agents are safe. It is a local macOS boundary that removes some ambient privileges, stores supported secrets behind keychain-backed injection and credential-helper protocols, and asks before local tools receive sensitive authority.</p>
           </div>
           <div class="hero-actions">
             <a class="button primary" href="https://github.com/automic-vault/automic-vault">Review source <span aria-hidden="true">&rsaquo;</span></a>
@@ -172,7 +172,7 @@
         <aside class="paper-facts" aria-label="White paper summary">
           <div><span>Scope</span><strong>Local macOS agent runs</strong></div>
           <div><span>Primary boundary</span><strong>Secrets and command authority</strong></div>
-          <div><span>Strongest controls</span><strong>Keychain, approval, root-controlled paths</strong></div>
+          <div><span>Strongest controls</span><strong>Keychain, credential helpers, approval</strong></div>
           <div><span>Known weak spots</span><strong>Same-user malware, env secrets, partial sandboxing</strong></div>
         </aside>
       </section>
@@ -183,6 +183,7 @@
           <a href="#threat-model">Threat Model</a>
           <a href="#architecture">Architecture</a>
           <a href="#methods">Methods</a>
+          <a href="#credential-helpers">Helpers</a>
           <a href="#successes">Successes</a>
           <a href="#holes">Holes</a>
           <a href="#roadmap">Roadmap</a>
@@ -193,11 +194,12 @@
             <p class="kicker">Abstract</p>
             <h2>Automic Vault narrows local authority. It does not make agents safe.</h2>
             <p>Automic Vault is strongest when the risk is ambient local authority: plaintext tokens in <code>.env</code>, <code>~/.aws/credentials</code>, <code>~/.npmrc</code>, GitHub CLI state, MCP configuration, or other files that an agent can read before a human notices.</p>
-            <p>It stores supported secrets in the macOS keychain, asks before injecting named values into an executable, and can run an agent through a synthetic toolchain where host tool execution is mediated by the local app.</p>
+            <p>It stores supported secrets in the macOS keychain, exposes them through native credential-helper protocols where a tool supports that boundary, asks before injecting named values into an executable, and can run an agent through a synthetic toolchain where host tool execution is mediated by the local app.</p>
             <div class="paper-callout">
               <strong>Honest claim</strong>
               <p>Automic Vault removes several high-value ambient privileges and makes sensitive local authority harder to spend silently. It is not same-user malware containment, a root-compromise defense, a cloud policy engine, or a proof that an approved tool is safe.</p>
             </div>
+            <p>The credential-helper adapter system is the strongest version of the secret boundary. Instead of leaving a token in a config file or passing it as a broad environment variable, a migrated tool can keep only a non-secret helper reference on disk. The tool then asks <code>av credential-helper</code> for a credential through the protocol it already understands, such as AWS <code>credential_process</code>, Kubernetes <code>ExecCredential</code>, Cargo credential providers, Docker-compatible registry credential helpers for Podman and Skopeo, or WakaTime's <code>api_key_vault_cmd</code>.</p>
           </section>
 
           <section class="paper-section" id="threat-model">
@@ -236,9 +238,10 @@
               </thead>
               <tbody>
                 <tr><th scope="row">Automic Vault.app</th><td>Shows package dossiers, approval prompts, helper operations, and containment logs.</td></tr>
-                <tr><th scope="row"><code>av</code></th><td>Runs package operations, scanning, secret save/inject, containment, tracing, and approval gates.</td></tr>
+                <tr><th scope="row"><code>av</code></th><td>Runs package operations, scanning, secret save/inject, containment, tracing, approval gates, and credential-helper adapters.</td></tr>
                 <tr><th scope="row">nuke-helper</th><td>Performs root-required package, isotope, helper, and always-allow operations.</td></tr>
                 <tr><th scope="row">macOS Keychain</th><td>Stores named CLI secrets under the Automic Vault isotope service.</td></tr>
+                <tr><th scope="row">Credential helpers</th><td>Let selected tools request keychain-backed credentials at runtime through native authentication protocols.</td></tr>
                 <tr><th scope="row">Local state</th><td>Approval requests and decisions live under <code>~/Library/Application Support/Automic Vault/</code>.</td></tr>
                 <tr><th scope="row">Package roots</th><td>Release builds use <code>/opt</code> with stubs in <code>/usr/local/bin</code>; debug builds use <code>/tmp</code> roots.</td></tr>
               </tbody>
@@ -263,6 +266,13 @@
               <li>The opened file descriptor is compared with the path immediately before <code>execve</code>.</li>
               <li>Loaded credential strings are zeroed on failure paths before being dropped.</li>
             </ul>
+
+            <h3 id="credential-helpers">Credential-helper adapters</h3>
+            <p><code>av credential-helper &lt;protocol&gt;</code> is the stronger path for tools that already know how to ask a helper for credentials. Instead of reconstructing a plaintext config file or injecting a broad environment variable, Automic Vault can rewrite the persisted tool config to a non-secret helper reference and provide the credential only when the approved tool invokes the helper.</p>
+            <p>This matters because the agent can inspect the project and many home-directory files without seeing the secret. It sees a helper command or protocol reference, not the token itself. The credential crosses the boundary only at the moment the tool performs the authenticated operation.</p>
+            <p>Current adapters include AWS <code>credential_process</code>, Kubernetes <code>ExecCredential</code>, Cargo's credential provider protocol, NuGet credential provider flows, Terraform and OpenTofu credential helpers, Docker-compatible registry helpers for Podman and Skopeo, and WakaTime's <code>api_key_vault_cmd</code>.</p>
+            <p>The helpers are not general-purpose secret printers. The dispatcher disables core dumps before helper execution. The generated wrapper passes a per-run approval token through <code>AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN</code>, and helpers validate that token before returning credentials. Helpers also check that their parent process is the expected Automic Vault-managed launcher, and where the tool boundary allows it, validate that the parent path is root-controlled.</p>
+            <p>The caveat: credential helpers are still a local process boundary, not a cryptographic proof that the whole system is safe. A legitimately approved tool can receive and use the credential. Same-user malware and root compromise are still outside the current model. Helper coverage is also package-specific: it is excellent where the upstream tool has a native protocol, and absent where no adapter has been built yet.</p>
 
             <h3>Always-allow rules</h3>
             <p>Durable approval is intentionally narrower than "remember this prompt." It is available for root-owned, non-writable executables reached through non-writable parent directories. For script interpreters, the script path is part of the scope. Root-owned scripts can be remembered by path; non-root scripts require path plus SHA-256 hash. <code>env</code> shebangs and launchers are not eligible.</p>
@@ -289,6 +299,7 @@
             <div class="paper-status-grid">
               <article><span>Runtime</span><p>Controls happen where local tools run, not only where prompts are written.</p></article>
               <article><span>Storage</span><p>Supported secrets move from plaintext files into keychain-backed storage.</p></article>
+              <article><span>Native helpers</span><p>Tools that support credential-helper protocols can request secrets at runtime without restoring agent-readable plaintext config.</p></article>
               <article><span>Approval</span><p>Prompts show concrete paths, commands, parent processes, requested keys, and root-control status.</p></article>
               <article><span>Durability</span><p>Always-allow is tied to root-controlled or hash-bound execution boundaries.</p></article>
               <article><span>Roots</span><p>Release install paths and package metadata endpoints are fixed rather than arbitrary runtime knobs.</p></article>
@@ -303,7 +314,7 @@
               <li><strong>Same-user malware is not contained.</strong> A malicious process running as the same user is outside the current approval-file and socket trust model.</li>
               <li><strong>Root compromise wins.</strong> Root can read or modify package roots, helper state, approval records, and process memory.</li>
               <li><strong>Approved tools can leak.</strong> A secret injected into an executable is available to that process and may be available to children it spawns.</li>
-              <li><strong>Environment variables are a leaky transport.</strong> They are convenient for CLIs, but not the best long-term secret delivery mechanism.</li>
+              <li><strong>Environment variables are a leaky transport.</strong> They are convenient for CLIs, but not the best long-term secret delivery mechanism. Credential helpers reduce this exposure for supported tools, but do not remove the underlying need to trust the approved tool.</li>
               <li><strong>Containment is partial.</strong> Today it mediates process execution more than file, network, or syscall behavior.</li>
               <li><strong>Scanner coverage is incomplete.</strong> New tools, custom configs, and unusual paths can be missed.</li>
               <li><strong>Package provenance is not universal.</strong> Upstream package integrity still depends heavily on package ecosystems unless package-specific hardening exists.</li>
@@ -318,7 +329,7 @@
             <ul>
               <li>Authenticate local approval channels more strongly than writable per-user files.</li>
               <li>Add explicit helper-side client identity and authorization checks for every privileged method.</li>
-              <li>Reduce environment-variable secret transport for tools that can support file descriptors, keychain callbacks, credential-helper protocols, or scoped IPC.</li>
+              <li>Expand credential-helper adapters and reduce environment-variable secret transport for tools that can support file descriptors, keychain callbacks, native helper protocols, or scoped IPC.</li>
               <li>Expand containment from process-exec mediation toward more granular file and network policy where macOS allows it.</li>
               <li>Sign and verify package/security metadata with rollback protection.</li>
               <li>Add more package-specific isotopes, detectors, and approval manifests for high-risk developer tools.</li>
@@ -334,7 +345,8 @@
             <p class="kicker">Implementation anchors</p>
             <h2>Review the public source.</h2>
             <div class="resource-list">
-              <a href="https://github.com/automic-vault/automic-vault/blob/main/src/lib/rs/isotope.rs"><strong>Secret injection</strong><p><code>src/lib/rs/isotope.rs</code></p></a>
+              <a href="https://github.com/automic-vault/automic-vault/blob/main/src/lib/rs/isotope.rs"><strong>Secret injection and helper dispatch</strong><p><code>src/lib/rs/isotope.rs</code></p></a>
+              <a href="https://github.com/automic-vault/automic-vault/tree/main/data/radioisotopes"><strong>Credential-helper adapters</strong><p><code>data/radioisotopes/*/credential-helper.rs</code></p></a>
               <a href="https://github.com/automic-vault/automic-vault/blob/main/src/lib/rs/vault.rs"><strong>Containment CLI</strong><p><code>src/lib/rs/vault.rs</code></p></a>
               <a href="https://github.com/automic-vault/automic-vault/blob/main/src/gui/VaultDaemon.swift"><strong>Containment daemon</strong><p><code>src/gui/VaultDaemon.swift</code></p></a>
               <a href="https://github.com/automic-vault/automic-vault/blob/main/src/lib/rs/ops.rs"><strong>Helper operations</strong><p><code>src/lib/rs/ops.rs</code></p></a>

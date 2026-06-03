@@ -82,6 +82,7 @@
   "use_cases": [
     "Find plaintext credentials in local dev-tool files such as .env, .netrc, .npmrc, GitHub CLI config, AWS credentials, and MCP config.",
     "Harden supported Homebrew, npm, and PyPI tools so secrets are exposed only to approved executables at runtime.",
+    "Expose credentials through native helper protocols such as AWS credential_process, Kubernetes ExecCredential, Cargo credential providers, Docker-compatible registry helpers, and WakaTime api_key_vault_cmd.",
     "Ask before sensitive commands publish packages, change cloud state, reveal tokens, or run sensitive developer tools.",
     "Keep watching new installs, stale tools, and local config for hazards.",
     "Trace shell installers before an agent or developer runs them."

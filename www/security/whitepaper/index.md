@@ -20,9 +20,10 @@ shape as of June 3, 2026.
 Automic Vault is strongest when the risk is ambient local authority: plaintext
 tokens in `.env`, `~/.aws/credentials`, `~/.npmrc`, GitHub CLI state, MCP
 configuration, or other files that an agent can read before a human notices.
-It stores supported secrets in the macOS keychain, asks before injecting named
-values into an executable, and can run an agent through a synthetic toolchain
-where host tool execution is mediated by the local app.
+It stores supported secrets in the macOS keychain, exposes them through native
+credential-helper protocols where a tool supports that boundary, asks before
+injecting named values into an executable, and can run an agent through a
+synthetic toolchain where host tool execution is mediated by the local app.
 
 The design succeeds at moving several critical decisions below the prompt
 layer. An agent cannot simply read a key from a migrated plaintext file if the
@@ -31,6 +32,15 @@ requested secret names, executable path, command line, parent process, current
 directory, and root-control status. Always-allow is intentionally narrow: it is
 available for root-owned, non-writable executables, root-owned scripts, or
 hash-bound scripts behind root-controlled interpreters.
+
+The credential-helper adapter system is the strongest version of the secret
+boundary. Instead of leaving a token in a config file or passing it as a broad
+environment variable, a migrated tool can keep only a non-secret helper
+reference on disk. The tool then asks `av credential-helper` for a credential
+through the protocol it already understands, such as AWS `credential_process`,
+Kubernetes `ExecCredential`, Cargo credential providers, Docker-compatible
+registry credential helpers for Podman and Skopeo, or WakaTime's
+`api_key_vault_cmd`.
 
 The design is not a complete sandbox. A same-user malicious process can attack
 local per-user state. Root or kernel compromise bypasses the model. An approved
@@ -72,12 +82,14 @@ The main security boundary is local, not hosted.
 - `Automic Vault.app` is the AppKit GUI for package dossiers, security states,
   approval prompts, helper operations, and containment logs.
 - `av` is the CLI for package operations, scanning, secret save/inject,
-  containment, tracing, and approval gates.
+  containment, tracing, approval gates, and credential-helper adapters.
 - `nuke-helper` is the privileged helper for operations that need root
   privileges, including package installs, updates, uninstall, isotope
   conversion, helper maintenance, and root-owned always-allow records.
 - The macOS keychain stores named CLI secrets under the Automic Vault isotope
   service.
+- Credential-helper adapters let selected tools request keychain-backed
+  credentials at runtime through their native authentication protocols.
 - Per-user approval requests and decisions live under
   `~/Library/Application Support/Automic Vault/`.
 - Release package roots are fixed at `/opt` with stubs in `/usr/local/bin`.
@@ -127,6 +139,38 @@ Several details matter:
 The approval prompt is intentionally about named keys and executable context,
 not raw secret values. The model should never receive the secret just so it can
 paste it into a command.
+
+## Credential-Helper Adapters
+
+`av credential-helper <protocol>` is the stronger path for tools that already
+know how to ask a helper for credentials. Instead of reconstructing a plaintext
+config file or injecting a broad environment variable, Automic Vault can rewrite
+the persisted tool config to a non-secret helper reference and provide the
+credential only when the approved tool invokes the helper.
+
+This matters because the agent can inspect the project and many home-directory
+files without seeing the secret. It sees a helper command or protocol reference,
+not the token itself. The credential crosses the boundary only at the moment
+the tool performs the authenticated operation.
+
+Current adapters include AWS `credential_process`, Kubernetes
+`ExecCredential`, Cargo's credential provider protocol, NuGet credential
+provider flows, Terraform and OpenTofu credential helpers, Docker-compatible
+registry helpers for Podman and Skopeo, and WakaTime's `api_key_vault_cmd`.
+
+The helpers are not general-purpose secret printers. The dispatcher disables
+core dumps before helper execution. The generated wrapper passes a per-run
+approval token through `AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN`, and helpers
+validate that token before returning credentials. Helpers also check that their
+parent process is the expected Automic Vault-managed launcher, and where the
+tool boundary allows it, validate that the parent path is root-controlled.
+
+The caveat: credential helpers are still a local process boundary, not a
+cryptographic proof that the whole system is safe. A legitimately approved tool
+can receive and use the credential. Same-user malware and root compromise are
+still outside the current model. Helper coverage is also package-specific: it
+is excellent where the upstream tool has a native protocol, and absent where no
+adapter has been built yet.
 
 ## Always-Allow Rules
 
@@ -253,6 +297,8 @@ Automic Vault has already made several good security choices:
 - It treats prompt-level safety as insufficient and puts controls at local
   runtime boundaries.
 - It uses macOS keychain storage instead of inventing its own secret database.
+- It uses native credential-helper protocols where available, so tools can ask
+  for credentials at runtime without restoring agent-readable plaintext config.
 - It refuses durable approval for mutable, easy-to-rewrite execution paths.
 - It presents concrete approval context: command, executable, parent process,
   current directory, requested keys, script status, and root-control status.
@@ -273,7 +319,9 @@ The current design should be presented with these limitations:
   other approved executable is available to that process and may be available
   to children it spawns.
 - Environment variables are a leaky transport. They are convenient for CLIs,
-  but they are not the best long-term secret delivery mechanism.
+  but they are not the best long-term secret delivery mechanism. Credential
+  helpers reduce this exposure for supported tools, but do not remove the
+  underlying need to trust the approved tool.
 - Containment is mostly process-exec mediation today. It is not a strong file,
   network, or syscall sandbox.
 - Scanner and detector coverage is incomplete. New tools, custom configs, and
@@ -291,14 +339,16 @@ Use Automic Vault where it is strongest:
 
 1. Run the scanner before giving an agent broad repository access.
 2. Move supported secrets out of plaintext config and into `av save`.
-3. Prefer root-owned tools or root-owned scripts for durable approvals.
-4. Treat every approval as a capability grant to a specific executable and
+3. Prefer isotope flows that use native credential helpers when a tool supports
+   them.
+4. Prefer root-owned tools or root-owned scripts for durable approvals.
+5. Treat every approval as a capability grant to a specific executable and
    command path.
-5. Use `av contain` to mediate host tool execution, but do not treat it as a
+6. Use `av contain` to mediate host tool execution, but do not treat it as a
    complete sandbox.
-6. Keep high-value production credentials outside routine agent workflows when
+7. Keep high-value production credentials outside routine agent workflows when
    possible.
-7. Review package hazards after new installs and after updating agent tools.
+8. Review package hazards after new installs and after updating agent tools.
 
 ## Hardening Roadmap
 
@@ -308,8 +358,9 @@ The most valuable next hardening work is:
   files.
 - Add explicit helper-side client identity and authorization checks for every
   privileged method.
-- Reduce environment-variable secret transport for tools that can support file
-  descriptors, keychain callbacks, credential-helper protocols, or scoped IPC.
+- Expand credential-helper adapters and reduce environment-variable secret
+  transport for tools that can support file descriptors, keychain callbacks,
+  native helper protocols, or scoped IPC.
 - Expand containment from process-exec mediation toward more granular file and
   network policy where macOS allows it.
 - Sign and verify package/security metadata with rollback protection.
@@ -322,8 +373,8 @@ The most valuable next hardening work is:
 Automic Vault is a practical local boundary for a real new problem: agents can
 read the same local files and run the same local tools developers use. Its
 strongest controls are concrete and useful: keychain-backed storage,
-approval-scoped injection, root-controlled durable approvals, predictable
-package roots, and visible local command mediation.
+credential-helper adapters, approval-scoped injection, root-controlled durable
+approvals, predictable package roots, and visible local command mediation.
 
 The honest claim is not that Automic Vault makes agents safe. The honest claim
 is that it removes several high-value ambient privileges and makes sensitive
