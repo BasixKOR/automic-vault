@@ -5,6 +5,10 @@ edition = "2024"
 autobins = false
 build = "build.rs"
 
+[workspace]
+members = ["src/web"]
+resolver = "3"
+
 [features]
 gold-release = []
 packaged-db = []
@@ -24,17 +28,12 @@ path = "src/scanner/main.rs"
 name = "nuke-helper"
 path = "src/helper/main.rs"
 
-[[bin]]
-name = "av-web"
-path = "src/web/main.rs"
-
 [dependencies]
 flate2 = "1"
 indicatif = "0.17"
 json5 = "0.4"
 libc = "0.2"
 rayon = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

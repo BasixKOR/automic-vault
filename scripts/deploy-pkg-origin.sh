@@ -174,17 +174,17 @@ build_binary() {
   host_target="$(rust_host_target)"
   log "Building av-web for ${AV_WEB_TARGET}"
   if [[ "${AV_WEB_TARGET}" == "${host_target}" ]]; then
-    cargo build --release --bin av-web
+    cargo build --release -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/release/av-web"
   elif cargo zigbuild --help >/dev/null 2>&1; then
-    cargo zigbuild --release --target "${AV_WEB_TARGET}" --bin av-web
+    cargo zigbuild --release --target "${AV_WEB_TARGET}" -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   elif command -v cross >/dev/null 2>&1; then
-    cross build --release --target "${AV_WEB_TARGET}" --bin av-web
+    cross build --release --target "${AV_WEB_TARGET}" -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   else
     ensure_target_buildable_with_cargo
-    cargo build --release --target "${AV_WEB_TARGET}" --bin av-web
+    cargo build --release --target "${AV_WEB_TARGET}" -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   fi
 }
