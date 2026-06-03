@@ -17,6 +17,7 @@ The headline position is: Secure the tools you brew install.
 - Website: https://www.automicvault.com/
 - Pricing: Free open-source software; see https://www.automicvault.com/pricing/
 - Security disclosure policy: https://www.automicvault.com/.well-known/security.txt
+- Security white paper: https://www.automicvault.com/security/whitepaper/
 - Positioning: A new kind of package manager for a new kind of threat model
 - Founder: Max Howell, creator of Homebrew in 2009
 - Founder reference: https://mxcl.dev/
@@ -54,6 +55,7 @@ and credentials already present on a developer machine.
 - [Full site text](https://www.automicvault.com/llms-full.txt): checked-in site text in one file.
 - [About and founder context](https://www.automicvault.com/about/): Max Howell and Homebrew context.
 - [Security model](https://www.automicvault.com/security/): local runtime threat model and disclosure path.
+- [Security methods and gaps](https://www.automicvault.com/security/whitepaper/): candid white paper on controls, caveats, holes, successes, and hardening work.
 - [Privacy boundary](https://www.automicvault.com/privacy/): local data and website privacy notes.
 - [Terms and licensing](https://www.automicvault.com/terms/): Apache 2.0 licensing summary.
 - [Pricing](https://www.automicvault.com/pricing/): free open-source software pricing.

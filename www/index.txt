@@ -19,6 +19,7 @@ performing sensitive actions without approval.
 Key pages:
 - Documentation: https://www.automicvault.com/docs/
 - Security: https://www.automicvault.com/security/
+- Security Methods and Gaps: https://www.automicvault.com/security/whitepaper/
 - Blog: https://www.automicvault.com/blog/
 - The Agentic Toolkit: https://www.automicvault.com/blog/agentic-toolkit/
 - Pricing: https://www.automicvault.com/pricing/

@@ -3,7 +3,7 @@
     {
       "path": "/",
       "source": "index.html",
-      "dateModified": "2026-06-02",
+      "dateModified": "2026-06-03",
       "translations": {
         "ja": {
           "title": "Automic Vault | brew install したツールを安全に",
@@ -58,13 +58,24 @@
     {
       "path": "/docs/",
       "source": "docs/index.html",
-      "dateModified": "2026-06-02",
+      "dateModified": "2026-06-03",
       "kind": "docs",
       "translations": {
         "ja": {"title": "Automic Vault ドキュメント", "description": "Automic Vault の CLI、ローカル実行境界、承認モデル、AI エージェント向け macOS ワークフローのドキュメント。", "kicker": "ドキュメント", "h1": "CLI とローカル実行境界", "lede": "Automic Vault のコマンド、シークレット注入、承認ゲート、パッケージ保護モデルを macOS 開発者向けにまとめます.", "sections": [["実行時境界", "エージェントが読めるファイルと、承認されたツールだけが受け取るシークレットを分けます。"], ["CLI ワークフロー", "インストール、承認、シークレット操作、パッケージ確認の主要コマンドを確認できます。"]]},
         "de": {"title": "Automic Vault Dokumentation", "description": "Dokumentation zu CLI, lokalen Laufzeitgrenzen, Approval-Modell und macOS-Workflows für AI-Agents in Automic Vault.", "kicker": "Dokumentation", "h1": "CLI und lokale Laufzeitgrenzen", "lede": "Diese Seite erklärt Befehle, Secret-Injektion, Approval Gates und Paketkontrollen für macOS-Entwickler.", "sections": [["Laufzeitgrenzen", "Automic Vault trennt Dateien, die ein Agent lesen kann, von Secrets, die nur genehmigte Tools erhalten."], ["CLI-Workflows", "Prüfe die wichtigsten Befehle für Installation, Freigabe, Secret-Verwaltung und Paketprüfung."]]},
         "fr": {"title": "Documentation Automic Vault", "description": "Documentation de la CLI, des limites d'exécution locales, du modèle d'approbation et des workflows macOS pour agents IA.", "kicker": "Documentation", "h1": "CLI et limites d'exécution locales", "lede": "Cette page couvre les commandes, l'injection de secrets, les portes d'approbation et les contrôles de paquets pour les développeurs macOS.", "sections": [["Limites d'exécution", "Automic Vault sépare les fichiers lisibles par un agent des secrets transmis uniquement aux outils approuvés."], ["Workflows CLI", "Consultez les commandes principales pour installer, approuver, gérer les secrets et examiner les paquets."]]},
         "zh-Hans": {"title": "Automic Vault 文档", "description": "Automic Vault 的 CLI、本地运行边界、审批模型以及面向 AI 代理的 macOS 工作流文档。", "kicker": "文档", "h1": "CLI 与本地运行边界", "lede": "本页面向 macOS 开发者说明命令、密钥注入、审批门和软件包控制。", "sections": [["运行边界", "Automic Vault 将代理可读文件与只提供给已批准工具的密钥分开。"], ["CLI 工作流", "查看安装、审批、密钥管理和软件包检查的主要命令。"]]}
+      }
+    },
+    {
+      "path": "/security/whitepaper/",
+      "source": "security/whitepaper/index.html",
+      "dateModified": "2026-06-03",
+      "translations": {
+        "ja": {"title": "Automic Vault セキュリティ手法とギャップ", "description": "Automic Vault のローカル実行制御、シークレット注入、承認、サンドボックスの限界、残る課題を率直にまとめたセキュリティ白書。", "kicker": "セキュリティ白書", "h1": "Automic Vault のセキュリティ手法とギャップ", "lede": "Automic Vault が保護するもの、保護しないもの、今後強化すべきローカル実行境界をまとめます。", "sections": [["率直な範囲", "Automic Vault は AI エージェントを安全にするという主張ではありません。平文シークレット、ローカルコマンド権限、パッケージ実行面の一部を、Mac 上の具体的な境界で制御します。"], ["英語版白書", "詳細な白書は英語で公開されています。現在の制御、注意点、穴、成功、強化ロードマップを確認してください。"]]},
+        "de": {"title": "Automic Vault Sicherheitsmethoden und Luecken", "description": "Ein ehrliches Security White Paper zu lokalen Laufzeitkontrollen, Secret Injection, Approval Gates, Sandbox-Grenzen und offenen Risiken in Automic Vault.", "kicker": "Security White Paper", "h1": "Automic Vault Sicherheitsmethoden und Luecken", "lede": "Was Automic Vault schuetzt, was es nicht schuetzt und welche lokalen Laufzeitgrenzen weiter gehaertet werden muessen.", "sections": [["Ehrlicher Umfang", "Automic Vault behauptet nicht, AI-Agents sicher zu machen. Es kontrolliert Klartext-Secrets, lokale Command Authority und Teile der Paket-Ausfuehrungsflaeche an konkreten Mac-Grenzen."], ["Englisches White Paper", "Das vollstaendige White Paper ist auf Englisch verfuegbar und beschreibt Kontrollen, Caveats, Luecken, Erfolge und die Hardening-Roadmap."]]},
+        "fr": {"title": "Methodes de securite et limites d'Automic Vault", "description": "Livre blanc honnete sur les controles d'execution locaux, l'injection de secrets, les approbations, les limites du sandbox et les risques restants d'Automic Vault.", "kicker": "Livre blanc securite", "h1": "Methodes de securite et limites d'Automic Vault", "lede": "Ce qu'Automic Vault protege, ce qu'il ne protege pas, et les limites locales qui doivent encore etre durcies.", "sections": [["Perimetre honnete", "Automic Vault ne pretend pas rendre les agents IA surs. Il controle certains secrets en clair, certaines autorites de commande locales et une partie de la surface d'execution des paquets sur le Mac."], ["Livre blanc en anglais", "Le livre blanc complet est disponible en anglais et decrit controles, reserves, failles, succes et feuille de route de durcissement."]]},
+        "zh-Hans": {"title": "Automic Vault 安全方法与缺口", "description": "关于 Automic Vault 本地运行控制、密钥注入、审批门、沙盒边界和剩余风险的坦诚安全白皮书。", "kicker": "安全白皮书", "h1": "Automic Vault 安全方法与缺口", "lede": "说明 Automic Vault 保护什么、不保护什么，以及本地运行边界还需要加固的部分。", "sections": [["坦诚范围", "Automic Vault 并不声称让 AI 代理变得安全。它在 Mac 上的具体边界处控制部分明文密钥、本地命令权限和软件包执行面。"], ["英文白皮书", "完整白皮书以英文发布，说明当前控制、注意事项、缺口、成功之处和加固路线图。"]]}
       }
     },
     {

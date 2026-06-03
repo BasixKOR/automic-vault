@@ -13,6 +13,7 @@
   "pricing": "Free open-source software",
   "pricing_url": "https://www.automicvault.com/pricing/",
   "docs": "https://www.automicvault.com/docs/",
+  "security_whitepaper": "https://www.automicvault.com/security/whitepaper/",
   "blog": "https://www.automicvault.com/blog/",
   "latest_blog_post": {
     "title": "The Agentic Toolkit",
@@ -70,6 +71,11 @@
     }
   ],
   "security": "https://www.automicvault.com/security/",
+  "security_methods_and_gaps": {
+    "title": "Automic Vault Security Methods and Gaps",
+    "url": "https://www.automicvault.com/security/whitepaper/",
+    "description": "A candid white paper on Automic Vault controls, caveats, holes, successes, and hardening work."
+  },
   "security_txt": "https://www.automicvault.com/.well-known/security.txt",
   "llms_txt": "https://www.automicvault.com/llms.txt",
   "llms_full_txt": "https://www.automicvault.com/llms-full.txt",

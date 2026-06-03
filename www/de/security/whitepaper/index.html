@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automic Vault Sicherheitsmethoden und Luecken</title>
+  <meta name="description" content="Ein ehrliches Security White Paper zu lokalen Laufzeitkontrollen, Secret Injection, Approval Gates, Sandbox-Grenzen und offenen Risiken in Automic Vault.">
+  <meta name="robots" content="index,follow">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="Automic Vault Sicherheitsmethoden und Luecken">
+  <meta property="og:description" content="Ein ehrliches Security White Paper zu lokalen Laufzeitkontrollen, Secret Injection, Approval Gates, Sandbox-Grenzen und offenen Risiken in Automic Vault.">
+  <meta property="og:url" content="https://www.automicvault.com/de/security/whitepaper/">
+  <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Automic Vault Sicherheitsmethoden und Luecken">
+  <meta name="twitter:description" content="Ein ehrliches Security White Paper zu lokalen Laufzeitkontrollen, Secret Injection, Approval Gates, Sandbox-Grenzen und offenen Risiken in Automic Vault.">
+  <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
+  <link rel="canonical" href="https://www.automicvault.com/de/security/whitepaper/">
+  <link rel="alternate" hreflang="en" href="https://www.automicvault.com/security/whitepaper/">
+  <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/security/whitepaper/">
+  <link rel="alternate" hreflang="de" href="https://www.automicvault.com/de/security/whitepaper/">
+  <link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/security/whitepaper/">
+  <link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/security/whitepaper/">
+  <link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/security/whitepaper/">
+  <link rel="icon" href="../../../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="stylesheet" href="../../../styles.css">
+  <link rel="stylesheet" href="../../../seo.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "url": "https://www.automicvault.com/de/security/whitepaper/",
+    "name": "Automic Vault Sicherheitsmethoden und Luecken",
+    "description": "Ein ehrliches Security White Paper zu lokalen Laufzeitkontrollen, Secret Injection, Approval Gates, Sandbox-Grenzen und offenen Risiken in Automic Vault.",
+    "inLanguage": "de",
+    "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
+  }
+  </script>
+</head>
+<body>
+  <div class="site-shell i18n-page">
+    <header class="masthead">
+      <a class="brand" href="/de/" aria-label="Automic Vault Startseite">
+        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+        <span class="brand-type">Automic Vault</span>
+      </a>
+      <nav class="nav" aria-label="Hauptnavigation">
+        <a href="/de/docs/">Dokumentation</a>
+        <a href="/de/security/">Sicherheit</a>
+        <a href="/de/pkg/">Pakete</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <section class="hero i18n-hero">
+        <p class="eyebrow">Security White Paper</p>
+        <h1>Automic Vault Sicherheitsmethoden und Luecken</h1>
+        <p class="lede">Was Automic Vault schuetzt, was es nicht schuetzt und welche lokalen Laufzeitgrenzen weiter gehaertet werden muessen.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="/security/whitepaper/">Englisches White Paper</a>
+          <a class="button secondary" href="/de/security/">Sicherheit</a>
+        </div>
+      </section>
+      <section class="i18n-section">
+        <h2>Ehrlicher Umfang</h2>
+        <p>Automic Vault behauptet nicht, AI-Agents sicher zu machen. Es kontrolliert Klartext-Secrets, lokale Command Authority und Teile der Paket-Ausfuehrungsflaeche an konkreten Mac-Grenzen.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Englisches White Paper</h2>
+        <p>Das vollstaendige White Paper ist auf Englisch verfuegbar und beschreibt Kontrollen, Caveats, Luecken, Erfolge und die Hardening-Roadmap.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Lokale Laufzeitgrenze</h2>
+        <p>Automic Vault trennt Dateien, die ein Agent lesen kann, von Credentials, die nur genehmigte Tools erhalten. Die Kontrolle sitzt im Ausführungspfad auf dem Mac, nicht nur in einer Agent-Anweisung.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Homebrew und CLIs</h2>
+        <p>Viele Entwicklerwerkzeuge kommen über Homebrew, npm, PyPI und Cloud-CLIs. Vault erkennt Credential-Dateien und riskante Aktionen, die diese Tools hinterlassen, und setzt Freigaben an die passende Stelle.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Nächste Schritte</h2>
+        <p>Starte zuerst den Scanner, verschiebe unterstützte Secrets in geschützten lokalen Speicher und lasse Automic Vault laufen, damit neue Hazard-Hinweise sofort sichtbar bleiben.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Was sich nach der Installation ändert</h2>
+        <p>Die bekannten CLIs bleiben nutzbar. Der Unterschied ist, dass Secrets nicht mehr als einfache Konfigurationsdateien herumliegen, sondern nur an die genehmigte Ausführung übergeben werden, die sie wirklich braucht.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Zusammenspiel mit zentralen Vaults</h2>
+        <p>1Password, HashiCorp Vault und Cloud-Secret-Systeme können weiter die Quelle der Wahrheit bleiben. Automic Vault schützt den lokalen Moment, in dem ein Mac-Tool diese Werte verwenden will.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Weiterführende Seiten</h2>
+        <p>Dokumentation, Download, Secret Scanner und Paketkatalog zeigen den Weg von Erkennung zu Härtung, Approval Gates und laufender Überwachung der Entwickler-Maschine.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Laufende Überwachung</h2>
+        <p>Neue Pakete, veraltete Tools und neu erzeugte Konfigurationsdateien können nach der ersten Bereinigung wieder Risiken schaffen. Automic Vault bleibt aktiv und meldet frische Hazards.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Vertrauenshinweise</h2>
+        <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Wann einsetzen</h2>
+        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
+      </section>
+      <nav class="language-links" aria-label="Sprachversionen"><a href="/security/whitepaper/" lang="en">English</a> <a href="/ja/security/whitepaper/" lang="ja">日本語</a> <a href="/de/security/whitepaper/" lang="de">Deutsch</a> <a href="/fr/security/whitepaper/" lang="fr">Français</a> <a href="/zh-hans/security/whitepaper/" lang="zh-Hans">简体中文</a></nav>
+    </main>
+    <footer class="site-footer">
+      <p>Automic Vault</p>
+      <div class="footer-links">
+        <a href="/de/privacy/">Datenschutz</a>
+        <a href="/de/terms/">Bedingungen</a>
+        <a href="/de/llms.txt">llms.txt</a>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

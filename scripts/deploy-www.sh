@@ -527,6 +527,8 @@ function handler(event) {
       "/secure-aws-cli-credentials-ai-agents/": true,
       "/security": true,
       "/security/": true,
+      "/security/whitepaper": true,
+      "/security/whitepaper/": true,
       "/stop-ai-agents-reading-env-files": true,
       "/stop-ai-agents-reading-env-files/": true,
       "/terms": true,

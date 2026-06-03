@@ -253,6 +253,7 @@ UI_COPY: dict[str, dict[str, str]] = {
         "toggleNavigationAria": "Toggle navigation",
         "v0Surface": "v0 surface",
         "viewSource": "View source",
+        "whitePaperEnglish": "Read English paper",
         "website": "Website",
     },
     "ja": {
@@ -298,6 +299,7 @@ UI_COPY: dict[str, dict[str, str]] = {
         "toggleNavigationAria": "ナビゲーションを開閉",
         "v0Surface": "v0 対象範囲",
         "viewSource": "ソースを見る",
+        "whitePaperEnglish": "英語版を読む",
         "website": "ウェブサイト",
     },
     "de": {
@@ -343,6 +345,7 @@ UI_COPY: dict[str, dict[str, str]] = {
         "toggleNavigationAria": "Navigation umschalten",
         "v0Surface": "v0-Oberfläche",
         "viewSource": "Quellcode ansehen",
+        "whitePaperEnglish": "Englisches White Paper",
         "website": "Website",
     },
     "fr": {
@@ -388,6 +391,7 @@ UI_COPY: dict[str, dict[str, str]] = {
         "toggleNavigationAria": "Afficher ou masquer la navigation",
         "v0Surface": "surface v0",
         "viewSource": "Voir le code source",
+        "whitePaperEnglish": "Livre blanc anglais",
         "website": "Site web",
     },
     "zh-Hans": {
@@ -433,6 +437,7 @@ UI_COPY: dict[str, dict[str, str]] = {
         "toggleNavigationAria": "切换导航",
         "v0Surface": "v0 范围",
         "viewSource": "查看源码",
+        "whitePaperEnglish": "阅读英文版",
         "website": "网站",
     },
 }
@@ -681,6 +686,11 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
         hero_actions = f"""        <div class="hero-actions">
           <a class="button primary" href="/Automic Vault.dmg">{html.escape(ui["downloadDmg"])}</a>
           <a class="button secondary" href="/install.sh">{html.escape(ui["installerScript"])}</a>
+        </div>"""
+    elif path == "/security/whitepaper/":
+        hero_actions = f"""        <div class="hero-actions">
+          <a class="button primary" href="/security/whitepaper/">{html.escape(ui["whitePaperEnglish"])}</a>
+          <a class="button secondary" href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
         </div>"""
     else:
         hero_actions = f"""        <div class="hero-actions">
