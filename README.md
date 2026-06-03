@@ -36,19 +36,16 @@ No magic. Just fewer ambient privileges.
 ## Install
 
 ```sh
-$ curl -fsSL https://automicvault.com/install.sh | sh -x
-# ^^ downloads and mounts the DMG read-only, lets Gatekeeper inspect the app,
-#    verifies its signature and TeamIdentifier, copies Automic Vault.app into
-#    /Applications, then installs /usr/local/bin/av
+$ curl -fsSL https://automicvault.com/install.sh | sh
+# ^^ downloads and mounts the DMG read-only
+#    lets Gatekeeper inspect the app
+#    verifies its signature and TeamIdentifier
+#    copies Automic Vault.app into /Applications
+#    sudo installs /usr/local/bin/av
 ```
 
-If `curl | sh` gives you hives, fair:
-
-```sh
-$ curl -fsSL https://automicvault.com/install.sh
-```
-
-Or download the DMG from [GitHub releases][releases].
+If `curl | sh` gives you hives, fair. You can just download the DMG from
+[GitHub releases][releases].
 
 ## Use It
 
