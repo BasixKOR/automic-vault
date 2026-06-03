@@ -670,11 +670,10 @@ h1 code {
   display: grid;
   grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr);
   gap: clamp(20px, 4.8vw, 64px);
-  align-items: stretch;
+  align-items: start;
   width: fit-content;
   max-width: 100%;
   margin-inline: auto;
-  min-height: clamp(204px, 22vw, 286px);
   overflow: hidden;
   padding: clamp(24px, 4vw, 46px);
   border: 1px solid transparent;
@@ -726,7 +725,8 @@ h1 code {
 
 .tweet-endorsement blockquote {
   display: grid;
-  align-content: end;
+  align-content: start;
+  gap: 12px;
   min-width: 0;
   margin: 0;
   padding-left: clamp(18px, 2.4vw, 30px);
@@ -765,6 +765,10 @@ h1 code {
 }
 
 .tweet-endorsement-author {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  width: fit-content;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -772,11 +776,7 @@ h1 code {
   font-weight: 700;
   line-height: 1.45;
   text-transform: uppercase;
-}
-
-.tweet-endorsement-author {
-  display: grid;
-  gap: 3px;
+  white-space: nowrap;
 }
 
 .tweet-endorsement-author span:last-child {
