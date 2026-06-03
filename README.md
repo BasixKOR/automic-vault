@@ -2,16 +2,19 @@
 
 Secure the tools you `brew install`.
 
-Automic Vault is a macOS app and CLI for giving AI coding agents useful local
-tools without handing them every secret and writable package path on the
-machine.
-
-<a href="https://github.com/automic-vault/automic-vault/releases/latest"><img src="./assets/download-button.png" alt="Download Automic Vault .DMG" width="250"></a>
+Automic Vault sits discretely on top of Homebrew hardening it by making
+packages store their secrets securely and requiring human approval for
+exfiltration of those secrets & risky commands.
 
 > [!IMPORTANT]
 > Automic Vault is not affiliated with any cryptocurrency or token.
 
 [![Coverage Status](https://shieldcn.dev/coveralls/github/automic-vault/automic-vault.svg?variant=outline)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+
+&nbsp;
+
+
+## Why Automic Vault
 
 Homebrew taught developer machines to install whatever tools the job needs.
 AI agents change the deal: the thing running those tools may not be you.
@@ -31,7 +34,10 @@ Automic Vault adds a local boundary for agent work:
 
 No magic. Just fewer ambient privileges.
 
-## Install
+&nbsp;
+
+
+## Install It
 
 ```sh
 curl -fsSL https://automicvault.com/install.sh | sh
