@@ -658,8 +658,74 @@ def package_security_signals(page_module: Any, page: Any) -> list[str]:
     return sorted(dict.fromkeys(item.strip() for item in signals if item and item.strip()))
 
 
-def package_data(page_module: Any, page: Any) -> dict[str, Any]:
+def jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): jsonable(item) for key, item in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(item) for item in value]
+    if isinstance(value, set):
+        return sorted(jsonable(item) for item in value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
     return {
+        "provider": getattr(page, "provider", ""),
+        "name": getattr(page, "name", ""),
+        "displayName": getattr(page, "display_name", ""),
+        "key": getattr(page, "key", ""),
+        "slug": getattr(page, "slug", ""),
+        "path": getattr(page, "path", ""),
+        "summary": getattr(page, "summary", ""),
+        "homepage": getattr(page, "homepage", ""),
+        "version": getattr(page, "version", ""),
+        "lastUpdatedAt": getattr(page, "last_updated_at", ""),
+        "pulseKind": getattr(page, "pulse_kind", ""),
+        "url": getattr(page, "url", ""),
+        "sha256": getattr(page, "sha256", ""),
+        "binaries": getattr(page, "binaries", []),
+        "popularity": getattr(page, "popularity", {}),
+        "aliases": sorted(str(item) for item in getattr(page, "aliases", [])),
+        "sourceNotes": getattr(page, "source_notes", []),
+        "packageManager": getattr(page, "package_manager", ""),
+        "packageManagerUrl": getattr(page, "package_manager_url", ""),
+        "repository": getattr(page, "repository", ""),
+        "upstreamDocs": getattr(page, "upstream_docs", ""),
+        "category": getattr(page, "category", ""),
+        "license": getattr(page, "license", ""),
+        "sourceArchive": getattr(page, "source_archive", ""),
+        "lastVerified": getattr(page, "last_verified", ""),
+        "dependencies": getattr(page, "dependencies", []),
+        "buildDependencies": getattr(page, "build_dependencies", []),
+        "usesFromMacos": getattr(page, "uses_from_macos", []),
+        "install": getattr(page, "install", {}),
+        "installCommands": getattr(page, "install_commands", []),
+        "executablesDetailed": getattr(page, "executables", []),
+        "installBehavior": getattr(page, "install_behavior", {}),
+        "bottle": getattr(page, "bottle", {}),
+        "publishedAt": getattr(page, "published_at", ""),
+        "keywords": getattr(page, "keywords", []),
+        "issueTracker": getattr(page, "issue_tracker", ""),
+        "classifiers": getattr(page, "classifiers", []),
+        "projectUrls": getattr(page, "project_urls", {}),
+        "versionFreshness": getattr(page, "version_freshness", {}),
+        "geiger": getattr(page, "geiger", None),
+        "relatedPackages": getattr(page, "related_packages", []),
+        "alsoAvailableVia": getattr(page, "also_available_via", []),
+        "packageHubs": getattr(page, "package_hubs", []),
+        "isotope": getattr(page, "isotope", None),
+        "isotopeReadme": getattr(page, "isotope_readme", ""),
+        "isotopeReadmeHtml": page_module.public_copy(getattr(page, "isotope_readme_html", "")),
+        "isotopeReadmeSource": getattr(page, "isotope_readme_source", ""),
+        "approvalGate": getattr(page, "approval_gate", None),
+        "extra": getattr(page, "extra", {}),
+    }
+
+
+def package_data(page_module: Any, page: Any) -> dict[str, Any]:
+    data = {
         "aliases": sorted(str(item) for item in getattr(page, "aliases", [])),
         "binaries": string_items(getattr(page, "binaries", [])),
         "classifiers": string_items(getattr(page, "classifiers", [])),
@@ -677,6 +743,8 @@ def package_data(page_module: Any, page: Any) -> dict[str, Any]:
         "related": string_items(getattr(page, "related_packages", []), ("label", "name", "target", "package", "key")),
         "security": package_security_signals(page_module, page),
     }
+    data["full"] = jsonable(full_package_data(page_module, page))
+    return data
 
 
 def package_record(page_module: Any, page: Any, search_text: str) -> PackageRecord:

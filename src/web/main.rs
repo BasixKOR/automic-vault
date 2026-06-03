@@ -1,5 +1,6 @@
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
@@ -463,38 +464,13 @@ const PROVIDERS: &[&str] = &["brew", "cask", "npm", "pip"];
 #[derive(Debug, Clone, Default, Deserialize)]
 struct PackageData {
     #[serde(default)]
-    aliases: Vec<String>,
-    #[serde(default)]
-    binaries: Vec<String>,
-    #[serde(default)]
-    classifiers: Vec<String>,
-    #[serde(default)]
-    executables: Vec<String>,
-    #[serde(default)]
-    hubs: Vec<PackageHubData>,
-    #[serde(default)]
-    keywords: Vec<String>,
-    #[serde(default)]
-    related: Vec<String>,
-    #[serde(default)]
-    security: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-struct PackageHubData {
-    #[serde(default)]
-    slug: String,
-    #[serde(default)]
-    label: String,
-    #[serde(default)]
-    reason: String,
+    full: Value,
 }
 
 #[derive(Debug, Clone)]
 struct PackageRow {
     path: String,
     provider: String,
-    slug: String,
     package_key: String,
     name: String,
     display_name: String,
@@ -504,7 +480,6 @@ struct PackageRow {
     install_command: String,
     native_install_command: String,
     version: String,
-    category: String,
     license: String,
     homepage: String,
     repository: String,
@@ -557,13 +532,15 @@ fn dynamic_response_for_path(db_path: &Path, path: &str) -> Result<Option<Stored
             if !package.indexable {
                 return Ok(None);
             }
+            let generated_at = metadata_string(&connection, "generated_at")?.unwrap_or_default();
             Some((
-                render_package_markdown(&package, locale),
+                render_package_markdown(&package, locale, &generated_at),
                 "text/markdown; charset=utf-8",
             ))
         } else {
+            let generated_at = metadata_string(&connection, "generated_at")?.unwrap_or_default();
             Some((
-                render_package_page(&package, locale),
+                render_package_page(&package, locale, &generated_at),
                 "text/html; charset=utf-8",
             ))
         }
@@ -699,7 +676,6 @@ fn package_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PackageRow> {
     Ok(PackageRow {
         path: row.get(0)?,
         provider: row.get(1)?,
-        slug: row.get(2)?,
         package_key: row.get(3)?,
         name: row.get(4)?,
         display_name: row.get(5)?,
@@ -709,7 +685,6 @@ fn package_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PackageRow> {
         install_command: row.get(9)?,
         native_install_command: row.get(10)?,
         version: row.get(11)?,
-        category: row.get(12)?,
         license: row.get(13)?,
         homepage: row.get(14)?,
         repository: row.get(15)?,
@@ -737,21 +712,6 @@ fn hub_by_slug(connection: &Connection, slug: &str) -> Result<Option<HubRow>, St
         )
         .optional()
         .map_err(|err| format!("failed to query hub {slug}: {err}"))
-}
-
-fn top_packages(connection: &Connection, limit: usize) -> Result<Vec<PackageRow>, String> {
-    let mut statement = connection
-        .prepare(
-            "SELECT path, provider, slug, package_key, name, display_name, summary,
-                    provider_label, package_manager_url, install_command, native_install_command,
-                    version, category, license, homepage, repository, rank, last_updated_at,
-                    indexable, data_json
-             FROM packages
-             ORDER BY rank IS NULL, rank, display_name
-             LIMIT ?1",
-        )
-        .map_err(|err| format!("failed to prepare top packages query: {err}"))?;
-    collect_packages(statement.query_map(params![limit as i64], package_from_row))
 }
 
 fn packages_for_hub(
@@ -798,6 +758,61 @@ fn hubs(connection: &Connection) -> Result<Vec<HubRow>, String> {
         .map_err(|err| format!("failed to read hubs: {err}"))
 }
 
+fn all_packages(connection: &Connection) -> Result<Vec<PackageRow>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT path, provider, slug, package_key, name, display_name, summary,
+                    provider_label, package_manager_url, install_command, native_install_command,
+                    version, category, license, homepage, repository, rank, last_updated_at,
+                    indexable, data_json
+             FROM packages
+             ORDER BY rank IS NULL, rank, display_name",
+        )
+        .map_err(|err| format!("failed to prepare all packages query: {err}"))?;
+    collect_packages(statement.query_map([], package_from_row))
+}
+
+#[derive(Debug, Clone)]
+struct HubSummary {
+    hub: HubRow,
+    package_count: i64,
+}
+
+fn hub_summaries(connection: &Connection) -> Result<Vec<HubSummary>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT h.path, h.slug, h.title, h.description, h.group_name, COUNT(hp.package_key)
+             FROM hubs h
+             LEFT JOIN hub_packages hp ON hp.hub_slug = h.slug
+             GROUP BY h.path, h.slug, h.title, h.description, h.group_name
+             ORDER BY h.group_name, h.title",
+        )
+        .map_err(|err| format!("failed to prepare hub summaries query: {err}"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(HubSummary {
+                hub: HubRow {
+                    path: row.get(0)?,
+                    slug: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    group: row.get(4)?,
+                },
+                package_count: row.get(5)?,
+            })
+        })
+        .map_err(|err| format!("failed to query hub summaries: {err}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("failed to read hub summaries: {err}"))
+}
+
+fn metadata_json(connection: &Connection, key: &str) -> Result<Option<Value>, String> {
+    let Some(value) = metadata_string(connection, key)? else {
+        return Ok(None);
+    };
+    Ok(serde_json::from_str(&value).ok())
+}
+
 fn collect_packages<F>(
     rows: rusqlite::Result<rusqlite::MappedRows<'_, F>>,
 ) -> Result<Vec<PackageRow>, String>
@@ -810,34 +825,73 @@ where
 }
 
 fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String, String> {
-    let hubs = hubs(connection)?;
-    let packages = top_packages(connection, 240)?;
+    let hub_summaries = hub_summaries(connection)?;
+    let packages = all_packages(connection)?;
+    let top_packages = packages.iter().take(72).collect::<Vec<_>>();
+    let secured = packages
+        .iter()
+        .filter(|package| package_isotope(package))
+        .count();
+    let radioisotope_count = metadata_json(connection, "manifest")?
+        .and_then(|manifest| value_i64_key(&manifest, "radioisotope_manifest_count"))
+        .unwrap_or(secured as i64);
+    let gated = packages
+        .iter()
+        .filter(|package| package_gate(package))
+        .count();
+    let source_files = metadata_json(connection, "manifest")?
+        .and_then(|manifest| value_i64_key(&manifest, "source_file_count"))
+        .unwrap_or_default();
     let search_endpoint = locale_path("/pkg/search.json", locale);
     let mut body = String::new();
-    body.push_str(r#"<section class="hero"><p class="eyebrow">Package security catalog</p><h1>Package security catalog</h1><p>Curated Automic Vault package pages with install, executable, and security signals.</p></section>"#);
+    body.push_str(&site_nav(locale));
+    body.push_str("<main>");
     body.push_str(&format!(
-        r#"<section class="search-card"><h2>Find package coverage</h2><div id="pkg-search" class="pkg-search" data-av-package-search data-locale="{}" data-search-endpoint="{}" data-placeholder="Search awscli, gh, .env, npm publish"></div></section><script src="{}"></script>"#,
-        html_escape(locale.code),
-        html_escape(&search_endpoint),
-        html_escape(&locale_path("/pkg/search.js", locale))
+        r#"<section class="pkg-hero pkg-hero-index" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">Nucleus package intelligence</p><h1 id="pkg-title">Package security catalog</h1><p class="lede">Generated pages for executable packages Nucleus knows about, with local secret-handling manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p></div><aside class="hero-panel" aria-label="Catalog counts">{}{}{}{}</aside></section>"#,
+        metric("packages", &fmt_int(packages.len() as i64)),
+        metric("protected tools", &fmt_int(radioisotope_count)),
+        metric("approval gates", &fmt_int(gated as i64)),
+        metric("source files", &fmt_int(source_files)),
     ));
-    body.push_str(
-        r#"<section><h2>Package groups with security signals</h2><div class="hub-groups">"#,
-    );
-    for hub in hubs {
-        body.push_str(&format!(
-            r#"<a class="hub-card" href="{}"><span>{}</span><small>{}</small></a>"#,
-            html_escape(&locale_path(&hub.path, locale)),
-            html_escape(&hub.title),
-            html_escape(&hub.description)
-        ));
+    body.push_str(&format!(
+        r#"<section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title"><div class="search-copy"><p class="section-kicker">site search</p><h2 id="pkg-search-title">Find package coverage</h2><p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p></div><div id="pkg-search" class="pkg-search" data-av-package-search data-locale="{}" data-search-endpoint="{}" data-placeholder="Search awscli, gh, .env, npm publish"></div></section>"#,
+        html_escape(locale.code),
+        html_escape(&search_endpoint)
+    ));
+    body.push_str(&format!(
+        r#"<section class="pkg-section" aria-labelledby="pkg-hubs-title"><p class="section-kicker">package hubs</p><h2 id="pkg-hubs-title">Package groups with security signals</h2><p>These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p><div class="hub-groups" aria-label="Package category hubs">{}</div></section>"#,
+        hub_group_sections(&hub_summaries, locale)
+    ));
+    body.push_str(r#"<section class="pkg-section split-section"><div><p class="section-kicker">crawlable catalog</p><h2>Package pages from local source data</h2><p>Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are written to dynamic HTML so search and answer engines can find specific tool coverage.</p></div><div class="package-list" aria-label="Popular packages">"#);
+    for package in top_packages {
+        body.push_str(&index_package_row(package, locale));
     }
-    body.push_str("</div></section><section><h2>Popular packages</h2><div class=\"package-list\">");
-    for package in packages {
-        body.push_str(&package_row(&package, locale, None));
-    }
-    body.push_str("</div></section>");
-    Ok(layout("Package security catalog", "/pkg/", locale, &body))
+    body.push_str("</div></section></main>");
+    body.push_str(&site_footer(locale));
+    let schema = json!({
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "Automic Vault package security catalog",
+        "url": locale_url("/pkg/", locale),
+        "inLanguage": locale.hreflang,
+        "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
+        "about": "Nucleus packages, AI agent package security, approval gates, and secret migration metadata"
+    });
+    let schema_json = serde_json::to_string_pretty(&schema).unwrap_or_else(|_| "{}".to_string());
+    Ok(html_doc(
+        locale,
+        "Package security catalog | Automic Vault",
+        "Automic Vault package catalog for executable Nucleus packages, protected-tool secret handling, approval gates, install metadata, and agent security notes.",
+        &locale_url("/pkg/", locale),
+        "index,follow",
+        "",
+        &schema_json,
+        &body,
+        &format!(
+            r#"  <script src="{}"></script>"#,
+            html_escape(&locale_path("/pkg/search.js", locale))
+        ),
+    ))
 }
 
 fn render_hub_page(
@@ -846,106 +900,2444 @@ fn render_hub_page(
     locale: &Locale,
 ) -> Result<String, String> {
     let packages = packages_for_hub(connection, &hub.slug)?;
+    let generated_at = metadata_string(connection, "generated_at")?.unwrap_or_default();
+    let updated = fmt_date(&generated_at);
+    let secured = packages
+        .iter()
+        .filter(|(package, _reason)| package_isotope(package))
+        .count();
+    let gated = packages
+        .iter()
+        .filter(|(package, _reason)| package_gate(package))
+        .count();
+    let risked = packages
+        .iter()
+        .filter(|(package, _reason)| package_non_low_geiger(package))
+        .count();
+    let top = packages.iter().take(72).collect::<Vec<_>>();
+    let high_signal = packages
+        .iter()
+        .take(12)
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let protected = packages
+        .iter()
+        .filter(|(package, _reason)| package_isotope(package))
+        .take(8)
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let approval_gated = packages
+        .iter()
+        .filter(|(package, _reason)| package_gate(package))
+        .take(8)
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let mut spokes = packages
+        .iter()
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    spokes.sort_by_key(|package| {
+        (
+            package.rank.unwrap_or(u32::MAX),
+            package.display_name.to_ascii_lowercase(),
+        )
+    });
+    let spokes = spokes.into_iter().take(16).collect::<Vec<_>>();
     let mut body = String::new();
+    body.push_str(&site_nav(locale));
+    body.push_str("<main>");
     body.push_str(&format!(
-        r#"<nav class="breadcrumbs"><a href="{}">Packages</a></nav><section class="hero"><p class="eyebrow">{}</p><h1>{}</h1><p>{}</p></section><section><h2>Packages</h2><div class="package-list">"#,
+        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">Home</a><span>/</span><a href="{}">Packages</a><span>/</span><span>{}</span></nav><section class="pkg-hero pkg-hero-index" aria-labelledby="hub-title"><div class="hero-copy"><p class="eyebrow">{}</p><h1 id="hub-title">{}</h1><p class="lede">{}</p></div><aside class="hero-panel" aria-label="Hub counts">{}{}{}{}</aside></section>"#,
+        html_escape(&locale_path("/", locale)),
         html_escape(&locale_path("/pkg/", locale)),
+        html_escape(&hub.title),
         html_escape(&hub.group),
         html_escape(&hub.title),
-        html_escape(&hub.description)
+        html_escape(&hub.description),
+        metric("packages", &fmt_int(packages.len() as i64)),
+        metric("protected tools", &fmt_int(secured as i64)),
+        metric("approval gates", &fmt_int(gated as i64)),
+        metric("updated", &updated),
     ));
-    for (package, reason) in packages {
-        body.push_str(&package_row(&package, locale, Some(&reason)));
+    body.push_str(&format!(
+        r#"<section class="pkg-section split-section"><div><p class="section-kicker">summary</p><h2>Why this package group is here</h2><p>{}</p></div><div class="detail-stack"><article><h3>Generated source</h3><p>This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available.</p></article><article><h3>Review model</h3><p>Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.</p></article></div></section>"#,
+        html_escape(&format!(
+            "{} currently includes {} generated package pages. {} have protected-tool coverage, {} have approval-gate metadata, and {} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+            hub.title,
+            packages.len(),
+            secured,
+            gated,
+            risked
+        ))
+    ));
+    body.push_str(&hub_cluster_block(
+        "High-signal tools",
+        &high_signal,
+        locale,
+    ));
+    body.push_str(&hub_cluster_block("Protected tools", &protected, locale));
+    body.push_str(&hub_cluster_block(
+        "Approval-gated tools",
+        &approval_gated,
+        locale,
+    ));
+    body.push_str(&hub_related_block(
+        "Related hubs",
+        &related_hub_links(hub, &packages, locale),
+    ));
+    body.push_str(&hub_cluster_block(
+        "Representative package spokes",
+        &spokes,
+        locale,
+    ));
+    body.push_str(r#"<section class="pkg-section"><p class="section-kicker">packages</p><h2>Indexed package pages</h2><div class="table-wrap hub-table"><table><thead><tr><th>Package</th><th>Manager</th><th>Signals</th><th>Why it appears here</th></tr></thead><tbody>"#);
+    for (package, reason) in top {
+        body.push_str(&hub_package_row(package, reason));
     }
-    body.push_str("</div></section>");
-    Ok(layout(&hub.title, &hub.path, locale, &body))
+    body.push_str("</tbody></table></div></section></main>");
+    body.push_str(&site_footer(locale));
+    let description = short_text(
+        &format!(
+            "{} Browse {} package pages with install commands, metadata, and Automic Vault security notes.",
+            hub.description,
+            packages.len()
+        ),
+        155,
+    );
+    let schema = schema_for_hub(
+        hub,
+        packages.iter().map(|(package, _)| package).collect(),
+        &description,
+        &updated,
+        locale,
+    );
+    let schema_json = serde_json::to_string_pretty(&schema).unwrap_or_else(|_| "{}".to_string());
+    Ok(html_doc(
+        locale,
+        &format!("{} | Automic Vault package catalog", hub.title),
+        &description,
+        &locale_url(&hub.path, locale),
+        "index,follow",
+        "",
+        &schema_json,
+        &body,
+        "",
+    ))
 }
 
-fn render_package_page(package: &PackageRow, locale: &Locale) -> String {
-    let title = format!("{} package security", package.display_name);
+fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str) -> String {
+    let title = format!("Install {} | Automic Vault", package.display_name);
+    let description = meta_description(package);
+    let updated = first_non_empty(&[
+        full_str(package, "lastVerified"),
+        package.last_updated_at.clone(),
+    ])
+    .map(|value| fmt_date(&value))
+    .filter(|value| !value.is_empty())
+    .unwrap_or_else(|| "2026-06-03".to_string());
+    let canonical = locale_url(&package.path, locale);
+    let schema = schema_for_package(package, &description, &updated, locale);
+    let schema_json = serde_json::to_string_pretty(&schema).unwrap_or_else(|_| "{}".to_string());
     let mut body = String::new();
+    body.push_str(&site_nav(locale));
+    body.push_str("<main>");
     body.push_str(&format!(
-        r#"<nav class="breadcrumbs"><a href="{}">Packages</a></nav><section class="hero"><p class="eyebrow">{} package</p><h1>{}</h1><p>{}</p></section>"#,
+        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">Home</a><span>/</span><a href="{}">Packages</a><span>/</span><span>{}</span></nav>"#,
+        html_escape(&locale_path("/", locale)),
         html_escape(&locale_path("/pkg/", locale)),
-        html_escape(&package.provider_label),
-        html_escape(&package.display_name),
-        html_escape(&package.summary)
+        html_escape(&package.display_name)
     ));
-    body.push_str("<section><h2>Install</h2>");
-    body.push_str(&code_block(&package.install_command));
-    if !package.native_install_command.is_empty()
-        && package.native_install_command != package.install_command
-    {
-        body.push_str("<h3>Package manager install</h3>");
-        body.push_str(&code_block(&package.native_install_command));
-    }
-    body.push_str("</section><section><h2>Package facts</h2><dl class=\"facts\">");
-    fact(&mut body, "Name", &package.name);
-    fact(&mut body, "Package key", &package.package_key);
-    fact(&mut body, "Provider", &package.provider);
-    fact(&mut body, "Slug", &package.slug);
-    fact(&mut body, "Manager", &package.provider_label);
-    fact(&mut body, "Version", &package.version);
-    fact(&mut body, "Category", &package.category);
-    fact(&mut body, "License", &package.license);
-    if let Some(rank) = package.rank {
-        fact(&mut body, "Popularity rank", &rank.to_string());
-    }
-    fact_link(&mut body, "Homepage", &package.homepage);
-    fact_link(&mut body, "Repository", &package.repository);
-    fact_link(
-        &mut body,
-        "Package manager page",
-        &package.package_manager_url,
+    body.push_str(&format!(
+        r##"<section class="pkg-hero" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">{} package intelligence</p><h1 id="pkg-title">Install {}</h1><p class="lede">{}</p><div class="hero-actions"><a class="button primary" href="#install">Install command</a><a class="button secondary" href="#security">Security notes</a></div></div><aside class="hero-panel" aria-label="Package facts">{}</aside></section>"##,
+        html_escape(&package.provider),
+        html_escape(&package.display_name),
+        html_escape(&hero_sentence(package)),
+        package_facts(package)
+    ));
+    body.push_str(&render_install(package));
+    body.push_str(&render_overview(package));
+    body.push_str(&render_security(package));
+    body.push_str(&render_executables(package));
+    body.push_str(&render_freshness(package, generated_at));
+    body.push_str(&render_install_metadata(package));
+    body.push_str(&render_related(package, locale));
+    body.push_str(&render_sources(package));
+    body.push_str("</main>");
+    body.push_str(&site_footer(locale));
+    html_doc(
+        locale,
+        &title,
+        &description,
+        &canonical,
+        if package.indexable {
+            "index,follow"
+        } else {
+            "noindex,follow"
+        },
+        &format!(
+            r#"  <link rel="alternate" type="text/markdown" href="{}index.md">"#,
+            html_escape(&canonical)
+        ),
+        &schema_json,
+        &body,
+        &copy_script(),
+    )
+}
+
+fn render_package_markdown(package: &PackageRow, locale: &Locale, generated_at: &str) -> String {
+    let mut text = format!(
+        "# Install {}\n\n{}\n\n## Install\n\n```sh\n{}\n```\n\n",
+        package.display_name,
+        hero_sentence(package),
+        package.install_command,
     );
-    body.push_str("</dl></section>");
-    list_section(&mut body, "Executables", &package.data.executables);
-    list_section(&mut body, "Aliases", &package.data.aliases);
-    list_section(&mut body, "Binaries", &package.data.binaries);
-    list_section(&mut body, "Security signals", &package.data.security);
-    list_section(&mut body, "Classifiers", &package.data.classifiers);
-    if !package.data.hubs.is_empty() {
-        body.push_str("<section><h2>Package groups</h2><ul>");
-        for hub in &package.data.hubs {
-            let label = if hub.label.is_empty() {
-                &hub.slug
-            } else {
-                &hub.label
-            };
-            body.push_str(&format!(
-                r#"<li><a href="{}">{}</a>{}</li>"#,
-                html_escape(&locale_path(&format!("/pkg/{}/", hub.slug), locale)),
+    markdown_install_groups(&mut text, package);
+    text.push_str("## Package Facts\n\n");
+    for (label, value) in [
+        ("Package key", package.package_key.clone()),
+        ("Package manager", package.provider_label.clone()),
+        ("Package manager URL", package.package_manager_url.clone()),
+        ("Version", package.version.clone()),
+        ("Source summary", package.summary.clone()),
+        ("Homepage", package.homepage.clone()),
+        ("Repository", package.repository.clone()),
+        ("Upstream docs", full_str(package, "upstreamDocs")),
+        ("License", package.license.clone()),
+        ("Source archive", full_str(package, "sourceArchive")),
+        ("Issue tracker", full_str(package, "issueTracker")),
+        ("Published", full_str(package, "publishedAt")),
+        ("Last verified", full_str(package, "lastVerified")),
+        ("Last updated", package.last_updated_at.clone()),
+        ("Generated", generated_at.to_string()),
+    ] {
+        if !value.trim().is_empty() {
+            text.push_str(&format!("- **{}:** {}\n", label, markdown_value(&value)));
+        }
+    }
+    markdown_value_list(
+        &mut text,
+        "Executables",
+        &executable_markdown_items(package),
+    );
+    markdown_value_list(
+        &mut text,
+        "Dependencies",
+        &full_string_array(package, "dependencies"),
+    );
+    markdown_value_list(
+        &mut text,
+        "Build Dependencies",
+        &full_string_array(package, "buildDependencies"),
+    );
+    markdown_value_list(
+        &mut text,
+        "macOS Provided Libraries",
+        &full_string_array(package, "usesFromMacos"),
+    );
+    markdown_value_list(
+        &mut text,
+        "Install Behavior",
+        &markdown_install_behavior_items(package),
+    );
+    markdown_value_list(
+        &mut text,
+        "Freshness",
+        &markdown_freshness_items(package, generated_at),
+    );
+    markdown_security_section(&mut text, package);
+    markdown_related(&mut text, package, locale);
+    markdown_value_list(
+        &mut text,
+        "Sources",
+        &full_string_array(package, "sourceNotes"),
+    );
+    text
+}
+
+fn html_doc(
+    locale: &Locale,
+    title: &str,
+    description: &str,
+    canonical: &str,
+    robots: &str,
+    extra_head: &str,
+    schema_json: &str,
+    body: &str,
+    extra_body: &str,
+) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <meta name="description" content="{description}">
+  <meta name="robots" content="{robots}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="{title}">
+  <meta property="og:description" content="{description}">
+  <meta property="og:url" content="{canonical}">
+  <meta property="og:image" content="{origin}/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{title}">
+  <meta name="twitter:description" content="{description}">
+  <meta name="twitter:image" content="{origin}/preview.jpg">
+  <link rel="canonical" href="{canonical}">
+{hreflang}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="stylesheet" href="{stylesheet}">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){{dataLayer.push(arguments);}}
+    gtag('js', new Date());
+    gtag('config', 'G-Y78QKG1T9Y');
+  </script>
+{extra_head}
+  <script type="application/ld+json">
+{schema_json}
+  </script>
+</head>
+<body>
+  <div class="site-shell">
+    {body}
+  </div>
+{extra_body}
+</body>
+</html>
+"#,
+        lang = html_escape(locale.code),
+        title = html_escape(title),
+        description = html_escape(description),
+        robots = html_escape(robots),
+        canonical = html_escape(canonical),
+        origin = SITE_ORIGIN,
+        hreflang = html_hreflang_links(canonical),
+        stylesheet = html_escape(&locale_path("/pkg/styles.css", locale)),
+        extra_head = extra_head,
+        schema_json = schema_json,
+        body = body,
+        extra_body = extra_body,
+    )
+}
+
+fn site_nav(locale: &Locale) -> String {
+    format!(
+        r#"<header class="masthead"><a class="brand" href="{}" aria-label="Automic Vault home"><img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54"><span class="brand-type">Automic Vault</span></a><nav class="nav" aria-label="Main navigation"><a href="{}">Docs</a><a href="{}">Security</a><a href="{}">Packages</a><a href="https://github.com/automic-vault/">GitHub</a></nav></header>"#,
+        html_escape(&locale_path("/", locale)),
+        html_escape(&locale_path("/docs/", locale)),
+        html_escape(&locale_path("/security/", locale)),
+        html_escape(&locale_path("/pkg/", locale)),
+    )
+}
+
+fn site_footer(locale: &Locale) -> String {
+    format!(
+        r#"<footer class="site-footer"><p>Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.</p><div class="footer-links"><a href="{}">Privacy</a><a href="{}">Terms</a><a href="{}">llms.txt</a></div></footer>"#,
+        html_escape(&locale_path("/privacy/", locale)),
+        html_escape(&locale_path("/terms/", locale)),
+        html_escape(&locale_path("/llms.txt", locale)),
+    )
+}
+
+fn copy_script() -> String {
+    r#"  <script>
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-copy]");
+      if (!button) return;
+      try {
+        await navigator.clipboard.writeText(button.getAttribute("data-copy"));
+        const previous = button.textContent;
+        button.textContent = "Copied";
+        button.setAttribute("data-state", "copied");
+        window.setTimeout(() => {
+          button.textContent = previous;
+          button.removeAttribute("data-state");
+        }, 1600);
+      } catch (_error) {
+        button.textContent = "Copy failed";
+        button.setAttribute("data-state", "error");
+      }
+    });
+  </script>"#
+        .to_string()
+}
+
+fn html_hreflang_links(canonical: &str) -> String {
+    let Some(path) = canonical.strip_prefix(SITE_ORIGIN) else {
+        return String::new();
+    };
+    let (_, canonical_path) = canonical_pkg_route(path);
+    let path = canonical_path
+        .strip_suffix("index.html")
+        .unwrap_or(&canonical_path);
+    let mut lines = Vec::new();
+    for locale in LOCALES {
+        lines.push(format!(
+            r#"  <link rel="alternate" hreflang="{}" href="{}{}">"#,
+            html_escape(locale.hreflang),
+            SITE_ORIGIN,
+            html_escape(&locale_path(path, locale))
+        ));
+    }
+    lines.push(format!(
+        r#"  <link rel="alternate" hreflang="x-default" href="{}{}">"#,
+        SITE_ORIGIN,
+        html_escape(path)
+    ));
+    lines.join("\n")
+}
+
+fn render_install(package: &PackageRow) -> String {
+    let commands = install_command_entries(package);
+    let primary = commands.first().cloned().unwrap_or_else(|| {
+        json!({
+            "platform": "portable",
+            "manager": "Automic Vault",
+            "command": package.install_command,
+            "kind": "automic_vault",
+            "confidence": 1.0,
+            "evidence": "deterministic local package key"
+        })
+    });
+    let command =
+        value_str_key(&primary, "command").unwrap_or_else(|| package.install_command.clone());
+    let notes = full_value(package, "install")
+        .and_then(|value| value.get("notes"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(6)
+                .filter_map(value_string)
+                .map(|item| format!("<li>{}</li>", html_escape(&item)))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    let platform_html = render_platform_install_commands(&commands[1..]);
+    let manager_link = if package.package_manager_url.is_empty() {
+        format!(
+            "{} metadata was not linked in local data.",
+            html_escape(&package.provider_label)
+        )
+    } else {
+        format!(
+            r#"<a href="{}">{}</a>"#,
+            html_escape(&package.package_manager_url),
+            html_escape(&package.package_manager_url)
+        )
+    };
+    format!(
+        r#"<section id="install" class="pkg-section install-section" aria-labelledby="install-title"><div class="install-command-panel"><div><p class="section-kicker">install</p><h2 id="install-title">Install with Automic Vault</h2></div><div class="terminal-block"><div class="terminal-head"><span>{}</span><div class="terminal-actions"><a class="download-av-button" href="/download/" aria-label="Download Automic Vault">Download AV</a><button class="copy-button" type="button" data-copy="{}" aria-label="Copy install command">Copy</button></div></div><pre><code>{}</code></pre></div>{}</div><div class="install-notes-grid"><article><h3>Package manager source</h3><p>{}</p></article><article><h3>Platform notes</h3><ul>{}</ul></article></div></section>"#,
+        html_escape(
+            &value_str_key(&primary, "manager").unwrap_or_else(|| "Automic Vault".to_string())
+        ),
+        html_escape(&command),
+        html_escape(&command),
+        platform_html,
+        manager_link,
+        if notes.is_empty() {
+            "<li>No package-specific platform notes were present.</li>".to_string()
+        } else {
+            notes
+        }
+    )
+}
+
+fn render_platform_install_commands(commands: &[Value]) -> String {
+    let mut sections = Vec::new();
+    for (platform, label) in [
+        ("macos", "macOS"),
+        ("linux", "Linux"),
+        ("windows", "Windows"),
+        ("portable", "Portable and language managers"),
+    ] {
+        let rows = commands
+            .iter()
+            .filter(|item| {
+                value_str_key(item, "platform").unwrap_or_else(|| "portable".to_string())
+                    == platform
+            })
+            .map(install_command_row)
+            .collect::<String>();
+        if !rows.is_empty() {
+            sections.push(format!(
+                r#"<article><h3>{}</h3><div class="install-command-list">{}</div></article>"#,
                 html_escape(label),
-                if hub.reason.is_empty() {
+                rows
+            ));
+        }
+    }
+    if sections.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<div class="platform-install-grid" aria-label="Platform install commands">{}</div>"#,
+            sections.join("")
+        )
+    }
+}
+
+fn install_command_row(item: &Value) -> String {
+    let command = value_str_key(item, "command").unwrap_or_default();
+    let label = install_command_manager_label(item);
+    let confidence = value_f64_key(item, "confidence").unwrap_or(0.0);
+    let confidence_label = if confidence >= 0.9 {
+        "verified"
+    } else {
+        "inferred"
+    };
+    let source = install_command_source_html(item);
+    format!(
+        r#"<div class="install-command-row"><div class="install-command-head"><strong class="install-command-eyebrow">{}</strong><span>{} · {:.0}%</span></div><div class="install-command-shell"><code>{}</code><button class="copy-button" type="button" data-copy="{}" aria-label="Copy {} install command">Copy</button></div>{}</div>"#,
+        html_escape(&label),
+        confidence_label,
+        confidence * 100.0,
+        html_escape(&command),
+        html_escape(&command),
+        html_escape(&label),
+        source
+    )
+}
+
+fn install_command_manager_label(item: &Value) -> String {
+    let manager = value_str_key(item, "manager").unwrap_or_else(|| "shell".to_string());
+    let source_manager = item
+        .get("source")
+        .and_then(|source| value_str_key(source, "manager"))
+        .unwrap_or_default();
+    match (if source_manager.is_empty() {
+        manager.clone()
+    } else {
+        source_manager
+    })
+    .to_ascii_lowercase()
+    .as_str()
+    {
+        "apk" => "Alpine Linux apk".to_string(),
+        "apt" => "Debian apt".to_string(),
+        "chocolatey" => "Chocolatey".to_string(),
+        "dnf" => "Fedora dnf".to_string(),
+        "macports" => "MacPorts".to_string(),
+        "nix" => "Nix".to_string(),
+        "pacman" => "Arch Linux pacman".to_string(),
+        "scoop" => "Scoop".to_string(),
+        "winget" => "Windows Package Manager".to_string(),
+        "zypper" => "openSUSE zypper".to_string(),
+        "pip" => "Python pip".to_string(),
+        "npm" => "npm".to_string(),
+        _ => manager,
+    }
+}
+
+fn install_command_source_html(item: &Value) -> String {
+    if let Some(source) = item.get("source").filter(|value| value.is_object()) {
+        let label = value_str_key(source, "source_label").unwrap_or_default();
+        let package_name = value_str_key(source, "package_name")
+            .or_else(|| value_str_key(source, "package_id"))
+            .unwrap_or_default();
+        let source_url = value_str_key(source, "source_url").unwrap_or_default();
+        let mut pieces = [label, package_name]
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .map(|value| html_escape(&value))
+            .collect::<Vec<_>>();
+        if !source_url.is_empty() {
+            pieces.push(format!(
+                r#"<a href="{}">source: {}</a>"#,
+                html_escape(&source_url),
+                html_escape(source_host_label(&source_url))
+            ));
+        }
+        return if pieces.is_empty() {
+            String::new()
+        } else {
+            format!(
+                r#"<p class="install-command-source">{}</p>"#,
+                pieces.join(" · ")
+            )
+        };
+    }
+    value_str_key(item, "evidence")
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            format!(
+                r#"<p class="install-command-source">{}</p>"#,
+                html_escape(&value)
+            )
+        })
+        .unwrap_or_default()
+}
+
+fn render_overview(package: &PackageRow) -> String {
+    let aliases = full_string_array(package, "aliases");
+    let alias_block = if aliases.is_empty() {
+        "<p>No executable aliases were found in the local package database.</p>".to_string()
+    } else {
+        format!(
+            r#"<ul class="chip-list">{}</ul>"#,
+            aliases
+                .iter()
+                .take(32)
+                .map(|alias| format!("<li>{}</li>", html_escape(alias)))
+                .collect::<String>()
+        )
+    };
+    let homepage = if package.homepage.is_empty() {
+        "Not present in the local metadata.".to_string()
+    } else {
+        format!(
+            r#"<a href="{}">{}</a>"#,
+            html_escape(&package.homepage),
+            html_escape(&package.homepage)
+        )
+    };
+    format!(
+        r#"<section class="pkg-section split-section"><div><p class="section-kicker">overview</p><h2>Package summary</h2><p>{}</p></div><div class="detail-stack"><article><h3>Homepage</h3><p>{}</p></article><article><h3>Commands and aliases</h3>{}</article></div></section>"#,
+        html_escape(&package.summary),
+        homepage,
+        alias_block
+    )
+}
+
+fn render_security(package: &PackageRow) -> String {
+    let geiger = render_geiger(package);
+    let install_signals = render_install_behavior_signals(package);
+    let gate = render_gate(package);
+    if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
+        let justification = isotope.get("justification").unwrap_or(&Value::Null);
+        let title = value_str_key(justification, "title")
+            .or_else(|| Some("Protected-tool coverage".to_string()))
+            .unwrap();
+        let detail = value_str_key(justification, "detail")
+            .or_else(|| full_opt_str(package, "isotopeReadme"))
+            .unwrap_or_else(|| {
+                "Automic Vault has a local secret-handling manifest for this package.".to_string()
+            });
+        let caveats = isotope
+            .get("caveats")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .take(8)
+                    .filter_map(value_string)
+                    .map(|item| format!("<li>{}</li>", html_escape(&item)))
+                    .collect::<String>()
+            })
+            .unwrap_or_default();
+        let readme = full_opt_str(package, "isotopeReadmeHtml")
+            .filter(|value| !value.is_empty())
+            .map(|html| {
+                format!(
+                    r#"<div class="readme-excerpt"><p class="readme-label">Local README excerpt</p>{}<p class="readme-source">Source: <code>{}</code></p></div>"#,
+                    html,
+                    html_escape(&full_str(package, "isotopeReadmeSource"))
+                )
+            })
+            .unwrap_or_default();
+        return format!(
+            r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">protected-tool coverage</p><h2>{}</h2><p>{}</p>{}{}{}</div><div class="detail-stack"><article><h3>Coverage source</h3><p>Local secret-handling manifest</p></article><article><h3>Caveats</h3><ul>{}</ul></article></div></section>{}"#,
+            html_escape(&title),
+            html_escape(&detail),
+            geiger,
+            install_signals,
+            readme,
+            if caveats.is_empty() {
+                "<li>No caveats were listed in the local manifest.</li>".to_string()
+            } else {
+                caveats
+            },
+            gate
+        );
+    }
+    if !gate.is_empty() {
+        return gate;
+    }
+    format!(
+        r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">security posture</p><h2>{}</h2><p>{}</p>{}{}</div><div class="detail-stack"><article><h3>Recommended review</h3><p>Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins.</p></article></div></section>"#,
+        html_escape(&security_heading(package)),
+        html_escape(&security_summary(package)),
+        geiger,
+        install_signals
+    )
+}
+
+fn render_geiger(package: &PackageRow) -> String {
+    let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) else {
+        return String::new();
+    };
+    let reasons = value_array(geiger, "reasons")
+        .into_iter()
+        .take(5)
+        .filter_map(value_string)
+        .map(|item| format!("<li>{}</li>", html_escape(&item)))
+        .collect::<String>();
+    let signals = value_array(geiger, "signals")
+        .into_iter()
+        .take(5)
+        .filter_map(value_string)
+        .map(|item| format!("<li>{}</li>", html_escape(&item)))
+        .collect::<String>();
+    format!(
+        r#"<div class="signal-grid" aria-label="Geiger classifier signals"><article><h3>Risk classifier</h3><p><strong>{}</strong> risk · {} confidence · {}</p></article><article><h3>Why</h3><ul>{}</ul></article><article><h3>Signals</h3><ul>{}</ul></article></div>"#,
+        html_escape(&value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string())),
+        html_escape(&value_str_key(geiger, "confidence").unwrap_or_else(|| "unknown".to_string())),
+        html_escape(
+            &value_str_key(geiger, "category").unwrap_or_else(|| "uncategorized".to_string())
+        ),
+        if reasons.is_empty() {
+            "<li>No classifier reasons were present.</li>".to_string()
+        } else {
+            reasons
+        },
+        if signals.is_empty() {
+            "<li>No classifier signals were present.</li>".to_string()
+        } else {
+            signals
+        },
+    )
+}
+
+fn render_install_behavior_signals(package: &PackageRow) -> String {
+    let Some(behavior) = full_value(package, "installBehavior").filter(|value| value.is_object())
+    else {
+        return String::new();
+    };
+    let mut signals = Vec::new();
+    if let Some(items) = behavior
+        .get("lifecycleScripts")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty())
+    {
+        signals.push(format!(
+            "npm lifecycle scripts are declared: {}.",
+            items
+                .iter()
+                .take(5)
+                .filter_map(value_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if let Some(value) = behavior.get("postInstallDefined").and_then(Value::as_bool) {
+        signals.push(if value {
+            if package.provider == "npm" {
+                "npm package metadata declares a postinstall script.".to_string()
+            } else {
+                "Homebrew declares a post-install hook for this formula.".to_string()
+            }
+        } else if package.provider == "npm" {
+            "No npm postinstall script is recorded in package metadata.".to_string()
+        } else {
+            "No Homebrew post-install hook is recorded in formula metadata.".to_string()
+        });
+    }
+    if behavior.get("prepareDefined").and_then(Value::as_bool) == Some(true) {
+        signals.push("npm package metadata declares a prepare script.".to_string());
+    }
+    if let Some(value) = value_str_key(behavior, "pythonRequires").filter(|value| !value.is_empty())
+    {
+        signals.push(format!("PyPI metadata requires Python {value}."));
+    }
+    if let Some(value) = value_i64_key(behavior, "requiresDistCount").filter(|value| *value > 0) {
+        signals.push(format!(
+            "PyPI metadata lists {value} dependency specifications."
+        ));
+    }
+    if value_str_key(behavior, "service")
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        signals.push("Formula metadata declares a service or daemon block.".to_string());
+    }
+    if let Some(bottle) = full_value(package, "bottle").filter(|value| value.is_object()) {
+        if bottle.get("available").and_then(Value::as_bool) == Some(true) {
+            let platforms = value_array(bottle, "platforms");
+            if platforms.is_empty() {
+                signals.push("Homebrew bottle metadata is available.".to_string());
+            } else {
+                signals.push(format!(
+                    "Homebrew bottle metadata is available for {} platform targets.",
+                    platforms.len()
+                ));
+            }
+        } else {
+            signals.push("No Homebrew bottle metadata was recorded.".to_string());
+        }
+    }
+    let dependencies = full_string_array(package, "dependencies");
+    if !dependencies.is_empty() {
+        signals.push(format!(
+            "Installs with {} runtime dependencies.",
+            dependencies.len()
+        ));
+    }
+    let build_dependencies = full_string_array(package, "buildDependencies");
+    if !build_dependencies.is_empty() {
+        signals.push(format!(
+            "Build metadata lists {} build dependencies.",
+            build_dependencies.len()
+        ));
+    }
+    if signals.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<div class="signal-grid install-signal-grid" aria-label="Install behavior signals"><article><h3>Install behavior</h3><ul>{}</ul></article></div>"#,
+            signals
+                .into_iter()
+                .take(6)
+                .map(|item| format!("<li>{}</li>", html_escape(&item)))
+                .collect::<String>()
+        )
+    }
+}
+
+fn render_gate(package: &PackageRow) -> String {
+    let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) else {
+        return String::new();
+    };
+    let rules = value_array(gate, "rules")
+        .into_iter()
+        .filter_map(value_string)
+        .map(|item| format!("<li>{}</li>", html_escape(&item)))
+        .collect::<String>();
+    let severities = full_value(package, "approvalGate")
+        .map(|gate| value_array(gate, "severities"))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(value_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let entrypoints = value_array(gate, "entrypoints")
+        .into_iter()
+        .filter_map(value_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let reviewed = value_str_key(gate, "reviewed_at").unwrap_or_default();
+    let reviewed_copy = if reviewed.is_empty() {
+        String::new()
+    } else {
+        format!(", reviewed {reviewed}")
+    };
+    format!(
+        r#"<section class="pkg-section split-section gate-section"><div><p class="section-kicker">approval gates</p><h2>Human review metadata for risky commands</h2><p>The local approval-gate seed includes {} rules for {}. Covered entrypoints: {}. Severity labels: {}. Coverage: {}{}.</p></div><div class="detail-stack"><article><h3>Example gated actions</h3><ul>{}</ul></article></div></section>"#,
+        html_escape(&value_i64_key(gate, "rule_count").unwrap_or(0).to_string()),
+        html_escape(&package.display_name),
+        html_escape(if entrypoints.is_empty() {
+            &package.display_name
+        } else {
+            &entrypoints
+        }),
+        html_escape(if severities.is_empty() {
+            "not specified"
+        } else {
+            &severities
+        }),
+        html_escape(
+            &value_str_key(gate, "coverage_status").unwrap_or_else(|| "unknown".to_string())
+        ),
+        html_escape(&reviewed_copy),
+        if rules.is_empty() {
+            "<li>No rule descriptions were present.</li>".to_string()
+        } else {
+            rules
+        },
+    )
+}
+
+fn render_executables(package: &PackageRow) -> String {
+    let mut rows = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for item in value_array(&package.data.full, "executablesDetailed") {
+        let name = value_str_key(item, "name")
+            .or_else(|| value_str_key(item, "target"))
+            .or_else(|| value_str_key(item, "source"))
+            .unwrap_or_default();
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+        rows.push(executable_row(
+            &name,
+            &value_str_key(item, "kind").unwrap_or_else(|| "executable".to_string()),
+            &value_str_key(item, "exposure").unwrap_or_else(|| "global executable".to_string()),
+            &value_str_key(item, "note").unwrap_or_default(),
+        ));
+    }
+    for item in value_array(&package.data.full, "binaries") {
+        let name = value_str_key(item, "target")
+            .or_else(|| value_str_key(item, "source"))
+            .unwrap_or_default();
+        if !name.is_empty() && seen.insert(name.clone()) {
+            rows.push(executable_row(
+                &name,
+                "binary",
+                "Homebrew cask binary",
+                &value_str_key(item, "source").unwrap_or_default(),
+            ));
+        }
+    }
+    let stub_exclusions = full_value(package, "extra")
+        .and_then(|extra| extra.get("stub_exclusions"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(value_string)
+                .collect::<std::collections::BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    for alias in full_string_array(package, "aliases") {
+        if seen.insert(alias.clone()) {
+            rows.push(executable_row(
+                &alias,
+                "executable",
+                if stub_exclusions.contains(&alias) {
+                    "Automic Vault stub excluded"
+                } else {
+                    "indexed executable"
+                },
+                "Discovered from the local executable index.",
+            ));
+        }
+    }
+    format!(
+        r#"<section class="pkg-section" aria-labelledby="executables-title"><p class="section-kicker">executables</p><h2 id="executables-title">Installed executables</h2><div class="table-wrap executable-table"><table><thead><tr><th>Command</th><th>Kind</th><th>Exposure</th><th>Note</th></tr></thead><tbody>{}</tbody></table></div></section>"#,
+        if rows.is_empty() {
+            r#"<tr><td colspan="4">No executable data was present.</td></tr>"#.to_string()
+        } else {
+            rows.join("")
+        }
+    )
+}
+
+fn executable_row(name: &str, kind: &str, exposure: &str, note: &str) -> String {
+    format!(
+        "<tr><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+        html_escape(name),
+        html_escape(kind),
+        html_escape(exposure),
+        html_escape(note)
+    )
+}
+
+fn render_freshness(package: &PackageRow, generated_at: &str) -> String {
+    let freshness = full_value(package, "versionFreshness").unwrap_or(&Value::Null);
+    let manager = freshness.get("packageManager").unwrap_or(&Value::Null);
+    let site = freshness.get("siteData").unwrap_or(&Value::Null);
+    let upstream = freshness.get("upstream").unwrap_or(&Value::Null);
+    let warnings = value_array(freshness, "warnings")
+        .into_iter()
+        .filter(|item| item.is_object())
+        .map(|item| {
+            let severity = value_str_key(item, "severity").unwrap_or_else(|| "info".to_string());
+            let message = value_str_key(item, "message")
+                .or_else(|| value_str_key(item, "kind"))
+                .unwrap_or_else(|| "freshness".to_string());
+            let evidence = value_str_key(item, "evidence").unwrap_or_default();
+            let confidence = value_str_key(item, "confidence").unwrap_or_default();
+            format!(
+                r#"<li class="freshness-item freshness-{}"><strong>{}</strong><span>{}</span>{}{}</li>"#,
+                html_escape(&severity),
+                html_escape(&severity),
+                html_escape(&message),
+                if evidence.is_empty() {
                     String::new()
                 } else {
-                    format!(": {}", html_escape(&hub.reason))
+                    format!("<small>{}</small>", link_value(&evidence))
+                },
+                if confidence.is_empty() {
+                    String::new()
+                } else {
+                    format!("<em>{} confidence</em>", html_escape(&confidence))
+                }
+            )
+        })
+        .collect::<String>();
+    let warnings = if warnings.is_empty() {
+        r#"<li class="freshness-item freshness-info"><strong>ok</strong><span>No freshness warnings were generated.</span></li>"#.to_string()
+    } else {
+        warnings
+    };
+    let repository = value_str_key(upstream, "repository").unwrap_or_default();
+    format!(
+        r#"<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title" data-pagefind-ignore="all"><div><p class="section-kicker">freshness</p><h2 id="freshness-title">Version and freshness</h2><p>These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present.</p></div><div><div class="freshness-metrics"><div><span>page generated</span><strong>{}</strong></div><div><span>manager version</span><strong>{}</strong></div><div><span>manager updated</span><strong>{}</strong></div><div><span>local data</span><strong>{}</strong></div><div><span>upstream</span><strong>{}</strong></div><div><span>latest detected</span><strong>{}</strong></div></div>{}<ul class="freshness-list">{}</ul></div></section>"#,
+        html_escape(&fmt_date(generated_at)),
+        html_escape(
+            &value_str_key(manager, "version")
+                .unwrap_or_else(|| empty_as_unknown(&package.version).to_string())
+        ),
+        html_escape(&fmt_date(
+            &value_str_key(manager, "updatedAt").unwrap_or_else(|| package.last_updated_at.clone())
+        )),
+        html_escape(&value_str_key(site, "status").unwrap_or_else(|| "unknown".to_string())),
+        html_escape(
+            &value_str_key(upstream, "comparison").unwrap_or_else(|| "not available".to_string())
+        ),
+        html_escape(
+            &value_str_key(upstream, "latestVersion").unwrap_or_else(|| "not detected".to_string())
+        ),
+        if repository.is_empty() {
+            String::new()
+        } else {
+            format!(
+                r#"<p class="freshness-repo"><a href="{}">{}</a></p>"#,
+                html_escape(&repository),
+                html_escape(&repository)
+            )
+        },
+        warnings
+    )
+}
+
+fn render_install_metadata(package: &PackageRow) -> String {
+    let mut rows = Vec::new();
+    for (label, value) in [
+        ("Package key", package.package_key.clone()),
+        ("Version", package.version.clone()),
+        ("Package manager", package.provider_label.clone()),
+        ("Package manager page", package.package_manager_url.clone()),
+        ("Homepage", package.homepage.clone()),
+        ("Repository", package.repository.clone()),
+        ("Upstream docs", full_str(package, "upstreamDocs")),
+        ("License", package.license.clone()),
+        ("Source archive", full_str(package, "sourceArchive")),
+        ("Issue tracker", full_str(package, "issueTracker")),
+        ("Last updated", package.last_updated_at.clone()),
+        ("Last verified", full_str(package, "lastVerified")),
+        ("Published", full_str(package, "publishedAt")),
+        ("Pulse", full_str(package, "pulseKind")),
+        ("SHA-256", full_str(package, "sha256")),
+        ("Download URL", full_str(package, "url")),
+    ] {
+        if !value.is_empty() {
+            rows.push((label.to_string(), value));
+        }
+    }
+    push_joined_row(
+        &mut rows,
+        "Dependencies",
+        &full_string_array(package, "dependencies"),
+    );
+    push_joined_row(
+        &mut rows,
+        "Build dependencies",
+        &full_string_array(package, "buildDependencies"),
+    );
+    push_joined_row(
+        &mut rows,
+        "Uses from macOS",
+        &full_string_array(package, "usesFromMacos"),
+    );
+    if let Some(bottle) = full_value(package, "bottle").filter(|value| value.is_object()) {
+        let mut detail = if bottle.get("available").and_then(Value::as_bool) == Some(true) {
+            "available".to_string()
+        } else {
+            "not recorded".to_string()
+        };
+        let platforms = value_array(bottle, "platforms")
+            .into_iter()
+            .filter_map(value_string)
+            .collect::<Vec<_>>();
+        if !platforms.is_empty() {
+            detail.push_str(&format!(" ({})", platforms.join(", ")));
+        }
+        rows.push(("Bottle".to_string(), detail));
+    }
+    if let Some(behavior) = full_value(package, "installBehavior").filter(|value| value.is_object())
+    {
+        if let Some(post_install) = behavior.get("postInstallDefined").and_then(Value::as_bool) {
+            rows.push((
+                if package.provider == "npm" {
+                    "npm postinstall"
+                } else {
+                    "Homebrew post-install"
+                }
+                .to_string(),
+                if post_install {
+                    "defined"
+                } else {
+                    "not defined"
+                }
+                .to_string(),
+            ));
+        }
+        rows.push((
+            "Service".to_string(),
+            value_str_key(behavior, "service")
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "none declared".to_string()),
+        ));
+        if let Some(caveats) = value_str_key(behavior, "caveats").filter(|value| !value.is_empty())
+        {
+            rows.push(("Caveats".to_string(), caveats));
+        }
+    }
+    push_joined_row(
+        &mut rows,
+        "Keywords",
+        &full_string_array(package, "keywords"),
+    );
+    push_joined_row(
+        &mut rows,
+        "Classifiers",
+        &full_string_array(package, "classifiers"),
+    );
+    let row_html = rows
+        .into_iter()
+        .map(|(label, value)| {
+            format!(
+                "<tr><th>{}</th><td>{}</td></tr>",
+                html_escape(&label),
+                link_value(&value)
+            )
+        })
+        .collect::<String>();
+    format!(
+        r#"<section class="pkg-section"><p class="section-kicker">install metadata</p><h2>Package metadata</h2><div class="table-wrap"><table><tbody>{}</tbody></table></div></section>"#,
+        if row_html.is_empty() {
+            "<tr><th>Status</th><td>No resolver details were present.</td></tr>".to_string()
+        } else {
+            row_html
+        }
+    )
+}
+
+fn render_related(package: &PackageRow, locale: &Locale) -> String {
+    let hubs = value_array(&package.data.full, "packageHubs")
+        .into_iter()
+        .take(4)
+        .filter_map(|hub| {
+            let slug = value_str_key(hub, "slug")?;
+            if slug.is_empty() {
+                return None;
+            }
+            let label = value_str_key(hub, "label").unwrap_or_else(|| slug.clone());
+            let reason = value_str_key(hub, "reason").unwrap_or_default();
+            Some(format!(
+                r#"<li><a href="{}">{}</a>{}</li>"#,
+                html_escape(&locale_path(&format!("/pkg/{slug}/"), locale)),
+                html_escape(&label),
+                if reason.is_empty() {
+                    String::new()
+                } else {
+                    format!("<span>{}</span>", html_escape(&reason))
+                }
+            ))
+        })
+        .collect::<Vec<_>>();
+    let related = related_links(package, locale, "relatedPackages", 8, false);
+    let workflow = related_links(package, locale, "relatedPackages", 6, true);
+    let also = related_links(package, locale, "alsoAvailableVia", 4, false);
+    let guides = core_security_guides(package, locale);
+    let columns = [
+        related_article("Topical hubs", hubs),
+        related_article("Related tools", related),
+        related_article("Same workflow", [workflow, also].concat()),
+        related_article("Agent security guides", guides),
+    ]
+    .into_iter()
+    .filter(|value| !value.is_empty())
+    .collect::<String>();
+    format!(
+        r#"<section class="pkg-section split-section related-section" aria-labelledby="related-title"><div><p class="section-kicker">package graph</p><h2 id="related-title">Internal package links</h2><p>Links come from deterministic package relationships, av.db category and tag curation, ecosystem matches, and package hub membership.</p></div><div class="related-columns">{}</div></section>"#,
+        columns
+    )
+}
+
+fn render_sources(package: &PackageRow) -> String {
+    let mut notes = full_string_array(package, "sourceNotes");
+    notes.sort();
+    notes.dedup();
+    if notes.is_empty() {
+        notes.push("local package generator".to_string());
+    }
+    let items = notes
+        .into_iter()
+        .map(|note| format!("<li>{}</li>", html_escape(&note)))
+        .collect::<String>();
+    format!(
+        r#"<section class="pkg-section split-section sources-section"><div><p class="section-kicker">source trail</p><h2>Generated from repository data</h2><p>This page is generated by <code>av-web</code> from the private package SQLite artifact built by <code>scripts/generate-pkg-sqlite.py</code>.</p></div><div class="detail-stack"><article><h3>Used sources</h3><ul>{}</ul></article></div></section>"#,
+        items
+    )
+}
+
+fn package_isotope(package: &PackageRow) -> bool {
+    full_value(package, "isotope")
+        .filter(|value| value.is_object())
+        .is_some()
+}
+
+fn package_gate(package: &PackageRow) -> bool {
+    full_value(package, "approvalGate")
+        .filter(|value| value.is_object())
+        .is_some()
+}
+
+fn package_non_low_geiger(package: &PackageRow) -> bool {
+    let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) else {
+        return false;
+    };
+    !matches!(
+        value_str_key(geiger, "level")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "" | "green" | "low" | "unknown"
+    )
+}
+
+fn label_for(package: &PackageRow) -> String {
+    let mut labels = vec![package.provider.clone()];
+    if package_isotope(package) {
+        labels.push("protected-tool coverage".to_string());
+    }
+    if package_gate(package) {
+        labels.push("approval gates".to_string());
+    }
+    if let Some(rank) = package.rank {
+        labels.push(format!("rank {rank}"));
+    }
+    labels.join(" / ")
+}
+
+fn hub_group_sections(hubs: &[HubSummary], locale: &Locale) -> String {
+    let mut sections = Vec::new();
+    for (group, label) in [
+        ("security", "Security hubs"),
+        ("topical", "Topical hubs"),
+        ("ecosystem", "Ecosystem hubs"),
+    ] {
+        let cards = hubs
+            .iter()
+            .filter(|summary| summary.hub.group == group)
+            .map(|summary| {
+                format!(
+                    r#"<a class="hub-card" href="{}"><span>{}</span><strong>{}</strong><small>{}</small></a>"#,
+                    html_escape(&locale_path(&summary.hub.path, locale)),
+                    html_escape(&summary.hub.title),
+                    html_escape(&fmt_int(summary.package_count)),
+                    html_escape(&short_text(&summary.hub.description, 96))
+                )
+            })
+            .collect::<String>();
+        if !cards.is_empty() {
+            sections.push(format!(
+                r#"<section class="hub-group"><h3>{}</h3><div class="hub-grid">{}</div></section>"#,
+                html_escape(label),
+                cards
+            ));
+        }
+    }
+    sections.join("")
+}
+
+fn index_package_row(package: &PackageRow, locale: &Locale) -> String {
+    format!(
+        r#"<a class="package-row" href="{}"><span>{}</span><small>{}</small></a>"#,
+        html_escape(&locale_path(&package.path, locale)),
+        html_escape(&package.display_name),
+        html_escape(&label_for(package))
+    )
+}
+
+fn hub_cluster_block(title: &str, packages: &[&PackageRow], locale: &Locale) -> String {
+    if packages.is_empty() {
+        return String::new();
+    }
+    let cards = packages
+        .iter()
+        .map(|package| hub_spoke_card(package, locale))
+        .collect::<String>();
+    format!(
+        r#"<section class="pkg-section hub-cluster"><h2>{}</h2><div class="package-list hub-spoke-list">{}</div></section>"#,
+        html_escape(title),
+        cards
+    )
+}
+
+fn hub_spoke_card(package: &PackageRow, locale: &Locale) -> String {
+    format!(
+        r#"<a class="package-row" href="{}"><span>{}</span><small>{}</small></a>"#,
+        html_escape(&locale_path(&package.path, locale)),
+        html_escape(&package.display_name),
+        html_escape(&hub_package_reason(package))
+    )
+}
+
+fn hub_related_block(title: &str, links: &[String]) -> String {
+    if links.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<section class="pkg-section hub-cluster"><h2>{}</h2><div class="hub-related-list">{}</div></section>"#,
+        html_escape(title),
+        links.join("")
+    )
+}
+
+fn related_hub_links(
+    hub: &HubRow,
+    packages: &[(PackageRow, String)],
+    locale: &Locale,
+) -> Vec<String> {
+    let mut counts: BTreeMap<String, (String, String, i64)> = BTreeMap::new();
+    for (package, _reason) in packages {
+        for item in value_array(&package.data.full, "packageHubs") {
+            let slug = value_str_key(item, "slug").unwrap_or_default();
+            if slug.is_empty() || slug == hub.slug {
+                continue;
+            }
+            let label = value_str_key(item, "label").unwrap_or_else(|| slug.replace('-', " "));
+            let reason = value_str_key(item, "reason").unwrap_or_default();
+            let entry = counts.entry(slug).or_insert((label, reason.clone(), 0));
+            if entry.1.is_empty() && !reason.is_empty() {
+                entry.1 = reason;
+            }
+            entry.2 += 1;
+        }
+    }
+    let mut ranked = counts.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| {
+        right.1.2.cmp(&left.1.2).then_with(|| {
+            left.1
+                .0
+                .to_ascii_lowercase()
+                .cmp(&right.1.0.to_ascii_lowercase())
+        })
+    });
+    ranked
+        .into_iter()
+        .take(8)
+        .map(|(slug, (label, reason, count))| {
+            format!(
+                r#"<a class="hub-related-card" href="{}"><span>{}</span><small>{}</small><strong>{}</strong></a>"#,
+                html_escape(&locale_path(&format!("/pkg/{slug}/"), locale)),
+                html_escape(&label),
+                html_escape(if reason.is_empty() { "package graph" } else { &reason }),
+                html_escape(&fmt_int(count))
+            )
+        })
+        .collect()
+}
+
+fn hub_package_reason(package: &PackageRow) -> String {
+    if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
+        if let Some(title) = isotope
+            .get("justification")
+            .and_then(|justification| value_str_key(justification, "title"))
+        {
+            return title;
+        }
+    }
+    if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
+        return format!(
+            "{} approval-gate rules are present.",
+            value_i64_key(gate, "rule_count")
+                .map(fmt_int)
+                .unwrap_or_else(|| "Local".to_string())
+        );
+    }
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        if let Some(reason) = value_array(geiger, "reasons")
+            .into_iter()
+            .find_map(value_string)
+        {
+            return short_text(&reason, 140);
+        }
+    }
+    if !package.summary.is_empty() {
+        return short_text(&package.summary, 140);
+    }
+    let aliases = full_string_array(package, "aliases");
+    if !aliases.is_empty() {
+        return format!(
+            "Executable aliases include {}.",
+            aliases.into_iter().take(4).collect::<Vec<_>>().join(", ")
+        );
+    }
+    "Matched package metadata for this hub.".to_string()
+}
+
+fn hub_package_row(package: &PackageRow, reason: &str) -> String {
+    let mut signals = Vec::new();
+    if package_isotope(package) {
+        signals.push("protected-tool coverage".to_string());
+    }
+    if package_gate(package) {
+        signals.push("approval gate".to_string());
+    }
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        signals.push(format!(
+            "{} risk",
+            value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string())
+        ));
+    }
+    if !package.version.is_empty() {
+        signals.push(format!("v{}", package.version));
+    }
+    let reason = if reason.trim().is_empty() {
+        hub_package_reason(package)
+    } else {
+        reason.to_string()
+    };
+    format!(
+        r#"<tr><td><a href="{}">{}</a></td><td>{}</td><td>{}</td><td>{}</td></tr>"#,
+        html_escape(&package.path),
+        html_escape(&package.display_name),
+        html_escape(&package.provider_label),
+        html_escape(&if signals.is_empty() {
+            label_for(package)
+        } else {
+            signals.join(", ")
+        }),
+        html_escape(&reason)
+    )
+}
+
+fn schema_for_hub(
+    hub: &HubRow,
+    pages: Vec<&PackageRow>,
+    description: &str,
+    updated: &str,
+    locale: &Locale,
+) -> Value {
+    let url = locale_url(&hub.path, locale);
+    let items = pages
+        .into_iter()
+        .take(72)
+        .enumerate()
+        .map(|(index, package)| {
+            json!({
+                "@type": "ListItem",
+                "position": index + 1,
+                "url": locale_url(&package.path, locale),
+                "name": package.display_name,
+                "description": hub_package_reason(package)
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "WebSite", "@id": format!("{SITE_ORIGIN}/#website"), "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
+            {"@type": "Organization", "@id": format!("{SITE_ORIGIN}/#organization"), "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
+            {"@type": "Person", "@id": format!("{SITE_ORIGIN}/about/#max-howell"), "name": "Max Howell", "url": format!("{SITE_ORIGIN}/about/")},
+            {
+                "@type": "CollectionPage",
+                "@id": format!("{url}#webpage"),
+                "name": hub.title,
+                "headline": hub.title,
+                "url": url,
+                "description": description,
+                "inLanguage": locale.hreflang,
+                "dateModified": updated,
+                "isPartOf": {"@id": format!("{SITE_ORIGIN}/#website")},
+                "author": {"@id": format!("{SITE_ORIGIN}/about/#max-howell")},
+                "publisher": {"@id": format!("{SITE_ORIGIN}/#organization")},
+                "mainEntity": {"@id": format!("{url}#list")}
+            },
+            {
+                "@type": "ItemList",
+                "@id": format!("{url}#list"),
+                "name": hub.title,
+                "itemListElement": items
+            }
+        ]
+    })
+}
+
+fn full_value<'a>(package: &'a PackageRow, key: &str) -> Option<&'a Value> {
+    package.data.full.get(key).filter(|value| !value.is_null())
+}
+
+fn full_str(package: &PackageRow, key: &str) -> String {
+    full_opt_str(package, key).unwrap_or_default()
+}
+
+fn full_opt_str(package: &PackageRow, key: &str) -> Option<String> {
+    full_value(package, key).and_then(value_string)
+}
+
+fn full_string_array(package: &PackageRow, key: &str) -> Vec<String> {
+    let Some(items) = full_value(package, key).and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut values = Vec::new();
+    for item in items {
+        let value = value_string(item)
+            .or_else(|| value_str_key(item, "label"))
+            .or_else(|| value_str_key(item, "name"))
+            .or_else(|| value_str_key(item, "target"))
+            .or_else(|| value_str_key(item, "source"))
+            .or_else(|| value_str_key(item, "package"))
+            .or_else(|| value_str_key(item, "key"))
+            .unwrap_or_default();
+        let value = value.trim();
+        if !value.is_empty() && seen.insert(value.to_string()) {
+            values.push(value.to_string());
+        }
+    }
+    values
+}
+
+fn value_array<'a>(value: &'a Value, key: &str) -> Vec<&'a Value> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| items.iter().collect())
+        .unwrap_or_default()
+}
+
+fn value_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_string())
+        }
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn value_str_key(value: &Value, key: &str) -> Option<String> {
+    value.get(key).and_then(value_string)
+}
+
+fn value_i64_key(value: &Value, key: &str) -> Option<i64> {
+    value.get(key).and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+    })
+}
+
+fn value_f64_key(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+    })
+}
+
+fn first_non_empty(values: &[String]) -> Option<String> {
+    values
+        .iter()
+        .map(|value| value.trim())
+        .find(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn fmt_date(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 10 && value.as_bytes().get(4) == Some(&b'-') {
+        value[..10].to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn fmt_int(value: i64) -> String {
+    let mut digits = value.abs().to_string();
+    let mut out = String::new();
+    while digits.len() > 3 {
+        let tail = digits.split_off(digits.len() - 3);
+        if out.is_empty() {
+            out = tail;
+        } else {
+            out = format!("{tail},{out}");
+        }
+    }
+    if out.is_empty() {
+        out = digits;
+    } else if !digits.is_empty() {
+        out = format!("{digits},{out}");
+    }
+    if value < 0 { format!("-{out}") } else { out }
+}
+
+fn locale_url(path: &str, locale: &Locale) -> String {
+    format!("{SITE_ORIGIN}{}", locale_path(path, locale))
+}
+
+fn source_host_label(url: &str) -> &str {
+    url.trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(url)
+}
+
+fn sentence_text(value: &str) -> String {
+    let mut text = normalize_space(value);
+    if text.is_empty() {
+        return text;
+    }
+    if !matches!(text.as_bytes().last(), Some(b'.' | b'!' | b'?')) {
+        text.push('.');
+    }
+    text
+}
+
+fn normalize_space(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn short_text(value: &str, limit: usize) -> String {
+    let value = normalize_space(value);
+    if value.chars().count() <= limit {
+        return value;
+    }
+    let mut text = String::new();
+    for word in value.split_whitespace() {
+        let extra = if text.is_empty() { 0 } else { 1 };
+        if text.chars().count() + word.chars().count() + extra > limit.saturating_sub(1) {
+            break;
+        }
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        text.push_str(word);
+    }
+    if text.is_empty() {
+        value
+            .chars()
+            .take(limit.saturating_sub(1))
+            .collect::<String>()
+            + "…"
+    } else {
+        text + "…"
+    }
+}
+
+fn hero_sentence(package: &PackageRow) -> String {
+    let summary = normalize_space(&package.summary);
+    if !summary.is_empty() && !package.install_command.is_empty() {
+        let verified = first_non_empty(&[
+            full_str(package, "lastVerified"),
+            package.last_updated_at.clone(),
+        ])
+        .map(|value| fmt_date(&value))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "from local package data".to_string());
+        let alternate = alternate_install_sentence(package);
+        let alternate = if alternate.is_empty() {
+            String::new()
+        } else {
+            format!(" {alternate}")
+        };
+        return format!(
+            "{} Version {} via {}; verified {}.{}",
+            sentence_text(&summary),
+            empty_as_unknown(&package.version),
+            package.provider_label,
+            verified,
+            alternate
+        );
+    }
+    if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
+        let title = isotope
+            .get("justification")
+            .and_then(|justification| value_str_key(justification, "title"))
+            .unwrap_or_else(|| "secret handling".to_string());
+        return format!(
+            "Automic Vault tracks {} because {} affects agent-run command-line tools on macOS.",
+            package.display_name,
+            title.trim_end_matches('.').to_ascii_lowercase()
+        );
+    }
+    if full_value(package, "approvalGate").is_some() {
+        return format!(
+            "Automic Vault has approval-gate metadata for {}, including high-risk commands and recommended human review points.",
+            package.display_name
+        );
+    }
+    if !summary.is_empty() {
+        return format!("Nucleus can resolve {}: {}", package.display_name, summary);
+    }
+    format!(
+        "Nucleus package metadata for {}, from local Automic Vault package sources.",
+        package.display_name
+    )
+}
+
+fn meta_description(package: &PackageRow) -> String {
+    let mut parts = Vec::new();
+    if let Some(alternate) = alternate_install_command(package) {
+        let manager = value_str_key(&alternate, "manager")
+            .unwrap_or_else(|| "another package manager".to_string());
+        let command = value_str_key(&alternate, "command").unwrap_or_default();
+        parts.push(format!(
+            "Install {} with {} or {}: {}.",
+            package.display_name, package.provider_label, manager, command
+        ));
+    } else {
+        parts.push(format!(
+            "Install {} with {}.",
+            package.display_name, package.provider_label
+        ));
+    }
+    if !package.summary.is_empty() {
+        parts.push(package.summary.clone());
+    }
+    if !full_string_array(package, "executablesDetailed").is_empty()
+        || !full_string_array(package, "aliases").is_empty()
+    {
+        parts.push("View executables, metadata, and security notes.".to_string());
+    }
+    if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
+        if let Some(title) = isotope
+            .get("justification")
+            .and_then(|justification| value_str_key(justification, "title"))
+        {
+            parts.push(format!("Protected-tool coverage: {title}."));
+        }
+    }
+    if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
+        if let Some(rule_count) = value_i64_key(gate, "rule_count") {
+            parts.push(format!("Includes {rule_count} approval-gate rules."));
+        }
+    }
+    short_text(&parts.join(" "), 155)
+}
+
+fn alternate_install_command(package: &PackageRow) -> Option<Value> {
+    install_command_entries(package).into_iter().find(|item| {
+        if value_str_key(item, "kind").as_deref() == Some("automic_vault") {
+            return false;
+        }
+        let command = value_str_key(item, "command").unwrap_or_default();
+        native_command_provider(&command)
+            .map(|provider| provider != package.provider)
+            .unwrap_or(false)
+    })
+}
+
+fn native_command_provider(command: &str) -> Option<&'static str> {
+    let command = command.trim();
+    if command.starts_with("brew install --cask ") {
+        Some("cask")
+    } else if command.starts_with("brew install ") {
+        Some("brew")
+    } else if command.starts_with("npm install ") || command.starts_with("npm i ") {
+        Some("npm")
+    } else if command.starts_with("pip install ")
+        || command.starts_with("pip3 install ")
+        || command.starts_with("python -m pip install ")
+        || command.starts_with("python3 -m pip install ")
+    {
+        Some("pip")
+    } else {
+        None
+    }
+}
+
+fn alternate_install_sentence(package: &PackageRow) -> String {
+    let Some(alternate) = alternate_install_command(package) else {
+        return String::new();
+    };
+    let manager = value_str_key(&alternate, "manager")
+        .unwrap_or_else(|| "another package manager".to_string());
+    let command = value_str_key(&alternate, "command").unwrap_or_default();
+    if command.is_empty() {
+        String::new()
+    } else {
+        format!("Also installable with {manager}: {command}.")
+    }
+}
+
+fn install_command_entries(package: &PackageRow) -> Vec<Value> {
+    if let Some(items) = full_value(package, "installCommands")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty())
+    {
+        return items.iter().cloned().collect();
+    }
+    let mut entries = vec![json!({
+        "platform": "portable",
+        "manager": "Automic Vault",
+        "command": if package.install_command.is_empty() {
+            format!("sudo av install {}", package.package_key)
+        } else {
+            package.install_command.clone()
+        },
+        "kind": "automic_vault",
+        "confidence": 1.0,
+        "evidence": "deterministic local package key"
+    })];
+    if !package.native_install_command.is_empty() {
+        entries.push(json!({
+            "platform": if package.provider == "brew" || package.provider == "cask" { "macos" } else { "portable" },
+            "manager": package.provider_label,
+            "command": package.native_install_command,
+            "kind": "package_manager",
+            "confidence": 1.0,
+            "evidence": "provider-native install command"
+        }));
+    }
+    entries
+}
+
+fn package_facts(package: &PackageRow) -> String {
+    let mut facts = vec![metric("manager", &package.provider_label)];
+    if !package.version.is_empty() {
+        facts.push(metric("version", &package.version));
+    }
+    if !package.license.is_empty() {
+        facts.push(metric("license", &package.license));
+    }
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        facts.push(metric(
+            "risk",
+            &value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string()),
+        ));
+        facts.push(metric(
+            "classifier confidence",
+            &value_str_key(geiger, "confidence").unwrap_or_else(|| "unknown".to_string()),
+        ));
+    }
+    if let Some(rank) = full_value(package, "popularity")
+        .and_then(|value| value_i64_key(value, "rank"))
+        .or_else(|| package.rank.map(i64::from))
+    {
+        facts.push(metric("rank", &fmt_int(rank)));
+    }
+    if let Some(popularity) = full_value(package, "popularity").filter(|value| value.is_object()) {
+        if let Some(installs) = value_i64_key(popularity, "installs_per_365_days") {
+            facts.push(metric("365d installs", &fmt_int(installs)));
+        } else if let Some(downloads) = value_i64_key(popularity, "downloads_per_30_days") {
+            facts.push(metric("30d downloads", &fmt_int(downloads)));
+        }
+    }
+    if full_value(package, "isotope").is_some() {
+        facts.push(metric("protected-tool coverage", "covered"));
+    }
+    if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
+        if let Some(rule_count) = value_i64_key(gate, "rule_count") {
+            facts.push(metric("approval rules", &fmt_int(rule_count)));
+        }
+    }
+    if let Some(verified) = full_opt_str(package, "lastVerified").filter(|value| !value.is_empty())
+    {
+        facts.push(metric("verified", &fmt_date(&verified)));
+    } else if !package.last_updated_at.is_empty() {
+        facts.push(metric("updated", &fmt_date(&package.last_updated_at)));
+    }
+    facts.join("")
+}
+
+fn metric(label: &str, value: &str) -> String {
+    format!(
+        r#"<div class="metric"><span>{}</span><strong>{}</strong></div>"#,
+        html_escape(label),
+        html_escape(value)
+    )
+}
+
+fn security_heading(package: &PackageRow) -> String {
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        return format!(
+            "Risk level: {}",
+            value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string())
+        );
+    }
+    "No protected-tool coverage found yet".to_string()
+}
+
+fn security_summary(package: &PackageRow) -> String {
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        let reasons = value_array(geiger, "reasons")
+            .into_iter()
+            .take(2)
+            .filter_map(value_string)
+            .map(|reason| sentence_text(reason.trim_end_matches('.')))
+            .collect::<Vec<_>>();
+        if !reasons.is_empty() {
+            return reasons.join(" ");
+        }
+    }
+    format!(
+        "No matching local secret-handling manifest was found for {}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
+        package.display_name
+    )
+}
+
+fn link_value(value: &str) -> String {
+    if value.starts_with("https://") || value.starts_with("http://") {
+        format!(
+            r#"<a href="{}">{}</a>"#,
+            html_escape(value),
+            html_escape(value)
+        )
+    } else {
+        html_escape(value)
+    }
+}
+
+fn push_joined_row(rows: &mut Vec<(String, String)>, label: &str, values: &[String]) {
+    if !values.is_empty() {
+        rows.push((label.to_string(), values.join(", ")));
+    }
+}
+
+fn related_links(
+    package: &PackageRow,
+    locale: &Locale,
+    key: &str,
+    limit: usize,
+    workflow_only: bool,
+) -> Vec<String> {
+    let workflow_rels = [
+        "adjacent_workflow",
+        "format_peer",
+        "language_runtime_peer",
+        "command_surface_peer",
+        "security_surface_peer",
+        "domain_peer",
+    ];
+    let mut links = full_value(package, key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .filter_map(|item| {
+                    let rel = value_str_key(item, "rel").unwrap_or_default();
+                    let is_workflow = workflow_rels.contains(&rel.as_str());
+                    if workflow_only != is_workflow && key == "relatedPackages" {
+                        return None;
+                    }
+                    let provider = value_str_key(item, "provider")?;
+                    let name = value_str_key(item, "name")
+                        .or_else(|| value_str_key(item, "package"))
+                        .or_else(|| value_str_key(item, "target"))?;
+                    if provider.is_empty()
+                        || name.is_empty()
+                        || format!("{provider}:{name}") == package.package_key
+                    {
+                        return None;
+                    }
+                    let label = value_str_key(item, "label").unwrap_or_else(|| name.clone());
+                    let reason = value_str_key(item, "reason").unwrap_or_default();
+                    let href =
+                        locale_path(&format!("/pkg/{}/{}/", provider, slugify(&name)), locale);
+                    Some(format!(
+                        r#"<li><a href="{}">{}</a>{}</li>"#,
+                        html_escape(&href),
+                        html_escape(&label),
+                        if reason.is_empty() {
+                            String::new()
+                        } else {
+                            format!("<span>{}</span>", html_escape(&reason))
+                        }
+                    ))
+                })
+                .take(limit)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if links.is_empty() && key == "relatedPackages" && !workflow_only && package.provider == "brew"
+    {
+        links = full_string_array(package, "dependencies")
+            .into_iter()
+            .take(limit)
+            .map(|dependency| {
+                let href = locale_path(&format!("/pkg/brew/{}/", slugify(&dependency)), locale);
+                format!(
+                    r#"<li><a href="{}">{}</a><span>{} dependency.</span></li>"#,
+                    html_escape(&href),
+                    html_escape(&dependency),
+                    html_escape(&package.provider_label)
+                )
+            })
+            .collect();
+    }
+    links
+}
+
+fn related_article(title: &str, items: Vec<String>) -> String {
+    let content = items
+        .into_iter()
+        .filter(|item| !item.is_empty())
+        .collect::<String>();
+    if content.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<article><h3>{}</h3><ul>{content}</ul></article>",
+            html_escape(title)
+        )
+    }
+}
+
+fn core_security_guides(package: &PackageRow, locale: &Locale) -> Vec<String> {
+    let mut links = vec![
+        (
+            locale_path("/secret-scanner-for-ai-agents/", locale),
+            "AI agent secret scanner",
+            "Find plaintext credentials before an agent run starts.",
+        ),
+        (
+            locale_path("/ai-agent-approval-gates/", locale),
+            "AI agent approval gates",
+            "Put approvals in front of risky package and tool actions.",
+        ),
+        (
+            locale_path("/docs/#secrets", locale),
+            "Secret injection docs",
+            "Move supported secrets out of plaintext files and inject them into approved tools.",
+        ),
+    ];
+    let haystack = format!(
+        "{} {} {} {} {}",
+        package.provider,
+        package.name,
+        package.display_name,
+        package.summary,
+        full_string_array(package, "aliases").join(" ")
+    )
+    .to_ascii_lowercase();
+    if package.provider == "brew" || haystack.contains("homebrew") {
+        links.push((
+            locale_path("/download/", locale),
+            "Secure Homebrew tools",
+            "Install Vault and scan the tools your Mac already uses.",
+        ));
+    }
+    if haystack.contains("aws") || haystack.contains("cloud") {
+        links.push((
+            locale_path("/secure-aws-cli-credentials-ai-agents/", locale),
+            "Secure AWS CLI credentials",
+            "Keep cloud keys out of ambient config files.",
+        ));
+    }
+    if haystack.contains("github")
+        || full_string_array(package, "aliases")
+            .iter()
+            .any(|alias| alias == "gh")
+    {
+        links.push((
+            locale_path("/github-cli-token-security-ai-agents/", locale),
+            "GitHub CLI token security",
+            "Protect source and release tokens used by local tools.",
+        ));
+    }
+    links
+        .into_iter()
+        .take(5)
+        .map(|(url, label, copy)| {
+            format!(
+                r#"<li><a href="{}">{}</a><span>{}</span></li>"#,
+                html_escape(&url),
+                html_escape(label),
+                html_escape(copy)
+            )
+        })
+        .collect()
+}
+
+fn slugify(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for character in value.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character);
+            last_dash = false;
+        } else if !last_dash && !slug.is_empty() {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    slug
+}
+
+fn schema_for_package(
+    package: &PackageRow,
+    description: &str,
+    updated: &str,
+    locale: &Locale,
+) -> Value {
+    let url = locale_url(&package.path, locale);
+    let mut software = json!({
+        "@type": "SoftwareApplication",
+        "@id": format!("{url}#software"),
+        "name": package.display_name,
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS",
+        "url": url,
+        "description": description,
+        "dateModified": updated,
+        "inLanguage": locale.hreflang,
+        "isPartOf": {"@id": format!("{SITE_ORIGIN}/#website")}
+    });
+    if let Some(object) = software.as_object_mut() {
+        if !package.homepage.is_empty() {
+            object.insert("sameAs".to_string(), json!(package.homepage));
+        }
+        if !package.version.is_empty() {
+            object.insert("softwareVersion".to_string(), json!(package.version));
+        }
+        if !package.license.is_empty() {
+            object.insert("license".to_string(), json!(package.license));
+        }
+        if !package.repository.is_empty() {
+            object.insert("codeRepository".to_string(), json!(package.repository));
+        }
+        let dependencies = full_string_array(package, "dependencies");
+        if !dependencies.is_empty() {
+            object.insert(
+                "softwareRequirements".to_string(),
+                json!(
+                    dependencies
+                        .into_iter()
+                        .take(16)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
+    }
+    let steps = install_command_entries(package)
+        .into_iter()
+        .filter_map(|item| {
+            let command = value_str_key(&item, "command")?;
+            if command.is_empty() {
+                return None;
+            }
+            let manager = value_str_key(&item, "manager").unwrap_or_else(|| "install".to_string());
+            Some((manager, command))
+        })
+        .take(12)
+        .enumerate()
+        .map(|(index, (manager, command))| {
+            json!({
+                "@type": "HowToStep",
+                "position": index + 1,
+                "name": format!("Run {manager} command"),
+                "text": command
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "@context": "https://schema.org",
+        "@graph": [
+            {"@type": "WebSite", "@id": format!("{SITE_ORIGIN}/#website"), "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
+            {"@type": "Organization", "@id": format!("{SITE_ORIGIN}/#organization"), "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
+            {"@type": "Person", "@id": format!("{SITE_ORIGIN}/about/#max-howell"), "name": "Max Howell", "url": format!("{SITE_ORIGIN}/about/")},
+            software,
+            {
+                "@type": "TechArticle",
+                "@id": format!("{url}#article"),
+                "headline": format!("Install {} with {}", package.display_name, package.provider_label),
+                "description": description,
+                "dateModified": updated,
+                "inLanguage": locale.hreflang,
+                "author": {"@id": format!("{SITE_ORIGIN}/about/#max-howell")},
+                "reviewedBy": {"@id": format!("{SITE_ORIGIN}/about/#max-howell")},
+                "publisher": {"@id": format!("{SITE_ORIGIN}/#organization")},
+                "mainEntity": {"@id": format!("{url}#software")}
+            },
+            {
+                "@type": "BreadcrumbList",
+                "@id": format!("{url}#breadcrumbs"),
+                "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Home", "item": locale_url("/", locale)},
+                    {"@type": "ListItem", "position": 2, "name": "Packages", "item": locale_url("/pkg/", locale)},
+                    {"@type": "ListItem", "position": 3, "name": package.display_name, "item": url}
+                ]
+            },
+            {
+                "@type": "HowTo",
+                "@id": format!("{url}#install-howto"),
+                "name": format!("Install {}", package.display_name),
+                "step": steps
+            }
+        ]
+    })
+}
+
+fn markdown_install_groups(text: &mut String, package: &PackageRow) {
+    let commands = install_command_entries(package);
+    if commands.len() <= 1 {
+        return;
+    }
+    text.push_str("Additional install commands:\n\n");
+    for (platform, label) in [
+        ("macos", "macOS"),
+        ("linux", "Linux"),
+        ("windows", "Windows"),
+        ("portable", "Portable and language managers"),
+    ] {
+        let items = commands
+            .iter()
+            .skip(1)
+            .filter(|item| {
+                value_str_key(item, "platform").unwrap_or_else(|| "portable".to_string())
+                    == platform
+            })
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            continue;
+        }
+        text.push_str(&format!("### {label}\n\n"));
+        for item in items {
+            let manager = value_str_key(item, "manager").unwrap_or_else(|| "shell".to_string());
+            let command = value_str_key(item, "command").unwrap_or_default();
+            if command.is_empty() {
+                continue;
+            }
+            let confidence = value_f64_key(item, "confidence")
+                .map(|value| format!("{:.0}%", value * 100.0))
+                .unwrap_or_else(|| "unknown confidence".to_string());
+            text.push_str(&format!(
+                "- {manager} ({confidence}):\n\n```sh\n{command}\n```\n"
+            ));
+            if let Some(evidence) = value_str_key(item, "evidence") {
+                text.push_str(&format!("\n  Evidence: {evidence}\n"));
+            }
+            text.push('\n');
+        }
+    }
+}
+
+fn markdown_value_list(text: &mut String, title: &str, items: &[String]) {
+    if items.is_empty() {
+        return;
+    }
+    text.push_str(&format!("\n## {title}\n\n"));
+    for item in items {
+        text.push_str(&format!("- {}\n", markdown_value(item)));
+    }
+}
+
+fn markdown_value(value: &str) -> String {
+    if value.starts_with("https://") || value.starts_with("http://") {
+        format!("<{value}>")
+    } else {
+        value.to_string()
+    }
+}
+
+fn executable_markdown_items(package: &PackageRow) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for item in value_array(&package.data.full, "executablesDetailed") {
+        let name = value_str_key(item, "name")
+            .or_else(|| value_str_key(item, "target"))
+            .or_else(|| value_str_key(item, "source"))
+            .unwrap_or_default();
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+        let kind = value_str_key(item, "kind").unwrap_or_else(|| "executable".to_string());
+        let note = value_str_key(item, "note").unwrap_or_default();
+        items.push(if note.is_empty() {
+            format!("{name} ({kind})")
+        } else {
+            format!("{name} ({kind}): {note}")
+        });
+    }
+    for item in value_array(&package.data.full, "binaries") {
+        let name = value_str_key(item, "target")
+            .or_else(|| value_str_key(item, "source"))
+            .unwrap_or_default();
+        if !name.is_empty() {
+            items.push(format!("{name} (binary)"));
+        }
+    }
+    for alias in full_string_array(package, "aliases") {
+        items.push(format!("{alias} (alias)"));
+    }
+    items
+}
+
+fn markdown_install_behavior_items(package: &PackageRow) -> Vec<String> {
+    let mut items = Vec::new();
+    if let Some(behavior) = full_value(package, "installBehavior").filter(|value| value.is_object())
+    {
+        if let Some(post_install) = behavior.get("postInstallDefined").and_then(Value::as_bool) {
+            items.push(format!(
+                "Post-install hook: {}",
+                if post_install {
+                    "defined"
+                } else {
+                    "not defined"
                 }
             ));
         }
-        body.push_str("</ul></section>");
+        if let Some(service) = value_str_key(behavior, "service").filter(|value| !value.is_empty())
+        {
+            items.push(format!("Service: {service}"));
+        }
+        if let Some(caveats) = value_str_key(behavior, "caveats").filter(|value| !value.is_empty())
+        {
+            items.push(format!("Caveats: {caveats}"));
+        }
+        let lifecycle = value_array(behavior, "lifecycleScripts")
+            .into_iter()
+            .filter_map(value_string)
+            .collect::<Vec<_>>();
+        if !lifecycle.is_empty() {
+            items.push(format!("Lifecycle scripts: {}", lifecycle.join(", ")));
+        }
+        if let Some(python) =
+            value_str_key(behavior, "pythonRequires").filter(|value| !value.is_empty())
+        {
+            items.push(format!("Python requires: {python}"));
+        }
+        if let Some(count) = value_i64_key(behavior, "requiresDistCount") {
+            items.push(format!("PyPI dependency specs: {count}"));
+        }
     }
-    list_section(&mut body, "Related packages", &package.data.related);
-    list_section(&mut body, "Keywords", &package.data.keywords);
-    layout(&title, &package.path, locale, &body)
+    if let Some(bottle) = full_value(package, "bottle").filter(|value| value.is_object()) {
+        let mut detail = if bottle.get("available").and_then(Value::as_bool) == Some(true) {
+            "available".to_string()
+        } else {
+            "not available".to_string()
+        };
+        let platforms = value_array(bottle, "platforms")
+            .into_iter()
+            .filter_map(value_string)
+            .take(12)
+            .collect::<Vec<_>>();
+        if !platforms.is_empty() {
+            detail.push_str(&format!(" on {}", platforms.join(", ")));
+        }
+        items.push(format!("Bottle: {detail}"));
+    }
+    items
 }
 
-fn render_package_markdown(package: &PackageRow, _locale: &Locale) -> String {
-    let mut text = format!(
-        "# {}\n\n{}\n\n## Install\n\n```sh\n{}\n```\n\n## Package Facts\n\n- Package key: {}\n- Manager: {}\n- Version: {}\n- Category: {}\n- License: {}\n",
-        package.display_name,
-        package.summary,
-        package.install_command,
-        package.package_key,
-        package.provider_label,
-        empty_as_unknown(&package.version),
-        empty_as_unknown(&package.category),
-        empty_as_unknown(&package.license)
-    );
-    markdown_list(&mut text, "Executables", &package.data.executables);
-    markdown_list(&mut text, "Aliases", &package.data.aliases);
-    markdown_list(&mut text, "Security Signals", &package.data.security);
-    text
+fn markdown_freshness_items(package: &PackageRow, generated_at: &str) -> Vec<String> {
+    let freshness = full_value(package, "versionFreshness").unwrap_or(&Value::Null);
+    let manager = freshness.get("packageManager").unwrap_or(&Value::Null);
+    let site = freshness.get("siteData").unwrap_or(&Value::Null);
+    let upstream = freshness.get("upstream").unwrap_or(&Value::Null);
+    let mut items = vec![
+        format!(
+            "Page generated: {}",
+            non_empty(&fmt_date(generated_at), "unknown")
+        ),
+        format!(
+            "Package-manager version: {}",
+            value_str_key(manager, "version")
+                .unwrap_or_else(|| empty_as_unknown(&package.version).to_string())
+        ),
+    ];
+    if let Some(updated) = value_str_key(manager, "updatedAt") {
+        items.push(format!("Package-manager updated: {}", fmt_date(&updated)));
+    }
+    if let Some(status) = value_str_key(site, "status") {
+        items.push(format!("Local data status: {status}"));
+    }
+    if let Some(repository) = value_str_key(upstream, "repository") {
+        items.push(format!("Upstream repository: {repository}"));
+    }
+    if let Some(version) = value_str_key(upstream, "latestVersion") {
+        items.push(format!(
+            "Upstream latest detected: {} ({})",
+            version,
+            value_str_key(upstream, "comparison").unwrap_or_else(|| "unknown".to_string())
+        ));
+    }
+    for item in value_array(freshness, "warnings").into_iter().take(8) {
+        if item.is_object() {
+            let severity = value_str_key(item, "severity").unwrap_or_else(|| "info".to_string());
+            let message = value_str_key(item, "message").unwrap_or_default();
+            if !message.is_empty() {
+                items.push(format!("{severity}: {message}"));
+            }
+        }
+    }
+    items
+}
+
+fn markdown_security_section(text: &mut String, package: &PackageRow) {
+    text.push_str("\n## Security Notes\n\n");
+    text.push_str(&security_summary(package));
+    text.push_str("\n\n");
+    if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
+        if let Some(title) = isotope
+            .get("justification")
+            .and_then(|justification| value_str_key(justification, "title"))
+        {
+            text.push_str(&format!("- **Protected-tool coverage:** {title}\n"));
+        }
+    }
+    if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
+        text.push_str(&format!(
+            "- **Geiger risk:** {} / {}\n",
+            value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string()),
+            value_str_key(geiger, "confidence").unwrap_or_else(|| "unknown".to_string())
+        ));
+        for item in value_array(geiger, "reasons")
+            .into_iter()
+            .filter_map(value_string)
+        {
+            text.push_str(&format!("- {item}\n"));
+        }
+    }
+    if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
+        if let Some(rule_count) = value_i64_key(gate, "rule_count") {
+            text.push_str(&format!("- **Approval gate rules:** {rule_count}\n"));
+        }
+    }
+    text.push('\n');
+}
+
+fn markdown_related(text: &mut String, package: &PackageRow, locale: &Locale) {
+    let mut items = Vec::new();
+    if let Some(hubs) = full_value(package, "packageHubs").and_then(Value::as_array) {
+        for item in hubs.iter().take(4) {
+            let slug = value_str_key(item, "slug").unwrap_or_default();
+            if slug.is_empty() {
+                continue;
+            }
+            let label = value_str_key(item, "label").unwrap_or_else(|| slug.clone());
+            let reason = value_str_key(item, "reason").unwrap_or_default();
+            let url = locale_url(&format!("/pkg/{slug}/"), locale);
+            items.push(markdown_link_item(&label, &url, &reason));
+        }
+    }
+    for key in ["relatedPackages", "alsoAvailableVia"] {
+        if let Some(values) = full_value(package, key).and_then(Value::as_array) {
+            for item in values.iter().take(24) {
+                let label = value_str_key(item, "label")
+                    .or_else(|| value_str_key(item, "name"))
+                    .unwrap_or_default();
+                let provider = value_str_key(item, "provider").unwrap_or_default();
+                let name = value_str_key(item, "name").unwrap_or_else(|| label.clone());
+                let reason = value_str_key(item, "reason").unwrap_or_default();
+                if label.is_empty() || provider.is_empty() || name.is_empty() {
+                    continue;
+                }
+                let url = locale_url(&format!("/pkg/{}/{}/", provider, slugify(&name)), locale);
+                items.push(markdown_link_item(&label, &url, &reason));
+            }
+        }
+    }
+    markdown_value_list(text, "Related Links", &items);
+}
+
+fn markdown_link_item(label: &str, url: &str, reason: &str) -> String {
+    if reason.is_empty() {
+        format!("[{label}]({url})")
+    } else {
+        format!("[{label}]({url}) - {reason}")
+    }
 }
 
 fn render_sitemap_index(connection: &Connection) -> Result<String, String> {
@@ -1050,36 +3442,6 @@ fn render_urlset(urls: &[String]) -> String {
     )
 }
 
-fn layout(title: &str, canonical_path: &str, locale: &Locale, body: &str) -> String {
-    let canonical = format!("{SITE_ORIGIN}{}", locale_path(canonical_path, locale));
-    let home_path = if locale.prefix.is_empty() {
-        "/".to_string()
-    } else {
-        format!("{}/", locale.prefix)
-    };
-    format!(
-        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{} | Automic Vault</title><link rel=\"canonical\" href=\"{}\"><link rel=\"stylesheet\" href=\"{}\"></head><body><header class=\"masthead\"><a class=\"brand\" href=\"{}\">Automic Vault</a><nav><a href=\"{}\">Packages</a></nav></header><main>{}</main></body></html>\n",
-        html_escape(locale.code),
-        html_escape(title),
-        html_escape(&canonical),
-        html_escape(&locale_path("/pkg/styles.css", locale)),
-        html_escape(&home_path),
-        html_escape(&locale_path("/pkg/", locale)),
-        body
-    )
-}
-
-fn package_row(package: &PackageRow, locale: &Locale, detail: Option<&str>) -> String {
-    let detail = detail.unwrap_or(&package.summary);
-    format!(
-        r#"<a class="package-row" href="{}"><span>{}</span><small>{} / {}</small></a>"#,
-        html_escape(&locale_path(&package.path, locale)),
-        html_escape(&package.display_name),
-        html_escape(&package.provider_label),
-        html_escape(detail)
-    )
-}
-
 fn locale_path(path: &str, locale: &Locale) -> String {
     if locale.prefix.is_empty() {
         path.to_string()
@@ -1094,52 +3456,6 @@ fn html_escape(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-}
-
-fn code_block(value: &str) -> String {
-    format!("<pre><code>{}</code></pre>", html_escape(value))
-}
-
-fn fact(body: &mut String, label: &str, value: &str) {
-    if !value.is_empty() {
-        body.push_str(&format!(
-            "<dt>{}</dt><dd>{}</dd>",
-            html_escape(label),
-            html_escape(value)
-        ));
-    }
-}
-
-fn fact_link(body: &mut String, label: &str, value: &str) {
-    if !value.is_empty() {
-        body.push_str(&format!(
-            r#"<dt>{}</dt><dd><a href="{}">{}</a></dd>"#,
-            html_escape(label),
-            html_escape(value),
-            html_escape(value)
-        ));
-    }
-}
-
-fn list_section(body: &mut String, title: &str, items: &[String]) {
-    if items.is_empty() {
-        return;
-    }
-    body.push_str(&format!("<section><h2>{}</h2><ul>", html_escape(title)));
-    for item in items.iter().take(80) {
-        body.push_str(&format!("<li>{}</li>", html_escape(item)));
-    }
-    body.push_str("</ul></section>");
-}
-
-fn markdown_list(text: &mut String, title: &str, items: &[String]) {
-    if items.is_empty() {
-        return;
-    }
-    text.push_str(&format!("\n## {title}\n\n"));
-    for item in items {
-        text.push_str(&format!("- {item}\n"));
-    }
 }
 
 fn empty_as_unknown(value: &str) -> &str {
