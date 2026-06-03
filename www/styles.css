@@ -667,12 +667,13 @@ h1 code {
 
 .tweet-endorsement {
   position: relative;
-  display: inline-grid;
-  grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr) minmax(122px, 0.18fr);
+  display: grid;
+  grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr);
   gap: clamp(20px, 4.8vw, 64px);
   align-items: stretch;
   width: fit-content;
   max-width: 100%;
+  margin-inline: auto;
   min-height: clamp(204px, 22vw, 286px);
   overflow: hidden;
   padding: clamp(24px, 4vw, 46px);
@@ -763,8 +764,7 @@ h1 code {
   text-wrap: balance;
 }
 
-.tweet-endorsement-author,
-.tweet-endorsement-meta {
+.tweet-endorsement-author {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -781,20 +781,6 @@ h1 code {
 
 .tweet-endorsement-author span:last-child {
   color: var(--hot);
-}
-
-.tweet-endorsement-meta {
-  display: grid;
-  align-content: space-between;
-  gap: 10px;
-  justify-self: end;
-  justify-items: end;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.tweet-endorsement-meta span:last-child {
-  color: var(--ink);
 }
 
 .hazard-board {
@@ -1697,21 +1683,6 @@ h1 code {
 
   .tweet-endorsement-person {
     grid-template-columns: 1fr;
-  }
-
-  .tweet-endorsement-meta {
-    grid-auto-flow: column;
-    align-content: start;
-    align-items: center;
-    justify-self: start;
-    justify-items: start;
-    text-align: left;
-  }
-
-  .tweet-endorsement-meta span + span::before {
-    content: "/";
-    margin-right: 10px;
-    color: var(--line-strong);
   }
 
   .side-rail {
