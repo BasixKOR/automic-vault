@@ -1,6 +1,6 @@
 # Automic Vault
 
-Secure the tools you brew install.
+Lock down the tools you brew install.
 
 Automic Vault is a macOS app and CLI for giving AI coding agents useful local
 tools without handing them every secret and writable package path on the
@@ -13,21 +13,19 @@ machine.
 
 [![Coverage Status](https://shieldcn.dev/coveralls/github/automic-vault/automic-vault.svg?variant=outline)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
 
-Homebrew made it normal for developer machines to install the tools they need.
-AI agents change the assumption underneath that: the thing running those tools
-may not be you.
+Homebrew taught developer machines to install whatever tools the job needs.
+AI agents change the deal: the thing running those tools may not be you.
 
-Automic Vault puts a local boundary under agent work:
+Automic Vault adds a local boundary for agent work:
 
 - packages install as self-contained packages under controlled roots
-- package metadata, install state, updates, and security notes are visible from
-  the app and `av`
+- the app and `av` show package metadata, install state, updates, and security
+  notes
 - secrets are stored in the Automic Vault keychain, not `.env`, shell startup
   files, or model-readable config
-- approved secrets can be injected into a specific process when it actually
-  needs them
+- approved secrets are injected only into the process that needs them
 - risky command execution can ask a human before it continues
-- local files and isotope detectors can be scanned for plaintext credentials
+- `av` can scan local files and isotope detectors for plaintext credentials
 - `av contain` can run an agent command through a vaulted sandbox and proxy
   toolchain
 
