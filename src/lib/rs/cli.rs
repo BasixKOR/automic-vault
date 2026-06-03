@@ -1386,7 +1386,11 @@ fn installed_package_matches_uninstall_name(
             if package == isotope_name || Some(isotope_name.as_str()) == provider_install_name {
                 return Ok(true);
             }
-            let record = isotope_package_data(isotope_name)?;
+            let record = match isotope_package_data(isotope_name) {
+                Ok(record) => record,
+                Err(err) if err.starts_with("unknown isotope ") => return Ok(false),
+                Err(err) => return Err(err),
+            };
             Ok(isotope_modified_package_name(record)?
                 .as_deref()
                 .is_some_and(|modified_package| {

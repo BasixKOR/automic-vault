@@ -10344,6 +10344,54 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn parse_uninstall_request_ignores_unknown_installed_isotopes_for_other_names() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let opt_root = opt_pkg_root();
+        let install_root = opt_root.join(ISOTOPE_INSTALL_ROOT_DIR).join("flyctl");
+        if fs::symlink_metadata(&install_root).is_ok() {
+            remove_path(&install_root).unwrap();
+        }
+        fs::create_dir_all(&install_root).unwrap();
+        write_package_receipt(
+            &install_root.join(ROOT_RECEIPT),
+            &PackageReceipt {
+                package_name: "isotope:flyctl".to_string(),
+                version: "0.3.0".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "flyctl".to_string(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        write_stub_manifest(
+            &install_root.join(STUB_MANIFEST),
+            &StubManifest {
+                stubs: vec!["flyctl".to_string()],
+            },
+        )
+        .unwrap();
+
+        let invocation = Invocation {
+            binary_name: "av".to_string(),
+            name: "av rm".to_string(),
+            mode: None,
+        };
+        let request =
+            parse_uninstall_request_from_iter(&invocation, vec![OsString::from("uv")].into_iter())
+                .unwrap();
+
+        assert_eq!(
+            request,
+            Some(UninstallRequest {
+                packages: vec!["uv".to_string()],
+            })
+        );
+
+        remove_path(&install_root).unwrap();
+    }
+
+    #[test]
     fn parse_uninstall_request_rejects_ambiguous_installed_names() {
         let _env_lock = test_env_lock().lock().unwrap();
         let opt_root = opt_pkg_root();
