@@ -180,6 +180,51 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testSecurityCatalogNoticeForOpenSSHPointsToKeychainFixDocs() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "schema": 1,
+          "sources": {
+            "isotopes": {
+              "openssh": {
+                "name": "isotope:openssh",
+                "modifies": "brew:openssh",
+                "repository": "automic-vault/radioisotopes",
+                "justification": {
+                  "title": "Plain Text SSH Private Keys",
+                  "detail": "`ssh` reads private keys from ~/.ssh and IdentityFile paths. Unencrypted\\nprivate keys are reusable credentials that local agents can read directly.\\n\\nAutomic Vault currently detects this exposure but does not yet provide a\\nmigration or package modification for OpenSSH. Click Learn More for the\\nmacOS Keychain setup steps that fix this hazard.\\n"
+                }
+              }
+            }
+          }
+        }
+        """)
+        let detail = try decodePackageDetail(
+            packageName: "brew:openssh",
+            formula: "openssh",
+            securityState: """
+            {
+              "isotopeName": "openssh",
+              "installIsInsecure": true,
+              "remediationAvailable": false,
+              "reasons": ["SSH private key is unencrypted: /Users/test/.ssh/id_ed25519"],
+              "error": null
+            }
+            """
+        )
+
+        let notice = try XCTUnwrap(SecurityCatalog(bundle: bundle).notice(for: detail))
+
+        XCTAssertNil(notice.applyPackageName)
+        XCTAssertEqual(notice.headline, "Plain Text SSH Private Keys")
+        XCTAssertTrue(notice.body.contains("Click Learn More"))
+        XCTAssertTrue(notice.body.contains("macOS Keychain setup steps"))
+        XCTAssertEqual(
+            notice.learnMoreURL.absoluteString,
+            "https://github.com/automic-vault/radioisotopes/tree/main/openssh#readme"
+        )
+    }
+
     func testSecurityCatalogHardeningSummaryUsesInstalledIsotopeMetadata() throws {
         let bundle = try makeSecurityCatalogBundle(combinedJSON: """
         {
