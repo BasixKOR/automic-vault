@@ -519,7 +519,10 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     nonisolated private static func performIsotopeMigration(
         isotopeName: String
     ) throws -> NucleusBridge.IsotopeMigrationPlan {
-        try NucleusBridge(daemonOwnership: .owner)
+        try NucleusBridge(
+            compatibilityPolicy: .protocolOnly,
+            daemonOwnership: .owner
+        )
             .migrateIsotope(isotopeName: isotopeName)
     }
 
