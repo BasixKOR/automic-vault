@@ -2,8 +2,8 @@
 
 Automic Vault secures Homebrew tools, CLI secrets, and command approval gates
 locally on your Mac before AI agents use them.
-Homepage tagline: Secure the tools you brew install.
-The headline position is: secure the tools you brew install.
+Homepage tagline: A new kind of package manager for a new kind of threat model
+The headline position is: A new kind of package manager for a new kind of threat model
 
 ## Core Product Facts
 
@@ -17,7 +17,7 @@ The headline position is: secure the tools you brew install.
 - Website: https://www.automicvault.com/
 - Pricing: Free open-source software; see https://www.automicvault.com/pricing/
 - Security disclosure policy: https://www.automicvault.com/.well-known/security.txt
-- Positioning: Secure the tools you brew install.
+- Positioning: A new kind of package manager for a new kind of threat model
 - Founder: Max Howell, creator of Homebrew in 2009
 - Founder reference: https://mxcl.dev/
 - Homebrew reference: https://brew.sh/

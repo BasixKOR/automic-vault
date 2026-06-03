@@ -1,6 +1,6 @@
 # Automic Vault
 
-Secure the tools you brew install.
+A new kind of package manager for a new kind of threat model
 
 Automic Vault secures Homebrew tools, CLI secrets, and command approval gates
 locally on your Mac before AI agents use them.

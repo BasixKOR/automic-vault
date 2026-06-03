@@ -11,7 +11,7 @@
 
 **Overall GEO Score: 72/100 (Fair, close to Good)**
 
-Automic Vault has strong technical GEO foundations: AI crawler access is explicit, `llms.txt` exists, the sitemap is broad, pages render as static HTML, schema coverage is unusually good, and the package catalog creates a large crawlable surface. The main gap is not infrastructure. It is authority and message freshness: the live site still presents the older "From the creator of Homebrew" homepage, while the local site and brand work now say "Secure the tools you brew install." AI systems will understand the product, but may cite it inconsistently until the sharper positioning, fresh version metadata, and stronger external entity signals are deployed.
+Automic Vault has strong technical GEO foundations: AI crawler access is explicit, `llms.txt` exists, the sitemap is broad, pages render as static HTML, schema coverage is unusually good, and the package catalog creates a large crawlable surface. The main gap is not infrastructure. It is authority and message freshness: the live site still presents the older "From the creator of Homebrew" homepage, while the local site and brand work now say "A new kind of package manager for a new kind of threat model." AI systems will understand the product, but may cite it inconsistently until the sharper positioning, fresh version metadata, and stronger external entity signals are deployed.
 
 ### Score Breakdown
 
@@ -32,8 +32,8 @@ The live production page is behind the current local landing-page work.
 - Live homepage H1: `Automic Vault`
 - Live title: `Automic Vault | From the creator of Homebrew`
 - Live `llms.txt` positioning: `From the creator of Homebrew`
-- Current local H1: `Secure the tools you brew install.`
-- Current local `llms.txt` positioning: `secure the tools you brew install`
+- Current local H1: `A new kind of package manager for a new kind of threat model`
+- Current local `llms.txt` positioning: `A new kind of package manager for a new kind of threat model`
 
 Deploying the local landing page, `llms.txt`, translations, and sitemap changes is the fastest GEO improvement because it aligns human copy, AI-readable copy, and schema around the same product promise.
 
@@ -319,7 +319,7 @@ Do not try to manufacture volume. Create a small number of credible, consistent 
 
 1. Deploy the current local landing page, `llms.txt`, translations, and sitemap updates so production matches the new brand direction.
 2. Stamp live schema and `llms.txt` with the current release version.
-3. Change the live homepage H1/title/schema headline to "Secure the tools you brew install."
+3. Change the live homepage H1/title/schema headline to "A new kind of package manager for a new kind of threat model."
 4. Add FAQ blocks to `/download/`, `/pricing/`, `/github-cli-token-security-ai-agents/`, `/secure-aws-cli-credentials-ai-agents/`, and `/secret-scanner-for-ai-agents/`.
 5. Add internal related links from package pages to the relevant guide pages.
 

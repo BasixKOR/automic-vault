@@ -478,6 +478,12 @@ h1 {
   text-transform: none;
 }
 
+#hero-title {
+  max-width: 16ch;
+  font-size: 5.65rem;
+  line-height: 0.92;
+}
+
 h1 code {
   font-size: 0.8em;
   white-space: nowrap;
@@ -1650,6 +1656,10 @@ h1 code {
     font-size: 5.3rem;
   }
 
+  #hero-title {
+    font-size: 4.85rem;
+  }
+
   .lede {
     font-size: 1.32rem;
   }
@@ -1770,6 +1780,10 @@ h1 code {
   h1 {
     font-size: 3.9rem;
     max-width: 100%;
+  }
+
+  #hero-title {
+    font-size: 3.45rem;
   }
 
   .lede {
@@ -1962,6 +1976,10 @@ h1 code {
 
   h1 {
     font-size: 3.05rem;
+  }
+
+  #hero-title {
+    font-size: 2.75rem;
   }
 
   .blog-hero h1,

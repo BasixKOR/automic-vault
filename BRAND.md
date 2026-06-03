@@ -2,7 +2,7 @@
 
 ## Core Position
 
-Secure the tools you brew install.
+A new kind of package manager for a new kind of threat model
 
 `brew install` is the common path in. The real scope is broader: CLIs, SDKs,
 package managers, MCP servers, and local automation leave credentials and
@@ -13,7 +13,7 @@ The secrets manager for the open source ecosystem.
 
 ## One-Line Promise
 
-Secure the tools you brew install.
+A new kind of package manager for a new kind of threat model
 
 ## Founder Quote
 

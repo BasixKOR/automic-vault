@@ -6,7 +6,7 @@
   "description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
   "short_description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
   "full_description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them. It finds exposed tool state, moves supported credentials out of plaintext files, injects approved secrets only into trusted tools, and asks before risky commands publish, mutate infrastructure, reveal tokens, or use protected credentials.",
-  "positioning": "Secure the tools you brew install.",
+  "positioning": "A new kind of package manager for a new kind of threat model",
   "founder_context": "From the creator of Homebrew, Automic Vault applies Max Howell's package-management background to local package roots, command stubs, and tool execution boundaries for AI agents on macOS.",
   "url": "https://www.automicvault.com/",
   "source": "https://github.com/automic-vault/automic-vault",

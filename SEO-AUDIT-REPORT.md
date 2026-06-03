@@ -37,7 +37,7 @@ No Google Search Console, Bing Webmaster Tools, analytics, backlink database, or
 
 ## Quick Wins
 
-1. Deploy the current local homepage and `llms.txt` so production uses `Secure the tools you brew install.` and the new direct tagline.
+1. Deploy the current local homepage and `llms.txt` so production uses `A new kind of package manager for a new kind of threat model` consistently.
 2. Change the live homepage H1 from `Automic Vault` to a keyword-bearing H1.
 3. Update production sitemap `lastmod` values from `2026-05-24` to the actual deployment date when the new pages ship.
 4. Add descriptive alt text to the logo/icon image or mark it consistently decorative with `aria-hidden` where appropriate.
@@ -173,8 +173,8 @@ Thin localized pages can reduce perceived site quality and are unlikely to rank 
 
 Current local work has stronger positioning:
 
-- H1: `Secure the tools you brew install.`
-- Tagline: `Stop agents, malware, and compromised tools from accessing secrets or performing sensitive actions without approval.`
+- H1: `A new kind of package manager for a new kind of threat model`
+- Founder quote: `Stop agents, malware, and compromised tools from accessing secrets or performing sensitive actions without approval.`
 - Founder quote moved into a second-to-last section
 
 **Fix:** Deploy the local landing-page changes and ensure the homepage title, H1, meta description, Open Graph, Twitter description, JSON-LD `WebPage.description`, `llms.txt`, and sitemap all update together.
