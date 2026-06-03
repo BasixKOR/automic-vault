@@ -40,7 +40,7 @@ No magic. Just fewer ambient privileges.
 ## Install It
 
 ```sh
-curl -fsSL https://automicvault.com/install.sh | sh
+curl -fsSL https://automicvault.com/install.sh | sh && av open
 # ^^ downloads and mounts the DMG read-only
 #    lets Gatekeeper inspect the app
 #    verifies its signature and TeamIdentifier

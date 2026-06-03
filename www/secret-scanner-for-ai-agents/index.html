@@ -432,7 +432,7 @@
                 protected storage and inject them only into trusted tool executions.
               </p>
               <div class="source-strip" aria-label="Automic Vault install command">
-                <span>/usr/bin/curl -fsSL https://www.automicvault.com/install.sh | /bin/bash</span>
+                <span>curl -fsSL https://automicvault.com/install.sh | sh && av open</span>
               </div>
             </div>
           </article>
@@ -442,7 +442,7 @@
           <section>
             <h2>Terminal</h2>
             <div class="scanner-terminal" aria-label="Example scanner output">
-              <p><span>$</span> /usr/bin/curl -fsSL https://www.automicvault.com/scanner.sh | /bin/bash</p>
+              <p><span>$</span> curl -fsSL https://automicvault.com/scanner.sh | bash</p>
               <p><i>◆</i> Downloading scanner</p>
               <p><i>✓</i> Writes denied</p>
               <p><i>✓</i> Network denied</p>
