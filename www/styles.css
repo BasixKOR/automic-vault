@@ -669,7 +669,7 @@ h1 code {
   position: relative;
   display: grid;
   grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr);
-  gap: clamp(20px, 4.8vw, 64px);
+  gap: clamp(16px, 2.8vw, 34px);
   align-items: start;
   width: fit-content;
   max-width: 100%;
@@ -729,8 +729,6 @@ h1 code {
   gap: 12px;
   min-width: 0;
   margin: 0;
-  padding-left: clamp(18px, 2.4vw, 30px);
-  border-left: 1px solid oklch(94% 0.01 82 / 0.16);
 }
 
 .tweet-endorsement-person {
