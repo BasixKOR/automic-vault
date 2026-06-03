@@ -1250,6 +1250,10 @@ h1 code {
   max-width: 780px;
 }
 
+.article-hero .hero-actions {
+  margin-top: clamp(14px, 2vw, 24px);
+}
+
 .article-hero-image {
   margin: 0;
   box-shadow: 0 24px 80px oklch(6% 0.006 255 / 0.34);
