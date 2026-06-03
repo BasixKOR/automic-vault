@@ -1387,6 +1387,8 @@ put_bucket_policy() {
 sync_site() {
   local upload_site_dir="${prepared_site_dir:-${site_dir}}"
 
+  remove_old_generated_package_objects
+
   log_step "Syncing static assets"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --delete \
@@ -1466,8 +1468,6 @@ sync_site() {
   aws s3 cp "${upload_site_dir}/scanner.sh" "s3://${WWW_BUCKET}/scanner.sh" \
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
-
-  remove_old_generated_package_objects
 
   log_step "Removing repo-local guidance from S3"
   aws s3 rm "s3://${WWW_BUCKET}/AGENTS.md"
