@@ -131,8 +131,10 @@ generate_sqlite() {
 }
 
 verify_sqlite() {
+  local integrity
   [[ -f "${AV_WEB_SQLITE_PATH}" ]] || fail "missing SQLite artifact: ${AV_WEB_SQLITE_PATH}"
-  sqlite3 "${AV_WEB_SQLITE_PATH}" 'PRAGMA integrity_check;' | grep -qx 'ok'
+  integrity="$(sqlite3 "${AV_WEB_SQLITE_PATH}" 'PRAGMA integrity_check;')"
+  [[ "${integrity}" == "ok" ]] || fail "sqlite integrity_check failed: ${integrity}"
 }
 
 rust_host_target() {
