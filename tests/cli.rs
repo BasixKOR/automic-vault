@@ -143,6 +143,7 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(stdout(&output).contains("list (ls)"));
     assert!(stdout(&output).contains("scan"));
     assert!(stdout(&output).contains("trace"));
+    assert!(stdout(&output).contains("open"));
     assert!(!stdout(&output).contains("secret-scanner"));
     assert!(stdout(&output).contains("─"));
     assert!(stdout(&output).contains("LEGEND"));
@@ -206,6 +207,10 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     let output = run_nuke(&["help", "serve"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av serve"));
+
+    let output = run_nuke(&["help", "open"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av open"));
 
     let output = run_nuke(&["help", "inject"]);
     assert!(output.status.success());
@@ -863,6 +868,7 @@ fn subs_help_topics_and_root_gated_commands_cover_dispatch_edges() {
         "scan",
         "trace",
         "serve",
+        "open",
         "inject",
         "save",
         "gate",
@@ -914,6 +920,21 @@ fn subs_serve_command_covers_non_server_paths() {
     assert!(stdout(&output).contains(&format!("av serve {}", pkg_version())));
 
     let output = run_nuke(&["serve", "--bad"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown argument '--bad'"));
+}
+
+#[test]
+fn subs_open_command_covers_non_launch_paths() {
+    let output = run_nuke(&["open", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av open"));
+
+    let output = run_nuke(&["open", "--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("av open {}", pkg_version())));
+
+    let output = run_nuke(&["open", "--bad"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("unknown argument '--bad'"));
 }

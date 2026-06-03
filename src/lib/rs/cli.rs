@@ -339,6 +339,126 @@ pub(crate) fn run_serve(invocation: &Invocation, mut args: env::ArgsOs) -> Resul
     ))
 }
 
+pub(crate) fn run_open(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
+    let Some(first_arg) = args.next() else {
+        return open_gui_app();
+    };
+
+    if is_help_flag(&first_arg) {
+        print_open_usage(&invocation.name);
+        return Ok(());
+    }
+
+    if is_version_flag(&first_arg) {
+        println!("{} {}", invocation.name, env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    Err(format!(
+        "unknown argument '{}'",
+        first_arg.to_string_lossy()
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn open_gui_app() -> Result<(), String> {
+    let mut errors = Vec::new();
+    for app_path in gui_app_launch_candidates() {
+        if !app_bundle_exists(&app_path) {
+            continue;
+        }
+        match open_gui_app_at_path(&app_path) {
+            Ok(()) => return Ok(()),
+            Err(err) => errors.push(err),
+        }
+    }
+
+    match open_gui_app_by_bundle_identifier() {
+        Ok(()) => Ok(()),
+        Err(err) if errors.is_empty() => Err(err),
+        Err(err) => {
+            errors.push(err);
+            Err(errors.join("; "))
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_gui_app() -> Result<(), String> {
+    Err("av open is only available on macOS".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn open_gui_app_at_path(app_path: &Path) -> Result<(), String> {
+    let status = Command::new("/usr/bin/open")
+        .arg(app_path)
+        .status()
+        .map_err(|err| format!("failed to open {}: {err}", app_path.display()))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to open {}", app_path.display()))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn open_gui_app_by_bundle_identifier() -> Result<(), String> {
+    let status = Command::new("/usr/bin/open")
+        .args(["-b", GUI_APP_BUNDLE_IDENTIFIER])
+        .status()
+        .map_err(|err| format!("failed to open Automic Vault.app: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "failed to open Automic Vault.app by bundle identifier {GUI_APP_BUNDLE_IDENTIFIER}"
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn gui_app_launch_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(current_exe) = env::current_exe()
+        && let Some(app_path) = main_app_bundle_for_executable_path(&current_exe)
+    {
+        push_unique_path(&mut candidates, app_path);
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        push_unique_path(
+            &mut candidates,
+            PathBuf::from(home)
+                .join("Applications")
+                .join(GUI_APP_BUNDLE_NAME),
+        );
+    }
+    push_unique_path(
+        &mut candidates,
+        PathBuf::from("/Applications").join(GUI_APP_BUNDLE_NAME),
+    );
+    candidates
+}
+
+fn main_app_bundle_for_executable_path(executable_path: &Path) -> Option<PathBuf> {
+    executable_path
+        .ancestors()
+        .find(|path| path.file_name() == Some(OsStr::new(GUI_APP_BUNDLE_NAME)))
+        .map(Path::to_path_buf)
+}
+
+#[cfg(target_os = "macos")]
+fn app_bundle_exists(app_path: &Path) -> bool {
+    app_path.join("Contents/Info.plist").is_file()
+}
+
+#[cfg(target_os = "macos")]
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
 pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let Some(first_arg) = args.next() else {
         print_pkg_usage(&invocation.name);
@@ -392,6 +512,9 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                 }
                 Some(subcommand) if is_serve_subcommand(subcommand) => {
                     print_serve_usage(&format!("{} {}", invocation.binary_name, subcommand));
+                }
+                Some(subcommand) if is_open_subcommand(subcommand) => {
+                    print_open_usage(&format!("{} {}", invocation.binary_name, subcommand));
                 }
                 Some("inject") => {
                     isotope::print_isotope_usage(&format!("{} inject", invocation.binary_name));
@@ -515,6 +638,16 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     }
     if is_serve_subcommand(subcommand) {
         return run_serve(
+            &Invocation {
+                binary_name: invocation.binary_name.clone(),
+                name: format!("{} {subcommand}", invocation.binary_name),
+                mode: None,
+            },
+            args,
+        );
+    }
+    if is_open_subcommand(subcommand) {
+        return run_open(
             &Invocation {
                 binary_name: invocation.binary_name.clone(),
                 name: format!("{} {subcommand}", invocation.binary_name),
@@ -1632,6 +1765,10 @@ pub(crate) fn is_serve_subcommand(value: &str) -> bool {
     value == "serve"
 }
 
+pub(crate) fn is_open_subcommand(value: &str) -> bool {
+    value == "open"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2112,6 +2249,26 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(
             split_shebang_subcommand_arg(&OsString::from_vec(vec![0xff, b' ', b'x'])),
+            None
+        );
+    }
+
+    #[test]
+    fn gui_app_bundle_resolver_finds_main_app_around_bundled_cli() {
+        assert_eq!(
+            main_app_bundle_for_executable_path(Path::new(
+                "/Applications/Automic Vault.app/Contents/Resources/av"
+            )),
+            Some(PathBuf::from("/Applications/Automic Vault.app"))
+        );
+        assert_eq!(
+            main_app_bundle_for_executable_path(Path::new(
+                "/Applications/Automic Vault.app/Contents/Library/LoginItems/Automic Vault Menu.app/Contents/Resources/av"
+            )),
+            Some(PathBuf::from("/Applications/Automic Vault.app"))
+        );
+        assert_eq!(
+            main_app_bundle_for_executable_path(Path::new("/usr/local/bin/av")),
             None
         );
     }

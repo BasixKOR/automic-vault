@@ -83,6 +83,12 @@ pub(crate) fn print_serve_usage(program: &str) {
     println!("Starts the local Nucleus protocol daemon.");
 }
 
+pub(crate) fn print_open_usage(program: &str) {
+    println!("Usage: {program}");
+    println!();
+    println!("Opens Automic Vault.app.");
+}
+
 pub(crate) fn print_pkg_usage(program: &str) {
     HelpScreen::new(program, terminal_columns(), stdout_supports_ansi()).print();
 }
@@ -278,6 +284,7 @@ impl<'a> HelpScreen<'a> {
             command_line("gate", None, "Block until a manual approval is decided."),
             HelpLine::plain(""),
             section_line("LOCAL SYSTEM"),
+            command_line("open", None, "Open Automic Vault.app."),
             command_line("serve", None, "Start the local Nucleus protocol daemon."),
         ]
     }

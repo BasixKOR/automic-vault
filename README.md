@@ -51,6 +51,9 @@ If `curl | sh` gives you hives, fair. You can just download the DMG from
 $ av --help
 # package installs, secret storage/injection, containment, trace, approval gates
 
+$ av open
+# opens Automic Vault.app
+
 $ av info jq
 # source, version, install state, dependencies, homepage, license
 
