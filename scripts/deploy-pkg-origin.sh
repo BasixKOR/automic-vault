@@ -20,6 +20,7 @@ AV_WEB_CERTBOT_EMAIL="${AV_WEB_CERTBOT_EMAIL:-}"
 AV_WEB_TARGET="${AV_WEB_TARGET:-aarch64-unknown-linux-gnu}"
 AV_WEB_SQLITE_PATH="${AV_WEB_SQLITE_PATH:-${repo_root}/cache/pkg.sqlite}"
 AV_WEB_BINARY_PATH="${AV_WEB_BINARY_PATH:-}"
+AV_WEB_REMOTE_TMP="${AV_WEB_REMOTE_TMP:-/var/tmp}"
 
 skip_refresh=false
 skip_sqlite=false
@@ -41,6 +42,7 @@ Environment:
   AV_WEB_CERTBOT_EMAIL   Email for first-run certbot issuance if TLS cert is missing.
   AV_WEB_TARGET          Rust target. Default: ${AV_WEB_TARGET}
   AV_WEB_BINARY_PATH     Existing av-web binary path when using --skip-build.
+  AV_WEB_REMOTE_TMP      Remote staging directory. Default: ${AV_WEB_REMOTE_TMP}
 EOF
 }
 
@@ -291,7 +293,7 @@ deploy_remote() {
   trap 'rm -rf "${staging_dir}"' RETURN
   write_local_config_files "${staging_dir}"
 
-  remote_tmp="/tmp/av-web-deploy-${stamp}.$$"
+  remote_tmp="${AV_WEB_REMOTE_TMP%/}/av-web-deploy-${stamp}.$$"
   log "Copying package origin release to Atlas"
   ssh "${ssh_args[@]}" "${ATLAS_SSH_TARGET}" "mkdir -p $(shell_quote "${remote_tmp}")"
   scp "${scp_args[@]}" \
