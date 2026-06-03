@@ -322,13 +322,31 @@
           </div>
 
           <article class="ranked-story">
+            <span class="rank">0</span>
+            <div>
+              <p class="story-kicker">Install normally</p>
+              <h3>Keep using brew, npm, etc. as usual.</h3>
+              <p>
+                Vault fits under the package managers and install paths developers already use,
+                then adds a local safety pass after tools land on the machine.
+              </p>
+              <div class="source-strip" aria-label="Normal package sources">
+                <span>Homebrew</span>
+                <span>npm</span>
+                <span>PyPI</span>
+                <span>Direct installs</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="ranked-story">
             <span class="rank">1</span>
             <div>
-              <p class="story-kicker">Scan the machine</p>
-              <h3>Find exposed credentials before the next agent run.</h3>
+              <p class="story-kicker">Detect vulnerable installs</p>
+              <h3>Find vulnerable package installs, whatever the source.</h3>
               <p>
-                Vault ties readable credentials to the tool that can use them, so you know
-                which local paths need attention before the next agent run.
+                Vault ties readable credentials to the installed tools that can use them, so
+                vulnerable package paths surface before the next agent run.
               </p>
               <ul class="story-tags" aria-label="Secret boundary details">
                 <li>curl</li>
