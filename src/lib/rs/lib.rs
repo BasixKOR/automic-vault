@@ -8881,6 +8881,15 @@ fn isotope_migration_install_root_aliases(isotope: &IsotopePackageData) -> Vec<S
             &mut aliases,
             format!("/opt/{ISOTOPE_INSTALL_ROOT_DIR}/{name}"),
         );
+        push_unique_string(
+            &mut aliases,
+            opt_pkg_root()
+                .join("isotopes")
+                .join(&name)
+                .display()
+                .to_string(),
+        );
+        push_unique_string(&mut aliases, format!("/opt/isotopes/{name}"));
     }
     aliases.sort_by_key(|alias| std::cmp::Reverse(alias.len()));
     aliases
@@ -12802,7 +12811,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
         let isotope = isotope_package_data("gh").unwrap();
         let script = isotope.migrate.as_deref().unwrap();
 
-        assert!(script.contains("gh auth av-migrate"));
+        assert_eq!(script, "/opt/iso/gh/bin/gh auth av-migrate \"$@\"");
         assert!(!script.contains("auth login"));
         assert!(!script.contains("--with-token"));
     }
@@ -13513,6 +13522,22 @@ managed_secrets = ["dep:managed-secrets"]"#,
         );
         assert!(!executable.contains("/opt/iso/supabase-cli"));
         assert!(!executable.contains("/tmp/opt/iso/supabase-cli"));
+    }
+
+    #[test]
+    fn isotope_migration_script_rewrites_legacy_isotopes_install_root() {
+        let isotope = isotope_package_data("gh").unwrap();
+        let plan = InstallPlan::for_i_isotope("isotope:gh".to_string(), "gh");
+        let executable = executable_isotope_migration_script(
+            "/opt/isotopes/gh/bin/gh auth av-migrate \"$@\"",
+            &plan,
+            isotope,
+        )
+        .unwrap();
+
+        assert!(executable.contains(&plan.install_root.join("bin/gh").display().to_string()));
+        assert!(!executable.contains("/opt/isotopes/gh"));
+        assert!(!executable.contains("/tmp/opt/isotopes/gh"));
     }
 
     #[test]
