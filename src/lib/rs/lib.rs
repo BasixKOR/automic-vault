@@ -3194,58 +3194,60 @@ where
     let mut seen_errors = HashSet::new();
     let mut isotope_detectors = 0;
 
-    for integration in isotope_integrations::INTEGRATIONS {
-        let detector = integration
-            .detect_reasons
-            .map(|detect_reasons| detect_reasons())
-            .or_else(|| {
-                integration.detect.map(|detect| {
-                    detect().map(|install_is_insecure| {
-                        if install_is_insecure {
-                            vec![format!(
-                                "isotope:{} detector found plaintext credential exposure",
-                                integration.name
-                            )]
-                        } else {
-                            Vec::new()
-                        }
+    if secret_scan_should_run_isotope_detectors(request) {
+        for integration in isotope_integrations::INTEGRATIONS {
+            let detector = integration
+                .detect_reasons
+                .map(|detect_reasons| detect_reasons())
+                .or_else(|| {
+                    integration.detect.map(|detect| {
+                        detect().map(|install_is_insecure| {
+                            if install_is_insecure {
+                                vec![format!(
+                                    "isotope:{} detector found plaintext credential exposure",
+                                    integration.name
+                                )]
+                            } else {
+                                Vec::new()
+                            }
+                        })
                     })
-                })
-            });
+                });
 
-        let Some(result) = detector else {
-            continue;
-        };
-        isotope_detectors += 1;
+            let Some(result) = detector else {
+                continue;
+            };
+            isotope_detectors += 1;
 
-        match result {
-            Ok(reasons) => {
-                for reason in reasons {
-                    record_secret_scanner_finding(
-                        &mut findings,
-                        &mut seen_findings,
-                        SecretScannerFinding {
-                            source: format!("isotope:{}", integration.name),
-                            kind: "detector".to_string(),
-                            severity: "high".to_string(),
-                            path: None,
-                            line: None,
-                            message: reason,
-                        },
-                        &mut on_event,
-                    )?;
+            match result {
+                Ok(reasons) => {
+                    for reason in reasons {
+                        record_secret_scanner_finding(
+                            &mut findings,
+                            &mut seen_findings,
+                            SecretScannerFinding {
+                                source: format!("isotope:{}", integration.name),
+                                kind: "detector".to_string(),
+                                severity: "high".to_string(),
+                                path: None,
+                                line: None,
+                                message: reason,
+                            },
+                            &mut on_event,
+                        )?;
+                    }
                 }
+                Err(err) => record_secret_scanner_error(
+                    &mut errors,
+                    &mut seen_errors,
+                    SecretScannerError {
+                        source: format!("isotope:{}", integration.name),
+                        path: None,
+                        message: err,
+                    },
+                    &mut on_event,
+                )?,
             }
-            Err(err) => record_secret_scanner_error(
-                &mut errors,
-                &mut seen_errors,
-                SecretScannerError {
-                    source: format!("isotope:{}", integration.name),
-                    path: None,
-                    message: err,
-                },
-                &mut on_event,
-            )?,
         }
     }
 
@@ -3295,6 +3297,10 @@ where
         findings,
         errors,
     })
+}
+
+fn secret_scan_should_run_isotope_detectors(request: &SecretScannerRequest) -> bool {
+    request.path.is_none()
 }
 
 fn record_secret_scanner_finding<F>(
@@ -4186,10 +4192,20 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
 
     let value = normalized_secret_value(assignment.value);
     let key_is_sensitive = secret_key_name_is_sensitive(assignment.key);
-    let value_is_real = secret_value_is_real(value)
-        || (key_is_sensitive
-            && secret_path_looks_like_env_file(path)
-            && secret_sensitive_env_value_is_real(value));
+    let value_has_known_shape = secret_value_has_known_secret_shape(value);
+    let value_has_strong_shape = secret_value_has_high_entropy_shape(value);
+    let credential_context = secret_path_looks_like_credential_file(path);
+    let source_context = secret_path_looks_like_source_file(path);
+    let value_is_real = value_has_known_shape
+        || (source_context
+            && key_is_sensitive
+            && secret_assignment_value_is_literal(assignment.value)
+            && value_has_strong_shape)
+        || (!source_context
+            && key_is_sensitive
+            && credential_context
+            && (secret_value_is_real(value) || secret_sensitive_env_value_is_real(value)))
+        || (!source_context && key_is_sensitive && value_has_strong_shape);
     if !value_is_real || secret_value_is_test_fixture(path, value) {
         return None;
     }
@@ -4210,9 +4226,7 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
         ));
     }
 
-    if secret_value_has_known_token_shape(value)
-        || secret_value_looks_like_posthog_project_key(value)
-    {
+    if value_has_known_shape {
         return Some(secret_file_finding(
             path,
             line_number,
@@ -4562,6 +4576,10 @@ fn secret_raw_value_is_quoted(value: &str) -> bool {
     value.starts_with('"') || value.starts_with('\'')
 }
 
+fn secret_assignment_value_is_literal(value: &str) -> bool {
+    secret_raw_value_is_quoted(value)
+}
+
 fn source_identifier(value: &str) -> Option<&str> {
     let value = value.trim();
     if value.is_empty() || !value.chars().all(source_reference_char) {
@@ -4670,10 +4688,7 @@ fn secret_value_is_real(value: &str) -> bool {
     }
 
     let lower = value.to_ascii_lowercase();
-    if secret_value_has_known_token_shape(value)
-        || secret_value_looks_like_posthog_project_key(value)
-        || secret_value_looks_like_jwt(value)
-    {
+    if secret_value_has_known_secret_shape(value) {
         return true;
     }
     if lower == "secret_secret" {
@@ -4690,6 +4705,47 @@ fn secret_sensitive_env_value_is_real(value: &str) -> bool {
     let has_alpha = value.chars().any(|ch| ch.is_ascii_alphabetic());
     let has_digit = value.chars().any(|ch| ch.is_ascii_digit());
     (value.len() >= 16 && has_alpha) || (value.len() >= 12 && has_alpha && has_digit)
+}
+
+fn secret_value_has_known_secret_shape(value: &str) -> bool {
+    secret_value_has_known_token_shape(value)
+        || secret_value_looks_like_posthog_project_key(value)
+        || secret_value_looks_like_jwt(value)
+}
+
+fn secret_value_has_high_entropy_shape(value: &str) -> bool {
+    if value.len() < 20
+        || secret_value_is_obviously_not_real(value)
+        || secret_value_looks_like_package_or_label(value)
+        || value.chars().any(char::is_whitespace)
+    {
+        return false;
+    }
+
+    let mut has_lower = false;
+    let mut has_upper = false;
+    let mut has_digit = false;
+    let mut has_symbol = false;
+    for ch in value.chars() {
+        if ch.is_ascii_lowercase() {
+            has_lower = true;
+        } else if ch.is_ascii_uppercase() {
+            has_upper = true;
+        } else if ch.is_ascii_digit() {
+            has_digit = true;
+        } else if matches!(ch, '_' | '-' | '.' | '+' | '/' | '=') {
+            has_symbol = true;
+        } else {
+            return false;
+        }
+    }
+
+    let category_count = usize::from(has_lower)
+        + usize::from(has_upper)
+        + usize::from(has_digit)
+        + usize::from(has_symbol);
+    let has_alpha = has_lower || has_upper;
+    has_alpha && has_digit && ((value.len() >= 24 && category_count >= 3) || value.len() >= 32)
 }
 
 fn secret_value_is_obviously_not_real(value: &str) -> bool {
@@ -4818,7 +4874,33 @@ fn secret_path_looks_like_reference_fixture(path: &Path) -> bool {
         || path.contains("/share/info/")
         || path.contains("/man/man")
         || path.contains("/resources/bundled/")
+        || path.ends_with(".sample")
         || path.ends_with(".strings")
+}
+
+fn secret_path_looks_like_credential_file(path: &Path) -> bool {
+    if secret_path_looks_like_env_file(path) {
+        return true;
+    }
+
+    let normalized_path = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    if normalized_path.ends_with("/.aws/credentials")
+        || normalized_path.ends_with("/.kube/config")
+        || normalized_path.ends_with("/.config/gh/hosts.yml")
+    {
+        return true;
+    }
+
+    matches!(
+        path.file_name()
+            .and_then(|file_name| file_name.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some(".npmrc" | ".pypirc" | ".netrc" | ".git-credentials")
+    )
 }
 
 fn secret_path_looks_like_env_file(path: &Path) -> bool {
@@ -4878,14 +4960,45 @@ fn secret_line_looks_like_source_string_fixture(path: &Path, line: &str) -> bool
 }
 
 fn secret_line_contains_standalone_token_literal(path: &Path, line: &str) -> bool {
-    if secret_path_looks_like_test_fixture(path)
-        || secret_path_looks_like_reference_fixture(path)
-        || secret_path_looks_like_source_file(path)
-    {
+    if secret_path_looks_like_test_fixture(path) || secret_path_looks_like_reference_fixture(path) {
         return false;
     }
+    if secret_path_looks_like_source_file(path) {
+        return secret_line_contains_quoted_secret_literal(line);
+    }
     line.split(|ch: char| !token_shape_char(ch))
-        .any(secret_value_looks_like_posthog_project_key)
+        .any(secret_value_has_known_secret_shape)
+}
+
+fn secret_line_contains_quoted_secret_literal(line: &str) -> bool {
+    let mut chars = line.char_indices().peekable();
+    while let Some((_, ch)) = chars.next() {
+        if !matches!(ch, '"' | '\'') {
+            continue;
+        }
+
+        let quote = ch;
+        let mut escaped = false;
+        let start = chars.peek().map_or(line.len(), |(index, _)| *index);
+        while let Some((index, next)) = chars.next() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if next == '\\' {
+                escaped = true;
+                continue;
+            }
+            if next == quote {
+                let value = &line[start..index];
+                if secret_value_has_known_secret_shape(value) {
+                    return true;
+                }
+                break;
+            }
+        }
+    }
+    false
 }
 
 fn secret_value_looks_like_file_path(value: &str) -> bool {
@@ -11675,6 +11788,54 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn secret_file_scanner_ignores_source_constants_and_parser_tables() {
+        let temp = TempDir::new().unwrap();
+        let python_path = temp.path().join("tokenize.py");
+        fs::write(
+            &python_path,
+            [
+                "TOKEN_ENDS = TSPECIALS | WSP",
+                "password = password or \"\"",
+                "passwd = passwd or ''",
+                "token_range = \"%d,%d-%d,%d:\" % (token.start + token.end)",
+                "token = \"'\", token[0][1:-1]",
+                "'a4337bc45a8fc544c03f52dc550cd6e1e87021bc896588bd79e901e2'",
+                "'1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa'",
+                "\"application/vnd.pypi.simple.v1+json\"",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&python_path).unwrap();
+
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn secret_file_scanner_detects_source_secret_literals() {
+        let temp = TempDir::new().unwrap();
+        let source_path = temp.path().join("credentials.ts");
+        fs::write(
+            &source_path,
+            [
+                r#"const apiKey = "sk-live_1234567890abcdefghijklmnop";"#,
+                r#"export const opaqueToken = "Rdb0XGysWuBnveWaNkyiM8Qz1Lp2";"#,
+                r#"return "ghp_1234567890abcdefghijkl";"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&source_path).unwrap();
+
+        assert_eq!(findings.len(), 3, "{findings:?}");
+        assert_eq!(findings[0].kind, "secret-assignment");
+        assert_eq!(findings[1].kind, "secret-assignment");
+        assert_eq!(findings[2].kind, "token-literal");
+    }
+
+    #[test]
     fn secret_file_scanner_ignores_json_boolean_and_null_values() {
         let temp = TempDir::new().unwrap();
         let json_path = temp.path().join("models.json");
@@ -11697,6 +11858,27 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].line, Some(4));
         assert_eq!(findings[0].kind, "secret-assignment");
+    }
+
+    #[test]
+    fn secret_file_scanner_requires_stronger_values_outside_credential_files() {
+        let temp = TempDir::new().unwrap();
+        let notes_path = temp.path().join("notes.txt");
+        fs::write(
+            &notes_path,
+            [
+                "TOKEN_ENDS = TSPECIALS | WSP",
+                "API_KEY=supervaultcodeqx",
+                "API_KEY=Rdb0XGysWuBnveWaNkyiM8Qz1Lp2",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&notes_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].line, Some(3));
     }
 
     #[test]
@@ -12090,6 +12272,11 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert!(!secret_value_has_known_token_shape("npm_pkg"));
         assert!(!secret_value_has_known_token_shape("gho_abc123"));
         assert!(!secret_value_has_known_token_shape("github_pat_abc123"));
+        assert!(secret_value_has_high_entropy_shape(
+            "Rdb0XGysWuBnveWaNkyiM8Qz1Lp2"
+        ));
+        assert!(!secret_value_has_high_entropy_shape("TSPECIALS | WSP"));
+        assert!(!secret_value_has_high_entropy_shape("supervaultcodeqx"));
         assert!(secret_value_looks_like_jwt(
             "eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxMjM0NTY3ODkwIn0.signature_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
         ));
@@ -12160,6 +12347,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             "/repo/share/info/key.info",
             "/repo/man/man3/key.3",
             "/repo/resources/bundled/skills/README.md",
+            "/repo/hooks/fsmonitor-watchman.sample",
             "/repo/en.lproj/Localizable.strings",
         ] {
             assert!(
@@ -12190,6 +12378,28 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
             Path::new("/repo/src/auth.ts"),
             "sk-test_1234567890abcdef"
         ));
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_sample_hook_source() {
+        let temp = TempDir::new().unwrap();
+        let sample_path = temp.path().join("hooks/fsmonitor-watchman.sample");
+        fs::create_dir_all(sample_path.parent().unwrap()).unwrap();
+        fs::write(
+            &sample_path,
+            [
+                "\t# further constrain the results.",
+                "\tmy $last_update_line = \"\";",
+                "\tif (substr($last_update_token, 0, 1) eq \"c\") {",
+                "\t\t$last_update_token = \"\\\"$last_update_token\\\"\";",
+                "\t\t$last_update_line = qq[\\n\"since\": $last_update_token,];",
+                "\t}",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        assert!(scan_secret_file(&sample_path).unwrap().is_empty());
     }
 
     #[test]
@@ -12595,7 +12805,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
         fs::create_dir_all(&scan_root).unwrap();
         fs::write(
             &aws_credentials,
-            "[default]\naws_secret_access_key = secretsecret\n",
+            "[default]\naws_secret_access_key = secretsecret1234\n",
         )
         .unwrap();
         fs::write(scan_root.join(".npmrc"), "_authToken=npm_secret_token\n").unwrap();
@@ -12636,24 +12846,13 @@ managed_secrets = ["dep:managed-secrets"]"#,
         })
         .unwrap();
 
-        let has_aws_cli_detector = detect_isotope_install_reasons("aws-cli").is_some();
-        if has_aws_cli_detector {
-            assert!(report.summary.isotope_detectors > 0);
-            assert!(
-                report
-                    .findings
-                    .iter()
-                    .any(|finding| finding.source == "isotope:aws-cli")
-            );
-        } else {
-            assert_eq!(report.summary.isotope_detectors, 0);
-            assert!(
-                report
-                    .findings
-                    .iter()
-                    .all(|finding| !finding.source.starts_with("isotope:"))
-            );
-        }
+        assert_eq!(report.summary.isotope_detectors, 0);
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| !finding.source.starts_with("isotope:"))
+        );
         assert!(report.summary.scanned_files >= 1);
         assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert!(
@@ -12662,6 +12861,24 @@ managed_secrets = ["dep:managed-secrets"]"#,
                 .iter()
                 .any(|finding| finding.source == "file-probe")
         );
+
+        let default_report = run_secret_scan(&SecretScannerRequest {
+            path: None,
+            skip_paths: Vec::new(),
+            output: OutputMode::Human,
+            isotopes_only: false,
+        })
+        .unwrap();
+        let has_aws_cli_detector = detect_isotope_install_reasons("aws-cli").is_some();
+        if has_aws_cli_detector {
+            assert!(default_report.summary.isotope_detectors > 0);
+            assert!(
+                default_report
+                    .findings
+                    .iter()
+                    .any(|finding| finding.source == "isotope:aws-cli")
+            );
+        }
 
         let isotope_only_report = run_secret_scan(&SecretScannerRequest {
             path: Some(scan_root),
@@ -12673,6 +12890,8 @@ managed_secrets = ["dep:managed-secrets"]"#,
 
         assert_eq!(isotope_only_report.summary.scanned_files, 0);
         assert_eq!(isotope_only_report.summary.file_probes, 0);
+        assert_eq!(isotope_only_report.summary.isotope_detectors, 0);
+        assert!(isotope_only_report.findings.is_empty());
         assert!(
             isotope_only_report
                 .findings
