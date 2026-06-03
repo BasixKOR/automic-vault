@@ -176,7 +176,7 @@ build_binary() {
   if [[ "${AV_WEB_TARGET}" == "${host_target}" ]]; then
     cargo build --release --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/release/av-web"
-  elif cargo zigbuild --version >/dev/null 2>&1; then
+  elif cargo zigbuild --help >/dev/null 2>&1; then
     cargo zigbuild --release --target "${AV_WEB_TARGET}" --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   elif command -v cross >/dev/null 2>&1; then
