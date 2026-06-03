@@ -180,6 +180,90 @@ final class PackageSecurityStateTests: XCTestCase {
         )
     }
 
+    func testSecurityCatalogHardeningSummaryUsesInstalledIsotopeMetadata() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "schema": 1,
+          "sources": {
+            "isotopes": {
+              "aws-cli": {
+                "name": "isotope:aws-cli",
+                "modifies": "brew:awscli",
+                "repository": "automic-vault/radioisotopes",
+                "justification": {
+                  "title": "Plain Text Secrets",
+                  "detail": "`aws` stores credentials as plaintext at ~/.aws/credentials.\\n\\nOur isotope locks them in the macOS keychain and injects them through credential_process while `aws` runs.\\n"
+                },
+                "caveats": [
+                  "We only support console allocated key/secret pairs.",
+                  "We disable AWS CLI legacy external plugins configured under [plugins]."
+                ]
+              }
+            }
+          }
+        }
+        """)
+        let detail = try decodePackageDetail(
+            packageName: "isotope:aws-cli",
+            formula: "aws-cli",
+            installed: true,
+            installRoot: "/opt/iso/aws-cli",
+            sourceJSON: #"{"kind": "isotope", "isotopeName": "aws-cli"}"#,
+            securityState: "null"
+        )
+        let catalog = SecurityCatalog(bundle: bundle)
+
+        XCTAssertNil(catalog.notice(for: detail))
+        let summary = try XCTUnwrap(catalog.hardeningSummary(for: detail))
+
+        XCTAssertEqual(summary.isotopePackageName, "isotope:aws-cli")
+        XCTAssertEqual(summary.hardenedPackageName, "brew:awscli")
+        XCTAssertEqual(summary.headline, "Plain Text Secrets")
+        XCTAssertTrue(summary.body.contains("locks them in the macOS keychain"))
+        XCTAssertEqual(
+            summary.caveats,
+            .bullets([
+                "We only support console allocated key/secret pairs.",
+                "We disable AWS CLI legacy external plugins configured under [plugins].",
+            ])
+        )
+    }
+
+    func testSecurityCatalogHardeningSummaryDoesNotReplaceActiveWarning() throws {
+        let bundle = try makeSecurityCatalogBundle(combinedJSON: """
+        {
+          "schema": 1,
+          "sources": {
+            "isotopes": {
+              "aws-cli": {
+                "name": "isotope:aws-cli",
+                "modifies": "brew:awscli",
+                "repository": "automic-vault/radioisotopes"
+              }
+            }
+          }
+        }
+        """)
+        let detail = try decodePackageDetail(
+            packageName: "isotope:aws-cli",
+            formula: "aws-cli",
+            installed: true,
+            installRoot: "/opt/iso/aws-cli",
+            sourceJSON: #"{"kind": "isotope", "isotopeName": "aws-cli"}"#,
+            securityState: """
+            {
+              "isotopeName": "aws-cli",
+              "installIsInsecure": true,
+              "remediationAvailable": true,
+              "reasons": ["AWS shared credentials file contains plaintext credentials"],
+              "error": null
+            }
+            """
+        )
+
+        XCTAssertNil(SecurityCatalog(bundle: bundle).hardeningSummary(for: detail))
+    }
+
     func testDetectorOnlyNoticeLinksToRadioisotopeReadme() throws {
         let detail = try decodePackageDetail(
             packageName: "brew:curl",
@@ -863,15 +947,17 @@ final class PackageSecurityStateTests: XCTestCase {
         formula: String = "git",
         installed: Bool = false,
         installRoot: String? = nil,
+        sourceJSON: String? = nil,
         securityState: String
     ) throws -> PackageDetail {
+        let sourceJSON = sourceJSON ?? #"{"kind": "formula", "rootFormula": "\#(formula)"}"#
         let json = """
         {
           "packageName": "\(packageName)",
           "qualifiedName": "\(packageName)",
           "installRoot": "\(installRoot ?? "/opt/homebrew/Cellar/\(formula)")",
           "installed": \(installed),
-          "source": {"kind": "formula", "rootFormula": "\(formula)"},
+          "source": \(sourceJSON),
           "sourceError": null,
           "aliases": [],
           "aliasesError": null,

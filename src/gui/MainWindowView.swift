@@ -356,6 +356,9 @@ struct MainWindowView: View {
                 if let detail = model.selectedDetail,
                    let package = model.selectedPackage {
                     let warning = DossierSecurityWarningContent(detail: detail)
+                    let hardeningSummary = warning == nil
+                        ? model.dossierHardeningSummary(for: detail, package: package)
+                        : nil
 
                     dossierHeader(
                         detail: detail,
@@ -368,7 +371,11 @@ struct MainWindowView: View {
                     executableSection(detail: detail, package: package)
                     permissionsSection(detail: detail, package: package)
                     if warning == nil {
-                        notesSection(detail: detail, package: package)
+                        notesSection(
+                            detail: detail,
+                            package: package,
+                            hardeningSummary: hardeningSummary
+                        )
                     }
                     lastUpdatedSection(detail: detail)
                 } else {
@@ -535,16 +542,21 @@ struct MainWindowView: View {
 
     private func notesSection(
         detail: PackageDetail,
-        package: PackagePresentation
+        package: PackagePresentation,
+        hardeningSummary: PackageHardeningSummary?
     ) -> some View {
         InfoSection(title: L10n.string("NOTES")) {
-            Text(noteText(detail: detail, package: package))
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(AVGlassPalette.secondaryText)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
+            if let hardeningSummary {
+                DossierHardeningSummaryCard(summary: hardeningSummary)
+            } else {
+                Text(noteText(detail: detail, package: package))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AVGlassPalette.secondaryText)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 8))
+            }
         }
     }
 
@@ -945,6 +957,151 @@ private struct HardenTraceStroke: View {
                 color: AVGlassPalette.hardenTrace.opacity(shadowOpacity),
                 radius: shadowRadius
             )
+    }
+}
+
+private struct DossierHardeningSummaryCard: View {
+    let summary: PackageHardeningSummary
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(summary.headline)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(AVGlassPalette.green)
+                .lineLimit(nil)
+                .textSelection(.enabled)
+
+            DossierSecurityMarkdownText(
+                summary.body,
+                fontSize: 13,
+                weight: .medium,
+                color: AVGlassPalette.secondaryText
+            )
+
+            VStack(alignment: .leading, spacing: 7) {
+                if let hardenedPackageName = summary.hardenedPackageName {
+                    DossierHardeningSummaryFact(
+                        label: L10n.string("Package"),
+                        value: hardenedPackageName
+                    )
+                }
+                DossierHardeningSummaryFact(
+                    label: "Isotope",
+                    value: summary.isotopePackageName
+                )
+            }
+
+            if summary.hasCaveats {
+                DossierHardeningSummarySection(title: L10n.string("CAVEATS")) {
+                    caveatsContent
+                }
+            }
+
+            Button {
+                openURL(summary.learnMoreURL)
+            } label: {
+                Text(L10n.string("LEARN MORE"))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(AVGlassPalette.green)
+                    .tracking(0.6)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .background(AVGlassPalette.controlFill, in: RoundedRectangle(cornerRadius: 5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(AVGlassPalette.green.opacity(0.48), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AVGlassPalette.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AVGlassPalette.green.opacity(0.42), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var caveatsContent: some View {
+        switch summary.caveats {
+        case .paragraph(let paragraph):
+            DossierSecurityMarkdownText(
+                paragraph,
+                fontSize: 12,
+                weight: .regular,
+                color: AVGlassPalette.secondaryText
+            )
+        case .bullets(let bullets):
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(bullets.indices, id: \.self) { index in
+                    DossierHardeningSummaryBullet(text: bullets[index])
+                }
+            }
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+private struct DossierHardeningSummarySection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.green.opacity(0.86))
+                .tracking(0.7)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DossierHardeningSummaryFact: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.green.opacity(0.86))
+                .tracking(0.7)
+                .frame(width: 58, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(AVGlassPalette.secondaryText)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DossierHardeningSummaryBullet: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("•")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AVGlassPalette.green.opacity(0.82))
+            DossierSecurityMarkdownText(
+                text,
+                fontSize: 12,
+                weight: .regular,
+                color: AVGlassPalette.secondaryText
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

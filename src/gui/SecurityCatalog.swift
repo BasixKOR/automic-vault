@@ -88,6 +88,28 @@ struct PackageSecurityNotice: Equatable {
     }
 }
 
+struct PackageHardeningSummary: Equatable {
+    let isotopePackageName: String
+    let hardenedPackageName: String?
+    let headline: String
+    let body: String
+    let caveats: PackageSecurityNotice.Caveats?
+    let learnMoreURL: URL
+
+    var hasCaveats: Bool {
+        switch caveats {
+        case .paragraph(let paragraph):
+            return paragraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        case .bullets(let bullets):
+            return bullets.contains {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            }
+        case .none:
+            return false
+        }
+    }
+}
+
 final class SecurityCatalog {
     static let shared = SecurityCatalog(bundle: .main)
 
@@ -167,6 +189,30 @@ final class SecurityCatalog {
         return nil
     }
 
+    func hardeningSummary(for detail: PackageDetail) -> PackageHardeningSummary? {
+        guard detail.installed,
+              detail.securityState?.needsMainWindowSecurityAlert != true,
+              detailIsInstalledIsotope(detail) else {
+            return nil
+        }
+        let matchedIsotope = preferredMatchedIsotope(
+            packages: matchedIsotopePackages(for: detail),
+            securityState: detail.securityState
+        )
+        guard let matchedIsotope else {
+            return nil
+        }
+        return PackageHardeningSummary(
+            isotopePackageName: matchedIsotope.name,
+            hardenedPackageName: matchedIsotope.hardenedPackageName,
+            headline: matchedIsotope.hardeningHeadline,
+            body: matchedIsotope.hardeningBody,
+            caveats: matchedIsotope.caveats?.noticeCaveats,
+            learnMoreURL: matchedIsotope.learnMoreURL
+                ?? PackageSecurityNotice.defaultLearnMoreURL
+        )
+    }
+
     func homepageURL(for detail: PackageDetail) -> URL? {
         matchedIsotopePackages(for: detail)
             .lazy
@@ -191,6 +237,17 @@ final class SecurityCatalog {
         let stateName = securityState.isotopeName
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return packages.first { $0.isotopeName == stateName }
+    }
+
+    private func detailIsInstalledIsotope(_ detail: PackageDetail) -> Bool {
+        if case .isotope = detail.source {
+            return true
+        }
+        return [detail.packageName, detail.qualifiedName]
+            .contains { value in
+                value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .hasPrefix("isotope:")
+            }
     }
 
     private func packageIdentifiers(for detail: PackageDetail) -> Set<String> {
@@ -377,6 +434,21 @@ private struct IsotopeRecord: Decodable {
         return learnMoreURL
     }
 
+    var hardenedPackageName: String? {
+        Self.nonEmpty(modifies) ?? Self.nonEmpty(replaces)
+    }
+
+    var hardeningHeadline: String {
+        Self.nonEmpty(justification?.title) ?? L10n.string("Hardened")
+    }
+
+    var hardeningBody: String {
+        Self.nonEmpty(justification?.detail)
+            ?? L10n.string(
+                "This package is hardened. Binary execution is sandboxed and secret access is restricted."
+            )
+    }
+
     var learnMoreURL: URL? {
         guard let repository,
               repository.contains("/") else {
@@ -386,6 +458,11 @@ private struct IsotopeRecord: Decodable {
             return radioisotopeReadmeURL(for: isotopeName)
         }
         return URL(string: "https://github.com/\(repository)#readme")
+    }
+
+    private static func nonEmpty(_ rawValue: String?) -> String? {
+        let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     private func httpURL(from rawValue: String?) -> URL? {

@@ -1139,6 +1139,16 @@ final class MainWindowModel: ObservableObject {
         return false
     }
 
+    func dossierHardeningSummary(
+        for detail: PackageDetail,
+        package: PackagePresentation
+    ) -> PackageHardeningSummary? {
+        guard isHardened(package, detail: detail) else {
+            return nil
+        }
+        return securityCatalog.hardeningSummary(for: detail)
+    }
+
     func displayName(for package: PackagePresentation) -> String {
         strippedPackagePrefix(package.displayName)
     }
