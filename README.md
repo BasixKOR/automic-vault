@@ -11,6 +11,8 @@ machine.
 > [!IMPORTANT]
 > Automic Vault is not affiliated with any cryptocurrency or token.
 
+[![Coverage Status](https://shieldcn.dev/coveralls/github/automic-vault/automic-vault.svg?variant=outline)](https://coveralls.io/github/automic-vault/automic-vault?branch=main)
+
 Homebrew made it normal for developer machines to install the tools they need.
 AI agents change the assumption underneath that: the thing running those tools
 may not be you.
