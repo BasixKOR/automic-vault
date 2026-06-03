@@ -330,7 +330,7 @@ sudo ln -sfn "${release_dir}" "${remote_root}/current"
 sudo install -o root -g root -m 0644 "${remote_tmp}/automic-vault-web.service" "/etc/systemd/system/automic-vault-web.service"
 sudo install -o root -g root -m 0600 "${remote_tmp}/automic-vault-web.env" "/etc/automic-vault-web.env"
 
-if [[ ! -f "/etc/letsencrypt/live/${origin_domain}/fullchain.pem" ]]; then
+if ! sudo test -f "/etc/letsencrypt/live/${origin_domain}/fullchain.pem"; then
   sudo install -o root -g root -m 0644 "${remote_tmp}/automic-vault-web-http.conf" "/etc/nginx/conf.d/automic-vault-web.conf"
   sudo nginx -t
   sudo systemctl reload nginx
