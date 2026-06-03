@@ -107,9 +107,7 @@ lot, and it is the part we can actually ship.
 
 ## Platform
 
-macOS first.
-
-Linux and Windows are not supported today.
+macOS: first. Linux & Windows: soon.
 
 > [!NOTE]
 > - 20k stars: we ship Linux
@@ -119,7 +117,7 @@ Linux and Windows are not supported today.
 
 ```sh
 $ cargo test
-$ ./scripts/build-app.sh
+$ ./scripts/run-gui.sh
 ```
 
 The native app lives in `src/gui`. The CLI and package/security core live in
