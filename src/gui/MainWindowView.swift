@@ -150,11 +150,12 @@ struct MainWindowView: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                 Spacer(minLength: 6)
-                if let count = model.count(for: section), count > 0 {
-                    if section == .geigerCounter && count > 0 {
+                if let count = model.count(for: section),
+                   section.shouldDisplaySidebarCount(count) {
+                    if section == .geigerCounter {
                         CountPill(count: count, prominence: .critical)
                             .fixedSize()
-                    } else if (section == .newUpdated || section == .outdated) && count > 0 {
+                    } else if section == .newUpdated || section == .outdated {
                         CountPill(count: count, prominence: .normal)
                             .fixedSize()
                     } else {

@@ -62,6 +62,13 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
+    func testOutdatedSidebarCountDisplaysZero() {
+        XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(0))
+        XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(1))
+        XCTAssertFalse(MainWindowSection.newUpdated.shouldDisplaySidebarCount(0))
+        XCTAssertFalse(MainWindowSection.geigerCounter.shouldDisplaySidebarCount(0))
+    }
+
     func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
         let sections = MainWindowSection.categorySections
         XCTAssertFalse(sections.contains(.other))

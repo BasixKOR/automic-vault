@@ -163,6 +163,10 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
         }
     }
 
+    func shouldDisplaySidebarCount(_ count: Int) -> Bool {
+        count > 0 || self == .outdated
+    }
+
     var categoryIdentifier: String? {
         switch self {
         case .developerTools:
