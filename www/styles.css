@@ -668,7 +668,7 @@ h1 code {
 .tweet-endorsement {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr);
+  grid-template-columns: auto max-content;
   gap: clamp(16px, 2.8vw, 34px);
   align-items: start;
   width: fit-content;
@@ -727,6 +727,9 @@ h1 code {
   display: grid;
   align-content: start;
   gap: 12px;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
   margin: 0;
 }
