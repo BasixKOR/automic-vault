@@ -4936,6 +4936,9 @@ fn secret_path_looks_like_source_file(path: &Path) -> bool {
                 | "swift"
                 | "js"
                 | "jsx"
+                | "sh"
+                | "bash"
+                | "zsh"
                 | "ts"
                 | "tsx"
                 | "py"
@@ -11808,6 +11811,31 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         .unwrap();
 
         let findings = scan_secret_file(&python_path).unwrap();
+
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_shell_variable_expansions() {
+        let temp = TempDir::new().unwrap();
+        let shell_path = temp.path().join("dev.sh");
+        fs::write(
+            &shell_path,
+            [
+                "local npm_default_cache=\"$HOME/.npm\"",
+                "local -a npm_residual_dirs=(\"_cacache\" \"_npx\" \"_logs\" \"_prebuilds\")",
+                "local -a npm_descriptions=(\"npm cache directory\" \"npm npx cache\" \"npm logs\" \"npm prebuilds\")",
+                "if [[ \"$npm_cache_path_normalized\" != \"$npm_default_cache_normalized\" ]]; then",
+                "    for i in \"${!npm_residual_dirs[@]}\"; do",
+                "        safe_clean \"$npm_cache_path/${npm_residual_dirs[$i]}\"/* \"${npm_descriptions[$i]} (custom path)\"",
+                "    done",
+                "fi",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&shell_path).unwrap();
 
         assert!(findings.is_empty(), "{findings:?}");
     }
