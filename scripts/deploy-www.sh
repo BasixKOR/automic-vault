@@ -1009,15 +1009,28 @@ build_distribution_config() {
           }
         },
         Compress: true,
+        SmoothStreaming: false,
         CachePolicyId: $policy,
         ResponseHeadersPolicyId: $response_headers_policy_id,
+        TrustedSigners: {
+          Enabled: false,
+          Quantity: 0
+        },
+        TrustedKeyGroups: {
+          Enabled: false,
+          Quantity: 0
+        },
+        LambdaFunctionAssociations: {
+          Quantity: 0
+        },
         FunctionAssociations: {
           Quantity: 1,
           Items: [{
             EventType: "viewer-request",
             FunctionARN: $function_arn
           }]
-        }
+        },
+        FieldLevelEncryptionId: ""
       };
     {
       CallerReference: $caller_reference,
@@ -1074,8 +1087,20 @@ build_distribution_config() {
           }
         },
         Compress: true,
+        SmoothStreaming: false,
         CachePolicyId: $cache_policy_id,
         ResponseHeadersPolicyId: $response_headers_policy_id,
+        TrustedSigners: {
+          Enabled: false,
+          Quantity: 0
+        },
+        TrustedKeyGroups: {
+          Enabled: false,
+          Quantity: 0
+        },
+        LambdaFunctionAssociations: {
+          Quantity: 0
+        },
         FunctionAssociations: {
           Quantity: 1,
           Items: [{
@@ -1083,6 +1108,7 @@ build_distribution_config() {
             FunctionARN: $function_arn
           }]
         },
+        FieldLevelEncryptionId: ""
       },
       CacheBehaviors: {
         Quantity: 7,
@@ -1174,15 +1200,28 @@ upsert_distribution() {
             }
           },
           Compress: true,
+          SmoothStreaming: false,
           CachePolicyId: $policy,
           ResponseHeadersPolicyId: $response_headers_policy_id,
+          TrustedSigners: {
+            Enabled: false,
+            Quantity: 0
+          },
+          TrustedKeyGroups: {
+            Enabled: false,
+            Quantity: 0
+          },
+          LambdaFunctionAssociations: {
+            Quantity: 0
+          },
           FunctionAssociations: {
             Quantity: 1,
             Items: [{
               EventType: "viewer-request",
               FunctionARN: $function_arn
             }]
-          }
+          },
+          FieldLevelEncryptionId: ""
         };
       .DistributionConfig.Comment = $comment
       | .DistributionConfig.DefaultRootObject = "index.html"
@@ -1234,8 +1273,20 @@ upsert_distribution() {
           }
         }
       | .DistributionConfig.DefaultCacheBehavior.Compress = true
+      | .DistributionConfig.DefaultCacheBehavior.SmoothStreaming = false
       | .DistributionConfig.DefaultCacheBehavior.CachePolicyId = $cache_policy_id
       | .DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId = $response_headers_policy_id
+      | .DistributionConfig.DefaultCacheBehavior.TrustedSigners = {
+          Enabled: false,
+          Quantity: 0
+        }
+      | .DistributionConfig.DefaultCacheBehavior.TrustedKeyGroups = {
+          Enabled: false,
+          Quantity: 0
+        }
+      | .DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociations = {
+          Quantity: 0
+        }
       | .DistributionConfig.DefaultCacheBehavior.FunctionAssociations = {
           Quantity: 1,
           Items: [{
@@ -1243,6 +1294,7 @@ upsert_distribution() {
             FunctionARN: $function_arn
           }]
         }
+      | .DistributionConfig.DefaultCacheBehavior.FieldLevelEncryptionId = ""
       | del(
           .DistributionConfig.DefaultCacheBehavior.ForwardedValues,
           .DistributionConfig.DefaultCacheBehavior.MinTTL,
