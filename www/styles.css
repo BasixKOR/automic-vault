@@ -726,7 +726,6 @@ h1 code {
 .tweet-endorsement blockquote {
   display: grid;
   align-content: end;
-  gap: clamp(16px, 2vw, 22px);
   min-width: 0;
   margin: 0;
   padding-left: clamp(18px, 2.4vw, 30px);
@@ -736,7 +735,7 @@ h1 code {
 .tweet-endorsement-person {
   display: grid;
   gap: 14px;
-  align-content: space-between;
+  align-content: start;
   justify-items: start;
   min-width: 0;
 }
@@ -764,8 +763,7 @@ h1 code {
   text-wrap: balance;
 }
 
-.tweet-endorsement cite,
-.tweet-endorsement-label,
+.tweet-endorsement-author,
 .tweet-endorsement-meta {
   color: var(--muted);
   font-family: var(--font-mono);
@@ -776,12 +774,12 @@ h1 code {
   text-transform: uppercase;
 }
 
-.tweet-endorsement cite span {
-  color: var(--hot);
+.tweet-endorsement-author {
+  display: grid;
+  gap: 3px;
 }
 
-.tweet-endorsement-label {
-  align-self: start;
+.tweet-endorsement-author span:last-child {
   color: var(--hot);
 }
 
@@ -1698,8 +1696,7 @@ h1 code {
   }
 
   .tweet-endorsement-person {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: 1fr;
   }
 
   .tweet-endorsement-meta {
