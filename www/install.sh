@@ -13,7 +13,7 @@ trap cleanup EXIT
 
 set -x
 
-/usr/bin/curl -sSfL https://automicvault.com/AutomicVault.dmg -o "$tmp/av.dmg"
+/usr/bin/curl -sSfL https://automicvault.com/av.dmg -o "$tmp/av.dmg"
 
 /usr/sbin/spctl -a -vv --type open "$tmp/av.dmg"
 
