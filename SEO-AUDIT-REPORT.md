@@ -173,7 +173,8 @@ Thin localized pages can reduce perceived site quality and are unlikely to rank 
 
 Current local work has stronger positioning:
 
-- H1: `A new kind of package manager for a new kind of threat model`
+- H1: `Secure the tools you brew install.`
+- Tagline: `A new kind of package manager for a new kind of threat model`
 - Founder quote: `Stop agents, malware, and compromised tools from accessing secrets or performing sensitive actions without approval.`
 - Founder quote moved into a second-to-last section
 
