@@ -37,8 +37,9 @@ No magic. Just fewer ambient privileges.
 
 ```sh
 $ curl -fsSL https://automicvault.com/install.sh | sh -x
-# ^^ downloads the DMG, lets Gatekeeper inspect it, checks TeamIdentifier,
-#    copies Automic Vault.app into /Applications, then installs /usr/local/bin/av
+# ^^ downloads and mounts the DMG read-only, lets Gatekeeper inspect the app,
+#    verifies its signature and TeamIdentifier, copies Automic Vault.app into
+#    /Applications, then installs /usr/local/bin/av
 ```
 
 If `curl | sh` gives you hives, fair:
