@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-env-changed=NUKE_BUILD_ID");
     let build_id = build_id();
     println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");

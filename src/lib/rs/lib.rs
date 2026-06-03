@@ -15322,13 +15322,14 @@ machine example.com login user password netrc-token
         fn invocation<'a>(
             args: Vec<std::ffi::OsString>,
             token: Option<&str>,
+            parent_executable_path: Option<&str>,
             store: &'a MissingCredentialStore,
         ) -> isotope::CredentialHelperInvocation<'a> {
             isotope::CredentialHelperInvocation {
                 args,
                 caller: isotope::CredentialHelperCallerContext {
                     token: token.map(str::to_string),
-                    parent_executable_path: None,
+                    parent_executable_path: parent_executable_path.map(str::to_string),
                     parent_command: None,
                 },
                 store,
@@ -15353,25 +15354,54 @@ machine example.com login user password netrc-token
             helper(invocation(
                 vec![std::ffi::OsString::from("--help")],
                 None,
+                None,
                 &store,
             ))
             .unwrap();
             helper(invocation(
                 vec![std::ffi::OsString::from("--version")],
                 None,
+                None,
                 &store,
             ))
             .unwrap();
 
-            let missing = helper(invocation(helper_args(name), None, &store)).unwrap_err();
+            let missing = helper(invocation(helper_args(name), None, None, &store)).unwrap_err();
             assert!(
                 missing.to_ascii_lowercase().contains("token"),
                 "expected missing token error for {name}, got {missing}"
             );
-            let invalid = helper(invocation(helper_args(name), Some("short"), &store)).unwrap_err();
+            let invalid =
+                helper(invocation(helper_args(name), Some("short"), None, &store)).unwrap_err();
             assert!(
                 invalid.to_ascii_lowercase().contains("token"),
                 "expected invalid token error for {name}, got {invalid}"
+            );
+            let valid_token = "x".repeat(32);
+            let missing_parent = helper(invocation(
+                helper_args(name),
+                Some(&valid_token),
+                None,
+                &store,
+            ))
+            .unwrap_err();
+            assert!(
+                missing_parent.to_ascii_lowercase().contains("parent"),
+                "expected missing parent error for {name}, got {missing_parent}"
+            );
+            let wrong_parent = helper(invocation(
+                helper_args(name),
+                Some(&valid_token),
+                Some("/tmp/not-the-approved-launcher"),
+                &store,
+            ))
+            .unwrap_err();
+            let wrong_parent = wrong_parent.to_ascii_lowercase();
+            assert!(
+                wrong_parent.contains("invoked")
+                    || wrong_parent.contains("launcher")
+                    || wrong_parent.contains("kubectl"),
+                "expected wrong parent error for {name}, got {wrong_parent}"
             );
         }
         assert_eq!(helpers.len(), 9);
