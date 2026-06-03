@@ -243,7 +243,7 @@ run_daily_publish() {
   run_step "package-origin SQLite generation" \
     python3 "${script_dir}/generate-pkg-sqlite.py" || return 1
   run_step "Atlas package-origin deploy" \
-    "${script_dir}/deploy-pkg-origin.sh" --skip-refresh || return 1
+    "${script_dir}/deploy-pkg-origin.sh" --skip-refresh --skip-sqlite || return 1
   run_step "static site deploy" \
     "${script_dir}/deploy-www.sh" || return 1
 }

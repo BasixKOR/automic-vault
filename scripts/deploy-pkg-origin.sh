@@ -19,13 +19,15 @@ AV_WEB_ORIGIN_SECRET="${AV_WEB_ORIGIN_SECRET:-}"
 AV_WEB_CERTBOT_EMAIL="${AV_WEB_CERTBOT_EMAIL:-}"
 AV_WEB_TARGET="${AV_WEB_TARGET:-aarch64-unknown-linux-gnu}"
 AV_WEB_SQLITE_PATH="${AV_WEB_SQLITE_PATH:-${repo_root}/cache/pkg.sqlite}"
+AV_WEB_BINARY_PATH="${AV_WEB_BINARY_PATH:-}"
 
 skip_refresh=false
+skip_sqlite=false
 skip_build=false
 
 usage() {
   cat <<EOF
-Usage: scripts/deploy-pkg-origin.sh [--skip-refresh] [--skip-build]
+Usage: scripts/deploy-pkg-origin.sh [--skip-refresh] [--skip-sqlite] [--skip-build]
 
 Build and deploy the Atlas Rust package origin.
 
@@ -38,6 +40,7 @@ Environment:
   AV_WEB_ORIGIN_SECRET   Required shared secret for the custom origin header.
   AV_WEB_CERTBOT_EMAIL   Email for first-run certbot issuance if TLS cert is missing.
   AV_WEB_TARGET          Rust target. Default: ${AV_WEB_TARGET}
+  AV_WEB_BINARY_PATH     Existing av-web binary path when using --skip-build.
 EOF
 }
 
@@ -45,6 +48,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-refresh)
       skip_refresh=true
+      shift
+      ;;
+    --skip-sqlite)
+      skip_sqlite=true
       shift
       ;;
     --skip-build)
@@ -120,21 +127,59 @@ run_refresh_steps() {
 generate_sqlite() {
   log "Generating package-origin SQLite artifact"
   python3 "${script_dir}/generate-pkg-sqlite.py" --output "${AV_WEB_SQLITE_PATH}"
+  verify_sqlite
+}
+
+verify_sqlite() {
+  [[ -f "${AV_WEB_SQLITE_PATH}" ]] || fail "missing SQLite artifact: ${AV_WEB_SQLITE_PATH}"
   sqlite3 "${AV_WEB_SQLITE_PATH}" 'PRAGMA integrity_check;' | grep -qx 'ok'
+}
+
+rust_host_target() {
+  rustc -vV | awk '/^host:/ { print $2; exit }'
+}
+
+rust_target_installed() {
+  if command -v rustup >/dev/null 2>&1; then
+    rustup target list --installed | grep -qx "${AV_WEB_TARGET}"
+    return
+  fi
+  rustc --print target-libdir --target "${AV_WEB_TARGET}" >/dev/null 2>&1
+}
+
+ensure_target_buildable_with_cargo() {
+  if rust_target_installed; then
+    return 0
+  fi
+
+  fail "Rust target ${AV_WEB_TARGET} is not installed. Atlas is ARM64, so this target is correct; install cargo-zigbuild/zig or cross, or run: rustup target add ${AV_WEB_TARGET}"
 }
 
 build_binary() {
   if [[ "${skip_build}" == "true" ]]; then
+    if [[ -z "${AV_WEB_BINARY_PATH}" ]]; then
+      AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
+    fi
+    log "Skipping av-web build; using ${AV_WEB_BINARY_PATH}"
     return 0
   fi
 
+  local host_target
+  host_target="$(rust_host_target)"
   log "Building av-web for ${AV_WEB_TARGET}"
-  if cargo zigbuild --version >/dev/null 2>&1; then
+  if [[ "${AV_WEB_TARGET}" == "${host_target}" ]]; then
+    cargo build --release --bin av-web
+    AV_WEB_BINARY_PATH="${repo_root}/target/release/av-web"
+  elif cargo zigbuild --version >/dev/null 2>&1; then
     cargo zigbuild --release --target "${AV_WEB_TARGET}" --bin av-web
+    AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   elif command -v cross >/dev/null 2>&1; then
     cross build --release --target "${AV_WEB_TARGET}" --bin av-web
+    AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   else
+    ensure_target_buildable_with_cargo
     cargo build --release --target "${AV_WEB_TARGET}" --bin av-web
+    AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   fi
 }
 
@@ -229,10 +274,10 @@ EOF
 }
 
 deploy_remote() {
-  local binary_path="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   local stamp staging_dir remote_tmp
 
-  [[ -x "${binary_path}" ]] || fail "missing built binary: ${binary_path}"
+  [[ -n "${AV_WEB_BINARY_PATH}" ]] || fail "missing av-web binary path"
+  [[ -x "${AV_WEB_BINARY_PATH}" ]] || fail "missing built binary: ${AV_WEB_BINARY_PATH}"
   [[ -f "${AV_WEB_SQLITE_PATH}" ]] || fail "missing SQLite artifact: ${AV_WEB_SQLITE_PATH}"
 
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -244,7 +289,7 @@ deploy_remote() {
   log "Copying package origin release to Atlas"
   ssh "${ssh_args[@]}" "${ATLAS_SSH_TARGET}" "mkdir -p $(shell_quote "${remote_tmp}")"
   scp "${scp_args[@]}" \
-    "${binary_path}" \
+    "${AV_WEB_BINARY_PATH}" \
     "${AV_WEB_SQLITE_PATH}" \
     "${staging_dir}/automic-vault-web.service" \
     "${staging_dir}/automic-vault-web.env" \
@@ -304,6 +349,7 @@ if [[ -z "${AV_WEB_ORIGIN_SECRET}" ]]; then
 fi
 
 require_cmd cargo
+require_cmd rustc
 require_cmd python3
 require_cmd sqlite3
 require_cmd ssh
@@ -313,7 +359,11 @@ build_ssh_args
 if [[ "${skip_refresh}" != "true" ]]; then
   run_refresh_steps
 fi
-generate_sqlite
+if [[ "${skip_sqlite}" == "true" ]]; then
+  verify_sqlite
+else
+  generate_sqlite
+fi
 build_binary
 deploy_remote
 log "Atlas package origin deployed: ${AV_WEB_ORIGIN_DOMAIN}"
