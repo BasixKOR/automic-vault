@@ -138,15 +138,19 @@ verify_sqlite() {
 }
 
 rust_host_target() {
-  rustc -vV | awk '/^host:/ { print $2; exit }'
+  local version
+  version="$(rustc -vV)"
+  awk '/^host:/ { print $2; exit }' <<<"${version}"
 }
 
 rust_target_installed() {
+  local installed
   if command -v rustup >/dev/null 2>&1; then
-    rustup target list --installed | grep -qx "${AV_WEB_TARGET}"
-    return
+    installed="$(rustup target list --installed)"
+    grep -qx "${AV_WEB_TARGET}" <<<"${installed}"
+  else
+    rustc --print target-libdir --target "${AV_WEB_TARGET}" >/dev/null 2>&1
   fi
-  rustc --print target-libdir --target "${AV_WEB_TARGET}" >/dev/null 2>&1
 }
 
 ensure_target_buildable_with_cargo() {
