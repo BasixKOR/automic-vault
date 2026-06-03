@@ -19,7 +19,7 @@ Usage: scripts/update-all [--skip-isotope-builds] [--skip-daily]
 Run the full publishing cadence:
   - refresh av.db Homebrew authority, rebuild, and upload /db.json at the top
     of every hour
-  - refresh package-page enrichment, regenerate package pages, rebuild search,
+  - refresh package-origin enrichment, deploy the Atlas package SQLite origin,
     and deploy the static site once daily at or after the 3 AM local-hour mark
 
 Options:
@@ -240,10 +240,10 @@ run_daily_publish() {
     python3 "${script_dir}/generate-pkg-graph-curation.py" || return 1
   run_step "package graph generation" \
     python3 "${script_dir}/generate-pkg-graph.py" || return 1
-  run_step "package-page generation" \
-    python3 "${script_dir}/generate-pkg-pages.py" || return 1
-  run_step "Pagefind search index generation" \
-    python3 "${script_dir}/generate-search-index.py" || return 1
+  run_step "package-origin SQLite generation" \
+    python3 "${script_dir}/generate-pkg-sqlite.py" || return 1
+  run_step "Atlas package-origin deploy" \
+    "${script_dir}/deploy-pkg-origin.sh" --skip-refresh || return 1
   run_step "static site deploy" \
     "${script_dir}/deploy-www.sh" || return 1
 }

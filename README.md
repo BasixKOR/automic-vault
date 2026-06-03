@@ -123,4 +123,10 @@ $ ./scripts/run-gui.sh
 The native app lives in `src/gui`. The CLI and package/security core live in
 `src/lib/rs` and `src/nucleus`.
 
+## Dependencies
+
+- `rusqlite` with bundled SQLite is used by `av-web`, the private Atlas package
+  origin. It serves the locally generated `pkg.sqlite` artifact without adding a
+  system SQLite shared-library dependency on Atlas.
+
 [releases]: https://github.com/automic-vault/automic-vault/releases/latest

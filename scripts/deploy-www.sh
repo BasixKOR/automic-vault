@@ -84,6 +84,9 @@ for tool in aws jq node; do
   }
 done
 
+WWW_PKG_ORIGIN_HEADER_NAME="${WWW_PKG_ORIGIN_HEADER_NAME:-X-Automic-Vault-Origin}"
+WWW_EMERGENCY_INVALIDATE="${WWW_EMERGENCY_INVALIDATE:-false}"
+
 for env_name in \
   AWS_REGION \
   WWW_DOMAIN \
@@ -93,7 +96,9 @@ for env_name in \
   WWW_CERTIFICATE_ARN \
   WWW_CLOUDFRONT_PRICE_CLASS \
   WWW_HTML_CACHE_CONTROL \
-  WWW_ASSET_CACHE_CONTROL
+  WWW_ASSET_CACHE_CONTROL \
+  WWW_PKG_ORIGIN_DOMAIN \
+  WWW_PKG_ORIGIN_HEADER_VALUE
 do
   require_env "${env_name}"
 done
@@ -102,14 +107,13 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
-package_pages_generator="${repo_root}/scripts/generate-pkg-pages.py"
+package_sqlite_generator="${repo_root}/scripts/generate-pkg-sqlite.py"
 package_page_enrichment_generator="${repo_root}/scripts/generate-pkg-page-enrichment.py"
 package_version_freshness_generator="${repo_root}/scripts/generate-pkg-version-freshness.py"
 package_manager_indexes_generator="${repo_root}/scripts/generate-pkg-manager-indexes.py"
 package_cross_ecosystem_generator="${repo_root}/scripts/generate-pkg-cross-ecosystem.py"
 package_graph_curation_generator="${repo_root}/scripts/generate-pkg-graph-curation.py"
 package_graph_generator="${repo_root}/scripts/generate-pkg-graph.py"
-search_index_generator="${repo_root}/scripts/generate-search-index.py"
 www_i18n_generator="${repo_root}/scripts/generate-www-i18n.py"
 product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
@@ -129,11 +133,14 @@ if [[ ! -f "${product_version_source}" ]]; then
 fi
 
 origin_domain="${WWW_BUCKET}.s3.${AWS_REGION}.amazonaws.com"
+pkg_origin_id="${WWW_DOMAIN}-atlas-pkg-origin"
 distribution_comment="${WWW_DOMAIN} static site"
 oac_name="${WWW_DOMAIN}-s3-oac"
 redirect_function_name="${WWW_DOMAIN//./-}-redirect-to-canonical"
 response_headers_policy_name="${WWW_DOMAIN//./-}-security-headers"
 cache_policy_name="${WWW_DOMAIN//./-}-brotli-cache"
+pkg_cache_policy_name="${WWW_DOMAIN//./-}-pkg-daily-cache"
+pkg_search_cache_policy_name="${WWW_DOMAIN//./-}-pkg-search-daily-cache"
 
 cleanup() {
   if [[ -n "${prepared_site_dir}" && -d "${prepared_site_dir}" ]]; then
@@ -257,6 +264,7 @@ prepare_site_for_upload() {
   rsync -a \
     --exclude '/pkg/' \
     --exclude '/*/pkg/' \
+    --exclude '/pagefind/' \
     "${site_dir}/" "${prepared_site_dir}/"
   stamp_product_version "${product_version}"
 
@@ -321,19 +329,11 @@ assert_package_pages_current() {
   fi
   python3 "${package_graph_generator}" --check
 
-  log_step "Checking generated package SEO pages"
-  if [[ ! -x "${package_pages_generator}" && ! -f "${package_pages_generator}" ]]; then
-    die "Missing package page generator: ${package_pages_generator}"
+  log_step "Checking package-origin SQLite artifact"
+  if [[ ! -x "${package_sqlite_generator}" && ! -f "${package_sqlite_generator}" ]]; then
+    die "Missing package SQLite generator: ${package_sqlite_generator}"
   fi
-  python3 "${package_pages_generator}" --check
-}
-
-assert_search_index_current() {
-  log_step "Checking generated Pagefind search index"
-  if [[ ! -x "${search_index_generator}" && ! -f "${search_index_generator}" ]]; then
-    die "Missing search index generator: ${search_index_generator}"
-  fi
-  python3 "${search_index_generator}" --check
+  python3 "${package_sqlite_generator}" --check
 }
 
 assert_www_i18n_current() {
@@ -836,6 +836,118 @@ ensure_cache_policy() {
   printf '%s\n' "${policy_id}"
 }
 
+ensure_pkg_cache_policy() {
+  local policy_file policy_id etag response_file
+  log_step "Preparing CloudFront package-origin daily cache policy"
+  policy_file="$(mktemp)"
+  response_file="$(mktemp)"
+
+  jq -n \
+    --arg name "${pkg_cache_policy_name}" \
+    '{
+      Name: $name,
+      Comment: "Package origin cache; CloudFront checks Atlas daily",
+      DefaultTTL: 86400,
+      MaxTTL: 86400,
+      MinTTL: 0,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        EnableAcceptEncodingGzip: true,
+        EnableAcceptEncodingBrotli: true,
+        HeadersConfig: { HeaderBehavior: "none" },
+        CookiesConfig: { CookieBehavior: "none" },
+        QueryStringsConfig: { QueryStringBehavior: "none" }
+      }
+    }' >"${policy_file}"
+
+  policy_id="$(
+    aws cloudfront list-cache-policies \
+      --type custom \
+      --query "CachePolicyList.Items[?CachePolicy.CachePolicyConfig.Name == '${pkg_cache_policy_name}'].CachePolicy.Id | [0]" \
+      --output text
+  )"
+
+  if [[ "${policy_id}" == "None" ]]; then
+    policy_id="$(
+      aws cloudfront create-cache-policy \
+        --cache-policy-config "file://${policy_file}" \
+        --query 'CachePolicy.Id' \
+        --output text
+    )"
+    log_ok "Created package cache policy ${policy_id}"
+    printf '%s\n' "${policy_id}"
+    return 0
+  fi
+
+  aws cloudfront get-cache-policy-config \
+    --id "${policy_id}" >"${response_file}"
+  etag="$(jq -r '.ETag' "${response_file}")"
+  aws cloudfront update-cache-policy \
+    --id "${policy_id}" \
+    --if-match "${etag}" \
+    --cache-policy-config "file://${policy_file}" >/dev/null
+  log_ok "Package cache policy ready"
+  printf '%s\n' "${policy_id}"
+}
+
+ensure_pkg_search_cache_policy() {
+  local policy_file policy_id etag response_file
+  log_step "Preparing CloudFront package search cache policy"
+  policy_file="$(mktemp)"
+  response_file="$(mktemp)"
+
+  jq -n \
+    --arg name "${pkg_search_cache_policy_name}" \
+    '{
+      Name: $name,
+      Comment: "Package search cache with search query parameters",
+      DefaultTTL: 86400,
+      MaxTTL: 86400,
+      MinTTL: 0,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        EnableAcceptEncodingGzip: true,
+        EnableAcceptEncodingBrotli: true,
+        HeadersConfig: { HeaderBehavior: "none" },
+        CookiesConfig: { CookieBehavior: "none" },
+        QueryStringsConfig: {
+          QueryStringBehavior: "whitelist",
+          QueryStrings: {
+            Quantity: 4,
+            Items: ["q", "offset", "limit", "locale"]
+          }
+        }
+      }
+    }' >"${policy_file}"
+
+  policy_id="$(
+    aws cloudfront list-cache-policies \
+      --type custom \
+      --query "CachePolicyList.Items[?CachePolicy.CachePolicyConfig.Name == '${pkg_search_cache_policy_name}'].CachePolicy.Id | [0]" \
+      --output text
+  )"
+
+  if [[ "${policy_id}" == "None" ]]; then
+    policy_id="$(
+      aws cloudfront create-cache-policy \
+        --cache-policy-config "file://${policy_file}" \
+        --query 'CachePolicy.Id' \
+        --output text
+    )"
+    log_ok "Created package search cache policy ${policy_id}"
+    printf '%s\n' "${policy_id}"
+    return 0
+  fi
+
+  aws cloudfront get-cache-policy-config \
+    --id "${policy_id}" >"${response_file}"
+  etag="$(jq -r '.ETag' "${response_file}")"
+  aws cloudfront update-cache-policy \
+    --id "${policy_id}" \
+    --if-match "${etag}" \
+    --cache-policy-config "file://${policy_file}" >/dev/null
+  log_ok "Package search cache policy ready"
+  printf '%s\n' "${policy_id}"
+}
+
 
 distribution_id_for_alias() {
   local alias_csv
@@ -857,34 +969,88 @@ build_distribution_config() {
   local function_arn="$2"
   local response_headers_policy_id="$3"
   local cache_policy_id="$4"
-  local output_file="$5"
+  local pkg_cache_policy_id="$5"
+  local pkg_search_cache_policy_id="$6"
+  local output_file="$7"
 
   jq -n \
     --arg caller_reference "${WWW_DOMAIN}-$(date +%s)" \
     --arg comment "${distribution_comment}" \
     --arg origin_id "${WWW_BUCKET}-origin" \
     --arg domain_name "${origin_domain}" \
+    --arg pkg_origin_id "${pkg_origin_id}" \
+    --arg pkg_origin_domain "${WWW_PKG_ORIGIN_DOMAIN}" \
+    --arg pkg_origin_header_name "${WWW_PKG_ORIGIN_HEADER_NAME}" \
+    --arg pkg_origin_header_value "${WWW_PKG_ORIGIN_HEADER_VALUE}" \
     --arg oac_id "${oac_id}" \
     --arg function_arn "${function_arn}" \
     --arg response_headers_policy_id "${response_headers_policy_id}" \
     --arg cache_policy_id "${cache_policy_id}" \
+    --arg pkg_cache_policy_id "${pkg_cache_policy_id}" \
+    --arg pkg_search_cache_policy_id "${pkg_search_cache_policy_id}" \
     --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
     --arg domain_a "${WWW_DOMAIN}" \
     --arg domain_b "${WWW_WWW_DOMAIN}" \
     --arg price_class "${WWW_CLOUDFRONT_PRICE_CLASS}" \
-    '{
+    '
+    def behavior($pattern; $policy):
+      {
+        PathPattern: $pattern,
+        TargetOriginId: $pkg_origin_id,
+        ViewerProtocolPolicy: "allow-all",
+        AllowedMethods: {
+          Quantity: 2,
+          Items: ["HEAD", "GET"],
+          CachedMethods: {
+            Quantity: 2,
+            Items: ["HEAD", "GET"]
+          }
+        },
+        Compress: true,
+        CachePolicyId: $policy,
+        ResponseHeadersPolicyId: $response_headers_policy_id,
+        FunctionAssociations: {
+          Quantity: 1,
+          Items: [{
+            EventType: "viewer-request",
+            FunctionARN: $function_arn
+          }]
+        }
+      };
+    {
       CallerReference: $caller_reference,
       Comment: $comment,
       Enabled: true,
       DefaultRootObject: "index.html",
       Origins: {
-        Quantity: 1,
+        Quantity: 2,
         Items: [{
           Id: $origin_id,
           DomainName: $domain_name,
           OriginAccessControlId: $oac_id,
           S3OriginConfig: {
             OriginAccessIdentity: ""
+          }
+        }, {
+          Id: $pkg_origin_id,
+          DomainName: $pkg_origin_domain,
+          CustomHeaders: {
+            Quantity: 1,
+            Items: [{
+              HeaderName: $pkg_origin_header_name,
+              HeaderValue: $pkg_origin_header_value
+            }]
+          },
+          CustomOriginConfig: {
+            HTTPPort: 80,
+            HTTPSPort: 443,
+            OriginProtocolPolicy: "https-only",
+            OriginSslProtocols: {
+              Quantity: 1,
+              Items: ["TLSv1.2"]
+            },
+            OriginReadTimeout: 30,
+            OriginKeepaliveTimeout: 5
           }
         }]
       },
@@ -913,6 +1079,18 @@ build_distribution_config() {
             FunctionARN: $function_arn
           }]
         },
+      },
+      CacheBehaviors: {
+        Quantity: 7,
+        Items: [
+          behavior("pkg/search.json"; $pkg_search_cache_policy_id),
+          behavior("*/pkg/search.json"; $pkg_search_cache_policy_id),
+          behavior("pkg*"; $pkg_cache_policy_id),
+          behavior("de/pkg*"; $pkg_cache_policy_id),
+          behavior("fr/pkg*"; $pkg_cache_policy_id),
+          behavior("ja/pkg*"; $pkg_cache_policy_id),
+          behavior("zh-hans/pkg*"; $pkg_cache_policy_id)
+        ]
       },
       CustomErrorResponses: {
         Quantity: 1,
@@ -947,6 +1125,8 @@ upsert_distribution() {
   local function_arn="$2"
   local response_headers_policy_id="$3"
   local cache_policy_id="$4"
+  local pkg_cache_policy_id="$5"
+  local pkg_search_cache_policy_id="$6"
   local distribution_id etag config_file response_file
   log_step "Preparing CloudFront distribution"
   config_file="$(mktemp)"
@@ -961,27 +1141,78 @@ upsert_distribution() {
       --arg comment "${distribution_comment}" \
       --arg origin_id "${WWW_BUCKET}-origin" \
       --arg domain_name "${origin_domain}" \
+      --arg pkg_origin_id "${pkg_origin_id}" \
+      --arg pkg_origin_domain "${WWW_PKG_ORIGIN_DOMAIN}" \
+      --arg pkg_origin_header_name "${WWW_PKG_ORIGIN_HEADER_NAME}" \
+      --arg pkg_origin_header_value "${WWW_PKG_ORIGIN_HEADER_VALUE}" \
       --arg oac_id "${oac_id}" \
       --arg function_arn "${function_arn}" \
       --arg response_headers_policy_id "${response_headers_policy_id}" \
       --arg cache_policy_id "${cache_policy_id}" \
+      --arg pkg_cache_policy_id "${pkg_cache_policy_id}" \
+      --arg pkg_search_cache_policy_id "${pkg_search_cache_policy_id}" \
       --arg cert_arn "${WWW_CERTIFICATE_ARN}" \
       --arg domain_a "${WWW_DOMAIN}" \
       --arg domain_b "${WWW_WWW_DOMAIN}" \
       --arg price_class "${WWW_CLOUDFRONT_PRICE_CLASS}" \
       '
+      def behavior($pattern; $policy):
+        {
+          PathPattern: $pattern,
+          TargetOriginId: $pkg_origin_id,
+          ViewerProtocolPolicy: "allow-all",
+          AllowedMethods: {
+            Quantity: 2,
+            Items: ["HEAD", "GET"],
+            CachedMethods: {
+              Quantity: 2,
+              Items: ["HEAD", "GET"]
+            }
+          },
+          Compress: true,
+          CachePolicyId: $policy,
+          ResponseHeadersPolicyId: $response_headers_policy_id,
+          FunctionAssociations: {
+            Quantity: 1,
+            Items: [{
+              EventType: "viewer-request",
+              FunctionARN: $function_arn
+            }]
+          }
+        };
       .DistributionConfig.Comment = $comment
       | .DistributionConfig.DefaultRootObject = "index.html"
       | .DistributionConfig.Enabled = true
       | .DistributionConfig.PriceClass = $price_class
-      | .DistributionConfig.Origins.Quantity = 1
+      | .DistributionConfig.Origins.Quantity = 2
       | .DistributionConfig.Origins.Items = [(
           .DistributionConfig.Origins.Items[0]
           | .Id = $origin_id
           | .DomainName = $domain_name
           | .OriginAccessControlId = $oac_id
           | .S3OriginConfig = ((.S3OriginConfig // {}) + {OriginAccessIdentity: ""})
-        )]
+        ), {
+          Id: $pkg_origin_id,
+          DomainName: $pkg_origin_domain,
+          CustomHeaders: {
+            Quantity: 1,
+            Items: [{
+              HeaderName: $pkg_origin_header_name,
+              HeaderValue: $pkg_origin_header_value
+            }]
+          },
+          CustomOriginConfig: {
+            HTTPPort: 80,
+            HTTPSPort: 443,
+            OriginProtocolPolicy: "https-only",
+            OriginSslProtocols: {
+              Quantity: 1,
+              Items: ["TLSv1.2"]
+            },
+            OriginReadTimeout: 30,
+            OriginKeepaliveTimeout: 5
+          }
+        }]
       | .DistributionConfig.Aliases = {
           Quantity: 2,
           Items: [$domain_a, $domain_b]
@@ -1012,6 +1243,18 @@ upsert_distribution() {
           .DistributionConfig.DefaultCacheBehavior.DefaultTTL,
           .DistributionConfig.DefaultCacheBehavior.MaxTTL
         )
+      | .DistributionConfig.CacheBehaviors = {
+          Quantity: 7,
+          Items: [
+            behavior("pkg/search.json"; $pkg_search_cache_policy_id),
+            behavior("*/pkg/search.json"; $pkg_search_cache_policy_id),
+            behavior("pkg*"; $pkg_cache_policy_id),
+            behavior("de/pkg*"; $pkg_cache_policy_id),
+            behavior("fr/pkg*"; $pkg_cache_policy_id),
+            behavior("ja/pkg*"; $pkg_cache_policy_id),
+            behavior("zh-hans/pkg*"; $pkg_cache_policy_id)
+          ]
+        }
       | .DistributionConfig.CustomErrorResponses = {
           Quantity: 1,
           Items: [{
@@ -1040,7 +1283,7 @@ upsert_distribution() {
   fi
 
   log "  Creating distribution for ${WWW_DOMAIN}, ${WWW_WWW_DOMAIN}"
-  build_distribution_config "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}" "${config_file}"
+  build_distribution_config "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}" "${pkg_cache_policy_id}" "${pkg_search_cache_policy_id}" "${config_file}"
   aws cloudfront create-distribution \
     --distribution-config "file://${config_file}" \
     --query 'Distribution.Id' \
@@ -1104,73 +1347,6 @@ sync_site() {
     --exclude "*.json" \
     --cache-control "${WWW_ASSET_CACHE_CONTROL}"
 
-  log_step "Syncing immutable Pagefind search data"
-  aws s3 sync "${upload_site_dir}/pagefind/" "s3://${WWW_BUCKET}/pagefind/" \
-    --size-only \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include "fragment/*.pf_fragment" \
-    --include "index/*.pf_index" \
-    --include "pagefind.*.pf_meta" \
-    --cache-control "${WWW_ASSET_CACHE_CONTROL}"
-
-  log_step "Syncing mutable Pagefind runtime assets"
-  aws s3 sync "${upload_site_dir}/pagefind/" "s3://${WWW_BUCKET}/pagefind/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --exclude "*" \
-    --include ".manifest.json" \
-    --include "pagefind-entry.json" \
-    --include "pagefind.js" \
-    --include "pagefind-*.js" \
-    --include "pagefind-*.css" \
-    --include "wasm.*.pagefind" \
-    --cache-control "${WWW_HTML_CACHE_CONTROL}"
-
-  log_step "Normalizing mutable Pagefind cache headers"
-  local normalized_pagefind_count=0
-  local pagefind_runtime_asset pagefind_runtime_key pagefind_runtime_head pagefind_runtime_cache pagefind_runtime_type
-  while IFS= read -r -d '' pagefind_runtime_asset; do
-    pagefind_runtime_key="pagefind/${pagefind_runtime_asset##*/}"
-    pagefind_runtime_head="$(
-      aws s3api head-object \
-        --bucket "${WWW_BUCKET}" \
-        --key "${pagefind_runtime_key}" \
-        --output json
-    )"
-    pagefind_runtime_cache="$(jq -r '.CacheControl // "None"' <<<"${pagefind_runtime_head}")"
-    pagefind_runtime_type="$(jq -r '.ContentType // "None"' <<<"${pagefind_runtime_head}")"
-    if [[ "${pagefind_runtime_cache}" == "${WWW_HTML_CACHE_CONTROL}" ]]; then
-      continue
-    fi
-
-    local copy_args=(
-      s3api copy-object
-      --bucket "${WWW_BUCKET}"
-      --key "${pagefind_runtime_key}"
-      --copy-source "${WWW_BUCKET}/${pagefind_runtime_key}"
-      --metadata-directive REPLACE
-      --cache-control "${WWW_HTML_CACHE_CONTROL}"
-    )
-    if [[ -n "${pagefind_runtime_type}" && "${pagefind_runtime_type}" != "None" ]]; then
-      copy_args+=(--content-type "${pagefind_runtime_type}")
-    fi
-    aws "${copy_args[@]}" >/dev/null
-    normalized_pagefind_count="$((normalized_pagefind_count + 1))"
-  done < <(
-    find "${upload_site_dir}/pagefind" -maxdepth 1 -type f \( \
-      -name ".manifest.json" -o \
-      -name "pagefind-entry.json" -o \
-      -name "pagefind.js" -o \
-      -name "pagefind-*.js" -o \
-      -name "pagefind-*.css" -o \
-      -name "wasm.*.pagefind" \
-    \) -print0
-  )
-  log_ok "Normalized ${normalized_pagefind_count} mutable Pagefind headers"
-
   log_step "Syncing crawlable HTML and XML content"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
     --exclude ".DS_Store" \
@@ -1231,7 +1407,7 @@ sync_site() {
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control "${WWW_HTML_CACHE_CONTROL}"
 
-  sync_package_pages
+  remove_old_generated_package_objects
 
   log_step "Removing repo-local guidance from S3"
   aws s3 rm "s3://${WWW_BUCKET}/AGENTS.md"
@@ -1239,36 +1415,15 @@ sync_site() {
   log_ok "S3 content synced"
 }
 
-sync_package_tree() {
-  local source_dir="$1"
-  local destination_prefix="$2"
-
-  if [[ ! -d "${source_dir}" ]]; then
-    die "Missing generated package page directory: ${source_dir}"
-  fi
-
-  log "  ${destination_prefix}/ from ${source_dir}"
-
-  aws s3 sync "${source_dir}/" "s3://${WWW_BUCKET}/${destination_prefix}/" \
-    --delete \
-    --exclude ".DS_Store" \
-    --exclude "*/.DS_Store" \
-    --cache-control "${WWW_HTML_CACHE_CONTROL}"
-}
-
-sync_package_pages() {
-  local locale_dir locale_slug
-
-  log_step "Syncing generated package pages from www"
-  sync_package_tree "${site_dir}/pkg" "pkg"
-
-  while IFS= read -r -d '' locale_dir; do
-    locale_slug="${locale_dir#"${site_dir}/"}"
-    locale_slug="${locale_slug%/pkg}"
-    sync_package_tree "${locale_dir}" "${locale_slug}/pkg"
-  done < <(
-    find "${site_dir}" -mindepth 2 -maxdepth 2 -type d -path "${site_dir}/*/pkg" -print0
-  )
+remove_old_generated_package_objects() {
+  log_step "Removing package and Pagefind objects now served by Atlas"
+  aws s3 rm "s3://${WWW_BUCKET}/pkg/" --recursive >/dev/null 2>&1 || true
+  aws s3 rm "s3://${WWW_BUCKET}/de/pkg/" --recursive >/dev/null 2>&1 || true
+  aws s3 rm "s3://${WWW_BUCKET}/fr/pkg/" --recursive >/dev/null 2>&1 || true
+  aws s3 rm "s3://${WWW_BUCKET}/ja/pkg/" --recursive >/dev/null 2>&1 || true
+  aws s3 rm "s3://${WWW_BUCKET}/zh-hans/pkg/" --recursive >/dev/null 2>&1 || true
+  aws s3 rm "s3://${WWW_BUCKET}/pagefind/" --recursive >/dev/null 2>&1 || true
+  log_ok "Old generated package and Pagefind prefixes removed from S3"
 }
 
 ensure_certificate_issued() {
@@ -1291,13 +1446,14 @@ ensure_certificate_issued() {
 log_header
 assert_www_i18n_current
 assert_package_pages_current
-assert_search_index_current
 prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"
 ensure_redirect_function
 response_headers_policy_id="$(ensure_response_headers_policy)"
 cache_policy_id="$(ensure_cache_policy)"
+pkg_cache_policy_id="$(ensure_pkg_cache_policy)"
+pkg_search_cache_policy_id="$(ensure_pkg_search_cache_policy)"
 log_step "Reading CloudFront function ARN"
 function_arn="$(
   aws cloudfront describe-function \
@@ -1308,17 +1464,21 @@ function_arn="$(
 )"
 log_ok "Function ARN resolved"
 ensure_certificate_issued
-distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}")"
+distribution_id="$(upsert_distribution "${oac_id}" "${function_arn}" "${response_headers_policy_id}" "${cache_policy_id}" "${pkg_cache_policy_id}" "${pkg_search_cache_policy_id}")"
 put_bucket_policy "${distribution_id}"
 log_step "Waiting for CloudFront deployment"
 aws cloudfront wait distribution-deployed --id "${distribution_id}"
 log_ok "Distribution deployed"
 sync_site
-log_step "Invalidating CloudFront cache"
-aws cloudfront create-invalidation \
-  --distribution-id "${distribution_id}" \
-  --paths '/*' >/dev/null
-log_ok "Invalidation submitted"
+if [[ "${WWW_EMERGENCY_INVALIDATE}" == "true" ]]; then
+  log_step "Submitting emergency CloudFront invalidation"
+  aws cloudfront create-invalidation \
+    --distribution-id "${distribution_id}" \
+    --paths '/*' >/dev/null
+  log_ok "Emergency invalidation submitted"
+else
+  log_ok "Skipped CloudFront invalidation; package origin cache refreshes daily"
+fi
 
 distribution_domain="$(
   aws cloudfront get-distribution \
