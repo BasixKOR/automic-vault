@@ -225,7 +225,40 @@ run_database_update() {
   run_step "${step_name}" "${command[@]}"
 }
 
+require_daily_publish_env() {
+  local missing=()
+  local name
+
+  for name in AV_WEB_ORIGIN_SECRET WWW_PKG_ORIGIN_DOMAIN WWW_PKG_ORIGIN_HEADER_VALUE; do
+    if [[ -z "${!name:-}" ]]; then
+      missing+=("${name}")
+    fi
+  done
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    for name in "${missing[@]}"; do
+      log ERROR "Set ${name} in .envrc before running the website publish."
+    done
+    return 1
+  fi
+
+  if [[ "${WWW_PKG_ORIGIN_HEADER_VALUE}" != "${AV_WEB_ORIGIN_SECRET}" ]]; then
+    log ERROR "WWW_PKG_ORIGIN_HEADER_VALUE must match AV_WEB_ORIGIN_SECRET."
+    return 1
+  fi
+
+  if [[ "${WWW_PKG_ORIGIN_HEADER_NAME:-X-Automic-Vault-Origin}" != "${AV_WEB_ORIGIN_HEADER:-X-Automic-Vault-Origin}" ]]; then
+    log ERROR "WWW_PKG_ORIGIN_HEADER_NAME must match AV_WEB_ORIGIN_HEADER."
+    return 1
+  fi
+
+  if [[ -z "${AV_WEB_CERTBOT_EMAIL:-}" ]]; then
+    log WARN "AV_WEB_CERTBOT_EMAIL is unset; Atlas deploy requires an existing TLS cert for ${AV_WEB_ORIGIN_DOMAIN:-av-origin.automicvault.com}."
+  fi
+}
+
 run_daily_publish() {
+  require_daily_publish_env || return 1
   run_step "package-page enrichment refresh" \
     python3 "${script_dir}/generate-pkg-page-enrichment.py" --refresh || return 1
   run_step "package version freshness generation" \
