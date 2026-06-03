@@ -34,5 +34,5 @@ set -x
 /usr/bin/ditto "$app" "/Applications/Automic Vault.app"
 /usr/bin/sudo /bin/mkdir -p /usr/local/bin
 /usr/bin/sudo /usr/bin/install -m 755 \
-  "/Applications/Automic Vault.app/Contents/Resources/av" \
+  "$app/Contents/Resources/av" \
   /usr/local/bin/av
