@@ -3695,25 +3695,31 @@ fn render_hub_sitemap(connection: &Connection) -> Result<String, String> {
 }
 
 fn render_provider_sitemap(connection: &Connection, provider: &str) -> Result<String, String> {
+    let fallback_lastmod = sitemap_lastmod(connection)?;
     let mut statement = connection
         .prepare(
-            "SELECT path, provider, slug, package_key, name, display_name, summary,
-                    provider_label, package_manager_url, install_command, native_install_command,
-                    version, category, license, homepage, repository, rank, last_updated_at,
-                    indexable, data_json
+            "SELECT path, last_updated_at
              FROM packages
              WHERE provider = ?1 AND indexable = 1
              ORDER BY slug",
         )
         .map_err(|err| format!("failed to prepare provider sitemap query: {err}"))?;
-    let packages = collect_packages(statement.query_map(params![provider], package_from_row))?;
-    let fallback_lastmod = sitemap_lastmod(connection)?;
-    let urls = packages
+    let rows = statement
+        .query_map(params![provider], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|err| format!("failed to query provider sitemap: {err}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("failed to read provider sitemap rows: {err}"))?;
+    let urls = rows
         .iter()
-        .map(|package| {
+        .map(|(path, last_updated_at)| {
             sitemap_url(
-                &package.path,
-                non_empty(&package.last_updated_at, &fallback_lastmod),
+                path,
+                non_empty(
+                    last_updated_at.as_deref().unwrap_or_default(),
+                    &fallback_lastmod,
+                ),
             )
         })
         .collect::<Vec<_>>();
