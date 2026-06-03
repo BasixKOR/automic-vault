@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import UserNotifications
 
 final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
@@ -9,6 +10,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? .white
             : .black
+    }
+    private enum MenuBarIndicatorMetrics {
+        static let diameter: CGFloat = 7
+        static let imageOverlap: CGFloat = 1.5
+        static let edgeInset: CGFloat = 1
     }
 
     private let bridge = NucleusBridge(
@@ -28,6 +34,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     )
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusIcon = Bundle.main.image(forResource: "NSMenuItem")
+    private let menuBarIndicatorLayer = CALayer()
     private let menu = NSMenu()
     private let refreshedItem = NSMenuItem(
         title: L10n.string("Last Refresh: --"),
@@ -483,21 +490,10 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         if let statusIcon {
             button.image = adjustedIcon(statusIcon, horizontalInset: 0, heightReduction: 0, offsetY: 0)
-            button.imagePosition = shouldShowIndicator ? .imageLeading : .imageOnly
+            button.imagePosition = .imageOnly
             button.imageScaling = .scaleNone
-            if shouldShowIndicator {
-                button.attributedTitle = NSAttributedString(
-                    string: "●",
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 6.3, weight: .bold),
-                        .foregroundColor: indicatorColor,
-                        .baselineOffset: 7.52
-                    ]
-                )
-            } else {
-                button.attributedTitle = NSAttributedString(string: "")
-                button.title = ""
-            }
+            button.attributedTitle = NSAttributedString(string: "")
+            button.title = ""
         } else {
             let atom = NSAttributedString(
                 string: "⚛︎",
@@ -506,26 +502,78 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     .foregroundColor: NSColor.labelColor
                 ]
             )
-            let title = NSMutableAttributedString(attributedString: atom)
-            if shouldShowIndicator {
-                title.append(
-                    NSAttributedString(
-                        string: " ●",
-                        attributes: [
-                            .font: NSFont.systemFont(ofSize: 7, weight: .bold),
-                            .foregroundColor: indicatorColor,
-                            .baselineOffset: 8.8
-                        ]
-                    )
-                )
-            }
             button.image = nil
-            button.attributedTitle = title
+            button.attributedTitle = atom
         }
+        updateMenuBarIndicator(
+            on: button,
+            isVisible: shouldShowIndicator,
+            color: indicatorColor
+        )
         button.toolTip = buttonTooltip(
             outdatedCount: outdatedCount,
             hazardousCount: hazardousCount
         )
+    }
+
+    private func updateMenuBarIndicator(
+        on button: NSStatusBarButton,
+        isVisible: Bool,
+        color: NSColor
+    ) {
+        button.wantsLayer = true
+        guard let buttonLayer = button.layer else { return }
+        if menuBarIndicatorLayer.superlayer !== buttonLayer {
+            menuBarIndicatorLayer.removeFromSuperlayer()
+            buttonLayer.addSublayer(menuBarIndicatorLayer)
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        var indicatorColor = color.cgColor
+        button.effectiveAppearance.performAsCurrentDrawingAppearance {
+            indicatorColor = color.cgColor
+        }
+        menuBarIndicatorLayer.backgroundColor = indicatorColor
+        menuBarIndicatorLayer.cornerRadius = MenuBarIndicatorMetrics.diameter / 2
+        menuBarIndicatorLayer.contentsScale = button.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        menuBarIndicatorLayer.frame = menuBarIndicatorFrame(in: button)
+        menuBarIndicatorLayer.isHidden = isVisible == false
+        CATransaction.commit()
+
+        DispatchQueue.main.async { [weak self, weak button] in
+            guard let self, let button else { return }
+            self.positionMenuBarIndicator(in: button)
+        }
+    }
+
+    private func positionMenuBarIndicator(in button: NSStatusBarButton) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        menuBarIndicatorLayer.frame = menuBarIndicatorFrame(in: button)
+        CATransaction.commit()
+    }
+
+    private func menuBarIndicatorFrame(in button: NSStatusBarButton) -> CGRect {
+        let diameter = MenuBarIndicatorMetrics.diameter
+        let bounds = button.bounds
+        guard bounds.isEmpty == false else {
+            return CGRect(x: 0, y: 0, width: diameter, height: diameter)
+        }
+
+        let imageRect = button.cell?.imageRect(forBounds: bounds) ?? .zero
+        let referenceRect = imageRect.isEmpty
+            ? bounds.insetBy(dx: max((bounds.width - 18) / 2, 0), dy: max((bounds.height - 18) / 2, 0))
+            : imageRect
+        let proposedX = referenceRect.maxX - diameter + MenuBarIndicatorMetrics.imageOverlap
+        let proposedY = referenceRect.maxY - diameter + MenuBarIndicatorMetrics.imageOverlap
+        let maxX = max(bounds.minX + MenuBarIndicatorMetrics.edgeInset, bounds.maxX - diameter - MenuBarIndicatorMetrics.edgeInset)
+        let maxY = max(bounds.minY + MenuBarIndicatorMetrics.edgeInset, bounds.maxY - diameter - MenuBarIndicatorMetrics.edgeInset)
+        let x = min(max(proposedX, bounds.minX + MenuBarIndicatorMetrics.edgeInset), maxX)
+        let y = min(max(proposedY, bounds.minY + MenuBarIndicatorMetrics.edgeInset), maxY)
+        return CGRect(x: floor(x), y: floor(y), width: diameter, height: diameter)
     }
 
     private static func menuBarIndicatorColor(hasSecurityAlerts: Bool) -> NSColor {
