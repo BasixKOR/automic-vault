@@ -113,6 +113,11 @@ def main():
                         popularity_rank=3,
                         last_updated_at="2026-05-03T00:00:00Z",
                     ),
+                    "node@24": _formula(
+                        "JavaScript runtime",
+                        popularity_rank=4,
+                        last_updated_at="2026-05-02T00:00:00Z",
+                    ),
                     "portable-libffi": _formula(
                         "Portable Foreign Function Interface library",
                         popularity_rank=26875,
@@ -277,6 +282,21 @@ def main():
                         "geigerConfidence": "high",
                         "geigerCategory": "infrastructure",
                     },
+                    "brew:node@24": {
+                        "provider": "brew",
+                        "name": "node@24",
+                        "installPackageName": "brew:node@24",
+                        "priority": 0,
+                        "signals": ["isotope", "geiger:orange"],
+                        "reasons": [
+                            "Node.js can execute package lifecycle scripts."
+                        ],
+                        "isotope": "node@24",
+                        "isotopePackage": "isotope:node@24",
+                        "geigerLevel": "orange",
+                        "geigerConfidence": "high",
+                        "geigerCategory": "infrastructure",
+                    },
                 },
             },
             "stub_exclusions": {
@@ -301,6 +321,7 @@ def _validate(data):
     assert db["schema"] == 7
     assert db["formulas"]["ripgrep"]["aliases"] == ["rg"]
     assert db["formulas"]["node"]["aliases"] == ["node@25"]
+    assert db["formulas"]["node@24"]["summary"] == "JavaScript runtime"
     assert db["casks"]["codex"]["version"]
     assert db["entries"]["coverage-npm"] == "npm:coverage-npm"
     assert db["entries"]["scoped-tool"] == "npm:@scope/scoped-tool"
@@ -310,6 +331,7 @@ def _validate(data):
     assert sources["npm"]["coverage-npm"]["homebrewDeps"] == ["node"]
     assert sources["pip"]["coverage-pip"]["pythonFormula"] == "python@3.14"
     assert sources["security-recommendations"]["packages"]["brew:awscli"]["isotope"] == "aws-cli"
+    assert sources["security-recommendations"]["packages"]["brew:node@24"]["isotope"] == "node@24"
 
 
 if __name__ == "__main__":
