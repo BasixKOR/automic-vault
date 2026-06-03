@@ -6,7 +6,7 @@ use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:3004";
@@ -15,6 +15,8 @@ const DEFAULT_ORIGIN_HEADER: &str = "x-automic-vault-origin";
 const HTML_CACHE_CONTROL: &str = "public, max-age=86400, s-maxage=86400";
 const DEFAULT_SEARCH_LIMIT: usize = 8;
 const MAX_SEARCH_LIMIT: usize = 50;
+const I18N_PKG_TEMPLATES_JSON: &str = include_str!("../../data/www-i18n/pkg/templates.json");
+static I18N_PKG_TEMPLATES: OnceLock<Value> = OnceLock::new();
 
 fn main() {
     if let Err(err) = run() {
@@ -843,26 +845,45 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         .and_then(|manifest| value_i64_key(&manifest, "source_file_count"))
         .unwrap_or_default();
     let search_endpoint = locale_path("/pkg/search.json", locale);
+    let catalog_title = tx(locale, "packageCatalogTitle", "Package security catalog");
     let mut body = String::new();
     body.push_str(&site_nav(locale));
     body.push_str("<main>");
     body.push_str(&format!(
-        r#"<section class="pkg-hero pkg-hero-index" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">Nucleus package intelligence</p><h1 id="pkg-title">Package security catalog</h1><p class="lede">Generated pages for executable packages Nucleus knows about, with local secret-handling manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.</p></div><aside class="hero-panel" aria-label="Catalog counts">{}{}{}{}</aside></section>"#,
-        metric("packages", &fmt_int(packages.len() as i64)),
-        metric("protected tools", &fmt_int(radioisotope_count)),
-        metric("approval gates", &fmt_int(gated as i64)),
-        metric("source files", &fmt_int(source_files)),
+        r#"<section class="pkg-hero pkg-hero-index" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">{}</p><h1 id="pkg-title">{}</h1><p class="lede">{}</p></div><aside class="hero-panel" aria-label="{}">{}{}{}{}</aside></section>"#,
+        html_escape(&tx(locale, "catalogEyebrow", "Nucleus package intelligence")),
+        html_escape(&catalog_title),
+        html_escape(&tx(locale, "catalogPagesCopy", "Generated pages for executable packages Nucleus knows about, with local secret-handling manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.")),
+        html_escape(&tx(locale, "catalogCounts", "Catalog counts")),
+        metric(&tx(locale, "packages", "packages"), &fmt_int(packages.len() as i64)),
+        metric(&tx(locale, "radioisotopes", "protected tools"), &fmt_int(radioisotope_count)),
+        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(gated as i64)),
+        metric(&tx(locale, "sourceFiles", "source files"), &fmt_int(source_files)),
     ));
     body.push_str(&format!(
-        r#"<section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title"><div class="search-copy"><p class="section-kicker">site search</p><h2 id="pkg-search-title">Find package coverage</h2><p>Search generated package pages, security guides, documentation, and source-backed metadata from one index.</p></div><div id="pkg-search" class="pkg-search" data-av-package-search data-locale="{}" data-search-endpoint="{}" data-placeholder="Search awscli, gh, .env, npm publish"></div></section>"#,
+        r#"<section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title"><div class="search-copy"><p class="section-kicker">{}</p><h2 id="pkg-search-title">{}</h2><p>{}</p></div><div id="pkg-search" class="pkg-search" data-av-package-search data-locale="{}" data-search-endpoint="{}" data-placeholder="{}"></div></section>"#,
+        html_escape(&tx(locale, "siteSearch", "site search")),
+        html_escape(&tx(locale, "findPackageCoverage", "Find package coverage")),
+        html_escape(&tx(locale, "catalogSearchCopy", "Search generated package pages, security guides, documentation, and source-backed metadata from one index.")),
         html_escape(locale.code),
-        html_escape(&search_endpoint)
+        html_escape(&search_endpoint),
+        html_escape(&tx(locale, "searchPlaceholder", "Search awscli, gh, .env, npm publish"))
     ));
     body.push_str(&format!(
-        r#"<section class="pkg-section" aria-labelledby="pkg-hubs-title"><p class="section-kicker">package hubs</p><h2 id="pkg-hubs-title">Package groups with security signals</h2><p>These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.</p><div class="hub-groups" aria-label="Package category hubs">{}</div></section>"#,
+        r#"<section class="pkg-section" aria-labelledby="pkg-hubs-title"><p class="section-kicker">{}</p><h2 id="pkg-hubs-title">{}</h2><p>{}</p><div class="hub-groups" aria-label="{}">{}</div></section>"#,
+        html_escape(&tx(locale, "catalogHubsKicker", "package hubs")),
+        html_escape(&tx(locale, "catalogHubsTitle", "Package groups with security signals")),
+        html_escape(&tx(locale, "catalogHubsCopy", "These crawlable hubs group package families that matter for agent security: cloud CLIs, source-control tools, package publishers, MCP tools, and packages with local secret-risk signals.")),
+        html_escape(&tx(locale, "catalogHubsAria", "Package category hubs")),
         hub_group_sections(&hub_summaries, locale)
     ));
-    body.push_str(r#"<section class="pkg-section split-section"><div><p class="section-kicker">crawlable catalog</p><h2>Package pages from local source data</h2><p>Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are written to dynamic HTML so search and answer engines can find specific tool coverage.</p></div><div class="package-list" aria-label="Popular packages">"#);
+    body.push_str(&format!(
+        r#"<section class="pkg-section split-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="package-list" aria-label="{}">"#,
+        html_escape(&tx(locale, "catalogPagesKicker", "crawlable catalog")),
+        html_escape(&tx(locale, "catalogPagesTitle", "Package pages from local source data")),
+        html_escape(&tx(locale, "crawlableCatalog", "Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.")),
+        html_escape(&tx(locale, "popularPackages", "Popular packages")),
+    ));
     for package in top_packages {
         body.push_str(&index_package_row(package, locale));
     }
@@ -875,13 +896,17 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         "url": locale_url("/pkg/", locale),
         "inLanguage": locale.hreflang,
         "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": format!("{SITE_ORIGIN}/")},
-        "about": "Nucleus packages, AI agent package security, approval gates, and secret migration metadata"
+        "about": tx(locale, "packageCatalogDescription", "Nucleus packages, AI agent package security, approval gates, and secret migration metadata")
     });
     let schema_json = serde_json::to_string_pretty(&schema).unwrap_or_else(|_| "{}".to_string());
     Ok(html_doc(
         locale,
-        "Package security catalog | Automic Vault",
-        "Automic Vault package catalog for executable Nucleus packages, protected-tool secret handling, approval gates, install metadata, and agent security notes.",
+        &format!("{catalog_title} | Automic Vault"),
+        &tx(
+            locale,
+            "packageCatalogDescription",
+            "Automic Vault package catalog for executable Nucleus packages, protected-tool secret handling, approval gates, install metadata, and agent security notes.",
+        ),
         &locale_url("/pkg/", locale),
         "index,follow",
         "",
@@ -947,60 +972,94 @@ fn render_hub_page(
     body.push_str(&site_nav(locale));
     body.push_str("<main>");
     body.push_str(&format!(
-        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">Home</a><span>/</span><a href="{}">Packages</a><span>/</span><span>{}</span></nav><section class="pkg-hero pkg-hero-index" aria-labelledby="hub-title"><div class="hero-copy"><p class="eyebrow">{}</p><h1 id="hub-title">{}</h1><p class="lede">{}</p></div><aside class="hero-panel" aria-label="Hub counts">{}{}{}{}</aside></section>"#,
+        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">{}</a><span>/</span><a href="{}">{}</a><span>/</span><span>{}</span></nav><section class="pkg-hero pkg-hero-index" aria-labelledby="hub-title"><div class="hero-copy"><p class="eyebrow">{}</p><h1 id="hub-title">{}</h1><p class="lede">{}</p></div><aside class="hero-panel" aria-label="{}">{}{}{}{}</aside></section>"#,
         html_escape(&locale_path("/", locale)),
+        html_escape(&tx(locale, "home", "Home")),
         html_escape(&locale_path("/pkg/", locale)),
+        html_escape(&tx(locale, "packages", "Packages")),
         html_escape(&hub.title),
         html_escape(&hub.group),
         html_escape(&hub.title),
         html_escape(&hub.description),
-        metric("packages", &fmt_int(packages.len() as i64)),
-        metric("protected tools", &fmt_int(secured as i64)),
-        metric("approval gates", &fmt_int(gated as i64)),
-        metric("updated", &updated),
+        html_escape(&tx(locale, "hubCounts", "Hub counts")),
+        metric(&tx(locale, "packages", "packages"), &fmt_int(packages.len() as i64)),
+        metric(&tx(locale, "radioisotopes", "protected tools"), &fmt_int(secured as i64)),
+        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(gated as i64)),
+        metric(&tx(locale, "updated", "updated"), &updated),
     ));
+    let hub_description = txf(
+        locale,
+        "hubDescription",
+        "{title} currently includes {count} generated package pages. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+        &[
+            ("title", hub.title.clone()),
+            ("count", packages.len().to_string()),
+            ("secured", secured.to_string()),
+            ("gated", gated.to_string()),
+            ("risked", risked.to_string()),
+        ],
+    );
     body.push_str(&format!(
-        r#"<section class="pkg-section split-section"><div><p class="section-kicker">summary</p><h2>Why this package group is here</h2><p>{}</p></div><div class="detail-stack"><article><h3>Generated source</h3><p>This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available.</p></article><article><h3>Review model</h3><p>Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.</p></article></div></section>"#,
-        html_escape(&format!(
-            "{} currently includes {} generated package pages. {} have protected-tool coverage, {} have approval-gate metadata, and {} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
-            hub.title,
-            packages.len(),
-            secured,
-            gated,
-            risked
-        ))
+        r#"<section class="pkg-section split-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="detail-stack"><article><h3>{}</h3><p>{}</p></article><article><h3>{}</h3><p>{}</p></article></div></section>"#,
+        html_escape(&tx(locale, "packageSummary", "summary")),
+        html_escape(&tx(locale, "hubSummaryTitle", "Why this package group is here")),
+        html_escape(&hub_description),
+        html_escape(&tx(locale, "generatedSource", "Generated source")),
+        html_escape(&tx(locale, "generatedSourceCopy", "This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available.")),
+        html_escape(&tx(locale, "hubReviewModel", "Review model")),
+        html_escape(&tx(locale, "hubReviewCopy", "Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them."))
     ));
     body.push_str(&hub_cluster_block(
-        "High-signal tools",
+        &tx(locale, "hubHighSignalTitle", "High-signal tools"),
         &high_signal,
         locale,
     ));
-    body.push_str(&hub_cluster_block("Protected tools", &protected, locale));
     body.push_str(&hub_cluster_block(
-        "Approval-gated tools",
+        &tx(locale, "hubProtectedToolsTitle", "Protected tools"),
+        &protected,
+        locale,
+    ));
+    body.push_str(&hub_cluster_block(
+        &tx(locale, "hubApprovalGatedTitle", "Approval-gated tools"),
         &approval_gated,
         locale,
     ));
     body.push_str(&hub_related_block(
-        "Related hubs",
+        &tx(locale, "hubRelatedHubsTitle", "Related hubs"),
         &related_hub_links(hub, &packages, locale),
     ));
     body.push_str(&hub_cluster_block(
-        "Representative package spokes",
+        &tx(
+            locale,
+            "hubRepresentativeSpokesTitle",
+            "Representative package spokes",
+        ),
         &spokes,
         locale,
     ));
-    body.push_str(r#"<section class="pkg-section"><p class="section-kicker">packages</p><h2>Indexed package pages</h2><div class="table-wrap hub-table"><table><thead><tr><th>Package</th><th>Manager</th><th>Signals</th><th>Why it appears here</th></tr></thead><tbody>"#);
+    body.push_str(&format!(
+        r#"<section class="pkg-section"><p class="section-kicker">{}</p><h2>{}</h2><div class="table-wrap hub-table"><table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>"#,
+        html_escape(&tx(locale, "packages", "packages")),
+        html_escape(&tx(locale, "hubIndexedPagesTitle", "Indexed package pages")),
+        html_escape(&tx(locale, "package", "Package")),
+        html_escape(&tx(locale, "manager", "Manager")),
+        html_escape(&tx(locale, "signals", "Signals")),
+        html_escape(&tx(locale, "why", "Why it appears here")),
+    ));
     for (package, reason) in top {
-        body.push_str(&hub_package_row(package, reason));
+        body.push_str(&hub_package_row(package, reason, locale));
     }
     body.push_str("</tbody></table></div></section></main>");
     body.push_str(&site_footer(locale));
     let description = short_text(
-        &format!(
-            "{} Browse {} package pages with install commands, metadata, and Automic Vault security notes.",
-            hub.description,
-            packages.len()
+        &txf(
+            locale,
+            "hubSchemaDescription",
+            "{description} Browse {count} package pages with install commands, metadata, and Automic Vault security notes.",
+            &[
+                ("description", hub.description.clone()),
+                ("count", packages.len().to_string()),
+            ],
         ),
         155,
     );
@@ -1026,7 +1085,13 @@ fn render_hub_page(
 }
 
 fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str) -> String {
-    let title = format!("Install {} | Automic Vault", package.display_name);
+    let install_heading = txf(
+        locale,
+        "installHeading",
+        "Install {name}",
+        &[("name", package.display_name.clone())],
+    );
+    let title = format!("{install_heading} | Automic Vault");
     let description = meta_description(package);
     let updated = first_non_empty(&[
         full_str(package, "lastVerified"),
@@ -1042,26 +1107,31 @@ fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str
     body.push_str(&site_nav(locale));
     body.push_str("<main>");
     body.push_str(&format!(
-        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">Home</a><span>/</span><a href="{}">Packages</a><span>/</span><span>{}</span></nav>"#,
+        r#"<nav class="breadcrumbs" aria-label="Breadcrumbs"><a href="{}">{}</a><span>/</span><a href="{}">{}</a><span>/</span><span>{}</span></nav>"#,
         html_escape(&locale_path("/", locale)),
+        html_escape(&tx(locale, "home", "Home")),
         html_escape(&locale_path("/pkg/", locale)),
+        html_escape(&tx(locale, "packages", "Packages")),
         html_escape(&package.display_name)
     ));
     body.push_str(&format!(
-        r##"<section class="pkg-hero" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">{} package intelligence</p><h1 id="pkg-title">Install {}</h1><p class="lede">{}</p><div class="hero-actions"><a class="button primary" href="#install">Install command</a><a class="button secondary" href="#security">Security notes</a></div></div><aside class="hero-panel" aria-label="Package facts">{}</aside></section>"##,
-        html_escape(&package.provider),
-        html_escape(&package.display_name),
-        html_escape(&hero_sentence(package)),
-        package_facts(package)
+        r##"<section class="pkg-hero" aria-labelledby="pkg-title"><div class="hero-copy"><p class="eyebrow">{}</p><h1 id="pkg-title">{}</h1><p class="lede">{}</p><div class="hero-actions"><a class="button primary" href="#install">{}</a><a class="button secondary" href="#security">{}</a></div></div><aside class="hero-panel" aria-label="{}">{}</aside></section>"##,
+        html_escape(&label_for(package, locale)),
+        html_escape(&install_heading),
+        html_escape(&localized_hero_sentence(package, locale)),
+        html_escape(&tx(locale, "installCommand", "Install command")),
+        html_escape(&tx(locale, "securityNotes", "Security notes")),
+        html_escape(&tx(locale, "heroPanelAria", "Package facts")),
+        package_facts(package, locale)
     ));
-    body.push_str(&render_install(package));
-    body.push_str(&render_overview(package));
-    body.push_str(&render_security(package));
-    body.push_str(&render_executables(package));
-    body.push_str(&render_freshness(package, generated_at));
-    body.push_str(&render_install_metadata(package));
+    body.push_str(&render_install(package, locale));
+    body.push_str(&render_overview(package, locale));
+    body.push_str(&render_security(package, locale));
+    body.push_str(&render_executables(package, locale));
+    body.push_str(&render_freshness(package, generated_at, locale));
+    body.push_str(&render_install_metadata(package, locale));
     body.push_str(&render_related(package, locale));
-    body.push_str(&render_sources(package));
+    body.push_str(&render_sources(package, locale));
     body.push_str("</main>");
     body.push_str(&site_footer(locale));
     html_doc(
@@ -1144,7 +1214,7 @@ fn render_package_markdown(package: &PackageRow, locale: &Locale, generated_at: 
         "Freshness",
         &markdown_freshness_items(package, generated_at),
     );
-    markdown_security_section(&mut text, package);
+    markdown_security_section(&mut text, package, locale);
     markdown_related(&mut text, package, locale);
     markdown_value_list(
         &mut text,
@@ -1294,7 +1364,7 @@ fn html_hreflang_links(canonical: &str) -> String {
     lines.join("\n")
 }
 
-fn render_install(package: &PackageRow) -> String {
+fn render_install(package: &PackageRow, locale: &Locale) -> String {
     let commands = install_command_entries(package);
     let primary = commands.first().cloned().unwrap_or_else(|| {
         json!({
@@ -1334,16 +1404,39 @@ fn render_install(package: &PackageRow) -> String {
         )
     };
     format!(
-        r#"<section id="install" class="pkg-section install-section" aria-labelledby="install-title"><div class="install-command-panel"><div><p class="section-kicker">install</p><h2 id="install-title">Install with Automic Vault</h2></div><div class="terminal-block"><div class="terminal-head"><span>{}</span><div class="terminal-actions"><a class="download-av-button" href="/download/" aria-label="Download Automic Vault">Download AV</a><button class="copy-button" type="button" data-copy="{}" aria-label="Copy install command">Copy</button></div></div><pre><code>{}</code></pre></div>{}</div><div class="install-notes-grid"><article><h3>Package manager source</h3><p>{}</p></article><article><h3>Platform notes</h3><ul>{}</ul></article></div></section>"#,
+        r#"<section id="install" class="pkg-section install-section" aria-labelledby="install-title"><div class="install-command-panel"><div><p class="section-kicker">{}</p><h2 id="install-title">{}</h2></div><div class="terminal-block"><div class="terminal-head"><span>{}</span><div class="terminal-actions"><a class="download-av-button" href="/download/" aria-label="{}">{}</a><button class="copy-button" type="button" data-copy="{}" aria-label="{}">{}</button></div></div><pre><code>{}</code></pre></div>{}</div><div class="install-notes-grid"><article><h3>{}</h3><p>{}</p></article><article><h3>{}</h3><ul>{}</ul></article></div></section>"#,
+        html_escape(&tx(locale, "install", "install")),
+        html_escape(&tx(
+            locale,
+            "automicVaultInstallHeading",
+            "Install with Automic Vault"
+        )),
         html_escape(
             &value_str_key(&primary, "manager").unwrap_or_else(|| "Automic Vault".to_string())
         ),
+        html_escape(&tx(locale, "downloadAV", "Download AV")),
+        html_escape(&tx(locale, "downloadAV", "Download AV")),
         html_escape(&command),
+        html_escape(&tx(locale, "copyInstallCommand", "Copy install command")),
+        html_escape(&tx(locale, "copy", "Copy")),
         html_escape(&command),
         platform_html,
+        html_escape(&tx(
+            locale,
+            "packageManagerSource",
+            "Package manager source"
+        )),
         manager_link,
+        html_escape(&tx(locale, "platformNotes", "Platform notes")),
         if notes.is_empty() {
-            "<li>No package-specific platform notes were present.</li>".to_string()
+            format!(
+                "<li>{}</li>",
+                html_escape(&tx(
+                    locale,
+                    "noPlatformNotes",
+                    "No package-specific platform notes were present."
+                ))
+            )
         } else {
             notes
         }
@@ -1475,10 +1568,17 @@ fn install_command_source_html(item: &Value) -> String {
         .unwrap_or_default()
 }
 
-fn render_overview(package: &PackageRow) -> String {
+fn render_overview(package: &PackageRow, locale: &Locale) -> String {
     let aliases = full_string_array(package, "aliases");
     let alias_block = if aliases.is_empty() {
-        "<p>No executable aliases were found in the local package database.</p>".to_string()
+        format!(
+            "<p>{}</p>",
+            html_escape(&tx(
+                locale,
+                "noAliases",
+                "No executable aliases were found in the local package database."
+            ))
+        )
     } else {
         format!(
             r#"<ul class="chip-list">{}</ul>"#,
@@ -1490,7 +1590,11 @@ fn render_overview(package: &PackageRow) -> String {
         )
     };
     let homepage = if package.homepage.is_empty() {
-        "Not present in the local metadata.".to_string()
+        tx(
+            locale,
+            "homepageMissing",
+            "Not present in the local metadata.",
+        )
     } else {
         format!(
             r#"<a href="{}">{}</a>"#,
@@ -1499,17 +1603,21 @@ fn render_overview(package: &PackageRow) -> String {
         )
     };
     format!(
-        r#"<section class="pkg-section split-section"><div><p class="section-kicker">overview</p><h2>Package summary</h2><p>{}</p></div><div class="detail-stack"><article><h3>Homepage</h3><p>{}</p></article><article><h3>Commands and aliases</h3>{}</article></div></section>"#,
+        r#"<section class="pkg-section split-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="detail-stack"><article><h3>{}</h3><p>{}</p></article><article><h3>{}</h3>{}</article></div></section>"#,
+        html_escape(&tx(locale, "overview", "overview")),
+        html_escape(&tx(locale, "packageSummary", "Package summary")),
         html_escape(&package.summary),
+        html_escape(&tx(locale, "homepage", "Homepage")),
         homepage,
+        html_escape(&tx(locale, "commandsAndAliases", "Commands and aliases")),
         alias_block
     )
 }
 
-fn render_security(package: &PackageRow) -> String {
+fn render_security(package: &PackageRow, locale: &Locale) -> String {
     let geiger = render_geiger(package);
     let install_signals = render_install_behavior_signals(package);
-    let gate = render_gate(package);
+    let gate = render_gate(package, locale);
     if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
         let justification = isotope.get("justification").unwrap_or(&Value::Null);
         let title = value_str_key(justification, "title")
@@ -1536,36 +1644,53 @@ fn render_security(package: &PackageRow) -> String {
             .filter(|value| !value.is_empty())
             .map(|html| {
                 format!(
-                    r#"<div class="readme-excerpt"><p class="readme-label">Local README excerpt</p>{}<p class="readme-source">Source: <code>{}</code></p></div>"#,
+                    r#"<div class="readme-excerpt"><p class="readme-label">{}</p>{}<p class="readme-source">{}: <code>{}</code></p></div>"#,
+                    html_escape(&tx(locale, "localReadmeExcerpt", "Local README excerpt")),
                     html,
+                    html_escape(&tx(locale, "source", "Source")),
                     html_escape(&full_str(package, "isotopeReadmeSource"))
                 )
             })
             .unwrap_or_default();
         return format!(
-            r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">protected-tool coverage</p><h2>{}</h2><p>{}</p>{}{}{}</div><div class="detail-stack"><article><h3>Coverage source</h3><p>Local secret-handling manifest</p></article><article><h3>Caveats</h3><ul>{}</ul></article></div></section>{}"#,
+            r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p>{}{}{}</div><div class="detail-stack"><article><h3>{}</h3><p>{}</p></article><article><h3>{}</h3><ul>{}</ul></article></div></section>{}"#,
+            html_escape(&tx(locale, "radioisotopeKicker", "protected-tool coverage")),
             html_escape(&title),
             html_escape(&detail),
             geiger,
             install_signals,
             readme,
+            html_escape(&tx(locale, "coverageSource", "Coverage source")),
+            html_escape(&tx(
+                locale,
+                "sourceExcerpt",
+                "Local secret-handling manifest"
+            )),
+            html_escape(&tx(locale, "caveats", "Caveats")),
             if caveats.is_empty() {
                 "<li>No caveats were listed in the local manifest.</li>".to_string()
             } else {
                 caveats
             },
-            gate
+            render_gate(package, locale)
         );
     }
     if !gate.is_empty() {
         return gate;
     }
     format!(
-        r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">security posture</p><h2>{}</h2><p>{}</p>{}{}</div><div class="detail-stack"><article><h3>Recommended review</h3><p>Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins.</p></article></div></section>"#,
-        html_escape(&security_heading(package)),
-        html_escape(&security_summary(package)),
+        r#"<section id="security" class="pkg-section security-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p>{}{}</div><div class="detail-stack"><article><h3>{}</h3><p>{}</p></article></div></section>"#,
+        html_escape(&tx(locale, "securityPosture", "security posture")),
+        html_escape(&security_heading(package, locale)),
+        html_escape(&security_summary(package, locale)),
         geiger,
-        install_signals
+        install_signals,
+        html_escape(&tx(locale, "recommendedReview", "Recommended review")),
+        html_escape(&tx(
+            locale,
+            "recommendedReviewCopy",
+            "Before unattended agent use, check whether the tool reads plaintext credentials, writes remote state, publishes artifacts, or shells out to plugins."
+        ))
     )
 }
 
@@ -1700,7 +1825,7 @@ fn render_install_behavior_signals(package: &PackageRow) -> String {
     }
 }
 
-fn render_gate(package: &PackageRow) -> String {
+fn render_gate(package: &PackageRow, locale: &Locale) -> String {
     let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) else {
         return String::new();
     };
@@ -1728,32 +1853,63 @@ fn render_gate(package: &PackageRow) -> String {
         format!(", reviewed {reviewed}")
     };
     format!(
-        r#"<section class="pkg-section split-section gate-section"><div><p class="section-kicker">approval gates</p><h2>Human review metadata for risky commands</h2><p>The local approval-gate seed includes {} rules for {}. Covered entrypoints: {}. Severity labels: {}. Coverage: {}{}.</p></div><div class="detail-stack"><article><h3>Example gated actions</h3><ul>{}</ul></article></div></section>"#,
-        html_escape(&value_i64_key(gate, "rule_count").unwrap_or(0).to_string()),
-        html_escape(&package.display_name),
-        html_escape(if entrypoints.is_empty() {
-            &package.display_name
-        } else {
-            &entrypoints
-        }),
-        html_escape(if severities.is_empty() {
-            "not specified"
-        } else {
-            &severities
-        }),
-        html_escape(
-            &value_str_key(gate, "coverage_status").unwrap_or_else(|| "unknown".to_string())
-        ),
-        html_escape(&reviewed_copy),
+        r#"<section class="pkg-section split-section gate-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="detail-stack"><article><h3>{}</h3><ul>{}</ul></article></div></section>"#,
+        html_escape(&tx(locale, "approvalGatesKicker", "approval gates")),
+        html_escape(&tx(
+            locale,
+            "approvalGateHeading",
+            "Human review metadata for risky commands"
+        )),
+        html_escape(&txf(
+            locale,
+            "approvalGateCopy",
+            "The local approval-gate seed includes {count} rules for {name}. Covered entrypoints: {entrypoints}. Severity labels: {severities}. Coverage: {coverage}{reviewed}.",
+            &[
+                (
+                    "count",
+                    value_i64_key(gate, "rule_count").unwrap_or(0).to_string()
+                ),
+                ("name", package.display_name.clone()),
+                (
+                    "entrypoints",
+                    if entrypoints.is_empty() {
+                        package.display_name.clone()
+                    } else {
+                        entrypoints.clone()
+                    }
+                ),
+                (
+                    "severities",
+                    if severities.is_empty() {
+                        "not specified".to_string()
+                    } else {
+                        severities.clone()
+                    }
+                ),
+                (
+                    "coverage",
+                    value_str_key(gate, "coverage_status").unwrap_or_else(|| "unknown".to_string())
+                ),
+                ("reviewed", reviewed_copy.clone()),
+            ],
+        )),
+        html_escape(&tx(locale, "exampleGatedActions", "Example gated actions")),
         if rules.is_empty() {
-            "<li>No rule descriptions were present.</li>".to_string()
+            format!(
+                "<li>{}</li>",
+                html_escape(&tx(
+                    locale,
+                    "noApprovalRules",
+                    "No rule descriptions were present."
+                ))
+            )
         } else {
             rules
         },
     )
 }
 
-fn render_executables(package: &PackageRow) -> String {
+fn render_executables(package: &PackageRow, locale: &Locale) -> String {
     let mut rows = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for item in value_array(&package.data.full, "executablesDetailed") {
@@ -1809,9 +1965,22 @@ fn render_executables(package: &PackageRow) -> String {
         }
     }
     format!(
-        r#"<section class="pkg-section" aria-labelledby="executables-title"><p class="section-kicker">executables</p><h2 id="executables-title">Installed executables</h2><div class="table-wrap executable-table"><table><thead><tr><th>Command</th><th>Kind</th><th>Exposure</th><th>Note</th></tr></thead><tbody>{}</tbody></table></div></section>"#,
+        r#"<section class="pkg-section" aria-labelledby="executables-title"><p class="section-kicker">{}</p><h2 id="executables-title">{}</h2><div class="table-wrap executable-table"><table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table></div></section>"#,
+        html_escape(&tx(locale, "executables", "executables")),
+        html_escape(&tx(locale, "executablesTitle", "Installed executables")),
+        html_escape(&tx(locale, "command", "Command")),
+        html_escape(&tx(locale, "kind", "Kind")),
+        html_escape(&tx(locale, "exposure", "Exposure")),
+        html_escape(&tx(locale, "note", "Note")),
         if rows.is_empty() {
-            r#"<tr><td colspan="4">No executable data was present.</td></tr>"#.to_string()
+            format!(
+                r#"<tr><td colspan="4">{}</td></tr>"#,
+                html_escape(&tx(
+                    locale,
+                    "executableDataMissing",
+                    "No executable data was present."
+                ))
+            )
         } else {
             rows.join("")
         }
@@ -1828,7 +1997,7 @@ fn executable_row(name: &str, kind: &str, exposure: &str, note: &str) -> String 
     )
 }
 
-fn render_freshness(package: &PackageRow, generated_at: &str) -> String {
+fn render_freshness(package: &PackageRow, generated_at: &str, locale: &Locale) -> String {
     let freshness = full_value(package, "versionFreshness").unwrap_or(&Value::Null);
     let manager = freshness.get("packageManager").unwrap_or(&Value::Null);
     let site = freshness.get("siteData").unwrap_or(&Value::Null);
@@ -1868,19 +2037,32 @@ fn render_freshness(package: &PackageRow, generated_at: &str) -> String {
     };
     let repository = value_str_key(upstream, "repository").unwrap_or_default();
     format!(
-        r#"<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title" data-pagefind-ignore="all"><div><p class="section-kicker">freshness</p><h2 id="freshness-title">Version and freshness</h2><p>These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present.</p></div><div><div class="freshness-metrics"><div><span>page generated</span><strong>{}</strong></div><div><span>manager version</span><strong>{}</strong></div><div><span>manager updated</span><strong>{}</strong></div><div><span>local data</span><strong>{}</strong></div><div><span>upstream</span><strong>{}</strong></div><div><span>latest detected</span><strong>{}</strong></div></div>{}<ul class="freshness-list">{}</ul></div></section>"#,
+        r#"<section class="pkg-section split-section freshness-section" aria-labelledby="freshness-title" data-pagefind-ignore="all"><div><p class="section-kicker">{}</p><h2 id="freshness-title">{}</h2><p>{}</p></div><div><div class="freshness-metrics"><div><span>{}</span><strong>{}</strong></div><div><span>{}</span><strong>{}</strong></div><div><span>{}</span><strong>{}</strong></div><div><span>{}</span><strong>{}</strong></div><div><span>{}</span><strong>{}</strong></div><div><span>{}</span><strong>{}</strong></div></div>{}<ul class="freshness-list">{}</ul></div></section>"#,
+        html_escape(&tx(locale, "freshness", "freshness")),
+        html_escape(&tx(locale, "freshnessTitle", "Version and freshness")),
+        html_escape(&tx(
+            locale,
+            "freshnessCopy",
+            "These signals separate page generation age, package-manager activity, and upstream release comparison. Version lag is warned only when an evidence URL and comparable versions are present."
+        )),
+        html_escape(&tx(locale, "pageGenerated", "page generated")),
         html_escape(&fmt_date(generated_at)),
+        html_escape(&tx(locale, "managerVersion", "manager version")),
         html_escape(
             &value_str_key(manager, "version")
                 .unwrap_or_else(|| empty_as_unknown(&package.version).to_string())
         ),
+        html_escape(&tx(locale, "managerUpdated", "manager updated")),
         html_escape(&fmt_date(
             &value_str_key(manager, "updatedAt").unwrap_or_else(|| package.last_updated_at.clone())
         )),
+        html_escape(&tx(locale, "localData", "local data")),
         html_escape(&value_str_key(site, "status").unwrap_or_else(|| "unknown".to_string())),
+        html_escape(&tx(locale, "upstream", "upstream")),
         html_escape(
             &value_str_key(upstream, "comparison").unwrap_or_else(|| "not available".to_string())
         ),
+        html_escape(&tx(locale, "upstreamLatestDetected", "latest detected")),
         html_escape(
             &value_str_key(upstream, "latestVersion").unwrap_or_else(|| "not detected".to_string())
         ),
@@ -1897,7 +2079,7 @@ fn render_freshness(package: &PackageRow, generated_at: &str) -> String {
     )
 }
 
-fn render_install_metadata(package: &PackageRow) -> String {
+fn render_install_metadata(package: &PackageRow, locale: &Locale) -> String {
     let mut rows = Vec::new();
     for (label, value) in [
         ("Package key", package.package_key.clone()),
@@ -2001,9 +2183,19 @@ fn render_install_metadata(package: &PackageRow) -> String {
         })
         .collect::<String>();
     format!(
-        r#"<section class="pkg-section"><p class="section-kicker">install metadata</p><h2>Package metadata</h2><div class="table-wrap"><table><tbody>{}</tbody></table></div></section>"#,
+        r#"<section class="pkg-section"><p class="section-kicker">{}</p><h2>{}</h2><div class="table-wrap"><table><tbody>{}</tbody></table></div></section>"#,
+        html_escape(&tx(locale, "packageMetadataKicker", "install metadata")),
+        html_escape(&tx(locale, "metadataTitle", "Package metadata")),
         if row_html.is_empty() {
-            "<tr><th>Status</th><td>No resolver details were present.</td></tr>".to_string()
+            format!(
+                "<tr><th>{}</th><td>{}</td></tr>",
+                html_escape(&tx(locale, "status", "Status")),
+                html_escape(&tx(
+                    locale,
+                    "metadataEmpty",
+                    "No resolver details were present."
+                ))
+            )
         } else {
             row_html
         }
@@ -2038,21 +2230,34 @@ fn render_related(package: &PackageRow, locale: &Locale) -> String {
     let also = related_links(package, locale, "alsoAvailableVia", 4, false);
     let guides = core_security_guides(package, locale);
     let columns = [
-        related_article("Topical hubs", hubs),
-        related_article("Related tools", related),
-        related_article("Same workflow", [workflow, also].concat()),
-        related_article("Agent security guides", guides),
+        related_article(&tx(locale, "topicalHubs", "Topical hubs"), hubs),
+        related_article(&tx(locale, "relatedTools", "Related tools"), related),
+        related_article(
+            &tx(locale, "sameWorkflow", "Same workflow"),
+            [workflow, also].concat(),
+        ),
+        related_article(
+            &tx(locale, "agentSecurityGuides", "Agent security guides"),
+            guides,
+        ),
     ]
     .into_iter()
     .filter(|value| !value.is_empty())
     .collect::<String>();
     format!(
-        r#"<section class="pkg-section split-section related-section" aria-labelledby="related-title"><div><p class="section-kicker">package graph</p><h2 id="related-title">Internal package links</h2><p>Links come from deterministic package relationships, av.db category and tag curation, ecosystem matches, and package hub membership.</p></div><div class="related-columns">{}</div></section>"#,
+        r#"<section class="pkg-section split-section related-section" aria-labelledby="related-title"><div><p class="section-kicker">{}</p><h2 id="related-title">{}</h2><p>{}</p></div><div class="related-columns">{}</div></section>"#,
+        html_escape(&tx(locale, "packageGraph", "package graph")),
+        html_escape(&tx(locale, "internalLinks", "Internal package links")),
+        html_escape(&tx(
+            locale,
+            "packageGraphCopy",
+            "Links come from deterministic package relationships, av.db category and tag curation, ecosystem matches, and package hub membership."
+        )),
         columns
     )
 }
 
-fn render_sources(package: &PackageRow) -> String {
+fn render_sources(package: &PackageRow, locale: &Locale) -> String {
     let mut notes = full_string_array(package, "sourceNotes");
     notes.sort();
     notes.dedup();
@@ -2064,7 +2269,19 @@ fn render_sources(package: &PackageRow) -> String {
         .map(|note| format!("<li>{}</li>", html_escape(&note)))
         .collect::<String>();
     format!(
-        r#"<section class="pkg-section split-section sources-section"><div><p class="section-kicker">source trail</p><h2>Generated from repository data</h2><p>This page is generated by <code>av-web</code> from the private package SQLite artifact built by <code>scripts/generate-pkg-sqlite.py</code>.</p></div><div class="detail-stack"><article><h3>Used sources</h3><ul>{}</ul></article></div></section>"#,
+        r#"<section class="pkg-section split-section sources-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="detail-stack"><article><h3>{}</h3><ul>{}</ul></article></div></section>"#,
+        html_escape(&tx(locale, "sourceTrail", "source trail")),
+        html_escape(&tx(
+            locale,
+            "generatedFromRepositoryData",
+            "Generated from repository data"
+        )),
+        tx(
+            locale,
+            "sourcesCopy",
+            "This page is generated by <code>av-web</code> from the private package SQLite artifact built by <code>scripts/generate-pkg-sqlite.py</code>."
+        ),
+        html_escape(&tx(locale, "usedSources", "Used sources")),
         items
     )
 }
@@ -2094,16 +2311,16 @@ fn package_non_low_geiger(package: &PackageRow) -> bool {
     )
 }
 
-fn label_for(package: &PackageRow) -> String {
+fn label_for(package: &PackageRow, locale: &Locale) -> String {
     let mut labels = vec![package.provider.clone()];
     if package_isotope(package) {
-        labels.push("protected-tool coverage".to_string());
+        labels.push(tx(locale, "radioisotopeKicker", "protected-tool coverage"));
     }
     if package_gate(package) {
-        labels.push("approval gates".to_string());
+        labels.push(tx(locale, "approvalGatesKicker", "approval gates"));
     }
     if let Some(rank) = package.rank {
-        labels.push(format!("rank {rank}"));
+        labels.push(format!("{} {rank}", tx(locale, "rank", "rank")));
     }
     labels.join(" / ")
 }
@@ -2111,9 +2328,18 @@ fn label_for(package: &PackageRow) -> String {
 fn hub_group_sections(hubs: &[HubSummary], locale: &Locale) -> String {
     let mut sections = Vec::new();
     for (group, label) in [
-        ("security", "Security hubs"),
-        ("topical", "Topical hubs"),
-        ("ecosystem", "Ecosystem hubs"),
+        (
+            "security",
+            tx(locale, "hubSecurityGroupTitle", "Security hubs"),
+        ),
+        (
+            "topical",
+            tx(locale, "hubTopicalGroupTitle", "Topical hubs"),
+        ),
+        (
+            "ecosystem",
+            tx(locale, "hubEcosystemGroupTitle", "Ecosystem hubs"),
+        ),
     ] {
         let cards = hubs
             .iter()
@@ -2131,7 +2357,7 @@ fn hub_group_sections(hubs: &[HubSummary], locale: &Locale) -> String {
         if !cards.is_empty() {
             sections.push(format!(
                 r#"<section class="hub-group"><h3>{}</h3><div class="hub-grid">{}</div></section>"#,
-                html_escape(label),
+                html_escape(&label),
                 cards
             ));
         }
@@ -2144,7 +2370,7 @@ fn index_package_row(package: &PackageRow, locale: &Locale) -> String {
         r#"<a class="package-row" href="{}"><span>{}</span><small>{}</small></a>"#,
         html_escape(&locale_path(&package.path, locale)),
         html_escape(&package.display_name),
-        html_escape(&label_for(package))
+        html_escape(&label_for(package, locale))
     )
 }
 
@@ -2168,7 +2394,7 @@ fn hub_spoke_card(package: &PackageRow, locale: &Locale) -> String {
         r#"<a class="package-row" href="{}"><span>{}</span><small>{}</small></a>"#,
         html_escape(&locale_path(&package.path, locale)),
         html_escape(&package.display_name),
-        html_escape(&hub_package_reason(package))
+        html_escape(&hub_package_reason(package, locale))
     )
 }
 
@@ -2217,18 +2443,24 @@ fn related_hub_links(
         .into_iter()
         .take(8)
         .map(|(slug, (label, reason, count))| {
+            let fallback_reason = tx(locale, "packageGraph", "package graph");
+            let reason = if reason.is_empty() {
+                fallback_reason.as_str()
+            } else {
+                reason.as_str()
+            };
             format!(
                 r#"<a class="hub-related-card" href="{}"><span>{}</span><small>{}</small><strong>{}</strong></a>"#,
                 html_escape(&locale_path(&format!("/pkg/{slug}/"), locale)),
                 html_escape(&label),
-                html_escape(if reason.is_empty() { "package graph" } else { &reason }),
+                html_escape(reason),
                 html_escape(&fmt_int(count))
             )
         })
         .collect()
 }
 
-fn hub_package_reason(package: &PackageRow) -> String {
+fn hub_package_reason(package: &PackageRow, locale: &Locale) -> String {
     if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
         if let Some(title) = isotope
             .get("justification")
@@ -2238,11 +2470,16 @@ fn hub_package_reason(package: &PackageRow) -> String {
         }
     }
     if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
-        return format!(
-            "{} approval-gate rules are present.",
-            value_i64_key(gate, "rule_count")
-                .map(fmt_int)
-                .unwrap_or_else(|| "Local".to_string())
+        return txf(
+            locale,
+            "hubPackageReasonApproval",
+            "{count} approval-gate rules are present.",
+            &[(
+                "count",
+                value_i64_key(gate, "rule_count")
+                    .map(fmt_int)
+                    .unwrap_or_else(|| "Local".to_string()),
+            )],
         );
     }
     if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
@@ -2259,32 +2496,49 @@ fn hub_package_reason(package: &PackageRow) -> String {
     let aliases = full_string_array(package, "aliases");
     if !aliases.is_empty() {
         return format!(
-            "Executable aliases include {}.",
-            aliases.into_iter().take(4).collect::<Vec<_>>().join(", ")
+            "{}",
+            txf(
+                locale,
+                "hubPackageReasonAlias",
+                "Executable aliases include {aliases}.",
+                &[(
+                    "aliases",
+                    aliases.into_iter().take(4).collect::<Vec<_>>().join(", "),
+                )],
+            )
         );
     }
-    "Matched package metadata for this hub.".to_string()
+    tx(
+        locale,
+        "hubPackageReasonDefault",
+        "Matched package metadata for this hub.",
+    )
 }
 
-fn hub_package_row(package: &PackageRow, reason: &str) -> String {
+fn hub_package_row(package: &PackageRow, reason: &str, locale: &Locale) -> String {
     let mut signals = Vec::new();
     if package_isotope(package) {
-        signals.push("protected-tool coverage".to_string());
+        signals.push(tx(locale, "radioisotopeKicker", "protected-tool coverage"));
     }
     if package_gate(package) {
-        signals.push("approval gate".to_string());
+        signals.push(tx(locale, "approvalGatesKicker", "approval gate"));
     }
     if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
-        signals.push(format!(
-            "{} risk",
-            value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string())
+        signals.push(txf(
+            locale,
+            "riskLevel",
+            "{level} risk",
+            &[(
+                "level",
+                value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string()),
+            )],
         ));
     }
     if !package.version.is_empty() {
         signals.push(format!("v{}", package.version));
     }
     let reason = if reason.trim().is_empty() {
-        hub_package_reason(package)
+        hub_package_reason(package, locale)
     } else {
         reason.to_string()
     };
@@ -2294,7 +2548,7 @@ fn hub_package_row(package: &PackageRow, reason: &str) -> String {
         html_escape(&package.display_name),
         html_escape(&package.provider_label),
         html_escape(&if signals.is_empty() {
-            label_for(package)
+            label_for(package, locale)
         } else {
             signals.join(", ")
         }),
@@ -2320,7 +2574,7 @@ fn schema_for_hub(
                 "position": index + 1,
                 "url": locale_url(&package.path, locale),
                 "name": package.display_name,
-                "description": hub_package_reason(package)
+                "description": hub_package_reason(package, locale)
             })
         })
         .collect::<Vec<_>>();
@@ -2470,6 +2724,28 @@ fn locale_url(path: &str, locale: &Locale) -> String {
     format!("{SITE_ORIGIN}{}", locale_path(path, locale))
 }
 
+fn tx(locale: &Locale, key: &str, default: &str) -> String {
+    if locale.code == "en" {
+        return default.to_string();
+    }
+    let templates = I18N_PKG_TEMPLATES
+        .get_or_init(|| serde_json::from_str(I18N_PKG_TEMPLATES_JSON).unwrap_or(Value::Null));
+    templates
+        .get(locale.code)
+        .and_then(|items| items.get(key))
+        .and_then(Value::as_str)
+        .unwrap_or(default)
+        .to_string()
+}
+
+fn txf(locale: &Locale, key: &str, default: &str, replacements: &[(&str, String)]) -> String {
+    let mut value = tx(locale, key, default);
+    for (name, replacement) in replacements {
+        value = value.replace(&format!("{{{name}}}"), replacement);
+    }
+    value
+}
+
 fn source_host_label(url: &str) -> &str {
     url.trim_start_matches("https://")
         .trim_start_matches("http://")
@@ -2569,6 +2845,19 @@ fn hero_sentence(package: &PackageRow) -> String {
         "Nucleus package metadata for {}, from local Automic Vault package sources.",
         package.display_name
     )
+}
+
+fn localized_hero_sentence(package: &PackageRow, locale: &Locale) -> String {
+    if locale.code == "en" {
+        hero_sentence(package)
+    } else {
+        txf(
+            locale,
+            "heroSentence",
+            "View install routes, executables, metadata, and security notes for {name}.",
+            &[("name", package.display_name.clone())],
+        )
+    }
 }
 
 fn meta_description(package: &PackageRow) -> String {
@@ -2688,21 +2977,24 @@ fn install_command_entries(package: &PackageRow) -> Vec<Value> {
     entries
 }
 
-fn package_facts(package: &PackageRow) -> String {
-    let mut facts = vec![metric("manager", &package.provider_label)];
+fn package_facts(package: &PackageRow, locale: &Locale) -> String {
+    let mut facts = vec![metric(
+        &tx(locale, "manager", "manager"),
+        &package.provider_label,
+    )];
     if !package.version.is_empty() {
-        facts.push(metric("version", &package.version));
+        facts.push(metric(&tx(locale, "version", "version"), &package.version));
     }
     if !package.license.is_empty() {
-        facts.push(metric("license", &package.license));
+        facts.push(metric(&tx(locale, "license", "license"), &package.license));
     }
     if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
         facts.push(metric(
-            "risk",
+            &tx(locale, "risk", "risk"),
             &value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string()),
         ));
         facts.push(metric(
-            "classifier confidence",
+            &tx(locale, "classifierConfidence", "classifier confidence"),
             &value_str_key(geiger, "confidence").unwrap_or_else(|| "unknown".to_string()),
         ));
     }
@@ -2710,28 +3002,46 @@ fn package_facts(package: &PackageRow) -> String {
         .and_then(|value| value_i64_key(value, "rank"))
         .or_else(|| package.rank.map(i64::from))
     {
-        facts.push(metric("rank", &fmt_int(rank)));
+        facts.push(metric(&tx(locale, "rank", "rank"), &fmt_int(rank)));
     }
     if let Some(popularity) = full_value(package, "popularity").filter(|value| value.is_object()) {
         if let Some(installs) = value_i64_key(popularity, "installs_per_365_days") {
-            facts.push(metric("365d installs", &fmt_int(installs)));
+            facts.push(metric(
+                &tx(locale, "installs365d", "365d installs"),
+                &fmt_int(installs),
+            ));
         } else if let Some(downloads) = value_i64_key(popularity, "downloads_per_30_days") {
-            facts.push(metric("30d downloads", &fmt_int(downloads)));
+            facts.push(metric(
+                &tx(locale, "downloads30d", "30d downloads"),
+                &fmt_int(downloads),
+            ));
         }
     }
     if full_value(package, "isotope").is_some() {
-        facts.push(metric("protected-tool coverage", "covered"));
+        facts.push(metric(
+            &tx(locale, "radioisotopeKicker", "protected-tool coverage"),
+            &tx(locale, "covered", "covered"),
+        ));
     }
     if let Some(gate) = full_value(package, "approvalGate").filter(|value| value.is_object()) {
         if let Some(rule_count) = value_i64_key(gate, "rule_count") {
-            facts.push(metric("approval rules", &fmt_int(rule_count)));
+            facts.push(metric(
+                &tx(locale, "approvalRules", "approval rules"),
+                &fmt_int(rule_count),
+            ));
         }
     }
     if let Some(verified) = full_opt_str(package, "lastVerified").filter(|value| !value.is_empty())
     {
-        facts.push(metric("verified", &fmt_date(&verified)));
+        facts.push(metric(
+            &tx(locale, "verified", "verified"),
+            &fmt_date(&verified),
+        ));
     } else if !package.last_updated_at.is_empty() {
-        facts.push(metric("updated", &fmt_date(&package.last_updated_at)));
+        facts.push(metric(
+            &tx(locale, "updated", "updated"),
+            &fmt_date(&package.last_updated_at),
+        ));
     }
     facts.join("")
 }
@@ -2744,17 +3054,26 @@ fn metric(label: &str, value: &str) -> String {
     )
 }
 
-fn security_heading(package: &PackageRow) -> String {
+fn security_heading(package: &PackageRow, locale: &Locale) -> String {
     if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
-        return format!(
-            "Risk level: {}",
-            value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string())
+        return txf(
+            locale,
+            "riskLevel",
+            "Risk level: {level}",
+            &[(
+                "level",
+                value_str_key(geiger, "level").unwrap_or_else(|| "unknown".to_string()),
+            )],
         );
     }
-    "No protected-tool coverage found yet".to_string()
+    tx(
+        locale,
+        "radioisotopeMissingHeading",
+        "No protected-tool coverage found yet",
+    )
 }
 
-fn security_summary(package: &PackageRow) -> String {
+fn security_summary(package: &PackageRow, locale: &Locale) -> String {
     if let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) {
         let reasons = value_array(geiger, "reasons")
             .into_iter()
@@ -2766,9 +3085,11 @@ fn security_summary(package: &PackageRow) -> String {
             return reasons.join(" ");
         }
     }
-    format!(
-        "No matching local secret-handling manifest was found for {}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
-        package.display_name
+    txf(
+        locale,
+        "radioisotopeMissingSummary",
+        "No matching local secret-handling manifest was found for {name}. Nucleus package metadata is still published here so future coverage has a stable package URL.",
+        &[("name", package.display_name.clone())],
     )
 }
 
@@ -3265,9 +3586,12 @@ fn markdown_freshness_items(package: &PackageRow, generated_at: &str) -> Vec<Str
     items
 }
 
-fn markdown_security_section(text: &mut String, package: &PackageRow) {
-    text.push_str("\n## Security Notes\n\n");
-    text.push_str(&security_summary(package));
+fn markdown_security_section(text: &mut String, package: &PackageRow, locale: &Locale) {
+    text.push_str(&format!(
+        "\n## {}\n\n",
+        tx(locale, "securityNotes", "Security Notes")
+    ));
+    text.push_str(&security_summary(package, locale));
     text.push_str("\n\n");
     if let Some(isotope) = full_value(package, "isotope").filter(|value| value.is_object()) {
         if let Some(title) = isotope
