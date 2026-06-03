@@ -1029,6 +1029,7 @@ build_distribution_config() {
         Items: [{
           Id: $origin_id,
           DomainName: $domain_name,
+          OriginPath: "",
           OriginAccessControlId: $oac_id,
           S3OriginConfig: {
             OriginAccessIdentity: ""
@@ -1036,6 +1037,7 @@ build_distribution_config() {
         }, {
           Id: $pkg_origin_id,
           DomainName: $pkg_origin_domain,
+          OriginPath: "",
           CustomHeaders: {
             Quantity: 1,
             Items: [{
@@ -1191,11 +1193,13 @@ upsert_distribution() {
           .DistributionConfig.Origins.Items[0]
           | .Id = $origin_id
           | .DomainName = $domain_name
+          | .OriginPath = ""
           | .OriginAccessControlId = $oac_id
           | .S3OriginConfig = ((.S3OriginConfig // {}) + {OriginAccessIdentity: ""})
         ), {
           Id: $pkg_origin_id,
           DomainName: $pkg_origin_domain,
+          OriginPath: "",
           CustomHeaders: {
             Quantity: 1,
             Items: [{
@@ -1275,12 +1279,14 @@ upsert_distribution() {
         }
       ' "${response_file}" | jq '.DistributionConfig' >"${config_file}"
 
-    aws cloudfront update-distribution \
+    if ! aws cloudfront update-distribution \
       --id "${distribution_id}" \
       --if-match "${etag}" \
       --distribution-config "file://${config_file}" \
       --query 'Distribution.Id' \
-      --output text
+      --output text; then
+      return 1
+    fi
     return 0
   fi
 
