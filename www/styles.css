@@ -667,10 +667,12 @@ h1 code {
 
 .tweet-endorsement {
   position: relative;
-  display: grid;
+  display: inline-grid;
   grid-template-columns: minmax(76px, 0.12fr) minmax(0, 1fr) minmax(122px, 0.18fr);
   gap: clamp(20px, 4.8vw, 64px);
   align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
   min-height: clamp(204px, 22vw, 286px);
   overflow: hidden;
   padding: clamp(24px, 4vw, 46px);
