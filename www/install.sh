@@ -4,6 +4,7 @@ set -e
 
 tmp="$(mktemp -d)"
 app="$tmp/mnt/Automic Vault.app"
+team_id="ZU76A67LGU"
 
 cleanup() {
   set +x
@@ -12,6 +13,8 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+set -x
 
 /usr/bin/curl -sSfL https://automicvault.com/av.dmg -o "$tmp/av.dmg"
 
@@ -26,7 +29,7 @@ trap cleanup EXIT
 /usr/bin/codesign --verify --deep --strict "$app"
 
 /usr/bin/codesign -dv --verbose=4 "$app" 2>&1 \
-  | /usr/bin/grep -q '^TeamIdentifier=ZU76A67LGU$'
+  | /usr/bin/grep -q "^TeamIdentifier=${team_id}$"
 
 /usr/bin/ditto "$app" "/Applications/Automic Vault.app"
 /usr/bin/sudo /bin/mkdir -p /usr/local/bin
