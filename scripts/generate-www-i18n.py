@@ -32,6 +32,12 @@ class Locale:
 
 
 TOPICS: dict[str, dict[str, dict[str, Any]]] = {
+    "download": {
+        "ja": {"title": "Automic Vault ダウンロード", "description": "macOS 用 Automic Vault を入手し、ローカルの AI エージェント実行を保護します。", "kicker": "ダウンロード", "h1": "macOS 用 Automic Vault をダウンロード", "lede": "ローカルの Homebrew パッケージ、CLI シークレット、AI エージェント操作を保護する macOS セキュリティレイヤーをインストールします。", "sections": [["直接ダウンロード", ".dmg を取得するか、ターミナル用の install.sh スクリプトでインストールできます。"], ["含まれるもの", "ネイティブアプリ、av コマンドラインツール、シークレットスキャナー、Nucleus パッケージ制御が含まれます。"], ["インストール後", "まずシークレットスキャナーを実行し、平文の認証情報を確認して、対応済みのシークレットを保護されたローカル保存に移します。"]]},
+        "de": {"title": "Automic Vault herunterladen", "description": "Lade Automic Vault für macOS herunter und schütze lokale AI-Agent-Läufe.", "kicker": "Download", "h1": "Automic Vault für macOS herunterladen", "lede": "Installiere die lokale Sicherheitschicht für Homebrew-Pakete, CLI-Secrets und AI-Agent-Aktionen auf macOS.", "sections": [["Direkter Download", "Lade die .dmg-Datei herunter oder installiere über das install.sh-Skript im Terminal."], ["Was enthalten ist", "Enthalten sind die native App, das av-Kommandozeilenwerkzeug, Secret-Scanner-Workflows und Nucleus-Paketkontrollen."], ["Nach der Installation", "Starte zuerst den Secret Scanner, prüfe Klartext-Credentials und verschiebe unterstützte Secrets in geschützten lokalen Speicher."]]},
+        "fr": {"title": "Télécharger Automic Vault", "description": "Téléchargez Automic Vault pour macOS et protégez les exécutions locales d'agents IA.", "kicker": "Téléchargement", "h1": "Télécharger Automic Vault pour macOS", "lede": "Installez la couche de sécurité locale pour les paquets Homebrew, les secrets CLI et les actions d'agents IA sur macOS.", "sections": [["Téléchargement direct", "Téléchargez le .dmg ou installez depuis le terminal avec le script install.sh."], ["Ce qui est inclus", "Le téléchargement inclut l'application native, l'outil en ligne de commande av, les workflows de scanner de secrets et les contrôles de paquets Nucleus."], ["Après l'installation", "Lancez d'abord le scanner de secrets, vérifiez les identifiants en clair et déplacez les secrets pris en charge vers un stockage local protégé."]]},
+        "zh-Hans": {"title": "下载 Automic Vault", "description": "获取 macOS 版 Automic Vault，保护本地 AI 代理运行。", "kicker": "下载", "h1": "下载 macOS 版 Automic Vault", "lede": "安装用于保护 macOS 上 Homebrew 软件包、CLI 密钥和 AI 代理操作的本地安全层。", "sections": [["直接下载", "可以下载 .dmg，也可以在终端中使用 install.sh 脚本安装。"], ["包含内容", "下载内容包括原生应用、av 命令行工具、密钥扫描器工作流和 Nucleus 软件包控制。"], ["安装之后", "先运行密钥扫描器，检查明文凭据，并将支持的密钥移入受保护的本地存储。"]]},
+    },
     "security": {
         "ja": {"title": "Automic Vault セキュリティ", "description": "Automic Vault のローカル実行境界、シークレット保存、承認ゲート、AI エージェント向け脅威モデル。", "h1": "AI エージェントのローカル権限を制限する", "sections": [["脅威モデル", "AI エージェントは端末、CLI、設定ファイルに触れるため、認証情報と高リスク操作を分離する必要があります。"], ["ローカル優先", "Automic Vault は macOS 上でシークレットを扱い、承認された実行だけに必要な値を渡します。"]]},
         "de": {"title": "Automic Vault Sicherheit", "description": "Lokale Laufzeitgrenzen, Secret-Speicherung, Approval Gates und Threat Model für AI-Agents in Automic Vault.", "h1": "Lokale Rechte von AI-Agents begrenzen", "sections": [["Threat Model", "AI-Agents können Terminals, CLIs und Konfigurationsdateien berühren; Credentials und riskante Aktionen brauchen Trennung."], ["Lokal zuerst", "Automic Vault verarbeitet Secrets auf macOS und gibt Werte nur an genehmigte Ausführungen weiter."]]},
@@ -220,9 +226,11 @@ UI_COPY: dict[str, dict[str, str]] = {
         "dismissLanguageSuggestion": "Dismiss language suggestion",
         "docs": "Docs",
         "download": "Download",
+        "downloadDmg": "Download .dmg",
         "finalKicker": "Free and open source",
         "highlights": "Highlights",
         "home": "Home",
+        "installerScript": "Installer script",
         "languageSuggestionAria": "Language suggestion",
         "languageSuggestionText": "Read this page in English",
         "languageVersionsAria": "Language versions",
@@ -263,9 +271,11 @@ UI_COPY: dict[str, dict[str, str]] = {
         "dismissLanguageSuggestion": "言語提案を閉じる",
         "docs": "ドキュメント",
         "download": "ダウンロード",
+        "downloadDmg": ".dmg をダウンロード",
         "finalKicker": "無料のオープンソース",
         "highlights": "ハイライト",
         "home": "ホーム",
+        "installerScript": "インストーラースクリプト",
         "languageSuggestionAria": "言語の提案",
         "languageSuggestionText": "このページを日本語で読む",
         "languageVersionsAria": "言語版",
@@ -306,9 +316,11 @@ UI_COPY: dict[str, dict[str, str]] = {
         "dismissLanguageSuggestion": "Sprachvorschlag schließen",
         "docs": "Dokumentation",
         "download": "Herunterladen",
+        "downloadDmg": ".dmg herunterladen",
         "finalKicker": "Kostenlos und Open Source",
         "highlights": "Kernpunkte",
         "home": "Startseite",
+        "installerScript": "Installer-Skript",
         "languageSuggestionAria": "Sprachvorschlag",
         "languageSuggestionText": "Diese Seite auf Deutsch lesen",
         "languageVersionsAria": "Sprachversionen",
@@ -349,9 +361,11 @@ UI_COPY: dict[str, dict[str, str]] = {
         "dismissLanguageSuggestion": "Fermer la suggestion de langue",
         "docs": "Documentation",
         "download": "Télécharger",
+        "downloadDmg": "Télécharger le .dmg",
         "finalKicker": "Gratuit et open source",
         "highlights": "Points forts",
         "home": "Accueil",
+        "installerScript": "Script d'installation",
         "languageSuggestionAria": "Suggestion de langue",
         "languageSuggestionText": "Lire cette page en français",
         "languageVersionsAria": "Versions linguistiques",
@@ -392,9 +406,11 @@ UI_COPY: dict[str, dict[str, str]] = {
         "dismissLanguageSuggestion": "关闭语言建议",
         "docs": "文档",
         "download": "下载",
+        "downloadDmg": "下载 .dmg",
         "finalKicker": "免费开源",
         "highlights": "亮点",
         "home": "首页",
+        "installerScript": "安装脚本",
         "languageSuggestionAria": "语言建议",
         "languageSuggestionText": "用简体中文阅读本页",
         "languageVersionsAria": "语言版本",
@@ -661,6 +677,16 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
       </section>"""
         for title, body in expanded_sections(t, locale)
     )
+    if path == "/download/":
+        hero_actions = f"""        <div class="hero-actions">
+          <a class="button primary" href="/Automic Vault.dmg">{html.escape(ui["downloadDmg"])}</a>
+          <a class="button secondary" href="/install.sh">{html.escape(ui["installerScript"])}</a>
+        </div>"""
+    else:
+        hero_actions = f"""        <div class="hero-actions">
+          <a class="button primary" href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
+        </div>"""
     return f"""<!DOCTYPE html>
 <html lang="{html.escape(locale.html_lang)}">
 <head>
@@ -715,10 +741,7 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
         <p class="eyebrow">{html.escape(t.get("kicker", "Automic Vault"))}</p>
         <h1>{html.escape(t["h1"])}</h1>
         <p class="lede">{html.escape(t.get("lede", t["description"]))}</p>
-        <div class="hero-actions">
-          <a class="button primary" href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
-          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
-        </div>
+{hero_actions}
       </section>
 {sections}
       {language_links(path, locale, locales)}
