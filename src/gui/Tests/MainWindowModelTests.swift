@@ -79,6 +79,14 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertTrue(MainWindowSection.newUpdated.shouldHighlightSidebarCount(1))
     }
 
+    @MainActor
+    func testSecurityAlertsSidebarCountShowsZeroWhenThereAreNoAlerts() {
+        let model = MainWindowModel()
+        defer { model.stop() }
+
+        XCTAssertEqual(model.count(for: .geigerCounter), 0)
+    }
+
     func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
         let sections = MainWindowSection.categorySections
         XCTAssertFalse(sections.contains(.other))

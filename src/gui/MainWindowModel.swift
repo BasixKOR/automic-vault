@@ -1324,8 +1324,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private var geigerCounterCount: Int? {
-        let count = geigerActionPackages.count
-        return count > 0 ? count : nil
+        geigerActionPackages.count
     }
 
     private var geigerActionPackages: [PackagePresentation] {
