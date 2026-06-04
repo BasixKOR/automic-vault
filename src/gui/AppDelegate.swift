@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let containmentLogStore = ContainmentLogStore()
     private let isotopeApprovalStore = IsotopeApprovalStore()
     private let gateApprovalStore = GateApprovalStore()
+    private let dotenvApprovalStore = DotenvApprovalStore()
     private let helperBridge = NukeHelperBridge()
     private lazy var appUpdateCoordinator = AppUpdateCoordinator(statusStore: statusStore)
     #if !DEBUG
@@ -23,9 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingApprovalObserver: NSObjectProtocol?
     private var pendingIsotopeApprovalObserver: NSObjectProtocol?
     private var pendingGateApprovalObserver: NSObjectProtocol?
+    private var pendingDotenvApprovalObserver: NSObjectProtocol?
     private var activeApprovalID: String?
     private var activeIsotopeApprovalID: String?
     private var activeGateApprovalID: String?
+    private var activeDotenvApprovalID: String?
     private var containmentWindowControllers: [String: ContainmentLogWindowController] = [:]
     private var remoteDatabaseRefreshTimer: Timer?
 
@@ -46,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installVaultApprovalObserverIfNeeded()
         installIsotopeApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
+        installDotenvApprovalObserverIfNeeded()
         startRemoteDatabaseRefreshTimer()
         applyDockBadge(snapshot: statusStore.loadSnapshot())
         showMainWindow()
@@ -53,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presentPendingVaultApprovalIfNeeded()
         presentPendingIsotopeApprovalIfNeeded()
         presentPendingGateApprovalIfNeeded()
+        presentPendingDotenvApprovalIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -76,6 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let pendingGateApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingGateApprovalObserver)
+        }
+        if let pendingDotenvApprovalObserver {
+            DistributedNotificationCenter.default().removeObserver(pendingDotenvApprovalObserver)
         }
         remoteDatabaseRefreshTimer?.invalidate()
         appUpdateCoordinator.stop()
@@ -335,6 +343,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func installDotenvApprovalObserverIfNeeded() {
+        guard pendingDotenvApprovalObserver == nil else { return }
+        pendingDotenvApprovalObserver = dotenvApprovalStore.observePendingApprovalChanges { [weak self] _ in
+            self?.presentPendingDotenvApprovalIfNeeded()
+        }
+    }
+
     @objc private func refreshPackages(_ sender: Any?) {
         (window?.contentViewController as? MainWindowController)?.requestRefresh()
     }
@@ -529,6 +544,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func presentPendingDotenvApprovalIfNeeded() {
+        guard let approval = dotenvApprovalStore.loadPendingApproval() else {
+            activeDotenvApprovalID = nil
+            return
+        }
+        guard activeDotenvApprovalID != approval.id else { return }
+        activeDotenvApprovalID = approval.id
+
+        let window = makeOrRestoreMainWindow()
+        if NSApp.isActive == false || window.isKeyWindow == false {
+            _ = NSApp.requestUserAttention(.criticalRequest)
+        }
+        showMainWindow()
+
+        let alert = NSAlert()
+        alert.messageText = L10n.string("Approve Dotenv Keys")
+        alert.informativeText = dotenvApprovalSummary(for: approval)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.string("Allow"))
+        alert.addButton(withTitle: L10n.string("Deny"))
+        alert.accessoryView = dotenvApprovalAccessoryView(for: approval)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            try? self.dotenvApprovalStore.saveDecision(
+                DotenvApprovalDecision(
+                    id: approval.id,
+                    approved: response == .alertFirstButtonReturn,
+                    reason: response == .alertFirstButtonReturn ? nil : "Denied by operator"
+                )
+            )
+            self.activeDotenvApprovalID = nil
+            DispatchQueue.main.async {
+                self.presentPendingDotenvApprovalIfNeeded()
+            }
+        }
+    }
+
     private func rememberIsotopeAlwaysAllow(_ approval: IsotopeApprovalRequestSnapshot) {
         helperBridge.rememberIsotopeAlwaysAllow(
             executablePath: approval.executablePath,
@@ -638,6 +690,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             L10n.string("Invoked By"),
             isotopeParentProcessDetail(approval.parentProcess)
         ].joined(separator: "\n")
+    }
+
+    private func dotenvApprovalSummary(for approval: DotenvApprovalRequestSnapshot) -> String {
+        switch approval.mode {
+        case .export:
+            return L10n.string("Export encrypted dotenv keys into this shell.")
+        case .run:
+            return L10n.string("Run one command with encrypted dotenv keys.")
+        }
+    }
+
+    private func dotenvApprovalAccessoryView(for approval: DotenvApprovalRequestSnapshot) -> NSView {
+        DotenvApprovalView(approval: approval)
     }
 
     private func approvalAccessoryView(for approval: VaultApprovalRequestSnapshot) -> NSView {

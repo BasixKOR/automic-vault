@@ -270,6 +270,7 @@ impl<'a> HelpScreen<'a> {
                 None,
                 "Run an approved credential helper adapter.",
             ),
+            command_line("dotenv", None, "Load encrypted dotenv files with approval."),
             section_line("EXECUTION CONTROL"),
             command_line(
                 "contain",

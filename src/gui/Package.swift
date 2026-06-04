@@ -50,6 +50,7 @@ let package = Package(
                 "MainWindowView.swift",
                 "CommandExecutionApprovalView.swift",
                 "IsotopeApprovalView.swift",
+                "DotenvApprovalView.swift",
                 "AppUpdateCoordinator.swift",
                 "PackageSecurityRules.swift",
                 "UpdateProgressViewController.swift",

@@ -315,3 +315,15 @@
 "Window" = "Fenster";
 "Working Directory" = "Arbeitsverzeichnis";
 "Zoom" = "Zoomen";
+"Approve Dotenv Keys" = "Dotenv-Keys genehmigen";
+"Digest" = "Digest";
+"Dotenv file" = "Dotenv-Datei";
+"Dotenv keys" = "Dotenv-Keys";
+"Export encrypted dotenv keys into this shell." = "Verschluesselte Dotenv-Keys in diese Shell exportieren.";
+"export" = "export";
+"File" = "Datei";
+"Project" = "Projekt";
+"run" = "run";
+"Run one command with encrypted dotenv keys." = "Einen Befehl mit verschluesselten Dotenv-Keys ausfuehren.";
+"These keys will be exported into this shell" = "Diese Keys werden in diese Shell exportiert";
+"This command will receive the dotenv keys" = "Dieser Befehl erhaelt die Dotenv-Keys";

@@ -315,3 +315,15 @@
 "Window" = "ウィンドウ";
 "Working Directory" = "作業ディレクトリ";
 "Zoom" = "ズーム";
+"Approve Dotenv Keys" = "dotenvキーを承認";
+"Digest" = "ダイジェスト";
+"Dotenv file" = "dotenvファイル";
+"Dotenv keys" = "dotenvキー";
+"Export encrypted dotenv keys into this shell." = "暗号化されたdotenvキーをこのシェルにエクスポートします。";
+"export" = "export";
+"File" = "ファイル";
+"Project" = "プロジェクト";
+"run" = "run";
+"Run one command with encrypted dotenv keys." = "暗号化されたdotenvキーで1つのコマンドを実行します。";
+"These keys will be exported into this shell" = "これらのキーはこのシェルにエクスポートされます";
+"This command will receive the dotenv keys" = "このコマンドがdotenvキーを受け取ります";

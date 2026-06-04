@@ -192,6 +192,10 @@ The native app lives in `src/gui`. The CLI and package/security core live in
 
 ## Dependencies
 
+- `ecies` is used by `av dotenv` to read and write dotenvx-compatible
+  `encrypted:` values using the same secp256k1 ECIES scheme as dotenvx.
+- `base64` is used by `av dotenv` for dotenvx-compatible encrypted value
+  encoding.
 - `rusqlite` with bundled SQLite is used by `av-web`, the private Atlas package
   origin. It serves the locally generated `pkg.sqlite` artifact without adding a
   system SQLite shared-library dependency on Atlas.

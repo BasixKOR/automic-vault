@@ -220,6 +220,10 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av save"));
 
+    let output = run_nuke(&["help", "dotenv"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv"));
+
     let output = run_nuke(&["help", "gate"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av gate"));
@@ -239,6 +243,79 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     let output = run_nuke(&["run"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("av: unknown subcommand 'run'"));
+}
+
+#[test]
+fn subs_dotenv_cli_covers_help_version_and_parse_errors() {
+    let output = run_nuke(&["dotenv", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv"));
+
+    let output = run_nuke(&["dotenv", "--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("av dotenv {}", pkg_version())));
+
+    let output = run_nuke(&["dotenv"]);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv"));
+    assert!(stderr(&output).contains("missing dotenv command"));
+
+    let output = run_nuke(&["dotenv", "wat"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown dotenv command 'wat'"));
+
+    let output = run_nuke(&["dotenv", "init", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv init"));
+
+    let output = run_nuke(&["dotenv", "set", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv set"));
+
+    let output = run_nuke(&["dotenv", "set"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing KEY"));
+
+    let output = run_nuke(&["dotenv", "encrypt", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv encrypt"));
+
+    let output = run_nuke(&["dotenv", "encrypt", "--key"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing value for --key"));
+
+    let output = run_nuke(&["dotenv", "import", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv import"));
+
+    let output = run_nuke(&["dotenv", "hook", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv hook"));
+
+    let output = run_nuke(&["dotenv", "hook", "zsh"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("add-zsh-hook"));
+    assert!(stdout(&output).contains("av dotenv export --shell zsh"));
+
+    let output = run_nuke(&["dotenv", "hook", "powershell"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unsupported shell 'powershell'"));
+
+    let output = run_nuke(&["dotenv", "export", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv export"));
+
+    let output = run_nuke(&["dotenv", "export"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing --shell"));
+
+    let output = run_nuke(&["dotenv", "run", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av dotenv run"));
+
+    let output = run_nuke(&["dotenv", "run"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("missing command"));
 }
 
 #[test]

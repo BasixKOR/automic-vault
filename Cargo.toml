@@ -29,6 +29,8 @@ name = "nuke-helper"
 path = "src/helper/main.rs"
 
 [dependencies]
+base64 = "0.22"
+ecies = { version = "0.2", default-features = false, features = ["aes-rust", "std"] }
 flate2 = "1"
 indicatif = "0.17"
 json5 = "0.4"

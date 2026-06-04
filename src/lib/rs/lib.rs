@@ -36,6 +36,7 @@ mod cask;
 mod cli_help;
 mod config;
 mod core;
+mod dotenv;
 mod gate;
 mod npm;
 mod ops;

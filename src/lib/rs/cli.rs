@@ -528,6 +528,9 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
                         invocation.binary_name
                     ));
                 }
+                Some("dotenv") => {
+                    dotenv::print_dotenv_usage(&format!("{} dotenv", invocation.binary_name));
+                }
                 Some("gate") => {
                     gate::print_gate_usage(&format!("{} gate", invocation.binary_name));
                 }
@@ -669,6 +672,11 @@ pub(crate) fn dispatch_pkg(invocation: &Invocation, mut args: env::ArgsOs) -> Re
     if subcommand == "credential-helper" {
         let program_name = format!("{} credential-helper", invocation.binary_name);
         return isotope::run_credential_helper_entry(&program_name, args)
+            .map_err(|err| format!("{RENDERED_ERROR_PREFIX}{program_name}: {err}"));
+    }
+    if subcommand == "dotenv" {
+        let program_name = format!("{} dotenv", invocation.binary_name);
+        return dotenv::run_dotenv_entry(&program_name, args)
             .map_err(|err| format!("{RENDERED_ERROR_PREFIX}{program_name}: {err}"));
     }
     if subcommand == "gate" {

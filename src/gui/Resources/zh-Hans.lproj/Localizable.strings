@@ -315,3 +315,15 @@
 "Window" = "窗口";
 "Working Directory" = "工作目录";
 "Zoom" = "缩放";
+"Approve Dotenv Keys" = "批准 dotenv 密钥";
+"Digest" = "摘要";
+"Dotenv file" = "dotenv 文件";
+"Dotenv keys" = "dotenv 密钥";
+"Export encrypted dotenv keys into this shell." = "将加密的 dotenv 密钥导出到此 Shell。";
+"export" = "export";
+"File" = "文件";
+"Project" = "项目";
+"run" = "run";
+"Run one command with encrypted dotenv keys." = "使用加密的 dotenv 密钥运行一个命令。";
+"These keys will be exported into this shell" = "这些密钥将导出到此 Shell";
+"This command will receive the dotenv keys" = "此命令将接收 dotenv 密钥";

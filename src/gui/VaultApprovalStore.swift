@@ -128,6 +128,49 @@ enum GateNotification {
     )
 }
 
+enum DotenvApprovalMode: String, Codable, Equatable {
+    case export
+    case run
+}
+
+struct DotenvApprovalRequestSnapshot: Codable, Equatable {
+    let id: String
+    let mode: DotenvApprovalMode
+    let envFilePath: String
+    let projectRoot: String
+    let envSha256: String
+    let publicKeyFingerprint: String
+    let keys: [String]
+    let cwd: String
+    let parentProcess: IsotopeParentProcessSnapshot
+    let command: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mode
+        case envFilePath = "env_file_path"
+        case projectRoot = "project_root"
+        case envSha256 = "env_sha256"
+        case publicKeyFingerprint = "public_key_fingerprint"
+        case keys
+        case cwd
+        case parentProcess = "parent_process"
+        case command
+    }
+}
+
+struct DotenvApprovalDecision: Codable, Equatable {
+    let id: String
+    let approved: Bool
+    let reason: String?
+}
+
+enum DotenvNotification {
+    static let pendingApprovalChanged = Notification.Name(
+        "com.automicvault.dotenv-approval.pending-changed"
+    )
+}
+
 final class VaultApprovalStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -432,6 +475,106 @@ final class GateApprovalStore {
     private func decisionURL(for id: String) -> URL {
         rootURL()
             .appendingPathComponent("gate/decisions", isDirectory: true)
+            .appendingPathComponent("\(id).json", isDirectory: false)
+    }
+}
+
+final class DotenvApprovalStore {
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+    private let fileManager = FileManager.default
+    private let distributedCenter = DistributedNotificationCenter.default()
+
+    init() {
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    }
+
+    func loadPendingApproval() -> DotenvApprovalRequestSnapshot? {
+        guard let approval = load(
+            DotenvApprovalRequestSnapshot.self,
+            from: pendingApprovalURL()
+        ) else {
+            return nil
+        }
+        if fileManager.fileExists(atPath: decisionURL(for: approval.id).path) {
+            removePendingApproval(id: approval.id)
+            return nil
+        }
+        return approval
+    }
+
+    func clearPendingApproval(id: String) {
+        removePendingApproval(id: id)
+        try? fileManager.removeItem(at: decisionURL(for: id))
+    }
+
+    func saveDecision(_ decision: DotenvApprovalDecision) throws {
+        try write(decision, to: decisionURL(for: decision.id))
+        removePendingApproval(id: decision.id)
+        postPendingApprovalChanged()
+    }
+
+    private func removePendingApproval(id: String) {
+        let pendingURL = pendingApprovalURL()
+        if let current = load(DotenvApprovalRequestSnapshot.self, from: pendingURL),
+           current.id == id {
+            try? fileManager.removeItem(at: pendingURL)
+            postPendingApprovalChanged()
+        }
+    }
+
+    func observePendingApprovalChanges(
+        using block: @escaping (Notification) -> Void
+    ) -> NSObjectProtocol {
+        distributedCenter.addObserver(
+            forName: DotenvNotification.pendingApprovalChanged,
+            object: nil,
+            queue: .main,
+            using: block
+        )
+    }
+
+    func postPendingApprovalChanged() {
+        distributedCenter.postNotificationName(
+            DotenvNotification.pendingApprovalChanged,
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+    }
+
+    private func write<T: Encodable>(_ value: T, to url: URL) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        let data = try encoder.encode(value)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? decoder.decode(type, from: data)
+    }
+
+    private func rootURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Application Support/Automic Vault",
+                isDirectory: true
+            )
+    }
+
+    private func pendingApprovalURL() -> URL {
+        rootURL().appendingPathComponent("dotenv/pending-approval.json", isDirectory: false)
+    }
+
+    private func decisionURL(for id: String) -> URL {
+        rootURL()
+            .appendingPathComponent("dotenv/decisions", isDirectory: true)
             .appendingPathComponent("\(id).json", isDirectory: false)
     }
 }
