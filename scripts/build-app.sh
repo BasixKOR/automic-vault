@@ -379,7 +379,7 @@ copy_localizations() {
   local destination_dir="$1"
   local localization_dir
 
-  [[ -d "$GUI_LOCALIZATION_DIR" ]] || return
+  [[ -d "$GUI_LOCALIZATION_DIR" ]] || return 0
   rm -rf "$destination_dir"/*.lproj(N)
   for localization_dir in "$GUI_LOCALIZATION_DIR"/*.lproj(N); do
     cp -R "$localization_dir" "$destination_dir/"
@@ -391,7 +391,7 @@ copy_pack_images() {
   local source_dir="$GUI_DIR/Resources/PackImages"
 
   rm -rf "$destination_dir/PackImages"
-  [[ -d "$source_dir" ]] || return
+  [[ -d "$source_dir" ]] || return 0
   cp -R "$source_dir" "$destination_dir/"
 }
 
