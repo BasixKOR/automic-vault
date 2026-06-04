@@ -11,6 +11,14 @@ radioisotopes_dir="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${repo_root}/data/radiois
 dry_run=false
 skip_builds=false
 isotope_versions_path="${repo_root}/data/isotopes.json"
+if [[ -n "${AUTOMIC_VAULT_CODEX_PROJECT_ROOT:-}" ]]; then
+  codex_project_root="${AUTOMIC_VAULT_CODEX_PROJECT_ROOT}"
+elif [[ -n "${HOME:-}" ]]; then
+  codex_project_root="${HOME}/src/automic-vault"
+else
+  codex_project_root="${repo_root}"
+fi
+codex_conflict_max_attempts="${AUTOMIC_VAULT_CODEX_CONFLICT_MAX_ATTEMPTS:-3}"
 
 usage() {
   cat <<'EOF'
@@ -30,6 +38,14 @@ Options:
   --repo NAME        Only process one automic-vault repository.
   --skip-builds      Skip build and release work. Still refresh isotopes.json.
   --help            Show this help.
+
+Environment:
+  AUTOMIC_VAULT_CODEX_PROJECT_ROOT
+                    Project root passed to Codex when repairing isotope merge
+                    conflicts. Defaults to ~/src/automic-vault.
+  AUTOMIC_VAULT_CODEX_CONFLICT_MAX_ATTEMPTS
+                    Number of Codex repair attempts per conflicted git update.
+                    Defaults to 3.
 EOF
 }
 
@@ -167,14 +183,189 @@ rebase_onto_remote_branch() {
   local remote="$2"
   local branch="$3"
 
-  git -C "${repo_dir}" rebase "refs/remotes/${remote}/${branch}"
+  rebase_with_codex_conflict_repair \
+    "${repo_dir}" \
+    "refs/remotes/${remote}/${branch}" \
+    "git rebase refs/remotes/${remote}/${branch}"
 }
 
 rebase_onto_ref() {
   local repo_dir="$1"
   local ref="$2"
 
-  git -C "${repo_dir}" rebase "${ref}"
+  rebase_with_codex_conflict_repair \
+    "${repo_dir}" \
+    "${ref}" \
+    "git rebase ${ref}"
+}
+
+git_has_unmerged_paths() {
+  local repo_dir="$1"
+
+  git -C "${repo_dir}" diff --name-only --diff-filter=U | grep -q .
+}
+
+git_rebase_in_progress() {
+  local repo_dir="$1"
+  local rebase_apply rebase_merge
+
+  rebase_apply="$(
+    git -C "${repo_dir}" rev-parse --path-format=absolute --git-path rebase-apply 2>/dev/null
+  )" || return 1
+  rebase_merge="$(
+    git -C "${repo_dir}" rev-parse --path-format=absolute --git-path rebase-merge 2>/dev/null
+  )" || return 1
+
+  [[ -d "${rebase_apply}" || -d "${rebase_merge}" ]]
+}
+
+git_operation_in_progress() {
+  local repo_dir="$1"
+
+  git_rebase_in_progress "${repo_dir}" ||
+    git -C "${repo_dir}" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 ||
+    git -C "${repo_dir}" rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1 ||
+    git -C "${repo_dir}" rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1
+}
+
+git_conflict_state_exists() {
+  local repo_dir="$1"
+
+  git_has_unmerged_paths "${repo_dir}" || git_operation_in_progress "${repo_dir}"
+}
+
+git_tracked_changes_are_clean() {
+  local repo_dir="$1"
+
+  git -C "${repo_dir}" diff --quiet &&
+    git -C "${repo_dir}" diff --cached --quiet
+}
+
+continue_rebase_if_ready() {
+  local repo_dir="$1"
+
+  while git_rebase_in_progress "${repo_dir}"; do
+    if git_has_unmerged_paths "${repo_dir}"; then
+      return 1
+    fi
+    GIT_EDITOR=: git -C "${repo_dir}" rebase --continue || return 1
+  done
+}
+
+git_update_is_complete() {
+  local repo_dir="$1"
+
+  ! git_has_unmerged_paths "${repo_dir}" &&
+    ! git_operation_in_progress "${repo_dir}" &&
+    git_tracked_changes_are_clean "${repo_dir}"
+}
+
+normalized_codex_conflict_attempts() {
+  case "${codex_conflict_max_attempts}" in
+    ''|*[!0-9]*)
+      printf '3\n'
+      ;;
+    0)
+      printf '1\n'
+      ;;
+    *)
+      printf '%s\n' "${codex_conflict_max_attempts}"
+      ;;
+  esac
+}
+
+invoke_codex_for_git_conflicts() {
+  local repo_dir="$1"
+  local operation="$2"
+  local target_ref="$3"
+  local prompt
+
+  if ! command -v codex >/dev/null 2>&1; then
+    echo "Codex is required to repair isotope merge conflicts but was not found on PATH" >&2
+    return 127
+  fi
+
+  if [[ ! -d "${codex_project_root}" ]]; then
+    echo "Codex project root does not exist: ${codex_project_root}" >&2
+    return 1
+  fi
+
+  prompt="$(cat <<EOF
+Resolve the interrupted Automic Vault isotope git update.
+
+Primary project root: ${codex_project_root}
+Conflicted isotope checkout: ${repo_dir}
+Failed operation: ${operation}
+Target ref: ${target_ref}
+
+This was invoked by scripts/update-all through scripts/build-isotopes.sh.
+Use the Automic Vault project context to understand the fork, then work inside
+the conflicted isotope checkout. Resolve the merge/rebase conflicts, preserve
+both upstream changes and Automic Vault fork behavior when appropriate, and
+complete the interrupted git operation until there are no unmerged paths and no
+rebase, merge, cherry-pick, or revert operation in progress.
+
+Run focused checks if practical. Leave unrelated files alone. Do not abort or
+skip the git operation unless it is genuinely impossible to continue.
+EOF
+)"
+
+  codex exec \
+    --cd "${codex_project_root}" \
+    --add-dir "${repo_dir}" \
+    --sandbox workspace-write \
+    --config 'approval_policy="never"' \
+    --color never \
+    --ephemeral \
+    "${prompt}" \
+    >&2
+}
+
+repair_git_conflicts_with_codex() {
+  local repo_dir="$1"
+  local operation="$2"
+  local target_ref="$3"
+  local original_status="$4"
+  local attempt max_attempts
+
+  if ! git_conflict_state_exists "${repo_dir}"; then
+    return "${original_status}"
+  fi
+
+  max_attempts="$(normalized_codex_conflict_attempts)"
+  attempt=1
+  while [[ "${attempt}" -le "${max_attempts}" ]]; do
+    echo "Git update conflict in ${repo_dir}; invoking Codex to repair it (attempt ${attempt}/${max_attempts})" >&2
+    if ! invoke_codex_for_git_conflicts "${repo_dir}" "${operation}" "${target_ref}"; then
+      return 1
+    fi
+
+    continue_rebase_if_ready "${repo_dir}" || true
+
+    if git_update_is_complete "${repo_dir}"; then
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "Codex did not finish repairing git conflicts in ${repo_dir}" >&2
+  git -C "${repo_dir}" status --short >&2 || true
+  return 1
+}
+
+rebase_with_codex_conflict_repair() {
+  local repo_dir="$1"
+  local target_ref="$2"
+  local operation="$3"
+  local status
+
+  if git -C "${repo_dir}" rebase "${target_ref}"; then
+    return 0
+  fi
+
+  status="$?"
+  repair_git_conflicts_with_codex "${repo_dir}" "${operation}" "${target_ref}" "${status}"
 }
 
 fetch_release_tag_if_missing() {

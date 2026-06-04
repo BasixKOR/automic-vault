@@ -31,6 +31,14 @@ Options:
                                     Defaults to auto.
   --no-color                        Disable terminal color output.
   --help                            Show this help.
+
+Environment:
+  AUTOMIC_VAULT_CODEX_PROJECT_ROOT  Project root passed to Codex when repairing
+                                    isotope merge conflicts.
+                                    Defaults to ~/src/automic-vault.
+  AUTOMIC_VAULT_CODEX_CONFLICT_MAX_ATTEMPTS
+                                    Codex repair attempts per conflicted isotope
+                                    git update. Defaults to 3.
 EOF
 }
 
