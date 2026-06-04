@@ -718,29 +718,99 @@ fn hub_by_slug(connection: &Connection, slug: &str) -> Result<Option<HubRow>, St
         .map_err(|err| format!("failed to query hub {slug}: {err}"))
 }
 
-fn packages_for_hub(
+fn hub_signal_condition(signal: &str) -> Option<&'static str> {
+    match signal {
+        "isotope" => {
+            Some("p.data_json LIKE '%\"isotope\":{%' AND p.data_json NOT LIKE '%\"isotope\":null%'")
+        }
+        "approval_gate" => Some(
+            "p.data_json LIKE '%\"approvalGate\":{%' AND p.data_json NOT LIKE '%\"approvalGate\":null%'",
+        ),
+        "non_low_geiger" => Some(
+            "p.data_json LIKE '%\"geiger\":{%'
+                AND p.data_json NOT LIKE '%\"level\":\"low\"%'
+                AND p.data_json NOT LIKE '%\"level\":\"green\"%'
+                AND p.data_json NOT LIKE '%\"level\":\"unknown\"%'",
+        ),
+        _ => None,
+    }
+}
+
+fn hub_packages_query(
     connection: &Connection,
     slug: &str,
+    limit: usize,
+    signal: Option<&str>,
+    order_by: &str,
 ) -> Result<Vec<(PackageRow, String)>, String> {
+    let condition = signal
+        .and_then(hub_signal_condition)
+        .map(|condition| format!(" AND {condition}"))
+        .unwrap_or_default();
+    let order_by = match order_by {
+        "rank" => "p.rank IS NULL, p.rank, p.display_name",
+        _ => "hp.position",
+    };
+    let query = format!(
+        "SELECT p.path, p.provider, p.slug, p.package_key, p.name, p.display_name, p.summary,
+                p.provider_label, p.package_manager_url, p.install_command, p.native_install_command,
+                p.version, p.category, p.license, p.homepage, p.repository, p.rank,
+                p.last_updated_at, p.indexable, p.data_json, hp.reason
+         FROM hub_packages hp
+         JOIN packages p ON p.package_key = hp.package_key
+         WHERE hp.hub_slug = ?1{condition}
+         ORDER BY {order_by}
+         LIMIT ?2"
+    );
     let mut statement = connection
-        .prepare(
-            "SELECT p.path, p.provider, p.slug, p.package_key, p.name, p.display_name, p.summary,
-                    p.provider_label, p.package_manager_url, p.install_command, p.native_install_command,
-                    p.version, p.category, p.license, p.homepage, p.repository, p.rank,
-                    p.last_updated_at, p.indexable, p.data_json, hp.reason
-             FROM hub_packages hp
-             JOIN packages p ON p.package_key = hp.package_key
-             WHERE hp.hub_slug = ?1
-             ORDER BY hp.position",
-        )
+        .prepare(&query)
         .map_err(|err| format!("failed to prepare hub package query: {err}"))?;
     let rows = statement
-        .query_map(params![slug], |row| {
+        .query_map(params![slug, limit as i64], |row| {
             Ok((package_from_row(row)?, row.get::<_, String>(20)?))
         })
         .map_err(|err| format!("failed to query hub packages: {err}"))?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("failed to read hub packages: {err}"))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HubStats {
+    package_count: i64,
+    secured_count: i64,
+    gated_count: i64,
+    risked_count: i64,
+}
+
+fn hub_stats(connection: &Connection, slug: &str) -> Result<HubStats, String> {
+    connection
+        .query_row(
+            "SELECT COUNT(*),
+                    COALESCE(SUM(CASE WHEN p.data_json LIKE '%\"isotope\":{%'
+                                         AND p.data_json NOT LIKE '%\"isotope\":null%'
+                                      THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN p.data_json LIKE '%\"approvalGate\":{%'
+                                         AND p.data_json NOT LIKE '%\"approvalGate\":null%'
+                                      THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN p.data_json LIKE '%\"geiger\":{%'
+                                         AND p.data_json NOT LIKE '%\"level\":\"low\"%'
+                                         AND p.data_json NOT LIKE '%\"level\":\"green\"%'
+                                         AND p.data_json NOT LIKE '%\"level\":\"unknown\"%'
+                                      THEN 1 ELSE 0 END), 0)
+             FROM hub_packages hp
+             JOIN packages p ON p.package_key = hp.package_key
+             WHERE hp.hub_slug = ?1",
+            params![slug],
+            |row| {
+                Ok(HubStats {
+                    package_count: row.get(0)?,
+                    secured_count: row.get(1)?,
+                    gated_count: row.get(2)?,
+                    risked_count: row.get(3)?,
+                })
+            },
+        )
+        .map_err(|err| format!("failed to query hub stats: {err}"))
 }
 
 fn hubs(connection: &Connection) -> Result<Vec<HubRow>, String> {
@@ -956,50 +1026,31 @@ fn render_hub_page(
     hub: &HubRow,
     locale: &Locale,
 ) -> Result<String, String> {
-    let packages = packages_for_hub(connection, &hub.slug)?;
+    let stats = hub_stats(connection, &hub.slug)?;
+    let top = hub_packages_query(connection, &hub.slug, 72, None, "position")?;
+    let high_signal_rows = hub_packages_query(connection, &hub.slug, 12, None, "position")?;
+    let protected_rows = hub_packages_query(connection, &hub.slug, 8, Some("isotope"), "position")?;
+    let approval_gated_rows =
+        hub_packages_query(connection, &hub.slug, 8, Some("approval_gate"), "position")?;
+    let spokes_rows = hub_packages_query(connection, &hub.slug, 16, None, "rank")?;
+    let high_signal = high_signal_rows
+        .iter()
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let protected = protected_rows
+        .iter()
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let approval_gated = approval_gated_rows
+        .iter()
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
+    let spokes = spokes_rows
+        .iter()
+        .map(|(package, _reason)| package)
+        .collect::<Vec<_>>();
     let generated_at = metadata_string(connection, "generated_at")?.unwrap_or_default();
     let updated = fmt_date(&generated_at);
-    let secured = packages
-        .iter()
-        .filter(|(package, _reason)| package_isotope(package))
-        .count();
-    let gated = packages
-        .iter()
-        .filter(|(package, _reason)| package_gate(package))
-        .count();
-    let risked = packages
-        .iter()
-        .filter(|(package, _reason)| package_non_low_geiger(package))
-        .count();
-    let top = packages.iter().take(72).collect::<Vec<_>>();
-    let high_signal = packages
-        .iter()
-        .take(12)
-        .map(|(package, _reason)| package)
-        .collect::<Vec<_>>();
-    let protected = packages
-        .iter()
-        .filter(|(package, _reason)| package_isotope(package))
-        .take(8)
-        .map(|(package, _reason)| package)
-        .collect::<Vec<_>>();
-    let approval_gated = packages
-        .iter()
-        .filter(|(package, _reason)| package_gate(package))
-        .take(8)
-        .map(|(package, _reason)| package)
-        .collect::<Vec<_>>();
-    let mut spokes = packages
-        .iter()
-        .map(|(package, _reason)| package)
-        .collect::<Vec<_>>();
-    spokes.sort_by_key(|package| {
-        (
-            package.rank.unwrap_or(u32::MAX),
-            package.display_name.to_ascii_lowercase(),
-        )
-    });
-    let spokes = spokes.into_iter().take(16).collect::<Vec<_>>();
     let mut body = String::new();
     body.push_str(&site_nav(locale));
     body.push_str("<main>");
@@ -1014,9 +1065,9 @@ fn render_hub_page(
         html_escape(&hub.title),
         html_escape(&hub.description),
         html_escape(&tx(locale, "hubCounts", "Hub counts")),
-        metric(&tx(locale, "packages", "packages"), &fmt_int(packages.len() as i64)),
-        metric(&tx(locale, "radioisotopes", "protected tools"), &fmt_int(secured as i64)),
-        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(gated as i64)),
+        metric(&tx(locale, "packages", "packages"), &fmt_int(stats.package_count)),
+        metric(&tx(locale, "radioisotopes", "protected tools"), &fmt_int(stats.secured_count)),
+        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(stats.gated_count)),
         metric(&tx(locale, "updated", "updated"), &updated),
     ));
     let hub_description = txf(
@@ -1025,10 +1076,10 @@ fn render_hub_page(
         "{title} currently includes {count} package catalog entries. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
         &[
             ("title", hub.title.clone()),
-            ("count", packages.len().to_string()),
-            ("secured", secured.to_string()),
-            ("gated", gated.to_string()),
-            ("risked", risked.to_string()),
+            ("count", stats.package_count.to_string()),
+            ("secured", stats.secured_count.to_string()),
+            ("gated", stats.gated_count.to_string()),
+            ("risked", stats.risked_count.to_string()),
         ],
     );
     body.push_str(&format!(
@@ -1058,7 +1109,7 @@ fn render_hub_page(
     ));
     body.push_str(&hub_related_block(
         &tx(locale, "hubRelatedHubsTitle", "Related hubs"),
-        &related_hub_links(hub, &packages, locale),
+        &related_hub_links(connection, hub, locale)?,
     ));
     body.push_str(&hub_cluster_block(
         &tx(
@@ -1078,7 +1129,7 @@ fn render_hub_page(
         html_escape(&tx(locale, "signals", "Signals")),
         html_escape(&tx(locale, "why", "Why it appears here")),
     ));
-    for (package, reason) in top {
+    for (package, reason) in &top {
         body.push_str(&hub_package_row(package, reason, locale));
     }
     body.push_str("</tbody></table></div></section></main>");
@@ -1090,14 +1141,14 @@ fn render_hub_page(
             "{description} Browse {count} package pages with install commands, metadata, and Automic Vault security notes.",
             &[
                 ("description", hub.description.clone()),
-                ("count", packages.len().to_string()),
+                ("count", stats.package_count.to_string()),
             ],
         ),
         155,
     );
     let schema = schema_for_hub(
         hub,
-        packages.iter().map(|(package, _)| package).collect(),
+        top.iter().map(|(package, _)| package).collect(),
         &description,
         &updated,
         locale,
@@ -2528,19 +2579,6 @@ fn package_gate(package: &PackageRow) -> bool {
         .is_some()
 }
 
-fn package_non_low_geiger(package: &PackageRow) -> bool {
-    let Some(geiger) = full_value(package, "geiger").filter(|value| value.is_object()) else {
-        return false;
-    };
-    !matches!(
-        value_str_key(geiger, "level")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str(),
-        "" | "green" | "low" | "unknown"
-    )
-}
-
 fn label_for(package: &PackageRow, locale: &Locale) -> String {
     let mut labels = vec![package.provider.clone()];
     if package_isotope(package) {
@@ -2640,39 +2678,39 @@ fn hub_related_block(title: &str, links: &[String]) -> String {
 }
 
 fn related_hub_links(
+    connection: &Connection,
     hub: &HubRow,
-    packages: &[(PackageRow, String)],
     locale: &Locale,
-) -> Vec<String> {
-    let mut counts: BTreeMap<String, (String, String, i64)> = BTreeMap::new();
-    for (package, _reason) in packages {
-        for item in value_array(&package.data.full, "packageHubs") {
-            let slug = value_str_key(item, "slug").unwrap_or_default();
-            if slug.is_empty() || slug == hub.slug {
-                continue;
-            }
-            let label = value_str_key(item, "label").unwrap_or_else(|| slug.replace('-', " "));
-            let reason = value_str_key(item, "reason").unwrap_or_default();
-            let entry = counts.entry(slug).or_insert((label, reason.clone(), 0));
-            if entry.1.is_empty() && !reason.is_empty() {
-                entry.1 = reason;
-            }
-            entry.2 += 1;
-        }
-    }
-    let mut ranked = counts.into_iter().collect::<Vec<_>>();
-    ranked.sort_by(|left, right| {
-        right.1.2.cmp(&left.1.2).then_with(|| {
-            left.1
-                .0
-                .to_ascii_lowercase()
-                .cmp(&right.1.0.to_ascii_lowercase())
+) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT h.slug, h.title, h.description, COUNT(*) AS overlap_count
+             FROM hub_packages current
+             JOIN hub_packages related
+               ON related.package_key = current.package_key
+              AND related.hub_slug <> current.hub_slug
+             JOIN hubs h ON h.slug = related.hub_slug
+             WHERE current.hub_slug = ?1
+             GROUP BY h.slug, h.title, h.description
+             ORDER BY overlap_count DESC, h.title
+             LIMIT 8",
+        )
+        .map_err(|err| format!("failed to prepare related hub query: {err}"))?;
+    let rows = statement
+        .query_map(params![hub.slug], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
         })
-    });
-    ranked
+        .map_err(|err| format!("failed to query related hubs: {err}"))?;
+    let links = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("failed to read related hubs: {err}"))?
         .into_iter()
-        .take(8)
-        .map(|(slug, (label, reason, count))| {
+        .map(|(slug, label, reason, count)| {
             let fallback_reason = tx(locale, "packageGraph", "package graph");
             let reason = if reason.is_empty() {
                 fallback_reason.as_str()
@@ -2687,7 +2725,8 @@ fn related_hub_links(
                 html_escape(&fmt_int(count))
             )
         })
-        .collect()
+        .collect();
+    Ok(links)
 }
 
 fn hub_package_reason(package: &PackageRow, locale: &Locale) -> String {
@@ -4954,6 +4993,13 @@ mod tests {
                 "Node and npm package ecosystem tools.",
                 "ecosystem",
             ),
+            (
+                "/pkg/source-control/",
+                "source-control",
+                "Source control",
+                "Source-control and repository workflow tools.",
+                "topical",
+            ),
         ] {
             connection
                 .execute(
@@ -4970,6 +5016,13 @@ mod tests {
                 [],
             )
             .expect("insert hub package");
+        connection
+            .execute(
+                "INSERT INTO hub_packages(hub_slug, package_key, position, reason)
+                 VALUES('source-control', 'brew:awscli', 1, 'Credential-adjacent workflows')",
+                [],
+            )
+            .expect("insert related hub package");
         for (path, title, summary, provider, key, rank, text) in [
             (
                 "/pkg/brew/awscli/",
