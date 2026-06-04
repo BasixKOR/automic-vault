@@ -224,6 +224,115 @@ def normalize_match(value: str) -> str:
     return value.strip("-")
 
 
+def clean_text(value: Any, limit: int = 360) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not text:
+        return ""
+    text = text.replace("\x00", "")
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].strip()
+    return cut.rstrip(".,;:") or text[:limit].strip()
+
+
+def relation_names(value: Any, limit: int = 32) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        for group in re.split(r",|\n", str(raw or "")):
+            for alternative in group.split("|"):
+                token = re.sub(r"\([^)]*\)", "", alternative).strip()
+                token = re.sub(r"^[!<>=~]+", "", token)
+                token = re.split(r"\s|<|>|=|!|~", token, maxsplit=1)[0].strip()
+                if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+_.-]+:[A-Za-z0-9][A-Za-z0-9_.-]*", token):
+                    token = token.split(":", 1)[0]
+                token = token.strip("[]{}(),;")
+                if not token or token in seen:
+                    continue
+                seen.add(token)
+                result.append(token)
+                if len(result) >= limit:
+                    return result
+    return result
+
+
+def string_list(value: Any, limit: int = 24) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else re.split(r",|\s+", str(value))
+    result = []
+    seen = set()
+    for item in values:
+        text = clean_text(item, 96)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def integer_value(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return None
+
+
+def compact_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    result: dict[str, Any] = {}
+    scalar_limits = {
+        "displayName": 160,
+        "version": 96,
+        "summary": 260,
+        "description": 520,
+        "homepage": 320,
+        "repository": 320,
+        "license": 160,
+        "section": 96,
+        "category": 120,
+        "priority": 80,
+        "architecture": 80,
+        "maintainer": 180,
+        "publisher": 180,
+        "sourcePackage": 160,
+        "publishedAt": 96,
+    }
+    for key, limit in scalar_limits.items():
+        value = clean_text(metadata.get(key), limit)
+        if value:
+            result[key] = value
+    for key in ("packageSize", "installedSize", "downloadSize", "downloadCount"):
+        value = integer_value(metadata.get(key))
+        if value is not None:
+            result[key] = value
+    for key in ("dependencies", "optionalDependencies", "provides", "conflicts", "replaces"):
+        value = relation_names(metadata.get(key), 32)
+        if value:
+            result[key] = value
+    for key in ("tags", "monikers"):
+        value = string_list(metadata.get(key), 24)
+        if value:
+            result[key] = value
+    return result
+
+
+def first_sentence(value: Any) -> str:
+    text = clean_text(value, 520)
+    if "\n" in str(value or ""):
+        text = clean_text(str(value).split("\n", 1)[0], 260)
+    match = re.search(r"(?<=[.!?])\s+", text)
+    return text[: match.start()].strip() if match else clean_text(text, 260)
+
+
 def cache_path_for_url(url: str) -> Path:
     parsed = urllib.parse.urlparse(url)
     suffix = Path(parsed.path).suffix or ".data"
@@ -286,16 +395,25 @@ def package_stanzas(text: str) -> list[dict[str, str]]:
     return result
 
 
-def record(package_id: str, *, match_names: list[str] | None = None, source_url: str = "", source_name: str = "") -> dict[str, Any]:
+def record(
+    package_id: str,
+    *,
+    match_names: list[str] | None = None,
+    source_url: str = "",
+    source_name: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     names = [package_id]
     names.extend(match_names or [])
     normalized = sorted({normalize_match(name) for name in names if normalize_match(name)})
-    return {
+    item = {
         "id": package_id,
         "match_names": normalized,
         "source_name": source_name or package_id,
         "source_url": source_url,
     }
+    item.update(compact_metadata(metadata))
+    return item
 
 
 def dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -312,8 +430,18 @@ def dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "source_name": item.get("source_name") or package_id,
                 "source_url": item.get("source_url") or "",
             }
+            result[package_id].update({
+                key: value
+                for key, value in item.items()
+                if key not in {"id", "match_names", "source_name", "source_url"} and value not in ("", [], None)
+            })
             continue
         existing["match_names"] = sorted(set(existing.get("match_names") or []) | set(item.get("match_names") or []))
+        for key, value in item.items():
+            if key in {"id", "match_names", "source_name", "source_url"} or value in ("", [], None):
+                continue
+            if not existing.get(key):
+                existing[key] = value
     return [result[key] for key in sorted(result)]
 
 
@@ -370,9 +498,41 @@ def parse_debian_packages(data: bytes, source_url: str) -> list[dict[str, Any]]:
     records = []
     for stanza in package_stanzas(text):
         name = stanza.get("Package", "").strip()
-        if name:
-            records.append(record(name, source_url=source_url))
+        if not name:
+            continue
+        source_package = clean_text(stanza.get("Source", "").split(" ", 1)[0], 160)
+        metadata = {
+            "version": stanza.get("Version"),
+            "summary": first_sentence(stanza.get("Description")),
+            "description": stanza.get("Description"),
+            "homepage": stanza.get("Homepage"),
+            "section": stanza.get("Section"),
+            "priority": stanza.get("Priority"),
+            "architecture": stanza.get("Architecture"),
+            "maintainer": stanza.get("Maintainer"),
+            "sourcePackage": source_package,
+            "installedSize": stanza.get("Installed-Size"),
+            "dependencies": stanza.get("Depends"),
+            "optionalDependencies": ", ".join(
+                value for value in (stanza.get("Recommends", ""), stanza.get("Suggests", "")) if value
+            ),
+            "provides": stanza.get("Provides"),
+        }
+        records.append(record(name, match_names=[source_package] if source_package else [], source_url=source_url, metadata=metadata))
     return dedupe_records(records)
+
+
+def parse_pacman_desc(text: str) -> dict[str, list[str]]:
+    fields: dict[str, list[str]] = {}
+    current = ""
+    for line in text.splitlines():
+        if line.startswith("%") and line.endswith("%"):
+            current = line.strip("%")
+            fields.setdefault(current, [])
+            continue
+        if current and line.strip():
+            fields[current].append(line.strip())
+    return fields
 
 
 def parse_pacman_db(data: bytes, source_url: str) -> list[dict[str, Any]]:
@@ -385,9 +545,23 @@ def parse_pacman_db(data: bytes, source_url: str) -> list[dict[str, Any]]:
             if handle is None:
                 continue
             text = handle.read().decode("utf-8", errors="replace")
-            match = re.search(r"^%NAME%\n([^\n]+)", text, flags=re.MULTILINE)
-            if match:
-                records.append(record(match.group(1).strip(), source_url=source_url))
+            fields = parse_pacman_desc(text)
+            names = fields.get("NAME") or []
+            if not names:
+                continue
+            metadata = {
+                "version": (fields.get("VERSION") or [""])[0],
+                "summary": (fields.get("DESC") or [""])[0],
+                "homepage": (fields.get("URL") or [""])[0],
+                "license": " AND ".join(fields.get("LICENSE") or []),
+                "architecture": (fields.get("ARCH") or [""])[0],
+                "packageSize": (fields.get("CSIZE") or [""])[0],
+                "installedSize": (fields.get("ISIZE") or [""])[0],
+                "dependencies": fields.get("DEPENDS") or [],
+                "optionalDependencies": fields.get("OPTDEPENDS") or [],
+                "provides": fields.get("PROVIDES") or [],
+            }
+            records.append(record(names[0].strip(), match_names=fields.get("PROVIDES") or [], source_url=source_url, metadata=metadata))
     return dedupe_records(records)
 
 
@@ -401,13 +575,27 @@ def parse_apk_index(data: bytes, source_url: str) -> list[dict[str, Any]]:
                     continue
                 text = handle.read().decode("utf-8", errors="replace")
                 for stanza in text.split("\n\n"):
-                    name = ""
+                    fields: dict[str, str] = {}
                     for line in stanza.splitlines():
-                        if line.startswith("P:"):
-                            name = line[2:].strip()
-                            break
-                    if name:
-                        records.append(record(name, source_url=source_url))
+                        if len(line) > 2 and line[1] == ":":
+                            fields[line[0]] = line[2:].strip()
+                    name = fields.get("P", "")
+                    if not name:
+                        continue
+                    metadata = {
+                        "version": fields.get("V"),
+                        "summary": fields.get("T"),
+                        "homepage": fields.get("U"),
+                        "license": fields.get("L"),
+                        "architecture": fields.get("A"),
+                        "packageSize": fields.get("S"),
+                        "installedSize": fields.get("I"),
+                        "maintainer": fields.get("m"),
+                        "sourcePackage": fields.get("o"),
+                        "dependencies": fields.get("D"),
+                        "provides": fields.get("p"),
+                    }
+                    records.append(record(name, match_names=[fields.get("o", "")], source_url=source_url, metadata=metadata))
     return dedupe_records(records)
 
 
@@ -435,12 +623,54 @@ def parse_rpm_primary(data: bytes, source_url: str) -> list[dict[str, Any]]:
             element.clear()
             continue
         name = ""
+        metadata: dict[str, Any] = {}
         for child in element:
-            if child.tag.endswith("name") and child.text:
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "name" and child.text:
                 name = child.text.strip()
-                break
+            elif tag == "arch" and child.text:
+                metadata["architecture"] = child.text.strip()
+            elif tag == "summary" and child.text:
+                metadata["summary"] = child.text.strip()
+            elif tag == "description" and child.text:
+                metadata["description"] = child.text.strip()
+            elif tag == "url" and child.text:
+                metadata["homepage"] = child.text.strip()
+            elif tag == "version":
+                version = child.get("ver") or ""
+                release = child.get("rel") or ""
+                metadata["version"] = f"{version}-{release}" if version and release else version
+            elif tag == "format":
+                for fmt_child in child:
+                    fmt_tag = fmt_child.tag.rsplit("}", 1)[-1]
+                    if fmt_tag == "license" and fmt_child.text:
+                        metadata["license"] = fmt_child.text.strip()
+                    elif fmt_tag == "group" and fmt_child.text:
+                        metadata["category"] = fmt_child.text.strip()
+                    elif fmt_tag == "vendor" and fmt_child.text:
+                        metadata["publisher"] = fmt_child.text.strip()
+                    elif fmt_tag == "packager" and fmt_child.text:
+                        metadata["maintainer"] = fmt_child.text.strip()
+                    elif fmt_tag == "sourcerpm" and fmt_child.text:
+                        metadata["sourcePackage"] = re.sub(r"-[^-]+-[^-]+\.src\.rpm$", "", fmt_child.text.strip())
+                    elif fmt_tag == "requires":
+                        metadata["dependencies"] = [
+                            entry.get("name") or ""
+                            for entry in fmt_child
+                            if entry.tag.endswith("entry") and entry.get("name")
+                        ]
+                    elif fmt_tag == "provides":
+                        metadata["provides"] = [
+                            entry.get("name") or ""
+                            for entry in fmt_child
+                            if entry.tag.endswith("entry") and entry.get("name")
+                        ]
         if name:
-            records.append(record(name, source_url=source_url))
+            match_names = []
+            if metadata.get("sourcePackage"):
+                match_names.append(str(metadata["sourcePackage"]))
+            match_names.extend(metadata.get("provides") or [])
+            records.append(record(name, match_names=match_names, source_url=source_url, metadata=metadata))
         element.clear()
     return dedupe_records(records)
 
@@ -498,7 +728,13 @@ def parse_winget_source_msix(data: bytes, source_url: str) -> list[dict[str, Any
                 if not package_id:
                     continue
                 match_names = [str(name or ""), str(moniker or "")]
-                records.append(record(package_id, match_names=match_names, source_url=source_url, source_name=package_id))
+                records.append(record(
+                    package_id,
+                    match_names=match_names,
+                    source_url=source_url,
+                    source_name=package_id,
+                    metadata={"displayName": name, "monikers": [moniker]},
+                ))
             return dedupe_records(records)
         finally:
             connection.close()
@@ -517,7 +753,22 @@ def parse_chocolatey_atom(data: bytes, source_url: str) -> tuple[list[dict[str, 
         elif title is not None and title.text:
             package_id = title.text.strip()
         if package_id:
-            records.append(record(package_id, source_url=source_url))
+            def atom_text(name: str) -> str:
+                node = entry.find(f".//d:{name}", atom)
+                return node.text.strip() if node is not None and node.text else ""
+
+            metadata = {
+                "version": atom_text("Version"),
+                "summary": atom_text("Summary") or atom_text("Title"),
+                "description": atom_text("Description"),
+                "homepage": atom_text("ProjectUrl") or atom_text("PackageSourceUrl"),
+                "license": atom_text("LicenseUrl"),
+                "publishedAt": atom_text("Published"),
+                "downloadCount": atom_text("DownloadCount"),
+                "dependencies": atom_text("Dependencies").replace("|", ","),
+                "tags": atom_text("Tags"),
+            }
+            records.append(record(package_id, source_url=source_url, metadata=metadata))
     next_url = ""
     next_node = root.find("atom:link[@rel='next']", atom)
     if next_node is not None:

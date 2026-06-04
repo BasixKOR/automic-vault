@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 GENERATED_DATA_DIR = Path("cache")
 OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 PKG_MANAGER_INDEX_PATH = GENERATED_DATA_DIR / "pkg-manager-indexes.json.gz"
@@ -309,6 +309,7 @@ def manager_matcher(manager_indexes: dict[str, Any]) -> dict[str, list[dict[str,
             source_url = str(package.get("source_url") or "")
             source_name = str(package.get("source_name") or install_id)
             evidence = f"{source_label}: {source_name} from {source_url}" if source_url else f"{source_label}: {source_name}"
+            metadata = manager_package_metadata(package)
             item = command(
                 platform,
                 display_name,
@@ -324,6 +325,8 @@ def manager_matcher(manager_indexes: dict[str, Any]) -> dict[str, list[dict[str,
                 "package_name": source_name,
                 "source_url": source_url,
             }
+            if metadata:
+                item["source"]["metadata"] = metadata
             for match_name in match_names:
                 normalized = normalize_name(str(match_name))
                 if normalized:
@@ -333,6 +336,15 @@ def manager_matcher(manager_indexes: dict[str, Any]) -> dict[str, list[dict[str,
     return result
 
 
+def manager_package_metadata(package: dict[str, Any]) -> dict[str, Any]:
+    skip = {"id", "match_names", "source_name", "source_url"}
+    return {
+        key: value
+        for key, value in package.items()
+        if key not in skip and value not in ("", [], None)
+    }
+
+
 def package_match_tiers(facts: dict[str, Any]) -> list[list[str]]:
     name = str(facts.get("name") or "")
     version_tiers = versioned_name_tiers(name)
@@ -340,6 +352,61 @@ def package_match_tiers(facts: dict[str, Any]) -> list[list[str]]:
     if version_tiers:
         return [tier for tier in [version_tiers[0], executable_tier, *version_tiers[1:]] if tier]
     return [executable_tier] if executable_tier else []
+
+
+def source_backed_manager_matches(facts: dict[str, Any], matcher: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    exact_names = set(dedupe_match_names([facts.get("name")]))
+    executable_names_normalized = set(dedupe_match_names(facts.get("executables") or []))
+    for tier_index, tier in enumerate(package_match_tiers(facts)):
+        for normalized in tier:
+            for item in matcher.get(normalized) or []:
+                source = item.get("source") if isinstance(item, dict) else {}
+                if not isinstance(source, dict):
+                    continue
+                manager = str(source.get("manager") or "").strip()
+                package_id = str(source.get("package_id") or "").strip()
+                if not manager or not package_id:
+                    continue
+                key = (manager, package_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                confidence = float(item.get("confidence") or SOURCE_BACKED_MANAGER_CONFIDENCE.get(manager, 0.9))
+                if normalized in exact_names:
+                    reason = "normalized package name match"
+                    confidence = max(confidence, 0.95)
+                elif normalized in executable_names_normalized:
+                    reason = "installed executable or alias match"
+                    confidence = min(max(confidence, 0.9), 0.94)
+                elif tier_index > 0:
+                    reason = "versioned package alias match"
+                    confidence = min(confidence, 0.88)
+                else:
+                    reason = "package manager index match"
+                match = {
+                    "manager": manager,
+                    "displayName": str(item.get("manager") or manager),
+                    "platform": str(item.get("platform") or ""),
+                    "packageId": package_id,
+                    "packageName": str(source.get("package_name") or package_id),
+                    "command": str(item.get("command") or ""),
+                    "confidence": round(confidence, 2),
+                    "matchedBy": normalized,
+                    "reason": reason,
+                    "evidence": str(item.get("evidence") or ""),
+                    "source": {
+                        "type": "package_manager_index",
+                        "sourceLabel": str(source.get("source_label") or ""),
+                        "sourceUrl": str(source.get("source_url") or ""),
+                    },
+                }
+                metadata = source.get("metadata")
+                if isinstance(metadata, dict) and metadata:
+                    match["metadata"] = metadata
+                result.append(match)
+    return dedupe_external_matches(result)
 
 
 def source_backed_manager_commands(facts: dict[str, Any], matcher: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -380,6 +447,7 @@ def local_curate_packet(packet: dict[str, Any], matcher: dict[str, list[dict[str
     commands = [av_command(package_key)]
     commands.extend(native_commands(target))
     commands.extend(source_backed_manager_commands(target, matcher or {}))
+    external_matches = source_backed_manager_matches(target, matcher or {})
     links = [
         local_link(
             candidate,
@@ -388,7 +456,7 @@ def local_curate_packet(packet: dict[str, Any], matcher: dict[str, list[dict[str
         )
         for candidate in packet.get("localCandidates") or []
     ]
-    return {"commands": dedupe_commands(commands), "localLinks": links}
+    return {"commands": dedupe_commands(commands), "localLinks": links, "externalMatches": external_matches}
 
 
 def dedupe_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -401,6 +469,28 @@ def dedupe_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         result.append(item)
     return result
+
+
+def dedupe_external_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = []
+    seen = set()
+    for item in matches:
+        if not isinstance(item, dict):
+            continue
+        key = (item.get("manager"), item.get("packageId"))
+        if key in seen or not key[0] or not key[1]:
+            continue
+        seen.add(key)
+        result.append(item)
+    return sorted(
+        result,
+        key=lambda item: (
+            -float(item.get("confidence") or 0),
+            str(item.get("platform") or ""),
+            str(item.get("displayName") or item.get("manager") or ""),
+            str(item.get("packageId") or ""),
+        ),
+    )
 
 
 def run_agent(agent_cmd: str, packet: dict[str, Any]) -> dict[str, Any]:
@@ -435,12 +525,14 @@ def build_entry(
         and existing.get("candidate_hash") == candidate_hash
         and existing.get("manager_index_hash") == manager_index_hash
         and isinstance(existing.get("commands"), list)
+        and isinstance(existing.get("externalMatches"), list)
     ):
         return existing
     packet = {
         "task": (
-            "Return install commands grouped by controlled platform keys and local cross-ecosystem links. "
-            "The first command must remain the supplied Automic Vault command. Use only supplied local link candidates."
+            "Return install commands grouped by controlled platform keys, local cross-ecosystem links, "
+            "and source-backed external package-manager matches. The first command must remain the supplied "
+            "Automic Vault command. Use only supplied local link candidates."
         ),
         "allowedPlatforms": sorted(ALLOWED_PLATFORMS),
         "target": facts,
@@ -463,6 +555,7 @@ def build_entry(
         "curator": "agent-cmd" if agent_cmd else "codex-local-cross-ecosystem",
         "commands": dedupe_commands([item for item in commands if isinstance(item, dict)]),
         "localLinks": curated.get("localLinks") or [],
+        "externalMatches": dedupe_external_matches(curated.get("externalMatches") or []),
     }
 
 
@@ -497,6 +590,33 @@ def validate_command(package_key: str, index: int, item: Any) -> list[str]:
     return failures
 
 
+def validate_external_match(package_key: str, index: int, item: Any) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(item, dict):
+        return [f"{package_key}: external match {index} is not an object"]
+    for key in ("manager", "packageId", "displayName", "reason", "evidence"):
+        if not str(item.get(key) or "").strip():
+            failures.append(f"{package_key}: external match {index} is missing {key}")
+    if str(item.get("platform") or "") not in ALLOWED_PLATFORMS:
+        failures.append(f"{package_key}: external match {index} has invalid platform {item.get('platform')!r}")
+    try:
+        confidence = float(item.get("confidence"))
+    except (TypeError, ValueError):
+        failures.append(f"{package_key}: external match {index} has invalid confidence")
+    else:
+        if confidence < 0 or confidence > 1:
+            failures.append(f"{package_key}: external match {index} has out-of-range confidence")
+    source = item.get("source")
+    if not isinstance(source, dict):
+        failures.append(f"{package_key}: external match {index} source must be an object")
+    elif not str(source.get("sourceLabel") or "").strip():
+        failures.append(f"{package_key}: external match {index} source is missing sourceLabel")
+    metadata = item.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        failures.append(f"{package_key}: external match {index} metadata must be an object")
+    return failures
+
+
 def validate_artifact(artifact: dict[str, Any], page_keys: set[str]) -> list[str]:
     failures: list[str] = []
     if artifact.get("schema") != SCHEMA_VERSION:
@@ -523,6 +643,18 @@ def validate_artifact(artifact: dict[str, Any], page_keys: set[str]) -> list[str
             failures.append(f"{package_key}: first command must be {required!r}")
         for index, item in enumerate(commands):
             failures.extend(validate_command(package_key, index, item))
+        external_matches = entry.get("externalMatches") or []
+        if not isinstance(external_matches, list):
+            failures.append(f"{package_key}: externalMatches must be a list")
+        else:
+            seen_external = set()
+            for index, item in enumerate(external_matches):
+                if isinstance(item, dict):
+                    key = (item.get("manager"), item.get("packageId"))
+                    if key in seen_external:
+                        failures.append(f"{package_key}: duplicate external match {key}")
+                    seen_external.add(key)
+                failures.extend(validate_external_match(package_key, index, item))
         links = entry.get("localLinks") or []
         if not isinstance(links, list):
             failures.append(f"{package_key}: localLinks must be a list")

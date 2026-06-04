@@ -17,6 +17,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 FORMULA_URL = "https://formulae.brew.sh/api/formula.json"
+CASK_URL = "https://formulae.brew.sh/api/cask.json"
 NPM_PACKAGE_URL = "https://registry.npmjs.org/{name}"
 PYPI_PACKAGE_URL = "https://pypi.org/pypi/{name}/json"
 CACHE_DIR = Path("cache")
@@ -171,6 +172,62 @@ def normalize_dependency_names(value: Any) -> list[str]:
     if isinstance(value, dict):
         return sorted(str(name) for name in value if name)
     return normalize_list(value)
+
+
+def normalize_string_map(value: Any, limit: int = 24) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key, child in sorted(value.items()):
+        if len(result) >= limit:
+            break
+        if child in ("", None, [], {}):
+            continue
+        rendered = render_string_map_value(child)
+        if rendered:
+            result[str(key)] = rendered
+    return result
+
+
+def render_string_map_value(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item or "").strip())
+    if isinstance(value, dict):
+        return ", ".join(
+            f"{name}: {render_string_map_value(item)}"
+            for name, item in sorted(value.items())
+            if item not in ("", None, [], {})
+        )
+    return str(value)
+
+
+def normalize_people(value: Any, limit: int = 12) -> list[str]:
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    result = []
+    seen = set()
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+        elif isinstance(item, dict):
+            text = str(item.get("name") or item.get("username") or item.get("email") or "").strip()
+        else:
+            text = ""
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def normalized_dict_keys(value: Any, limit: int = 24) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    return [str(key) for key in sorted(value)[:limit] if str(key)]
 
 
 def normalize_license(value: Any) -> str:
@@ -424,6 +481,104 @@ def install_behavior(formula: dict[str, Any]) -> dict[str, Any]:
     return behavior
 
 
+def formula_registry_insights(formula: dict[str, Any]) -> dict[str, Any]:
+    versions = formula.get("versions") if isinstance(formula.get("versions"), dict) else {}
+    bottle = formula.get("bottle") if isinstance(formula.get("bottle"), dict) else {}
+    urls = formula.get("urls") if isinstance(formula.get("urls"), dict) else {}
+    insights = {
+        "sourceDatabase": "Homebrew formula API",
+        "tap": formula.get("tap"),
+        "fullName": formula.get("full_name"),
+        "oldName": formula.get("oldname"),
+        "aliases": normalize_list(formula.get("aliases"))[:16],
+        "versionScheme": formula.get("version_scheme"),
+        "revision": formula.get("revision"),
+        "headVersion": versions.get("head") if isinstance(versions, dict) else "",
+        "bottleStableRootUrl": ((bottle.get("stable") or {}).get("root_url") if isinstance(bottle.get("stable"), dict) else ""),
+        "urlKeys": normalized_dict_keys(urls),
+        "requirements": normalize_list(formula.get("requirements"))[:16],
+        "conflictsWith": normalize_list(formula.get("conflicts_with"))[:16],
+        "kegOnly": formula.get("keg_only"),
+        "deprecated": formula.get("deprecated"),
+        "disabled": formula.get("disabled"),
+    }
+    return insights
+
+
+def cask_artifact_name(value: Any) -> str:
+    if isinstance(value, str):
+        return os.path.basename(value)
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, str):
+            return os.path.basename(first)
+    if isinstance(value, dict):
+        for key in ("target", "source"):
+            child = value.get(key)
+            if isinstance(child, str) and child:
+                return os.path.basename(child)
+    return ""
+
+
+def cask_binary_records(cask: dict[str, Any]) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for artifact in cask.get("artifacts") or []:
+        if not isinstance(artifact, dict):
+            continue
+        if "binary" in artifact:
+            name = cask_artifact_name(artifact.get("binary"))
+            if name:
+                records.append({"source": name, "target": name})
+    return records
+
+
+def cask_artifact_summary(cask: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for artifact in cask.get("artifacts") or []:
+        if not isinstance(artifact, dict):
+            continue
+        for key in artifact:
+            counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def cask_install_behavior(cask: dict[str, Any]) -> dict[str, Any]:
+    caveats = cask.get("caveats")
+    behavior: dict[str, Any] = {
+        "autoUpdates": cask.get("auto_updates"),
+        "artifacts": cask_artifact_summary(cask),
+        "postInstallDefined": False,
+    }
+    if isinstance(caveats, str) and caveats.strip():
+        behavior["caveats"] = re.sub(r"\s+", " ", caveats).strip()
+    if cask.get("uninstall"):
+        behavior["uninstallDefined"] = True
+    if cask.get("zap"):
+        behavior["zapDefined"] = True
+    return behavior
+
+
+def cask_registry_insights(cask: dict[str, Any]) -> dict[str, Any]:
+    depends_on = cask.get("depends_on") if isinstance(cask.get("depends_on"), dict) else {}
+    conflicts_with = cask.get("conflicts_with") if isinstance(cask.get("conflicts_with"), dict) else {}
+    container = cask.get("container") if isinstance(cask.get("container"), dict) else {}
+    insights = {
+        "sourceDatabase": "Homebrew cask API",
+        "tap": cask.get("tap"),
+        "fullToken": cask.get("full_token"),
+        "names": normalize_list(cask.get("name"))[:12],
+        "oldTokens": normalize_list(cask.get("old_tokens"))[:16],
+        "dependsOn": normalize_string_map(depends_on),
+        "conflictsWith": normalize_string_map(conflicts_with),
+        "container": normalize_string_map(container),
+        "artifacts": cask_artifact_summary(cask),
+        "autoUpdates": cask.get("auto_updates"),
+        "deprecated": cask.get("deprecated"),
+        "disabled": cask.get("disabled"),
+    }
+    return insights
+
+
 def executable_index(db: dict[str, Any]) -> dict[str, list[str]]:
     result: dict[str, set[str]] = {}
     entries = db.get("entries") or {}
@@ -480,8 +635,64 @@ def formula_enrichment(formula: dict[str, Any], executables: dict[str, list[str]
         "bottle": bottle_metadata(formula),
         "installBehavior": install_behavior(formula),
         "executables": executable_records(name, executables),
+        "registryInsights": formula_registry_insights(formula),
     }
     return f"brew:{name}", prune(entry)
+
+
+def cask_enrichment(cask: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    token = cask.get("token")
+    if not isinstance(token, str) or not token:
+        return None
+    if cask.get("disabled") or cask.get("deprecated"):
+        return None
+    depends_on = cask.get("depends_on") if isinstance(cask.get("depends_on"), dict) else {}
+    formula_dependencies = normalize_list(depends_on.get("formula") if isinstance(depends_on, dict) else [])
+    cask_dependencies = normalize_list(depends_on.get("cask") if isinstance(depends_on, dict) else [])
+    entry: dict[str, Any] = {
+        "package": {
+            "provider": "cask",
+            "name": token,
+            "packageManager": "Homebrew Cask",
+            "packageManagerUrl": f"https://formulae.brew.sh/cask/{token}",
+        },
+        "version": cask.get("version") if isinstance(cask.get("version"), str) else "",
+        "summary": clean_summary(cask.get("desc") if isinstance(cask.get("desc"), str) else ""),
+        "homepage": cask.get("homepage") if isinstance(cask.get("homepage"), str) else "",
+        "sourceArchive": cask.get("url") if isinstance(cask.get("url"), str) else "",
+        "dependencies": [*formula_dependencies, *cask_dependencies],
+        "binaries": cask_binary_records(cask),
+        "installBehavior": cask_install_behavior(cask),
+        "registryInsights": cask_registry_insights(cask),
+    }
+    if isinstance(cask.get("sha256"), str):
+        entry["sha256"] = cask.get("sha256")
+    return f"cask:{token}", prune(entry)
+
+
+def npm_registry_insights(payload: dict[str, Any], manifest: dict[str, Any], latest: str) -> dict[str, Any]:
+    times = payload.get("time") if isinstance(payload.get("time"), dict) else {}
+    dist = manifest.get("dist") if isinstance(manifest.get("dist"), dict) else {}
+    insights = {
+        "sourceDatabase": "npm registry",
+        "createdAt": times.get("created"),
+        "modifiedAt": times.get("modified"),
+        "latestPublishedAt": times.get(latest),
+        "distTags": normalize_string_map(payload.get("dist-tags")),
+        "versionCount": len(payload.get("versions") or {}) if isinstance(payload.get("versions"), dict) else 0,
+        "maintainers": normalize_people(payload.get("maintainers")),
+        "author": ", ".join(normalize_people(manifest.get("author") or payload.get("author"), 1)),
+        "publisher": ", ".join(normalize_people((payload.get("_npmUser") or manifest.get("_npmUser")), 1)),
+        "engines": normalize_string_map(manifest.get("engines")),
+        "peerDependencies": normalize_dependency_names(manifest.get("peerDependencies"))[:24],
+        "optionalDependencies": normalize_dependency_names(manifest.get("optionalDependencies"))[:24],
+        "funding": normalize_url(manifest.get("funding") or payload.get("funding")),
+        "integrity": dist.get("integrity"),
+        "shasum": dist.get("shasum"),
+        "unpackedSize": dist.get("unpackedSize"),
+        "fileCount": len(manifest.get("files") or []) if isinstance(manifest.get("files"), list) else 0,
+    }
+    return insights
 
 
 def npm_enrichment(name: str, db_info: dict[str, Any], payload: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
@@ -520,6 +731,7 @@ def npm_enrichment(name: str, db_info: dict[str, Any], payload: dict[str, Any]) 
         "executables": npm_executable_records(manifest, executable),
         "installBehavior": npm_install_behavior(manifest),
         "publishedAt": ((payload.get("time") or {}).get(latest) if isinstance(payload.get("time"), dict) else ""),
+        "registryInsights": npm_registry_insights(payload, manifest, latest),
     }
     keywords = manifest.get("keywords")
     if isinstance(keywords, list):
@@ -527,6 +739,43 @@ def npm_enrichment(name: str, db_info: dict[str, Any], payload: dict[str, Any]) 
     if bugs:
         entry["issueTracker"] = bugs
     return f"npm:{name}", prune(entry)
+
+
+def pypi_registry_insights(payload: dict[str, Any], info: dict[str, Any], version: str) -> dict[str, Any]:
+    urls = payload.get("urls") if isinstance(payload.get("urls"), list) else []
+    releases = payload.get("releases") if isinstance(payload.get("releases"), dict) else {}
+    package_types = sorted({
+        str(item.get("packagetype"))
+        for item in urls
+        if isinstance(item, dict) and item.get("packagetype")
+    })
+    yanked = [item for item in urls if isinstance(item, dict) and item.get("yanked")]
+    insights = {
+        "sourceDatabase": "PyPI JSON API",
+        "author": info.get("author"),
+        "authorEmail": info.get("author_email"),
+        "maintainer": info.get("maintainer"),
+        "maintainerEmail": info.get("maintainer_email"),
+        "requiresPython": info.get("requires_python"),
+        "keywords": string_keywords(info.get("keywords")),
+        "platforms": normalize_list(info.get("platform"))[:12],
+        "releaseCount": len(releases),
+        "filesForLatest": len(urls),
+        "packageTypes": package_types,
+        "yankedFileCount": len(yanked),
+        "vulnerabilityCount": len(payload.get("vulnerabilities") or []) if isinstance(payload.get("vulnerabilities"), list) else 0,
+        "latestSerial": payload.get("last_serial"),
+        "latestUploadAt": pypi_upload_time(payload, version),
+    }
+    return insights
+
+
+def string_keywords(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()][:24]
+    if not isinstance(value, str):
+        return []
+    return [item for item in re.split(r",|\s+", value) if item][:24]
 
 
 def pypi_enrichment(name: str, overlay: dict[str, Any], payload: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
@@ -561,6 +810,7 @@ def pypi_enrichment(name: str, overlay: dict[str, Any], payload: dict[str, Any])
             "pythonRequires": info.get("requires_python") if isinstance(info.get("requires_python"), str) else "",
             "requiresDistCount": len(pypi_dependencies(info)),
         },
+        "registryInsights": pypi_registry_insights(payload, info, version),
     }
     classifiers = info.get("classifiers") or []
     if isinstance(classifiers, list):
@@ -599,6 +849,7 @@ def prune(value: Any) -> Any:
 
 def build_enrichment(
     formulae: list[Any],
+    casks: list[Any],
     db: dict[str, Any],
     npm_payloads: dict[str, Any] | None = None,
     pip_overlays: dict[str, Any] | None = None,
@@ -610,6 +861,14 @@ def build_enrichment(
         if not isinstance(formula, dict):
             continue
         enriched = formula_enrichment(formula, executables)
+        if enriched is None:
+            continue
+        key, entry = enriched
+        packages[key] = entry
+    for cask in casks:
+        if not isinstance(cask, dict):
+            continue
+        enriched = cask_enrichment(cask)
         if enriched is None:
             continue
         key, entry = enriched
@@ -652,6 +911,9 @@ def expected_enrichment(force_refresh: bool = False) -> dict[str, Any]:
     formulae = fetch_json(FORMULA_URL, force_refresh=force_refresh)
     if not isinstance(formulae, list):
         raise ValueError("Homebrew formula API payload must be a list")
+    casks = fetch_json(CASK_URL, force_refresh=force_refresh)
+    if not isinstance(casks, list):
+        raise ValueError("Homebrew cask API payload must be a list")
     db = read_json(Path("data/db.json"))
     if not isinstance(db, dict):
         raise ValueError("data/db.json must contain an object")
@@ -669,7 +931,7 @@ def expected_enrichment(force_refresh: bool = False) -> dict[str, Any]:
             if not isinstance(name, str) or not name:
                 continue
             pypi_payloads[name] = fetch_json(pypi_package_url(name), ecosystem="pypi.org", force_refresh=force_refresh)
-    return build_enrichment(formulae, db, npm_payloads=npm_payloads, pip_overlays=pip_overlays, pypi_payloads=pypi_payloads)
+    return build_enrichment(formulae, casks, db, npm_payloads=npm_payloads, pip_overlays=pip_overlays, pypi_payloads=pypi_payloads)
 
 
 def check_current(path: Path, terminal: Terminal) -> int:

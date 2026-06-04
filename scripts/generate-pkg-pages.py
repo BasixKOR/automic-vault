@@ -396,6 +396,7 @@ class PackagePage:
     geiger: dict[str, Any] | None = None
     related_packages: list[dict[str, Any]] = field(default_factory=list)
     also_available_via: list[dict[str, Any]] = field(default_factory=list)
+    external_package_manager_matches: list[dict[str, Any]] = field(default_factory=list)
     package_hubs: list[dict[str, Any]] = field(default_factory=list)
     isotope: dict[str, Any] | None = None
     isotope_readme: str = ""
@@ -829,9 +830,11 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         page.version = info.get("version") or page.version
         page.license = info.get("license") or page.license
         page.source_archive = info.get("sourceArchive") or page.source_archive
+        page.sha256 = info.get("sha256") or page.sha256
         page.dependencies = info.get("dependencies") or page.dependencies
         page.build_dependencies = info.get("buildDependencies") or page.build_dependencies
         page.uses_from_macos = info.get("usesFromMacos") or page.uses_from_macos
+        page.binaries = info.get("binaries") or page.binaries
         page.executables = info.get("executables") or page.executables
         page.install_behavior = info.get("installBehavior") or page.install_behavior
         page.bottle = info.get("bottle") or page.bottle
@@ -842,7 +845,41 @@ def apply_package_page_enrichment(pages: dict[str, PackagePage], enrichment: dic
         page.project_urls = info.get("projectUrls") or page.project_urls
         page.extra["homebrewDeps"] = info.get("homebrewDependencies") or page.extra.get("homebrewDeps")
         page.extra["pythonFormula"] = info.get("pythonFormula") or page.extra.get("pythonFormula")
+        page.extra["registryInsights"] = info.get("registryInsights") or page.extra.get("registryInsights")
+        if provider == "cask":
+            page.package_hubs = merge_hub_links(page.package_hubs, cask_package_hubs(page))
         page.source_notes.append("package-page enrichment")
+
+
+def cask_package_hubs(page: PackagePage) -> list[dict[str, Any]]:
+    insights = page.extra.get("registryInsights") if isinstance(page.extra.get("registryInsights"), dict) else {}
+    artifacts = insights.get("artifacts") if isinstance(insights.get("artifacts"), dict) else {}
+    hubs = [
+        {
+            "slug": "homebrew-cask-packages",
+            "label": "Homebrew Cask packages",
+            "kicker": "package manager family",
+            "description": "Homebrew Cask packages with generated Automic Vault metadata.",
+            "reason": "Generated from Homebrew Cask package-manager metadata.",
+        }
+    ]
+    if artifacts.get("app"):
+        hubs.append({
+            "slug": "homebrew-cask-applications",
+            "label": "Homebrew Cask applications",
+            "kicker": "macOS applications",
+            "description": "macOS application casks with generated package metadata and install routes.",
+            "reason": "Cask artifact metadata includes an app bundle.",
+        })
+    if artifacts.get("binary"):
+        hubs.append({
+            "slug": "homebrew-cask-binaries",
+            "label": "Homebrew Cask binaries",
+            "kicker": "cask command surface",
+            "description": "Homebrew Cask packages that expose command-line binaries.",
+            "reason": "Cask artifact metadata includes a binary.",
+        })
+    return hubs
 
 
 def apply_package_version_freshness(pages: dict[str, PackagePage], freshness: dict[str, Any]) -> None:
@@ -959,6 +996,14 @@ def apply_package_cross_ecosystem(pages: dict[str, PackagePage], cross_ecosystem
             entry.get("localLinks") if isinstance(entry.get("localLinks"), list) else [],
             limit=12,
         )
+        external_matches = entry.get("externalMatches")
+        if isinstance(external_matches, list):
+            page.external_package_manager_matches = merge_external_package_manager_matches(
+                page.external_package_manager_matches,
+                [item for item in external_matches if isinstance(item, dict)],
+            )
+            if page.external_package_manager_matches:
+                page.source_notes.append("external package-manager database matches")
         page.source_notes.append("cross-ecosystem install command graph")
 
 
@@ -1004,6 +1049,41 @@ def merge_related_links(existing: list[dict[str, Any]], generated: list[Any], li
         if len(result) >= limit:
             break
     return result
+
+
+def merge_external_package_manager_matches(
+    existing: list[dict[str, Any]],
+    generated: list[dict[str, Any]],
+    limit: int = 24,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in list(existing) + [item for item in generated if isinstance(item, dict)]:
+        manager = str(item.get("manager") or "").strip()
+        package_id = str(item.get("packageId") or "").strip()
+        if not manager or not package_id:
+            continue
+        key = (manager, package_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    result.sort(
+        key=lambda item: (
+            -external_match_confidence(item),
+            str(item.get("platform") or ""),
+            str(item.get("displayName") or item.get("manager") or ""),
+            str(item.get("packageId") or ""),
+        )
+    )
+    return result[:limit]
+
+
+def external_match_confidence(item: dict[str, Any]) -> float:
+    try:
+        return float(item.get("confidence"))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def merge_hub_links(existing: list[dict[str, Any]], generated: list[Any]) -> list[dict[str, Any]]:
@@ -1562,6 +1642,10 @@ def package_index_signals(page: PackagePage) -> list[str]:
         signals.append("geiger")
     if page.related_packages or page.also_available_via or page.package_hubs:
         signals.append("relationships")
+    if page.external_package_manager_matches:
+        signals.append("external_package_manager_matches")
+    if page.extra.get("registryInsights"):
+        signals.append("registry_insights")
     if any(page.extra.get(key) for key in ("homebrewDeps", "pythonFormula", "stub_exclusions")):
         signals.append("local_overlay")
     return signals
@@ -2239,6 +2323,8 @@ def render_package_page(
         render_executables(page, locale),
         render_freshness(page, manifest, locale),
         render_install_metadata(page, locale),
+        render_registry_insights(page, locale),
+        render_external_package_manager_matches(page, locale),
         render_related(page, locale),
         render_sources(page, locale),
     ]
@@ -2423,6 +2509,8 @@ def render_package_markdown(
     lines.extend(md_section_list(tx(locale, "buildDependencies", "Build Dependencies"), [*page.build_dependencies]))
     lines.extend(md_section_list(tx(locale, "usesFromMacos", "macOS Provided Libraries"), [*page.uses_from_macos]))
     lines.extend(md_install_behavior_section(page, locale))
+    lines.extend(md_registry_insights_section(page, locale))
+    lines.extend(md_external_manager_matches_section(page, locale))
     lines.extend(md_freshness_section(page, manifest, locale))
     lines.extend(md_security_section(page, locale))
     lines.extend(md_related_section(page, locale))
@@ -2535,6 +2623,61 @@ def md_install_behavior_section(page: PackagePage, locale: dict[str, Any] | None
             bottle_detail += f" {tx(locale, 'onPlatforms', 'on')} {', '.join(str(item) for item in platforms[:12])}"
         items.append(f"{tx(locale, 'bottle', 'Bottle')}: {bottle_detail}")
     return md_section_list(tx(locale, "installBehavior", "Install Behavior"), items)
+
+
+def md_registry_insights_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
+    insights = page.extra.get("registryInsights") if isinstance(page.extra.get("registryInsights"), dict) else {}
+    if not insights:
+        return []
+    rows = registry_insight_rows(insights)
+    if not rows:
+        return []
+    lines = [f"## {md_text(tx(locale, 'registryInsightsTitle', 'Source Database Details'))}", ""]
+    for label, value in rows[:28]:
+        lines.append(f"- **{md_text(label)}:** {md_metadata_value(value)}")
+    lines.append("")
+    return lines
+
+
+def md_external_manager_matches_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
+    matches = page.external_package_manager_matches[:16]
+    if not matches:
+        return []
+    lines = [f"## {md_text(tx(locale, 'otherPackageManagersTitle', 'Other Package-Manager Records'))}", ""]
+    for item in matches:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        bits = [
+            str(item.get("displayName") or item.get("manager") or ""),
+            str(item.get("packageId") or ""),
+        ]
+        if metadata.get("version"):
+            bits.append(str(metadata.get("version")))
+        line = " - ".join(md_text(bit) for bit in bits if bit)
+        details = []
+        if item.get("reason"):
+            details.append(str(item.get("reason")))
+        if metadata.get("summary"):
+            details.append(short_text(metadata.get("summary"), 180))
+        if metadata.get("homepage"):
+            details.append(str(metadata.get("homepage")))
+        if item.get("evidence"):
+            details.append(str(item.get("evidence")))
+        suffix = f": {md_text(' | '.join(details))}" if details else ""
+        lines.append(f"- {line}{suffix}")
+    lines.append("")
+    return lines
+
+
+def md_metadata_value(value: Any) -> str:
+    if isinstance(value, dict):
+        return md_text(", ".join(f"{key}: {child}" for key, child in value.items() if child not in ("", [], {}, None)))
+    if isinstance(value, list):
+        return md_text(", ".join(str(item) for item in value if str(item or "").strip()))
+    if isinstance(value, bool):
+        return md_text("yes" if value else "no")
+    if isinstance(value, (int, float)):
+        return md_text(fmt_int(value) if isinstance(value, int) else str(value))
+    return md_value(value)
 
 
 def md_freshness_section(page: PackagePage, manifest: dict[str, Any], locale: dict[str, Any] | None = None) -> list[str]:
@@ -3386,6 +3529,170 @@ def render_install_metadata(page: PackagePage, locale: dict[str, Any] | None = N
     </table>
   </div>
 </section>
+"""
+
+
+def render_registry_insights(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    insights = page.extra.get("registryInsights") if isinstance(page.extra.get("registryInsights"), dict) else {}
+    if not insights:
+        return ""
+    rows = registry_insight_rows(insights)
+    if not rows:
+        return ""
+    row_html = "".join(
+        f"<tr><th>{html_escape(label)}</th><td>{metadata_value_html(value)}</td></tr>"
+        for label, value in rows[:28]
+    )
+    return f"""
+<section class="pkg-section registry-insights-section">
+  <p class="section-kicker">{html_escape(tx(locale, 'registryFacts', 'registry facts'))}</p>
+  <h2>{html_escape(tx(locale, 'registryInsightsTitle', 'Source database details'))}</h2>
+  <div class="table-wrap registry-insights-table">
+    <table>
+      <tbody>{row_html}</tbody>
+    </table>
+  </div>
+</section>
+"""
+
+
+def registry_insight_rows(insights: dict[str, Any]) -> list[tuple[str, Any]]:
+    preferred = [
+        "sourceDatabase",
+        "tap",
+        "fullName",
+        "fullToken",
+        "names",
+        "aliases",
+        "oldName",
+        "oldTokens",
+        "versionScheme",
+        "revision",
+        "headVersion",
+        "distTags",
+        "versionCount",
+        "releaseCount",
+        "filesForLatest",
+        "packageTypes",
+        "maintainers",
+        "author",
+        "maintainer",
+        "publisher",
+        "engines",
+        "requiresPython",
+        "peerDependencies",
+        "optionalDependencies",
+        "dependsOn",
+        "conflictsWith",
+        "requirements",
+        "artifacts",
+        "autoUpdates",
+        "funding",
+        "integrity",
+        "shasum",
+        "unpackedSize",
+        "fileCount",
+        "latestSerial",
+        "latestUploadAt",
+        "vulnerabilityCount",
+        "yankedFileCount",
+    ]
+    rows = []
+    seen = set()
+    for key in preferred:
+        value = insights.get(key)
+        if value in ("", [], {}, None):
+            continue
+        seen.add(key)
+        rows.append((human_metadata_label(key), value))
+    for key in sorted(insights):
+        if key in seen:
+            continue
+        value = insights.get(key)
+        if value not in ("", [], {}, None):
+            rows.append((human_metadata_label(key), value))
+    return rows
+
+
+def human_metadata_label(key: str) -> str:
+    text = re.sub(r"(?<!^)([A-Z])", r" \1", key).replace("_", " ").replace("-", " ")
+    text = text.replace("Url", "URL").replace("Sha", "SHA")
+    return text[:1].upper() + text[1:]
+
+
+def metadata_value_html(value: Any) -> str:
+    if isinstance(value, bool):
+        return html_escape("yes" if value else "no")
+    if isinstance(value, (int, float)):
+        return html_escape(fmt_int(value) if isinstance(value, int) else str(value))
+    if isinstance(value, list):
+        items = [str(item) for item in value if str(item or "").strip()]
+        if not items:
+            return ""
+        return '<ul class="chip-list compact-chip-list">' + "".join(f"<li>{html_escape(item)}</li>" for item in items[:32]) + "</ul>"
+    if isinstance(value, dict):
+        items = [(str(key), child) for key, child in value.items() if child not in ("", [], {}, None)]
+        if not items:
+            return ""
+        return '<dl class="metadata-pair-list">' + "".join(
+            f"<div><dt>{html_escape(key)}</dt><dd>{metadata_value_html(child)}</dd></div>"
+            for key, child in items[:24]
+        ) + "</dl>"
+    return link_value(str(value))
+
+
+def render_external_package_manager_matches(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    matches = page.external_package_manager_matches[:16]
+    if not matches:
+        return ""
+    match_html = "".join(external_package_match_card(item, locale) for item in matches)
+    return f"""
+<section class="pkg-section split-section manager-match-section" aria-labelledby="manager-match-title">
+  <div>
+    <p class="section-kicker">{html_escape(tx(locale, 'sourceDatabaseMatches', 'source database matches'))}</p>
+    <h2 id="manager-match-title">{html_escape(tx(locale, 'otherPackageManagersTitle', 'Other package-manager records'))}</h2>
+    <p>{html_escape(tx(locale, 'otherPackageManagersCopy', 'Matches are pulled from external package-manager indexes and kept separate from local Automic Vault package links.'))}</p>
+  </div>
+  <div class="manager-match-grid">
+    {match_html}
+  </div>
+</section>
+"""
+
+
+def external_package_match_card(item: dict[str, Any], locale: dict[str, Any] | None = None) -> str:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    version = metadata.get("version") or ""
+    summary = metadata.get("summary") or metadata.get("description") or ""
+    homepage = metadata.get("homepage") or ""
+    source = item.get("source") if isinstance(item.get("source"), dict) else {}
+    source_url = str(source.get("sourceUrl") or "").strip()
+    source_label = str(source.get("sourceLabel") or "").strip()
+    fact_bits = []
+    for key in ("license", "section", "category", "architecture", "sourcePackage"):
+        value = metadata.get(key)
+        if value:
+            fact_bits.append(f"{human_metadata_label(key)}: {value}")
+    for key, label in (("dependencies", "dependencies"), ("provides", "provides"), ("optionalDependencies", "optional deps")):
+        values = metadata.get(key)
+        if isinstance(values, list) and values:
+            fact_bits.append(f"{len(values)} {label}")
+    fact_html = "".join(f"<li>{html_escape(bit)}</li>" for bit in fact_bits[:6])
+    source_link = f'<a href="{attr(source_url)}">{html_escape(source_host_label(source_url))}</a>' if source_url else html_escape(source_label)
+    command = str(item.get("command") or "").strip()
+    return f"""
+<article class="manager-match-card">
+  <div class="manager-match-head">
+    <strong>{html_escape(item.get('displayName') or item.get('manager') or '')}</strong>
+    <span>{html_escape(str(item.get('confidence') or ''))}</span>
+  </div>
+  <p><code>{html_escape(item.get('packageId') or '')}</code>{f' <em>{html_escape(version)}</em>' if version else ''}</p>
+  {f'<p>{html_escape(short_text(summary, 180))}</p>' if summary else ''}
+  {f'<p><a href="{attr(homepage)}">{html_escape(homepage)}</a></p>' if homepage else ''}
+  {f'<pre><code>{html_escape(command)}</code></pre>' if command else ''}
+  <ul>{fact_html or f'<li>{html_escape(item.get("reason") or "")}</li>'}</ul>
+  <small>{html_escape(source_label)}{f' · {source_link}' if source_url else ''}</small>
+</article>
 """
 
 
@@ -4321,6 +4628,116 @@ h1 {
   margin-top: 4px;
   color: var(--muted);
   font-size: 0.92rem;
+}
+.registry-insights-section {
+  background: rgba(255, 255, 255, 0.01);
+}
+.registry-insights-table td {
+  min-width: 280px;
+}
+.compact-chip-list {
+  margin-top: 0;
+}
+.compact-chip-list li {
+  font-size: 0.68rem;
+}
+.metadata-pair-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+.metadata-pair-list div {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.metadata-pair-list dt {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.metadata-pair-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.manager-match-section {
+  grid-template-columns: minmax(260px, 0.36fr) minmax(0, 1fr);
+  background: rgba(114, 182, 97, 0.026);
+}
+.manager-match-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.manager-match-card {
+  min-width: 0;
+  padding: 16px;
+  border-top: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.018);
+}
+.manager-match-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.manager-match-head strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.manager-match-head span {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.manager-match-card p {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.manager-match-card p:first-of-type {
+  color: var(--ink);
+}
+.manager-match-card code {
+  font-family: var(--font-mono);
+}
+.manager-match-card pre {
+  margin-top: 10px;
+  padding: 10px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+.manager-match-card ul {
+  margin-top: 10px;
+  padding-left: 1rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.manager-match-card small {
+  display: block;
+  margin-top: 10px;
+  color: var(--dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.manager-match-card a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hot);
+  text-underline-offset: 0.22em;
 }
 .executable-table td:first-child {
   color: var(--ink);
