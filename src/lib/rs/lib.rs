@@ -981,6 +981,21 @@ enum SecretScannerScope {
     IsotopesOnly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ShellSecretFlavor {
+    Bash,
+    Zsh,
+}
+
+impl ShellSecretFlavor {
+    fn source_label(self) -> &'static str {
+        match self {
+            ShellSecretFlavor::Bash => "file-probe:bash",
+            ShellSecretFlavor::Zsh => "file-probe:zsh",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 struct SecretScannerFinding {
     source: String,
@@ -4091,6 +4106,9 @@ fn default_secret_scan_paths() -> Vec<PathBuf> {
         }
     }
 
+    paths.extend(shell_secret_candidate_paths(ShellSecretFlavor::Bash));
+    paths.extend(shell_secret_candidate_paths(ShellSecretFlavor::Zsh));
+
     paths.sort();
     paths.dedup();
     paths
@@ -4115,12 +4133,45 @@ const DEFAULT_SECRET_SCAN_HOME_FILES: &[&str] = &[
     ".aws/credentials",
     ".kube/config",
     ".config/gh/hosts.yml",
-    ".bashrc",
-    ".zshrc",
-    ".profile",
 ];
 
+const BASH_SECRET_SCAN_HOME_FILES: &[&str] =
+    &[".bashrc", ".bash_profile", ".bash_login", ".profile"];
+
+const ZSH_SECRET_SCAN_HOME_FILES: &[&str] =
+    &[".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"];
+
 const SECRET_SCAN_MAX_FILE_BYTES: u64 = 1024 * 1024;
+
+fn shell_secret_candidate_paths(shell: ShellSecretFlavor) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    match shell {
+        ShellSecretFlavor::Bash => {
+            if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+                for relative in BASH_SECRET_SCAN_HOME_FILES {
+                    paths.push(home.join(relative));
+                }
+            }
+            if let Some(path) = env::var_os("BASH_ENV").filter(|value| !value.is_empty()) {
+                paths.push(PathBuf::from(path));
+            }
+        }
+        ShellSecretFlavor::Zsh => {
+            if let Some(base) = env::var_os("ZDOTDIR")
+                .filter(|value| !value.is_empty())
+                .or_else(|| env::var_os("HOME"))
+                .map(PathBuf::from)
+            {
+                for relative in ZSH_SECRET_SCAN_HOME_FILES {
+                    paths.push(base.join(relative));
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
 
 fn scan_secret_file(path: &Path) -> Result<Vec<SecretScannerFinding>, String> {
     let metadata = match fs::metadata(path) {
@@ -4214,15 +4265,13 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
     }
 
     if key_is_sensitive {
+        let key = shell_assignment_key_name(assignment.key).trim();
         return Some(secret_file_finding(
             path,
             line_number,
             "secret-assignment",
             "high",
-            &format!(
-                "Plaintext-looking credential assigned to {}",
-                assignment.key.trim()
-            ),
+            &format!("Plaintext-looking credential assigned to {key}"),
         ));
     }
 
@@ -4247,13 +4296,17 @@ fn secret_file_finding(
     message: &str,
 ) -> SecretScannerFinding {
     SecretScannerFinding {
-        source: "file-probe".to_string(),
+        source: secret_file_probe_source(path).to_string(),
         kind: kind.to_string(),
         severity: severity.to_string(),
         path: Some(path.display().to_string()),
         line: Some(line),
         message: message.to_string(),
     }
+}
+
+fn secret_file_probe_source(path: &Path) -> &'static str {
+    secret_shell_startup_file_flavor(path).map_or("file-probe", ShellSecretFlavor::source_label)
 }
 
 struct SecretAssignment<'a> {
@@ -4409,6 +4462,10 @@ fn source_key_reference_char(ch: char) -> bool {
 fn secret_key_looks_like_freeform_text(key: &str) -> bool {
     let key = key.trim();
     if key.starts_with("export ")
+        || key.starts_with("readonly ")
+        || key.starts_with("declare ")
+        || key.starts_with("typeset ")
+        || key.starts_with("local ")
         || key.starts_with("let ")
         || key.starts_with("var ")
         || key.starts_with("const ")
@@ -4667,9 +4724,7 @@ fn secret_key_name_is_noncredential_metadata(key: &str) -> bool {
 }
 
 fn normalized_secret_key_name(key: &str) -> String {
-    key.trim()
-        .strip_prefix("export ")
-        .unwrap_or_else(|| key.trim())
+    shell_assignment_key_name(key)
         .trim()
         .trim_matches('"')
         .trim_matches('\'')
@@ -4680,6 +4735,53 @@ fn normalized_secret_key_name(key: &str) -> String {
             _ => ch,
         })
         .collect()
+}
+
+fn shell_assignment_key_name(key: &str) -> &str {
+    let key = key.trim();
+    let Some((command, mut rest)) = shell_word(key) else {
+        return key;
+    };
+    if !matches!(
+        command,
+        "export" | "readonly" | "declare" | "typeset" | "local"
+    ) {
+        return key;
+    }
+
+    while let Some((word, after_word)) = shell_word(rest) {
+        if !word.starts_with('-') {
+            return if after_word.trim().is_empty() && shell_assignment_word_looks_like_name(word) {
+                word
+            } else {
+                key
+            };
+        }
+        rest = after_word;
+    }
+
+    key
+}
+
+fn shell_word(value: &str) -> Option<(&str, &str)> {
+    let value = value.trim_start();
+    if value.is_empty() {
+        return None;
+    }
+    let end = value
+        .char_indices()
+        .find_map(|(index, ch)| ch.is_whitespace().then_some(index))
+        .unwrap_or(value.len());
+    Some((&value[..end], &value[end..]))
+}
+
+fn shell_assignment_word_looks_like_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch == '-' || ch == '.' || ch.is_ascii_alphanumeric())
 }
 
 fn secret_value_is_real(value: &str) -> bool {
@@ -4882,6 +4984,9 @@ fn secret_path_looks_like_credential_file(path: &Path) -> bool {
     if secret_path_looks_like_env_file(path) {
         return true;
     }
+    if secret_shell_startup_file_flavor(path).is_some() {
+        return true;
+    }
 
     let normalized_path = path
         .to_string_lossy()
@@ -4913,6 +5018,27 @@ fn secret_path_looks_like_env_file(path: &Path) -> bool {
         || file_name.starts_with(".env.")
         || file_name.ends_with(".env")
         || file_name.contains(".env.")
+}
+
+fn secret_shell_startup_file_flavor(path: &Path) -> Option<ShellSecretFlavor> {
+    if let Some(bash_env) = env::var_os("BASH_ENV")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        && secret_paths_match(path, &bash_env)
+    {
+        return Some(ShellSecretFlavor::Bash);
+    }
+
+    let file_name = path.file_name()?.to_str()?.to_ascii_lowercase();
+    match file_name.as_str() {
+        ".bashrc" | ".bash_profile" | ".bash_login" | ".profile" => Some(ShellSecretFlavor::Bash),
+        ".zshenv" | ".zprofile" | ".zshrc" | ".zlogin" | ".zlogout" => Some(ShellSecretFlavor::Zsh),
+        _ => None,
+    }
+}
+
+fn secret_paths_match(left: &Path, right: &Path) -> bool {
+    normalize_path(left) == normalize_path(right)
 }
 
 fn secret_private_key_line_is_fixture(path: &Path, line: &str) -> bool {
@@ -12543,6 +12669,95 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn secret_file_scanner_detects_shell_startup_secret_assignments() {
+        let temp = TempDir::new().unwrap();
+        let bash_profile = temp.path().join(".bash_profile");
+        let zshenv = temp.path().join(".zshenv");
+        fs::write(
+            &bash_profile,
+            [
+                "declare -x OPENAI_API_KEY=sk-test_1234567890abcdef",
+                "export AWS_REGION=us-east-1",
+                "export GITHUB_TOKEN=$(gh auth token)",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            &zshenv,
+            [
+                "typeset -gx TWITCH_CLIENT_SECRET=mbji9xv2qlemn8n2sk4pxh71r03j2x",
+                "typeset -gx API_KEY=example",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let bash_findings = scan_secret_file(&bash_profile).unwrap();
+        let zsh_findings = scan_secret_file(&zshenv).unwrap();
+
+        assert_eq!(bash_findings.len(), 1, "{bash_findings:?}");
+        assert_eq!(bash_findings[0].source, "file-probe:bash");
+        assert_eq!(bash_findings[0].line, Some(1));
+        assert!(
+            bash_findings[0]
+                .message
+                .contains("assigned to OPENAI_API_KEY")
+        );
+        assert_eq!(zsh_findings.len(), 1, "{zsh_findings:?}");
+        assert_eq!(zsh_findings[0].source, "file-probe:zsh");
+        assert_eq!(zsh_findings[0].line, Some(1));
+        assert!(
+            zsh_findings[0]
+                .message
+                .contains("assigned to TWITCH_CLIENT_SECRET")
+        );
+    }
+
+    #[test]
+    fn shell_secret_detectors_scan_bash_and_zsh_startup_files() {
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let zdotdir = temp.path().join("zdotdir");
+        let bash_env = temp.path().join("bash-env");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&zdotdir).unwrap();
+        fs::write(
+            home.join(".profile"),
+            "export SERVICE_TOKEN=secret_secret\n",
+        )
+        .unwrap();
+        fs::write(&bash_env, "readonly BASH_ENV_TOKEN=secret_secret\n").unwrap();
+        fs::write(
+            zdotdir.join(".zprofile"),
+            "typeset -gx ZED_CLIENT_SECRET=zedsecret1234\n",
+        )
+        .unwrap();
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            ("BASH_ENV", bash_env.to_str().unwrap()),
+            ("ZDOTDIR", zdotdir.to_str().unwrap()),
+        ]);
+
+        let paths = default_secret_scan_paths();
+        assert!(paths.iter().any(|path| path == &home.join(".bash_profile")));
+        assert!(paths.iter().any(|path| path == &bash_env));
+        assert!(paths.iter().any(|path| path == &zdotdir.join(".zprofile")));
+
+        let profile_findings = scan_secret_file(&home.join(".profile")).unwrap();
+        let bash_env_findings = scan_secret_file(&bash_env).unwrap();
+        let zsh_findings = scan_secret_file(&zdotdir.join(".zprofile")).unwrap();
+
+        assert_eq!(profile_findings.len(), 1, "{profile_findings:?}");
+        assert_eq!(profile_findings[0].source, "file-probe:bash");
+        assert_eq!(bash_env_findings.len(), 1, "{bash_env_findings:?}");
+        assert_eq!(bash_env_findings[0].source, "file-probe:bash");
+        assert_eq!(zsh_findings.len(), 1, "{zsh_findings:?}");
+        assert_eq!(zsh_findings[0].source, "file-probe:zsh");
+    }
+
+    #[test]
     fn secret_file_scanner_detects_standalone_posthog_key_literals_in_config() {
         let temp = TempDir::new().unwrap();
         let gradle_path = temp.path().join("build.gradle.kts");
@@ -12986,6 +13201,8 @@ managed_secrets = ["dep:managed-secrets"]"#,
 
         let paths = default_secret_scan_paths();
         assert!(paths.iter().any(|path| path.ends_with(".env")));
+        assert!(paths.iter().any(|path| path == &home.join(".bashrc")));
+        assert!(paths.iter().any(|path| path == &home.join(".zshrc")));
         assert!(
             paths
                 .iter()

@@ -85,6 +85,73 @@ For the rest:
 $ av <subcommand> --help
 ```
 
+## Stop Exporting Secrets From Your Shell
+
+Do not put long-lived credentials in `.zshrc`, `.zprofile`, `.zshenv`,
+`.bashrc`, `.bash_profile`, `.profile`, `.envrc`, or project `.env` files that
+agents can read. Those files are convenient, but they make every shell and
+every local automation process an ambient credential carrier.
+
+Save the value once:
+
+```sh
+$ printf '%s\n' "$OPENAI_API_KEY" | av save OPENAI_API_KEY
+$ unset OPENAI_API_KEY
+```
+
+Then inject it only into the tool that needs it:
+
+```sh
+$ av inject +OPENAI_API_KEY /opt/homebrew/bin/opencode run
+$ av inject +GITHUB_TOKEN /opt/homebrew/bin/gh repo view automic-vault/automic-vault
+$ av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /opt/homebrew/bin/aws sts get-caller-identity
+```
+
+`+KEY` names a value stored in the Automic Vault keychain. The target must be an
+absolute executable or script path. By default, `av inject` refuses to overwrite
+an environment variable that is already set; use `--replace-existing-env` when
+you deliberately want the keychain value to win. Wrapper scripts can use
+`--allow-missing-keys` when a tool has optional credentials.
+
+For repeatable workflows, make the script itself use `av inject` as its
+interpreter:
+
+```sh
+#!/usr/local/bin/av inject +OPENAI_API_KEY /bin/sh
+set -eu
+exec /opt/homebrew/bin/opencode run "$@"
+```
+
+or for a tool with optional credentials:
+
+```sh
+#!/usr/local/bin/av inject --allow-missing-keys +GITHUB_TOKEN /bin/sh
+set -eu
+exec /opt/homebrew/bin/gh "$@"
+```
+
+Make the script executable and run it normally. The kernel starts `av`, `av`
+asks Automic Vault to approve the named key for that script and interpreter,
+then `/bin/sh` receives the key only for that execution.
+
+This is the boundary Automic Vault is trying to create:
+
+- the secret value lives in the macOS Keychain, not in a shell startup file,
+  project file, prompt, transcript, or agent-readable config
+- approval shows the key names, target executable, arguments, current
+  directory, parent process, and script context before injection
+- always-allow decisions are scoped to the executable and, for user-controlled
+  scripts, the script path and SHA-256 so changed scripts ask again
+- `av inject` disables core dumps, validates the target path and parent
+  directories, and on macOS verifies the opened executable still matches the
+  path immediately before `execve`
+- the value is placed in the child process environment only after approval; the
+  model does not get the raw value unless the tool itself prints or leaks it
+
+That is not a substitute for central enterprise secret management. It is a
+local runtime handoff that keeps agent-readable files clean while still letting
+real command-line tools authenticate when they run.
+
 ## What Ships
 
 - `Automic Vault.app`: the package console, package dossiers, recommendations,
