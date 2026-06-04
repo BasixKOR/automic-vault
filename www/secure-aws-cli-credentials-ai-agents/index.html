@@ -13,7 +13,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Secure AWS CLI Credentials for AI Agents | Automic Vault</title>
-  <meta name="description" content="Secure AWS CLI credentials from AI agents by removing plaintext credential files, injecting keys into approved tools, and gating cloud actions.">
+  <meta name="description" content="Secure AWS CLI credentials from AI agents with a Keychain-backed credential_process helper, root-controlled launcher checks, and gated cloud commands.">
   <link rel="canonical" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/">
   <link rel="alternate" hreflang="ja" href="https://www.automicvault.com/ja/secure-aws-cli-credentials-ai-agents/">
@@ -25,12 +25,12 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Secure AWS CLI Credentials for AI Agents">
-  <meta property="og:description" content="Secure AWS CLI credentials from AI agents by removing plaintext credential files, injecting keys into approved tools, and gating cloud actions.">
+  <meta property="og:description" content="Secure AWS CLI credentials from AI agents with a Keychain-backed credential_process helper, root-controlled launcher checks, and gated cloud commands.">
   <meta property="og:url" content="https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
-  <meta name="twitter:description" content="Secure AWS CLI credentials from AI agents by removing plaintext credential files, injecting keys into approved tools, and gating cloud actions.">
+  <meta name="twitter:description" content="Secure AWS CLI credentials from AI agents with a Keychain-backed credential_process helper, root-controlled launcher checks, and gated cloud commands.">
   <meta name="twitter:title" content="Secure AWS CLI Credentials for AI Agents | Automic Vault">
   <script type="application/ld+json">
 {
@@ -99,6 +99,7 @@
                         "Local AI agent secrets manager",
                         "Keychain-backed secret storage",
                         "Approved secret injection into command-line tools",
+                        "Native credential-helper adapters for supported tools",
                         "Command approval gates",
                         "AI agent secret scanner",
                         "Shell installer tracing",
@@ -122,9 +123,9 @@
                   "url": "https://www.automicvault.com/secure-aws-cli-credentials-ai-agents/",
                   "name": "Secure AWS CLI Credentials for AI Agents | Automic Vault",
                   "headline": "Secure AWS CLI Credentials for AI Agents",
-                  "description": "Secure AWS CLI credentials from AI agents by removing plaintext credential files, injecting keys into approved tools, and gating cloud actions.",
+                  "description": "Secure AWS CLI credentials from AI agents with a Keychain-backed credential_process helper, root-controlled launcher checks, and gated cloud commands.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-06-01",
+                  "dateModified": "2026-06-04",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -180,7 +181,23 @@
                               "name": "How does Automic Vault secure AWS CLI use?",
                               "acceptedAnswer": {
                                     "@type": "Answer",
-                                    "text": "Automic Vault moves supported AWS credentials out of plaintext files, injects named values into approved aws executions, and gates sensitive cloud commands at runtime."
+                                    "text": "Automic Vault moves supported AWS credentials out of plaintext files, stores them in the macOS Keychain, installs a non-secret credential_process reference, and returns credentials only to the validated AWS launcher."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "What does the AWS credential helper validate?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "The AWS helper requires a per-run approval token, checks that its parent is the Automic Vault-managed AWS launcher, validates the parent command shape, and verifies root-controlled paths before returning credential_process JSON."
+                              }
+                        },
+                        {
+                              "@type": "Question",
+                              "name": "Does this support every AWS credential flow?",
+                              "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": "No. The current aws-cli isotope focuses on console allocated access key and secret key pairs for one profile. AWS login-derived credentials and multi-profile setups still need a dedicated credential manager."
                               }
                         },
                         {
@@ -221,11 +238,11 @@
     <main>
       <section class="seo-hero">
         <div>
-          <p class="kicker">Cloud credentials under local control</p>
-          <h1>Secure AWS CLI credentials before an AI agent can read them</h1>
-          <p class="lede">AI agents often need the AWS CLI to debug and operate systems. Automic Vault keeps AWS keys out of readable files and puts approval around the command that uses them.</p>
-          <p class="updated">Last updated: June 1, 2026</p>
-          <div class="answer-box"><p>Secure AWS CLI credentials for AI agents by removing plaintext credential files and approving AWS tool execution at runtime. Automic Vault keeps credentials local and injects named values only into the approved AWS command.</p></div>
+          <p class="kicker">AWS credential_process under local control</p>
+          <h1>Private AWS CLI credentials</h1>
+          <p class="lede">AI agents often need the AWS CLI to debug and operate systems. Automic Vault moves console key pairs out of <code>~/.aws/credentials</code> and lets AWS retrieve them through a Keychain-backed <code>credential_process</code> helper only while the root-controlled launcher is running.</p>
+          <p class="updated">Last updated: June 4, 2026</p>
+          <div class="answer-box"><p>Secure AWS CLI credentials for AI agents by replacing plaintext AWS keys with a non-secret <code>credential_process</code> reference. The <code>aws</code> launcher mints a short-lived helper token, runs AWS Python in isolated mode, and gates credential-printing AWS commands before AWS CLI code runs.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#secrets">Store AWS keys safely <span aria-hidden="true">›</span></a>
             <a class="button" href="../privileged-access-management-for-ai-agents/">Read agent PAM <span aria-hidden="true">›</span></a>
@@ -239,36 +256,39 @@
         <div class="section-heading">
           <p class="kicker">AWS risk</p>
           <h2>The default AWS credential file is easy for agents to find.</h2>
-          <p><code>~/.aws/credentials</code> is predictable, familiar, and readable by local processes. That makes it convenient for humans and dangerous for autonomous sessions.</p>
+          <p><code>~/.aws/credentials</code> is predictable, familiar, and readable by local processes. That makes it convenient for humans and dangerous for autonomous sessions unless the durable secret moves behind a local runtime boundary.</p>
         </div>
         <div class="proof-list">
           <article><span>Readable path</span><h3>Remove direct file access</h3><p>Cloud credentials should not be available through <code>cat ~/.aws/credentials</code>.</p></article>
-          <article><span>Command scope</span><h3>Approve the AWS action</h3><p>Listing buckets and deleting infrastructure should not feel like the same permission.</p></article>
-          <article><span>Key scope</span><h3>Inject only named values</h3><p>Supply access key material to the approved AWS invocation, not the whole session.</p></article>
-          <article><span>Agent sessions</span><h3>Contain host tool execution</h3><p>Route AWS CLI attempts through a visible approval path during autonomous work.</p></article>
+          <article><span>Helper reference</span><h3>Leave non-secret config behind</h3><p><code>~/.aws/config</code> can point at <code>/usr/local/bin/av credential-helper aws</code> without storing the access key itself.</p></article>
+          <article><span>Caller checks</span><h3>Make direct helper calls fail</h3><p>The helper validates a per-run token, parent process, command shape, and root-controlled launcher path before returning credentials.</p></article>
+          <article><span>Cloud actions</span><h3>Gate sensitive AWS output</h3><p>Commands that can print credentials, tokens, private keys, decrypted secrets, or signed URLs are approval gated before AWS CLI code runs.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
           <p class="kicker">Pattern</p>
           <h2>Keep AWS useful without ambient credentials.</h2>
+          <p>The strongest path is not broad environment injection. It is AWS' native helper protocol: the persisted config contains only a command reference, and the credential crosses the boundary at AWS authentication time.</p>
         </div>
         <div class="compare-table">
           <article><span>Before</span><p>A readable AWS credentials file exposes access keys to any process with user-level file access.</p></article>
-          <article><span>After</span><p>Automic Vault stores values outside plaintext config and injects them into approved AWS CLI execution.</p></article>
-          <article><span>With agents</span><p>Approval gates make sensitive cloud operations visible before the agent changes infrastructure.</p></article>
+          <article><span>After migration</span><p>Automic Vault saves supported keys in the macOS Keychain and writes <code>credential_process = /usr/local/bin/av credential-helper aws</code>.</p></article>
+          <article><span>At runtime</span><p>The installed <code>aws</code> launcher runs isolated Python, mints a short-lived helper token, and lets AWS request credentials through its normal protocol.</p></article>
+          <article><span>With agents</span><p>The agent can see the helper reference, but not the key. Sensitive cloud operations still pass through local approval gates.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split">
         <div class="section-heading">
-          <p class="kicker">Example workflow</p>
-          <h2>Move the credential, then approve the cloud action.</h2>
-          <p>The important distinction is between a credential being present on disk and a credential being delivered to a specific tool invocation. Automic Vault is designed for the second case: the AWS CLI still works, but the agent does not get a durable plaintext file to inspect.</p>
+          <p class="kicker">Helper boundary</p>
+          <h2>The helper is not a general secret printer.</h2>
+          <p><code>av credential-helper aws</code> prints AWS <code>credential_process</code> JSON only in the expected launcher context. An unrelated process cannot call the helper directly and get the AWS keys back.</p>
         </div>
-        <div class="compare-table">
-          <article><span>Before</span><p><code>~/.aws/credentials</code> gives any user-level process a predictable path to cloud access keys.</p></article>
-          <article><span>During</span><p><code>av inject</code> supplies named AWS values to the approved executable that needs them, not to the entire shell session.</p></article>
-          <article><span>After</span><p>High-risk commands such as destructive infrastructure changes remain reviewable at the local runtime boundary.</p></article>
+        <div class="proof-list">
+          <article><span>Token</span><h3>Short-lived helper token</h3><p>The launcher mints a per-run approval token for the AWS process and passes it privately to the helper.</p></article>
+          <article><span>Parent</span><h3>Expected AWS launcher only</h3><p>The helper checks that its parent is the Automic Vault-managed <code>/opt/awscli/bin/aws</code> path or the isolated AWS Python it starts.</p></article>
+          <article><span>Isolation</span><h3>No legacy plugin surprise</h3><p>The launcher runs AWS Python in isolated mode and disables AWS CLI legacy external plugins that could run inside the credential-approved process.</p></article>
+          <article><span>Limits</span><h3>Clear AWS coverage</h3><p>The current isotope focuses on console allocated access key and secret key pairs for one profile. <code>aws login</code> cache and multi-profile setups need a dedicated credential manager.</p></article>
         </div>
       </section>
       <section class="seo-section seo-split" id="faq">
@@ -279,7 +299,8 @@
         </div>
         <div class="proof-list">
           <article><span>Plaintext</span><h3>Why is <code>~/.aws/credentials</code> risky?</h3><p>It is a predictable plaintext path. Agents that can browse local files can expose the keys before they run any cloud command.</p></article>
-          <article><span>Injection</span><h3>How does Vault secure AWS CLI use?</h3><p>Vault moves supported values out of easy-read files and injects named keys into approved <code>aws</code> executions.</p></article>
+          <article><span>Helper</span><h3>How does Vault secure AWS CLI use?</h3><p>Vault moves supported keys into the macOS Keychain, writes a non-secret <code>credential_process</code> reference, and returns credentials only to the validated AWS launcher.</p></article>
+          <article><span>Validation</span><h3>What does the helper check?</h3><p>It checks the helper token, parent executable, parent command, and root-controlled AWS launcher path before returning AWS <code>credential_process</code> JSON.</p></article>
           <article><span>IAM</span><h3>Should I still use IAM scopes and roles?</h3><p>Yes. Least privilege, SSO, roles, and short-lived credentials remain important. Vault controls the local CLI use path.</p></article>
           <article><span>Provenance</span><h3>Maintained by Max Howell</h3><p>This guide is maintained with the public Automic Vault source, security notes, and issue tracker by Max Howell, creator of Homebrew.</p></article>
         </div>
