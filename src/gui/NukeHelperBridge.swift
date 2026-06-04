@@ -50,6 +50,12 @@ enum NukeHelperMaintenanceResult {
     case pendingHelperInstallation
 }
 
+enum NukeHelperMaintenanceState {
+    case notInstalled
+    case current
+    case needsUpdate
+}
+
 @objc(AVPackageSpec)
 final class AVPackageSpec: NSObject, NSSecureCoding {
     static var supportsSecureCoding: Bool { true }
@@ -380,6 +386,23 @@ final class NukeHelperBridge {
         }
     }
 
+    func helperMaintenanceState(
+        completion: @escaping (Result<NukeHelperMaintenanceState, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                let state = try self.currentHelperMaintenanceState()
+                DispatchQueue.main.async {
+                    completion(.success(state))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
     func installOrUpdateHelper(
         completion: @escaping (Result<NukeHelperMaintenanceResult, Error>) -> Void
     ) {
@@ -697,6 +720,13 @@ final class NukeHelperBridge {
 
     private func helperToolInstalled() -> Bool {
         FileManager.default.fileExists(atPath: helperToolURL().path)
+    }
+
+    private func currentHelperMaintenanceState() throws -> NukeHelperMaintenanceState {
+        guard helperToolInstalled() else {
+            return .notInstalled
+        }
+        return try helperRequiresBlessing() ? .needsUpdate : .current
     }
 
     private func helperRequiresBlessing() throws -> Bool {

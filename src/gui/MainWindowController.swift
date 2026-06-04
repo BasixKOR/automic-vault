@@ -27,7 +27,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private var cltInstallToolbarStateCancellable: AnyCancellable?
     private var helperMaintenanceToolbarStateCancellable: AnyCancellable?
     private var updateProgressViewController: UpdateProgressViewController?
-    private var helperNeedsMaintenance = false
+    private var helperMaintenanceState = NukeHelperMaintenanceState.notInstalled
     private var isRefreshingHelperMaintenanceState = false
     private var isUpdatingHelper = false {
         didSet {
@@ -244,19 +244,32 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         guard isRefreshingHelperMaintenanceState == false else {
             return
         }
+        guard model.isPackageMutationInFlight == false,
+              model.isUpdatingAll == false,
+              isUpdatingHelper == false else {
+            return
+        }
         isRefreshingHelperMaintenanceState = true
-        helperBridge.helperNeedsInstallationOrUpdate { [weak self] result in
+        helperBridge.helperMaintenanceState { [weak self] result in
             guard let self else { return }
             self.isRefreshingHelperMaintenanceState = false
             switch result {
-            case .success(let needsMaintenance):
-                self.helperNeedsMaintenance = needsMaintenance
+            case .success(let state):
+                self.helperMaintenanceState = state
+                if state == .current {
+                    try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+                }
             case .failure:
-                self.helperNeedsMaintenance =
-                    self.model.snapshot.remoteDatabaseRefreshState == .pendingHelperInstallation
+                self.helperMaintenanceState = .notInstalled
             }
             self.syncHelperMaintenanceToolbarItem()
         }
+    }
+
+    private func markHelperMaintenanceSatisfied() {
+        helperMaintenanceState = .current
+        try? statusStore.saveRemoteDatabaseRefreshState(.normal)
+        syncHelperMaintenanceToolbarItem()
     }
 
     private func deactivateSearchField() {
@@ -306,15 +319,14 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     private func installOrUpdateHelper() {
         isUpdatingHelper = true
-        helperNeedsMaintenance = true
+        helperMaintenanceState = .needsUpdate
         model.showTransientStatus(L10n.string("Updating privileged helper"))
         helperBridge.installOrUpdateHelper { [weak self] result in
             guard let self else { return }
             self.isUpdatingHelper = false
             switch result {
             case .success(let maintenanceResult):
-                self.helperNeedsMaintenance = false
-                try? self.statusStore.saveRemoteDatabaseRefreshState(.normal)
+                self.markHelperMaintenanceSatisfied()
                 self.statusStore.requestRefresh()
                 switch maintenanceResult {
                 case .completed(let updated):
@@ -324,13 +336,12 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                             : L10n.string("Privileged helper is current")
                     )
                 case .pendingHelperInstallation:
-                    self.helperNeedsMaintenance = true
+                    self.helperMaintenanceState = .notInstalled
                     self.model.showTransientStatus(
                         L10n.string("Privileged helper still needs installation")
                     )
                 }
             case .failure(let error):
-                self.helperNeedsMaintenance = true
                 self.presentHelperError(error)
             }
             self.syncHelperMaintenanceToolbarItem()
@@ -412,6 +423,9 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 let completedPackages = helperResult.processedPackages.isEmpty
                     ? packageNames
                     : helperResult.processedPackages
+                if !debugPlayback {
+                    self.markHelperMaintenanceSatisfied()
+                }
                 progressController?.succeed(
                     message: helperResult.message,
                     packages: completedPackages
@@ -575,6 +589,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 let completedPackages = helperResult.processedPackages.isEmpty
                     ? request.packageNames
                     : helperResult.processedPackages
+                self.markHelperMaintenanceSatisfied()
                 progressController?.succeed(
                     message: helperResult.message,
                     packages: completedPackages
@@ -992,8 +1007,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             $0.itemIdentifier == .automicVaultHelperUpdate
         }
         let shouldShow = isUpdatingHelper
-            || helperNeedsMaintenance
-            || model.snapshot.remoteDatabaseRefreshState == .pendingHelperInstallation
+            || helperMaintenanceState == .needsUpdate
 
         if shouldShow {
             if itemIndex == nil {
