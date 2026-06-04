@@ -10,6 +10,11 @@ final class DotenvFileWatcher {
         let source: DispatchSourceFileSystemObject
     }
 
+    private struct FileSignature: Equatable {
+        let modificationTime: TimeInterval
+        let size: UInt64
+    }
+
     private struct CommandResult {
         let status: Int32
         let stdout: String
@@ -21,7 +26,9 @@ final class DotenvFileWatcher {
     private let notify: (DotenvAutoEncryptionResult) -> Void
     private let resolveBinaryURL: () -> URL?
     private var watches: [String: Watch] = [:]
+    private var signatures: [String: FileSignature] = [:]
     private var pendingWork: [String: DispatchWorkItem] = [:]
+    private var isPolling = false
 
     init(
         fileManager: FileManager = .default,
@@ -54,6 +61,7 @@ final class DotenvFileWatcher {
             for path in Array(watches.keys) {
                 cancelWatchUnlocked(path: path)
             }
+            isPolling = false
         }
     }
 
@@ -62,6 +70,9 @@ final class DotenvFileWatcher {
             return
         }
         guard fileManager.fileExists(atPath: path) else {
+            return
+        }
+        guard let signature = fileSignature(path: path) else {
             return
         }
 
@@ -82,14 +93,20 @@ final class DotenvFileWatcher {
             close(fd)
         }
         watches[path] = Watch(source: source)
+        signatures[path] = signature
         source.resume()
+        startPollingUnlocked()
     }
 
     private func cancelWatchUnlocked(path: String) {
         guard let watch = watches.removeValue(forKey: path) else {
             return
         }
+        signatures.removeValue(forKey: path)
         watch.source.cancel()
+        if watches.isEmpty {
+            stopPollingUnlocked()
+        }
     }
 
     private func handleEvent(path: String, events: DispatchSource.FileSystemEvent) {
@@ -99,6 +116,45 @@ final class DotenvFileWatcher {
             queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.watchUnlocked(path: path)
             }
+        }
+    }
+
+    private func startPollingUnlocked() {
+        guard isPolling == false else {
+            return
+        }
+        isPolling = true
+        scheduleNextPollUnlocked()
+    }
+
+    private func scheduleNextPollUnlocked() {
+        queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.pollWatchedFiles()
+        }
+    }
+
+    private func stopPollingUnlocked() {
+        isPolling = false
+    }
+
+    private func pollWatchedFiles() {
+        guard isPolling else {
+            return
+        }
+        for path in Array(watches.keys) {
+            guard let signature = fileSignature(path: path) else {
+                cancelWatchUnlocked(path: path)
+                continue
+            }
+            if signatures[path] != signature {
+                signatures[path] = signature
+                scheduleEncryptionCheck(path: path)
+            }
+        }
+        if watches.isEmpty {
+            stopPollingUnlocked()
+        } else {
+            scheduleNextPollUnlocked()
         }
     }
 
@@ -115,6 +171,7 @@ final class DotenvFileWatcher {
         pendingWork[path] = nil
         guard fileManager.fileExists(atPath: path),
               let binaryURL = resolveBinaryURL() else {
+            NSLog("Automic Vault dotenv auto-encrypt skipped for %@: av binary not found", path)
             return
         }
 
@@ -186,6 +243,15 @@ final class DotenvFileWatcher {
         return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
+    private func fileSignature(path: String) -> FileSignature? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path) else {
+            return nil
+        }
+        let modificationTime = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        return FileSignature(modificationTime: modificationTime, size: size)
+    }
+
     private static func defaultBinaryURL() -> URL? {
         resolveBinaryURL(named: "av")
     }
@@ -209,11 +275,6 @@ final class DotenvFileWatcher {
         let debug = repositoryRoot.appendingPathComponent("target/debug/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: debug.path) {
             return debug
-        }
-
-        let installed = URL(fileURLWithPath: "/usr/local/bin/\(binaryName)")
-        if FileManager.default.isExecutableFile(atPath: installed.path) {
-            return installed
         }
 
         return nil
