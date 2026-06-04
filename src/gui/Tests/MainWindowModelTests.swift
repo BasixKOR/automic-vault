@@ -62,11 +62,21 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
-    func testOutdatedSidebarCountDisplaysZero() {
+    func testSidebarAlertCountsDisplayZeroForPersistentSections() {
         XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(0))
         XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(1))
+        XCTAssertTrue(MainWindowSection.geigerCounter.shouldDisplaySidebarCount(0))
+        XCTAssertTrue(MainWindowSection.geigerCounter.shouldDisplaySidebarCount(1))
         XCTAssertFalse(MainWindowSection.newUpdated.shouldDisplaySidebarCount(0))
-        XCTAssertFalse(MainWindowSection.geigerCounter.shouldDisplaySidebarCount(0))
+    }
+
+    func testSidebarAlertCountsOnlyHighlightPositiveValues() {
+        XCTAssertFalse(MainWindowSection.outdated.shouldHighlightSidebarCount(0))
+        XCTAssertTrue(MainWindowSection.outdated.shouldHighlightSidebarCount(1))
+        XCTAssertFalse(MainWindowSection.geigerCounter.shouldHighlightSidebarCount(0))
+        XCTAssertTrue(MainWindowSection.geigerCounter.shouldHighlightSidebarCount(1))
+        XCTAssertFalse(MainWindowSection.newUpdated.shouldHighlightSidebarCount(0))
+        XCTAssertTrue(MainWindowSection.newUpdated.shouldHighlightSidebarCount(1))
     }
 
     func testCategorySectionsAreAlphabetizedByDisplayedTitle() {

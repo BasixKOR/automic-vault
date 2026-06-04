@@ -152,10 +152,10 @@ struct MainWindowView: View {
                 Spacer(minLength: 6)
                 if let count = model.count(for: section),
                    section.shouldDisplaySidebarCount(count) {
-                    if section == .geigerCounter {
+                    if section == .geigerCounter && section.shouldHighlightSidebarCount(count) {
                         CountPill(count: count, prominence: .critical)
                             .fixedSize()
-                    } else if section == .newUpdated || section == .outdated {
+                    } else if section.shouldHighlightSidebarCount(count) {
                         CountPill(count: count, prominence: .normal)
                             .fixedSize()
                     } else {

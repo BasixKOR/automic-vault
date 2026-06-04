@@ -164,7 +164,11 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     }
 
     func shouldDisplaySidebarCount(_ count: Int) -> Bool {
-        count > 0 || self == .outdated
+        count > 0 || self == .geigerCounter || self == .outdated
+    }
+
+    func shouldHighlightSidebarCount(_ count: Int) -> Bool {
+        count > 0 && (self == .geigerCounter || self == .newUpdated || self == .outdated)
     }
 
     var categoryIdentifier: String? {
