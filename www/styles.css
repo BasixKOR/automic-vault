@@ -575,6 +575,7 @@ h1 code {
 
 .highlights,
 .problem-strip,
+.exposure-examples,
 .story-layout,
 .compare,
 .guides,
@@ -658,6 +659,190 @@ h1 code {
 
 .highlight-card.accent-gold span {
   color: var(--gold);
+}
+
+.exposure-examples {
+  background:
+    radial-gradient(circle at 20% 8%, oklch(68% 0.15 246 / 0.1), transparent 24rem),
+    linear-gradient(180deg, oklch(12% 0.008 255 / 0.84), oklch(9% 0.006 255 / 0.96));
+}
+
+.terminal-exposure-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.terminal-exposure {
+  --accent: var(--hot);
+  --typing-delay: 380ms;
+  --typing-duration: 1360ms;
+  --typing-steps: 13;
+  --typing-width: 13ch;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  min-height: 318px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.terminal-exposure:hover {
+  border-color: oklch(94% 0.01 82 / 0.26);
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.terminal-exposure:active {
+  transform: translateY(0);
+}
+
+.terminal-exposure.aws-credentials {
+  --accent: var(--green);
+  --typing-duration: 1780ms;
+  --typing-steps: 22;
+  --typing-width: 22ch;
+}
+
+.terminal-exposure.git-credential {
+  --accent: var(--blue);
+  --typing-duration: 2880ms;
+  --typing-steps: 66;
+  --typing-width: 66ch;
+}
+
+.terminal-window {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  min-height: 180px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+    linear-gradient(135deg, oklch(94% 0.01 82 / 0.035), transparent 58%),
+    var(--surface-deep);
+  background-size: 100% 28px, auto, auto;
+}
+
+.terminal-chrome {
+  display: flex;
+  gap: 7px;
+  min-height: 10px;
+}
+
+.terminal-chrome span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.terminal-chrome span:first-child {
+  background: var(--hot);
+}
+
+.terminal-chrome span:nth-child(2) {
+  background: var(--gold);
+}
+
+.terminal-chrome span:last-child {
+  background: var(--green);
+}
+
+.terminal-window pre {
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: clamp(0.72rem, 0.92vw, 0.86rem);
+  line-height: 1.55;
+  scrollbar-width: thin;
+  white-space: pre;
+}
+
+.git-credential .terminal-window pre {
+  font-size: clamp(0.5rem, 0.67vw, 0.62rem);
+}
+
+.git-credential .terminal-window {
+  padding-inline: 12px;
+}
+
+.prompt {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.typed-command {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--accent);
+  color: var(--ink);
+  vertical-align: bottom;
+  white-space: nowrap;
+  animation:
+    terminal-type var(--typing-duration) steps(var(--typing-steps), end) var(--typing-delay) forwards,
+    terminal-caret 720ms steps(1, end) infinite;
+}
+
+.terminal-output {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(4px);
+  animation: terminal-output 280ms ease calc(var(--typing-delay) + var(--typing-duration) + 180ms) forwards;
+}
+
+.exposure-summary {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+}
+
+.exposure-summary h3 {
+  color: var(--ink);
+  font-size: 1.3rem;
+  line-height: 1.08;
+}
+
+.exposure-summary p {
+  color: var(--muted);
+  font-size: 0.96rem;
+  line-height: 1.48;
+}
+
+@keyframes terminal-type {
+  to {
+    width: var(--typing-width);
+  }
+}
+
+@keyframes terminal-caret {
+  0%,
+  49% {
+    border-color: var(--accent);
+  }
+
+  50%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes terminal-output {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .endorsement {
@@ -1656,6 +1841,7 @@ h1 code {
 
   .hero-grid,
   .hazard-board,
+  .terminal-exposure-grid,
   .story-layout,
   .secured-radar,
   .compare,
@@ -1690,6 +1876,10 @@ h1 code {
 
   .tweet-endorsement-person {
     grid-template-columns: 1fr;
+  }
+
+  .terminal-exposure {
+    min-height: 0;
   }
 
   .side-rail {
@@ -1922,6 +2112,7 @@ h1 code {
   .hero,
   .highlights,
   .problem-strip,
+  .exposure-examples,
   .story-layout,
   .compare,
   .guides,

@@ -11,6 +11,15 @@ The same risk shows up across CLIs, SDKs, package managers, and MCP servers:
 tokens sit in files an agent or malware can read. Automic Vault keeps watching
 after setup, so new installs and stale tool config do not stay quiet.
 
+## Secret Exposure Examples
+
+- `gh auth token` prints a GitHub bearer token that an agent, script, or
+  compromised tool can copy into API calls.
+- `cat ~/.aws/credentials` turns a readable dotfile into cloud account access.
+- `printf 'protocol=https\nhost=github.com\n\n' | git credential fill` asks the
+  local credential helper to reveal repository credentials, even when there is
+  no obvious token file.
+
 ## Founder Context
 
 > I built Homebrew. It was designed before AI agents existed.

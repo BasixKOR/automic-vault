@@ -128,7 +128,7 @@
         "headline": "Secure the tools you brew install",
         "description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
         "datePublished": "2026-05-15",
-        "dateModified": "2026-06-03",
+        "dateModified": "2026-06-04",
         "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=37">
+  <link rel="stylesheet" href="./styles.css?v=38">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -260,6 +260,66 @@
             <span>04 / monitor</span>
             <strong>Reports new hazards from installs, stale tools, and local config.</strong>
           </a>
+        </div>
+      </section>
+
+      <section class="exposure-examples" aria-labelledby="exposure-title">
+        <div class="section-label">
+          <h2 id="exposure-title">The secret is already one command away.</h2>
+          <span>exposure paths</span>
+        </div>
+
+        <div class="terminal-exposure-grid">
+          <article class="terminal-exposure gh-token">
+            <div class="terminal-window" aria-label="Terminal example for gh auth token">
+              <div class="terminal-chrome" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <pre><code><span class="prompt">$</span> <span class="typed-command">gh auth token</span>
+<span class="terminal-output">token=[redacted GitHub token]</span></code></pre>
+            </div>
+            <div class="exposure-summary">
+              <h3>GitHub CLI token</h3>
+              <p>Prints a bearer token any agent, script, or compromised tool can copy into GitHub API calls.</p>
+            </div>
+          </article>
+
+          <article class="terminal-exposure aws-credentials">
+            <div class="terminal-window" aria-label="Terminal example for cat AWS credentials">
+              <div class="terminal-chrome" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <pre><code><span class="prompt">$</span> <span class="typed-command">cat ~/.aws/credentials</span>
+<span class="terminal-output">[default]
+aws_access_key_id=[redacted]
+aws_secret_access_key=[redacted]</span></code></pre>
+            </div>
+            <div class="exposure-summary">
+              <h3>AWS credential file</h3>
+              <p>Turns a readable dotfile into cloud account access before any package or prompt control can intervene.</p>
+            </div>
+          </article>
+
+          <article class="terminal-exposure git-credential">
+            <div class="terminal-window" aria-label="Terminal example for git credential fill">
+              <div class="terminal-chrome" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <pre><code><span class="prompt">$</span> <span class="typed-command">printf 'protocol=https\nhost=github.com\n\n' | git credential fill</span>
+<span class="terminal-output">username=x-access-token
+password=[redacted Git credential]</span></code></pre>
+            </div>
+            <div class="exposure-summary">
+              <h3>Git credential helper</h3>
+              <p>Asks the local helper to reveal repository credentials, even when no obvious token file exists.</p>
+            </div>
+          </article>
         </div>
       </section>
 
