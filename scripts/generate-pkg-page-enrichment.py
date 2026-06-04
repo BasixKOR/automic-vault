@@ -690,12 +690,12 @@ def check_current(path: Path, terminal: Terminal) -> int:
     if current.get("packages") != expected.get("packages"):
         failures.append("package enrichment does not match current Homebrew formula data and data/db.json")
     if failures:
-        terminal.error_log("Package page enrichment is stale.")
+        terminal.error_log("Package-origin enrichment is stale.")
         for failure in failures:
             terminal.log(f"  - {failure}")
-        terminal.log("Run scripts/generate-pkg-page-enrichment.py and regenerate package pages.")
+        terminal.log("Run scripts/generate-pkg-page-enrichment.py, then rebuild the package-origin SQLite artifact.")
         return 1
-    terminal.ok_log(f"Package page enrichment is current ({len(current.get('packages') or {}):,} packages)")
+    terminal.ok_log(f"Package-origin enrichment is current ({len(current.get('packages') or {}):,} packages)")
     return 0
 
 

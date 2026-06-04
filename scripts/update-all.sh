@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
       exit 1
       ;;
     --daily-interval-seconds)
-      echo "--daily-interval-seconds is no longer supported; package-page deploys run at 3 AM." >&2
+      echo "--daily-interval-seconds is no longer supported; package-origin publishes run at 3 AM." >&2
       usage >&2
       exit 1
       ;;
@@ -259,7 +259,7 @@ require_daily_publish_env() {
 
 run_daily_publish() {
   require_daily_publish_env || return 1
-  run_step "package-page enrichment refresh" \
+  run_step "package-origin enrichment refresh" \
     python3 "${script_dir}/generate-pkg-page-enrichment.py" --refresh || return 1
   run_step "package version freshness generation" \
     python3 "${script_dir}/generate-pkg-version-freshness.py" || return 1
@@ -328,9 +328,9 @@ if [[ "${run_once}" == "true" ]]; then
 else
   log INFO "av.db Homebrew authority refresh and database upload run at the top of every hour"
   if [[ "${skip_daily}" == "true" ]]; then
-    log WARN "Scheduled daily package-page deploy is disabled"
+    log WARN "Scheduled daily package-origin publish is disabled"
   else
-    log INFO "Package-page deploy runs daily at or after 03:00 local time"
+    log INFO "Package-origin publish runs daily at or after 03:00 local time"
   fi
 fi
 
@@ -363,15 +363,15 @@ while true; do
       daily_check_date="$(date -r "${daily_check_epoch}" '+%Y-%m-%d')"
       daily_check_label="$(date -r "${daily_check_epoch}" '+%Y-%m-%d %H:%M:%S %Z')"
       if daily_publish_due "${daily_check_epoch}"; then
-        log INFO "Starting daily package-page publish for ${daily_check_label}"
+        log INFO "Starting daily package-origin publish for ${daily_check_label}"
         if run_daily_publish; then
           last_daily_date="${daily_check_date}"
-          log OK "Daily package-page publish completed"
+          log OK "Daily package-origin publish completed"
         else
-          log ERROR "Daily package-page publish failed; will retry after the next successful database update"
+          log ERROR "Daily package-origin publish failed; will retry after the next successful database update"
         fi
       else
-        log INFO "Daily package-page deploy is due once per day at or after 03:00 local time"
+        log INFO "Daily package-origin publish is due once per day at or after 03:00 local time"
       fi
     fi
   else
@@ -379,7 +379,7 @@ while true; do
     if [[ "${skip_daily}" != "true" ]]; then
       daily_check_epoch="$(date +%s)"
       if daily_publish_due "${daily_check_epoch}"; then
-        log WARN "Daily package-page publish is due; will retry after the next successful database update"
+        log WARN "Daily package-origin publish is due; will retry after the next successful database update"
       fi
     fi
   fi

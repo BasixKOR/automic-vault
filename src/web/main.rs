@@ -864,7 +864,7 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         r#"<section class="pkg-section pkg-search-section" aria-labelledby="pkg-search-title"><div class="search-copy"><p class="section-kicker">{}</p><h2 id="pkg-search-title">{}</h2><p>{}</p></div><div id="pkg-search" class="pkg-search" data-av-package-search data-locale="{}" data-search-endpoint="{}" data-placeholder="{}"></div></section>"#,
         html_escape(&tx(locale, "siteSearch", "site search")),
         html_escape(&tx(locale, "findPackageCoverage", "Find package coverage")),
-        html_escape(&tx(locale, "catalogSearchCopy", "Search generated package pages, security guides, documentation, and source-backed metadata from one index.")),
+        html_escape(&tx(locale, "catalogSearchCopy", "Search the package catalog, security guides, documentation, and source-backed metadata from one index.")),
         html_escape(locale.code),
         html_escape(&search_endpoint),
         html_escape(&tx(locale, "searchPlaceholder", "Search awscli, gh, .env, npm publish"))
@@ -881,7 +881,7 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         r#"<section class="pkg-section split-section"><div><p class="section-kicker">{}</p><h2>{}</h2><p>{}</p></div><div class="package-list" aria-label="{}">"#,
         html_escape(&tx(locale, "catalogPagesKicker", "crawlable catalog")),
         html_escape(&tx(locale, "catalogPagesTitle", "Package pages from local source data")),
-        html_escape(&tx(locale, "crawlableCatalog", "Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are written to static HTML so search and answer engines can find specific tool coverage.")),
+        html_escape(&tx(locale, "crawlableCatalog", "Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are served by the Atlas package origin so search and answer engines can find specific tool coverage.")),
         html_escape(&tx(locale, "popularPackages", "Popular packages")),
     ));
     for package in top_packages {
@@ -990,7 +990,7 @@ fn render_hub_page(
     let hub_description = txf(
         locale,
         "hubDescription",
-        "{title} currently includes {count} generated package pages. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+        "{title} currently includes {count} package catalog entries. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
         &[
             ("title", hub.title.clone()),
             ("count", packages.len().to_string()),

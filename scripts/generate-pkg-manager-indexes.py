@@ -606,7 +606,7 @@ def build_manager_indexes(*, force_refresh: bool = False) -> dict[str, Any]:
     artifact = {
         "schema": SCHEMA_VERSION,
         "generated_at": utc_now(),
-        "description": "Compact package-manager database indexes used to emit source-backed install commands on generated package pages.",
+        "description": "Compact package-manager database indexes used to emit source-backed install commands in the package-origin SQLite artifact.",
         "definition_hash": stable_hash(MANAGER_DEFINITIONS),
         "alias_hash": stable_hash(PACKAGE_ALIAS_MATCHES),
         "managers": managers,

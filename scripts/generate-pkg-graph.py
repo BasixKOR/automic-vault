@@ -845,7 +845,7 @@ def check_current(path: Path, terminal: Terminal) -> int:
         terminal.error("Package graph is stale.")
         for failure in failures:
             terminal.log(f"  - {failure}")
-        terminal.log("Run scripts/generate-pkg-graph.py and regenerate package pages.")
+        terminal.log("Run scripts/generate-pkg-graph.py, then rebuild the package-origin SQLite artifact.")
         return 1
     terminal.ok(f"Package graph is current ({len(current.get('packages') or {}):,} packages)")
     return 0

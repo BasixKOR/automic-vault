@@ -651,7 +651,7 @@ def check_current(path: Path, terminal: Terminal) -> int:
         terminal.error_log("Package version freshness is stale.")
         for failure in failures:
             terminal.log(f"  - {failure}")
-        terminal.log("Run scripts/generate-pkg-version-freshness.py and regenerate package pages.")
+        terminal.log("Run scripts/generate-pkg-version-freshness.py, then rebuild the package-origin SQLite artifact.")
         return 1
     terminal.ok_log(f"Package version freshness is current ({len(current.get('packages') or {}):,} packages)")
     return 0

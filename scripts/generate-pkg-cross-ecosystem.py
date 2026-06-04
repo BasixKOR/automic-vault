@@ -567,7 +567,7 @@ def build_cross_ecosystem(agent_cmd: str = "", existing: dict[str, Any] | None =
     artifact = {
         "schema": SCHEMA_VERSION,
         "generated_at": utc_now(),
-        "description": "Agent-oriented install command and cross-ecosystem package data for generated package pages.",
+        "description": "Agent-oriented install command and cross-ecosystem package data for the package-origin SQLite artifact.",
         "input_hash": input_hash(files),
         "input_files": [path.as_posix() for path in files],
         "platform_definitions": {
@@ -611,7 +611,7 @@ def check_current(path: Path, terminal: Terminal) -> int:
         terminal.error("Package cross-ecosystem data is stale.")
         for failure in failures[:24]:
             terminal.log(f"  - {failure}")
-        terminal.log("Run scripts/generate-pkg-cross-ecosystem.py, regenerate the package graph, pages, and search index.")
+        terminal.log("Run scripts/generate-pkg-cross-ecosystem.py, regenerate the package graph, and rebuild the package-origin SQLite artifact.")
         return 1
     terminal.ok(f"Package cross-ecosystem data is current ({len(current.get('packages') or {}):,} packages)")
     return 0

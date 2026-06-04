@@ -726,7 +726,7 @@ def check_current(path: Path, terminal: Terminal) -> int:
         terminal.error("Package graph curation is stale.")
         for failure in failures[:24]:
             terminal.log(f"  - {failure}")
-        terminal.log("Run scripts/generate-pkg-graph-curation.py, regenerate the package graph, and regenerate package pages.")
+        terminal.log("Run scripts/generate-pkg-graph-curation.py, regenerate the package graph, and rebuild the package-origin SQLite artifact.")
         return 1
     coverage = current.get("coverage") or {}
     terminal.ok(

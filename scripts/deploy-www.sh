@@ -107,13 +107,6 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 site_dir="${repo_root}/www"
 llms_full_generator="${repo_root}/scripts/generate-llms-full.mjs"
-package_sqlite_generator="${repo_root}/scripts/generate-pkg-sqlite.py"
-package_page_enrichment_generator="${repo_root}/scripts/generate-pkg-page-enrichment.py"
-package_version_freshness_generator="${repo_root}/scripts/generate-pkg-version-freshness.py"
-package_manager_indexes_generator="${repo_root}/scripts/generate-pkg-manager-indexes.py"
-package_cross_ecosystem_generator="${repo_root}/scripts/generate-pkg-cross-ecosystem.py"
-package_graph_curation_generator="${repo_root}/scripts/generate-pkg-graph-curation.py"
-package_graph_generator="${repo_root}/scripts/generate-pkg-graph.py"
 www_i18n_generator="${repo_root}/scripts/generate-www-i18n.py"
 product_version_source="${repo_root}/Cargo.toml"
 db_source="${repo_root}/data/combined.json"
@@ -291,49 +284,6 @@ prepare_site_for_upload() {
 
   log_ok "Stamped Automic Vault ${product_version}"
   log_ok "Stamped ${scanned_package_display_count} scanned packages"
-}
-
-assert_package_pages_current() {
-  log_step "Checking package page enrichment"
-  if [[ ! -x "${package_page_enrichment_generator}" && ! -f "${package_page_enrichment_generator}" ]]; then
-    die "Missing package page enrichment generator: ${package_page_enrichment_generator}"
-  fi
-  python3 "${package_page_enrichment_generator}" --check
-
-  log_step "Checking package version freshness"
-  if [[ ! -x "${package_version_freshness_generator}" && ! -f "${package_version_freshness_generator}" ]]; then
-    die "Missing package version freshness generator: ${package_version_freshness_generator}"
-  fi
-  python3 "${package_version_freshness_generator}" --check
-
-  log_step "Checking package manager indexes"
-  if [[ ! -x "${package_manager_indexes_generator}" && ! -f "${package_manager_indexes_generator}" ]]; then
-    die "Missing package manager index generator: ${package_manager_indexes_generator}"
-  fi
-  python3 "${package_manager_indexes_generator}" --check
-
-  log_step "Checking package cross-ecosystem install commands"
-  if [[ ! -x "${package_cross_ecosystem_generator}" && ! -f "${package_cross_ecosystem_generator}" ]]; then
-    die "Missing package cross-ecosystem generator: ${package_cross_ecosystem_generator}"
-  fi
-  python3 "${package_cross_ecosystem_generator}" --check
-
-  log_step "Checking package relationship graph"
-  if [[ ! -x "${package_graph_curation_generator}" && ! -f "${package_graph_curation_generator}" ]]; then
-    die "Missing package graph curation generator: ${package_graph_curation_generator}"
-  fi
-  python3 "${package_graph_curation_generator}" --check
-
-  if [[ ! -x "${package_graph_generator}" && ! -f "${package_graph_generator}" ]]; then
-    die "Missing package graph generator: ${package_graph_generator}"
-  fi
-  python3 "${package_graph_generator}" --check
-
-  log_step "Checking package-origin SQLite artifact"
-  if [[ ! -x "${package_sqlite_generator}" && ! -f "${package_sqlite_generator}" ]]; then
-    die "Missing package SQLite generator: ${package_sqlite_generator}"
-  fi
-  python3 "${package_sqlite_generator}" --check
 }
 
 assert_www_i18n_current() {
@@ -1387,7 +1337,7 @@ put_bucket_policy() {
 sync_site() {
   local upload_site_dir="${prepared_site_dir:-${site_dir}}"
 
-  remove_old_generated_package_objects
+  ensure_package_origin_prefixes_absent
 
   log_step "Syncing static assets"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
@@ -1475,15 +1425,15 @@ sync_site() {
   log_ok "S3 content synced"
 }
 
-remove_old_generated_package_objects() {
-  log_step "Removing package and Pagefind objects now served by Atlas"
+ensure_package_origin_prefixes_absent() {
+  log_step "Ensuring package-origin prefixes are absent from S3"
   aws s3 rm "s3://${WWW_BUCKET}/pkg/" --recursive >/dev/null 2>&1 || true
   aws s3 rm "s3://${WWW_BUCKET}/de/pkg/" --recursive >/dev/null 2>&1 || true
   aws s3 rm "s3://${WWW_BUCKET}/fr/pkg/" --recursive >/dev/null 2>&1 || true
   aws s3 rm "s3://${WWW_BUCKET}/ja/pkg/" --recursive >/dev/null 2>&1 || true
   aws s3 rm "s3://${WWW_BUCKET}/zh-hans/pkg/" --recursive >/dev/null 2>&1 || true
   aws s3 rm "s3://${WWW_BUCKET}/pagefind/" --recursive >/dev/null 2>&1 || true
-  log_ok "Old generated package and Pagefind prefixes removed from S3"
+  log_ok "Package-origin prefixes are absent from S3"
 }
 
 ensure_certificate_issued() {
@@ -1505,7 +1455,6 @@ ensure_certificate_issued() {
 
 log_header
 assert_www_i18n_current
-assert_package_pages_current
 prepare_site_for_upload
 ensure_bucket
 oac_id="$(ensure_oac)"
