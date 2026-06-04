@@ -62,6 +62,78 @@ final class MainWindowModelTests: XCTestCase {
         )
     }
 
+    func testWebsiteIndexDecodesBlogPostsFromWebsiteJSON() throws {
+        let json = """
+        {
+          "blog_posts": [
+            {
+              "title": "The Agentic Toolkit",
+              "url": "https://www.automicvault.com/blog/agentic-toolkit/",
+              "description": "An installable pack of Homebrew packages.",
+              "date_published": "2026-06-02"
+            }
+          ]
+        }
+        """
+
+        let index = try JSONDecoder().decode(WebsiteIndex.self, from: Data(json.utf8))
+
+        XCTAssertEqual(index.blogPosts.count, 1)
+        XCTAssertEqual(index.blogPosts.first?.title, "The Agentic Toolkit")
+        XCTAssertEqual(index.blogPosts.first?.datePublished, "2026-06-02")
+    }
+
+    @MainActor
+    func testAboutSectionLoadsBlogPostsWithEmptyDossierSelection() async throws {
+        let model = MainWindowModel(
+            blogPostsFetcher: {
+                [
+                    WebsiteBlogPost(
+                        title: "Older Post",
+                        url: "https://www.automicvault.com/blog/older/",
+                        description: "Older article.",
+                        datePublished: "2026-05-01"
+                    ),
+                    WebsiteBlogPost(
+                        title: "The Agentic Toolkit",
+                        url: "https://www.automicvault.com/blog/agentic-toolkit/",
+                        description: "An installable pack of Homebrew packages.",
+                        datePublished: "2026-06-02"
+                    ),
+                ]
+            }
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .about
+        await waitUntil(model.displayedPackages.count == 2)
+
+        XCTAssertNil(model.count(for: .about))
+        XCTAssertEqual(
+            model.displayedPackages.map(model.displayName),
+            ["The Agentic Toolkit", "Older Post"]
+        )
+
+        let post = try XCTUnwrap(model.displayedPackages.first)
+        XCTAssertEqual(model.packageDescription(for: post), "An installable pack of Homebrew packages.")
+        XCTAssertEqual(model.versionText(for: post), "2026-06-02")
+
+        model.select(post)
+
+        XCTAssertEqual(model.selectedItemID, "blog:https://www.automicvault.com/blog/agentic-toolkit/")
+        XCTAssertFalse(model.isLoadingDetail)
+        XCTAssertNil(model.selectedDetail)
+        XCTAssertEqual(
+            model.selectedURL(for: .homepage)?.absoluteString,
+            "https://www.automicvault.com/blog/agentic-toolkit/"
+        )
+        XCTAssertEqual(
+            model.selectedURL(for: .repository)?.absoluteString,
+            "https://www.automicvault.com/blog/agentic-toolkit/"
+        )
+        XCTAssertEqual(model.highlightedLinkTab(for: .repository), .homepage)
+    }
+
     func testSidebarAlertCountsDisplayZeroForPersistentSections() {
         XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(0))
         XCTAssertTrue(MainWindowSection.outdated.shouldDisplaySidebarCount(1))

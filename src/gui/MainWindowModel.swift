@@ -319,6 +319,20 @@ struct PackageOperationRequest: Equatable {
     let migrationIsotopeName: String?
 }
 
+private enum WebsiteBlogIndexFetchError: Error, LocalizedError {
+    case invalidHTTPStatus(Int)
+    case missingHTTPResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidHTTPStatus(let status):
+            return "Website blog index request failed with HTTP \(status)."
+        case .missingHTTPResponse:
+            return "Website blog index request did not return an HTTP response."
+        }
+    }
+}
+
 @MainActor
 final class MainWindowModel: ObservableObject {
     @Published var selectedSection: MainWindowSection = .installed {
@@ -344,6 +358,7 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var geigerPackages: [PackagePresentation] = []
     @Published private(set) var catalogPackages: [PackagePresentation] = []
     @Published private(set) var pulsePackages: [PackagePresentation] = []
+    @Published private(set) var blogPostPackages: [PackagePresentation] = []
     @Published private(set) var searchResults: [PackagePresentation] = []
     @Published private(set) var snapshot = NucleusStatusSnapshot.empty
     @Published private(set) var selectedItemID: String?
@@ -364,6 +379,9 @@ final class MainWindowModel: ObservableObject {
 
     nonisolated private static let pageSize = 96
     nonisolated private static let paginationPrefetchThreshold = 12
+    nonisolated private static let websiteIndexURL = URL(
+        string: "https://www.automicvault.com/index.json"
+    )!
     nonisolated static let newUpdatedLastClickedAtDefaultsKey =
         "MainWindowModel.newUpdatedLastClickedAt"
     private let statusStore = NucleusStatusStore()
@@ -383,12 +401,14 @@ final class MainWindowModel: ObservableObject {
     private var categoryPackagesByPageKey: [CategoryCatalogPageKey: [PackagePresentation]] = [:]
     private var categoryTotalCountsByPageKey: [CategoryCatalogPageKey: Int] = [:]
     private var pulseTotalCount: Int?
+    private var didLoadBlogPosts = false
     private var searchTotalCount = 0
     private var sectionPageNextOffsets: [SectionPageKind: Int] = [:]
     private var searchNextOffset: Int?
     private var transientStatusTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var sectionPageTasks: [SectionPageKind: Task<Void, Never>] = [:]
+    private var blogPostsTask: Task<Void, Never>?
     private var loadingSectionKinds = Set<SectionPageKind>()
     private var staleSectionKinds = Set<SectionPageKind>()
     private var pendingHardeningSelection: PackageHardeningContext?
@@ -404,6 +424,7 @@ final class MainWindowModel: ObservableObject {
     private let securityRecommendationPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let geigerPackagesFetcher: (Int, Int) throws -> PackageSearchPage
     private let searchPackagesFetcher: (String, Int, Int) throws -> PackageSearchPage
+    private let blogPostsFetcher: () async throws -> [WebsiteBlogPost]
 
     init(
         cliToolsRecommendationProvider: @escaping () -> PackageRecommendation? = {
@@ -452,6 +473,9 @@ final class MainWindowModel: ObservableObject {
             limit in
             try MainWindowModel.searchPackages(query: query, offset: offset, limit: limit)
         },
+        blogPostsFetcher: @escaping () async throws -> [WebsiteBlogPost] = {
+            try await MainWindowModel.fetchWebsiteBlogPosts()
+        },
         userDefaults: UserDefaults = .standard
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
@@ -462,6 +486,7 @@ final class MainWindowModel: ObservableObject {
         self.securityRecommendationPackagesFetcher = securityRecommendationPackagesFetcher
         self.geigerPackagesFetcher = geigerPackagesFetcher
         self.searchPackagesFetcher = searchPackagesFetcher
+        self.blogPostsFetcher = blogPostsFetcher
         self.userDefaults = userDefaults
         newUpdatedLastClickedAt = userDefaults.object(
             forKey: Self.newUpdatedLastClickedAtDefaultsKey
@@ -596,7 +621,9 @@ final class MainWindowModel: ObservableObject {
         transientStatusTask?.cancel()
         searchTask?.cancel()
         sectionPageTasks.values.forEach { $0.cancel() }
+        blogPostsTask?.cancel()
         sectionPageTasks.removeAll()
+        blogPostsTask = nil
         loadingSectionKinds.removeAll()
         staleSectionKinds.removeAll()
         sectionPageNextOffsets.removeAll()
@@ -651,6 +678,10 @@ final class MainWindowModel: ObservableObject {
                 detailsByPackageName[package.selectionID] = detail
                 detailsByPackageName[detail.packageName] = detail
             }
+            isLoadingDetail = false
+            return
+        }
+        if case .blogPost = package.item {
             isLoadingDetail = false
             return
         }
@@ -885,6 +916,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     func selectedURL(for tab: MainWindowLinkTab) -> URL? {
+        if let url = selectedBlogPostURL {
+            return url
+        }
         guard let detail = selectedDetail else {
             return nil
         }
@@ -892,6 +926,9 @@ final class MainWindowModel: ObservableObject {
     }
 
     func highlightedLinkTab(for tab: MainWindowLinkTab) -> MainWindowLinkTab {
+        if selectedBlogPostURL != nil {
+            return .homepage
+        }
         guard let detail = selectedDetail else {
             return tab
         }
@@ -935,6 +972,14 @@ final class MainWindowModel: ObservableObject {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    private var selectedBlogPostURL: URL? {
+        guard let selectedPackage,
+              case .blogPost(let post) = selectedPackage.item else {
+            return nil
+        }
+        return post.urlValue
     }
 
     func showTransientStatus(_ message: String) {
@@ -1185,7 +1230,7 @@ final class MainWindowModel: ObservableObject {
                 return "\(record.version) → \(latestVersion)"
             }
             return record.version
-        case .recommendation, .available, .command:
+        case .recommendation, .available, .blogPost, .command:
             return package.versionText
         }
     }
@@ -1264,6 +1309,7 @@ final class MainWindowModel: ObservableObject {
             + catalogPackages
             + categoryPackages
             + pulsePackages
+            + blogPostPackages
             + searchResults {
             if seen.insert(package.selectionID).inserted {
                 result.append(package)
@@ -1474,6 +1520,9 @@ final class MainWindowModel: ObservableObject {
             append(result.name)
             append(result.detailLookupName)
             append(sourceQualifiedName(for: result.source))
+        case .blogPost(let post):
+            append(post.selectionID)
+            append(post.url)
         case .recommendation(let recommendation):
             append(recommendation.detail.packageName)
             append(recommendation.detail.qualifiedName)
@@ -1569,6 +1618,8 @@ final class MainWindowModel: ObservableObject {
             return recommendation.detail.securityState
         case .available(let result):
             return result.securityState
+        case .blogPost:
+            return nil
         case .command:
             return nil
         }
@@ -1598,7 +1649,7 @@ final class MainWindowModel: ObservableObject {
         if query.isEmpty == false {
             return mergedSearchPackages(query: query)
         }
-        guard section != .settings, section != .about else {
+        guard section != .settings else {
             return []
         }
 
@@ -1616,6 +1667,8 @@ final class MainWindowModel: ObservableObject {
             source = packages.filter(isOutdated) + localOutdatedPackages
         case .allPackages:
             source = catalogSourcePackages
+        case .about:
+            source = blogPostPackages
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
              .data, .languageRuntime, .media, .productivity, .science, .games, .toys, .other:
             if let category = section.categoryIdentifier {
@@ -1623,7 +1676,7 @@ final class MainWindowModel: ObservableObject {
             } else {
                 source = []
             }
-        case .settings, .about:
+        case .settings:
             source = []
         }
 
@@ -1655,13 +1708,18 @@ final class MainWindowModel: ObservableObject {
             return true
         case .outdated:
             return isOutdated(package)
+        case .about:
+            if case .blogPost = package.item {
+                return true
+            }
+            return false
         case .developerTools, .cloudInfrastructure, .networking, .system, .security,
              .data, .languageRuntime, .media, .productivity, .science, .games, .toys, .other:
             guard let category = section.categoryIdentifier else {
                 return false
             }
             return packageCategoryIdentifier(package) == category
-        case .settings, .about:
+        case .settings:
             return false
         }
     }
@@ -1973,6 +2031,14 @@ final class MainWindowModel: ObservableObject {
         )
     }
 
+    private func presentation(for post: WebsiteBlogPost) -> PackagePresentation {
+        PackagePresentation(
+            item: .blogPost(post),
+            detail: nil,
+            freshness: Self.freshness(for: post.selectionID)
+        )
+    }
+
     private func scheduleSearch() {
         searchTask?.cancel()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2094,6 +2160,10 @@ final class MainWindowModel: ObservableObject {
     private func ensureSelectedSectionLoaded() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.isEmpty else {
+            return
+        }
+        if selectedSection == .about {
+            loadBlogPostsIfNeeded()
             return
         }
         guard let kind = sectionPageKind(for: selectedSection) else {
@@ -2325,11 +2395,55 @@ final class MainWindowModel: ObservableObject {
             isLoadingSectionPage = false
             return
         }
+        if selectedSection == .about {
+            isLoadingSectionPage = blogPostsTask != nil
+            return
+        }
         guard let kind = sectionPageKind(for: selectedSection) else {
             isLoadingSectionPage = false
             return
         }
         isLoadingSectionPage = loadingSectionKinds.contains(kind)
+    }
+
+    private func loadBlogPostsIfNeeded() {
+        guard !didLoadBlogPosts,
+              blogPostsTask == nil else {
+            return
+        }
+        updateSelectedSectionLoadingState()
+        lastErrorMessage = nil
+        let fetcher = blogPostsFetcher
+        blogPostsTask = Task { [weak self] in
+            let result: Result<[WebsiteBlogPost], Error>
+            do {
+                result = .success(try await fetcher())
+            } catch {
+                result = .failure(error)
+            }
+            await MainActor.run {
+                self?.finishBlogPostsLoad(result)
+            }
+        }
+        updateSelectedSectionLoadingState()
+    }
+
+    private func finishBlogPostsLoad(_ result: Result<[WebsiteBlogPost], Error>) {
+        blogPostsTask = nil
+        updateSelectedSectionLoadingState()
+        switch result {
+        case .success(let posts):
+            didLoadBlogPosts = true
+            blogPostPackages = posts
+                .filter { post in
+                    post.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        && post.urlValue != nil
+                }
+                .sorted(by: WebsiteBlogPost.sortsByMostRecent)
+                .map(presentation(for:))
+        case .failure(let error):
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     private func isSelectedCategoryCatalogPage(_ kind: SectionPageKind) -> Bool {
@@ -2606,6 +2720,23 @@ final class MainWindowModel: ObservableObject {
             .fetchSearchResults(query: query, offset: offset, limit: limit)
     }
 
+    private nonisolated static func fetchWebsiteBlogPosts() async throws -> [WebsiteBlogPost] {
+        var request = URLRequest(url: websiteIndexURL)
+        request.timeoutInterval = 15
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WebsiteBlogIndexFetchError.missingHTTPResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw WebsiteBlogIndexFetchError.invalidHTTPStatus(httpResponse.statusCode)
+        }
+
+        let index = try JSONDecoder().decode(WebsiteIndex.self, from: data)
+        return index.blogPosts
+    }
+
     private nonisolated static func freshness(for packageName: String) -> CGFloat {
         let hash = CGFloat(abs(packageName.hashValue % 1000)) / 1000
         return 0.28 + hash * 0.72
@@ -2721,6 +2852,8 @@ private extension Array where Element == PackagePresentation {
                 item = .available(result.clearingSecurityState())
             case .recommendation(let recommendation):
                 item = .recommendation(recommendation.clearingSecurityState())
+            case .blogPost:
+                item = package.item
             case .command:
                 item = package.item
             }
@@ -2770,6 +2903,8 @@ private struct PackageHardeningContext {
             return matches(recommendation.detail)
                 || matches(key: recommendation.packageName)
                 || recommendation.missingPackageNames.contains(where: matches(key:))
+        case .blogPost:
+            return false
         case .command:
             return false
         }

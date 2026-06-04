@@ -1382,15 +1382,71 @@ enum PackageListItem: Equatable {
     case installed(PackageRecord)
     case recommendation(PackageRecommendation)
     case available(PackageSearchResult)
+    case blogPost(WebsiteBlogPost)
     case command(CommandPaletteItem)
 
     var isAvailable: Bool {
         switch self {
-        case .recommendation, .available, .command:
+        case .recommendation, .available, .blogPost, .command:
             return true
         case .installed:
             return false
         }
+    }
+}
+
+struct WebsiteIndex: Decodable, Equatable {
+    let blogPosts: [WebsiteBlogPost]
+
+    enum CodingKeys: String, CodingKey {
+        case blogPosts = "blog_posts"
+    }
+
+    init(blogPosts: [WebsiteBlogPost]) {
+        self.blogPosts = blogPosts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        blogPosts = try container.decodeIfPresent([WebsiteBlogPost].self, forKey: .blogPosts) ?? []
+    }
+}
+
+struct WebsiteBlogPost: Decodable, Equatable {
+    let title: String
+    let url: String
+    let description: String?
+    let datePublished: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case url
+        case description
+        case datePublished = "date_published"
+    }
+
+    var selectionID: String {
+        "blog:\(url)"
+    }
+
+    var urlValue: URL? {
+        URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var displayDate: String {
+        datePublished?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    static func sortsByMostRecent(
+        _ left: WebsiteBlogPost,
+        before right: WebsiteBlogPost
+    ) -> Bool {
+        let leftDate = left.displayDate
+        let rightDate = right.displayDate
+        if leftDate != rightDate {
+            return leftDate > rightDate
+        }
+        return left.title.localizedStandardCompare(right.title) == .orderedAscending
     }
 }
 
@@ -1794,7 +1850,7 @@ struct PackagePresentation: Equatable {
                 return true
             }
             return record.name.hasPrefix("isotope:")
-        case .recommendation, .available, .command:
+        case .recommendation, .available, .blogPost, .command:
             return false
         }
     }
@@ -1855,7 +1911,7 @@ struct PackagePresentation: Equatable {
                 return lookupName
             }
             return packageName ?? selectionID
-        case .recommendation, .command:
+        case .recommendation, .blogPost, .command:
             return packageName ?? selectionID
         }
     }
@@ -1876,6 +1932,8 @@ struct PackagePresentation: Equatable {
             return fallbackDetail.securityNotice != nil
                 && !fallbackDetail.installed
                 && !fallbackDetail.hasLocalPlainTextSecretExposure
+        case .blogPost:
+            return false
         case .command:
             return false
         }
@@ -1892,6 +1950,8 @@ struct PackagePresentation: Equatable {
             return recommendation.detail.securityNotice?.source
         case .available(let result):
             return result.fallbackDetail.securityNotice?.source
+        case .blogPost:
+            return nil
         case .command:
             return nil
         }
@@ -1908,6 +1968,8 @@ struct PackagePresentation: Equatable {
             return recommendation.detail.packageName
         case .available(let result):
             return result.name
+        case .blogPost(let post):
+            return post.selectionID
         case .command(let command):
             return command.selectionID
         }
@@ -1921,6 +1983,8 @@ struct PackagePresentation: Equatable {
             return recommendation.detail.packageName
         case .available(let result):
             return result.name
+        case .blogPost:
+            return nil
         case .command:
             return nil
         }
@@ -1932,7 +1996,7 @@ struct PackagePresentation: Equatable {
             return record.category
         case .available(let result):
             return result.category
-        case .recommendation, .command:
+        case .recommendation, .blogPost, .command:
             return nil
         }
     }
@@ -1943,7 +2007,7 @@ struct PackagePresentation: Equatable {
             return detail?.popularity?.rank
         case .available(let result):
             return result.rank
-        case .recommendation, .command:
+        case .recommendation, .blogPost, .command:
             return nil
         }
     }
@@ -1956,6 +2020,8 @@ struct PackagePresentation: Equatable {
             return recommendation.detail.packageName
         case .available(let result):
             return result.name
+        case .blogPost(let post):
+            return post.title
         case .command(let command):
             return command.displayName
         }
@@ -1991,6 +2057,8 @@ struct PackagePresentation: Equatable {
                 return L10n.format("latest %@", latestVersion)
             }
             return result.source?.displayLabel ?? "Homebrew"
+        case .blogPost(let post):
+            return post.displayDate
         case .command(let command):
             return command.description
         }
@@ -2071,6 +2139,8 @@ struct PackagePresentation: Equatable {
                 return description
             }
             return versionText
+        case .blogPost(let post):
+            return post.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         case .command(let command):
             return command.description
         }
@@ -2094,7 +2164,7 @@ struct PackagePresentation: Equatable {
         switch item {
         case .command(let command):
             return command.queryText
-        case .installed, .recommendation, .available:
+        case .installed, .recommendation, .available, .blogPost:
             return nil
         }
     }
