@@ -32,16 +32,27 @@ def _npm_popularity(rank):
 def _formula(
     summary,
     aliases=None,
+    category=None,
+    docs=None,
+    homepage=None,
     popularity_rank=None,
     popularity_installs=None,
+    repository=None,
     last_updated_at=None,
     pulse_kind=None,
+    upstream_docs=None,
 ):
     formula = {
         "summary": summary,
         "aliases": aliases or [],
         "oldnames": [],
     }
+    if category is not None:
+        formula["category"] = category
+    if docs is not None:
+        formula["docs"] = docs
+    if homepage is not None:
+        formula["homepage"] = homepage
     if popularity_rank is not None and popularity_installs is not None:
         formula["popularity"] = {
             "installs_per_365_days": popularity_installs,
@@ -49,10 +60,14 @@ def _formula(
         }
     elif popularity_rank is not None:
         formula["popularity"] = _popularity(popularity_rank)
+    if repository is not None:
+        formula["repository"] = repository
     if last_updated_at is not None:
         formula["last_updated_at"] = last_updated_at
     if pulse_kind is not None:
         formula["pulse_kind"] = pulse_kind
+    if upstream_docs is not None:
+        formula["upstreamDocs"] = upstream_docs
     return formula
 
 
@@ -101,6 +116,7 @@ def main():
                     "scoped-tool": "npm:@scope/scoped-tool",
                     "rg": "ripgrep",
                     "sqlite": "sqlite",
+                    "uv": "uv",
                 },
                 "formulas": {
                     "awscli": _formula("Official Amazon AWS command-line interface"),
@@ -141,6 +157,14 @@ def main():
                         popularity_rank=5,
                         last_updated_at="2026-05-01T00:00:00Z",
                         pulse_kind="new",
+                    ),
+                    "uv": _formula(
+                        "Extremely fast Python package installer and resolver, written in Rust",
+                        category="developer-tools",
+                        docs=["https://docs.astral.sh/uv"],
+                        homepage="https://docs.astral.sh/uv/",
+                        repository="https://github.com/astral-sh/uv",
+                        upstream_docs="https://docs.astral.sh/uv",
                     ),
                 },
                 "casks": {
@@ -236,6 +260,15 @@ def main():
                     "modifies": "av:terraform",
                     "version": "1.0.0",
                 },
+                "uv": {
+                    "name": "isotope:uv",
+                    "modifies": "brew:uv",
+                    "publishedAt": "2026-06-02T15:02:25Z",
+                    "releaseUrl": "https://formulae.brew.sh/formula/uv",
+                    "repository": "automic-vault/radioisotopes",
+                    "upstreamRepository": "Homebrew/homebrew-core",
+                    "version": "0.11.18",
+                },
             },
             "npm": {
                 "@tobilu/qmd": {"homebrewDeps": ["sqlite"]},
@@ -325,9 +358,12 @@ def _validate(data):
     assert db["casks"]["codex"]["version"]
     assert db["entries"]["coverage-npm"] == "npm:coverage-npm"
     assert db["entries"]["scoped-tool"] == "npm:@scope/scoped-tool"
+    assert db["entries"]["uv"] == "uv"
+    assert db["formulas"]["uv"]["repository"] == "https://github.com/astral-sh/uv"
     assert db["npms"]["coverage-npm"]["executable"] == "coverage-npm"
     assert sources["isotopes"]["gh"]["replaces"] == "brew:gh"
     assert sources["isotopes"]["aws-cli"]["modifies"] == "brew:awscli"
+    assert sources["isotopes"]["uv"]["modifies"] == "brew:uv"
     assert sources["npm"]["coverage-npm"]["homebrewDeps"] == ["node"]
     assert sources["pip"]["coverage-pip"]["pythonFormula"] == "python@3.14"
     assert sources["security-recommendations"]["packages"]["brew:awscli"]["isotope"] == "aws-cli"

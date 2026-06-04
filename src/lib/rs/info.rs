@@ -1121,23 +1121,45 @@ fn geiger_package_result_for_integration(
         PackageAliasTarget::NpmPackage(package_name) => PackageReceiptSource::Npm { package_name },
         PackageAliasTarget::PipPackage(package_name) => PackageReceiptSource::Pip { package_name },
     };
-    Some(PackageSearchResult {
-        package_name: package_source_qualified_name(&source),
-        source,
-        summary: Some(geiger_package_summary(&state)),
+    let package_name = package_source_qualified_name(&source);
+    let mut result = geiger_package_result_with_source_metadata(&source, &package_name);
+    result.summary = Some(geiger_package_summary(&state));
+    if result.homepage.is_none() {
+        result.homepage = isotope.and_then(|record| record.release_url.clone());
+    }
+    result.security_state = Some(state);
+    result.last_updated_at = isotope.and_then(|record| record.published_at.clone());
+    Some(result)
+}
+
+fn geiger_package_result_with_source_metadata(
+    source: &PackageReceiptSource,
+    package_name: &str,
+) -> PackageSearchResult {
+    if let PackageReceiptSource::Formula { root_formula } = source
+        && let Ok(formulae) = formula_index_entries()
+        && let Some(entry) = formula_index_entry_for_security_recommendation(formulae, root_formula)
+    {
+        return formula_search_result(entry, package_name);
+    }
+
+    PackageSearchResult {
+        package_name: package_name.to_string(),
+        source: source.clone(),
+        summary: None,
         latest_version: None,
-        homepage: isotope.and_then(|record| record.release_url.clone()),
+        homepage: None,
         repository: None,
         upstream_docs: None,
         docs: Vec::new(),
         category: None,
         dependencies: Vec::new(),
         install_package_names: Vec::new(),
-        security_state: Some(state),
+        security_state: None,
         rank: None,
-        last_updated_at: isotope.and_then(|record| record.published_at.clone()),
+        last_updated_at: None,
         pulse_kind: None,
-    })
+    }
 }
 
 fn package_security_state_needs_geiger_action(state: &PackageSecurityState) -> bool {
@@ -1736,6 +1758,7 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                                             &formula,
                                             &formula_info,
                                         ));
+                                    apply_formula_db_homebrew_metadata(&formula, info);
                                     match ensure_formula_has_bottle(
                                         &formula,
                                         &formula_info,
@@ -1757,6 +1780,7 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                                     info.homebrew_info_error = Some(err);
                                     info.homebrew_info =
                                         Some(isotope_homebrew_info(&isotope_name, isotope));
+                                    apply_formula_db_homebrew_metadata(&formula, info);
                                 }
                             }
                         }
@@ -1772,6 +1796,9 @@ pub(crate) fn populate_package_info_metadata(config: &Config, info: &mut Package
                             info.latest_version = Some(isotope.version.clone());
                             info.homebrew_info =
                                 Some(isotope_homebrew_info(&isotope_name, isotope));
+                            if let Some(formula) = isotope_homebrew_formula_target(isotope) {
+                                apply_formula_db_homebrew_link_metadata(&formula, info);
+                            }
                         }
                     }
                 }
@@ -2004,6 +2031,45 @@ pub(crate) fn isotope_homebrew_info(
         docs: Vec::new(),
         license: None,
         dependencies: Vec::new(),
+    }
+}
+
+pub(crate) fn isotope_homebrew_formula_target(record: &IsotopePackageData) -> Option<String> {
+    isotope_modified_package_target(record)
+        .ok()
+        .flatten()
+        .or_else(|| isotope_replaced_package_target(record).ok().flatten())
+        .and_then(|target| match target {
+            PackageAliasTarget::HomebrewFormula(formula) => Some(formula),
+            _ => None,
+        })
+}
+
+fn apply_formula_db_homebrew_metadata(root_formula: &str, info: &mut PackageInfo) {
+    let Ok(db) = crate::cli::load_db() else {
+        return;
+    };
+    if crate::cli::ensure_db_schema(&db).is_err() {
+        return;
+    }
+    let canonical =
+        canonical_formula_name(root_formula).unwrap_or_else(|_| root_formula.to_string());
+    let Some(metadata) = db.formulas.get(&canonical) else {
+        return;
+    };
+    apply_formula_db_metadata_to_info(root_formula, metadata, info);
+}
+
+fn apply_formula_db_homebrew_link_metadata(root_formula: &str, info: &mut PackageInfo) {
+    let description = info
+        .homebrew_info
+        .as_ref()
+        .and_then(|homebrew_info| homebrew_info.description.clone());
+    apply_formula_db_homebrew_metadata(root_formula, info);
+    if let Some(description) = description
+        && let Some(homebrew_info) = info.homebrew_info.as_mut()
+    {
+        homebrew_info.description = Some(description);
     }
 }
 
@@ -3626,6 +3692,83 @@ mod tests {
         let isotope_info = isotope_homebrew_info("gh", isotope);
         assert_eq!(isotope_info.formula, "gh");
         assert!(isotope_info.description.is_some());
+
+        let uv_isotope = isotope_package_data("uv").unwrap();
+        assert_eq!(
+            isotope_homebrew_formula_target(uv_isotope),
+            Some("uv".to_string())
+        );
+        let mut uv_info = PackageInfo {
+            package_name: "isotope:uv".to_string(),
+            qualified_name: "isotope:uv".to_string(),
+            install_root: PathBuf::from("/opt/iso/uv"),
+            installed: false,
+            source: Some(PackageReceiptSource::Isotope {
+                isotope_name: "uv".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: None,
+            latest_version: Some("0.11.18".to_string()),
+            latest_version_error: None,
+            executable_paths: Vec::new(),
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: Some("2026-06-02T15:02:25Z".to_string()),
+            homebrew_info: Some(isotope_homebrew_info("uv", uv_isotope)),
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+            version_options: Vec::new(),
+        };
+        apply_formula_db_homebrew_metadata("uv", &mut uv_info);
+        let uv_homebrew_info = uv_info.homebrew_info.unwrap();
+        assert_eq!(
+            uv_homebrew_info.homepage.as_deref(),
+            Some("https://docs.astral.sh/uv/")
+        );
+        assert_eq!(
+            uv_homebrew_info.repository.as_deref(),
+            Some("https://github.com/astral-sh/uv")
+        );
+        assert_eq!(
+            uv_homebrew_info.upstream_docs.as_deref(),
+            Some("https://docs.astral.sh/uv")
+        );
+        assert_eq!(
+            uv_homebrew_info.docs,
+            vec!["https://docs.astral.sh/uv".to_string()]
+        );
+        assert_eq!(
+            uv_info.last_updated_at.as_deref(),
+            Some("2026-06-02T15:02:25Z")
+        );
+
+        let uv_geiger = geiger_package_result_with_source_metadata(
+            &PackageReceiptSource::Formula {
+                root_formula: "uv".to_string(),
+            },
+            "brew:uv",
+        );
+        assert_eq!(uv_geiger.package_name, "brew:uv");
+        assert_eq!(
+            uv_geiger.homepage.as_deref(),
+            Some("https://docs.astral.sh/uv/")
+        );
+        assert_eq!(
+            uv_geiger.repository.as_deref(),
+            Some("https://github.com/astral-sh/uv")
+        );
+        assert_eq!(
+            uv_geiger.upstream_docs.as_deref(),
+            Some("https://docs.astral.sh/uv")
+        );
+        assert_eq!(
+            uv_geiger.docs,
+            vec!["https://docs.astral.sh/uv".to_string()]
+        );
 
         let available = resolve_available_package_results(&config).unwrap();
         assert!(!available.is_empty());

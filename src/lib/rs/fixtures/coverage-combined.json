@@ -44,7 +44,8 @@
         "libpq": "libpq",
         "rg": "ripgrep",
         "scoped-tool": "npm:@scope/scoped-tool",
-        "sqlite": "sqlite"
+        "sqlite": "sqlite",
+        "uv": "uv"
       },
       "formulas": {
         "awscli": {
@@ -132,6 +133,18 @@
           },
           "pulse_kind": "new",
           "summary": "SQLite utility collection"
+        },
+        "uv": {
+          "aliases": [],
+          "category": "developer-tools",
+          "docs": [
+            "https://docs.astral.sh/uv"
+          ],
+          "homepage": "https://docs.astral.sh/uv/",
+          "oldnames": [],
+          "repository": "https://github.com/astral-sh/uv",
+          "summary": "Extremely fast Python package installer and resolver, written in Rust",
+          "upstreamDocs": "https://docs.astral.sh/uv"
         }
       },
       "generated_at": "2026-05-05T00:00:00Z",
@@ -224,6 +237,15 @@
         "modifies": "av:terraform",
         "name": "isotope:terraform",
         "version": "1.0.0"
+      },
+      "uv": {
+        "modifies": "brew:uv",
+        "name": "isotope:uv",
+        "publishedAt": "2026-06-02T15:02:25Z",
+        "releaseUrl": "https://formulae.brew.sh/formula/uv",
+        "repository": "automic-vault/radioisotopes",
+        "upstreamRepository": "Homebrew/homebrew-core",
+        "version": "0.11.18"
       }
     },
     "npm": {

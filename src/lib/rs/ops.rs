@@ -206,6 +206,7 @@ fn catalog_metadata_for_source(source: &PackageReceiptSource) -> CatalogPackageM
     match source {
         PackageReceiptSource::Formula { root_formula } => formula_catalog_metadata(root_formula),
         PackageReceiptSource::Cask { cask_name } => cask_catalog_metadata(cask_name),
+        PackageReceiptSource::Isotope { isotope_name } => isotope_catalog_metadata(isotope_name),
         PackageReceiptSource::Npm { package_name } => npm_catalog_metadata(package_name),
         _ => CatalogPackageMetadata::default(),
     }
@@ -249,6 +250,22 @@ fn cask_catalog_metadata(cask_name: &str) -> CatalogPackageMetadata {
     }
 }
 
+fn isotope_catalog_metadata(isotope_name: &str) -> CatalogPackageMetadata {
+    let Ok(isotope) = isotope_package_data(isotope_name) else {
+        return CatalogPackageMetadata::default();
+    };
+    if let Some(formula) = isotope_homebrew_formula_target(isotope) {
+        let metadata = formula_catalog_metadata(&formula);
+        if metadata.has_visible_fields() {
+            return metadata;
+        }
+    }
+    CatalogPackageMetadata {
+        homepage: isotope.release_url.as_deref().and_then(string_or_none),
+        ..CatalogPackageMetadata::default()
+    }
+}
+
 fn npm_catalog_metadata(package_name: &str) -> CatalogPackageMetadata {
     let Ok(db) = crate::cli::load_db() else {
         return CatalogPackageMetadata::default();
@@ -263,6 +280,17 @@ fn npm_catalog_metadata(package_name: &str) -> CatalogPackageMetadata {
         summary: string_or_none(&metadata.summary),
         homepage: string_or_none(&metadata.homepage),
         ..CatalogPackageMetadata::default()
+    }
+}
+
+impl CatalogPackageMetadata {
+    fn has_visible_fields(&self) -> bool {
+        self.summary.is_some()
+            || self.homepage.is_some()
+            || self.repository.is_some()
+            || self.upstream_docs.is_some()
+            || !self.docs.is_empty()
+            || self.category.is_some()
     }
 }
 
@@ -1666,6 +1694,13 @@ mod tests {
                     homepage: Some("https://example.test/coverage-cask".to_string()),
                 },
             ),
+            write_test_receipt(
+                "isotope:uv",
+                "0.11.18",
+                PackageReceiptSource::Isotope {
+                    isotope_name: "uv".to_string(),
+                },
+            ),
         ];
 
         let packages = list_installed_packages().unwrap().packages;
@@ -1704,6 +1739,20 @@ mod tests {
             cask.homepage.as_deref(),
             Some("https://example.test/coverage-cask")
         );
+        let uv = packages
+            .iter()
+            .find(|package| package.name == "isotope:uv")
+            .unwrap();
+        assert_eq!(uv.homepage.as_deref(), Some("https://docs.astral.sh/uv/"));
+        assert_eq!(
+            uv.repository.as_deref(),
+            Some("https://github.com/astral-sh/uv")
+        );
+        assert_eq!(
+            uv.upstream_docs.as_deref(),
+            Some("https://docs.astral.sh/uv")
+        );
+        assert_eq!(uv.docs, vec!["https://docs.astral.sh/uv".to_string()]);
 
         for root in roots {
             remove_path(&root).unwrap();
