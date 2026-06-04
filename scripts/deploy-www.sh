@@ -1001,7 +1001,7 @@ build_distribution_config() {
           Id: $pkg_origin_id,
           DomainName: $pkg_origin_domain,
           OriginPath: "",
-          OriginCustomHeaders: {
+          CustomHeaders: {
             Quantity: 1,
             Items: [{
               HeaderName: $pkg_origin_header_name,
@@ -1189,7 +1189,7 @@ upsert_distribution() {
           Id: $pkg_origin_id,
           DomainName: $pkg_origin_domain,
           OriginPath: "",
-          OriginCustomHeaders: {
+          CustomHeaders: {
             Quantity: 1,
             Items: [{
               HeaderName: $pkg_origin_header_name,

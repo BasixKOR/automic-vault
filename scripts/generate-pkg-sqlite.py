@@ -578,9 +578,11 @@ def populate_manifest_counts(page_module: Any, manifest: dict[str, Any], pages: 
         if any(page.provider == provider for page in indexable_pages)
     ]
     manifest["hub_count"] = len(hubs)
+    manifest["package_count"] = len(pages)
     manifest["indexable_page_count"] = len(indexable_pages)
     manifest["noindex_page_count"] = len(pages) - len(indexable_pages)
     manifest["markdown_page_count"] = len(indexable_pages)
+    manifest["approval_gate_count"] = sum(1 for page in pages if getattr(page, "approval_gate", None))
     manifest["sitemap_count"] = len(sitemap_names)
     manifest["sitemap_page_counts"] = {
         provider: sum(1 for page in indexable_pages if page.provider == provider)

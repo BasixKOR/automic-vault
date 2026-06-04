@@ -762,7 +762,7 @@ fn hubs(connection: &Connection) -> Result<Vec<HubRow>, String> {
         .map_err(|err| format!("failed to read hubs: {err}"))
 }
 
-fn all_packages(connection: &Connection) -> Result<Vec<PackageRow>, String> {
+fn top_packages(connection: &Connection, limit: usize) -> Result<Vec<PackageRow>, String> {
     let mut statement = connection
         .prepare(
             "SELECT path, provider, slug, package_key, name, display_name, summary,
@@ -770,10 +770,30 @@ fn all_packages(connection: &Connection) -> Result<Vec<PackageRow>, String> {
                     version, category, license, homepage, repository, rank, last_updated_at,
                     indexable, data_json
              FROM packages
-             ORDER BY rank IS NULL, rank, display_name",
+             ORDER BY rank IS NULL, rank, display_name
+             LIMIT ?1",
         )
-        .map_err(|err| format!("failed to prepare all packages query: {err}"))?;
-    collect_packages(statement.query_map([], package_from_row))
+        .map_err(|err| format!("failed to prepare top packages query: {err}"))?;
+    collect_packages(statement.query_map(params![limit as i64], package_from_row))
+}
+
+fn package_count(connection: &Connection) -> Result<i64, String> {
+    connection
+        .query_row("SELECT COUNT(*) FROM packages", [], |row| row.get(0))
+        .map_err(|err| format!("failed to count packages: {err}"))
+}
+
+fn approval_gate_count(connection: &Connection) -> Result<i64, String> {
+    connection
+        .query_row(
+            "SELECT COUNT(*)
+             FROM packages
+             WHERE data_json LIKE '%\"approvalGate\":%'
+               AND data_json NOT LIKE '%\"approvalGate\":null%'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|err| format!("failed to count approval-gate packages: {err}"))
 }
 
 #[derive(Debug, Clone)]
@@ -830,21 +850,31 @@ where
 
 fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String, String> {
     let hub_summaries = hub_summaries(connection)?;
-    let packages = all_packages(connection)?;
-    let top_packages = packages.iter().take(72).collect::<Vec<_>>();
-    let secured = packages
-        .iter()
-        .filter(|package| package_isotope(package))
-        .count();
-    let radioisotope_count = metadata_json(connection, "manifest")?
-        .and_then(|manifest| value_i64_key(&manifest, "radioisotope_manifest_count"))
-        .unwrap_or(secured as i64);
-    let gated = packages
-        .iter()
-        .filter(|package| package_gate(package))
-        .count();
-    let source_files = metadata_json(connection, "manifest")?
-        .and_then(|manifest| value_i64_key(&manifest, "source_file_count"))
+    let top_packages = top_packages(connection, 72)?;
+    let manifest = metadata_json(connection, "manifest")?;
+    let package_total = if let Some(count) = manifest
+        .as_ref()
+        .and_then(|manifest| value_i64_key(manifest, "package_count"))
+    {
+        count
+    } else {
+        package_count(connection)?
+    };
+    let radioisotope_count = manifest
+        .as_ref()
+        .and_then(|manifest| value_i64_key(manifest, "radioisotope_manifest_count"))
+        .unwrap_or_default();
+    let gated = if let Some(count) = manifest
+        .as_ref()
+        .and_then(|manifest| value_i64_key(manifest, "approval_gate_count"))
+    {
+        count
+    } else {
+        approval_gate_count(connection)?
+    };
+    let source_files = manifest
+        .as_ref()
+        .and_then(|manifest| value_i64_key(manifest, "source_file_count"))
         .unwrap_or_default();
     let search_endpoint = locale_path("/pkg/search.json", locale);
     let catalog_title = tx(locale, "packageCatalogTitle", "Package security catalog");
@@ -857,9 +887,9 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         html_escape(&catalog_title),
         html_escape(&tx(locale, "catalogPagesCopy", "Generated pages for executable packages Nucleus knows about, with local secret-handling manifests, approval-gate metadata, install popularity, executable aliases, and upstream package facts.")),
         html_escape(&tx(locale, "catalogCounts", "Catalog counts")),
-        metric(&tx(locale, "packages", "packages"), &fmt_int(packages.len() as i64)),
+        metric(&tx(locale, "packages", "packages"), &fmt_int(package_total)),
         metric(&tx(locale, "radioisotopes", "protected tools"), &fmt_int(radioisotope_count)),
-        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(gated as i64)),
+        metric(&tx(locale, "approvalGates", "approval gates"), &fmt_int(gated)),
         metric(&tx(locale, "sourceFiles", "source files"), &fmt_int(source_files)),
     ));
     body.push_str(&format!(
@@ -886,7 +916,7 @@ fn render_index_page(connection: &Connection, locale: &Locale) -> Result<String,
         html_escape(&tx(locale, "crawlableCatalog", "Nucleus package metadata, generated package inventories, secret-handling READMEs, migration manifests, and approval-gate seeds are served by the Atlas package origin so search and answer engines can find specific tool coverage.")),
         html_escape(&tx(locale, "popularPackages", "Popular packages")),
     ));
-    for package in top_packages {
+    for package in &top_packages {
         body.push_str(&index_package_row(package, locale));
     }
     body.push_str("</div></section></main>");
