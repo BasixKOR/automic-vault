@@ -390,8 +390,8 @@ copy_pack_images() {
   local destination_dir="$1"
   local source_dir="$GUI_DIR/Resources/PackImages"
 
-  [[ -d "$source_dir" ]] || return
   rm -rf "$destination_dir/PackImages"
+  [[ -d "$source_dir" ]] || return
   cp -R "$source_dir" "$destination_dir/"
 }
 

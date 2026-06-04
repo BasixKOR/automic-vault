@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 enum PackagePack: String, CaseIterable, Identifiable {
@@ -58,17 +57,6 @@ enum PackagePack: String, CaseIterable, Identifiable {
         }
     }
 
-    var imageResourceName: String {
-        switch self {
-        case .agenticToolkit:
-            return "agentic-toolkit"
-        case .agent:
-            return "agent-pack"
-        case .unixPlusPlus:
-            return "unix-plus-plus"
-        }
-    }
-
     var systemImage: String {
         switch self {
         case .agenticToolkit:
@@ -78,26 +66,5 @@ enum PackagePack: String, CaseIterable, Identifiable {
         case .unixPlusPlus:
             return "square.stack.3d.up"
         }
-    }
-
-    var image: NSImage? {
-        if let url = Bundle.main.url(
-            forResource: imageResourceName,
-            withExtension: "png",
-            subdirectory: "PackImages"
-        ) {
-            return NSImage(contentsOf: url)
-        }
-        if let image = Bundle.main.image(forResource: imageResourceName) {
-            return image
-        }
-        if let url = Bundle.module.url(
-            forResource: imageResourceName,
-            withExtension: "png",
-            subdirectory: "PackImages"
-        ) {
-            return NSImage(contentsOf: url)
-        }
-        return nil
     }
 }

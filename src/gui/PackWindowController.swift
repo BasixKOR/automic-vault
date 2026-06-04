@@ -375,17 +375,11 @@ private struct PackWindowView: View {
 
     @ViewBuilder
     private var packImage: some View {
-        if let image = model.pack.image {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-        } else {
-            ZStack {
-                PackWindowPalette.panelFill
-                Image(systemName: model.pack.systemImage)
-                    .font(.system(size: 58, weight: .semibold))
-                    .foregroundStyle(PackWindowPalette.accent)
-            }
+        ZStack {
+            PackWindowPalette.panelFill
+            Image(systemName: model.pack.systemImage)
+                .font(.system(size: 58, weight: .semibold))
+                .foregroundStyle(PackWindowPalette.accent)
         }
     }
 
