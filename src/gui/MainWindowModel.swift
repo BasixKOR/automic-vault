@@ -606,7 +606,7 @@ final class MainWindowModel: ObservableObject {
         guard pulsePackages.isEmpty == false || pulseTotalCount != nil else {
             return nil
         }
-        return pulsePackages.filter(isNewPackageSinceLastNewUpdatedClick).count
+        return pulsePackages.filter(isUnreadPulsePackage).count
     }
 
     private var displayedNewUpdatedPackageCount: Int? {
@@ -1775,13 +1775,12 @@ final class MainWindowModel: ObservableObject {
         return outdatedPackageNames.contains(name)
     }
 
-    private func isNewPackageSinceLastNewUpdatedClick(_ package: PackagePresentation) -> Bool {
-        guard case .available(let result) = package.item,
-              result.isNewPulse else {
+    private func isUnreadPulsePackage(_ package: PackagePresentation) -> Bool {
+        guard case .available(let result) = package.item else {
             return false
         }
         guard let newUpdatedLastClickedAt else {
-            return true
+            return result.isNewPulse
         }
         guard let raw = result.lastUpdatedAt,
               let packageUpdatedAt = Self.parseISO8601Date(raw) else {

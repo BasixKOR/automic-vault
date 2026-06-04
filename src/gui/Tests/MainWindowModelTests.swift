@@ -607,7 +607,37 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testNewUpdatedSidebarCountUsesNewPackagesSinceLastClick() async throws {
+    func testNewUpdatedSidebarDoesNotCountUpdatedPackagesBeforeFirstClick() async throws {
+        let suiteName = "MainWindowModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let model = MainWindowModel(
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(
+                    packages: [
+                        Self.packageSearchResult(
+                            name: "brew:updated",
+                            pulseKind: "updated",
+                            lastUpdatedAt: "2026-05-28T12:30:00Z"
+                        ),
+                    ],
+                    totalCount: 1,
+                    nextOffset: nil
+                )
+            },
+            userDefaults: defaults
+        )
+        defer { model.stop() }
+
+        model.selectedSection = .newUpdated
+        await waitUntil(model.displayedPackages.count == 1)
+
+        XCTAssertNil(model.count(for: .newUpdated))
+    }
+
+    @MainActor
+    func testNewUpdatedSidebarCountUsesPulsePackagesSinceLastClick() async throws {
         let suiteName = "MainWindowModelTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -651,7 +681,7 @@ final class MainWindowModelTests: XCTestCase {
         model.selectedSection = .newUpdated
         await waitUntil(model.displayedPackages.count == 4)
 
-        XCTAssertEqual(model.count(for: .newUpdated), 1)
+        XCTAssertEqual(model.count(for: .newUpdated), 2)
     }
 
     @MainActor
