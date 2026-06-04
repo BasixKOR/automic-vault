@@ -625,7 +625,7 @@ def page_search_text(page_module: Any, page: Any, locale: dict[str, Any] | None)
 
 def string_items(values: Any, keys: tuple[str, ...] = ("name", "target", "source", "label", "title")) -> list[str]:
     items: list[str] = []
-    if not isinstance(values, list | tuple | set):
+    if not isinstance(values, (list, tuple, set)):
         return items
     for value in values:
         if isinstance(value, dict):
