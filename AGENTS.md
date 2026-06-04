@@ -16,3 +16,18 @@
   backward-compatible.
 - The schema value is a format-family compatibility marker, not a routine
   revision counter.
+
+## Package Website Origin
+
+- Package catalog routes under `/pkg/` and localized equivalents are served by
+  the Rust `av-web` service from the private SQLite artifact at
+  `cache/pkg.sqlite` locally and `/var/lib/automic-vault-web/pkg.sqlite` on
+  Atlas.
+- Do not restore the old static `www/pkg/**` or `www/pagefind/**` upload path.
+  S3 remains the default static website origin, but package pages, package
+  sitemaps, package CSS/JS, markdown alternates, and package search are an
+  Atlas origin concern.
+- Use `scripts/generate-pkg-sqlite.py` to build the package-origin artifact and
+  `scripts/deploy-pkg-origin.sh` to deploy `av-web` plus `pkg.sqlite`.
+- Keep public `/db.json` backward-compatible. The package SQLite database is
+  private deployment data and must not drive a public schema bump.
