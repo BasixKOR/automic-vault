@@ -217,6 +217,43 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testStartPreloadsCategoryCountsAfterInstalledReloadCompletes() async {
+        let order = StartupPreloadOrderRecorder()
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: {
+                Thread.sleep(forTimeInterval: 0.05)
+                order.markInstalledReloadFinished()
+                return []
+            },
+            outdatedPackagesFetcher: { [] },
+            availablePackagesFetcher: { _, _, _, _ in
+                order.recordAvailablePackagesRequest()
+                return PackageSearchPage(
+                    packages: [],
+                    totalCount: 2,
+                    nextOffset: nil,
+                    categoryCounts: [
+                        "developer-tools": 2,
+                    ]
+                )
+            },
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        await waitUntil(model.count(for: .developerTools) == 2)
+
+        XCTAssertFalse(order.didRequestAvailablePackagesBeforeInstalledReloadFinished)
+    }
+
+    @MainActor
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(
@@ -1634,6 +1671,30 @@ private final class CategoryPageRequestRecorder: @unchecked Sendable {
             requests.append(
                 Request(offset: offset, category: category, sortOrder: sortOrder)
             )
+        }
+    }
+}
+
+private final class StartupPreloadOrderRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var installedReloadFinished = false
+    private var requestedAvailablePackagesBeforeInstalledReloadFinished = false
+
+    var didRequestAvailablePackagesBeforeInstalledReloadFinished: Bool {
+        lock.withLock { requestedAvailablePackagesBeforeInstalledReloadFinished }
+    }
+
+    func markInstalledReloadFinished() {
+        lock.withLock {
+            installedReloadFinished = true
+        }
+    }
+
+    func recordAvailablePackagesRequest() {
+        lock.withLock {
+            if !installedReloadFinished {
+                requestedAvailablePackagesBeforeInstalledReloadFinished = true
+            }
         }
     }
 }

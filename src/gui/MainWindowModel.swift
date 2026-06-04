@@ -651,7 +651,6 @@ final class MainWindowModel: ObservableObject {
         lastErrorMessage = nil
         statusMessage = L10n.string("Loading packages from the protocol daemon")
         markDynamicSectionPagesStale()
-        preloadSidebarCountData()
 
         Task.detached(priority: .userInitiated) {
             let cltRecommendation = cliToolsRecommendationProvider()

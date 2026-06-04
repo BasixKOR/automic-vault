@@ -72,16 +72,15 @@ final class MainWindowController: NSHostingController<MainWindowView> {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        startModelIfNeeded()
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        startModelIfNeeded()
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        startModelIfNeeded()
         installToolbarIfNeeded()
         installSearchShortcutMonitorIfNeeded()
     }
