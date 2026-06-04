@@ -4017,7 +4017,69 @@ impl SearchResult {
 mod tests {
     use super::*;
     use rusqlite::params;
+    use std::io::{Read, Write};
+    use std::net::Shutdown;
+    use std::thread;
     use tempfile::NamedTempFile;
+
+    struct PackageFixture<'a> {
+        path: &'a str,
+        provider: &'a str,
+        slug: &'a str,
+        package_key: &'a str,
+        name: &'a str,
+        display_name: &'a str,
+        summary: &'a str,
+        provider_label: &'a str,
+        package_manager_url: &'a str,
+        install_command: &'a str,
+        native_install_command: &'a str,
+        version: &'a str,
+        category: &'a str,
+        license: &'a str,
+        homepage: &'a str,
+        repository: &'a str,
+        rank: Option<u32>,
+        last_updated_at: &'a str,
+        indexable: bool,
+        data_json: String,
+        search_text: &'a str,
+    }
+
+    fn insert_package(connection: &Connection, package: PackageFixture<'_>) {
+        connection
+            .execute(
+                "INSERT INTO packages(path, provider, slug, package_key, name, display_name, summary,
+                 provider_label, package_manager_url, install_command, native_install_command,
+                 version, category, license, homepage, repository, rank, last_updated_at, indexable,
+                 data_json, search_text)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                params![
+                    package.path,
+                    package.provider,
+                    package.slug,
+                    package.package_key,
+                    package.name,
+                    package.display_name,
+                    package.summary,
+                    package.provider_label,
+                    package.package_manager_url,
+                    package.install_command,
+                    package.native_install_command,
+                    package.version,
+                    package.category,
+                    package.license,
+                    package.homepage,
+                    package.repository,
+                    package.rank,
+                    package.last_updated_at,
+                    if package.indexable { 1 } else { 0 },
+                    package.data_json,
+                    package.search_text
+                ],
+            )
+            .expect("insert package");
+    }
 
     fn test_database() -> NamedTempFile {
         let file = NamedTempFile::new().expect("temp database");
@@ -4086,6 +4148,22 @@ mod tests {
                 ",
             )
             .expect("create schema");
+        for (key, value) in [
+            ("generated_at", r#""2026-06-03T19:54:51Z""#),
+            ("last_modified", r#""Tue, 02 Jun 2026 19:54:51 GMT""#),
+            ("source_hash", r#""coverage-fixture""#),
+            (
+                "manifest",
+                r#"{"radioisotope_manifest_count":4,"source_file_count":42}"#,
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO metadata(key, value) VALUES(?1, ?2)",
+                    params![key, value],
+                )
+                .expect("insert metadata");
+        }
         connection
             .execute(
                 "INSERT INTO responses(path, content_type, body, etag, last_modified, cache_control)
@@ -4114,30 +4192,175 @@ mod tests {
                 ],
             )
             .expect("insert markdown");
-        connection
-            .execute(
-                "INSERT INTO packages(path, provider, slug, package_key, name, display_name, summary,
-                 provider_label, package_manager_url, install_command, native_install_command,
-                 version, category, license, homepage, repository, rank, last_updated_at, indexable,
-                 data_json, search_text)
-                 VALUES(?1, 'brew', 'awscli', 'brew:awscli', 'awscli', 'awscli',
-                 'AWS command line interface.', 'Homebrew', 'https://brew.example/awscli',
-                 'av install awscli', 'brew install awscli', '2.0.0', 'developer-tools',
-                 'Apache-2.0', 'https://aws.amazon.com/cli/', '', 2, '2026-06-02', 1,
-                 ?2, 'awscli brew:awscli aws cloud cli')",
-                params![
-                    "/pkg/brew/awscli/",
-                    r#"{"aliases":["aws"],"executables":["aws"],"security":["approval gate"],"keywords":["cloud"]}"#
-                ],
-            )
-            .expect("insert package");
-        connection
-            .execute(
-                "INSERT INTO hubs(path, slug, title, description, group_name, data_json)
-                 VALUES('/pkg/cloud/', 'cloud', 'Cloud', 'Cloud tools', 'topical', '{}')",
-                [],
-            )
-            .expect("insert hub");
+        insert_package(
+            &connection,
+            PackageFixture {
+                path: "/pkg/brew/awscli/",
+                provider: "brew",
+                slug: "awscli",
+                package_key: "brew:awscli",
+                name: "awscli",
+                display_name: "awscli",
+                summary: "AWS command line interface.",
+                provider_label: "Homebrew",
+                package_manager_url: "https://brew.example/awscli",
+                install_command: "sudo av install awscli",
+                native_install_command: "brew install awscli",
+                version: "2.0.0",
+                category: "developer-tools",
+                license: "Apache-2.0",
+                homepage: "https://aws.amazon.com/cli/",
+                repository: "https://github.com/aws/aws-cli",
+                rank: Some(2),
+                last_updated_at: "2026-06-02",
+                indexable: true,
+                data_json: serde_json::json!({"full": {
+                    "aliases": ["aws", "aws-vault"],
+                    "executablesDetailed": [
+                        {"name": "aws", "kind": "executable", "exposure": "global executable", "note": "Primary CLI"},
+                        {"target": "aws_completer", "kind": "completion", "note": "Shell completion"},
+                        {"source": "aws-shell", "kind": "helper"}
+                    ],
+                    "binaries": [{"target": "aws-iam-authenticator", "source": "bin/aws-iam-authenticator"}],
+                    "extra": {"stub_exclusions": ["aws-vault"]},
+                    "security": ["approval gate"],
+                    "keywords": ["cloud", "aws"],
+                    "classifiers": ["devops"],
+                    "installCommands": [
+                        {"platform": "portable", "manager": "Automic Vault", "command": "sudo av install awscli", "kind": "automic_vault", "confidence": 1.0, "evidence": "deterministic local package key"},
+                        {"platform": "macos", "manager": "Homebrew", "command": "brew install awscli", "kind": "package_manager", "confidence": 1.0, "source": {"source_label": "Homebrew Formula", "package_name": "awscli", "source_url": "https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/a/awscli.rb"}},
+                        {"platform": "linux", "manager": "apt", "command": "sudo apt install awscli", "confidence": 0.82, "evidence": "Debian package metadata"},
+                        {"platform": "windows", "manager": "winget", "command": "winget install Amazon.AWSCLI", "confidence": 0.95, "source": {"source_label": "WinGet", "package_id": "Amazon.AWSCLI", "source_url": "https://github.com/microsoft/winget-pkgs"}},
+                        {"platform": "portable", "manager": "pip", "command": "python3 -m pip install awscli", "confidence": 0.91, "evidence": "PyPI package"}
+                    ],
+                    "install": {"notes": ["Use an isolated profile for automation.", "Run av scan after installing."]},
+                    "isotope": {
+                        "justification": {
+                            "title": "AWS credential file coverage",
+                            "detail": "Detects plaintext AWS access keys and moves them into the local vault."
+                        },
+                        "caveats": ["Profiles with SSO metadata are left in place."]
+                    },
+                    "isotopeReadmeHtml": "<p>Use <code>av isotope migrate</code> for AWS credentials.</p>",
+                    "isotopeReadmeSource": "data/radioisotopes/aws-cli/README.md",
+                    "geiger": {
+                        "level": "high",
+                        "confidence": "strong",
+                        "category": "cloud",
+                        "reasons": ["Reads cloud credentials from ~/.aws/credentials.", "Can mutate cloud infrastructure."],
+                        "signals": ["cloud credentials", "remote state"]
+                    },
+                    "installBehavior": {
+                        "postInstallDefined": true,
+                        "service": "com.aws.cli",
+                        "caveats": "Shell completions are installed.",
+                        "lifecycleScripts": ["postinstall", "prepare"],
+                        "prepareDefined": true,
+                        "pythonRequires": ">=3.11",
+                        "requiresDistCount": 4
+                    },
+                    "bottle": {"available": true, "platforms": ["arm64_ventura", "sonoma"]},
+                    "approvalGate": {
+                        "rule_count": 2,
+                        "rules": ["aws iam create-access-key", "aws s3 rm --recursive"],
+                        "severities": ["high", "critical"],
+                        "entrypoints": ["aws"],
+                        "coverage_status": "reviewed",
+                        "reviewed_at": "2026-06-01"
+                    },
+                    "versionFreshness": {
+                        "packageManager": {"version": "2.0.0", "updatedAt": "2026-06-02T00:00:00Z"},
+                        "siteData": {"status": "current"},
+                        "upstream": {"repository": "https://github.com/aws/aws-cli", "latestVersion": "2.0.1", "comparison": "behind"},
+                        "warnings": [
+                            {"severity": "warning", "message": "Upstream has a newer patch release.", "evidence": "https://github.com/aws/aws-cli/releases", "confidence": "high"},
+                            {"kind": "stale_source"}
+                        ]
+                    },
+                    "popularity": {"rank": 2, "installs_per_365_days": 1234567},
+                    "dependencies": ["python@3.13", "openssl@3"],
+                    "buildDependencies": ["pkgconf"],
+                    "usesFromMacos": ["zlib"],
+                    "upstreamDocs": "https://docs.aws.amazon.com/cli/latest/userguide/",
+                    "sourceArchive": "https://example.test/awscli.tar.gz",
+                    "issueTracker": "https://github.com/aws/aws-cli/issues",
+                    "publishedAt": "2026-05-01",
+                    "lastVerified": "2026-06-03T10:20:30Z",
+                    "pulseKind": "current",
+                    "sha256": "abc123",
+                    "url": "https://example.test/awscli.tar.gz",
+                    "packageHubs": [
+                        {"slug": "cloud", "label": "Cloud", "reason": "Cloud control plane CLI"},
+                        {"slug": "source-control", "label": "Source control", "reason": "Credential-adjacent workflows"}
+                    ],
+                    "relatedPackages": [
+                        {"provider": "brew", "name": "aws-cdk", "label": "AWS CDK", "reason": "same cloud workflow", "rel": "adjacent_workflow"},
+                        {"provider": "brew", "name": "cloudflared", "label": "cloudflared", "reason": "network tunnel", "rel": "domain_peer"},
+                        {"provider": "brew", "name": "awscli", "label": "self", "rel": "domain_peer"}
+                    ],
+                    "alsoAvailableVia": [{"provider": "pip", "name": "awscli", "label": "awscli on PyPI", "reason": "Python package"}],
+                    "sourceNotes": ["Homebrew formula", "Geiger classifier", "Homebrew formula"]
+                }})
+                .to_string(),
+                search_text: "awscli brew:awscli aws cloud cli",
+            },
+        );
+        insert_package(
+            &connection,
+            PackageFixture {
+                path: "/pkg/npm/private-tool/",
+                provider: "npm",
+                slug: "private-tool",
+                package_key: "npm:private-tool",
+                name: "private-tool",
+                display_name: "private-tool",
+                summary: "Internal package with no public index page.",
+                provider_label: "npm",
+                package_manager_url: "",
+                install_command: "",
+                native_install_command: "npm install private-tool",
+                version: "",
+                category: "developer-tools",
+                license: "",
+                homepage: "",
+                repository: "",
+                rank: None,
+                last_updated_at: "",
+                indexable: false,
+                data_json: serde_json::json!({"full": {
+                    "approvalGate": {"rule_count": 1, "rules": [], "coverage_status": "draft"},
+                    "installBehavior": {"postInstallDefined": false},
+                    "dependencies": ["left-pad"]
+                }})
+                .to_string(),
+                search_text: "private-tool npm internal",
+            },
+        );
+        for (path, slug, title, description, group) in [
+            ("/pkg/cloud/", "cloud", "Cloud", "Cloud tools", "topical"),
+            (
+                "/pkg/risky-tools/",
+                "risky-tools",
+                "Risky tools",
+                "Packages that need review.",
+                "security",
+            ),
+            (
+                "/pkg/javascript/",
+                "javascript",
+                "JavaScript",
+                "Node and npm package ecosystem tools.",
+                "ecosystem",
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO hubs(path, slug, title, description, group_name, data_json)
+                     VALUES(?1, ?2, ?3, ?4, ?5, '{}')",
+                    params![path, slug, title, description, group],
+                )
+                .expect("insert hub");
+        }
         connection
             .execute(
                 "INSERT INTO hub_packages(hub_slug, package_key, position, reason)
@@ -4173,17 +4396,61 @@ mod tests {
                 Some(1_u32),
                 "cloudflared tunnel client aws adjacent workflows",
             ),
+            (
+                "/de/pkg/brew/awscli/",
+                "AWS CLI",
+                "Deutsch AWS CLI.",
+                "brew",
+                "brew:awscli",
+                Some(2_u32),
+                "aws deutsch cloud cli",
+            ),
         ] {
             connection
                 .execute(
                     "INSERT INTO search_documents(path, locale, title, summary, provider, package_key, rank, search_text)
-                     VALUES(?1, 'en', ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![path, title, summary, provider, key, rank, text],
+                     VALUES(?1, ?8, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        path,
+                        title,
+                        summary,
+                        provider,
+                        key,
+                        rank,
+                        text,
+                        if path.starts_with("/de/") { "de" } else { "en" }
+                    ],
                 )
                 .expect("insert search row");
         }
         drop(connection);
         file
+    }
+
+    fn handle_raw_request(db_path: &Path, raw_request: &str, secret: Option<&str>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("listener address");
+        let state = AppState {
+            bind_addr: addr.to_string(),
+            db_path: db_path.to_path_buf(),
+            origin_header: "x-test-origin".to_string(),
+            origin_secret: secret.map(str::to_string),
+        };
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept request");
+            handle_connection(stream, &state).expect("handle request");
+        });
+        let mut client = TcpStream::connect(addr).expect("connect client");
+        client
+            .write_all(raw_request.as_bytes())
+            .expect("write request");
+        client
+            .shutdown(Shutdown::Write)
+            .expect("finish request body");
+        let mut response = String::new();
+        client.read_to_string(&mut response).expect("read response");
+        server.join().expect("join server");
+        response
     }
 
     #[test]
@@ -4224,19 +4491,48 @@ mod tests {
         let hub = dynamic_response_for_path(db.path(), "/pkg/cloud/")
             .expect("query")
             .expect("hub response");
+        let index = dynamic_response_for_path(db.path(), "/de/pkg/")
+            .expect("query")
+            .expect("localized index response");
+        let sitemap_index = dynamic_response_for_path(db.path(), "/pkg/sitemap.xml")
+            .expect("query")
+            .expect("sitemap index response");
+        let hub_sitemap = dynamic_response_for_path(db.path(), "/pkg/sitemap-hubs.xml")
+            .expect("query")
+            .expect("hub sitemap response");
         let sitemap = dynamic_response_for_path(db.path(), "/pkg/sitemap-brew.xml")
             .expect("query")
             .expect("sitemap response");
 
+        let package_html = String::from_utf8(package.body).expect("package html");
+        assert!(package_html.contains("AWS credential file coverage"));
+        assert!(package_html.contains("brew install awscli"));
+        assert!(package_html.contains("Risk classifier"));
+        assert!(package_html.contains("aws iam create-access-key"));
+        assert!(package_html.contains("aws-iam-authenticator"));
+        assert!(package_html.contains("Upstream has a newer patch release."));
+        assert!(package_html.contains("Secure AWS CLI credentials"));
+
+        let hub_html = String::from_utf8(hub.body).expect("hub html");
+        assert!(hub_html.contains("Cloud CLI"));
+        assert!(hub_html.contains("Protected tools"));
+        assert!(hub_html.contains("Related hubs"));
+        assert!(hub_html.contains("Source control"));
+
+        let index_html = String::from_utf8(index.body).expect("index html");
+        assert!(index_html.contains("data-locale=\"de\""));
+        assert!(index_html.contains("Risky tools"));
+        assert!(index_html.contains("JavaScript"));
+
         assert!(
-            String::from_utf8(package.body)
-                .expect("package html")
-                .contains("AWS command line interface")
+            String::from_utf8(sitemap_index.body)
+                .expect("sitemap index xml")
+                .contains("/pkg/sitemap-brew.xml")
         );
         assert!(
-            String::from_utf8(hub.body)
-                .expect("hub html")
-                .contains("Cloud CLI")
+            String::from_utf8(hub_sitemap.body)
+                .expect("hub sitemap xml")
+                .contains("/pkg/risky-tools/")
         );
         assert!(
             String::from_utf8(sitemap.body)
@@ -4246,11 +4542,45 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_package_markdown_covers_rich_metadata_and_noindex() {
+        let db = test_database();
+        let markdown = dynamic_response_for_path(db.path(), "/pkg/brew/awscli/index.md")
+            .expect("query")
+            .expect("markdown response");
+        let private_html = dynamic_response_for_path(db.path(), "/pkg/npm/private-tool/")
+            .expect("query")
+            .expect("private response");
+
+        let text = String::from_utf8(markdown.body).expect("markdown");
+        assert!(text.contains("Additional install commands"));
+        assert!(text.contains("AWS credential file coverage"));
+        assert!(text.contains("Upstream latest detected"));
+        assert!(text.contains("[Cloud](https://www.automicvault.com/pkg/cloud/)"));
+        assert!(text.contains("Source archive"));
+
+        assert!(
+            dynamic_response_for_path(db.path(), "/pkg/npm/private-tool/index.md")
+                .expect("query")
+                .is_none()
+        );
+        assert!(
+            String::from_utf8(private_html.body)
+                .expect("private html")
+                .contains("noindex,follow")
+        );
+    }
+
+    #[test]
     fn missing_route_returns_none() {
         let db = test_database();
 
         assert!(
             response_for_path(db.path(), "/pkg/brew/nope/")
+                .expect("query")
+                .is_none()
+        );
+        assert!(
+            dynamic_response_for_path(db.path(), "/pkg/sitemap-gem.xml")
                 .expect("query")
                 .is_none()
         );
@@ -4269,6 +4599,83 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["awscli", "aws-cdk", "cloudflared"]
         );
+    }
+
+    #[test]
+    fn search_json_uses_locale_limit_offset_and_query_decoding() {
+        let db = test_database();
+        let decoded = parse_query("q=aws+cli&limit=1&offset=0");
+        let query = parse_query("q=aws&limit=1&offset=0");
+        let empty = search_documents(db.path(), "   ", "en", 0, 10).expect("empty search");
+        let de = search_response_json(db.path(), "/de/pkg/search.json", &parse_query("q=aws"))
+            .expect("de search");
+        let paged = search_response_json(db.path(), "/pkg/search.json", &query).expect("search");
+
+        assert_eq!(decoded.get("q").map(String::as_str), Some("aws cli"));
+        assert_eq!(empty.results, Vec::new());
+        let de_page: Value = serde_json::from_slice(&de).expect("de page");
+        assert_eq!(de_page["locale"], "de");
+        assert_eq!(de_page["results"][0]["title"], "AWS CLI");
+        let page: Value = serde_json::from_slice(&paged).expect("page");
+        assert_eq!(page["query"], "aws");
+        assert_eq!(page["results"].as_array().expect("results").len(), 1);
+        assert_eq!(page["nextOffset"], 1);
+    }
+
+    #[test]
+    fn request_handler_covers_health_redirect_search_head_and_errors() {
+        let db = test_database();
+
+        let health = handle_raw_request(
+            db.path(),
+            "GET /healthz HTTP/1.1\r\nHost: test\r\n\r\n",
+            Some("secret"),
+        );
+        assert!(health.starts_with("HTTP/1.1 200 OK"));
+        assert!(health.ends_with("ok\n"));
+
+        let forbidden = handle_raw_request(
+            db.path(),
+            "GET /pkg/ HTTP/1.1\r\nHost: test\r\n\r\n",
+            Some("secret"),
+        );
+        assert!(forbidden.starts_with("HTTP/1.1 403 Forbidden"));
+
+        let redirected = handle_raw_request(
+            db.path(),
+            "GET /pkg?q=aws HTTP/1.1\r\nHost: test\r\nx-test-origin: secret\r\n\r\n",
+            Some("secret"),
+        );
+        assert!(redirected.starts_with("HTTP/1.1 301 Moved Permanently"));
+        assert!(redirected.contains("location: /pkg/?q=aws"));
+
+        let search = handle_raw_request(
+            db.path(),
+            "GET /pkg/search.json?q=aws&limit=1 HTTP/1.1\r\nHost: test\r\n\r\n",
+            None,
+        );
+        assert!(search.starts_with("HTTP/1.1 200 OK"));
+        assert!(search.contains("application/json; charset=utf-8"));
+        assert!(search.contains("\"nextOffset\":1"));
+
+        let head = handle_raw_request(
+            db.path(),
+            "HEAD /pkg/brew/awscli/ HTTP/1.1\r\nHost: test\r\n\r\n",
+            None,
+        );
+        assert!(head.starts_with("HTTP/1.1 200 OK"));
+        assert!(!head.contains("AWS credential file coverage"));
+
+        let method =
+            handle_raw_request(db.path(), "POST /pkg/ HTTP/1.1\r\nHost: test\r\n\r\n", None);
+        assert!(method.starts_with("HTTP/1.1 405 Method Not Allowed"));
+
+        let missing = handle_raw_request(
+            db.path(),
+            "GET /pkg/brew/nope/ HTTP/1.1\r\nHost: test\r\n\r\n",
+            None,
+        );
+        assert!(missing.starts_with("HTTP/1.1 404 Not Found"));
     }
 
     #[test]
