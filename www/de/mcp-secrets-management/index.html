@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MCP-Secret-Management | Schutz für AI-Agents und Entwickler-Tools</title>
-  <meta name="description" content="MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="description" content="Gib MCP-Tools Credentials, ohne Secrets in Modellkontext oder Klartextkonfiguration zu legen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="MCP-Secret-Management | Schutz für AI-Agents und Entwickler-Tools">
-  <meta property="og:description" content="MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta property="og:description" content="Gib MCP-Tools Credentials, ohne Secrets in Modellkontext oder Klartextkonfiguration zu legen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta property="og:url" content="https://www.automicvault.com/de/mcp-secrets-management/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MCP-Secret-Management | Schutz für AI-Agents und Entwickler-Tools">
-  <meta name="twitter:description" content="MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="twitter:description" content="Gib MCP-Tools Credentials, ohne Secrets in Modellkontext oder Klartextkonfiguration zu legen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/de/mcp-secrets-management/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/mcp-secrets-management/",
     "name": "MCP-Secret-Management | Schutz für AI-Agents und Entwickler-Tools",
-    "description": "MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
+    "description": "Gib MCP-Tools Credentials, ohne Secrets in Modellkontext oder Klartextkonfiguration zu legen. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">MCP-Secret-Management</p>
-        <h1>MCP-Secret-Management</h1>
-        <p class="lede">MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen.</p>
+        <p class="eyebrow">MCP-Sicherheit</p>
+        <h1>MCP-Secret-Management ohne Secrets im Modell</h1>
+        <p class="lede">MCP vereinfacht Tool-Zugriff, aber rohe Tokens gehören nicht in Serverkonfigurationen. Automic Vault injiziert genehmigte Werte an der lokalen Startgrenze.</p>
         <div class="hero-actions">
           <a class="button primary" href="/de/download/">Herunterladen</a>
           <a class="button secondary" href="/de/docs/">Dokumentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>MCP-Secret-Management</h2>
-        <p>MCP-Tools erhalten benötigte Credentials innerhalb klarer Freigabegrenzen.</p>
+        <h2>Vorher / Nachher</h2>
+        <p>Vorher standen GITHUB_TOKEN oder Datenbank-Credentials in MCP-JSON oder dotenv-Dateien, sodass Konfigurationsprüfung Werte zeigte. Nachher bleibt nur der Befehl in der Konfiguration; der Wert kommt zur Laufzeit.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Es kontrolliert Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac, damit AI-Agents innerhalb klarer Grenzen arbeiten.</p>
+        <h2>Befehlsbeispiel</h2>
+        <p>Führe av save GITHUB_TOKEN aus, entferne den Wert aus der MCP-Konfiguration und starte den Server mit av inject -- ./mcp-server.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Freigabegrenze</h2>
+        <p>Read-only-Tools können leicht laufen; Tools mit Publish-, Delete- oder Cloud-Mutationsrechten gehören durch av contain und Approval Gates.</p>
       </section>
       <section class="i18n-section">
         <h2>Lokale Laufzeitgrenze</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Vertrauenshinweise</h2>
         <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Wann einsetzen</h2>
-        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
       </section>
       <nav class="language-links" aria-label="Sprachversionen"><a href="/mcp-secrets-management/" lang="en">English</a> <a href="/ja/mcp-secrets-management/" lang="ja">日本語</a> <a href="/de/mcp-secrets-management/" lang="de">Deutsch</a> <a href="/fr/mcp-secrets-management/" lang="fr">Français</a> <a href="/zh-hans/mcp-secrets-management/" lang="zh-Hans">简体中文</a></nav>
     </main>

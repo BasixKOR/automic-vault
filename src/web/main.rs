@@ -548,14 +548,21 @@ fn dynamic_response_for_path(db_path: &Path, path: &str) -> Result<Option<Stored
                 "text/html; charset=utf-8",
             ))
         }
-    } else if let Some(slug) = hub_route(&canonical_path) {
+    } else if let Some((slug, markdown)) = hub_route(&canonical_path) {
         let Some(hub) = hub_by_slug(&connection, slug)? else {
             return Ok(None);
         };
-        Some((
-            render_hub_page(&connection, &hub, locale)?,
-            "text/html; charset=utf-8",
-        ))
+        if markdown {
+            Some((
+                render_hub_markdown(&connection, &hub, locale)?,
+                "text/markdown; charset=utf-8",
+            ))
+        } else {
+            Some((
+                render_hub_page(&connection, &hub, locale)?,
+                "text/html; charset=utf-8",
+            ))
+        }
     } else {
         None
     };
@@ -610,11 +617,12 @@ fn package_route(path: &str) -> Option<(&str, &str, bool)> {
     }
 }
 
-fn hub_route(path: &str) -> Option<&str> {
+fn hub_route(path: &str) -> Option<(&str, bool)> {
     let rest = path.strip_prefix("/pkg/")?;
     let parts = rest.split('/').collect::<Vec<_>>();
     match parts.as_slice() {
-        [slug, "index.html"] if !PROVIDERS.contains(slug) => Some(slug),
+        [slug, "index.html"] if !PROVIDERS.contains(slug) => Some((slug, false)),
+        [slug, "index.md"] if !PROVIDERS.contains(slug) => Some((slug, true)),
         _ => None,
     }
 }
@@ -1160,11 +1168,81 @@ fn render_hub_page(
         &description,
         &locale_url(&hub.path, locale),
         "index,follow",
-        "",
+        &format!(
+            r#"  <link rel="alternate" type="text/markdown" href="{}index.md">"#,
+            html_escape(&locale_url(&hub.path, locale))
+        ),
         &schema_json,
         &body,
         "",
     ))
+}
+
+fn render_hub_markdown(
+    connection: &Connection,
+    hub: &HubRow,
+    locale: &Locale,
+) -> Result<String, String> {
+    let stats = hub_stats(connection, &hub.slug)?;
+    let top = hub_packages_query(connection, &hub.slug, 72, None, "position")?;
+    let generated_at = metadata_string(connection, "generated_at")?.unwrap_or_default();
+    let updated = fmt_date(&generated_at);
+    let description = txf(
+        locale,
+        "hubDescription",
+        "{title} currently includes {count} package catalog entries. {secured} have protected-tool coverage, {gated} have approval-gate metadata, and {risked} have non-low Geiger classifier findings. The grouping comes from package metadata, so it can stay current as that metadata changes.",
+        &[
+            ("title", hub.title.clone()),
+            ("count", stats.package_count.to_string()),
+            ("secured", stats.secured_count.to_string()),
+            ("gated", stats.gated_count.to_string()),
+            ("risked", stats.risked_count.to_string()),
+        ],
+    );
+    let mut text = format!(
+        "# {}\n\n{}\n\n- **{}:** {}\n- **{}:** {}\n- **{}:** {}\n- **{}:** {}\n- **{}:** {}\n\n## {}\n\n{}\n\n## {}\n\n{}\n\n## {}\n\n{}\n\n## {}\n\n",
+        hub.title,
+        hub.description,
+        tx(locale, "packages", "Packages"),
+        fmt_int(stats.package_count),
+        tx(locale, "radioisotopes", "Protected tools"),
+        fmt_int(stats.secured_count),
+        tx(locale, "approvalGates", "Approval gates"),
+        fmt_int(stats.gated_count),
+        tx(locale, "risk", "Non-low risk"),
+        fmt_int(stats.risked_count),
+        tx(locale, "updated", "Updated"),
+        updated,
+        tx(locale, "hubSummaryTitle", "Why this package group is here"),
+        description,
+        tx(locale, "generatedSource", "Generated source"),
+        tx(
+            locale,
+            "generatedSourceCopy",
+            "This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available."
+        ),
+        tx(locale, "hubReviewModel", "Review model"),
+        tx(
+            locale,
+            "hubReviewCopy",
+            "Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them."
+        ),
+        tx(locale, "hubIndexedPagesTitle", "Indexed package pages"),
+    );
+    for (package, reason) in top {
+        let reason = if reason.trim().is_empty() {
+            hub_package_reason(&package, locale)
+        } else {
+            reason
+        };
+        text.push_str(&format!(
+            "- [{}]({}) - {}\n",
+            package.display_name,
+            locale_url(&package.path, locale),
+            markdown_value(&reason)
+        ));
+    }
+    Ok(text)
 }
 
 fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str) -> String {
@@ -1207,6 +1285,7 @@ fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str
         html_escape(&tx(locale, "heroPanelAria", "Package facts")),
         package_facts(package, locale)
     ));
+    body.push_str(&render_agent_safety_answer(package, locale));
     body.push_str(&render_install(package, locale));
     body.push_str(&render_overview(package, locale));
     body.push_str(&render_security(package, locale));
@@ -1246,6 +1325,7 @@ fn render_package_markdown(package: &PackageRow, locale: &Locale, generated_at: 
         hero_sentence(package),
         package.install_command,
     );
+    markdown_agent_safety_section(&mut text, package, locale);
     markdown_install_groups(&mut text, package);
     text.push_str("## Package Facts\n\n");
     for (label, value) in [
@@ -1527,6 +1607,59 @@ fn render_install(package: &PackageRow, locale: &Locale) -> String {
         } else {
             notes
         }
+    )
+}
+
+fn agent_safety_answer(package: &PackageRow) -> Option<&Value> {
+    full_value(package, "agentSafetyAnswer").filter(|value| value.is_object())
+}
+
+fn render_agent_safety_answer(package: &PackageRow, locale: &Locale) -> String {
+    let Some(answer) = agent_safety_answer(package) else {
+        return String::new();
+    };
+    let Some(summary) = value_str_key(answer, "summary") else {
+        return String::new();
+    };
+    let articles = [
+        (
+            tx(locale, "agentSafetyCredentialAccess", "Credential access"),
+            "credentialAccess",
+        ),
+        (
+            tx(locale, "agentSafetyRemoteMutation", "Remote mutation"),
+            "remoteMutation",
+        ),
+        (
+            tx(locale, "agentSafetyPublishRisk", "Publish/artifact risk"),
+            "publishOrArtifactRisk",
+        ),
+        (
+            tx(locale, "agentSafetyControl", "Recommended control"),
+            "recommendedControl",
+        ),
+        (
+            tx(locale, "agentSafetyGuidance", "Agent-use guidance"),
+            "agentUseGuidance",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(label, field)| {
+        value_str_key(answer, field).map(|value| {
+            format!(
+                "<article><h3>{}</h3><p>{}</p></article>",
+                html_escape(&label),
+                html_escape(&value)
+            )
+        })
+    })
+    .collect::<String>();
+    format!(
+        r#"<section class="pkg-section split-section agent-safety-section" aria-labelledby="agent-safety-title"><div><p class="section-kicker">{}</p><h2 id="agent-safety-title">{}</h2><p>{}</p></div><div class="detail-stack">{}</div></section>"#,
+        html_escape(&tx(locale, "agentSafetyKicker", "agent safety")),
+        html_escape(&tx(locale, "agentSafetyTitle", "Agent safety answer")),
+        html_escape(&summary),
+        articles
     )
 }
 
@@ -3922,6 +4055,47 @@ fn markdown_install_groups(text: &mut String, package: &PackageRow) {
     }
 }
 
+fn markdown_agent_safety_section(text: &mut String, package: &PackageRow, locale: &Locale) {
+    let Some(answer) = agent_safety_answer(package) else {
+        return;
+    };
+    let Some(summary) = value_str_key(answer, "summary") else {
+        return;
+    };
+    text.push_str(&format!(
+        "## {}\n\n{}\n\n",
+        tx(locale, "agentSafetyTitle", "Agent safety answer"),
+        markdown_value(&summary)
+    ));
+    for (label, field) in [
+        (
+            tx(locale, "agentSafetyCredentialAccess", "Credential access"),
+            "credentialAccess",
+        ),
+        (
+            tx(locale, "agentSafetyRemoteMutation", "Remote mutation"),
+            "remoteMutation",
+        ),
+        (
+            tx(locale, "agentSafetyPublishRisk", "Publish/artifact risk"),
+            "publishOrArtifactRisk",
+        ),
+        (
+            tx(locale, "agentSafetyControl", "Recommended control"),
+            "recommendedControl",
+        ),
+        (
+            tx(locale, "agentSafetyGuidance", "Agent-use guidance"),
+            "agentUseGuidance",
+        ),
+    ] {
+        if let Some(value) = value_str_key(answer, field) {
+            text.push_str(&format!("- **{}:** {}\n", label, markdown_value(&value)));
+        }
+    }
+    text.push('\n');
+}
+
 fn markdown_value_list(text: &mut String, title: &str, items: &[String]) {
     if items.is_empty() {
         return;
@@ -4909,6 +5083,14 @@ mod tests {
                         "coverage_status": "reviewed",
                         "reviewed_at": "2026-06-01"
                     },
+                    "agentSafetyAnswer": {
+                        "summary": "AWS CLI can read durable cloud credentials and mutate production infrastructure, so agent runs should use scoped profiles plus human approval for destructive commands.",
+                        "credentialAccess": "Reads AWS shared credential and config files, SSO cache metadata, and environment variables such as AWS_ACCESS_KEY_ID.",
+                        "remoteMutation": "Can create, delete, and reconfigure cloud resources across IAM, S3, EC2, EKS, and other AWS services.",
+                        "publishOrArtifactRisk": "Can upload artifacts to S3, push container images through AWS services, and expose generated deployment assets.",
+                        "recommendedControl": "Use protected AWS credential helpers, short-lived role sessions, and approval gates for IAM, delete, write, and deployment subcommands.",
+                        "agentUseGuidance": "Allow read-only inventory commands by default, but require review before an agent changes infrastructure, secrets, policies, buckets, or deployment state."
+                    },
                     "versionFreshness": {
                         "packageManager": {"version": "2.0.0", "updatedAt": "2026-06-02T00:00:00Z"},
                         "siteData": {"status": "current"},
@@ -5146,6 +5328,9 @@ mod tests {
         let hub = dynamic_response_for_path(db.path(), "/pkg/cloud/")
             .expect("query")
             .expect("hub response");
+        let hub_markdown = dynamic_response_for_path(db.path(), "/pkg/cloud/index.md")
+            .expect("query")
+            .expect("hub markdown response");
         let index = dynamic_response_for_path(db.path(), "/de/pkg/")
             .expect("query")
             .expect("localized index response");
@@ -5164,6 +5349,8 @@ mod tests {
         assert!(package_html.contains("brew install awscli"));
         assert!(package_html.contains("Risk classifier"));
         assert!(package_html.contains("aws iam create-access-key"));
+        assert!(package_html.contains("Agent safety answer"));
+        assert!(package_html.contains("Use protected AWS credential helpers"));
         assert!(package_html.contains("aws-iam-authenticator"));
         assert!(package_html.contains("Upstream has a newer patch release."));
         assert!(package_html.contains("Secure AWS CLI credentials"));
@@ -5179,6 +5366,14 @@ mod tests {
         assert!(hub_html.contains("Protected tools"));
         assert!(hub_html.contains("Related hubs"));
         assert!(hub_html.contains("Source control"));
+        assert!(hub_html.contains(r#"type="text/markdown""#));
+        assert!(hub_html.contains("/pkg/cloud/index.md"));
+
+        assert_eq!(hub_markdown.content_type, "text/markdown; charset=utf-8");
+        let hub_markdown = String::from_utf8(hub_markdown.body).expect("hub markdown");
+        assert!(hub_markdown.contains("# Cloud"));
+        assert!(hub_markdown.contains("Cloud tools"));
+        assert!(hub_markdown.contains("[awscli](https://www.automicvault.com/pkg/brew/awscli/)"));
 
         let index_html = String::from_utf8(index.body).expect("index html");
         assert!(index_html.contains("data-locale=\"de\""));
@@ -5214,6 +5409,8 @@ mod tests {
 
         let text = String::from_utf8(markdown.body).expect("markdown");
         assert!(text.contains("Additional install commands"));
+        assert!(text.contains("## Agent safety answer"));
+        assert!(text.contains("Use protected AWS credential helpers"));
         assert!(text.contains("AWS credential file coverage"));
         assert!(text.contains("Upstream latest detected"));
         assert!(text.contains("[Cloud](https://www.automicvault.com/pkg/cloud/)"));

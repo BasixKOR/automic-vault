@@ -124,7 +124,7 @@
                   "headline": "API Key Management for AI Coding Agents",
                   "description": "Manage API keys for AI agents by keeping tokens out of model context and injecting approved credentials only into trusted command-line tools.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-04",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -228,7 +228,7 @@
           <p class="kicker">Runtime API key security</p>
           <h1>API key management for AI coding agents</h1>
           <p class="lede">Agents can call CLIs, SDKs, package managers, and deploy scripts. Automic Vault keeps the key out of the conversation and gives it only to the command you approve.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 4, 2026</p>
           <div class="answer-box"><p>API key management for AI agents should treat each token as a capability, not as text for a model to handle. Automic Vault stores keys locally and injects named values only into approved command-line tools.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#secrets">Read key management docs <span aria-hidden="true">›</span></a>
@@ -261,6 +261,18 @@
           <article><span>GitHub</span><p>Protect <code>gh</code> auth material and tokens used for source, release, and package workflows.</p></article>
           <article><span>AWS</span><p>Keep cloud credentials out of predictable local files and approve the CLI actions that use them.</p></article>
           <article><span>Registries</span><p>Gate npm, PyPI, and package publishing credentials before an agent can mutate releases.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Before / after</p>
+          <h2>Turn API keys into per-command capabilities.</h2>
+          <p>The safe shape is not “the agent has my development environment.” The safe shape is “this approved executable receives this named key for this run.” That gives agents enough power to work while reducing accidental reads, logs, and copy-paste leaks.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Before</span><p>Keys live in shell profiles, <code>.npmrc</code>, <code>.netrc</code>, cloud config files, or pasted terminal exports inherited by every child process.</p></article>
+          <article><span>After</span><p>Automic Vault stores each token locally and releases only the key needed by the approved CLI, SDK helper, package manager, or deploy command.</p></article>
+          <article><span>Command example</span><p>Use <code>av save OPENAI_API_KEY</code>, remove broad exports, then run <code>av inject -- npm test</code>, <code>av inject -- gh release create</code>, or the precise command under review.</p></article>
         </div>
       </section>
       <section class="seo-section">

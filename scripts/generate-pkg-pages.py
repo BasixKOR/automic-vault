@@ -34,6 +34,7 @@ PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
 PKG_GRAPH_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
 PKG_GRAPH_CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 PKG_CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
+PKG_AGENT_SAFETY_ANSWERS_PATH = Path("data/pkg-agent-safety-answers.json")
 I18N_LOCALES_PATH = Path("data/www-i18n/locales.json")
 I18N_PKG_TEMPLATES_PATH = Path("data/www-i18n/pkg/templates.json")
 INDEXABLE_MIN_SIGNAL_COUNT = 2
@@ -398,6 +399,7 @@ class PackagePage:
     also_available_via: list[dict[str, Any]] = field(default_factory=list)
     external_package_manager_matches: list[dict[str, Any]] = field(default_factory=list)
     package_hubs: list[dict[str, Any]] = field(default_factory=list)
+    agent_safety_answer: dict[str, str] | None = None
     isotope: dict[str, Any] | None = None
     isotope_readme: str = ""
     isotope_readme_html: str = ""
@@ -650,6 +652,8 @@ def load_sources() -> dict[str, Any]:
                 sources["pkg_graph"] = read_json(PKG_GRAPH_PATH, {})
             if PKG_CROSS_ECOSYSTEM_PATH.exists():
                 sources["pkg_cross_ecosystem"] = read_json(PKG_CROSS_ECOSYSTEM_PATH, {})
+            if PKG_AGENT_SAFETY_ANSWERS_PATH.exists():
+                sources["pkg_agent_safety_answers"] = read_json(PKG_AGENT_SAFETY_ANSWERS_PATH, {})
             return sources
 
     return {
@@ -661,6 +665,7 @@ def load_sources() -> dict[str, Any]:
         "pkg_cross_ecosystem": read_json(PKG_CROSS_ECOSYSTEM_PATH, {}),
         "pkg_page_enrichment": read_json(PKG_PAGE_ENRICHMENT_PATH, {}),
         "pkg_version_freshness": read_json(PKG_VERSION_FRESHNESS_PATH, {}),
+        "pkg_agent_safety_answers": read_json(PKG_AGENT_SAFETY_ANSWERS_PATH, {}),
         "pip": read_json(Path("data/pip.json"), {}),
     }
 
@@ -786,8 +791,60 @@ def package_pages_from_sources(sources: dict[str, Any]) -> dict[str, PackagePage
     apply_package_cross_ecosystem(pages, sources.get("pkg_cross_ecosystem") or {})
     prune_missing_relationship_targets(pages)
     verify_local_install_commands(pages)
+    apply_agent_safety_answers(pages, sources.get("pkg_agent_safety_answers") or {})
 
     return pages
+
+
+AGENT_SAFETY_FIELDS = (
+    "summary",
+    "credentialAccess",
+    "remoteMutation",
+    "publishOrArtifactRisk",
+    "recommendedControl",
+    "agentUseGuidance",
+)
+
+
+def apply_agent_safety_answers(pages: dict[str, PackagePage], data: dict[str, Any]) -> None:
+    if not data:
+        return
+    if int(data.get("schema") or 0) != 1:
+        raise ValueError("data/pkg-agent-safety-answers.json schema must be 1")
+    priority_keys = data.get("priorityPackageKeys")
+    answers = data.get("answers")
+    if not isinstance(priority_keys, list) or not all(isinstance(item, str) and item for item in priority_keys):
+        raise ValueError("pkg agent safety priorityPackageKeys must be a non-empty string array")
+    if len(priority_keys) != len(set(priority_keys)):
+        raise ValueError("pkg agent safety priorityPackageKeys contains duplicate keys")
+    if not isinstance(answers, dict):
+        raise ValueError("pkg agent safety answers must be an object")
+    priority_set = set(priority_keys)
+    answer_set = set(str(key) for key in answers)
+    if answer_set != priority_set:
+        missing = sorted(priority_set - answer_set)
+        extra = sorted(answer_set - priority_set)
+        details = []
+        if missing:
+            details.append(f"missing answers: {', '.join(missing[:12])}")
+        if extra:
+            details.append(f"unexpected answers: {', '.join(extra[:12])}")
+        raise ValueError("pkg agent safety answers must exactly match priorityPackageKeys (" + "; ".join(details) + ")")
+    missing_pages = sorted(key for key in priority_keys if key not in pages)
+    if missing_pages:
+        raise ValueError(f"pkg agent safety answers reference missing package pages: {', '.join(missing_pages[:12])}")
+    for package_key in priority_keys:
+        answer = answers.get(package_key)
+        if not isinstance(answer, dict):
+            raise ValueError(f"pkg agent safety answer for {package_key} must be an object")
+        cleaned: dict[str, str] = {}
+        for field in AGENT_SAFETY_FIELDS:
+            value = answer.get(field)
+            if not isinstance(value, str) or not normalize_space(value):
+                raise ValueError(f"pkg agent safety answer for {package_key} missing {field}")
+            cleaned[field] = normalize_space(value)
+        pages[package_key].agent_safety_answer = cleaned
+        pages[package_key].source_notes.append("curated agent safety answer")
 
 
 def apply_package_taxonomy(pages: dict[str, PackagePage]) -> None:
@@ -1851,6 +1908,7 @@ def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_d
     manifest["indexable_page_count"] = len(indexable_pages)
     manifest["noindex_page_count"] = len(ordered) - len(indexable_pages)
     manifest["markdown_page_count"] = len(indexable_pages)
+    manifest["hub_markdown_page_count"] = len(hubs)
     manifest["sitemap_count"] = len(sitemap_names)
     manifest["sitemap_page_counts"] = {
         provider: sum(1 for page in indexable_pages if page.provider == provider)
@@ -1869,6 +1927,7 @@ def render_all(pages: dict[str, PackagePage], manifest: dict[str, Any], output_d
         for hub, hub_pages in hubs:
             hub_dir = localized_dir / hub.slug
             write_generated_text(hub_dir / "index.html", render_hub_page(hub, hub_pages, manifest, locale), expected_files, stats)
+            write_generated_text(hub_dir / "index.md", render_hub_markdown(hub, hub_pages, manifest, locale), expected_files, stats)
         write_generated_text(localized_dir / "index.html", render_index(ordered, hubs, manifest, locale), expected_files, stats)
         if locale_code(locale) == "en":
             write_generated_text(localized_dir / "sitemap.xml", render_sitemap_index(sitemap_names, manifest), expected_files, stats)
@@ -2095,7 +2154,51 @@ def render_hub_page(
         stylesheet_href=locale_path("/pkg/styles.css", locale),
         favicon_href="/favicon.ico",
         schema=schema_for_hub(hub, pages, description, updated, locale),
+        extra_head=markdown_alternate_head(hub.path, locale),
     )
+
+
+def render_hub_markdown(
+    hub: PackageHub,
+    pages: list[PackagePage],
+    manifest: dict[str, Any],
+    locale: dict[str, Any] | None = None,
+) -> str:
+    updated = fmt_date(manifest.get("generated_at", ""))
+    secured = sum(1 for page in pages if page.isotope)
+    gated = sum(1 for page in pages if page.approval_gate)
+    risked = sum(1 for page in pages if page.geiger and str(page.geiger.get("level") or "").lower() not in {"", "green", "low", "unknown"})
+    lines = [
+        f"# {md_text(hub.title)}",
+        "",
+        md_text(hub.description),
+        "",
+        f"- **{md_text(tx(locale, 'packages', 'Packages'))}:** {fmt_int(len(pages))}",
+        f"- **{md_text(tx(locale, 'radioisotopes', 'Protected tools'))}:** {fmt_int(secured)}",
+        f"- **{md_text(tx(locale, 'approvalGates', 'Approval gates'))}:** {fmt_int(gated)}",
+        f"- **{md_text(tx(locale, 'risk', 'Non-low risk'))}:** {fmt_int(risked)}",
+        f"- **{md_text(tx(locale, 'updated', 'Updated'))}:** {md_text(updated)}",
+        "",
+        f"## {md_text(tx(locale, 'hubSummaryTitle', 'Why this package group is here'))}",
+        "",
+        md_text(hub_description_detail(hub, pages, locale)),
+        "",
+        f"## {md_text(tx(locale, 'generatedSource', 'Generated source'))}",
+        "",
+        md_text(tx(locale, 'generatedSourceCopy', 'This hub uses the same local package data as individual package pages: Nucleus package metadata, Homebrew enrichment, Geiger classifier output, secret-handling manifests, and approval-gate seeds where available.')),
+        "",
+        f"## {md_text(tx(locale, 'hubReviewModel', 'Review model'))}",
+        "",
+        md_text(tx(locale, 'hubReviewCopy', 'Use the hub to find command families that need tighter secret injection, approval gates, or manual review before agents run them.')),
+        "",
+        f"## {md_text(tx(locale, 'hubIndexedPagesTitle', 'Indexed package pages'))}",
+        "",
+    ]
+    for page in pages[:72]:
+        reason = hub_package_reason(page, locale)
+        path = locale_url(page.path, locale)
+        lines.append(f"- [{md_text(page.display_name)}]({path}) - {md_text(reason)}")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def render_hub_cluster_sections(
@@ -2317,6 +2420,7 @@ def render_package_page(
     facts = package_facts(page, locale)
     install_section = render_concept_install(page, locale) if page.key == "brew:ripgrep" else render_install(page, locale)
     sections = [
+        render_agent_safety_answer(page, locale),
         install_section,
         render_overview(page, locale),
         render_security(page, locale),
@@ -2369,9 +2473,38 @@ def render_package_page(
         stylesheet_href=locale_path("/pkg/styles.css", locale),
         favicon_href="/favicon.ico",
         schema=schema_for_package(page, description, updated, locale),
-        extra_head=markdown_alternate_head(page, locale) if is_indexable_package_page(page) else "",
+        extra_head=markdown_alternate_head(page.path, locale) if is_indexable_package_page(page) else "",
         extra_body=copy_script(locale),
     )
+
+
+def render_agent_safety_answer(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
+    answer = page.agent_safety_answer
+    if not answer:
+        return ""
+    rows = [
+        (tx(locale, "agentSafetyCredentialAccess", "Credential access"), answer["credentialAccess"]),
+        (tx(locale, "agentSafetyRemoteMutation", "Remote mutation"), answer["remoteMutation"]),
+        (tx(locale, "agentSafetyPublishRisk", "Publish/artifact risk"), answer["publishOrArtifactRisk"]),
+        (tx(locale, "agentSafetyControl", "Recommended control"), answer["recommendedControl"]),
+        (tx(locale, "agentSafetyGuidance", "Agent-use guidance"), answer["agentUseGuidance"]),
+    ]
+    articles = "\n".join(
+        f"<article><h3>{html_escape(label)}</h3><p>{html_escape(value)}</p></article>"
+        for label, value in rows
+    )
+    return f"""
+<section class="pkg-section split-section agent-safety-section" aria-labelledby="agent-safety-title">
+  <div>
+    <p class="section-kicker">{html_escape(tx(locale, 'agentSafetyKicker', 'agent safety'))}</p>
+    <h2 id="agent-safety-title">{html_escape(tx(locale, 'agentSafetyTitle', 'Agent safety answer'))}</h2>
+    <p>{html_escape(answer["summary"])}</p>
+  </div>
+  <div class="detail-stack">
+    {articles}
+  </div>
+</section>
+"""
 
 
 def render_concept_install(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
@@ -2462,8 +2595,8 @@ def render_concept_command_row(item: dict[str, Any], locale: dict[str, Any] | No
 """
 
 
-def markdown_alternate_head(page: PackagePage, locale: dict[str, Any] | None = None) -> str:
-    return f'  <link rel="alternate" type="text/markdown" href="{attr(f"{locale_url(page.path, locale)}index.md")}">'
+def markdown_alternate_head(path: str, locale: dict[str, Any] | None = None) -> str:
+    return f'  <link rel="alternate" type="text/markdown" href="{attr(f"{locale_url(path, locale)}index.md")}">'
 
 
 def render_package_markdown(
@@ -2484,6 +2617,7 @@ def render_package_markdown(
         "```",
         "",
     ]
+    lines.extend(md_agent_safety_section(page, locale))
     lines.extend(md_install_command_groups(page, locale))
     lines.extend([f"## {md_text(tx(locale, 'packageFacts', 'Package Facts'))}", ""])
     fact_rows = [
@@ -2516,6 +2650,28 @@ def render_package_markdown(
     lines.extend(md_related_section(page, locale))
     lines.extend(md_section_list(tx(locale, "sources", "Sources"), page.source_notes))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def md_agent_safety_section(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
+    answer = page.agent_safety_answer
+    if not answer:
+        return []
+    lines = [
+        f"## {md_text(tx(locale, 'agentSafetyTitle', 'Agent safety answer'))}",
+        "",
+        md_text(answer["summary"]),
+        "",
+    ]
+    for label, field in [
+        (tx(locale, "agentSafetyCredentialAccess", "Credential access"), "credentialAccess"),
+        (tx(locale, "agentSafetyRemoteMutation", "Remote mutation"), "remoteMutation"),
+        (tx(locale, "agentSafetyPublishRisk", "Publish/artifact risk"), "publishOrArtifactRisk"),
+        (tx(locale, "agentSafetyControl", "Recommended control"), "recommendedControl"),
+        (tx(locale, "agentSafetyGuidance", "Agent-use guidance"), "agentUseGuidance"),
+    ]:
+        lines.append(f"- **{md_text(label)}:** {md_text(answer[field])}")
+    lines.append("")
+    return lines
 
 
 def md_install_command_groups(page: PackagePage, locale: dict[str, Any] | None = None) -> list[str]:
@@ -5491,6 +5647,9 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
     markdown_page_count = int(manifest.get("markdown_page_count") or 0)
     if markdown_page_count != len(indexable_pages):
         failures.append(f"manifest markdown page count is {markdown_page_count}, but current data yields {len(indexable_pages)}")
+    hub_markdown_page_count = int(manifest.get("hub_markdown_page_count") or 0)
+    if hub_markdown_page_count != len(hubs):
+        failures.append(f"manifest hub markdown page count is {hub_markdown_page_count}, but current data yields {len(hubs)}")
     for page in indexable_pages:
         if not (output_dir / page.provider / page.slug / "index.md").exists():
             failures.append(f"missing package markdown alternate: {output_dir / page.provider / page.slug / 'index.md'}")
@@ -5573,6 +5732,17 @@ def check_current(output_dir: Path, terminal: Terminal) -> int:
     for hub, _hub_pages in hubs:
         if not (output_dir / hub.slug / "index.html").exists():
             failures.append(f"missing package hub page: {output_dir / hub.slug / 'index.html'}")
+            break
+        if not (output_dir / hub.slug / "index.md").exists():
+            failures.append(f"missing package hub markdown alternate: {output_dir / hub.slug / 'index.md'}")
+            break
+    for locale in non_default_i18n_locales():
+        localized_output_dir = output_dir.parent / locale_slug(locale) / "pkg"
+        for hub, _hub_pages in hubs[:12]:
+            localized_hub_markdown = localized_output_dir / hub.slug / "index.md"
+            if not localized_hub_markdown.exists():
+                failures.append(f"missing localized package hub markdown alternate: {localized_hub_markdown}")
+                break
     if failures:
         terminal.error_log("Rendered package catalog pages are stale.")
         for failure in failures:

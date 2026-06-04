@@ -124,7 +124,7 @@
                   "headline": "AI Agent Approval Gates",
                   "description": "Automic Vault adds approval gates for AI agent commands at the tool layer, where secrets, package managers, and risky CLIs run.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-04",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -228,7 +228,7 @@
           <p class="kicker">Human approval for agent commands</p>
           <h1>Approval gates for the commands AI agents run</h1>
           <p class="lede">Agent-side prompts are useful, but they live inside the agent. Automic Vault adds approval beneath the agent, at the tool and secret layer.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 4, 2026</p>
           <div class="answer-box"><p>AI agent approval gates are strongest when they run at the tool layer. Automic Vault shows the sensitive command before execution so approval is tied to the executable, command path, and requested capability.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#contain">Run agents through contain <span aria-hidden="true">›</span></a>
@@ -261,6 +261,18 @@
           <article><span>Publish</span><p>An agent tries <code>npm publish</code>, <code>twine upload</code>, or another release command.</p></article>
           <article><span>Reveal</span><p>An agent tries to print tokens with commands such as <code>gh auth token</code>.</p></article>
           <article><span>Cloud</span><p>An agent tries AWS commands that can inspect, mutate, or delete infrastructure.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Before / after</p>
+          <h2>Approve the concrete command, not the agent's intention.</h2>
+          <p>A prompt-level approval says the plan looked reasonable. A tool-layer gate says the exact executable, path, arguments, and secret access are acceptable right now. That distinction matters when a benign plan turns into a destructive CLI call.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Before</span><p>The agent gets broad shell access after one high-level confirmation, then runs <code>git push</code>, <code>npm publish</code>, or <code>aws s3 rm</code> inside that open session.</p></article>
+          <article><span>After</span><p>Automic Vault pauses sensitive tool use and shows the command at execution time, including which credential or protected package path will be used.</p></article>
+          <article><span>Command example</span><p>Run agent work through <code>av contain</code>, then require approval for publish, delete, deploy, credential export, and cloud mutation commands before they execute.</p></article>
         </div>
       </section>
       <section class="seo-section">

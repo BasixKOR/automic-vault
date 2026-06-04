@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>阻止 AI 代理读取 .env | AI 代理与开发工具安全</title>
-  <meta name="description" content="用向已批准工具的受控注入替代持续暴露的 .env 文件。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
+  <meta name="description" content="把 .env 中的明文密钥替换为面向已批准工具的运行时注入。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="阻止 AI 代理读取 .env | AI 代理与开发工具安全">
-  <meta property="og:description" content="用向已批准工具的受控注入替代持续暴露的 .env 文件。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
+  <meta property="og:description" content="把 .env 中的明文密钥替换为面向已批准工具的运行时注入。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta property="og:url" content="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="阻止 AI 代理读取 .env | AI 代理与开发工具安全">
-  <meta name="twitter:description" content="用向已批准工具的受控注入替代持续暴露的 .env 文件。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
+  <meta name="twitter:description" content="把 .env 中的明文密钥替换为面向已批准工具的运行时注入。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/zh-hans/stop-ai-agents-reading-env-files/",
     "name": "阻止 AI 代理读取 .env | AI 代理与开发工具安全",
-    "description": "用向已批准工具的受控注入替代持续暴露的 .env 文件。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。",
+    "description": "把 .env 中的明文密钥替换为面向已批准工具的运行时注入。 在本地 Mac 上控制 Homebrew 工具、CLI 密钥和审批门。",
     "inLanguage": "zh-Hans",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">阻止 AI 代理读取 .env</p>
-        <h1>阻止 AI 代理读取 .env</h1>
-        <p class="lede">用向已批准工具的受控注入替代持续暴露的 .env 文件。</p>
+        <p class="eyebrow">dotenv 保护</p>
+        <h1>阻止 AI 代理读取 .env 文件</h1>
+        <p class="lede">.env 很方便，但也很容易被代理读取。Automic Vault 将值移入受保护的本地存储，只交给已批准的命令。</p>
         <div class="hero-actions">
           <a class="button primary" href="/zh-hans/download/">下载</a>
           <a class="button secondary" href="/zh-hans/docs/">文档</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>阻止 AI 代理读取 .env</h2>
-        <p>用向已批准工具的受控注入替代持续暴露的 .env 文件。</p>
+        <h2>前后对比</h2>
+        <p>以前 API 密钥和部署令牌写在 .env 中，普通文件检查就可能暴露它们。之后仓库只保留非密钥默认值，用 av save 保存敏感值，并用 av inject 交给需要它的进程。</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>它在 Mac 本地控制 Homebrew 工具、CLI 密钥和审批门，让 AI 代理在清晰边界内运行。</p>
+        <h2>命令示例</h2>
+        <p>运行 av save STRIPE_SECRET_KEY，从 .env 删除该行，然后用 av inject -- npm test 或已批准脚本启动。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>运维说明</h2>
+        <p>不要只要求代理不要读取文件。应移除可读密钥路径，避免日志、摘要和补丁捕获原始值。</p>
       </section>
       <section class="i18n-section">
         <h2>本地运行边界</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>可信线索</h2>
         <p>公开仓库、安全页面、许可证以及 Max Howell 的 Homebrew 背景都可查看。本地安全边界应该能够被验证。</p>
-      </section>
-      <section class="i18n-section">
-        <h2>何时使用</h2>
-        <p>在让代理处理仓库之前、使用云 CLI 之前，以及允许 npm publish、gh release 或基础设施变更等高权限命令之前使用 Automic Vault。</p>
       </section>
       <nav class="language-links" aria-label="语言版本"><a href="/stop-ai-agents-reading-env-files/" lang="en">English</a> <a href="/ja/stop-ai-agents-reading-env-files/" lang="ja">日本語</a> <a href="/de/stop-ai-agents-reading-env-files/" lang="de">Deutsch</a> <a href="/fr/stop-ai-agents-reading-env-files/" lang="fr">Français</a> <a href="/zh-hans/stop-ai-agents-reading-env-files/" lang="zh-Hans">简体中文</a></nav>
     </main>

@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI エージェント向け API キー管理 | AI エージェントと開発ツールの保護</title>
-  <meta name="description" content="CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="description" content="API キーをモデルコンテキストから外し、承認された CLI にだけ注入します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="AI エージェント向け API キー管理 | AI エージェントと開発ツールの保護">
-  <meta property="og:description" content="CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta property="og:description" content="API キーをモデルコンテキストから外し、承認された CLI にだけ注入します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta property="og:url" content="https://www.automicvault.com/ja/api-key-management-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AI エージェント向け API キー管理 | AI エージェントと開発ツールの保護">
-  <meta name="twitter:description" content="CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="twitter:description" content="API キーをモデルコンテキストから外し、承認された CLI にだけ注入します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/ja/api-key-management-for-ai-agents/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/ja/api-key-management-for-ai-agents/",
     "name": "AI エージェント向け API キー管理 | AI エージェントと開発ツールの保護",
-    "description": "CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
+    "description": "API キーをモデルコンテキストから外し、承認された CLI にだけ注入します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
     "inLanguage": "ja",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">AI エージェント向け API キー管理</p>
-        <h1>AI エージェント向け API キー管理</h1>
-        <p class="lede">CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。</p>
+        <p class="eyebrow">API キー管理</p>
+        <h1>AI コーディングエージェント向け API キー管理</h1>
+        <p class="lede">API キーは文字列ではなく権限です。Automic Vault は値をローカルに保存し、承認された実行だけに名前付きキーを渡します。</p>
         <div class="hero-actions">
           <a class="button primary" href="/ja/download/">ダウンロード</a>
           <a class="button secondary" href="/ja/docs/">ドキュメント</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>AI エージェント向け API キー管理</h2>
-        <p>CLI と SDK のトークンをモデルコンテキストや平文設定から遠ざけます。</p>
+        <h2>前後比較</h2>
+        <p>以前はシェルプロファイル、.npmrc、.netrc、クラウド設定にキーがあり、すべての子プロセスが継承できました。移行後はコマンドごとの機能として扱います。</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御し、AI エージェントの権限を明確な境界の中に収めます。</p>
+        <h2>コマンド例</h2>
+        <p>av save OPENAI_API_KEY で保存し、広い export を削除してから av inject -- npm test や av inject -- gh release create を実行します。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>優先対象</h2>
+        <p>GitHub、AWS、npm、PyPI、デプロイ CLI から始めます。公開、削除、リリース、クラウド変更ができるキーは最初に保護します。</p>
       </section>
       <section class="i18n-section">
         <h2>ローカル実行境界</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>信頼の手がかり</h2>
         <p>公開リポジトリ、セキュリティページ、ライセンス、Max Howell の Homebrew 背景を確認できます。ローカルのセキュリティ境界は、検証可能であるべきです。</p>
-      </section>
-      <section class="i18n-section">
-        <h2>使う場面</h2>
-        <p>エージェントにリポジトリを任せる前、クラウド CLI を使う前、npm publish や gh release のような権限の強いコマンドを許可する前に使います。</p>
       </section>
       <nav class="language-links" aria-label="言語版"><a href="/api-key-management-for-ai-agents/" lang="en">English</a> <a href="/ja/api-key-management-for-ai-agents/" lang="ja">日本語</a> <a href="/de/api-key-management-for-ai-agents/" lang="de">Deutsch</a> <a href="/fr/api-key-management-for-ai-agents/" lang="fr">Français</a> <a href="/zh-hans/api-key-management-for-ai-agents/" lang="zh-Hans">简体中文</a></nav>
     </main>

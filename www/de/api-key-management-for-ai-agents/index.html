@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API-Key-Management für AI-Agents | Schutz für AI-Agents und Entwickler-Tools</title>
-  <meta name="description" content="Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="description" content="Halte API-Keys aus dem Modellkontext und injiziere sie nur in genehmigte CLIs. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="API-Key-Management für AI-Agents | Schutz für AI-Agents und Entwickler-Tools">
-  <meta property="og:description" content="Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta property="og:description" content="Halte API-Keys aus dem Modellkontext und injiziere sie nur in genehmigte CLIs. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta property="og:url" content="https://www.automicvault.com/de/api-key-management-for-ai-agents/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="API-Key-Management für AI-Agents | Schutz für AI-Agents und Entwickler-Tools">
-  <meta name="twitter:description" content="Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="twitter:description" content="Halte API-Keys aus dem Modellkontext und injiziere sie nur in genehmigte CLIs. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/de/api-key-management-for-ai-agents/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/api-key-management-for-ai-agents/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/api-key-management-for-ai-agents/",
     "name": "API-Key-Management für AI-Agents | Schutz für AI-Agents und Entwickler-Tools",
-    "description": "Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
+    "description": "Halte API-Keys aus dem Modellkontext und injiziere sie nur in genehmigte CLIs. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">API-Key-Management für AI-Agents</p>
-        <h1>API-Key-Management für AI-Agents</h1>
-        <p class="lede">Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus.</p>
+        <p class="eyebrow">API-Key-Management</p>
+        <h1>API-Key-Management für AI-Coding-Agents</h1>
+        <p class="lede">Ein API-Key ist eine Berechtigung, kein Text für das Modell. Automic Vault speichert Werte lokal und übergibt benannte Keys nur an genehmigte Ausführungen.</p>
         <div class="hero-actions">
           <a class="button primary" href="/de/download/">Herunterladen</a>
           <a class="button secondary" href="/de/docs/">Dokumentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>API-Key-Management für AI-Agents</h2>
-        <p>Halte CLI- und SDK-Tokens aus Modellkontext und Klartextkonfiguration heraus.</p>
+        <h2>Vorher / Nachher</h2>
+        <p>Vorher lagen Keys in Shell-Profilen, .npmrc, .netrc oder Cloud-Konfigurationen und wurden von jedem Kindprozess geerbt. Nachher wird jeder Key als Fähigkeit pro Befehl behandelt.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Es kontrolliert Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac, damit AI-Agents innerhalb klarer Grenzen arbeiten.</p>
+        <h2>Befehlsbeispiel</h2>
+        <p>Speichere den Wert mit av save OPENAI_API_KEY, entferne breite Exports und nutze av inject -- npm test oder av inject -- gh release create für den konkreten Lauf.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Prioritäten</h2>
+        <p>Beginne mit GitHub, AWS, npm, PyPI und Deploy-CLIs. Keys, die veröffentlichen, löschen, releasen oder Cloud-Zustand ändern können, gehören zuerst geschützt.</p>
       </section>
       <section class="i18n-section">
         <h2>Lokale Laufzeitgrenze</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Vertrauenshinweise</h2>
         <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Wann einsetzen</h2>
-        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
       </section>
       <nav class="language-links" aria-label="Sprachversionen"><a href="/api-key-management-for-ai-agents/" lang="en">English</a> <a href="/ja/api-key-management-for-ai-agents/" lang="ja">日本語</a> <a href="/de/api-key-management-for-ai-agents/" lang="de">Deutsch</a> <a href="/fr/api-key-management-for-ai-agents/" lang="fr">Français</a> <a href="/zh-hans/api-key-management-for-ai-agents/" lang="zh-Hans">简体中文</a></nav>
     </main>

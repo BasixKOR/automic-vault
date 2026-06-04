@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gestion des secrets MCP | Protection des agents IA et outils développeur</title>
-  <meta name="description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta name="description" content="Donnez des identifiants aux outils MCP sans placer les secrets dans le contexte modèle ou la configuration en clair.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Gestion des secrets MCP | Protection des agents IA et outils développeur">
-  <meta property="og:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta property="og:description" content="Donnez des identifiants aux outils MCP sans placer les secrets dans le contexte modèle ou la configuration en clair.">
   <meta property="og:url" content="https://www.automicvault.com/fr/mcp-secrets-management/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Gestion des secrets MCP | Protection des agents IA et outils développeur">
-  <meta name="twitter:description" content="Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta name="twitter:description" content="Donnez des identifiants aux outils MCP sans placer les secrets dans le contexte modèle ou la configuration en clair.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/fr/mcp-secrets-management/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/fr/mcp-secrets-management/",
     "name": "Gestion des secrets MCP | Protection des agents IA et outils développeur",
-    "description": "Les outils MCP reçoivent les identifiants nécessaires dans des limites d'approbation explicites. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation.",
+    "description": "Donnez des identifiants aux outils MCP sans placer les secrets dans le contexte modèle ou la configuration en clair.",
     "inLanguage": "fr",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">Gestion des secrets MCP</p>
-        <h1>Gestion des secrets MCP</h1>
-        <p class="lede">Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites.</p>
+        <p class="eyebrow">sécurité MCP</p>
+        <h1>Gestion des secrets MCP sans secrets dans le modèle</h1>
+        <p class="lede">MCP facilite l&#x27;accès aux outils, mais les jetons bruts ne doivent pas vivre dans la configuration serveur. Automic Vault injecte les valeurs approuvées à la limite de lancement locale.</p>
         <div class="hero-actions">
           <a class="button primary" href="/fr/download/">Télécharger</a>
           <a class="button secondary" href="/fr/docs/">Documentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>Gestion des secrets MCP</h2>
-        <p>Les outils MCP reçoivent les identifiants nécessaires dans des limites d&#x27;approbation explicites.</p>
+        <h2>Avant / après</h2>
+        <p>Avant, GITHUB_TOKEN ou les identifiants de base de données vivaient dans le JSON MCP ou dotenv, donc vérifier la configuration exposait les valeurs. Après, la configuration garde la commande; la valeur arrive à l&#x27;exécution.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Il contrôle localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation afin que les agents IA restent dans des limites claires.</p>
+        <h2>Exemple de commande</h2>
+        <p>Exécutez av save GITHUB_TOKEN, retirez la valeur de la configuration MCP, puis lancez le serveur avec av inject -- ./mcp-server.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Limite d&#x27;approbation</h2>
+        <p>Les outils en lecture seule peuvent rester simples; les outils capables de publier, supprimer ou muter le cloud doivent passer par av contain et des portes d&#x27;approbation.</p>
       </section>
       <section class="i18n-section">
         <h2>Limite d&#x27;exécution locale</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Signaux de confiance</h2>
         <p>Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Quand l&#x27;utiliser</h2>
-        <p>Utilisez Automic Vault avant les exécutions d&#x27;agents dans un dépôt, avant le travail avec les CLI cloud et avant les commandes comme npm publish, gh release ou les mutations d&#x27;infrastructure.</p>
       </section>
       <nav class="language-links" aria-label="Versions linguistiques"><a href="/mcp-secrets-management/" lang="en">English</a> <a href="/ja/mcp-secrets-management/" lang="ja">日本語</a> <a href="/de/mcp-secrets-management/" lang="de">Deutsch</a> <a href="/fr/mcp-secrets-management/" lang="fr">Français</a> <a href="/zh-hans/mcp-secrets-management/" lang="zh-Hans">简体中文</a></nav>
     </main>

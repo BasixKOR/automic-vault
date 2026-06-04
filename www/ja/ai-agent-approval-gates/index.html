@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI エージェント承認ゲート | AI エージェントと開発ツールの保護</title>
-  <meta name="description" content="公開、削除、シークレット表示などの操作を実行前に確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="description" content="AI エージェントが実行する高リスクコマンドを、ツール層で人間が確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="AI エージェント承認ゲート | AI エージェントと開発ツールの保護">
-  <meta property="og:description" content="公開、削除、シークレット表示などの操作を実行前に確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta property="og:description" content="AI エージェントが実行する高リスクコマンドを、ツール層で人間が確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta property="og:url" content="https://www.automicvault.com/ja/ai-agent-approval-gates/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AI エージェント承認ゲート | AI エージェントと開発ツールの保護">
-  <meta name="twitter:description" content="公開、削除、シークレット表示などの操作を実行前に確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="twitter:description" content="AI エージェントが実行する高リスクコマンドを、ツール層で人間が確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/ja/ai-agent-approval-gates/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/ja/ai-agent-approval-gates/",
     "name": "AI エージェント承認ゲート | AI エージェントと開発ツールの保護",
-    "description": "公開、削除、シークレット表示などの操作を実行前に確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
+    "description": "AI エージェントが実行する高リスクコマンドを、ツール層で人間が確認します。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
     "inLanguage": "ja",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">AI エージェント承認ゲート</p>
-        <h1>AI エージェント承認ゲート</h1>
-        <p class="lede">公開、削除、シークレット表示などの操作を実行前に確認します。</p>
+        <p class="eyebrow">コマンド承認</p>
+        <h1>AI エージェントが実行するコマンドの承認ゲート</h1>
+        <p class="lede">意図ではなく、実際に走る実行ファイル、引数、シークレット利用を承認します。Automic Vault はエージェントの下のツール層で停止点を作ります。</p>
         <div class="hero-actions">
           <a class="button primary" href="/ja/download/">ダウンロード</a>
           <a class="button secondary" href="/ja/docs/">ドキュメント</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>AI エージェント承認ゲート</h2>
-        <p>公開、削除、シークレット表示などの操作を実行前に確認します。</p>
+        <h2>前後比較</h2>
+        <p>以前は高レベルな確認後にエージェントが git push、npm publish、aws s3 rm を同じセッションで実行できました。移行後は危険なコマンドごとに実行直前の承認を要求します。</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御し、AI エージェントの権限を明確な境界の中に収めます。</p>
+        <h2>コマンド例</h2>
+        <p>エージェント作業を av contain で実行し、公開、削除、デプロイ、認証情報表示、クラウド変更のコマンドに承認ゲートを置きます。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>優先ルール</h2>
+        <p>最初に npm publish、twine upload、gh auth token、git push --force、aws の削除や IAM 変更を対象にします。</p>
       </section>
       <section class="i18n-section">
         <h2>ローカル実行境界</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>信頼の手がかり</h2>
         <p>公開リポジトリ、セキュリティページ、ライセンス、Max Howell の Homebrew 背景を確認できます。ローカルのセキュリティ境界は、検証可能であるべきです。</p>
-      </section>
-      <section class="i18n-section">
-        <h2>使う場面</h2>
-        <p>エージェントにリポジトリを任せる前、クラウド CLI を使う前、npm publish や gh release のような権限の強いコマンドを許可する前に使います。</p>
       </section>
       <nav class="language-links" aria-label="言語版"><a href="/ai-agent-approval-gates/" lang="en">English</a> <a href="/ja/ai-agent-approval-gates/" lang="ja">日本語</a> <a href="/de/ai-agent-approval-gates/" lang="de">Deutsch</a> <a href="/fr/ai-agent-approval-gates/" lang="fr">Français</a> <a href="/zh-hans/ai-agent-approval-gates/" lang="zh-Hans">简体中文</a></nav>
     </main>

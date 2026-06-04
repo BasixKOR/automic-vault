@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Portes d&#x27;approbation pour agents IA</title>
-  <meta name="description" content="Vérifiez publication, suppression et affichage de secrets avant exécution. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta name="description" content="Vérifiez les commandes risquées des agents IA avec une approbation humaine au niveau outil. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Portes d&#x27;approbation pour agents IA">
-  <meta property="og:description" content="Vérifiez publication, suppression et affichage de secrets avant exécution. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta property="og:description" content="Vérifiez les commandes risquées des agents IA avec une approbation humaine au niveau outil. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
   <meta property="og:url" content="https://www.automicvault.com/fr/ai-agent-approval-gates/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Portes d&#x27;approbation pour agents IA">
-  <meta name="twitter:description" content="Vérifiez publication, suppression et affichage de secrets avant exécution. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
+  <meta name="twitter:description" content="Vérifiez les commandes risquées des agents IA avec une approbation humaine au niveau outil. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/fr/ai-agent-approval-gates/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/fr/ai-agent-approval-gates/",
     "name": "Portes d'approbation pour agents IA",
-    "description": "Vérifiez publication, suppression et affichage de secrets avant exécution. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation.",
+    "description": "Vérifiez les commandes risquées des agents IA avec une approbation humaine au niveau outil. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation.",
     "inLanguage": "fr",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">Portes d&#x27;approbation pour agents IA</p>
-        <h1>Portes d&#x27;approbation pour agents IA</h1>
-        <p class="lede">Vérifiez publication, suppression et affichage de secrets avant exécution.</p>
+        <p class="eyebrow">approbation de commandes</p>
+        <h1>Portes d&#x27;approbation pour les commandes exécutées par les agents IA</h1>
+        <p class="lede">N&#x27;approuvez pas seulement l&#x27;intention: approuvez l&#x27;exécutable, les arguments et l&#x27;accès aux secrets. Automic Vault place le point d&#x27;arrêt sous l&#x27;agent.</p>
         <div class="hero-actions">
           <a class="button primary" href="/fr/download/">Télécharger</a>
           <a class="button secondary" href="/fr/docs/">Documentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>Portes d&#x27;approbation pour agents IA</h2>
-        <p>Vérifiez publication, suppression et affichage de secrets avant exécution.</p>
+        <h2>Avant / après</h2>
+        <p>Avant, après une validation générale, l&#x27;agent pouvait lancer git push, npm publish ou aws s3 rm dans la même session. Après, chaque commande risquée demande une approbation juste avant exécution.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Il contrôle localement sur Mac les outils Homebrew, les secrets CLI et les portes d&#x27;approbation afin que les agents IA restent dans des limites claires.</p>
+        <h2>Exemple de commande</h2>
+        <p>Faites passer le travail de l&#x27;agent par av contain et placez des portes sur publication, suppression, déploiement, affichage d&#x27;identifiants et mutation cloud.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Priorité</h2>
+        <p>Commencez par npm publish, twine upload, gh auth token, git push --force, ainsi que les suppressions AWS et changements IAM.</p>
       </section>
       <section class="i18n-section">
         <h2>Limite d&#x27;exécution locale</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Signaux de confiance</h2>
         <p>Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Quand l&#x27;utiliser</h2>
-        <p>Utilisez Automic Vault avant les exécutions d&#x27;agents dans un dépôt, avant le travail avec les CLI cloud et avant les commandes comme npm publish, gh release ou les mutations d&#x27;infrastructure.</p>
       </section>
       <nav class="language-links" aria-label="Versions linguistiques"><a href="/ai-agent-approval-gates/" lang="en">English</a> <a href="/ja/ai-agent-approval-gates/" lang="ja">日本語</a> <a href="/de/ai-agent-approval-gates/" lang="de">Deutsch</a> <a href="/fr/ai-agent-approval-gates/" lang="fr">Français</a> <a href="/zh-hans/ai-agent-approval-gates/" lang="zh-Hans">简体中文</a></nav>
     </main>

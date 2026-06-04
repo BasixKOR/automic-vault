@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MCP シークレット管理 | AI エージェントと開発ツールの保護</title>
-  <meta name="description" content="MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="description" content="MCP ツールへ認証情報を渡しながら、モデルコンテキストと平文設定からシークレットを遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="MCP シークレット管理 | AI エージェントと開発ツールの保護">
-  <meta property="og:description" content="MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta property="og:description" content="MCP ツールへ認証情報を渡しながら、モデルコンテキストと平文設定からシークレットを遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta property="og:url" content="https://www.automicvault.com/ja/mcp-secrets-management/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MCP シークレット管理 | AI エージェントと開発ツールの保護">
-  <meta name="twitter:description" content="MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
+  <meta name="twitter:description" content="MCP ツールへ認証情報を渡しながら、モデルコンテキストと平文設定からシークレットを遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/ja/mcp-secrets-management/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/mcp-secrets-management/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/ja/mcp-secrets-management/",
     "name": "MCP シークレット管理 | AI エージェントと開発ツールの保護",
-    "description": "MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
+    "description": "MCP ツールへ認証情報を渡しながら、モデルコンテキストと平文設定からシークレットを遠ざけます。 Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御します。",
     "inLanguage": "ja",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">MCP シークレット管理</p>
-        <h1>MCP シークレット管理</h1>
-        <p class="lede">MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。</p>
+        <p class="eyebrow">MCP セキュリティ</p>
+        <h1>モデルにシークレットを渡さない MCP シークレット管理</h1>
+        <p class="lede">MCP はツール利用を簡単にしますが、サーバー設定に生のトークンを置くべきではありません。Automic Vault は起動境界で承認された値を注入します。</p>
         <div class="hero-actions">
           <a class="button primary" href="/ja/download/">ダウンロード</a>
           <a class="button secondary" href="/ja/docs/">ドキュメント</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>MCP シークレット管理</h2>
-        <p>MCP ツールが必要な認証情報を、明示的な承認境界の中で受け取れるようにします。</p>
+        <h2>前後比較</h2>
+        <p>以前は MCP JSON や dotenv に GITHUB_TOKEN や DB 認証情報が入り、設定確認で値が見えました。移行後は設定にコマンドだけを残し、値は実行時に渡します。</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Homebrew ツール、CLI シークレット、承認ゲートを Mac 上でローカルに制御し、AI エージェントの権限を明確な境界の中に収めます。</p>
+        <h2>コマンド例</h2>
+        <p>av save GITHUB_TOKEN を実行し、MCP 設定から値を削除してから av inject -- ./mcp-server でサーバーを起動します。</p>
+      </section>
+      <section class="i18n-section">
+        <h2>承認境界</h2>
+        <p>読み取り専用ツールは軽く、公開・削除・クラウド変更ができるツールは av contain と承認ゲートに通します。</p>
       </section>
       <section class="i18n-section">
         <h2>ローカル実行境界</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>信頼の手がかり</h2>
         <p>公開リポジトリ、セキュリティページ、ライセンス、Max Howell の Homebrew 背景を確認できます。ローカルのセキュリティ境界は、検証可能であるべきです。</p>
-      </section>
-      <section class="i18n-section">
-        <h2>使う場面</h2>
-        <p>エージェントにリポジトリを任せる前、クラウド CLI を使う前、npm publish や gh release のような権限の強いコマンドを許可する前に使います。</p>
       </section>
       <nav class="language-links" aria-label="言語版"><a href="/mcp-secrets-management/" lang="en">English</a> <a href="/ja/mcp-secrets-management/" lang="ja">日本語</a> <a href="/de/mcp-secrets-management/" lang="de">Deutsch</a> <a href="/fr/mcp-secrets-management/" lang="fr">Français</a> <a href="/zh-hans/mcp-secrets-management/" lang="zh-Hans">简体中文</a></nav>
     </main>

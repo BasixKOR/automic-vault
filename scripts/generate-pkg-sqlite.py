@@ -592,6 +592,7 @@ def populate_manifest_counts(page_module: Any, manifest: dict[str, Any], pages: 
     manifest["indexable_page_count"] = len(indexable_pages)
     manifest["noindex_page_count"] = len(pages) - len(indexable_pages)
     manifest["markdown_page_count"] = len(indexable_pages)
+    manifest["hub_markdown_page_count"] = len(hubs)
     manifest["approval_gate_count"] = sum(1 for page in pages if getattr(page, "approval_gate", None))
     manifest["sitemap_count"] = len(sitemap_names)
     manifest["sitemap_page_counts"] = {
@@ -630,6 +631,8 @@ def page_search_text(page_module: Any, page: Any, locale: dict[str, Any] | None)
         pieces.append(page_module.public_copy(justification.get("title") or ""))
     if page.approval_gate:
         pieces.extend(str(item) for item in page.approval_gate.get("rules") or [])
+    if getattr(page, "agent_safety_answer", None):
+        pieces.extend(str(value) for value in page.agent_safety_answer.values())
     taxonomy = page.extra.get("pkgTaxonomy") if isinstance(page.extra.get("pkgTaxonomy"), dict) else {}
     pieces.extend(str(item) for item in page_module.taxonomy_terms(taxonomy))
     return page_module.normalize_space(" ".join(str(piece or "") for piece in pieces))
@@ -730,6 +733,7 @@ def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
         "relatedPackages": getattr(page, "related_packages", []),
         "alsoAvailableVia": getattr(page, "also_available_via", []),
         "packageHubs": getattr(page, "package_hubs", []),
+        "agentSafetyAnswer": getattr(page, "agent_safety_answer", None),
         "isotope": getattr(page, "isotope", None),
         "isotopeReadme": getattr(page, "isotope_readme", ""),
         "isotopeReadmeHtml": page_module.public_copy(getattr(page, "isotope_readme_html", "")),

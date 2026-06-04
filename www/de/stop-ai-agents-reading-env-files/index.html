@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verhindere, dass AI-Agents .env lesen</title>
-  <meta name="description" content="Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="description" content="Ersetze Klartext-Secrets in .env durch Laufzeitinjektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Verhindere, dass AI-Agents .env lesen">
-  <meta property="og:description" content="Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta property="og:description" content="Ersetze Klartext-Secrets in .env durch Laufzeitinjektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta property="og:url" content="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Verhindere, dass AI-Agents .env lesen">
-  <meta name="twitter:description" content="Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="twitter:description" content="Ersetze Klartext-Secrets in .env durch Laufzeitinjektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/de/stop-ai-agents-reading-env-files/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/stop-ai-agents-reading-env-files/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/stop-ai-agents-reading-env-files/",
     "name": "Verhindere, dass AI-Agents .env lesen",
-    "description": "Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
+    "description": "Ersetze Klartext-Secrets in .env durch Laufzeitinjektion in genehmigte Tools. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">Verhindere, dass AI-Agents .env lesen</p>
-        <h1>Verhindere, dass AI-Agents .env lesen</h1>
-        <p class="lede">Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools.</p>
+        <p class="eyebrow">dotenv-Schutz</p>
+        <h1>AI-Agents daran hindern, .env-Dateien zu lesen</h1>
+        <p class="lede">.env ist praktisch, aber für Agents leicht lesbar. Automic Vault verschiebt Werte in geschützten lokalen Speicher und gibt sie nur an genehmigte Befehle weiter.</p>
         <div class="hero-actions">
           <a class="button primary" href="/de/download/">Herunterladen</a>
           <a class="button secondary" href="/de/docs/">Dokumentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>Verhindere, dass AI-Agents .env lesen</h2>
-        <p>Ersetze ständig sichtbare .env-Dateien durch kontrollierte Injektion in genehmigte Tools.</p>
+        <h2>Vorher / Nachher</h2>
+        <p>Vorher standen API-Keys und Deploy-Tokens in .env, sodass normales Datei-Inspecting Werte preisgab. Nachher bleiben nur nicht geheime Defaults im Repo; av save speichert den Wert und av inject übergibt ihn an den benötigten Prozess.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Es kontrolliert Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac, damit AI-Agents innerhalb klarer Grenzen arbeiten.</p>
+        <h2>Befehlsbeispiel</h2>
+        <p>Führe av save STRIPE_SECRET_KEY aus, entferne die Zeile aus .env und starte den erlaubten Lauf mit av inject -- npm test oder dem konkreten Script.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Betrieb</h2>
+        <p>Verlasse dich nicht darauf, dass der Agent die Datei meidet. Entferne den lesbaren Secret-Pfad, damit Logs, Zusammenfassungen und Patches keine Rohwerte übernehmen.</p>
       </section>
       <section class="i18n-section">
         <h2>Lokale Laufzeitgrenze</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Vertrauenshinweise</h2>
         <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Wann einsetzen</h2>
-        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
       </section>
       <nav class="language-links" aria-label="Sprachversionen"><a href="/stop-ai-agents-reading-env-files/" lang="en">English</a> <a href="/ja/stop-ai-agents-reading-env-files/" lang="ja">日本語</a> <a href="/de/stop-ai-agents-reading-env-files/" lang="de">Deutsch</a> <a href="/fr/stop-ai-agents-reading-env-files/" lang="fr">Français</a> <a href="/zh-hans/stop-ai-agents-reading-env-files/" lang="zh-Hans">简体中文</a></nav>
     </main>

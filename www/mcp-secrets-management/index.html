@@ -124,7 +124,7 @@
                   "headline": "MCP Secrets Management for AI Agents",
                   "description": "MCP secrets management for AI agents: give tools approved credential access without placing raw secrets in model context or plaintext config.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-04",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -228,7 +228,7 @@
           <p class="kicker">Model Context Protocol security</p>
           <h1>MCP secrets management without handing secrets to the model</h1>
           <p class="lede">MCP makes tools easier for agents to use. Automic Vault keeps the credential boundary clear: the tool can get approved access, while the model never needs the raw value.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 4, 2026</p>
           <div class="answer-box"><p>MCP secrets management should give tools approved credential access without placing raw secrets in prompts or plaintext server config. Automic Vault injects secrets when the local MCP server or CLI starts, then keeps the value outside model context.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#secrets">Read secret docs <span aria-hidden="true">›</span></a>
@@ -261,6 +261,18 @@
           <article><span>Save</span><p>Store API tokens with <code>av save</code> instead of writing them into MCP server config.</p></article>
           <article><span>Launch</span><p>Start the server or helper with <code>av inject</code> so it receives only the named keys.</p></article>
           <article><span>Contain</span><p>Use <code>av contain</code> when the agent can call tools that mutate real systems.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Before / after</p>
+          <h2>Start MCP servers with scoped runtime credentials.</h2>
+          <p>MCP does not remove the need for local secret hygiene. If server config contains raw tokens, the agent can still inspect or request files that reveal them. Keep server definitions stable, but move the secret value to a runtime boundary.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Before</span><p>A local MCP server config stores <code>GITHUB_TOKEN</code> or database credentials inline, so troubleshooting the config can expose the value to the model.</p></article>
+          <article><span>After</span><p>The config names the server and command, while Automic Vault injects the credential only when the approved server or helper process starts.</p></article>
+          <article><span>Command example</span><p>Save the key with <code>av save GITHUB_TOKEN</code>, remove it from MCP JSON, then launch the server through <code>av inject -- ./mcp-server</code>.</p></article>
         </div>
       </section>
       <section class="seo-section">

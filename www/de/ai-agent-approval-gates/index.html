@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Approval Gates für AI-Agents | Schutz für AI-Agents und Entwickler-Tools</title>
-  <meta name="description" content="Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="description" content="Prüfe riskante Befehle von AI-Agents mit menschlicher Freigabe auf Tool-Ebene. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="robots" content="index,follow">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
   <meta property="og:title" content="Approval Gates für AI-Agents | Schutz für AI-Agents und Entwickler-Tools">
-  <meta property="og:description" content="Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta property="og:description" content="Prüfe riskante Befehle von AI-Agents mit menschlicher Freigabe auf Tool-Ebene. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta property="og:url" content="https://www.automicvault.com/de/ai-agent-approval-gates/">
   <meta property="og:image" content="https://www.automicvault.com/preview.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Approval Gates für AI-Agents | Schutz für AI-Agents und Entwickler-Tools">
-  <meta name="twitter:description" content="Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
+  <meta name="twitter:description" content="Prüfe riskante Befehle von AI-Agents mit menschlicher Freigabe auf Tool-Ebene. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.">
   <meta name="twitter:image" content="https://www.automicvault.com/preview.jpg">
   <link rel="canonical" href="https://www.automicvault.com/de/ai-agent-approval-gates/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/ai-agent-approval-gates/">
@@ -32,7 +32,7 @@
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/ai-agent-approval-gates/",
     "name": "Approval Gates für AI-Agents | Schutz für AI-Agents und Entwickler-Tools",
-    "description": "Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
+    "description": "Prüfe riskante Befehle von AI-Agents mit menschlicher Freigabe auf Tool-Ebene. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
@@ -54,21 +54,25 @@
     </header>
     <main>
       <section class="hero i18n-hero">
-        <p class="eyebrow">Approval Gates für AI-Agents</p>
-        <h1>Approval Gates für AI-Agents</h1>
-        <p class="lede">Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung.</p>
+        <p class="eyebrow">Befehlsfreigabe</p>
+        <h1>Approval Gates für Befehle, die AI-Agents ausführen</h1>
+        <p class="lede">Gib nicht nur die Absicht frei, sondern das konkrete Executable, die Argumente und den Secret-Zugriff. Automic Vault setzt den Stoppunkt unterhalb des Agents.</p>
         <div class="hero-actions">
           <a class="button primary" href="/de/download/">Herunterladen</a>
           <a class="button secondary" href="/de/docs/">Dokumentation</a>
         </div>
       </section>
       <section class="i18n-section">
-        <h2>Approval Gates für AI-Agents</h2>
-        <p>Prüfe Veröffentlichung, Löschung und Secret-Ausgabe vor der Ausführung.</p>
+        <h2>Vorher / Nachher</h2>
+        <p>Vorher konnte ein Agent nach einer allgemeinen Bestätigung git push, npm publish oder aws s3 rm in derselben Sitzung ausführen. Nachher verlangt jeder riskante Befehl Freigabe direkt vor der Ausführung.</p>
       </section>
       <section class="i18n-section">
-        <h2>Automic Vault</h2>
-        <p>Es kontrolliert Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac, damit AI-Agents innerhalb klarer Grenzen arbeiten.</p>
+        <h2>Befehlsbeispiel</h2>
+        <p>Führe Agent-Arbeit durch av contain und setze Gates für Publish, Delete, Deploy, Credential-Ausgabe und Cloud-Mutation.</p>
+      </section>
+      <section class="i18n-section">
+        <h2>Priorität</h2>
+        <p>Beginne mit npm publish, twine upload, gh auth token, git push --force sowie AWS-Lösch- und IAM-Änderungen.</p>
       </section>
       <section class="i18n-section">
         <h2>Lokale Laufzeitgrenze</h2>
@@ -101,10 +105,6 @@
       <section class="i18n-section">
         <h2>Vertrauenshinweise</h2>
         <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Wann einsetzen</h2>
-        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
       </section>
       <nav class="language-links" aria-label="Sprachversionen"><a href="/ai-agent-approval-gates/" lang="en">English</a> <a href="/ja/ai-agent-approval-gates/" lang="ja">日本語</a> <a href="/de/ai-agent-approval-gates/" lang="de">Deutsch</a> <a href="/fr/ai-agent-approval-gates/" lang="fr">Français</a> <a href="/zh-hans/ai-agent-approval-gates/" lang="zh-Hans">简体中文</a></nav>
     </main>

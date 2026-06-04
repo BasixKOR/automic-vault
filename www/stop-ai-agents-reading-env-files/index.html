@@ -124,7 +124,7 @@
                   "headline": "Stop AI Agents Reading .env Files",
                   "description": "Move secrets out of .env files and inject approved credentials into trusted tools so AI coding agents cannot read raw values.",
                   "datePublished": "2026-05-15",
-                  "dateModified": "2026-05-24",
+                  "dateModified": "2026-06-04",
                   "image": "https://www.automicvault.com/preview.jpg",
                   "author": {
                         "@id": "https://www.automicvault.com/about/#max-howell"
@@ -194,7 +194,7 @@
           <p class="kicker">Dotenv protection for agent work</p>
           <h1>Stop AI coding agents from reading your .env files</h1>
           <p class="lede"><code>.env</code> files are convenient because every local tool can read them. That is exactly why they are risky for agent runs. Automic Vault keeps the developer workflow, but removes the plaintext target.</p>
-          <p class="updated">Last updated: May 24, 2026</p>
+          <p class="updated">Last updated: June 4, 2026</p>
           <div class="answer-box"><p>To stop AI agents reading .env files, remove secrets from project files and inject them at runtime into the specific tool that needs them. Automic Vault stores values locally and gives approved commands access without exposing raw credentials to the agent transcript.</p></div>
           <div class="hero-actions">
             <a class="button primary" href="../docs/#shebang-injection">See secret injection <span aria-hidden="true">›</span></a>
@@ -227,6 +227,18 @@
           <article><span>Remove</span><p>Take sensitive values out of project dotenv files and shell startup files.</p></article>
           <article><span>Save</span><p>Store each value with <code>av save KEY</code> so it is not part of the repo or the agent context.</p></article>
           <article><span>Run</span><p>Launch scripts with <code>av inject</code> so only the approved process receives the keys it requested.</p></article>
+        </div>
+      </section>
+      <section class="seo-section seo-split">
+        <div class="section-heading">
+          <p class="kicker">Before / after</p>
+          <h2>Keep the workflow, remove the readable file.</h2>
+          <p>Do not ask the agent to remember a policy such as “never open .env”. Make the unsafe path disappear. A project can still have local configuration, but credentials should be named capabilities that are released only to the command that needs them.</p>
+        </div>
+        <div class="compare-table">
+          <article><span>Before</span><p><code>.env</code> contains <code>STRIPE_SECRET_KEY</code>, <code>OPENAI_API_KEY</code>, and deploy tokens, so a normal file-inspection step can expose every value.</p></article>
+          <article><span>After</span><p>The repo keeps non-secret defaults, while Automic Vault stores the sensitive values locally and injects just the approved key into the runtime process.</p></article>
+          <article><span>Command example</span><p>Use <code>av save STRIPE_SECRET_KEY</code>, remove the line from <code>.env</code>, then run <code>av inject -- npm test</code> or the exact script the agent is allowed to execute.</p></article>
         </div>
       </section>
       <section class="seo-section">
