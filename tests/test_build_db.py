@@ -237,6 +237,35 @@ class NpmFetchTests(unittest.TestCase):
         self.assertEqual(downloads, {"@scope/example": 654321, "plain": 654321})
         self.assertEqual(len(urls), 3)
 
+    def test_npm_download_batches_split_by_count_and_url_length(self):
+        build_db = load_build_db()
+        build_db.NPM_DOWNLOADS_BATCH_SIZE = 3
+        first_two_url = build_db._npm_downloads_batch_url(["@scope/example", "plain"])
+        build_db.NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH = len(first_two_url)
+
+        batches = list(
+            build_db._npm_download_batches(
+                ["@scope/example", "plain", "third", "fourth"]
+            )
+        )
+
+        self.assertEqual(
+            batches,
+            [["@scope/example", "plain"], ["third", "fourth"]],
+        )
+
+        build_db.NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH = 10_000
+        batches = list(
+            build_db._npm_download_batches(
+                ["@scope/example", "plain", "third", "fourth"]
+            )
+        )
+
+        self.assertEqual(
+            batches,
+            [["@scope/example", "plain", "third"], ["fourth"]],
+        )
+
 
 class NpmIndexTests(unittest.TestCase):
     def test_npm_single_bin_object_can_supply_executable_name(self):
@@ -262,7 +291,7 @@ class NpmIndexTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             build_db = load_build_db()
             build_db.NPM_INDEX_STATE_PATH = os.path.join(tmp, "index.json")
-            build_db.NPM_FULL_SCAN_PAGE_SIZE = 2
+            build_db.NPM_FULL_SCAN_PAGE_SIZE = 3
             state = build_db._default_npm_index_state()
             state["full_scan_cursor"] = "left-off"
             state["packages"] = {}
@@ -272,6 +301,7 @@ class NpmIndexTests(unittest.TestCase):
                 urls.append(url)
                 if "_all_docs" in url:
                     return {
+                        "total_rows": 4,
                         "rows": [
                             {
                                 "id": "example-cli",
@@ -308,6 +338,13 @@ class NpmIndexTests(unittest.TestCase):
             self.assertTrue(any("startkey=%22left-off%22" in url for url in urls))
             self.assertFalse(any("skip=" in url for url in urls))
             self.assertIsNone(state["full_scan_cursor"])
+            self.assertIsNone(state["full_scan_started_at"])
+            self.assertIsNotNone(state["last_full_scan_at"])
+            self.assertEqual(state["full_scan_seen_count"], 2)
+            self.assertEqual(state["full_scan_download_qualified_count"], 1)
+            self.assertEqual(state["full_scan_packument_qualified_count"], 1)
+            self.assertEqual(state["full_scan_page_count"], 1)
+            self.assertEqual(state["full_scan_total_rows"], 4)
             self.assertIn("example-cli", state["packages"])
 
     def test_npm_read_state_clears_stale_started_marker_after_completed_scan(self):
@@ -329,6 +366,11 @@ class NpmIndexTests(unittest.TestCase):
             state = build_db._read_npm_index_state()
 
             self.assertIsNone(state["full_scan_started_at"])
+            self.assertEqual(state["full_scan_seen_count"], 0)
+            self.assertEqual(state["full_scan_download_qualified_count"], 0)
+            self.assertEqual(state["full_scan_packument_qualified_count"], 0)
+            self.assertEqual(state["full_scan_page_count"], 0)
+            self.assertIsNone(state["full_scan_total_rows"])
 
     def test_npm_collect_fails_without_usable_cache_on_rate_limit(self):
         build_db = load_build_db()

@@ -52,8 +52,9 @@ NPM_REPLICATE_CHANGES_URL = f"{NPM_REPLICATE_ROOT}/_changes"
 NPM_REPLICATE_ALL_DOCS_URL = f"{NPM_REPLICATE_ROOT}/_all_docs"
 NPM_DOWNLOADS_POINT_ROOT = "https://api.npmjs.org/downloads/point/last-month"
 NPM_MIN_MONTHLY_DOWNLOADS = 50_000
-NPM_FULL_SCAN_PAGE_SIZE = 250
-NPM_DOWNLOADS_BATCH_SIZE = 64
+NPM_FULL_SCAN_PAGE_SIZE = 5_000
+NPM_DOWNLOADS_BATCH_SIZE = 128
+NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH = 7_500
 PULSE_NEW_WINDOW_DAYS = 7
 PULSE_HISTORY_WINDOW_DAYS = 90
 NPM_CHANGES_LIMIT = 5000
@@ -124,6 +125,12 @@ NPM_DOWNLOADS_RPS = _env_float("NPM_DOWNLOADS_RPS", 0.5)
 NPM_MAX_RETRIES = _env_int("NPM_MAX_RETRIES", 4)
 NPM_RATE_LIMIT_BUDGET_SECONDS = _env_float("NPM_RATE_LIMIT_BUDGET_SECONDS", 600.0)
 NPM_MAX_WORKERS = _env_int("NPM_MAX_WORKERS", 4)
+NPM_FULL_SCAN_PAGE_SIZE = _env_int("NPM_FULL_SCAN_PAGE_SIZE", NPM_FULL_SCAN_PAGE_SIZE)
+NPM_DOWNLOADS_BATCH_SIZE = _env_int("NPM_DOWNLOADS_BATCH_SIZE", NPM_DOWNLOADS_BATCH_SIZE)
+NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH = _env_int(
+    "NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH",
+    NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH,
+)
 NPM_CHANGE_REFRESH_LIMIT = _env_int(
     "NPM_CHANGE_REFRESH_LIMIT",
     NPM_CHANGE_REFRESH_LIMIT,
@@ -1077,6 +1084,22 @@ def _npm_downloads_batch_url(packages):
     return f"{NPM_DOWNLOADS_POINT_ROOT}/{urllib.parse.quote(joined, safe='@/,')}"
 
 
+def _npm_download_batches(packages):
+    batch = []
+    for package in packages:
+        candidate = [*batch, package]
+        if batch and (
+            len(candidate) > NPM_DOWNLOADS_BATCH_SIZE
+            or len(_npm_downloads_batch_url(candidate)) > NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH
+        ):
+            yield batch
+            batch = [package]
+        else:
+            batch = candidate
+    if batch:
+        yield batch
+
+
 def _npm_all_docs_url(startkey=None):
     params = {
         "limit": NPM_FULL_SCAN_PAGE_SIZE,
@@ -1225,6 +1248,11 @@ def _default_npm_index_state():
         "full_scan_cursor": None,
         "full_scan_started_at": None,
         "last_full_scan_at": None,
+        "full_scan_seen_count": 0,
+        "full_scan_download_qualified_count": 0,
+        "full_scan_packument_qualified_count": 0,
+        "full_scan_page_count": 0,
+        "full_scan_total_rows": None,
     }
 
 
@@ -1309,8 +1337,7 @@ def _npm_monthly_downloads_batch(packages, existing_packages):
         if stale_downloads is not None:
             downloads[package] = stale_downloads
 
-    for index in range(0, len(packages), NPM_DOWNLOADS_BATCH_SIZE):
-        batch = packages[index : index + NPM_DOWNLOADS_BATCH_SIZE]
+    for batch in _npm_download_batches(packages):
         try:
             payload = _npm_fetch_json(_npm_downloads_batch_url(batch))
         except NpmFetchError as err:
@@ -1348,6 +1375,47 @@ def _npm_monthly_downloads_batch(packages, existing_packages):
     return downloads
 
 
+def _npm_reset_full_scan_stats(state):
+    state["full_scan_seen_count"] = 0
+    state["full_scan_download_qualified_count"] = 0
+    state["full_scan_packument_qualified_count"] = 0
+    state["full_scan_page_count"] = 0
+    state["full_scan_total_rows"] = None
+
+
+def _npm_full_scan_progress(state, indexed_count):
+    seen = _parse_count(state.get("full_scan_seen_count")) or 0
+    total = _parse_count(state.get("full_scan_total_rows"))
+    pages = _parse_count(state.get("full_scan_page_count")) or 0
+    download_qualified = (
+        _parse_count(state.get("full_scan_download_qualified_count")) or 0
+    )
+    packument_qualified = (
+        _parse_count(state.get("full_scan_packument_qualified_count")) or 0
+    )
+    remaining = "unknown"
+    if total is not None:
+        remaining_count = max(0, total - seen)
+        remaining_pages = (
+            remaining_count + NPM_FULL_SCAN_PAGE_SIZE - 1
+        ) // NPM_FULL_SCAN_PAGE_SIZE
+        remaining = f"{remaining_count} names, ~{remaining_pages} pages"
+    total_label = total if total is not None else "unknown"
+    print(
+        "npm full scan progress: "
+        f"seen={seen}/{total_label} "
+        f"pages={pages} "
+        f"download_qualified={download_qualified} "
+        f"packument_qualified={packument_qualified} "
+        f"indexed={indexed_count} "
+        f"remaining={remaining} "
+        f"requests={_NPM_STATS['requests']} "
+        f"cache_hits={_NPM_STATS['cache_hits']} "
+        f"rate_limits={_NPM_STATS['rate_limits']}",
+        file=sys.stderr,
+    )
+
+
 def _npm_packument_name(fallback, packument):
     name = packument.get("name") if isinstance(packument, dict) else None
     return name if isinstance(name, str) and name else fallback
@@ -1373,6 +1441,7 @@ def _refresh_npm_packuments(packages, packuments, existing_packages, downloads=N
 
     if downloads is None:
         downloads = _npm_monthly_downloads_batch(sorted(candidates), existing_packages)
+    accepted = 0
     for package, packument in candidates.items():
         metadata = _npm_metadata_from_packument(
             package,
@@ -1384,6 +1453,8 @@ def _refresh_npm_packuments(packages, packuments, existing_packages, downloads=N
             packages.pop(package, None)
         else:
             packages[package] = metadata
+            accepted += 1
+    return accepted
 
 
 def _run_npm_full_scan(state):
@@ -1393,10 +1464,14 @@ def _run_npm_full_scan(state):
         state["full_scan_started_at"] = datetime.datetime.now(
             datetime.timezone.utc
         ).isoformat()
-    page_count = 0
+        _npm_reset_full_scan_stats(state)
     while True:
         payload = _npm_fetch_json(_npm_all_docs_url(cursor), use_cache=False)
         rows = payload.get("rows") if isinstance(payload, dict) else None
+        total_rows = payload.get("total_rows") if isinstance(payload, dict) else None
+        parsed_total_rows = _parse_count(total_rows)
+        if parsed_total_rows is not None:
+            state["full_scan_total_rows"] = parsed_total_rows
         if not isinstance(rows, list) or not rows:
             state["full_scan_cursor"] = None
             state["full_scan_started_at"] = None
@@ -1422,16 +1497,31 @@ def _run_npm_full_scan(state):
             if (downloads.get(package) or 0) >= NPM_MIN_MONTHLY_DOWNLOADS
         ]
         packuments = _fetch_npm_packuments_for_packages(popular_packages)
-        _refresh_npm_packuments(packages, packuments, packages, downloads)
+        accepted_count = _refresh_npm_packuments(
+            packages,
+            packuments,
+            packages,
+            downloads,
+        )
         next_cursor = rows[-1].get("id") or rows[-1].get("key")
         state["full_scan_cursor"] = next_cursor
+        state["full_scan_seen_count"] = (
+            (_parse_count(state.get("full_scan_seen_count")) or 0)
+            + len(page_packages)
+        )
+        state["full_scan_download_qualified_count"] = (
+            (_parse_count(state.get("full_scan_download_qualified_count")) or 0)
+            + len(popular_packages)
+        )
+        state["full_scan_packument_qualified_count"] = (
+            (_parse_count(state.get("full_scan_packument_qualified_count")) or 0)
+            + accepted_count
+        )
+        state["full_scan_page_count"] = (
+            (_parse_count(state.get("full_scan_page_count")) or 0) + 1
+        )
         _write_npm_index_state(state)
-        page_count += 1
-        if page_count % 20 == 0:
-            print(
-                f"Scanned {page_count * NPM_FULL_SCAN_PAGE_SIZE} npm registry package ids...",
-                file=sys.stderr,
-            )
+        _npm_full_scan_progress(state, len(packages))
 
         if len(rows) < NPM_FULL_SCAN_PAGE_SIZE or next_cursor == cursor:
             state["full_scan_cursor"] = None
@@ -1820,7 +1910,8 @@ def main():
             print("  NPM_TOKEN, NODE_AUTH_TOKEN, NPM_REGISTRY_TOKEN")
             print("  NPM_REGISTRY_RPS, NPM_DOWNLOADS_RPS, NPM_MAX_RETRIES")
             print("  NPM_RATE_LIMIT_BUDGET_SECONDS, NPM_MAX_WORKERS")
-            print("  NPM_CHANGE_REFRESH_LIMIT")
+            print("  NPM_FULL_SCAN_PAGE_SIZE, NPM_DOWNLOADS_BATCH_SIZE")
+            print("  NPM_DOWNLOADS_BATCH_URL_MAX_LENGTH, NPM_CHANGE_REFRESH_LIMIT")
             print("  AV_DB_AUTHORITY_PATH")
             return
         else:
