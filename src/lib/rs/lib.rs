@@ -14293,6 +14293,61 @@ managed_secrets = ["dep:managed-secrets"]"#,
     }
 
     #[test]
+    fn git_security_state_reports_credential_fill_keychain_remediation() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let git = bin.join("git");
+        fs::write(
+            &git,
+            "#!/bin/sh\n\
+             if [ \"$1\" != credential ] || [ \"$2\" != fill ]; then exit 2; fi\n\
+             cat >/dev/null\n\
+             printf 'protocol=https\\nhost=github.com\\nusername=x-access-token\\npassword=github_pat_fake\\n\\n'\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&git).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&git, permissions).unwrap();
+
+        let path = match env::var_os("PATH") {
+            Some(existing) if !existing.is_empty() => {
+                format!("{}:{}", bin.display(), existing.to_string_lossy())
+            }
+            _ => bin.display().to_string(),
+        };
+        let _unset_disable =
+            TestEnvGuard::unset(&["AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR"]);
+        let _env = TestEnvGuard::set(&[
+            ("HOME", home.to_str().unwrap()),
+            ("PATH", &path),
+            ("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR", "1"),
+        ]);
+
+        let state = package_security_state_for_identifiers(["brew:git".to_string()])
+            .expect("git should have security state");
+
+        assert_eq!(state.isotope_name, "git");
+        assert!(state.install_is_insecure);
+        assert!(!state.remediation_available);
+        assert!(
+            state
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("git credential fill")
+                    && reason.contains("git credential reject")
+                    && reason.contains("Keychain Access")),
+            "expected credential-fill keychain remediation, got {:?}",
+            state.reasons
+        );
+    }
+
+    #[test]
     fn generated_isotope_integrations_tolerate_empty_home() {
         let _lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
