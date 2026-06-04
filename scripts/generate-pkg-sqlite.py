@@ -528,17 +528,27 @@ def css_with_search_styles(page_module: Any) -> str:
 }
 .av-search-input {
   width: 100%;
-  min-height: 48px;
-  padding: 12px 14px;
+  min-height: 56px;
+  padding: 13px 16px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  background: #10100f;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    #10100f;
   color: var(--ink);
   font: 700 0.92rem/1.3 var(--font-mono);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.av-search-input::placeholder {
+  color: #8d887f;
+  opacity: 1;
 }
 .av-search-input:focus-visible {
-  outline: 1px solid var(--gold);
-  outline-offset: 3px;
+  border-color: rgba(114, 182, 97, 0.72);
+  background: #22211f;
+  outline: none;
+  transform: translateY(-1px);
 }
 .av-search-status {
   min-height: 1.3em;
