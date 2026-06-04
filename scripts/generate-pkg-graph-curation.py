@@ -108,6 +108,7 @@ def load_script(name: str, filename: str) -> Any:
     module = importlib.util.module_from_spec(spec)
     if spec.loader is None:
         raise RuntimeError(f"Unable to load {path}")
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
