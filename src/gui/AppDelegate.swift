@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -14,6 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let dotenvApprovalStore = DotenvApprovalStore()
     private let helperBridge = NukeHelperBridge()
     private lazy var appUpdateCoordinator = AppUpdateCoordinator(statusStore: statusStore)
+    private lazy var dotenvFileWatcher = DotenvFileWatcher { [weak self] result in
+        self?.postDotenvAutoEncryptionNotification(result)
+    }
+    private lazy var userNotificationDelegate = AppUserNotificationDelegate { [weak self] in
+        self?.showMainWindow()
+    }
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     #endif
@@ -42,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = makeMainMenu()
         publishStartAtLoginStatus()
         launchMenuBarHelperIfNeeded()
+        configureUserNotifications()
         installOpenWindowObserverIfNeeded()
         installStartAtLoginObserverIfNeeded()
         installStatusSnapshotObserverIfNeeded()
@@ -50,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installIsotopeApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
         installDotenvApprovalObserverIfNeeded()
+        startDotenvFileWatcher()
         startRemoteDatabaseRefreshTimer()
         applyDockBadge(snapshot: statusStore.loadSnapshot())
         showMainWindow()
@@ -85,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let pendingDotenvApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingDotenvApprovalObserver)
         }
+        dotenvFileWatcher.stop()
         remoteDatabaseRefreshTimer?.invalidate()
         appUpdateCoordinator.stop()
         (window?.contentViewController as? MainWindowController)?
@@ -567,13 +577,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.accessoryView = dotenvApprovalAccessoryView(for: approval)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
+            let approved = response == .alertFirstButtonReturn
             try? self.dotenvApprovalStore.saveDecision(
                 DotenvApprovalDecision(
                     id: approval.id,
-                    approved: response == .alertFirstButtonReturn,
-                    reason: response == .alertFirstButtonReturn ? nil : "Denied by operator"
+                    approved: approved,
+                    reason: approved ? nil : "Denied by operator"
                 )
             )
+            if approved {
+                self.dotenvFileWatcher.watch(path: approval.envFilePath)
+            }
             self.activeDotenvApprovalID = nil
             DispatchQueue.main.async {
                 self.presentPendingDotenvApprovalIfNeeded()
@@ -705,6 +719,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DotenvApprovalView(approval: approval)
     }
 
+    private func startDotenvFileWatcher() {
+        dotenvFileWatcher.watch(paths: dotenvApprovalStore.knownEnvFilePaths())
+    }
+
+    private func configureUserNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = userNotificationDelegate
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+        }
+    }
+
+    private func postDotenvAutoEncryptionNotification(_ result: DotenvAutoEncryptionResult) {
+        let filename = URL(fileURLWithPath: result.filePath).lastPathComponent
+        let content = UNMutableNotificationContent()
+        content.title = L10n.string("Dotenv keys encrypted")
+        content.body = L10n.format(
+            "New dotenv entries in %@ were encrypted automatically.",
+            filename
+        )
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "com.automicvault.dotenv.encrypted.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     private func approvalAccessoryView(for approval: VaultApprovalRequestSnapshot) -> NSView {
         CommandExecutionApprovalView(approval: approval)
     }
@@ -793,5 +836,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeFirstResponder(controller.view)
         self.window = window
         return window
+    }
+}
+
+private final class AppUserNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private let openMainWindow: @MainActor () -> Void
+
+    init(openMainWindow: @escaping @MainActor () -> Void) {
+        self.openMainWindow = openMainWindow
+        super.init()
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor [openMainWindow] in
+            openMainWindow()
+            completionHandler()
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }

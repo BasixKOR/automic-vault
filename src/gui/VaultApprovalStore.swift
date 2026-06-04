@@ -165,6 +165,18 @@ struct DotenvApprovalDecision: Codable, Equatable {
     let reason: String?
 }
 
+private struct DotenvRememberedApprovalStore: Codable, Equatable {
+    let entries: [DotenvRememberedApprovalEntry]
+}
+
+private struct DotenvRememberedApprovalEntry: Codable, Equatable {
+    let envFilePath: String
+
+    enum CodingKeys: String, CodingKey {
+        case envFilePath = "env_file_path"
+    }
+}
+
 enum DotenvNotification {
     static let pendingApprovalChanged = Notification.Name(
         "com.automicvault.dotenv-approval.pending-changed"
@@ -508,6 +520,16 @@ final class DotenvApprovalStore {
         try? fileManager.removeItem(at: decisionURL(for: id))
     }
 
+    func knownEnvFilePaths() -> [String] {
+        guard let remembered = load(
+            DotenvRememberedApprovalStore.self,
+            from: rememberedApprovalsURL()
+        ) else {
+            return []
+        }
+        return Array(Set(remembered.entries.map(\.envFilePath))).sorted()
+    }
+
     func saveDecision(_ decision: DotenvApprovalDecision) throws {
         try write(decision, to: decisionURL(for: decision.id))
         removePendingApproval(id: decision.id)
@@ -570,6 +592,10 @@ final class DotenvApprovalStore {
 
     private func pendingApprovalURL() -> URL {
         rootURL().appendingPathComponent("dotenv/pending-approval.json", isDirectory: false)
+    }
+
+    private func rememberedApprovalsURL() -> URL {
+        rootURL().appendingPathComponent("dotenv/remembered-approvals.json", isDirectory: false)
     }
 
     private func decisionURL(for id: String) -> URL {

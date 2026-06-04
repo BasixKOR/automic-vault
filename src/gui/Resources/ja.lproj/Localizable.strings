@@ -327,3 +327,5 @@
 "Run one command with encrypted dotenv keys." = "暗号化されたdotenvキーで1つのコマンドを実行します。";
 "These keys will be exported into this shell" = "これらのキーはこのシェルにエクスポートされます";
 "This command will receive the dotenv keys" = "このコマンドがdotenvキーを受け取ります";
+"Dotenv keys encrypted" = "dotenvキーを暗号化しました";
+"New dotenv entries in %@ were encrypted automatically." = "%@ の新しいdotenvエントリを自動的に暗号化しました。";

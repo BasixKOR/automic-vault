@@ -327,3 +327,5 @@
 "Run one command with encrypted dotenv keys." = "Executer une commande avec des cles dotenv chiffrees.";
 "These keys will be exported into this shell" = "Ces cles seront exportees dans ce shell";
 "This command will receive the dotenv keys" = "Cette commande recevra les cles dotenv";
+"Dotenv keys encrypted" = "Cles dotenv chiffrees";
+"New dotenv entries in %@ were encrypted automatically." = "Les nouvelles entrees dotenv dans %@ ont ete chiffrees automatiquement.";

@@ -327,3 +327,5 @@
 "Run one command with encrypted dotenv keys." = "使用加密的 dotenv 密钥运行一个命令。";
 "These keys will be exported into this shell" = "这些密钥将导出到此 Shell";
 "This command will receive the dotenv keys" = "此命令将接收 dotenv 密钥";
+"Dotenv keys encrypted" = "dotenv 密钥已加密";
+"New dotenv entries in %@ were encrypted automatically." = "%@ 中的新 dotenv 条目已自动加密。";

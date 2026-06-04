@@ -51,6 +51,7 @@ let package = Package(
                 "CommandExecutionApprovalView.swift",
                 "IsotopeApprovalView.swift",
                 "DotenvApprovalView.swift",
+                "DotenvFileWatcher.swift",
                 "AppUpdateCoordinator.swift",
                 "PackageSecurityRules.swift",
                 "UpdateProgressViewController.swift",
