@@ -988,6 +988,13 @@ enum ShellSecretFlavor {
 }
 
 impl ShellSecretFlavor {
+    fn display_name(self) -> &'static str {
+        match self {
+            ShellSecretFlavor::Bash => "Bash",
+            ShellSecretFlavor::Zsh => "Zsh",
+        }
+    }
+
     fn source_label(self) -> &'static str {
         match self {
             ShellSecretFlavor::Bash => "file-probe:bash",
@@ -3168,6 +3175,20 @@ where
         return package_security_state_for_isotope(&isotope_name);
     }
 
+    let mut integrations = isotope_integrations::INTEGRATIONS
+        .iter()
+        .collect::<Vec<_>>();
+    integrations.sort_by(|left, right| left.name.cmp(right.name));
+    for integration in integrations {
+        let isotope_name = integration.name.to_ascii_lowercase();
+        if identifiers.contains(&isotope_name)
+            || identifiers.contains(&format!("{ISOTOPE_PACKAGE_PREFIX}{isotope_name}"))
+            || identifiers.contains(&format!("{BREW_PACKAGE_PREFIX}{isotope_name}"))
+        {
+            return package_security_state_for_isotope(integration.name);
+        }
+    }
+
     None
 }
 
@@ -4142,6 +4163,33 @@ const ZSH_SECRET_SCAN_HOME_FILES: &[&str] =
     &[".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"];
 
 const SECRET_SCAN_MAX_FILE_BYTES: u64 = 1024 * 1024;
+
+pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secret_insecurity_reasons(ShellSecretFlavor::Bash)
+}
+
+pub(crate) fn zsh_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secret_insecurity_reasons(ShellSecretFlavor::Zsh)
+}
+
+fn shell_secret_insecurity_reasons(shell: ShellSecretFlavor) -> Result<Vec<String>, String> {
+    let mut reasons = Vec::new();
+    for path in shell_secret_candidate_paths(shell) {
+        for finding in scan_secret_file(&path)? {
+            let location = secret_scanner_finding_location(&finding)
+                .unwrap_or_else(|| path.display().to_string());
+            reasons.push(format!(
+                "{} startup file contains plaintext-looking credential assignment: {} ({})",
+                shell.display_name(),
+                location,
+                finding.message
+            ));
+        }
+    }
+    reasons.sort();
+    reasons.dedup();
+    Ok(reasons)
+}
 
 fn shell_secret_candidate_paths(shell: ShellSecretFlavor) -> Vec<PathBuf> {
     let mut paths = Vec::new();
@@ -14479,11 +14527,23 @@ managed_secrets = ["dep:managed-secrets"]"#,
             "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
         )
         .unwrap();
+        fs::write(
+            home.join(".bash_profile"),
+            "export BASH_SERVICE_TOKEN=secret_secret\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".zshrc"),
+            "export OPENAI_API_KEY=\"sk-proj-THIS_IS_A_FAKE_KEY_FOR_TESTING_ONLY_1234567890abcdefghijklmnopqrstuvwxyz\"\n",
+        )
+        .unwrap();
         let _env = TestEnvGuard::set(&[("HOME", home.to_str().unwrap())]);
 
         for (package, isotope, reason) in [
+            ("brew:bash", "bash", "Bash startup file"),
             ("brew:git", "git", "Git credential store"),
             ("brew:curl", "curl", "curl netrc"),
+            ("brew:zsh", "zsh", "Zsh startup file"),
             ("brew:rsync", "rsync", "rsync password file"),
             ("brew:ruby", "ruby", "RubyGems credentials"),
             ("brew:perl", "perl", "CPAN config"),
@@ -14698,6 +14758,14 @@ managed_secrets = ["dep:managed-secrets"]"#,
         write_fixture(
             &home.join(".config/acli/jira_config.yaml"),
             "token: atlassian\n",
+        );
+        write_fixture(
+            &home.join(".bash_profile"),
+            "export BASH_SERVICE_TOKEN=secret_secret\n",
+        );
+        write_fixture(
+            &home.join(".zshrc"),
+            "export OPENAI_API_KEY=\"sk-proj-THIS_IS_A_FAKE_KEY_FOR_TESTING_ONLY_1234567890abcdefghijklmnopqrstuvwxyz\"\n",
         );
         write_fixture(&xdg_data.join("atuin/key"), "atuin-secret\n");
         write_fixture(
@@ -14952,6 +15020,7 @@ machine example.com login user password netrc-token
             "algolia",
             "argocd",
             "atuin",
+            "bash",
             "bitwarden-cli",
             "certbot",
             "cloudflare-wrangler",
@@ -14965,6 +15034,7 @@ machine example.com login user password netrc-token
             "supabase",
             "terraform",
             "vercel-cli",
+            "zsh",
         ] {
             assert!(
                 triggered.contains(&expected),
