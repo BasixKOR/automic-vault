@@ -1052,19 +1052,31 @@
   </url>
   <url>
     <loc>https://www.automicvault.com/blog/</loc>
-    <lastmod>2026-06-02</lastmod>
+    <lastmod>2026-06-04</lastmod>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/blog/agent-pack/</loc>
+    <lastmod>2026-06-04</lastmod>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/blog/unix-plus-plus/</loc>
+    <lastmod>2026-06-04</lastmod>
   </url>
   <url>
     <loc>https://www.automicvault.com/blog/agentic-toolkit/</loc>
     <lastmod>2026-06-02</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/</loc>
-    <lastmod>2026-03-25</lastmod>
+    <loc>https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/</loc>
+    <lastmod>2026-05-21</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/</loc>
-    <lastmod>2026-04-23</lastmod>
+    <loc>https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/</loc>
+    <lastmod>2026-05-21</lastmod>
+  </url>
+  <url>
+    <loc>https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/</loc>
+    <lastmod>2026-05-20</lastmod>
   </url>
   <url>
     <loc>https://www.automicvault.com/blog/prevent-tanstack-npm-compromise/</loc>
@@ -1075,16 +1087,12 @@
     <lastmod>2026-05-15</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/</loc>
-    <lastmod>2026-05-21</lastmod>
+    <loc>https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/</loc>
+    <lastmod>2026-04-23</lastmod>
   </url>
   <url>
-    <loc>https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/</loc>
-    <lastmod>2026-05-20</lastmod>
-  </url>
-  <url>
-    <loc>https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/</loc>
-    <lastmod>2026-05-21</lastmod>
+    <loc>https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/</loc>
+    <lastmod>2026-03-25</lastmod>
   </url>
   <url>
     <loc>https://www.automicvault.com/llms.txt</loc>

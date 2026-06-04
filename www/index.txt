@@ -29,6 +29,8 @@ Key pages:
 - Security: https://www.automicvault.com/security/
 - Security Methods and Gaps: https://www.automicvault.com/security/whitepaper/
 - Blog: https://www.automicvault.com/blog/
+- Agent Pack: https://www.automicvault.com/blog/agent-pack/
+- UNIX++ Pack: https://www.automicvault.com/blog/unix-plus-plus/
 - The Agentic Toolkit: https://www.automicvault.com/blog/agentic-toolkit/
 - Pricing: https://www.automicvault.com/pricing/
 - security.txt: https://www.automicvault.com/.well-known/security.txt
@@ -38,13 +40,21 @@ Key pages:
 Automic Vault is free open-source software under the Apache License 2.0.
 
 Blog:
+Agent Pack is an installable pack of 10 agent CLIs and coding assistants for
+terminal-native planning, editing, review, model routing, and usage inspection.
+UNIX++ Pack is an installable pack of 23 modern command line replacements and
+operators for search, file inspection, process monitoring, data wrangling,
+HTTP/DNS work, and file watching.
 The Agentic Toolkit is an installable pack of 26 Homebrew packages for media
 processing, image manipulation, runtimes, search, shell, build, OCR, metadata,
 and document conversion.
-- Preventing the LiteLLM PyPI compromise: https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/
-- Preventing the Bitwarden CLI npm compromise: https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/
+- Agent Pack: https://www.automicvault.com/blog/agent-pack/
+- UNIX++ Pack: https://www.automicvault.com/blog/unix-plus-plus/
+- The Agentic Toolkit: https://www.automicvault.com/blog/agentic-toolkit/
+- Preventing the Nx Console extension compromise: https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/
+- Preventing the GitHub employee device breach: https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/
+- Preventing the durabletask PyPI compromise: https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/
 - Preventing the TanStack npm credential theft: https://www.automicvault.com/blog/prevent-tanstack-npm-compromise/
 - Preventing the node-ipc npm backdoor: https://www.automicvault.com/blog/prevent-node-ipc-npm-backdoor/
-- Preventing the Nx Console extension compromise: https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/
-- Preventing the durabletask PyPI compromise: https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/
-- Preventing the GitHub employee device breach: https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/
+- Preventing the Bitwarden CLI npm compromise: https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/
+- Preventing the LiteLLM PyPI compromise: https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/

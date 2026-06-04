@@ -30,22 +30,46 @@
   "security_whitepaper": "https://www.automicvault.com/security/whitepaper/",
   "blog": "https://www.automicvault.com/blog/",
   "latest_blog_post": {
-    "title": "The Agentic Toolkit",
-    "url": "https://www.automicvault.com/blog/agentic-toolkit/",
-    "description": "An installable pack of 26 Homebrew packages for media, images, runtimes, search, shell, build, OCR, metadata, and document conversion."
+    "title": "Agent Pack",
+    "url": "https://www.automicvault.com/blog/agent-pack/",
+    "description": "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing, and usage inspection."
   },
   "blog_posts": [
     {
-      "title": "How Automic Vault Would Have Prevented the LiteLLM PyPI Compromise",
-      "url": "https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/",
-      "description": "LiteLLM 1.82.7 and 1.82.8 stole local credentials. Automic Vault would have prevented the workstation credential theft phase.",
-      "date_published": "2026-03-25"
+      "title": "Agent Pack",
+      "url": "https://www.automicvault.com/blog/agent-pack/",
+      "description": "Agent CLIs and coding assistants for terminal-native planning, editing, review, model routing, and usage inspection.",
+      "date_published": "2026-06-04"
     },
     {
-      "title": "How Automic Vault Would Have Prevented the Bitwarden CLI npm Compromise",
-      "url": "https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/",
-      "description": "The compromised Bitwarden CLI npm package used install-time code to steal developer secrets. Automic Vault would have stopped the local theft.",
-      "date_published": "2026-04-23"
+      "title": "UNIX++ Pack",
+      "url": "https://www.automicvault.com/blog/unix-plus-plus/",
+      "description": "Modern UNIX command line replacements and operators for search, file inspection, process monitoring, data wrangling, and HTTP/DNS work.",
+      "date_published": "2026-06-04"
+    },
+    {
+      "title": "The Agentic Toolkit",
+      "url": "https://www.automicvault.com/blog/agentic-toolkit/",
+      "description": "An installable pack of 26 Homebrew packages for media, images, runtimes, search, shell, build, OCR, metadata, and document conversion.",
+      "date_published": "2026-06-02"
+    },
+    {
+      "title": "How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise",
+      "url": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/",
+      "description": "Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.",
+      "date_published": "2026-05-21"
+    },
+    {
+      "title": "How Automic Vault Would Have Prevented the GitHub Employee Device Breach",
+      "url": "https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/",
+      "description": "A poisoned VS Code extension reached a GitHub employee device. Automic Vault would have prevented local credentials from becoming repository access.",
+      "date_published": "2026-05-21"
+    },
+    {
+      "title": "How Automic Vault Would Have Prevented the durabletask PyPI Compromise",
+      "url": "https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/",
+      "description": "Malicious durabletask PyPI releases fetched rope.pyz and stole cloud and developer secrets. Automic Vault would have blocked the local theft path.",
+      "date_published": "2026-05-20"
     },
     {
       "title": "How Automic Vault Would Have Prevented the TanStack npm Credential Theft",
@@ -60,28 +84,16 @@
       "date_published": "2026-05-15"
     },
     {
-      "title": "How Automic Vault Would Have Prevented the Nx Console VS Code Extension Compromise",
-      "url": "https://www.automicvault.com/blog/prevent-nx-console-vscode-compromise/",
-      "description": "Nx Console 18.95.0 stole local developer credentials from editor sessions. Automic Vault would have stopped the local secret access.",
-      "date_published": "2026-05-21"
+      "title": "How Automic Vault Would Have Prevented the Bitwarden CLI npm Compromise",
+      "url": "https://www.automicvault.com/blog/prevent-bitwarden-cli-npm-compromise/",
+      "description": "The compromised Bitwarden CLI npm package used install-time code to steal developer secrets. Automic Vault would have stopped the local theft.",
+      "date_published": "2026-04-23"
     },
     {
-      "title": "How Automic Vault Would Have Prevented the durabletask PyPI Compromise",
-      "url": "https://www.automicvault.com/blog/prevent-durabletask-pypi-compromise/",
-      "description": "Malicious durabletask PyPI releases fetched rope.pyz and stole cloud and developer secrets. Automic Vault would have blocked the local theft path.",
-      "date_published": "2026-05-20"
-    },
-    {
-      "title": "How Automic Vault Would Have Prevented the GitHub Employee Device Breach",
-      "url": "https://www.automicvault.com/blog/prevent-github-vscode-extension-breach/",
-      "description": "A poisoned VS Code extension reached a GitHub employee device. Automic Vault would have prevented local credentials from becoming repository access.",
-      "date_published": "2026-05-21"
-    },
-    {
-      "title": "The Agentic Toolkit",
-      "url": "https://www.automicvault.com/blog/agentic-toolkit/",
-      "description": "An installable pack of 26 Homebrew packages for media, images, runtimes, search, shell, build, OCR, metadata, and document conversion.",
-      "date_published": "2026-06-02"
+      "title": "How Automic Vault Would Have Prevented the LiteLLM PyPI Compromise",
+      "url": "https://www.automicvault.com/blog/prevent-litellm-pypi-compromise/",
+      "description": "LiteLLM 1.82.7 and 1.82.8 stole local credentials. Automic Vault would have prevented the workstation credential theft phase.",
+      "date_published": "2026-03-25"
     }
   ],
   "security": "https://www.automicvault.com/security/",
