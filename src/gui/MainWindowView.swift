@@ -803,9 +803,15 @@ private struct SidebarCountText: View {
         Text(count.formatted())
             .font(.system(size: 12, weight: .regular))
             .monospacedDigit()
-            .foregroundStyle(AVGlassPalette.secondaryText)
+            .foregroundStyle(foreground)
             .lineLimit(1)
             .frame(minWidth: SidebarCountMetrics.columnWidth, alignment: .trailing)
+    }
+
+    private var foreground: Color {
+        count == 0
+            ? AVGlassPalette.secondaryText.opacity(0.68)
+            : AVGlassPalette.secondaryText
     }
 }
 

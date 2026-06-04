@@ -80,11 +80,12 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testSecurityAlertsSidebarCountShowsZeroWhenThereAreNoAlerts() {
+    func testPersistentSidebarCountsShowZeroWhenThereAreNoAlertsOrUpdates() {
         let model = MainWindowModel()
         defer { model.stop() }
 
         XCTAssertEqual(model.count(for: .geigerCounter), 0)
+        XCTAssertEqual(model.count(for: .outdated), 0)
     }
 
     func testCategorySectionsAreAlphabetizedByDisplayedTitle() {
