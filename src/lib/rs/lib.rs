@@ -14293,7 +14293,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
     }
 
     #[test]
-    fn git_security_state_reports_credential_fill_keychain_remediation() {
+    fn git_security_state_reports_credential_fill_learn_more_guidance() {
         use std::os::unix::fs::PermissionsExt;
 
         let _lock = test_env_lock().lock().unwrap();
@@ -14340,9 +14340,10 @@ managed_secrets = ["dep:managed-secrets"]"#,
                 .reasons
                 .iter()
                 .any(|reason| reason.contains("git credential fill")
-                    && reason.contains("git credential reject")
-                    && reason.contains("Keychain Access")),
-            "expected credential-fill keychain remediation, got {:?}",
+                    && reason.contains("Click Learn More")
+                    && !reason.contains("git credential reject")
+                    && !reason.contains("Keychain Access")),
+            "expected credential-fill hazard to point to Learn More, got {:?}",
             state.reasons
         );
     }
