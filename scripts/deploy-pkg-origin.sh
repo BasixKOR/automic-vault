@@ -7,7 +7,11 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 
 ATLAS_SSH_TARGET="${ATLAS_SSH_TARGET:-ec2-user@16.58.147.215}"
 DEPLOY_PORT="${DEPLOY_PORT:-22}"
-SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-${HOME}/.ssh/smbh-api-ec2-us-east-2.pem}"
+DEFAULT_SSH_IDENTITY_FILE="${HOME}/.ssh/smbh-api-ec2-us-east-2.pem"
+SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-}"
+if [[ -z "${SSH_IDENTITY_FILE}" && -f "${DEFAULT_SSH_IDENTITY_FILE}" ]]; then
+  SSH_IDENTITY_FILE="${DEFAULT_SSH_IDENTITY_FILE}"
+fi
 AV_WEB_SERVICE="${AV_WEB_SERVICE:-automic-vault-web}"
 AV_WEB_REMOTE_ROOT="${AV_WEB_REMOTE_ROOT:-/apps/automic-vault-web}"
 AV_WEB_DATA_DIR="${AV_WEB_DATA_DIR:-/var/lib/automic-vault-web}"
@@ -34,7 +38,7 @@ Build and deploy the Atlas Rust package origin.
 
 Environment:
   ATLAS_SSH_TARGET       SSH target. Default: ${ATLAS_SSH_TARGET}
-  SSH_IDENTITY_FILE      SSH key. Default: ${SSH_IDENTITY_FILE}
+  SSH_IDENTITY_FILE      SSH key. Default: ${SSH_IDENTITY_FILE:-use ssh config/default identities}
   SSH_EXTRA_OPTS         Extra ssh/scp options.
   AV_WEB_ORIGIN_DOMAIN   Atlas origin hostname. Default: ${AV_WEB_ORIGIN_DOMAIN}
   AV_WEB_ORIGIN_HEADER   CloudFront custom origin header. Default: ${AV_WEB_ORIGIN_HEADER}
@@ -163,6 +167,10 @@ ensure_target_buildable_with_cargo() {
   fail "Rust target ${AV_WEB_TARGET} is not installed. Atlas is ARM64, so this target is correct; install cargo-zigbuild/zig or cross, or run: rustup target add ${AV_WEB_TARGET}"
 }
 
+cargo_zigbuild_available() {
+  cargo zigbuild --help >/dev/null 2>&1 && command -v zig >/dev/null 2>&1
+}
+
 build_binary() {
   if [[ "${skip_build}" == "true" ]]; then
     if [[ -z "${AV_WEB_BINARY_PATH}" ]]; then
@@ -178,7 +186,7 @@ build_binary() {
   if [[ "${AV_WEB_TARGET}" == "${host_target}" ]]; then
     cargo build --release -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/release/av-web"
-  elif cargo zigbuild --help >/dev/null 2>&1; then
+  elif cargo_zigbuild_available; then
     cargo zigbuild --release --target "${AV_WEB_TARGET}" -p av-web --bin av-web
     AV_WEB_BINARY_PATH="${repo_root}/target/${AV_WEB_TARGET}/release/av-web"
   elif command -v cross >/dev/null 2>&1; then
