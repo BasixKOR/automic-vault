@@ -23,10 +23,9 @@
   the Rust `av-web` service from the private SQLite artifact at
   `cache/pkg.sqlite` locally and `/var/lib/automic-vault-web/pkg.sqlite` on
   Atlas.
-- Do not restore the old static `www/pkg/**` or `www/pagefind/**` upload path.
-  S3 remains the default static website origin, but package pages, package
-  sitemaps, package CSS/JS, markdown alternates, and package search are an
-  Atlas origin concern.
+- S3 remains the default static website origin, but package pages, package
+  sitemaps, package CSS/JS, markdown alternates, and package search are served
+  by the Atlas origin.
 - Use `scripts/generate-pkg-sqlite.py` to build the package-origin artifact and
   `scripts/deploy-pkg-origin.sh` to deploy `av-web` plus `pkg.sqlite`.
 - Keep public `/db.json` backward-compatible. The package SQLite database is
