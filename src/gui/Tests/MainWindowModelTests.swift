@@ -175,6 +175,48 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testStartPreloadsCategoryCountsWhileInstalledSectionIsSelected() async {
+        let requests = CategoryPageRequestRecorder()
+        let categoryCounts = [
+            "developer-tools": 2,
+            "security": 1,
+        ]
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: { [] },
+            outdatedPackagesFetcher: { [] },
+            availablePackagesFetcher: { offset, _, category, sortOrder in
+                requests.append(offset: offset, category: category, sortOrder: sortOrder)
+                return PackageSearchPage(
+                    packages: [],
+                    totalCount: 3,
+                    nextOffset: nil,
+                    categoryCounts: categoryCounts
+                )
+            },
+            pulsePackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        XCTAssertEqual(model.selectedSection, .installed)
+
+        model.start()
+        await waitUntil(model.count(for: .developerTools) == 2)
+
+        XCTAssertEqual(model.selectedSection, .installed)
+        XCTAssertEqual(model.count(for: .security), 1)
+        XCTAssertEqual(
+            requests.values,
+            [.init(offset: 0, category: nil, sortOrder: .rank)]
+        )
+    }
+
+    @MainActor
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(

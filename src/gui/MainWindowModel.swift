@@ -413,6 +413,8 @@ final class MainWindowModel: ObservableObject {
     private var staleSectionKinds = Set<SectionPageKind>()
     private var pendingHardeningSelection: PackageHardeningContext?
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
+    private let installedPackagesFetcher: () throws -> [PackageRecord]
+    private let outdatedPackagesFetcher: () throws -> [OutdatedPackageRecord]
     private let securityCatalog: SecurityCatalog
     private let availablePackagesFetcher: (
         Int,
@@ -431,6 +433,12 @@ final class MainWindowModel: ObservableObject {
             NucleusBridge().cliToolsRecommendation()
         },
         initialAutomicVaultCLTRecommendation: PackageRecommendation? = nil,
+        installedPackagesFetcher: @escaping () throws -> [PackageRecord] = {
+            try MainWindowModel.fetchInstalledPackages()
+        },
+        outdatedPackagesFetcher: @escaping () throws -> [OutdatedPackageRecord] = {
+            try MainWindowModel.fetchOutdatedPackages()
+        },
         securityCatalog: SecurityCatalog = .shared,
         availablePackagesFetcher: @escaping (
             Int,
@@ -480,6 +488,8 @@ final class MainWindowModel: ObservableObject {
     ) {
         self.cliToolsRecommendationProvider = cliToolsRecommendationProvider
         automicVaultCLTRecommendation = initialAutomicVaultCLTRecommendation
+        self.installedPackagesFetcher = installedPackagesFetcher
+        self.outdatedPackagesFetcher = outdatedPackagesFetcher
         self.securityCatalog = securityCatalog
         self.availablePackagesFetcher = availablePackagesFetcher
         self.pulsePackagesFetcher = pulsePackagesFetcher
@@ -635,6 +645,8 @@ final class MainWindowModel: ObservableObject {
         reloadRequestID += 1
         let requestID = reloadRequestID
         let cliToolsRecommendationProvider = cliToolsRecommendationProvider
+        let installedPackagesFetcher = installedPackagesFetcher
+        let outdatedPackagesFetcher = outdatedPackagesFetcher
         isReloading = true
         lastErrorMessage = nil
         statusMessage = L10n.string("Loading packages from the protocol daemon")
@@ -650,7 +662,7 @@ final class MainWindowModel: ObservableObject {
                 )
             }
 
-            let result = Result { try Self.fetchInstalledPackages() }
+            let result = Result { try installedPackagesFetcher() }
             await MainActor.run {
                 self.finishInstalledReload(
                     result,
@@ -663,7 +675,7 @@ final class MainWindowModel: ObservableObject {
                 return
             }
 
-            let outdated = (try? Self.fetchOutdatedPackages()) ?? []
+            let outdated = (try? outdatedPackagesFetcher()) ?? []
             await MainActor.run {
                 self.finishOutdatedReload(outdated, requestID: requestID)
             }
@@ -2175,12 +2187,20 @@ final class MainWindowModel: ObservableObject {
     private func preloadSidebarCountData() {
         loadSectionPageIfNeeded(kind: .geiger)
         loadSectionPageIfNeeded(kind: .pulse)
-        loadSectionPageIfNeeded(kind: .catalog(category: nil, sortOrder: .rank))
+        loadCatalogCategoryCountsIfNeeded()
+    }
+
+    private func loadCatalogCategoryCountsIfNeeded() {
+        guard catalogCategoryCounts.isEmpty else {
+            return
+        }
+        loadSectionPage(kind: .catalog(category: nil, sortOrder: .rank), offset: 0)
     }
 
     private func markDynamicSectionPagesStale() {
         markSectionPageStale(kind: .geiger)
         markSectionPageStale(kind: .pulse)
+        markSectionPageStale(kind: .catalog(category: nil, sortOrder: .rank))
     }
 
     private func markSectionPageStale(kind: SectionPageKind) {
