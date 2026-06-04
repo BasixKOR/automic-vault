@@ -1,3 +1,5 @@
+#![cfg_attr(test, recursion_limit = "256")]
+
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1130,6 +1132,8 @@ fn render_package_page(package: &PackageRow, locale: &Locale, generated_at: &str
     body.push_str(&render_executables(package, locale));
     body.push_str(&render_freshness(package, generated_at, locale));
     body.push_str(&render_install_metadata(package, locale));
+    body.push_str(&render_registry_insights(package, locale));
+    body.push_str(&render_external_package_manager_matches(package, locale));
     body.push_str(&render_related(package, locale));
     body.push_str(&render_sources(package, locale));
     body.push_str("</main>");
@@ -1215,6 +1219,8 @@ fn render_package_markdown(package: &PackageRow, locale: &Locale, generated_at: 
         &markdown_freshness_items(package, generated_at),
     );
     markdown_security_section(&mut text, package, locale);
+    markdown_registry_insights(&mut text, package, locale);
+    markdown_external_package_manager_matches(&mut text, package, locale);
     markdown_related(&mut text, package, locale);
     markdown_value_list(
         &mut text,
@@ -2202,6 +2208,200 @@ fn render_install_metadata(package: &PackageRow, locale: &Locale) -> String {
     )
 }
 
+fn render_registry_insights(package: &PackageRow, locale: &Locale) -> String {
+    let Some(insights) = registry_insights(package) else {
+        return String::new();
+    };
+    let rows = registry_insight_rows(insights);
+    if rows.is_empty() {
+        return String::new();
+    }
+    let row_html = rows
+        .into_iter()
+        .take(28)
+        .map(|(label, value)| {
+            format!(
+                "<tr><th>{}</th><td>{}</td></tr>",
+                html_escape(&label),
+                metadata_value_html(value)
+            )
+        })
+        .collect::<String>();
+    format!(
+        r#"<section class="pkg-section registry-insights-section"><p class="section-kicker">{}</p><h2>{}</h2><div class="table-wrap registry-insights-table"><table><tbody>{}</tbody></table></div></section>"#,
+        html_escape(&tx(locale, "registryFacts", "registry facts")),
+        html_escape(&tx(
+            locale,
+            "registryInsightsTitle",
+            "Source database details"
+        )),
+        row_html
+    )
+}
+
+fn render_external_package_manager_matches(package: &PackageRow, locale: &Locale) -> String {
+    let matches = external_package_manager_matches(package);
+    if matches.is_empty() {
+        return String::new();
+    }
+    let match_html = matches
+        .into_iter()
+        .take(16)
+        .map(external_package_match_card)
+        .collect::<String>();
+    format!(
+        r#"<section class="pkg-section split-section manager-match-section" aria-labelledby="manager-match-title"><div><p class="section-kicker">{}</p><h2 id="manager-match-title">{}</h2><p>{}</p></div><div class="manager-match-grid">{}</div></section>"#,
+        html_escape(&tx(
+            locale,
+            "sourceDatabaseMatches",
+            "source database matches"
+        )),
+        html_escape(&tx(
+            locale,
+            "otherPackageManagersTitle",
+            "Other package-manager records"
+        )),
+        html_escape(&tx(
+            locale,
+            "otherPackageManagersCopy",
+            "Matches are pulled from external package-manager indexes and kept separate from local Automic Vault package links."
+        )),
+        match_html
+    )
+}
+
+fn external_package_match_card(item: &Value) -> String {
+    let metadata = item
+        .get("metadata")
+        .filter(|value| value.is_object())
+        .unwrap_or(&Value::Null);
+    let version = value_str_key(metadata, "version").unwrap_or_default();
+    let summary = value_str_key(metadata, "summary")
+        .or_else(|| value_str_key(metadata, "description"))
+        .unwrap_or_default();
+    let homepage = value_str_key(metadata, "homepage").unwrap_or_default();
+    let source = item
+        .get("source")
+        .filter(|value| value.is_object())
+        .unwrap_or(&Value::Null);
+    let source_url = value_str_key(source, "sourceUrl")
+        .or_else(|| value_str_key(source, "source_url"))
+        .unwrap_or_default();
+    let source_label = value_str_key(source, "sourceLabel")
+        .or_else(|| value_str_key(source, "source_label"))
+        .unwrap_or_default();
+    let display_name = value_str_key(item, "displayName")
+        .or_else(|| value_str_key(item, "manager"))
+        .unwrap_or_default();
+    let package_id = value_str_key(item, "packageId")
+        .or_else(|| value_str_key(item, "packageName"))
+        .or_else(|| value_str_key(item, "package_name"))
+        .unwrap_or_default();
+    let confidence = value_f64_key(item, "confidence")
+        .map(|value| format!("{:.0}%", value * 100.0))
+        .or_else(|| value_str_key(item, "confidence"))
+        .unwrap_or_default();
+    let command = value_str_key(item, "command").unwrap_or_default();
+    let mut fact_bits = Vec::new();
+    for key in [
+        "license",
+        "section",
+        "category",
+        "architecture",
+        "sourcePackage",
+    ] {
+        if let Some(value) = value_str_key(metadata, key).filter(|value| !value.is_empty()) {
+            fact_bits.push(format!("{}: {value}", human_metadata_label(key)));
+        }
+    }
+    for (key, label) in [
+        ("dependencies", "dependencies"),
+        ("provides", "provides"),
+        ("optionalDependencies", "optional deps"),
+    ] {
+        let count = metadata
+            .get(key)
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0);
+        if count > 0 {
+            fact_bits.push(format!("{count} {label}"));
+        }
+    }
+    if let Some(reason) = value_str_key(item, "reason").filter(|value| !value.is_empty()) {
+        fact_bits.push(reason);
+    }
+    if let Some(matched_by) = value_str_key(item, "matchedBy").filter(|value| !value.is_empty()) {
+        fact_bits.push(format!("Matched by: {}", human_metadata_label(&matched_by)));
+    }
+    let facts = fact_bits
+        .into_iter()
+        .take(8)
+        .map(|bit| format!("<li>{}</li>", html_escape(&bit)))
+        .collect::<String>();
+    let source_link = if !source_url.is_empty() {
+        format!(
+            r#"<a href="{}">{}</a>"#,
+            html_escape(&source_url),
+            html_escape(source_host_label(&source_url))
+        )
+    } else {
+        String::new()
+    };
+    let source_label = html_escape(&source_label);
+    let source_html = [source_label, source_link]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let evidence = value_str_key(item, "evidence").unwrap_or_default();
+    let source_tail = [source_html, html_escape(&evidence)]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    format!(
+        r#"<article class="manager-match-card"><div class="manager-match-head"><strong>{}</strong><span>{}</span></div><p><code>{}</code>{}</p>{}{}{}{}{}</article>"#,
+        html_escape(&display_name),
+        html_escape(&confidence),
+        html_escape(&package_id),
+        if version.is_empty() {
+            String::new()
+        } else {
+            format!(" <em>{}</em>", html_escape(&version))
+        },
+        if summary.is_empty() {
+            String::new()
+        } else {
+            format!("<p>{}</p>", html_escape(&short_text(&summary, 180)))
+        },
+        if homepage.is_empty() {
+            String::new()
+        } else {
+            format!(
+                r#"<p><a href="{}">{}</a></p>"#,
+                html_escape(&homepage),
+                html_escape(&homepage)
+            )
+        },
+        if command.is_empty() {
+            String::new()
+        } else {
+            format!("<pre><code>{}</code></pre>", html_escape(&command))
+        },
+        if facts.is_empty() {
+            String::new()
+        } else {
+            format!("<ul>{facts}</ul>")
+        },
+        if source_tail.is_empty() {
+            String::new()
+        } else {
+            format!("<small>{source_tail}</small>")
+        }
+    )
+}
+
 fn render_related(package: &PackageRow, locale: &Locale) -> String {
     let hubs = value_array(&package.data.full, "packageHubs")
         .into_iter()
@@ -3111,6 +3311,225 @@ fn push_joined_row(rows: &mut Vec<(String, String)>, label: &str, values: &[Stri
     }
 }
 
+fn registry_insights(package: &PackageRow) -> Option<&Value> {
+    full_value(package, "registryInsights")
+        .or_else(|| {
+            full_value(package, "extra")
+                .and_then(|extra| extra.get("registryInsights"))
+                .filter(|value| !value.is_null())
+        })
+        .filter(|value| value.is_object())
+}
+
+fn registry_insight_rows(insights: &Value) -> Vec<(String, &Value)> {
+    let preferred = [
+        "sourceDatabase",
+        "tap",
+        "fullName",
+        "fullToken",
+        "names",
+        "aliases",
+        "oldName",
+        "oldTokens",
+        "versionScheme",
+        "revision",
+        "headVersion",
+        "distTags",
+        "versionCount",
+        "releaseCount",
+        "filesForLatest",
+        "packageTypes",
+        "maintainers",
+        "author",
+        "maintainer",
+        "publisher",
+        "engines",
+        "requiresPython",
+        "peerDependencies",
+        "optionalDependencies",
+        "dependsOn",
+        "conflictsWith",
+        "requirements",
+        "artifacts",
+        "autoUpdates",
+        "funding",
+        "integrity",
+        "shasum",
+        "unpackedSize",
+        "fileCount",
+        "latestSerial",
+        "latestUploadAt",
+        "vulnerabilityCount",
+        "yankedFileCount",
+    ];
+    let mut rows = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for key in preferred {
+        if let Some(value) = insights
+            .get(key)
+            .filter(|value| metadata_value_present(value))
+        {
+            seen.insert(key.to_string());
+            rows.push((human_metadata_label(key), value));
+        }
+    }
+    if let Some(object) = insights.as_object() {
+        for (key, value) in object {
+            if !seen.contains(key) && metadata_value_present(value) {
+                rows.push((human_metadata_label(key), value));
+            }
+        }
+    }
+    rows
+}
+
+fn external_package_manager_matches(package: &PackageRow) -> Vec<&Value> {
+    full_value(package, "externalPackageManagerMatches")
+        .or_else(|| full_value(package, "externalMatches"))
+        .or_else(|| {
+            full_value(package, "extra")
+                .and_then(|extra| extra.get("externalPackageManagerMatches"))
+                .filter(|value| !value.is_null())
+        })
+        .and_then(Value::as_array)
+        .map(|items| items.iter().collect())
+        .unwrap_or_default()
+}
+
+fn metadata_value_present(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(text) => !text.trim().is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(items) => !items.is_empty(),
+        Value::Bool(_) | Value::Number(_) => true,
+    }
+}
+
+fn human_metadata_label(key: &str) -> String {
+    let mut spaced = String::new();
+    for (index, character) in key.chars().enumerate() {
+        if character == '_' || character == '-' {
+            spaced.push(' ');
+        } else {
+            if index > 0 && character.is_ascii_uppercase() {
+                spaced.push(' ');
+            }
+            spaced.push(character);
+        }
+    }
+    let normalized = normalize_space(&spaced);
+    let mut words = Vec::new();
+    for word in normalized.split_whitespace() {
+        let lower = word.to_ascii_lowercase();
+        let label = match lower.as_str() {
+            "api" => "API".to_string(),
+            "id" => "ID".to_string(),
+            "json" => "JSON".to_string(),
+            "npm" => "npm".to_string(),
+            "pypi" => "PyPI".to_string(),
+            "sha" => "SHA".to_string(),
+            "sha256" => "SHA-256".to_string(),
+            "url" => "URL".to_string(),
+            _ => {
+                let mut chars = word.chars();
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+                    .unwrap_or_default()
+            }
+        };
+        words.push(label);
+    }
+    words.join(" ")
+}
+
+fn metadata_value_html(value: &Value) -> String {
+    match value {
+        Value::Bool(flag) => html_escape(if *flag { "yes" } else { "no" }),
+        Value::Number(number) => html_escape(&metadata_number_text(number)),
+        Value::String(text) => link_value(text),
+        Value::Array(items) => {
+            let item_html = items
+                .iter()
+                .take(32)
+                .filter_map(|item| {
+                    let text = metadata_value_text(item);
+                    (!text.trim().is_empty()).then(|| format!("<li>{}</li>", html_escape(&text)))
+                })
+                .collect::<String>();
+            if item_html.is_empty() {
+                String::new()
+            } else {
+                format!(r#"<ul class="chip-list compact-chip-list">{item_html}</ul>"#)
+            }
+        }
+        Value::Object(items) => {
+            let pair_html = items
+                .iter()
+                .filter(|(_key, value)| metadata_value_present(value))
+                .take(24)
+                .map(|(key, value)| {
+                    format!(
+                        "<div><dt>{}</dt><dd>{}</dd></div>",
+                        html_escape(&human_metadata_label(key)),
+                        metadata_value_html(value)
+                    )
+                })
+                .collect::<String>();
+            if pair_html.is_empty() {
+                String::new()
+            } else {
+                format!(r#"<dl class="metadata-pair-list">{pair_html}</dl>"#)
+            }
+        }
+        Value::Null => String::new(),
+    }
+}
+
+fn metadata_value_text(value: &Value) -> String {
+    match value {
+        Value::Bool(flag) => if *flag { "yes" } else { "no" }.to_string(),
+        Value::Number(number) => metadata_number_text(number),
+        Value::String(text) => text.trim().to_string(),
+        Value::Array(items) => items
+            .iter()
+            .take(32)
+            .map(metadata_value_text)
+            .filter(|text| !text.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        Value::Object(items) => items
+            .iter()
+            .filter(|(_key, value)| metadata_value_present(value))
+            .take(24)
+            .map(|(key, value)| {
+                format!(
+                    "{}: {}",
+                    human_metadata_label(key),
+                    metadata_value_text(value)
+                )
+            })
+            .filter(|text| !text.trim().ends_with(':'))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Value::Null => String::new(),
+    }
+}
+
+fn metadata_number_text(number: &serde_json::Number) -> String {
+    number
+        .as_i64()
+        .map(fmt_int)
+        .or_else(|| {
+            number
+                .as_u64()
+                .and_then(|value| i64::try_from(value).ok())
+                .map(fmt_int)
+        })
+        .unwrap_or_else(|| number.to_string())
+}
+
 fn related_links(
     package: &PackageRow,
     locale: &Locale,
@@ -3618,6 +4037,96 @@ fn markdown_security_section(text: &mut String, package: &PackageRow, locale: &L
         if let Some(rule_count) = value_i64_key(gate, "rule_count") {
             text.push_str(&format!("- **Approval gate rules:** {rule_count}\n"));
         }
+    }
+    text.push('\n');
+}
+
+fn markdown_registry_insights(text: &mut String, package: &PackageRow, locale: &Locale) {
+    let Some(insights) = registry_insights(package) else {
+        return;
+    };
+    let rows = registry_insight_rows(insights);
+    if rows.is_empty() {
+        return;
+    }
+    text.push_str(&format!(
+        "## {}\n\n",
+        tx(locale, "registryInsightsTitle", "Source Database Details")
+    ));
+    for (label, value) in rows.into_iter().take(28) {
+        let item = metadata_value_text(value);
+        if !item.is_empty() {
+            text.push_str(&format!("- **{}:** {}\n", label, markdown_value(&item)));
+        }
+    }
+    text.push('\n');
+}
+
+fn markdown_external_package_manager_matches(
+    text: &mut String,
+    package: &PackageRow,
+    locale: &Locale,
+) {
+    let matches = external_package_manager_matches(package);
+    if matches.is_empty() {
+        return;
+    }
+    text.push_str(&format!(
+        "## {}\n\n",
+        tx(
+            locale,
+            "otherPackageManagersTitle",
+            "Other Package-Manager Records"
+        )
+    ));
+    for item in matches.into_iter().take(16) {
+        let metadata = item
+            .get("metadata")
+            .filter(|value| value.is_object())
+            .unwrap_or(&Value::Null);
+        let mut bits = Vec::new();
+        if let Some(manager) = value_str_key(item, "displayName")
+            .or_else(|| value_str_key(item, "manager"))
+            .filter(|value| !value.is_empty())
+        {
+            bits.push(manager);
+        }
+        if let Some(package_id) = value_str_key(item, "packageId")
+            .or_else(|| value_str_key(item, "packageName"))
+            .filter(|value| !value.is_empty())
+        {
+            bits.push(package_id);
+        }
+        if let Some(version) = value_str_key(metadata, "version").filter(|value| !value.is_empty())
+        {
+            bits.push(version);
+        }
+        let mut details = Vec::new();
+        for key in ["reason", "evidence"] {
+            if let Some(value) = value_str_key(item, key).filter(|value| !value.is_empty()) {
+                details.push(value);
+            }
+        }
+        if let Some(summary) = value_str_key(metadata, "summary")
+            .or_else(|| value_str_key(metadata, "description"))
+            .filter(|value| !value.is_empty())
+        {
+            details.push(short_text(&summary, 180));
+        }
+        if let Some(homepage) =
+            value_str_key(metadata, "homepage").filter(|value| !value.is_empty())
+        {
+            details.push(homepage);
+        }
+        if bits.is_empty() && details.is_empty() {
+            continue;
+        }
+        let suffix = if details.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", details.join(" | "))
+        };
+        text.push_str(&format!("- {}{}\n", bits.join(" - "), suffix));
     }
     text.push('\n');
 }
@@ -4192,6 +4701,67 @@ mod tests {
                 ],
             )
             .expect("insert markdown");
+        let aws_registry_insights = serde_json::json!({
+            "sourceDatabase": "Homebrew formula API",
+            "tap": "homebrew/core",
+            "fullName": "awscli",
+            "aliases": ["aws-cli"],
+            "versionScheme": 1,
+            "revision": 2,
+            "distTags": {"stable": "2.0.0", "head": "2.1.0"},
+            "dependencies": ["python@3.13", "openssl@3"],
+            "requirements": {"macos": ">= Ventura"},
+            "funding": {"url": "https://github.com/sponsors/aws"},
+            "unpackedSize": 123456789,
+            "latestUploadAt": "2026-06-01T12:00:00Z"
+        });
+        let aws_external_package_manager_matches = serde_json::json!([
+            {
+                "manager": "apt",
+                "displayName": "Debian apt",
+                "platform": "linux",
+                "packageId": "awscli",
+                "command": "sudo apt install awscli",
+                "confidence": 0.82,
+                "matchedBy": "exact_name",
+                "reason": "Same package name in Debian package index.",
+                "evidence": "Debian package metadata",
+                "source": {
+                    "sourceLabel": "Debian sid Packages",
+                    "sourceUrl": "https://packages.debian.org/sid/awscli"
+                },
+                "metadata": {
+                    "version": "2.0.0-1",
+                    "summary": "Universal command line interface for Amazon Web Services",
+                    "homepage": "https://aws.amazon.com/cli/",
+                    "license": "Apache-2.0",
+                    "section": "admin",
+                    "architecture": "all",
+                    "dependencies": ["python3", "python3-botocore"]
+                }
+            },
+            {
+                "manager": "winget",
+                "displayName": "Windows Package Manager",
+                "platform": "windows",
+                "packageId": "Amazon.AWSCLI",
+                "command": "winget install Amazon.AWSCLI",
+                "confidence": 0.95,
+                "matchedBy": "alias",
+                "reason": "Known AWS CLI installer package.",
+                "evidence": "WinGet package metadata",
+                "source": {
+                    "sourceLabel": "WinGet manifests",
+                    "sourceUrl": "https://github.com/microsoft/winget-pkgs/tree/master/manifests/a/Amazon/AWSCLI"
+                },
+                "metadata": {
+                    "version": "2.0.0",
+                    "summary": "AWS CLI v2 installer for Windows",
+                    "publisher": "Amazon Web Services",
+                    "monikers": ["aws", "awscli"]
+                }
+            }
+        ]);
         insert_package(
             &connection,
             PackageFixture {
@@ -4223,6 +4793,8 @@ mod tests {
                     ],
                     "binaries": [{"target": "aws-iam-authenticator", "source": "bin/aws-iam-authenticator"}],
                     "extra": {"stub_exclusions": ["aws-vault"]},
+                    "registryInsights": aws_registry_insights,
+                    "externalPackageManagerMatches": aws_external_package_manager_matches,
                     "security": ["approval gate"],
                     "keywords": ["cloud", "aws"],
                     "classifiers": ["devops"],
@@ -4512,6 +5084,12 @@ mod tests {
         assert!(package_html.contains("aws-iam-authenticator"));
         assert!(package_html.contains("Upstream has a newer patch release."));
         assert!(package_html.contains("Secure AWS CLI credentials"));
+        assert!(package_html.contains("Source database details"));
+        assert!(package_html.contains("Homebrew formula API"));
+        assert!(package_html.contains("Other package-manager records"));
+        assert!(package_html.contains("Debian apt"));
+        assert!(package_html.contains("Amazon.AWSCLI"));
+        assert!(package_html.contains("123,456,789"));
 
         let hub_html = String::from_utf8(hub.body).expect("hub html");
         assert!(hub_html.contains("Cloud CLI"));
@@ -4557,6 +5135,10 @@ mod tests {
         assert!(text.contains("Upstream latest detected"));
         assert!(text.contains("[Cloud](https://www.automicvault.com/pkg/cloud/)"));
         assert!(text.contains("Source archive"));
+        assert!(text.contains("Source Database Details"));
+        assert!(text.contains("Other Package-Manager Records"));
+        assert!(text.contains("Homebrew formula API"));
+        assert!(text.contains("Debian apt - awscli - 2.0.0-1"));
 
         assert!(
             dynamic_response_for_path(db.path(), "/pkg/npm/private-tool/index.md")

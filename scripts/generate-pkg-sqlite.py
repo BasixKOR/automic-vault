@@ -671,6 +671,9 @@ def jsonable(value: Any) -> Any:
 
 
 def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
+    extra = getattr(page, "extra", {})
+    if not isinstance(extra, dict):
+        extra = {}
     return {
         "provider": getattr(page, "provider", ""),
         "name": getattr(page, "name", ""),
@@ -720,7 +723,9 @@ def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
         "isotopeReadmeHtml": page_module.public_copy(getattr(page, "isotope_readme_html", "")),
         "isotopeReadmeSource": getattr(page, "isotope_readme_source", ""),
         "approvalGate": getattr(page, "approval_gate", None),
-        "extra": getattr(page, "extra", {}),
+        "registryInsights": extra.get("registryInsights", {}),
+        "externalPackageManagerMatches": getattr(page, "external_package_manager_matches", []),
+        "extra": extra,
     }
 
 
