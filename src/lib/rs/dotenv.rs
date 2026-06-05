@@ -1960,6 +1960,7 @@ unsafe fn take_dotenv_bridge_string(value: *mut c_char) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
     use std::sync::Mutex;
 
