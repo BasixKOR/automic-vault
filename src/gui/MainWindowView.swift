@@ -261,7 +261,7 @@ struct MainWindowView: View {
                             version: packageRowVersion(for: package),
                             inlineBadges: model.packageInlineBadges(for: package),
                             severityLevel: model.securityRecommendationSeverityLevel(for: package),
-                            badges: packageRowBadges(for: package),
+                            badges: model.packageListBadges(for: package),
                             selected: model.selectedItemID == package.selectionID
                         ) {
                             model.select(package)
@@ -338,17 +338,6 @@ struct MainWindowView: View {
             displayName: title,
             latestVersionedBases: versionedPackageBases
         )
-    }
-
-    private func packageRowBadges(for package: PackagePresentation) -> [MainWindowPackageBadge] {
-        var badges = model.packageListBadges(for: package)
-        if !model.isSearchActive,
-           model.selectedSection == .newUpdated,
-           case .available(let result) = package.item,
-           result.isNewPulse {
-            badges.append(.new)
-        }
-        return badges
     }
 
     private var dossierPanel: some View {

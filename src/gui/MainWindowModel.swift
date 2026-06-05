@@ -1138,7 +1138,18 @@ final class MainWindowModel: ObservableObject {
         if packageShowsAutomicVaultInstallBadge(package) {
             badges.append(.automicVault)
         }
+        if packageShowsNewUpdatedBadge(package) {
+            badges.append(.new)
+        }
         return badges
+    }
+
+    private func packageShowsNewUpdatedBadge(_ package: PackagePresentation) -> Bool {
+        guard !isSearchActive,
+              selectedSection == .newUpdated else {
+            return false
+        }
+        return isUnreadPulsePackage(package)
     }
 
     private func packageShowsAutomicVaultInstallBadge(_ package: PackagePresentation) -> Bool {

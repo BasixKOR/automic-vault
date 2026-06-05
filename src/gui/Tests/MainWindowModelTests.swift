@@ -601,9 +601,11 @@ final class MainWindowModelTests: XCTestCase {
 
         model.selectedSection = .newUpdated
         await waitUntil(model.displayedPackages.count == 1)
+        let package = try XCTUnwrap(model.displayedPackages.first)
 
         XCTAssertNil(model.count(for: .newUpdated))
         XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["pulse:npm:tsx"])
+        XCTAssertEqual(model.packageListBadges(for: package), [])
     }
 
     @MainActor
@@ -682,6 +684,15 @@ final class MainWindowModelTests: XCTestCase {
         await waitUntil(model.displayedPackages.count == 4)
 
         XCTAssertEqual(model.count(for: .newUpdated), 2)
+        let badgesBySelectionID = Dictionary(
+            uniqueKeysWithValues: model.displayedPackages.map {
+                ($0.selectionID, model.packageListBadges(for: $0))
+            }
+        )
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:newer"]), [.new])
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:older"]), [])
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:undated"]), [])
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:updated"]), [.new])
     }
 
     @MainActor
