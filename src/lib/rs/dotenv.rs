@@ -678,7 +678,7 @@ fn run_dotenv_encrypt(
             return Ok(());
         }
         return Err(format!(
-            "{} has plaintext dotenv values: {}",
+            "{} has secret-shaped plaintext dotenv values: {}",
             document.path.display(),
             keys.join(", ")
         ));
@@ -686,7 +686,7 @@ fn run_dotenv_encrypt(
     let public_key = ensure_document_public_key(&mut document, store)?;
     if keys.is_empty() {
         document.write()?;
-        println!("no plaintext values to encrypt");
+        println!("no secret-shaped plaintext values to encrypt");
         return Ok(());
     }
     for key in &keys {
@@ -1058,6 +1058,9 @@ impl DotenvDocument {
             if exclude.contains(&assignment.key) || is_encrypted_value(&assignment.value) {
                 continue;
             }
+            if !is_secret_shaped_dotenv_assignment(&assignment.key, &assignment.value) {
+                continue;
+            }
             push_unique_string(&mut keys, assignment.key.clone());
         }
         keys
@@ -1307,6 +1310,191 @@ fn is_valid_dotenv_key_name(key: &str) -> bool {
         _ => return false,
     }
     chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_secret_shaped_dotenv_assignment(key: &str, value: &str) -> bool {
+    dotenv_key_looks_secret(key, value) || dotenv_value_looks_secret(value)
+}
+
+fn dotenv_key_looks_secret(key: &str, value: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    if upper.starts_with("NEXT_PUBLIC_")
+        || upper.starts_with("NUXT_PUBLIC_")
+        || upper.starts_with("PUBLIC_")
+        || upper.starts_with("VITE_")
+        || upper.contains("PUBLISHABLE")
+        || upper.contains("PUBLIC_KEY")
+    {
+        return false;
+    }
+    if [
+        "_ENDPOINT",
+        "_HOST",
+        "_PORT",
+        "_URI",
+        "_URL",
+        "_VERSION",
+        "_ENABLED",
+    ]
+    .iter()
+    .any(|suffix| upper.ends_with(suffix))
+    {
+        return dotenv_value_looks_secret(value);
+    }
+
+    let tokens = upper
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    if tokens
+        .iter()
+        .any(|token| matches!(*token, "SECRET" | "TOKEN" | "PASSWORD" | "PASSWD"))
+    {
+        return true;
+    }
+    if tokens.iter().any(|token| *token == "KEY")
+        && tokens.iter().any(|token| {
+            matches!(
+                *token,
+                "ACCESS"
+                    | "API"
+                    | "AWS"
+                    | "GITHUB"
+                    | "GITLAB"
+                    | "NPM"
+                    | "OPENAI"
+                    | "PRIVATE"
+                    | "SECRET"
+                    | "STRIPE"
+            )
+        })
+    {
+        return true;
+    }
+
+    let compact = upper
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>();
+    [
+        "APIKEY",
+        "ACCESSTOKEN",
+        "AUTHTOKEN",
+        "BEARERTOKEN",
+        "CLIENTSECRET",
+        "PRIVATEKEY",
+        "REFRESHTOKEN",
+        "SECRETKEY",
+        "SESSIONSECRET",
+        "SIGNINGSECRET",
+        "WEBHOOKSECRET",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
+        || ((upper.ends_with("_URL") || upper.ends_with("_DSN"))
+            && dotenv_value_looks_credential_url(value))
+}
+
+fn dotenv_value_looks_secret(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || is_encrypted_value(trimmed) {
+        return false;
+    }
+    if trimmed.contains("-----BEGIN ") && trimmed.contains("PRIVATE KEY-----") {
+        return true;
+    }
+    if dotenv_value_looks_credential_url(trimmed) || dotenv_value_looks_jwt(trimmed) {
+        return true;
+    }
+    if [
+        "sk-",
+        "sk_live_",
+        "sk_test_",
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "github_pat_",
+        "glpat-",
+        "xoxb-",
+        "xoxp-",
+        "xapp-",
+    ]
+    .iter()
+    .any(|prefix| trimmed.starts_with(prefix))
+    {
+        return true;
+    }
+    if dotenv_value_looks_aws_access_key(trimmed) {
+        return true;
+    }
+    dotenv_value_has_high_entropy_secret_shape(trimmed)
+}
+
+fn dotenv_value_looks_credential_url(value: &str) -> bool {
+    let Some(scheme_end) = value.find("://") else {
+        return false;
+    };
+    if !value[..scheme_end].chars().enumerate().all(|(index, ch)| {
+        if index == 0 {
+            ch.is_ascii_alphabetic()
+        } else {
+            ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-')
+        }
+    }) {
+        return false;
+    }
+    let authority = value[scheme_end + 3..]
+        .split(|ch: char| ch == '/' || ch.is_whitespace())
+        .next()
+        .unwrap_or_default();
+    let Some(at) = authority.rfind('@') else {
+        return false;
+    };
+    authority[..at].contains(':')
+}
+
+fn dotenv_value_looks_jwt(value: &str) -> bool {
+    let parts = value.split('.').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts[0].starts_with("eyJ")
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(is_base64url_byte))
+}
+
+fn is_base64url_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
+fn dotenv_value_looks_aws_access_key(value: &str) -> bool {
+    value.len() == 20
+        && (value.starts_with("AKIA") || value.starts_with("ASIA"))
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn dotenv_value_has_high_entropy_secret_shape(value: &str) -> bool {
+    if value.len() < 32
+        || value.chars().any(char::is_whitespace)
+        || value.starts_with('/')
+        || value.starts_with("~/")
+        || value.contains("://")
+        || value.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return false;
+    }
+    let has_lower = value.chars().any(|ch| ch.is_ascii_lowercase());
+    let has_upper = value.chars().any(|ch| ch.is_ascii_uppercase());
+    let has_digit = value.chars().any(|ch| ch.is_ascii_digit());
+    let has_symbol = value.chars().any(|ch| !ch.is_ascii_alphanumeric());
+    let class_count = [has_lower, has_upper, has_digit, has_symbol]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+    let unique_count = value.chars().collect::<HashSet<_>>().len();
+    class_count >= 3 && unique_count >= 16
 }
 
 fn validate_private_key_list(value: &str) -> Result<(), String> {
@@ -2589,7 +2777,7 @@ mod tests {
     fn dotenv_init_and_encrypt_use_stub_store() {
         let temp = TempDir::new().unwrap();
         let env_path = temp.path().join(".env");
-        fs::write(&env_path, "FOO=bar\n").unwrap();
+        fs::write(&env_path, "API_KEY=sk-test-secret\n").unwrap();
         let store = StubDotenvPrivateKeyStore::default();
         run_dotenv_encrypt(
             &DotenvEncryptOptions {
@@ -2608,7 +2796,39 @@ mod tests {
              # Output will be monitored to occlude secrets.\n\n"
         ));
         assert!(output.contains("DOTENV_PUBLIC_KEY"));
-        assert!(output.contains("FOO=\"encrypted:"));
+        assert!(output.contains("API_KEY=\"encrypted:"));
+    }
+
+    #[test]
+    fn dotenv_encryptable_keys_only_select_secret_shaped_plaintext() {
+        let ordinary = DotenvDocument::parse(
+            PathBuf::from(".env"),
+            "DOTENV_PUBLIC_KEY=abc\nMIN_MACOS_VERSION=26.0\nNUKE_HELPER_VERSION=12\nTEAM_COMMON_NAME=\"Developer ID Application: Example\"\nTEAM_IDENTIFIER=ZU76A67LGU\nAPI_BASE_URL=https://api.example.test\nAUTH_TOKEN_URL=https://auth.example.test/oauth/token\nNEXT_PUBLIC_TOKEN=visible\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghijklmnopqrstuvwxyz\nVITE_API_KEY=public-browser-config\nALREADY_SECRET=encrypted:abc\n",
+        );
+        assert!(ordinary.encryptable_keys(&[], &[]).is_empty());
+
+        let secrets = DotenvDocument::parse(
+            PathBuf::from(".env"),
+            "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456\nexport NPM_TOKEN=\"npm_abcdefghijklmnopqrstuvwxyz\"\nSTRIPE_SECRET_KEY='sk_live_abcdefghijklmnopqrstuvwxyz'\nDATABASE_URL=postgres://user:password@example.test/app\nPLAIN_VALUE=github_pat_1234567890abcdefghijklmnopqrstuvwxyz\nPRIVATE_MATERIAL=\"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\"\nJWT_VALUE=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature123\n",
+        );
+        assert_eq!(
+            secrets.encryptable_keys(&[], &[]),
+            vec![
+                "OPENAI_API_KEY",
+                "NPM_TOKEN",
+                "STRIPE_SECRET_KEY",
+                "DATABASE_URL",
+                "PLAIN_VALUE",
+                "PRIVATE_MATERIAL",
+                "JWT_VALUE",
+            ]
+        );
+
+        let colon = DotenvDocument::parse(
+            PathBuf::from(".env"),
+            "DB_PASSWORD: password # comment\nFEATURE_FLAG: enabled\nBAD-NAME=secret\n# COMMENTED_TOKEN=secret\n",
+        );
+        assert_eq!(colon.encryptable_keys(&[], &[]), vec!["DB_PASSWORD"]);
     }
 
     #[test]
@@ -2896,11 +3116,12 @@ mod tests {
 
         let mut doc = DotenvDocument::parse(
             PathBuf::from(".env.local.txt"),
-            "export FOO: value # comment\r\nBAR=`raw value`\rBAZ=\"line\\nnext\"\nNO_SEP\n",
+            "export FOO: value # comment\r\nBAR=`raw value`\rBAZ=\"line\\nnext\"\nAPI_KEY=sk-test-secret\nNO_SEP\n",
         );
         assert_eq!(doc.value("FOO").unwrap(), "value");
         assert_eq!(doc.value("BAR").unwrap(), "raw value");
         assert_eq!(doc.value("BAZ").unwrap(), "line\nnext");
+        assert_eq!(doc.value("API_KEY").unwrap(), "sk-test-secret");
         assert!(doc.value("NO_SEP").is_none());
         assert!(doc.render().ends_with('\n'));
 
@@ -2916,15 +3137,15 @@ mod tests {
         );
 
         let selected = doc.encryptable_keys(
-            &["FOO".to_string(), "QUOTED".to_string()],
+            &["FOO".to_string(), "API_KEY".to_string()],
             &["FOO".to_string()],
         );
-        assert_eq!(selected, vec!["QUOTED"]);
-        doc.set_value("QUOTED", "encrypted:abc");
-        assert!(doc.encryptable_keys(&[], &[]).contains(&"FOO".to_string()));
+        assert_eq!(selected, vec!["API_KEY"]);
+        doc.set_value("API_KEY", "encrypted:abc");
+        assert!(!doc.encryptable_keys(&[], &[]).contains(&"FOO".to_string()));
         assert!(
             !doc.encryptable_keys(&[], &[])
-                .contains(&"QUOTED".to_string())
+                .contains(&"API_KEY".to_string())
         );
 
         let mut empty_doc = DotenvDocument::parse(PathBuf::from(".env"), "");
@@ -3390,7 +3611,7 @@ mod tests {
         fs::write(
             &env_path,
             format!(
-                "DOTENV_PUBLIC_KEY={}\nFOO=plain\nBAR=encrypted:abc\n",
+                "DOTENV_PUBLIC_KEY={}\nFOO=plain\nAPI_KEY=sk-test-secret\nBAR=encrypted:abc\n",
                 keypair.public_key
             ),
         )
@@ -3438,31 +3659,29 @@ mod tests {
             run_dotenv_encrypt(
                 &DotenvEncryptOptions {
                     file: env_path.clone(),
-                    include_keys: vec!["FOO".to_string()],
+                    include_keys: vec!["API_KEY".to_string()],
                     exclude_keys: Vec::new(),
                     check: true,
                 },
                 &store,
             )
             .unwrap_err()
-            .contains("plaintext dotenv values: FOO")
+            .contains("secret-shaped plaintext dotenv values: API_KEY")
         );
 
         run_dotenv_encrypt(
             &DotenvEncryptOptions {
                 file: env_path.clone(),
-                include_keys: vec!["FOO".to_string()],
+                include_keys: vec!["FOO".to_string(), "API_KEY".to_string()],
                 exclude_keys: Vec::new(),
                 check: false,
             },
             &store,
         )
         .unwrap();
-        assert!(
-            fs::read_to_string(&env_path)
-                .unwrap()
-                .contains("FOO=\"encrypted:")
-        );
+        let encrypted_env = fs::read_to_string(&env_path).unwrap();
+        assert!(encrypted_env.contains("FOO=plain"));
+        assert!(encrypted_env.contains("API_KEY=\"encrypted:"));
 
         run_dotenv_encrypt(
             &DotenvEncryptOptions {

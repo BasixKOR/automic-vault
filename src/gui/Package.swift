@@ -67,7 +67,6 @@ let package = Package(
             dependencies: ["AutomicVaultApp"],
             path: "Tests",
             sources: [
-                "DotenvFileWatcherTests.swift",
                 "LocalizationResourceTests.swift",
                 "DeepLinkTests.swift",
                 "MainWindowModelTests.swift",
