@@ -2654,6 +2654,7 @@ mod tests {
         assert_eq!(dotenv_user_approval_root().unwrap_err(), "HOME is not set");
     }
 
+    #[cfg(unix)]
     #[test]
     fn dotenv_load_export_and_run_cover_approval_bypass_paths() {
         let _lock = global_test_env_lock().lock().unwrap();
