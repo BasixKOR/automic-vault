@@ -398,7 +398,7 @@ finder_center_x=$((finder_width / 2))
 app_icon_x=$((finder_center_x - icon_gap_from_center))
 applications_icon_x=$((finder_center_x + icon_gap_from_center))
 # Place Finder labels over the lower glow in the background artwork.
-applications_icon_y=$(((finder_height * 3 / 5) - 30))
+applications_icon_y=$(((finder_height * 2 / 3) - 22))
 app_icon_y="${applications_icon_y}"
 
 cli_title "Build Automic Vault DMG"
