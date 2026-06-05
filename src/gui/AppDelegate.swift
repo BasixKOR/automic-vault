@@ -601,14 +601,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             saveDotenvDecision(approval, approved: false)
             return
         }
+        saveDotenvDecision(approval, approved: true)
         helperBridge.dotenvApprovalPolicy { [weak self] result in
             guard let self else { return }
             guard case .success(.rememberApproved) = result else {
-                self.saveDotenvDecision(approval, approved: true)
                 return
             }
-            self.helperBridge.rememberDotenvApproval(approval) { [weak self] _ in
-                self?.saveDotenvDecision(approval, approved: true)
+            self.helperBridge.rememberDotenvApproval(approval) { _ in
             }
         }
     }
