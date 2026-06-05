@@ -178,8 +178,10 @@ for tool in aws git; do
   }
 done
 
+WWW_BUCKET="${WWW_BUCKET:-${WWW_DOMAIN:-}}"
+
 if [[ -z "${WWW_BUCKET:-}" ]]; then
-  die "Set WWW_BUCKET in .envrc."
+  die "Set WWW_BUCKET or WWW_DOMAIN in .envrc."
 fi
 
 format_duration() {
