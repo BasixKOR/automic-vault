@@ -578,7 +578,7 @@ final class NukeHelperBridge {
             do {
                 guard let proxy = try self.remoteProxy(
                     progressHandler: nil,
-                    blessingPolicy: .compatibleInstalledOnly
+                    blessingPolicy: .installedOnly
                 ) else {
                     DispatchQueue.main.async {
                         completion(.success(.approveEveryTime))
