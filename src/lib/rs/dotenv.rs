@@ -1364,7 +1364,7 @@ fn print_shell_unload(shell: DotenvShell, previous: &PreviousDotenvState) {
     if previous.env_path.is_some() || !previous.keys.is_empty() {
         print_shell_status_message(
             shell,
-            &dotenv_status_message(
+            &dotenv_unloading_status_message(
                 "unloading",
                 previous.env_path.as_deref(),
                 previous.keys.len(),
@@ -1400,11 +1400,7 @@ fn print_shell_exports(
     let keys = loaded.values.keys().cloned().collect::<Vec<_>>();
     print_shell_status_message(
         shell,
-        &dotenv_status_message(
-            "loading",
-            Some(loaded.env_path.to_string_lossy().as_ref()),
-            keys.len(),
-        ),
+        &dotenv_loading_status_message(&loaded.env_path, &keys),
     );
     match shell {
         DotenvShell::Bash | DotenvShell::Zsh => {
@@ -1452,12 +1448,49 @@ fn print_shell_status_message(shell: DotenvShell, message: &str) {
     }
 }
 
-fn dotenv_status_message(action: &str, env_path: Option<&str>, key_count: usize) -> String {
+fn dotenv_loading_status_message(env_path: &Path, keys: &[String]) -> String {
+    let key_list = keys
+        .iter()
+        .map(|key| format!("+{key}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let path = dotenv_display_path(env_path);
+    if key_list.is_empty() {
+        format!("av dotenv: loading {path}")
+    } else {
+        format!("av dotenv: loading {path} {key_list}")
+    }
+}
+
+fn dotenv_unloading_status_message(
+    action: &str,
+    env_path: Option<&str>,
+    key_count: usize,
+) -> String {
     let subject = env_path.unwrap_or("dotenv keys");
     format!(
         "av dotenv: {action} {subject} ({key_count} {})",
         if key_count == 1 { "key" } else { "keys" }
     )
+}
+
+fn dotenv_display_path(path: &Path) -> String {
+    let Some(home) = env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    else {
+        return path.to_string_lossy().into_owned();
+    };
+
+    if path == home {
+        return "~".to_string();
+    }
+
+    path.strip_prefix(&home)
+        .ok()
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .map(|relative| format!("~/{}", relative.to_string_lossy()))
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 fn request_dotenv_approval_if_needed(
@@ -2167,6 +2200,8 @@ mod tests {
 
     #[test]
     fn dotenv_shell_exports_unset_previous_keys() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let _env = DotenvEnvGuard::set(&[("HOME", "/tmp")]);
         let loaded = DotenvLoadedSecrets {
             env_path: PathBuf::from("/tmp/project/.env"),
             project_root: PathBuf::from("/tmp/project"),
@@ -2177,12 +2212,19 @@ mod tests {
         assert_eq!(shell_quote("bar baz"), "'bar baz'");
         assert_eq!(loaded.values["FOO"], "bar baz");
         assert_eq!(
-            dotenv_status_message("loading", Some("/tmp/project/.env"), 1),
-            "av dotenv: loading /tmp/project/.env (1 key)"
+            dotenv_loading_status_message(
+                Path::new("/tmp/project/.env"),
+                &["FOO".to_string(), "BAR".to_string()]
+            ),
+            "av dotenv: loading ~/project/.env +FOO +BAR"
         );
         assert_eq!(
-            dotenv_status_message("unloading", None, 2),
+            dotenv_unloading_status_message("unloading", None, 2),
             "av dotenv: unloading dotenv keys (2 keys)"
+        );
+        assert_eq!(
+            dotenv_display_path(Path::new("/var/tmp/project/.env")),
+            "/var/tmp/project/.env"
         );
     }
 
