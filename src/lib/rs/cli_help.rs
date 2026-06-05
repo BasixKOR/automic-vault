@@ -271,6 +271,7 @@ impl<'a> HelpScreen<'a> {
                 "Run an approved credential helper adapter.",
             ),
             command_line("dotenv", None, "Load encrypted dotenv files with approval."),
+            HelpLine::plain(""),
             section_line("EXECUTION CONTROL"),
             command_line(
                 "contain",
