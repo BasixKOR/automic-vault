@@ -449,16 +449,51 @@ final class DotenvApprovalView: NSView {
     }
 
     private var requesterSummary: NSAttributedString {
-        let processName = approval.parentProcess.displayName
-            ?? approval.parentProcess.executablePath
-            ?? L10n.string("unknown process")
         let result = NSMutableAttributedString()
-        result.append(bold(processName))
-        result.append(plain(L10n.string("; pid ")))
-        result.append(bold("\(approval.parentProcess.pid)"))
+        if let application = requestingApplication {
+            result.append(bold(application.displayName))
+            result.append(plain(L10n.string("; pid ")))
+            result.append(bold("\(application.pid)"))
+            if application.pid != approval.parentProcess.pid {
+                result.append(plain("; via "))
+                result.append(bold(parentProcessName))
+                result.append(plain(" pid "))
+                result.append(bold("\(approval.parentProcess.pid)"))
+            }
+        } else {
+            result.append(bold(parentProcessName))
+            result.append(plain(L10n.string("; pid ")))
+            result.append(bold("\(approval.parentProcess.pid)"))
+        }
         result.append(plain(L10n.string("; cwd: ")))
         result.append(code(abbreviatedPath(approval.cwd)))
         return result
+    }
+
+    private var parentProcessName: String {
+        approval.parentProcess.displayName
+            ?? approval.parentProcess.executablePath
+            ?? L10n.string("unknown process")
+    }
+
+    private var requestingApplication: RequestingApplication? {
+        approval.processAncestry.compactMap { process in
+            guard let executablePath = process.executablePath,
+                  let displayName = Self.applicationDisplayName(from: executablePath)
+            else {
+                return nil
+            }
+            return RequestingApplication(
+                pid: process.pid,
+                displayName: displayName
+            )
+        }.first
+    }
+
+    private static func applicationDisplayName(from executablePath: String) -> String? {
+        URL(fileURLWithPath: executablePath)
+            .pathComponents
+            .first(where: { $0.hasSuffix(".app") })
     }
 
     private var displayCommand: String {
@@ -533,6 +568,11 @@ final class DotenvApprovalView: NSView {
     private struct Status {
         let title: String
         let color: NSColor
+    }
+
+    private struct RequestingApplication {
+        let pid: Int32
+        let displayName: String
     }
 
     private final class WrappingPillView: NSView {

@@ -122,12 +122,22 @@ struct DotenvApprovalRequestSnapshot {
     cwd: String,
     parent_process: DotenvParentProcessSnapshot,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    process_ancestry: Vec<DotenvProcessSnapshot>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     command: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct DotenvParentProcessSnapshot {
     pid: i32,
+    executable_path: Option<String>,
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct DotenvProcessSnapshot {
+    pid: i32,
+    parent_pid: i32,
     executable_path: Option<String>,
     display_name: Option<String>,
 }
@@ -1783,6 +1793,7 @@ fn request_dotenv_approval(
             .map_err(|err| format!("failed to compute request timestamp: {err}"))?
             .as_millis()
     );
+    let parent_process = dotenv_parent_process_snapshot();
     let request = DotenvApprovalRequestSnapshot {
         id: request_id.clone(),
         mode: entry.mode,
@@ -1795,7 +1806,8 @@ fn request_dotenv_approval(
             .map_err(|err| format!("failed to resolve current directory: {err}"))?
             .to_string_lossy()
             .into_owned(),
-        parent_process: dotenv_parent_process_snapshot(),
+        process_ancestry: dotenv_process_ancestry_snapshot(parent_process.pid),
+        parent_process,
         command: command.to_vec(),
     };
     let pending_url = dotenv_pending_approval_path()?;
@@ -2124,16 +2136,19 @@ fn dotenv_system_remembered_approvals_requires_root_control() -> bool {
 fn dotenv_parent_process_snapshot() -> DotenvParentProcessSnapshot {
     let pid = unsafe { libc::getppid() };
     let executable_path = dotenv_parent_process_path(pid);
-    let display_name = executable_path
-        .as_deref()
-        .and_then(|path| Path::new(path).file_name())
-        .and_then(|name| name.to_str())
-        .map(str::to_string);
+    let display_name = dotenv_process_display_name(executable_path.as_deref());
     DotenvParentProcessSnapshot {
         pid,
         executable_path,
         display_name,
     }
+}
+
+fn dotenv_process_display_name(executable_path: Option<&str>) -> Option<String> {
+    executable_path
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
 }
 
 #[cfg(target_os = "macos")]
@@ -2152,6 +2167,69 @@ fn dotenv_parent_process_path(pid: i32) -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn dotenv_parent_process_path(_pid: i32) -> Option<String> {
     None
+}
+
+fn dotenv_process_ancestry_snapshot(start_pid: i32) -> Vec<DotenvProcessSnapshot> {
+    let mut ancestry = Vec::new();
+    let mut seen = HashSet::new();
+    let mut pid = start_pid;
+
+    for _ in 0..16 {
+        if pid <= 0 || !seen.insert(pid) {
+            break;
+        }
+        let Some(snapshot) = dotenv_process_snapshot(pid) else {
+            break;
+        };
+        let parent_pid = snapshot.parent_pid;
+        ancestry.push(snapshot);
+        if parent_pid <= 1 || parent_pid == pid {
+            break;
+        }
+        pid = parent_pid;
+    }
+
+    ancestry
+}
+
+#[cfg(target_os = "macos")]
+fn dotenv_process_snapshot(pid: i32) -> Option<DotenvProcessSnapshot> {
+    let output = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "ppid=", "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let line = String::from_utf8(output.stdout).ok()?;
+    let (parent_pid, executable_path) = parse_dotenv_process_info_line(line.trim())?;
+    let display_name = dotenv_process_display_name(executable_path.as_deref());
+    Some(DotenvProcessSnapshot {
+        pid,
+        parent_pid,
+        executable_path,
+        display_name,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn dotenv_process_snapshot(_pid: i32) -> Option<DotenvProcessSnapshot> {
+    None
+}
+
+fn parse_dotenv_process_info_line(line: &str) -> Option<(i32, Option<String>)> {
+    let line = line.trim_start();
+    let split_at = line
+        .char_indices()
+        .find_map(|(index, character)| character.is_whitespace().then_some(index))?;
+    let parent_pid = line[..split_at].trim().parse().ok()?;
+    let executable_path = line[split_at..].trim();
+    let executable_path = if executable_path.is_empty() {
+        None
+    } else {
+        Some(executable_path.to_string())
+    };
+    Some((parent_pid, executable_path))
 }
 
 fn dotenv_user_approval_root() -> Result<PathBuf, String> {
@@ -3364,6 +3442,25 @@ mod tests {
         drop(_env);
         let _env = DotenvEnvGuard::unset(&["HOME"]);
         assert_eq!(dotenv_user_approval_root().unwrap_err(), "HOME is not set");
+    }
+
+    #[test]
+    fn dotenv_process_info_parser_preserves_paths_with_spaces() {
+        let (parent_pid, executable_path) = parse_dotenv_process_info_line(
+            "   42 /Applications/Visual Studio Code.app/Contents/MacOS/Electron",
+        )
+        .unwrap();
+
+        assert_eq!(parent_pid, 42);
+        assert_eq!(
+            executable_path.as_deref(),
+            Some("/Applications/Visual Studio Code.app/Contents/MacOS/Electron")
+        );
+        assert_eq!(
+            parse_dotenv_process_info_line("  42   ").unwrap(),
+            (42, None)
+        );
+        assert!(parse_dotenv_process_info_line("not-a-pid /bin/zsh").is_none());
     }
 
     #[test]

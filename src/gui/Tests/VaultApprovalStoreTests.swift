@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import AutomicVaultApp
 
@@ -25,6 +26,7 @@ final class VaultApprovalStoreTests: XCTestCase {
 
         XCTAssertEqual(approval.id, "request-1")
         XCTAssertEqual(approval.mode, .export)
+        XCTAssertEqual(approval.processAncestry, [])
         XCTAssertEqual(approval.command, [])
     }
 
@@ -54,6 +56,99 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertEqual(approval.command, ["/usr/bin/env"])
     }
 
+    func testDotenvApprovalRequestDecodesProcessAncestryWhenPresent() throws {
+        let data = Data("""
+        {
+          "id": "request-3",
+          "mode": "export",
+          "env_file_path": "/tmp/project/.env",
+          "project_root": "/tmp/project",
+          "env_sha256": "abc",
+          "public_key_fingerprint": "def",
+          "keys": ["FOO"],
+          "cwd": "/tmp/project",
+          "parent_process": {
+            "pid": 123,
+            "executable_path": "/bin/zsh",
+            "display_name": "zsh"
+          },
+          "process_ancestry": [
+            {
+              "pid": 123,
+              "parent_pid": 456,
+              "executable_path": "/bin/zsh",
+              "display_name": "zsh"
+            },
+            {
+              "pid": 456,
+              "parent_pid": 1,
+              "executable_path": "/Applications/Codex.app/Contents/MacOS/Codex",
+              "display_name": "Codex"
+            }
+          ]
+        }
+        """.utf8)
+
+        let approval = try JSONDecoder().decode(DotenvApprovalRequestSnapshot.self, from: data)
+
+        XCTAssertEqual(approval.processAncestry.count, 2)
+        XCTAssertEqual(approval.processAncestry[0].parentPid, 456)
+        XCTAssertEqual(
+            approval.processAncestry[1].executablePath,
+            "/Applications/Codex.app/Contents/MacOS/Codex"
+        )
+    }
+
+    func testDotenvApprovalViewShowsApplicationAncestor() throws {
+        let approval = dotenvApproval(
+            keys: ["FOO"],
+            processAncestry: [
+                DotenvProcessSnapshot(
+                    pid: 123,
+                    parentPid: 456,
+                    executablePath: "/bin/zsh",
+                    displayName: "zsh"
+                ),
+                DotenvProcessSnapshot(
+                    pid: 456,
+                    parentPid: 1,
+                    executablePath: "/Applications/Codex.app/Contents/MacOS/Codex",
+                    displayName: "Codex"
+                ),
+            ]
+        )
+        let view = DotenvApprovalView(approval: approval)
+        let text = textFields(in: view).joined(separator: "\n")
+
+        XCTAssertTrue(text.contains("Codex.app"), text)
+        XCTAssertTrue(text.contains("via zsh"), text)
+    }
+
+    func testDotenvApprovalViewShowsOutermostApplicationForNestedHelpers() throws {
+        let approval = dotenvApproval(
+            keys: ["FOO"],
+            processAncestry: [
+                DotenvProcessSnapshot(
+                    pid: 123,
+                    parentPid: 456,
+                    executablePath: "/bin/zsh",
+                    displayName: "zsh"
+                ),
+                DotenvProcessSnapshot(
+                    pid: 456,
+                    parentPid: 1,
+                    executablePath: "/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)",
+                    displayName: "Code Helper (Plugin)"
+                ),
+            ]
+        )
+        let view = DotenvApprovalView(approval: approval)
+        let text = textFields(in: view).joined(separator: "\n")
+
+        XCTAssertTrue(text.contains("Visual Studio Code.app"), text)
+        XCTAssertFalse(text.contains("Code Helper (Plugin).app"), text)
+    }
+
     func testDotenvApprovalViewWrapsOverflowingKeyPills() throws {
         let compactView = DotenvApprovalView(approval: dotenvApproval(keys: ["FOO", "BAR"]))
         let wrappedView = DotenvApprovalView(approval: dotenvApproval(keys: [
@@ -80,7 +175,10 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxPillX, keyFlow.bounds.width + 0.5)
     }
 
-    private func dotenvApproval(keys: [String]) -> DotenvApprovalRequestSnapshot {
+    private func dotenvApproval(
+        keys: [String],
+        processAncestry: [DotenvProcessSnapshot] = []
+    ) -> DotenvApprovalRequestSnapshot {
         DotenvApprovalRequestSnapshot(
             id: "request-1",
             mode: .export,
@@ -94,7 +192,17 @@ final class VaultApprovalStoreTests: XCTestCase {
                 pid: 123,
                 executablePath: "/bin/zsh",
                 displayName: "zsh"
-            )
+            ),
+            processAncestry: processAncestry
         )
+    }
+
+    private func textFields(in view: NSView) -> [String] {
+        let current = (view as? NSTextField).map {
+            $0.attributedStringValue.string.isEmpty
+                ? $0.stringValue
+                : $0.attributedStringValue.string
+        }
+        return (current.map { [$0] } ?? []) + view.subviews.flatMap(textFields)
     }
 }

@@ -79,6 +79,20 @@ struct IsotopeParentProcessSnapshot: Codable, Equatable {
     }
 }
 
+struct DotenvProcessSnapshot: Codable, Equatable {
+    let pid: Int32
+    let parentPid: Int32
+    let executablePath: String?
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pid
+        case parentPid = "parent_pid"
+        case executablePath = "executable_path"
+        case displayName = "display_name"
+    }
+}
+
 struct IsotopeApprovalDecision: Codable, Equatable {
     let id: String
     let approved: Bool
@@ -143,6 +157,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
     let keys: [String]
     let cwd: String
     let parentProcess: IsotopeParentProcessSnapshot
+    let processAncestry: [DotenvProcessSnapshot]
     let command: [String]
 
     enum CodingKeys: String, CodingKey {
@@ -155,6 +170,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         case keys
         case cwd
         case parentProcess = "parent_process"
+        case processAncestry = "process_ancestry"
         case command
     }
 
@@ -168,6 +184,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         keys: [String],
         cwd: String,
         parentProcess: IsotopeParentProcessSnapshot,
+        processAncestry: [DotenvProcessSnapshot] = [],
         command: [String] = []
     ) {
         self.id = id
@@ -179,6 +196,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         self.keys = keys
         self.cwd = cwd
         self.parentProcess = parentProcess
+        self.processAncestry = processAncestry
         self.command = command
     }
 
@@ -196,6 +214,10 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
             IsotopeParentProcessSnapshot.self,
             forKey: .parentProcess
         )
+        processAncestry = try container.decodeIfPresent(
+            [DotenvProcessSnapshot].self,
+            forKey: .processAncestry
+        ) ?? []
         command = try container.decodeIfPresent([String].self, forKey: .command) ?? []
     }
 }
