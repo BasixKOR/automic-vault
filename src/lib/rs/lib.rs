@@ -68,6 +68,7 @@ pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
 pub(crate) use cli::*;
 pub use cli::{main_entry, scanner_main_entry};
 pub(crate) use cli_help::*;
+pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy};
 pub(crate) use info::*;
 pub(crate) use install::*;
 pub use isotope::isotope_main_entry;
@@ -12015,11 +12016,7 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(findings[0].kind, "secret-assignment");
         assert_eq!(findings[0].line, Some(3));
-        assert!(
-            findings[0]
-                .message
-                .contains("assigned to OPENAI_API_KEY")
-        );
+        assert!(findings[0].message.contains("assigned to OPENAI_API_KEY"));
     }
 
     #[test]

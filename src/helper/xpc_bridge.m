@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 #import <libproc.h>
 
 @protocol NukeHelperProgressProtocol
@@ -35,6 +36,16 @@
                       scriptSha256:(NSString *_Nullable)scriptSha256
                                keys:(NSArray<NSString *> *)keys
                               reply:(void (^)(NSDictionary *result))reply;
+- (void)dotenvApprovalPolicy:(void (^)(NSDictionary *result))reply;
+- (void)setDotenvApprovalPolicy:(NSString *)policy
+                          reply:(void (^)(NSDictionary *result))reply;
+- (void)rememberDotenvApproval:(NSString *)mode
+                   envFilePath:(NSString *)envFilePath
+                    projectRoot:(NSString *)projectRoot
+                      envSha256:(NSString *)envSha256
+           publicKeyFingerprint:(NSString *)publicKeyFingerprint
+                           keys:(NSArray<NSString *> *)keys
+                          reply:(void (^)(NSDictionary *result))reply;
 - (void)refreshRemoteDatabase:(void (^)(BOOL updated))reply;
 - (void)checkForUpdates:(void (^)(BOOL hasUpdates))reply;
 @end
@@ -79,6 +90,22 @@ extern char *nuke_helper_remember_isotope_always_allow(
     const char *executable_path,
     const char *script_path,
     const char *script_sha256,
+    const char *keys_json,
+    void *context,
+    void (*progress_callback)(void *context, const char *event_json));
+extern char *nuke_helper_get_dotenv_approval_policy(
+    void *context,
+    void (*progress_callback)(void *context, const char *event_json));
+extern char *nuke_helper_set_dotenv_approval_policy(
+    const char *policy,
+    void *context,
+    void (*progress_callback)(void *context, const char *event_json));
+extern char *nuke_helper_remember_dotenv_approval(
+    const char *mode,
+    const char *env_file_path,
+    const char *project_root,
+    const char *env_sha256,
+    const char *public_key_fingerprint,
     const char *keys_json,
     void *context,
     void (*progress_callback)(void *context, const char *event_json));
@@ -131,6 +158,75 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
         return @"";
     }
     return [NSString stringWithUTF8String:path_buffer] ?: @"";
+}
+
+static NSArray<NSString *> *nuke_helper_authorized_client_requirements(void) {
+    id requirements =
+        NSBundle.mainBundle.infoDictionary[@"SMAuthorizedClients"];
+    if (![requirements isKindOfClass:[NSArray class]]) {
+        return @[];
+    }
+
+    NSMutableArray<NSString *> *strings =
+        [NSMutableArray arrayWithCapacity:[requirements count]];
+    for (id requirement in requirements) {
+        if ([requirement isKindOfClass:[NSString class]] &&
+            [requirement length] > 0) {
+            [strings addObject:requirement];
+        }
+    }
+    return strings;
+}
+
+static BOOL nuke_helper_connection_satisfies_requirement(
+    NSXPCConnection *connection,
+    NSString *requirementString) {
+    if (connection == nil || requirementString.length == 0) {
+        return NO;
+    }
+
+    NSDictionary *attributes = @{
+        (__bridge NSString *)kSecGuestAttributePid :
+            @(connection.processIdentifier)
+    };
+    SecCodeRef guest = NULL;
+    OSStatus codeStatus = SecCodeCopyGuestWithAttributes(
+        NULL,
+        (__bridge CFDictionaryRef)attributes,
+        kSecCSDefaultFlags,
+        &guest);
+    if (codeStatus != errSecSuccess || guest == NULL) {
+        return NO;
+    }
+
+    SecRequirementRef requirement = NULL;
+    OSStatus requirementStatus = SecRequirementCreateWithString(
+        (__bridge CFStringRef)requirementString,
+        kSecCSDefaultFlags,
+        &requirement);
+    if (requirementStatus != errSecSuccess || requirement == NULL) {
+        CFRelease(guest);
+        return NO;
+    }
+
+    OSStatus checkStatus =
+        SecCodeCheckValidity(guest, kSecCSDefaultFlags, requirement);
+    CFRelease(requirement);
+    CFRelease(guest);
+    return checkStatus == errSecSuccess;
+}
+
+static BOOL nuke_helper_connection_is_authorized_client(
+    NSXPCConnection *connection) {
+    NSArray<NSString *> *requirements =
+        nuke_helper_authorized_client_requirements();
+    for (NSString *requirement in requirements) {
+        if (nuke_helper_connection_satisfies_requirement(connection,
+                                                         requirement)) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 @interface NukeHelperService : NSObject <NSXPCListenerDelegate, NukeHelperProtocol>
@@ -331,6 +427,59 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
              forSelector:@selector(rememberIsotopeAlwaysAllow:scriptPath:scriptSha256:keys:reply:)
            argumentIndex:0
                  ofReply:YES];
+    [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
+                                                [NSArray class],
+                                                [NSString class],
+                                                [NSNumber class],
+                                                [NSNull class], nil]
+             forSelector:@selector(dotenvApprovalPolicy:)
+           argumentIndex:0
+                 ofReply:YES];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(setDotenvApprovalPolicy:reply:)
+           argumentIndex:0
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
+                                                [NSArray class],
+                                                [NSString class],
+                                                [NSNumber class],
+                                                [NSNull class], nil]
+             forSelector:@selector(setDotenvApprovalPolicy:reply:)
+           argumentIndex:0
+                 ofReply:YES];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:0
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:1
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:2
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:3
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:4
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSArray class],
+                                                [NSString class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:5
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
+                                                [NSArray class],
+                                                [NSString class],
+                                                [NSNumber class],
+                                                [NSNull class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+           argumentIndex:0
+                 ofReply:YES];
 
     NSXPCInterface *remote =
         [NSXPCInterface interfaceWithProtocol:@protocol(NukeHelperProgressProtocol)];
@@ -474,7 +623,11 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
                       scriptSha256:(NSString *_Nullable)scriptSha256
                                keys:(NSArray<NSString *> *)keys
                               reply:(void (^)(NSDictionary *result))reply {
-    [self executeWithConnection:NSXPCConnection.currentConnection
+    NSXPCConnection *connection = NSXPCConnection.currentConnection;
+    if (![self requireAuthorizedClientForConnection:connection reply:reply]) {
+        return;
+    }
+    [self executeWithConnection:connection
                          reply:reply
                           body:^char *(void *context, void (*progress_callback)(
                                                       void *, const char *)) {
@@ -482,6 +635,58 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
             executablePath.UTF8String,
             scriptPath.UTF8String,
             scriptSha256.UTF8String,
+            [[self serializeStringArray:keys] UTF8String],
+            context,
+            progress_callback);
+    }];
+}
+
+- (void)dotenvApprovalPolicy:(void (^)(NSDictionary *result))reply {
+    [self executeWithConnection:NSXPCConnection.currentConnection
+                         reply:reply
+                          body:^char *(void *context, void (*progress_callback)(
+                                                      void *, const char *)) {
+        return nuke_helper_get_dotenv_approval_policy(context, progress_callback);
+    }];
+}
+
+- (void)setDotenvApprovalPolicy:(NSString *)policy
+                          reply:(void (^)(NSDictionary *result))reply {
+    NSXPCConnection *connection = NSXPCConnection.currentConnection;
+    if (![self requireAuthorizedClientForConnection:connection reply:reply]) {
+        return;
+    }
+    [self executeWithConnection:connection
+                         reply:reply
+                          body:^char *(void *context, void (*progress_callback)(
+                                                      void *, const char *)) {
+        return nuke_helper_set_dotenv_approval_policy(policy.UTF8String,
+                                                      context,
+                                                      progress_callback);
+    }];
+}
+
+- (void)rememberDotenvApproval:(NSString *)mode
+                   envFilePath:(NSString *)envFilePath
+                    projectRoot:(NSString *)projectRoot
+                      envSha256:(NSString *)envSha256
+           publicKeyFingerprint:(NSString *)publicKeyFingerprint
+                           keys:(NSArray<NSString *> *)keys
+                          reply:(void (^)(NSDictionary *result))reply {
+    NSXPCConnection *connection = NSXPCConnection.currentConnection;
+    if (![self requireAuthorizedClientForConnection:connection reply:reply]) {
+        return;
+    }
+    [self executeWithConnection:connection
+                         reply:reply
+                          body:^char *(void *context, void (*progress_callback)(
+                                                      void *, const char *)) {
+        return nuke_helper_remember_dotenv_approval(
+            mode.UTF8String,
+            envFilePath.UTF8String,
+            projectRoot.UTF8String,
+            envSha256.UTF8String,
+            publicKeyFingerprint.UTF8String,
             [[self serializeStringArray:keys] UTF8String],
             context,
             progress_callback);
@@ -524,6 +729,17 @@ static NSString *nuke_helper_caller_executable_path(NSXPCConnection *connection)
     }
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?:
         @"[]";
+}
+
+- (BOOL)requireAuthorizedClientForConnection:(NSXPCConnection *)connection
+                                       reply:(void (^)(NSDictionary *result))reply {
+    if (nuke_helper_connection_is_authorized_client(connection)) {
+        return YES;
+    }
+    reply(@{
+        @"Err" : @"helper request rejected: unauthorized client",
+    });
+    return NO;
 }
 
 - (void)executeWithConnection:(NSXPCConnection *)connection

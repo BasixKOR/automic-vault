@@ -622,13 +622,99 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var linkBrowser: some View {
-        if let url = model.selectedURL(for: linkTab) {
+        if model.selectedSection == .settings {
+            settingsPanel
+        } else if let url = model.selectedURL(for: linkTab) {
             PackageWebView(url: url)
                 .id(url)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var settingsPanel: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text(L10n.string("Settings"))
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(AVGlassPalette.primaryText)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L10n.string("Dotenv approvals"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AVGlassPalette.primaryText)
+
+                    Toggle(isOn: dotenvRememberApprovedBinding) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.string("Remember approved dotenv files"))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(AVGlassPalette.secondaryText)
+                            Text(dotenvApprovalPolicyStatusText)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(AVGlassPalette.quietText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(
+                        model.isLoadingDotenvApprovalPolicy
+                            || model.isUpdatingDotenvApprovalPolicy
+                    )
+
+                    if model.isLoadingDotenvApprovalPolicy || model.isUpdatingDotenvApprovalPolicy {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(L10n.string("Updating dotenv approval policy"))
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(AVGlassPalette.quietText)
+                        }
+                    }
+
+                    if let error = model.dotenvApprovalPolicyError {
+                        Text(error)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(AVGlassPalette.vulnerableText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: 520, alignment: .leading)
+                .background(
+                    AVGlassPalette.controlFill.opacity(0.55),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(AVGlassPalette.controlBorder.opacity(0.18), lineWidth: 1)
+                )
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollIndicators(.visible)
+    }
+
+    private var dotenvRememberApprovedBinding: Binding<Bool> {
+        Binding(
+            get: { model.dotenvApprovalPolicy == .rememberApproved },
+            set: { isEnabled in
+                model.requestDotenvApprovalPolicy(
+                    isEnabled ? .rememberApproved : .approveEveryTime
+                )
+            }
+        )
+    }
+
+    private var dotenvApprovalPolicyStatusText: String {
+        switch model.dotenvApprovalPolicy {
+        case .approveEveryTime:
+            return L10n.string("Approve every dotenv export and run request.")
+        case .rememberApproved:
+            return L10n.string("Approved dotenv files can be reused while their digest and key list stay unchanged.")
         }
     }
 

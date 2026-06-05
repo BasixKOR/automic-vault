@@ -183,6 +183,70 @@ pub extern "C" fn nuke_helper_remember_isotope_always_allow(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn nuke_helper_get_dotenv_approval_policy(
+    context: *mut c_void,
+    progress_callback: Option<ProgressCallback>,
+) -> *mut c_char {
+    execute_command(
+        HelperCommand::GetDotenvApprovalPolicy,
+        context,
+        progress_callback,
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nuke_helper_set_dotenv_approval_policy(
+    policy: *const c_char,
+    context: *mut c_void,
+    progress_callback: Option<ProgressCallback>,
+) -> *mut c_char {
+    let policy = match c_string(policy)
+        .ok()
+        .and_then(|value| nucleus::DotenvApprovalPolicy::from_raw_value(&value).ok())
+    {
+        Some(policy) => policy,
+        None => return encode_error("invalid dotenv approval policy".to_string()),
+    };
+    execute_command(
+        HelperCommand::SetDotenvApprovalPolicy { policy },
+        context,
+        progress_callback,
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn nuke_helper_remember_dotenv_approval(
+    mode: *const c_char,
+    env_file_path: *const c_char,
+    project_root: *const c_char,
+    env_sha256: *const c_char,
+    public_key_fingerprint: *const c_char,
+    keys_json: *const c_char,
+    context: *mut c_void,
+    progress_callback: Option<ProgressCallback>,
+) -> *mut c_char {
+    let mode = match c_string(mode)
+        .ok()
+        .and_then(|value| nucleus::DotenvApprovalMode::from_raw_value(&value).ok())
+    {
+        Some(mode) => mode,
+        None => return encode_error("invalid dotenv approval mode".to_string()),
+    };
+    execute_command(
+        HelperCommand::RememberDotenvApproval {
+            mode,
+            env_file_path: c_string(env_file_path).unwrap_or_default(),
+            project_root: c_string(project_root).unwrap_or_default(),
+            env_sha256: c_string(env_sha256).unwrap_or_default(),
+            public_key_fingerprint: c_string(public_key_fingerprint).unwrap_or_default(),
+            keys: parse_string_array(keys_json),
+        },
+        context,
+        progress_callback,
+    )
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn nuke_helper_check_for_updates() -> bool {
     if verify_helper_codesign_identity().is_err() {
         return false;
@@ -285,6 +349,8 @@ fn encode_error(message: String) -> *mut c_char {
 struct HelperCommandSuccessWire {
     message: String,
     processed_packages: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
 }
 
 fn sanitize_environment() {

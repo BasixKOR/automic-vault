@@ -329,3 +329,14 @@
 "This command will receive the dotenv keys" = "このコマンドがdotenvキーを受け取ります";
 "Dotenv keys encrypted" = "dotenvキーを暗号化しました";
 "New dotenv entries in %@ were encrypted automatically." = "%@ の新しいdotenvエントリを自動的に暗号化しました。";
+"Approved dotenv files can be reused while their digest and key list stay unchanged." = "承認済みのdotenvファイルは、ダイジェストとキー一覧が変わらない間は再利用できます。";
+"Approve every dotenv export and run request." = "dotenv exportとrunの各リクエストを毎回承認します。";
+"Authorize dotenv approval policy changes for Automic Vault." = "Automic Vaultのdotenv承認ポリシー変更を許可します。";
+"Dotenv approval policy update already in progress" = "dotenv承認ポリシーの更新はすでに進行中です";
+"Dotenv approval policy update failed" = "dotenv承認ポリシーの更新に失敗しました";
+"Dotenv approval policy updated" = "dotenv承認ポリシーを更新しました";
+"Dotenv approvals" = "dotenv承認";
+"Remember approved dotenv files" = "承認済みdotenvファイルを記憶";
+"Updating dotenv approval policy" = "dotenv承認ポリシーを更新中";
+"Updating dotenv approvals to remember approved files" = "承認済みファイルを記憶するようdotenv承認を更新中";
+"Updating dotenv approvals to require approval every time" = "毎回承認を求めるようdotenv承認を更新中";

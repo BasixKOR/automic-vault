@@ -329,3 +329,14 @@
 "This command will receive the dotenv keys" = "Dieser Befehl erhaelt die Dotenv-Keys";
 "Dotenv keys encrypted" = "Dotenv-Keys verschluesselt";
 "New dotenv entries in %@ were encrypted automatically." = "Neue Dotenv-Eintraege in %@ wurden automatisch verschluesselt.";
+"Approved dotenv files can be reused while their digest and key list stay unchanged." = "Genehmigte Dotenv-Dateien koennen wiederverwendet werden, solange Digest und Key-Liste unveraendert bleiben.";
+"Approve every dotenv export and run request." = "Jede dotenv export- und run-Anfrage genehmigen.";
+"Authorize dotenv approval policy changes for Automic Vault." = "Aenderungen an der Dotenv-Genehmigungsrichtlinie fuer Automic Vault autorisieren.";
+"Dotenv approval policy update already in progress" = "Aktualisierung der Dotenv-Richtlinie laeuft bereits";
+"Dotenv approval policy update failed" = "Aktualisierung der Dotenv-Richtlinie fehlgeschlagen";
+"Dotenv approval policy updated" = "Dotenv-Genehmigungsrichtlinie aktualisiert";
+"Dotenv approvals" = "Dotenv-Genehmigungen";
+"Remember approved dotenv files" = "Genehmigte Dotenv-Dateien merken";
+"Updating dotenv approval policy" = "Dotenv-Genehmigungsrichtlinie wird aktualisiert";
+"Updating dotenv approvals to remember approved files" = "Dotenv-Genehmigungen werden auf Merken genehmigter Dateien aktualisiert";
+"Updating dotenv approvals to require approval every time" = "Dotenv-Genehmigungen werden auf jedes Mal genehmigen aktualisiert";

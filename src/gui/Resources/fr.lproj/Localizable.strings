@@ -329,3 +329,14 @@
 "This command will receive the dotenv keys" = "Cette commande recevra les cles dotenv";
 "Dotenv keys encrypted" = "Cles dotenv chiffrees";
 "New dotenv entries in %@ were encrypted automatically." = "Les nouvelles entrees dotenv dans %@ ont ete chiffrees automatiquement.";
+"Approved dotenv files can be reused while their digest and key list stay unchanged." = "Les fichiers dotenv approuves peuvent etre reutilises tant que leur empreinte et leur liste de cles ne changent pas.";
+"Approve every dotenv export and run request." = "Approuver chaque demande dotenv export et run.";
+"Authorize dotenv approval policy changes for Automic Vault." = "Autoriser les changements de politique d approbation dotenv pour Automic Vault.";
+"Dotenv approval policy update already in progress" = "Mise a jour de la politique dotenv deja en cours";
+"Dotenv approval policy update failed" = "Echec de la mise a jour de la politique dotenv";
+"Dotenv approval policy updated" = "Politique d approbation dotenv mise a jour";
+"Dotenv approvals" = "Approbations dotenv";
+"Remember approved dotenv files" = "Memoriser les fichiers dotenv approuves";
+"Updating dotenv approval policy" = "Mise a jour de la politique d approbation dotenv";
+"Updating dotenv approvals to remember approved files" = "Mise a jour dotenv pour memoriser les fichiers approuves";
+"Updating dotenv approvals to require approval every time" = "Mise a jour dotenv pour exiger une approbation a chaque fois";

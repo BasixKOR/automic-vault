@@ -1008,7 +1008,7 @@ fn always_allows_usage_at_path(
 }
 
 fn load_always_allow_store() -> Result<IsotopeAlwaysAllowStore, String> {
-    load_always_allow_store_at_path(Path::new(ALWAYS_ALLOW_PATH))
+    load_root_controlled_always_allow_store_at_path(Path::new(ALWAYS_ALLOW_PATH))
 }
 
 fn load_always_allow_store_at_path(path: &Path) -> Result<IsotopeAlwaysAllowStore, String> {
@@ -1019,6 +1019,34 @@ fn load_always_allow_store_at_path(path: &Path) -> Result<IsotopeAlwaysAllowStor
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&contents)
         .map_err(|err| format!("failed to decode {}: {err}", path.display()))
+}
+
+fn load_root_controlled_always_allow_store_at_path(
+    path: &Path,
+) -> Result<IsotopeAlwaysAllowStore, String> {
+    if !path.exists() {
+        return Ok(IsotopeAlwaysAllowStore::default());
+    }
+    if !is_root_controlled_always_allow_file(path)? {
+        return Ok(IsotopeAlwaysAllowStore::default());
+    }
+    load_always_allow_store_at_path(path)
+}
+
+fn is_root_controlled_always_allow_file(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+        return Ok(false);
+    }
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    let parent_metadata = fs::symlink_metadata(parent)
+        .map_err(|err| format!("failed to stat {}: {err}", parent.display()))?;
+    Ok(parent_metadata.is_dir()
+        && parent_metadata.uid() == 0
+        && parent_metadata.mode() & 0o022 == 0)
 }
 
 fn request_isotope_approval(

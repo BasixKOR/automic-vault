@@ -14,7 +14,15 @@ const DOTENV_PUBLIC_KEY_PREFIX: &str = "DOTENV_PUBLIC_KEY";
 const DOTENV_PRIVATE_KEY_PREFIX: &str = "DOTENV_PRIVATE_KEY";
 const DOTENV_USER_APPROVAL_SUBDIR: &str = "dotenv";
 const DOTENV_APPROVAL_NOTIFICATION: &str = "com.automicvault.dotenv-approval.pending-changed";
-const DOTENV_REMEMBERED_APPROVALS: &str = "remembered-approvals.json";
+const DOTENV_SYSTEM_POLICY_PATH: &str =
+    "/Library/Application Support/Automic Vault/dotenv/policy.json";
+const DOTENV_SYSTEM_REMEMBERED_APPROVALS_PATH: &str =
+    "/Library/Application Support/Automic Vault/dotenv/remembered-approvals.json";
+#[cfg(test)]
+const AV_TEST_DOTENV_POLICY_PATH_ENV: &str = "AV_TEST_DOTENV_POLICY_PATH";
+#[cfg(test)]
+const AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV: &str =
+    "AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH";
 const AV_DOTENV_FILE_ENV: &str = "AV_DOTENV_FILE";
 const AV_DOTENV_DIGEST_ENV: &str = "AV_DOTENV_DIGEST";
 const AV_DOTENV_KEYS_ENV: &str = "AV_DOTENV_KEYS";
@@ -80,9 +88,26 @@ enum DotenvShell {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum DotenvApprovalMode {
+pub enum DotenvApprovalMode {
     Export,
     Run,
+}
+
+impl DotenvApprovalMode {
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            DotenvApprovalMode::Export => "export",
+            DotenvApprovalMode::Run => "run",
+        }
+    }
+
+    pub fn from_raw_value(value: &str) -> Result<Self, String> {
+        match value {
+            "export" => Ok(DotenvApprovalMode::Export),
+            "run" => Ok(DotenvApprovalMode::Run),
+            other => Err(format!("unknown dotenv approval mode: {other}")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -127,6 +152,37 @@ struct DotenvRememberedApprovalEntry {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 struct DotenvRememberedApprovalStore {
     entries: Vec<DotenvRememberedApprovalEntry>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DotenvApprovalPolicy {
+    #[default]
+    #[serde(rename = "approve_every_time")]
+    ApproveEveryTime,
+    #[serde(rename = "remember_approved")]
+    RememberApproved,
+}
+
+impl DotenvApprovalPolicy {
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            DotenvApprovalPolicy::ApproveEveryTime => "approve_every_time",
+            DotenvApprovalPolicy::RememberApproved => "remember_approved",
+        }
+    }
+
+    pub fn from_raw_value(value: &str) -> Result<Self, String> {
+        match value {
+            "approve_every_time" => Ok(DotenvApprovalPolicy::ApproveEveryTime),
+            "remember_approved" => Ok(DotenvApprovalPolicy::RememberApproved),
+            other => Err(format!("unknown dotenv approval policy: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct DotenvPolicyFile {
+    approval_policy: DotenvApprovalPolicy,
 }
 
 impl DotenvRememberedApprovalStore {
@@ -1237,6 +1293,13 @@ fn validate_dotenv_key_name(key: &str) -> Result<(), String> {
     }
 }
 
+fn validate_sha256_hex(value: &str) -> Result<(), String> {
+    if value.len() != 64 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("dotenv sha256 must be a 64-character hex digest".to_string());
+    }
+    Ok(())
+}
+
 fn is_valid_dotenv_key_name(key: &str) -> bool {
     let mut chars = key.chars();
     match chars.next() {
@@ -1510,11 +1573,14 @@ fn request_dotenv_approval_if_needed(
         public_key_fingerprint: public_key_fingerprint.to_string(),
         keys: keys.to_vec(),
     };
-    if load_dotenv_remembered_approvals()?.contains(&entry) {
+    let policy = load_dotenv_approval_policy().unwrap_or_default();
+    if policy == DotenvApprovalPolicy::RememberApproved
+        && load_dotenv_remembered_approvals()?.contains(&entry)
+    {
         return Ok(());
     }
     request_dotenv_approval(&entry, command)?;
-    remember_dotenv_approval(entry)
+    Ok(())
 }
 
 fn request_dotenv_approval(
@@ -1577,8 +1643,28 @@ fn wait_for_dotenv_decision(id: &str) -> Result<(), String> {
 }
 
 fn load_dotenv_remembered_approvals() -> Result<DotenvRememberedApprovalStore, String> {
-    let path = dotenv_remembered_approvals_path()?;
+    let path = dotenv_system_remembered_approvals_path();
+    load_dotenv_remembered_approvals_at_path(
+        &path,
+        dotenv_system_remembered_approvals_requires_root_control(),
+    )
+}
+
+#[cfg(test)]
+fn load_dotenv_remembered_approvals_for_test(
+    path: &Path,
+) -> Result<DotenvRememberedApprovalStore, String> {
+    load_dotenv_remembered_approvals_at_path(path, false)
+}
+
+fn load_dotenv_remembered_approvals_at_path(
+    path: &Path,
+    require_root_controlled: bool,
+) -> Result<DotenvRememberedApprovalStore, String> {
     if !path.exists() {
+        return Ok(DotenvRememberedApprovalStore::default());
+    }
+    if require_root_controlled && !dotenv_system_file_is_trusted(path)? {
         return Ok(DotenvRememberedApprovalStore::default());
     }
     let contents = fs::read_to_string(&path)
@@ -1588,9 +1674,263 @@ fn load_dotenv_remembered_approvals() -> Result<DotenvRememberedApprovalStore, S
 }
 
 fn remember_dotenv_approval(entry: DotenvRememberedApprovalEntry) -> Result<(), String> {
-    let mut store = load_dotenv_remembered_approvals()?;
+    let path = dotenv_system_remembered_approvals_path();
+    remember_dotenv_approval_at_path(
+        &path,
+        entry,
+        dotenv_system_remembered_approvals_requires_root_control(),
+    )
+}
+
+#[cfg(test)]
+fn remember_dotenv_approval_for_test(
+    path: &Path,
+    entry: DotenvRememberedApprovalEntry,
+) -> Result<(), String> {
+    remember_dotenv_approval_at_path(path, entry, false)
+}
+
+fn remember_dotenv_approval_at_path(
+    path: &Path,
+    entry: DotenvRememberedApprovalEntry,
+    require_root_controlled_parent: bool,
+) -> Result<(), String> {
+    let mut store = load_dotenv_remembered_approvals_at_path(path, require_root_controlled_parent)?;
     store.remember(entry);
-    write_dotenv_json(&dotenv_remembered_approvals_path()?, &store)
+    write_dotenv_system_json(path, &store, require_root_controlled_parent)
+}
+
+pub(crate) fn remember_dotenv_approval_from_helper(
+    mode: DotenvApprovalMode,
+    env_file_path: &str,
+    project_root: &str,
+    env_sha256: &str,
+    public_key_fingerprint: &str,
+    mut keys: Vec<String>,
+) -> Result<(), String> {
+    if load_dotenv_approval_policy()? != DotenvApprovalPolicy::RememberApproved {
+        return Ok(());
+    }
+    validate_dotenv_approval_entry(
+        mode,
+        env_file_path,
+        project_root,
+        env_sha256,
+        public_key_fingerprint,
+        &mut keys,
+    )
+    .and_then(remember_dotenv_approval)
+}
+
+fn validate_dotenv_approval_entry(
+    mode: DotenvApprovalMode,
+    env_file_path: &str,
+    project_root: &str,
+    env_sha256: &str,
+    public_key_fingerprint: &str,
+    keys: &mut Vec<String>,
+) -> Result<DotenvRememberedApprovalEntry, String> {
+    validate_sha256_hex(env_sha256)?;
+    if public_key_fingerprint.is_empty() {
+        return Err("dotenv public key fingerprint is empty".to_string());
+    }
+    for key in keys.iter() {
+        validate_dotenv_key_name(key)?;
+    }
+    keys.sort();
+    keys.dedup();
+
+    let env_path = resolve_dotenv_path(Path::new(env_file_path))?;
+    let project_root_path = resolve_dotenv_path(Path::new(project_root))?;
+    let expected_project_root = env_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    if project_root_path != expected_project_root {
+        return Err("dotenv approval project root does not match env file".to_string());
+    }
+    let actual_sha256 = sha256_file_hex(&env_path)?;
+    if actual_sha256 != env_sha256 {
+        return Err("dotenv file changed before approval could be remembered".to_string());
+    }
+    let document = DotenvDocument::load(&env_path)?;
+    let (_public_key_name, public_key) = document
+        .public_key()
+        .ok_or_else(|| format!("{} is missing DOTENV_PUBLIC_KEY", document.path.display()))?;
+    if self::public_key_fingerprint(&public_key) != public_key_fingerprint {
+        return Err("dotenv public key fingerprint mismatch".to_string());
+    }
+    let available_keys = document
+        .lines
+        .iter()
+        .filter_map(|line| line.assignment.as_ref())
+        .filter(|assignment| {
+            !is_public_key_name(&assignment.key) && is_valid_dotenv_key_name(&assignment.key)
+        })
+        .map(|assignment| assignment.key.clone())
+        .collect::<HashSet<_>>();
+    if keys.iter().any(|key| !available_keys.contains(key)) {
+        return Err("dotenv approval includes keys that are not in the env file".to_string());
+    }
+
+    Ok(DotenvRememberedApprovalEntry {
+        mode,
+        env_file_path: env_path.to_string_lossy().into_owned(),
+        project_root: expected_project_root.to_string_lossy().into_owned(),
+        env_sha256: actual_sha256,
+        public_key_fingerprint: public_key_fingerprint.to_string(),
+        keys: keys.clone(),
+    })
+}
+
+pub(crate) fn load_dotenv_approval_policy() -> Result<DotenvApprovalPolicy, String> {
+    let path = dotenv_system_policy_path();
+    load_dotenv_approval_policy_at_path(&path, dotenv_system_policy_requires_root_control())
+}
+
+#[cfg(test)]
+fn load_dotenv_approval_policy_for_test(path: &Path) -> Result<DotenvApprovalPolicy, String> {
+    load_dotenv_approval_policy_at_path(path, false)
+}
+
+fn load_dotenv_approval_policy_at_path(
+    path: &Path,
+    require_root_controlled: bool,
+) -> Result<DotenvApprovalPolicy, String> {
+    if !path.exists() {
+        return Ok(DotenvApprovalPolicy::ApproveEveryTime);
+    }
+    if require_root_controlled && !dotenv_system_file_is_trusted(path)? {
+        return Ok(DotenvApprovalPolicy::ApproveEveryTime);
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let policy_file: DotenvPolicyFile = serde_json::from_str(&contents)
+        .map_err(|err| format!("failed to decode {}: {err}", path.display()))?;
+    Ok(policy_file.approval_policy)
+}
+
+pub(crate) fn write_dotenv_approval_policy(policy: DotenvApprovalPolicy) -> Result<(), String> {
+    let path = dotenv_system_policy_path();
+    write_dotenv_approval_policy_at_path(
+        &path,
+        policy,
+        dotenv_system_policy_requires_root_control(),
+    )
+}
+
+#[cfg(test)]
+fn write_dotenv_approval_policy_for_test(
+    path: &Path,
+    policy: DotenvApprovalPolicy,
+) -> Result<(), String> {
+    write_dotenv_approval_policy_at_path(path, policy, false)
+}
+
+fn write_dotenv_approval_policy_at_path(
+    path: &Path,
+    policy: DotenvApprovalPolicy,
+    require_root_controlled_parent: bool,
+) -> Result<(), String> {
+    write_dotenv_system_json(
+        path,
+        &DotenvPolicyFile {
+            approval_policy: policy,
+        },
+        require_root_controlled_parent,
+    )
+}
+
+fn write_dotenv_system_json<T: Serialize>(
+    path: &Path,
+    value: &T,
+    require_root_controlled_parent: bool,
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("invalid dotenv system path {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o755))
+        .map_err(|err| format!("failed to chmod {}: {err}", parent.display()))?;
+    if require_root_controlled_parent && !dotenv_system_directory_is_trusted(parent)? {
+        return Err(format!(
+            "dotenv approval policy directory is not root-controlled: {}",
+            parent.display()
+        ));
+    }
+
+    let temp_dir = TempDir::new_in(parent)
+        .map_err(|err| format!("failed to create temp dir in {}: {err}", parent.display()))?;
+    let temp_path = temp_dir.path().join(
+        path.file_name()
+            .unwrap_or_else(|| OsStr::new("dotenv-system.json")),
+    );
+    let payload = serde_json::to_vec_pretty(value)
+        .map_err(|err| format!("failed to encode dotenv system JSON: {err}"))?;
+    fs::write(&temp_path, payload)
+        .map_err(|err| format!("failed to write {}: {err}", temp_path.display()))?;
+    fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o644))
+        .map_err(|err| format!("failed to chmod {}: {err}", temp_path.display()))?;
+    fs::rename(&temp_path, path)
+        .map_err(|err| format!("failed to install {}: {err}", path.display()))?;
+    Ok(())
+}
+
+fn dotenv_system_file_is_trusted(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+        return Ok(false);
+    }
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    dotenv_system_directory_is_trusted(parent)
+}
+
+fn dotenv_system_directory_is_trusted(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    Ok(metadata.is_dir() && metadata.uid() == 0 && metadata.mode() & 0o022 == 0)
+}
+
+fn dotenv_system_policy_path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) =
+        env::var_os(AV_TEST_DOTENV_POLICY_PATH_ENV).filter(|value| !value.is_empty())
+    {
+        return PathBuf::from(path);
+    }
+    PathBuf::from(DOTENV_SYSTEM_POLICY_PATH)
+}
+
+fn dotenv_system_remembered_approvals_path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) =
+        env::var_os(AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV).filter(|value| !value.is_empty())
+    {
+        return PathBuf::from(path);
+    }
+    PathBuf::from(DOTENV_SYSTEM_REMEMBERED_APPROVALS_PATH)
+}
+
+fn dotenv_system_policy_requires_root_control() -> bool {
+    #[cfg(test)]
+    if env::var_os(AV_TEST_DOTENV_POLICY_PATH_ENV).is_some_and(|value| !value.is_empty()) {
+        return false;
+    }
+    true
+}
+
+fn dotenv_system_remembered_approvals_requires_root_control() -> bool {
+    #[cfg(test)]
+    if env::var_os(AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV)
+        .is_some_and(|value| !value.is_empty())
+    {
+        return false;
+    }
+    true
 }
 
 fn dotenv_parent_process_snapshot() -> DotenvParentProcessSnapshot {
@@ -1645,10 +1985,6 @@ fn dotenv_decision_path(id: &str) -> Result<PathBuf, String> {
     Ok(dotenv_user_approval_root()?
         .join("decisions")
         .join(format!("{id}.json")))
-}
-
-fn dotenv_remembered_approvals_path() -> Result<PathBuf, String> {
-    Ok(dotenv_user_approval_root()?.join(DOTENV_REMEMBERED_APPROVALS))
 }
 
 fn write_dotenv_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
@@ -2675,12 +3011,46 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
         fs::create_dir_all(&home).unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
         let home_str = home.to_str().unwrap();
-        let _env = DotenvEnvGuard::set(&[("HOME", home_str)]);
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            ("HOME", home_str),
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+        ]);
 
         assert_eq!(
             dotenv_user_approval_root().unwrap(),
             home.join("Library/Application Support/Automic Vault/dotenv")
+        );
+        assert_eq!(
+            load_dotenv_approval_policy().unwrap(),
+            DotenvApprovalPolicy::ApproveEveryTime
+        );
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+        assert_eq!(
+            load_dotenv_approval_policy().unwrap(),
+            DotenvApprovalPolicy::RememberApproved
+        );
+        assert_eq!(
+            load_dotenv_approval_policy_for_test(&policy_path).unwrap(),
+            DotenvApprovalPolicy::RememberApproved
+        );
+        let direct_policy_path = temp.path().join("direct-policy.json");
+        write_dotenv_approval_policy_for_test(
+            &direct_policy_path,
+            DotenvApprovalPolicy::ApproveEveryTime,
+        )
+        .unwrap();
+        assert_eq!(
+            load_dotenv_approval_policy_for_test(&direct_policy_path).unwrap(),
+            DotenvApprovalPolicy::ApproveEveryTime
         );
         assert!(
             load_dotenv_remembered_approvals()
@@ -2701,6 +3071,20 @@ mod tests {
         remember_dotenv_approval(entry.clone()).unwrap();
         let store = load_dotenv_remembered_approvals().unwrap();
         assert_eq!(store.entries, vec![entry.clone()]);
+        assert_eq!(
+            load_dotenv_remembered_approvals_for_test(&remembered_path)
+                .unwrap()
+                .entries,
+            vec![entry.clone()]
+        );
+        let direct_remembered_path = temp.path().join("direct-remembered.json");
+        remember_dotenv_approval_for_test(&direct_remembered_path, entry.clone()).unwrap();
+        assert_eq!(
+            load_dotenv_remembered_approvals_for_test(&direct_remembered_path)
+                .unwrap()
+                .entries,
+            vec![entry.clone()]
+        );
 
         let pending = dotenv_pending_approval_path().unwrap();
         write_dotenv_json(&pending, &entry).unwrap();
@@ -2750,7 +3134,7 @@ mod tests {
             "dotenv approval decision id mismatch"
         );
 
-        fs::write(dotenv_remembered_approvals_path().unwrap(), "not json").unwrap();
+        fs::write(&remembered_path, "not json").unwrap();
         assert!(
             load_dotenv_remembered_approvals()
                 .unwrap_err()
@@ -2759,6 +3143,110 @@ mod tests {
         drop(_env);
         let _env = DotenvEnvGuard::unset(&["HOME"]);
         assert_eq!(dotenv_user_approval_root().unwrap_err(), "HOME is not set");
+    }
+
+    #[test]
+    fn dotenv_helper_remember_validates_policy_and_snapshot() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+        ]);
+
+        let keypair = generate_dotenv_keypair(Path::new(".env"));
+        let env_path = project.join(".env");
+        fs::write(
+            &env_path,
+            format!(
+                "DOTENV_PUBLIC_KEY={}\nFOO=plain\nBAR=plain\n",
+                keypair.public_key
+            ),
+        )
+        .unwrap();
+        let digest = sha256_file_hex(&env_path).unwrap();
+        let fingerprint = public_key_fingerprint(&keypair.public_key);
+        let env_path_str = env_path.to_str().unwrap();
+        let project_str = project.to_str().unwrap();
+
+        remember_dotenv_approval_from_helper(
+            DotenvApprovalMode::Export,
+            env_path_str,
+            project_str,
+            &digest,
+            &fingerprint,
+            vec!["FOO".to_string()],
+        )
+        .unwrap();
+        assert!(
+            load_dotenv_remembered_approvals()
+                .unwrap()
+                .entries
+                .is_empty()
+        );
+
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+        assert_eq!(
+            remember_dotenv_approval_from_helper(
+                DotenvApprovalMode::Export,
+                env_path_str,
+                temp.path().to_str().unwrap(),
+                &digest,
+                &fingerprint,
+                vec!["FOO".to_string()],
+            )
+            .unwrap_err(),
+            "dotenv approval project root does not match env file"
+        );
+        assert_eq!(
+            remember_dotenv_approval_from_helper(
+                DotenvApprovalMode::Export,
+                env_path_str,
+                project_str,
+                &"0".repeat(64),
+                &fingerprint,
+                vec!["FOO".to_string()],
+            )
+            .unwrap_err(),
+            "dotenv file changed before approval could be remembered"
+        );
+        assert_eq!(
+            remember_dotenv_approval_from_helper(
+                DotenvApprovalMode::Export,
+                env_path_str,
+                project_str,
+                &digest,
+                &fingerprint,
+                vec!["MISSING".to_string()],
+            )
+            .unwrap_err(),
+            "dotenv approval includes keys that are not in the env file"
+        );
+
+        remember_dotenv_approval_from_helper(
+            DotenvApprovalMode::Export,
+            env_path_str,
+            project_str,
+            &digest,
+            &fingerprint,
+            vec!["FOO".to_string(), "BAR".to_string(), "FOO".to_string()],
+        )
+        .unwrap();
+        let store = load_dotenv_remembered_approvals().unwrap();
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(
+            store.entries[0].keys,
+            vec!["BAR".to_string(), "FOO".to_string()]
+        );
     }
 
     #[cfg(unix)]
@@ -2770,9 +3258,22 @@ mod tests {
         let project = temp.path().join("project");
         fs::create_dir_all(&project).unwrap();
         fs::create_dir_all(project.join("child")).unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
         let home_str = home.to_str().unwrap();
-        let _env = DotenvEnvGuard::set(&[("HOME", home_str), (AV_DOTENV_KEYS_ENV, "FOO:BAD-NAME")]);
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            ("HOME", home_str),
+            (AV_DOTENV_KEYS_ENV, "FOO:BAD-NAME"),
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+        ]);
         let _unset = DotenvEnvGuard::unset(&["FOO", "BAR", "EXTERNAL"]);
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
 
         let keypair = generate_dotenv_keypair(Path::new(".env"));
         let encrypted_bar = encrypt_dotenv_value("bar secret", &keypair.public_key).unwrap();

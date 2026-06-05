@@ -34,6 +34,12 @@ enum NukeHelperBridgeError: Error, LocalizedError {
 struct NukeHelperResult {
     let message: String
     let processedPackages: [String]
+    let value: String?
+}
+
+enum DotenvApprovalPolicy: String, Equatable {
+    case approveEveryTime = "approve_every_time"
+    case rememberApproved = "remember_approved"
 }
 
 enum NukeHelperProgressEvent {
@@ -100,6 +106,20 @@ final class AVPackageSpec: NSObject, NSSecureCoding {
         _ executablePath: String,
         scriptPath: String?,
         scriptSha256: String?,
+        keys: [String],
+        reply: @escaping ([String: Any]) -> Void
+    )
+    func dotenvApprovalPolicy(_ reply: @escaping ([String: Any]) -> Void)
+    func setDotenvApprovalPolicy(
+        _ policy: String,
+        reply: @escaping ([String: Any]) -> Void
+    )
+    func rememberDotenvApproval(
+        _ mode: String,
+        envFilePath: String,
+        projectRoot: String,
+        envSha256: String,
+        publicKeyFingerprint: String,
         keys: [String],
         reply: @escaping ([String: Any]) -> Void
     )
@@ -219,7 +239,8 @@ final class NukeHelperBridge {
         DispatchQueue.main.asyncAfter(deadline: .now() + cursor + 0.20) {
             completion(.success(NukeHelperResult(
                 message: "Debug fake update complete",
-                processedPackages: Self.debugFakeUpdatePackages
+                processedPackages: Self.debugFakeUpdatePackages,
+                value: nil
             )))
         }
     }
@@ -550,6 +571,108 @@ final class NukeHelperBridge {
         }
     }
 
+    func dotenvApprovalPolicy(
+        completion: @escaping (Result<DotenvApprovalPolicy, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                guard let proxy = try self.remoteProxy(
+                    progressHandler: nil,
+                    blessingPolicy: .compatibleInstalledOnly
+                ) else {
+                    DispatchQueue.main.async {
+                        completion(.success(.approveEveryTime))
+                    }
+                    return
+                }
+                proxy.dotenvApprovalPolicy { result in
+                    self.complete(result) { parsed in
+                        switch parsed {
+                        case .success(let helperResult):
+                            let policy = helperResult.value
+                                .flatMap(DotenvApprovalPolicy.init(rawValue:))
+                                ?? .approveEveryTime
+                            completion(.success(policy))
+                        case .failure(let error):
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func setDotenvApprovalPolicy(
+        _ policy: DotenvApprovalPolicy,
+        completion: @escaping (Result<DotenvApprovalPolicy, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                let proxy = try self.privilegedRemoteProxy(
+                    progressHandler: nil,
+                    errorHandler: { error in
+                        DispatchQueue.main.async {
+                            completion(.failure(error))
+                        }
+                    }
+                )
+                proxy.setDotenvApprovalPolicy(policy.rawValue) { result in
+                    self.complete(result) { parsed in
+                        switch parsed {
+                        case .success(let helperResult):
+                            let policy = helperResult.value
+                                .flatMap(DotenvApprovalPolicy.init(rawValue:))
+                                ?? policy
+                            completion(.success(policy))
+                        case .failure(let error):
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func rememberDotenvApproval(
+        _ approval: DotenvApprovalRequestSnapshot,
+        completion: @escaping (Result<NukeHelperResult, Error>) -> Void
+    ) {
+        queue.async {
+            do {
+                let proxy = try self.privilegedRemoteProxy(
+                    progressHandler: nil,
+                    errorHandler: { error in
+                        DispatchQueue.main.async {
+                            completion(.failure(error))
+                        }
+                    }
+                )
+                proxy.rememberDotenvApproval(
+                    approval.mode.rawValue,
+                    envFilePath: approval.envFilePath,
+                    projectRoot: approval.projectRoot,
+                    envSha256: approval.envSha256,
+                    publicKeyFingerprint: approval.publicKeyFingerprint,
+                    keys: approval.keys
+                ) { result in
+                    self.complete(result, completion: completion)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
     func install(
         packages: [AVPackageSpec],
         progress: @escaping (NukeHelperProgressEvent) -> Void,
@@ -644,7 +767,12 @@ final class NukeHelperBridge {
         }
         let message = success["message"] as? String ?? "Operation complete"
         let processedPackages = success["processed_packages"] as? [String] ?? []
-        return .success(NukeHelperResult(message: message, processedPackages: processedPackages))
+        let value = success["value"] as? String
+        return .success(NukeHelperResult(
+            message: message,
+            processedPackages: processedPackages,
+            value: value
+        ))
     }
 
     private func privilegedRemoteProxy(
@@ -948,6 +1076,66 @@ final class NukeHelperBridge {
         interface.setClasses(
             resultClasses,
             for: #selector(NukeHelperProtocol.rememberIsotopeAlwaysAllow(_:scriptPath:scriptSha256:keys:reply:)),
+            argumentIndex: 0,
+            ofReply: true
+        )
+        interface.setClasses(
+            resultClasses,
+            for: #selector(NukeHelperProtocol.dotenvApprovalPolicy(_:)),
+            argumentIndex: 0,
+            ofReply: true
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.setDotenvApprovalPolicy(_:reply:)),
+            argumentIndex: 0,
+            ofReply: false
+        )
+        interface.setClasses(
+            resultClasses,
+            for: #selector(NukeHelperProtocol.setDotenvApprovalPolicy(_:reply:)),
+            argumentIndex: 0,
+            ofReply: true
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 0,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 1,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 2,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 3,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 4,
+            ofReply: false
+        )
+        interface.setClasses(
+            stringArrayClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            argumentIndex: 5,
+            ofReply: false
+        )
+        interface.setClasses(
+            resultClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
             argumentIndex: 0,
             ofReply: true
         )

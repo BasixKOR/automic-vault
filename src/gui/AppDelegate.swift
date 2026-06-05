@@ -58,7 +58,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installIsotopeApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
         installDotenvApprovalObserverIfNeeded()
-        startDotenvFileWatcher()
         startRemoteDatabaseRefreshTimer()
         applyDockBadge(snapshot: statusStore.loadSnapshot())
         showMainWindow()
@@ -590,20 +589,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             let approved = response == .alertFirstButtonReturn
-            try? self.dotenvApprovalStore.saveDecision(
-                DotenvApprovalDecision(
-                    id: approval.id,
-                    approved: approved,
-                    reason: approved ? nil : "Denied by operator"
-                )
+            self.completeDotenvApproval(approval, approved: approved)
+        }
+    }
+
+    private func completeDotenvApproval(
+        _ approval: DotenvApprovalRequestSnapshot,
+        approved: Bool
+    ) {
+        guard approved else {
+            saveDotenvDecision(approval, approved: false)
+            return
+        }
+        helperBridge.dotenvApprovalPolicy { [weak self] result in
+            guard let self else { return }
+            guard case .success(.rememberApproved) = result else {
+                self.saveDotenvDecision(approval, approved: true)
+                return
+            }
+            self.helperBridge.rememberDotenvApproval(approval) { [weak self] _ in
+                self?.saveDotenvDecision(approval, approved: true)
+            }
+        }
+    }
+
+    private func saveDotenvDecision(
+        _ approval: DotenvApprovalRequestSnapshot,
+        approved: Bool
+    ) {
+        try? dotenvApprovalStore.saveDecision(
+            DotenvApprovalDecision(
+                id: approval.id,
+                approved: approved,
+                reason: approved ? nil : "Denied by operator"
             )
-            if approved {
-                self.dotenvFileWatcher.watch(path: approval.envFilePath)
-            }
-            self.activeDotenvApprovalID = nil
-            DispatchQueue.main.async {
-                self.presentPendingDotenvApprovalIfNeeded()
-            }
+        )
+        if approved {
+            dotenvFileWatcher.watch(path: approval.envFilePath)
+        }
+        activeDotenvApprovalID = nil
+        DispatchQueue.main.async {
+            self.presentPendingDotenvApprovalIfNeeded()
         }
     }
 
@@ -729,10 +755,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func dotenvApprovalAccessoryView(for approval: DotenvApprovalRequestSnapshot) -> NSView {
         DotenvApprovalView(approval: approval)
-    }
-
-    private func startDotenvFileWatcher() {
-        dotenvFileWatcher.watch(paths: dotenvApprovalStore.knownEnvFilePaths())
     }
 
     private func configureUserNotifications() {

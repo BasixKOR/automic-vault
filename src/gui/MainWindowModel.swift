@@ -319,6 +319,11 @@ struct PackageOperationRequest: Equatable {
     let migrationIsotopeName: String?
 }
 
+struct DotenvApprovalPolicyRequest: Equatable {
+    let id: Int
+    let policy: DotenvApprovalPolicy
+}
+
 private enum WebsiteBlogIndexFetchError: Error, LocalizedError {
     case invalidHTTPStatus(Int)
     case missingHTTPResponse
@@ -373,6 +378,11 @@ final class MainWindowModel: ObservableObject {
     @Published private(set) var updateAllRequestID = 0
     @Published private(set) var isUpdatingAll = false
     @Published private(set) var packageOperationRequest: PackageOperationRequest?
+    @Published private(set) var dotenvApprovalPolicyRequest: DotenvApprovalPolicyRequest?
+    @Published private(set) var dotenvApprovalPolicy: DotenvApprovalPolicy = .approveEveryTime
+    @Published private(set) var isLoadingDotenvApprovalPolicy = false
+    @Published private(set) var isUpdatingDotenvApprovalPolicy = false
+    @Published private(set) var dotenvApprovalPolicyError: String?
     @Published private(set) var activePackageOperation: PackageOperationRequest?
     @Published private(set) var automicVaultCLTRecommendation: PackageRecommendation?
     private(set) var newUpdatedLastClickedAt: Date?
@@ -393,6 +403,7 @@ final class MainWindowModel: ObservableObject {
     private var sectionPageRequestIDs: [SectionPageKind: Int] = [:]
     private var detailRequestID = 0
     private var packageOperationRequestID = 0
+    private var dotenvApprovalPolicyRequestID = 0
     private var detailsByPackageName: [String: PackageDetail] = [:]
     private var securityRecommendationTotalCount: Int?
     private var geigerTotalCount: Int?
@@ -753,6 +764,59 @@ final class MainWindowModel: ObservableObject {
             return
         }
         updateAllRequestID += 1
+    }
+
+    func beginDotenvApprovalPolicyLoad() {
+        isLoadingDotenvApprovalPolicy = true
+        dotenvApprovalPolicyError = nil
+    }
+
+    func finishDotenvApprovalPolicyLoad(_ result: Result<DotenvApprovalPolicy, Error>) {
+        isLoadingDotenvApprovalPolicy = false
+        switch result {
+        case .success(let policy):
+            dotenvApprovalPolicy = policy
+            dotenvApprovalPolicyError = nil
+        case .failure(let error):
+            dotenvApprovalPolicy = .approveEveryTime
+            dotenvApprovalPolicyError = error.localizedDescription
+        }
+    }
+
+    func requestDotenvApprovalPolicy(_ policy: DotenvApprovalPolicy) {
+        guard policy != dotenvApprovalPolicy else { return }
+        guard !isUpdatingDotenvApprovalPolicy else {
+            showTransientStatus(L10n.string("Dotenv approval policy update already in progress"))
+            return
+        }
+        dotenvApprovalPolicyRequestID += 1
+        dotenvApprovalPolicyRequest = DotenvApprovalPolicyRequest(
+            id: dotenvApprovalPolicyRequestID,
+            policy: policy
+        )
+    }
+
+    func beginDotenvApprovalPolicyUpdate(_ policy: DotenvApprovalPolicy) {
+        isUpdatingDotenvApprovalPolicy = true
+        dotenvApprovalPolicyError = nil
+        showTransientStatus(
+            policy == .rememberApproved
+                ? L10n.string("Updating dotenv approvals to remember approved files")
+                : L10n.string("Updating dotenv approvals to require approval every time")
+        )
+    }
+
+    func finishDotenvApprovalPolicyUpdate(_ result: Result<DotenvApprovalPolicy, Error>) {
+        isUpdatingDotenvApprovalPolicy = false
+        switch result {
+        case .success(let policy):
+            dotenvApprovalPolicy = policy
+            dotenvApprovalPolicyError = nil
+            showTransientStatus(L10n.string("Dotenv approval policy updated"))
+        case .failure(let error):
+            dotenvApprovalPolicyError = error.localizedDescription
+            showTransientStatus(L10n.string("Dotenv approval policy update failed"))
+        }
     }
 
     func requestAutomicVaultCLTInstall() {

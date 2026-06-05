@@ -329,3 +329,14 @@
 "This command will receive the dotenv keys" = "此命令将接收 dotenv 密钥";
 "Dotenv keys encrypted" = "dotenv 密钥已加密";
 "New dotenv entries in %@ were encrypted automatically." = "%@ 中的新 dotenv 条目已自动加密。";
+"Approved dotenv files can be reused while their digest and key list stay unchanged." = "已批准的 dotenv 文件可在摘要和密钥列表不变时重复使用。";
+"Approve every dotenv export and run request." = "每次 dotenv export 和 run 请求都需要批准。";
+"Authorize dotenv approval policy changes for Automic Vault." = "授权更改 Automic Vault 的 dotenv 批准策略。";
+"Dotenv approval policy update already in progress" = "dotenv 批准策略更新已在进行中";
+"Dotenv approval policy update failed" = "dotenv 批准策略更新失败";
+"Dotenv approval policy updated" = "dotenv 批准策略已更新";
+"Dotenv approvals" = "dotenv 批准";
+"Remember approved dotenv files" = "记住已批准的 dotenv 文件";
+"Updating dotenv approval policy" = "正在更新 dotenv 批准策略";
+"Updating dotenv approvals to remember approved files" = "正在更新 dotenv 批准以记住已批准文件";
+"Updating dotenv approvals to require approval every time" = "正在更新 dotenv 批准以要求每次批准";

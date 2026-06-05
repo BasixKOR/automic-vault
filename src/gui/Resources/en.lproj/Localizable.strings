@@ -318,6 +318,17 @@
 "Approve Dotenv Keys" = "Approve Dotenv Keys";
 "Digest" = "Digest";
 "Dotenv file" = "Dotenv file";
+"Approved dotenv files can be reused while their digest and key list stay unchanged." = "Approved dotenv files can be reused while their digest and key list stay unchanged.";
+"Approve every dotenv export and run request." = "Approve every dotenv export and run request.";
+"Authorize dotenv approval policy changes for Automic Vault." = "Authorize dotenv approval policy changes for Automic Vault.";
+"Dotenv approval policy update already in progress" = "Dotenv approval policy update already in progress";
+"Dotenv approval policy update failed" = "Dotenv approval policy update failed";
+"Dotenv approval policy updated" = "Dotenv approval policy updated";
+"Dotenv approvals" = "Dotenv approvals";
+"Remember approved dotenv files" = "Remember approved dotenv files";
+"Updating dotenv approval policy" = "Updating dotenv approval policy";
+"Updating dotenv approvals to remember approved files" = "Updating dotenv approvals to remember approved files";
+"Updating dotenv approvals to require approval every time" = "Updating dotenv approvals to require approval every time";
 "Dotenv keys" = "Dotenv keys";
 "Export encrypted dotenv keys into this shell." = "Export encrypted dotenv keys into this shell.";
 "export" = "export";

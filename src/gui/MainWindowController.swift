@@ -22,6 +22,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     private weak var helperMaintenanceToolbarItem: NSToolbarItem?
     private var updateAllRequestCancellable: AnyCancellable?
     private var packageOperationRequestCancellable: AnyCancellable?
+    private var dotenvApprovalPolicyRequestCancellable: AnyCancellable?
     private var searchTextCancellable: AnyCancellable?
     private var searchDeactivationRequestCancellable: AnyCancellable?
     private var cltInstallToolbarStateCancellable: AnyCancellable?
@@ -49,6 +50,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         super.init(rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installPackageOperationRequestObserver()
+        installDotenvApprovalPolicyRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
         installAutomicVaultCLTInstallToolbarObserver()
@@ -63,6 +65,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         super.init(coder: coder, rootView: MainWindowView(model: model))
         installUpdateAllRequestObserver()
         installPackageOperationRequestObserver()
+        installDotenvApprovalPolicyRequestObserver()
         installSearchTextObserver()
         installSearchDeactivationObserver()
         installAutomicVaultCLTInstallToolbarObserver()
@@ -139,6 +142,7 @@ final class MainWindowController: NSHostingController<MainWindowView> {
     func applicationWillTerminate() {
         updateAllRequestCancellable?.cancel()
         packageOperationRequestCancellable?.cancel()
+        dotenvApprovalPolicyRequestCancellable?.cancel()
         searchTextCancellable?.cancel()
         searchDeactivationRequestCancellable?.cancel()
         cltInstallToolbarStateCancellable?.cancel()
@@ -171,6 +175,16 @@ final class MainWindowController: NSHostingController<MainWindowView> {
             .sink { [weak self] request in
                 Task { @MainActor in
                     self?.startPackageOperation(request)
+                }
+            }
+    }
+
+    private func installDotenvApprovalPolicyRequestObserver() {
+        dotenvApprovalPolicyRequestCancellable = model.$dotenvApprovalPolicyRequest
+            .compactMap { $0 }
+            .sink { [weak self] request in
+                Task { @MainActor in
+                    self?.startDotenvApprovalPolicyUpdate(request)
                 }
             }
     }
@@ -507,7 +521,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                         processedPackages: Self.mergedProcessedPackages(
                             updateAllSuccess.processedPackages,
                             avSuccess.processedPackages
-                        )
+                        ),
+                        value: nil
                     )))
                 }
             }
@@ -629,7 +644,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                             processedPackages: Self.mergedProcessedPackages(
                                 helperResult.processedPackages,
                                 request.packageNames
-                            )
+                            ),
+                            value: nil
                         )))
                     case .failure(let error):
                         finishOperation(.failure(error))
@@ -720,7 +736,8 @@ final class MainWindowController: NSHostingController<MainWindowView> {
                 request,
                 .success(NukeHelperResult(
                     message: L10n.string("Command Line Tools installer launched"),
-                    processedPackages: request.packageNames
+                    processedPackages: request.packageNames,
+                    value: nil
                 )),
                 refreshAfterSuccess: false
             )
@@ -825,6 +842,37 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
         didStartModel = true
         model.start()
+        loadDotenvApprovalPolicy()
+    }
+
+    private func loadDotenvApprovalPolicy() {
+        model.beginDotenvApprovalPolicyLoad()
+        helperBridge.dotenvApprovalPolicy { [weak self] result in
+            self?.model.finishDotenvApprovalPolicyLoad(result)
+        }
+    }
+
+    private func startDotenvApprovalPolicyUpdate(_ request: DotenvApprovalPolicyRequest) {
+        guard isUpdatingHelper == false,
+              isAuthorizingPrivilegedOperation == false else {
+            model.showTransientStatus(L10n.string("Privileged operation already in progress"))
+            return
+        }
+        authorizePrivilegedHelperOperation(
+            reason: L10n.string("Authorize dotenv approval policy changes for Automic Vault.")
+        ) { [weak self] in
+            self?.setDotenvApprovalPolicy(request.policy)
+        }
+    }
+
+    private func setDotenvApprovalPolicy(_ policy: DotenvApprovalPolicy) {
+        model.beginDotenvApprovalPolicyUpdate(policy)
+        helperBridge.setDotenvApprovalPolicy(policy) { [weak self] result in
+            self?.model.finishDotenvApprovalPolicyUpdate(result)
+            if case .success = result {
+                self?.markHelperMaintenanceSatisfied()
+            }
+        }
     }
 
     private func installToolbarIfNeeded() {

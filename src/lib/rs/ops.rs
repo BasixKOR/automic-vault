@@ -42,6 +42,18 @@ pub enum HelperCommand {
         script_sha256: Option<String>,
         keys: Vec<String>,
     },
+    GetDotenvApprovalPolicy,
+    SetDotenvApprovalPolicy {
+        policy: dotenv::DotenvApprovalPolicy,
+    },
+    RememberDotenvApproval {
+        mode: dotenv::DotenvApprovalMode,
+        env_file_path: String,
+        project_root: String,
+        env_sha256: String,
+        public_key_fingerprint: String,
+        keys: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -77,6 +89,8 @@ pub enum ProgressEvent {
 pub struct HelperCommandSuccess {
     pub message: String,
     pub processed_packages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 pub type HelperCommandResult = Result<HelperCommandSuccess, String>;
@@ -125,6 +139,23 @@ where
             &executable_path,
             script_path.as_deref(),
             script_sha256.as_deref(),
+            keys,
+        ),
+        HelperCommand::GetDotenvApprovalPolicy => get_dotenv_approval_policy(),
+        HelperCommand::SetDotenvApprovalPolicy { policy } => set_dotenv_approval_policy(policy),
+        HelperCommand::RememberDotenvApproval {
+            mode,
+            env_file_path,
+            project_root,
+            env_sha256,
+            public_key_fingerprint,
+            keys,
+        } => remember_dotenv_approval_with_helper(
+            mode,
+            &env_file_path,
+            &project_root,
+            &env_sha256,
+            &public_key_fingerprint,
             keys,
         ),
     };
@@ -631,6 +662,7 @@ fn install_packages(
     Ok(HelperCommandSuccess {
         message: "Install complete".to_string(),
         processed_packages,
+        value: None,
     })
 }
 
@@ -659,6 +691,7 @@ fn uninstall_packages(
     Ok(HelperCommandSuccess {
         message: "Uninstall complete".to_string(),
         processed_packages: package_names,
+        value: None,
     })
 }
 
@@ -689,6 +722,7 @@ fn update_packages(
     Ok(HelperCommandSuccess {
         message: "Update complete".to_string(),
         processed_packages,
+        value: None,
     })
 }
 
@@ -725,6 +759,7 @@ fn update_all_packages(
             "Update complete".to_string()
         },
         processed_packages,
+        value: None,
     })
 }
 
@@ -740,6 +775,7 @@ fn install_isotope_stubs_with_helper(
     Ok(HelperCommandSuccess {
         message: "Isotope stubs installed".to_string(),
         processed_packages: vec![package_name],
+        value: None,
     })
 }
 
@@ -761,6 +797,7 @@ fn install_isotope_root_with_helper(
     Ok(HelperCommandSuccess {
         message: "Isotope root installed".to_string(),
         processed_packages: vec![package_name],
+        value: None,
     })
 }
 
@@ -783,6 +820,7 @@ fn convert_radioisotope_with_helper(
     Ok(HelperCommandSuccess {
         message: "Isotope conversion complete".to_string(),
         processed_packages: vec![package_name],
+        value: None,
     })
 }
 
@@ -1069,6 +1107,50 @@ fn remember_isotope_always_allow(
     )
 }
 
+fn get_dotenv_approval_policy() -> HelperCommandResult {
+    require_root()?;
+    let policy = dotenv::load_dotenv_approval_policy()?;
+    Ok(HelperCommandSuccess {
+        message: "Dotenv approval policy loaded".to_string(),
+        processed_packages: Vec::new(),
+        value: Some(policy.raw_value().to_string()),
+    })
+}
+
+fn set_dotenv_approval_policy(policy: dotenv::DotenvApprovalPolicy) -> HelperCommandResult {
+    require_root()?;
+    dotenv::write_dotenv_approval_policy(policy)?;
+    Ok(HelperCommandSuccess {
+        message: "Dotenv approval policy updated".to_string(),
+        processed_packages: Vec::new(),
+        value: Some(policy.raw_value().to_string()),
+    })
+}
+
+fn remember_dotenv_approval_with_helper(
+    mode: dotenv::DotenvApprovalMode,
+    env_file_path: &str,
+    project_root: &str,
+    env_sha256: &str,
+    public_key_fingerprint: &str,
+    keys: Vec<String>,
+) -> HelperCommandResult {
+    require_root()?;
+    dotenv::remember_dotenv_approval_from_helper(
+        mode,
+        env_file_path,
+        project_root,
+        env_sha256,
+        public_key_fingerprint,
+        keys,
+    )?;
+    Ok(HelperCommandSuccess {
+        message: "Dotenv approval remembered".to_string(),
+        processed_packages: Vec::new(),
+        value: None,
+    })
+}
+
 fn install_cli_tool_records(
     installs: Vec<(&'static str, PathBuf, PathBuf)>,
     progress_callback: Arc<Mutex<Box<ProgressCallback>>>,
@@ -1095,6 +1177,7 @@ fn install_cli_tool_records(
     Ok(HelperCommandSuccess {
         message: "Automic Vault command line tools installed to /usr/local/bin".to_string(),
         processed_packages,
+        value: None,
     })
 }
 
@@ -1131,6 +1214,7 @@ fn remember_isotope_always_allow_at_path(
     Ok(HelperCommandSuccess {
         message: "Isotope always-allow remembered".to_string(),
         processed_packages: Vec::new(),
+        value: None,
     })
 }
 
@@ -1317,6 +1401,16 @@ fn write_isotope_always_allow_store(
         .ok_or_else(|| format!("invalid isotope always-allow path {}", path.display()))?;
     fs::create_dir_all(parent)
         .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o755))
+        .map_err(|err| format!("failed to chmod {}: {err}", parent.display()))?;
+    if path == Path::new(ISOTOPE_ALWAYS_ALLOW_PATH)
+        && !is_root_controlled_isotope_store_directory(parent)?
+    {
+        return Err(format!(
+            "isotope always-allow directory is not root-controlled: {}",
+            parent.display()
+        ));
+    }
     let temp_dir = TempDir::new_in(parent)
         .map_err(|err| format!("failed to create temp dir in {}: {err}", parent.display()))?;
     let temp_path = temp_dir.path().join("always-allow.json");
@@ -1329,6 +1423,12 @@ fn write_isotope_always_allow_store(
     fs::rename(&temp_path, path)
         .map_err(|err| format!("failed to install {}: {err}", path.display()))?;
     Ok(())
+}
+
+fn is_root_controlled_isotope_store_directory(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+    Ok(metadata.is_dir() && metadata.uid() == 0 && metadata.mode() & 0o022 == 0)
 }
 
 #[cfg(test)]
@@ -2383,6 +2483,7 @@ fn make_default_packages(
     Ok(HelperCommandSuccess {
         message: "Package default updated".to_string(),
         processed_packages,
+        value: None,
     })
 }
 
@@ -2393,6 +2494,7 @@ pub(crate) fn make_package_default(package: &str) -> Result<HelperCommandSuccess
     Ok(HelperCommandSuccess {
         message: "Package default updated".to_string(),
         processed_packages: vec![package_name],
+        value: None,
     })
 }
 
