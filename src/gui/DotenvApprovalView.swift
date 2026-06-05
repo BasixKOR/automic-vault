@@ -4,11 +4,19 @@ final class DotenvApprovalView: NSView {
     private enum Metrics {
         static let width: CGFloat = 640
         static let height: CGFloat = 286
+        static let secretsPanelMinHeight: CGFloat = 42
         static let panelRadius: CGFloat = 9
         static let labelWidth: CGFloat = 116
         static let innerPadding: CGFloat = 11
         static let rowHeight: CGFloat = 19
         static let rowSpacing: CGFloat = 4
+        static let titleToPillsSpacing: CGFloat = 16
+        static let pillHeight: CGFloat = 20
+        static let pillHorizontalPadding: CGFloat = 14
+        static let pillSpacing: CGFloat = 6
+        static let pillRowSpacing: CGFloat = 6
+        static let secretsTopPadding: CGFloat = 9
+        static let secretsBottomPadding: CGFloat = 9
     }
 
     private enum Palette {
@@ -24,14 +32,21 @@ final class DotenvApprovalView: NSView {
     }
 
     private let approval: DotenvApprovalRequestSnapshot
+    private let secretsPanelHeight: CGFloat
+    private let contentHeight: CGFloat
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: Metrics.width, height: Metrics.height)
+        NSSize(width: Metrics.width, height: contentHeight)
     }
 
     init(approval: DotenvApprovalRequestSnapshot) {
+        let computedSecretsPanelHeight = Self.secretsPanelHeight(for: approval.keys)
+        let computedContentHeight = Metrics.height
+            + max(0, computedSecretsPanelHeight - Metrics.secretsPanelMinHeight)
         self.approval = approval
-        super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.height))
+        self.secretsPanelHeight = computedSecretsPanelHeight
+        self.contentHeight = computedContentHeight
+        super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: computedContentHeight))
         translatesAutoresizingMaskIntoConstraints = false
         build()
     }
@@ -55,7 +70,7 @@ final class DotenvApprovalView: NSView {
             secrets.leadingAnchor.constraint(equalTo: leadingAnchor),
             secrets.trailingAnchor.constraint(equalTo: trailingAnchor),
             secrets.topAnchor.constraint(equalTo: topAnchor),
-            secrets.heightAnchor.constraint(equalToConstant: 42),
+            secrets.heightAnchor.constraint(equalToConstant: secretsPanelHeight),
 
             project.leadingAnchor.constraint(equalTo: leadingAnchor),
             project.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -78,28 +93,29 @@ final class DotenvApprovalView: NSView {
         let view = makePanel()
         let title = sectionTitle(L10n.string("Dotenv keys"))
 
-        let keyStack = NSStackView()
-        keyStack.orientation = .horizontal
-        keyStack.alignment = .centerY
-        keyStack.spacing = 6
-        keyStack.distribution = .fill
-        keyStack.translatesAutoresizingMaskIntoConstraints = false
+        let keyFlow = WrappingPillView(
+            itemSpacing: Metrics.pillSpacing,
+            lineSpacing: Metrics.pillRowSpacing
+        )
+        keyFlow.translatesAutoresizingMaskIntoConstraints = false
         for key in approval.keys {
-            keyStack.addArrangedSubview(pill(key, color: Palette.accent, monospaced: true))
+            keyFlow.addPill(pill(key, color: Palette.accent, monospaced: true))
         }
 
-        [title, keyStack].forEach {
+        [title, keyFlow].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
 
+        let pillRowsHeight = Self.pillRowsHeight(for: approval.keys)
         NSLayoutConstraint.activate([
             title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.innerPadding),
-            title.topAnchor.constraint(equalTo: view.topAnchor, constant: 9),
+            title.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.secretsTopPadding),
 
-            keyStack.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 16),
-            keyStack.centerYAnchor.constraint(equalTo: title.centerYAnchor),
-            keyStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -Metrics.innerPadding)
+            keyFlow.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: Metrics.titleToPillsSpacing),
+            keyFlow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.innerPadding),
+            keyFlow.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.secretsTopPadding),
+            keyFlow.heightAnchor.constraint(equalToConstant: pillRowsHeight)
         ])
 
         return view
@@ -343,6 +359,8 @@ final class DotenvApprovalView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
 
         let field = label(text, size: 10, weight: .medium, color: color, monospaced: monospaced)
+        field.lineBreakMode = .byTruncatingMiddle
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(field)
 
@@ -354,6 +372,80 @@ final class DotenvApprovalView: NSView {
         ])
 
         return container
+    }
+
+    private static func secretsPanelHeight(for keys: [String]) -> CGFloat {
+        max(
+            Metrics.secretsPanelMinHeight,
+            Metrics.secretsTopPadding
+                + pillRowsHeight(for: keys)
+                + Metrics.secretsBottomPadding
+        )
+    }
+
+    private static func pillRowsHeight(for keys: [String]) -> CGFloat {
+        let lineCount = pillLineCount(for: keys)
+        return CGFloat(lineCount) * Metrics.pillHeight
+            + CGFloat(max(0, lineCount - 1)) * Metrics.pillRowSpacing
+    }
+
+    private static func pillLineCount(for keys: [String]) -> Int {
+        guard keys.isEmpty == false else { return 1 }
+
+        let availableWidth = max(1, pillFlowWidth())
+        var lineCount = 1
+        var lineWidth: CGFloat = 0
+
+        for key in keys {
+            let width = min(pillWidth(for: key), availableWidth)
+            let proposedWidth = lineWidth == 0
+                ? width
+                : lineWidth + Metrics.pillSpacing + width
+
+            if lineWidth > 0, proposedWidth > availableWidth {
+                lineCount += 1
+                lineWidth = width
+            } else {
+                lineWidth = proposedWidth
+            }
+        }
+
+        return lineCount
+    }
+
+    private static func pillFlowWidth() -> CGFloat {
+        let title = L10n.string("Dotenv keys").uppercased()
+        let titleWidth = measuredWidth(
+            title,
+            font: UIStyle.monoFont(size: 9, weight: .semibold),
+            tracking: 0.9
+        )
+
+        return Metrics.width
+            - Metrics.innerPadding
+            - titleWidth
+            - Metrics.titleToPillsSpacing
+            - Metrics.innerPadding
+    }
+
+    private static func pillWidth(for key: String) -> CGFloat {
+        measuredWidth(
+            key,
+            font: UIStyle.monoFont(size: 10, weight: .medium),
+            tracking: 0
+        ) + Metrics.pillHorizontalPadding
+    }
+
+    private static func measuredWidth(
+        _ text: String,
+        font: NSFont,
+        tracking: CGFloat
+    ) -> CGFloat {
+        var attributes: [NSAttributedString.Key: Any] = [.font: font]
+        if tracking != 0 {
+            attributes[.kern] = tracking
+        }
+        return ceil((text as NSString).size(withAttributes: attributes).width)
     }
 
     private var requesterSummary: NSAttributedString {
@@ -441,5 +533,56 @@ final class DotenvApprovalView: NSView {
     private struct Status {
         let title: String
         let color: NSColor
+    }
+
+    private final class WrappingPillView: NSView {
+        private let itemSpacing: CGFloat
+        private let lineSpacing: CGFloat
+        private var pills: [NSView] = []
+
+        override var isFlipped: Bool {
+            true
+        }
+
+        init(itemSpacing: CGFloat, lineSpacing: CGFloat) {
+            self.itemSpacing = itemSpacing
+            self.lineSpacing = lineSpacing
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        func addPill(_ view: NSView) {
+            view.translatesAutoresizingMaskIntoConstraints = true
+            pills.append(view)
+            addSubview(view)
+        }
+
+        override func layout() {
+            super.layout()
+
+            let availableWidth = max(1, bounds.width)
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var lineHeight: CGFloat = 0
+
+            for pill in pills {
+                let fittingSize = pill.fittingSize
+                let width = min(ceil(fittingSize.width), availableWidth)
+                let height = ceil(fittingSize.height)
+
+                if x > 0, x + width > availableWidth {
+                    x = 0
+                    y += lineHeight + lineSpacing
+                    lineHeight = 0
+                }
+
+                pill.frame = NSRect(x: x, y: y, width: width, height: height)
+                x += width + itemSpacing
+                lineHeight = max(lineHeight, height)
+            }
+        }
     }
 }
