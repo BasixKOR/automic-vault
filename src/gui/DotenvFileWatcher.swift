@@ -21,6 +21,11 @@ final class DotenvFileWatcher {
         let stderr: String
     }
 
+    private struct DotenvAssignment {
+        let key: String
+        let value: String
+    }
+
     private let queue = DispatchQueue(label: "com.automicvault.dotenv-file-watcher")
     private let fileManager: FileManager
     private let notify: (DotenvAutoEncryptionResult) -> Void
@@ -169,18 +174,34 @@ final class DotenvFileWatcher {
 
     private func encryptIfNeeded(path: String) {
         pendingWork[path] = nil
-        guard fileManager.fileExists(atPath: path),
-              let binaryURL = resolveBinaryURL() else {
+        guard fileManager.fileExists(atPath: path) else {
+            return
+        }
+        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+            NSLog("Automic Vault dotenv auto-encrypt skipped for %@: file is not UTF-8", path)
+            return
+        }
+        let secretKeys = Self.secretShapedPlaintextKeys(in: contents)
+        guard secretKeys.isEmpty == false else {
+            return
+        }
+        guard let binaryURL = resolveBinaryURL() else {
             NSLog("Automic Vault dotenv auto-encrypt skipped for %@: av binary not found", path)
             return
         }
 
-        let check = runAv(binaryURL, arguments: ["dotenv", "encrypt", "--check", "--file", path])
+        let check = runAv(
+            binaryURL,
+            arguments: encryptArguments(path: path, keys: secretKeys, check: true)
+        )
         guard check.status != 0 else {
             return
         }
 
-        let encrypt = runAv(binaryURL, arguments: ["dotenv", "encrypt", "--file", path])
+        let encrypt = runAv(
+            binaryURL,
+            arguments: encryptArguments(path: path, keys: secretKeys, check: false)
+        )
         guard encrypt.status == 0 else {
             NSLog("Automic Vault dotenv auto-encrypt failed for %@: %@", path, encrypt.stderr)
             return
@@ -194,6 +215,16 @@ final class DotenvFileWatcher {
         DispatchQueue.main.async { [notify] in
             notify(DotenvAutoEncryptionResult(filePath: path, encryptedKeys: keys))
         }
+    }
+
+    private func encryptArguments(path: String, keys: [String], check: Bool) -> [String] {
+        var arguments = ["dotenv", "encrypt"]
+        if check {
+            arguments.append("--check")
+        }
+        arguments.append(contentsOf: ["--file", path, "--key"])
+        arguments.append(contentsOf: keys)
+        return arguments
     }
 
     private func runAv(_ binaryURL: URL, arguments: [String]) -> CommandResult {
@@ -234,6 +265,257 @@ final class DotenvFileWatcher {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }
+    }
+
+    static func secretShapedPlaintextKeys(in contents: String) -> [String] {
+        contents
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .compactMap(Self.parseDotenvAssignment)
+            .filter { assignment in
+                isPublicDotenvKey(assignment.key) == false
+                    && assignment.value.hasPrefix("encrypted:") == false
+                    && assignment.value.isEmpty == false
+                    && isSecretShaped(key: assignment.key, value: assignment.value)
+            }
+            .map(\.key)
+    }
+
+    private static func parseDotenvAssignment(_ rawLine: Substring) -> DotenvAssignment? {
+        var assignment = rawLine.trimmingCharacters(in: .whitespaces)
+        guard assignment.isEmpty == false, assignment.hasPrefix("#") == false else {
+            return nil
+        }
+        if assignment.hasPrefix("export ") {
+            assignment.removeFirst("export ".count)
+        }
+        guard let separator = dotenvAssignmentSeparator(in: assignment) else {
+            return nil
+        }
+        let key = assignment[..<separator]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidDotenvKey(key) else {
+            return nil
+        }
+        let valueStart = assignment.index(after: separator)
+        let value = parseDotenvValue(assignment[valueStart...])
+        return DotenvAssignment(key: key, value: value)
+    }
+
+    private static func dotenvAssignmentSeparator(in assignment: String) -> String.Index? {
+        let equals = assignment.firstIndex(of: "=")
+        let colon = assignment.indices.first { index in
+            guard assignment[index] == ":" else { return false }
+            let next = assignment.index(after: index)
+            return next < assignment.endIndex && assignment[next].isWhitespace
+        }
+        switch (equals, colon) {
+        case (.some(let equals), .some(let colon)):
+            return equals < colon ? equals : colon
+        case (.some(let equals), .none):
+            return equals
+        case (.none, .some(let colon)):
+            return colon
+        case (.none, .none):
+            return nil
+        }
+    }
+
+    private static func parseDotenvValue(_ rawValue: Substring) -> String {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = value.first else {
+            return ""
+        }
+        if first == "'" || first == "\"" || first == "`" {
+            return parseQuotedDotenvValue(value, quote: first)
+        }
+        return value
+            .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func parseQuotedDotenvValue(_ value: String, quote: Character) -> String {
+        var escaped = false
+        var endIndex: String.Index?
+        var index = value.index(after: value.startIndex)
+        while index < value.endIndex {
+            let character = value[index]
+            if escaped {
+                escaped = false
+            } else if character == "\\", quote != "'" {
+                escaped = true
+            } else if character == quote {
+                endIndex = index
+                break
+            }
+            index = value.index(after: index)
+        }
+        let innerEnd = endIndex ?? value.endIndex
+        var inner = String(value[value.index(after: value.startIndex)..<innerEnd])
+        if quote == "\"" {
+            inner = inner
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\r", with: "\r")
+                .replacingOccurrences(of: "\\t", with: "\t")
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\\\", with: "\\")
+        }
+        return inner
+    }
+
+    private static func isValidDotenvKey(_ key: String) -> Bool {
+        guard let first = key.unicodeScalars.first,
+              first == "_" || isAsciiLetter(first) else {
+            return false
+        }
+        return key.unicodeScalars.dropFirst().allSatisfy { scalar in
+            scalar == "_" || isAsciiLetter(scalar) || isAsciiDigit(scalar)
+        }
+    }
+
+    private static func isAsciiLetter(_ scalar: UnicodeScalar) -> Bool {
+        (65...90).contains(scalar.value) || (97...122).contains(scalar.value)
+    }
+
+    private static func isAsciiDigit(_ scalar: UnicodeScalar) -> Bool {
+        (48...57).contains(scalar.value)
+    }
+
+    private static func isPublicDotenvKey(_ key: String) -> Bool {
+        key == "DOTENV_PUBLIC_KEY" || key.hasPrefix("DOTENV_PUBLIC_KEY_")
+    }
+
+    private static func isSecretShaped(key: String, value: String) -> Bool {
+        keyLooksSecret(key, value: value) || valueLooksSecret(value)
+    }
+
+    private static func keyLooksSecret(_ key: String, value: String) -> Bool {
+        let upper = key.uppercased()
+        if upper.hasPrefix("NEXT_PUBLIC_")
+            || upper.hasPrefix("NUXT_PUBLIC_")
+            || upper.hasPrefix("PUBLIC_")
+            || upper.hasPrefix("VITE_")
+            || upper.contains("PUBLISHABLE")
+            || upper.contains("PUBLIC_KEY") {
+            return false
+        }
+        if [
+            "_ENDPOINT",
+            "_HOST",
+            "_PORT",
+            "_URI",
+            "_URL",
+            "_VERSION",
+            "_ENABLED",
+        ].contains(where: upper.hasSuffix) {
+            return valueLooksSecret(value)
+        }
+
+        let tokens = upper
+            .split { $0.isLetter == false && $0.isNumber == false }
+            .map(String.init)
+        let tokenSet = Set(tokens)
+        if tokenSet.contains("SECRET")
+            || tokenSet.contains("TOKEN")
+            || tokenSet.contains("PASSWORD")
+            || tokenSet.contains("PASSWD") {
+            return true
+        }
+        if tokenSet.contains("KEY")
+            && !tokenSet.isDisjoint(with: [
+                "ACCESS", "API", "AWS", "GITHUB", "GITLAB", "NPM", "OPENAI", "PRIVATE", "SECRET",
+                "STRIPE",
+            ]) {
+            return true
+        }
+
+        let compact = upper.filter { $0.isLetter || $0.isNumber }
+        if [
+            "APIKEY",
+            "ACCESSTOKEN",
+            "AUTH_TOKEN",
+            "BEARERTOKEN",
+            "CLIENTSECRET",
+            "PRIVATEKEY",
+            "REFRESHTOKEN",
+            "SECRETKEY",
+            "SESSIONSECRET",
+            "SIGNINGSECRET",
+            "WEBHOOKSECRET",
+        ].contains(where: { compact.contains($0.filter { $0 != "_" }) }) {
+            return true
+        }
+
+        if (upper.hasSuffix("_URL") || upper.hasSuffix("_DSN"))
+            && valueLooksCredentialURL(value) {
+            return true
+        }
+        return false
+    }
+
+    private static func valueLooksSecret(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false, trimmed.hasPrefix("encrypted:") == false else {
+            return false
+        }
+        if trimmed.contains("-----BEGIN ") && trimmed.contains("PRIVATE KEY-----") {
+            return true
+        }
+        if valueLooksCredentialURL(trimmed) {
+            return true
+        }
+        if matches(trimmed, #"^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$"#) {
+            return true
+        }
+        if [
+            "sk-",
+            "sk_live_",
+            "sk_test_",
+            "ghp_",
+            "gho_",
+            "ghu_",
+            "ghs_",
+            "github_pat_",
+            "glpat-",
+            "xoxb-",
+            "xoxp-",
+            "xapp-",
+        ].contains(where: trimmed.hasPrefix) {
+            return true
+        }
+        if matches(trimmed, #"^(AKIA|ASIA)[A-Z0-9]{16}$"#) {
+            return true
+        }
+        return valueHasHighEntropySecretShape(trimmed)
+    }
+
+    private static func valueLooksCredentialURL(_ value: String) -> Bool {
+        matches(value, #"^[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@"#)
+    }
+
+    private static func valueHasHighEntropySecretShape(_ value: String) -> Bool {
+        guard value.count >= 32,
+              value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              value.hasPrefix("/") == false,
+              value.hasPrefix("~/") == false,
+              value.contains("://") == false,
+              matches(value, #"^[0-9a-fA-F-]{32,}$"#) == false else {
+            return false
+        }
+        let scalars = value.unicodeScalars
+        let hasLower = scalars.contains { CharacterSet.lowercaseLetters.contains($0) }
+        let hasUpper = scalars.contains { CharacterSet.uppercaseLetters.contains($0) }
+        let hasDigit = scalars.contains { CharacterSet.decimalDigits.contains($0) }
+        let hasSymbol = scalars.contains {
+            CharacterSet.alphanumerics.contains($0) == false
+        }
+        let classCount = [hasLower, hasUpper, hasDigit, hasSymbol].filter { $0 }.count
+        let uniqueCount = Set(scalars.map(\.value)).count
+        return classCount >= 3 && uniqueCount >= 16
+    }
+
+    private static func matches(_ value: String, _ pattern: String) -> Bool {
+        value.range(of: pattern, options: .regularExpression) != nil
     }
 
     private func normalizedPath(_ path: String) -> String? {
