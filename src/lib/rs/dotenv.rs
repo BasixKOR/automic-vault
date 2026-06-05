@@ -1124,10 +1124,9 @@ fn dotenv_double_quote_escape(value: &str) -> String {
 
 fn dotenv_header_lines() -> Vec<DotenvLine> {
     [
-        "# Agents! Hi! You can use these keys by",
-        "# running `av dotenv run SCRIPT.ext`",
-        "# Your human will be prompted to allow it",
-        "# We will monitor output to make sure secrets don't escape!",
+        "# You can use these keys by running `av dotenv run SCRIPT.ext`",
+        "# The human operator will be prompted to allow it.",
+        "# Output will be monitored to occlude secrets.",
         "",
     ]
     .into_iter()
@@ -2225,6 +2224,11 @@ mod tests {
         )
         .unwrap();
         let output = fs::read_to_string(env_path).unwrap();
+        assert!(output.starts_with(
+            "# You can use these keys by running `av dotenv run SCRIPT.ext`\n\
+             # The human operator will be prompted to allow it.\n\
+             # Output will be monitored to occlude secrets.\n\n"
+        ));
         assert!(output.contains("DOTENV_PUBLIC_KEY"));
         assert!(output.contains("FOO=\"encrypted:"));
     }
