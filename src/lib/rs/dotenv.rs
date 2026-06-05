@@ -183,6 +183,12 @@ struct DotenvLoadedSecrets {
     values: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PreviousDotenvState {
+    env_path: Option<String>,
+    keys: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DotenvRedactor {
     secrets: Vec<Vec<u8>>,
@@ -666,9 +672,9 @@ fn run_dotenv_export(
     options: &DotenvExportOptions,
     store: &dyn DotenvPrivateKeyStore,
 ) -> Result<(), String> {
-    let previous_keys = previous_dotenv_keys();
+    let previous = previous_dotenv_state();
     let Some(env_path) = nearest_dotenv_file(&options.cwd) else {
-        print_shell_unload(options.shell, &previous_keys);
+        print_shell_unload(options.shell, &previous);
         return Ok(());
     };
 
@@ -684,9 +690,9 @@ fn run_dotenv_export(
         DotenvApprovalMode::Export,
         &[],
         store,
-        Some(&previous_keys),
+        Some(&previous.keys),
     )?;
-    print_shell_exports(options.shell, &previous_keys, &loaded);
+    print_shell_exports(options.shell, &previous, &loaded);
     Ok(())
 }
 
@@ -1333,6 +1339,15 @@ fn nearest_dotenv_file(cwd: &Path) -> Option<PathBuf> {
     }
 }
 
+fn previous_dotenv_state() -> PreviousDotenvState {
+    PreviousDotenvState {
+        env_path: env::var(AV_DOTENV_FILE_ENV)
+            .ok()
+            .filter(|value| !value.is_empty()),
+        keys: previous_dotenv_keys(),
+    }
+}
+
 fn previous_dotenv_keys() -> Vec<String> {
     env::var(AV_DOTENV_KEYS_ENV)
         .ok()
@@ -1346,18 +1361,28 @@ fn previous_dotenv_keys() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn print_shell_unload(shell: DotenvShell, previous_keys: &[String]) {
+fn print_shell_unload(shell: DotenvShell, previous: &PreviousDotenvState) {
+    if previous.env_path.is_some() || !previous.keys.is_empty() {
+        print_shell_status_message(
+            shell,
+            &dotenv_status_message(
+                "unloading",
+                previous.env_path.as_deref(),
+                previous.keys.len(),
+            ),
+        );
+    }
     match shell {
         DotenvShell::Bash | DotenvShell::Zsh => {
-            for key in previous_keys {
-                println!("unset {key}");
+            for key in &previous.keys {
+                println!("unset {key};");
             }
-            println!("unset {AV_DOTENV_FILE_ENV}");
-            println!("unset {AV_DOTENV_DIGEST_ENV}");
-            println!("unset {AV_DOTENV_KEYS_ENV}");
+            println!("unset {AV_DOTENV_FILE_ENV};");
+            println!("unset {AV_DOTENV_DIGEST_ENV};");
+            println!("unset {AV_DOTENV_KEYS_ENV};");
         }
         DotenvShell::Fish => {
-            for key in previous_keys {
+            for key in &previous.keys {
                 println!("set -e {key};");
             }
             println!("set -e {AV_DOTENV_FILE_ENV};");
@@ -1367,24 +1392,36 @@ fn print_shell_unload(shell: DotenvShell, previous_keys: &[String]) {
     }
 }
 
-fn print_shell_exports(shell: DotenvShell, previous_keys: &[String], loaded: &DotenvLoadedSecrets) {
-    print_shell_unload(shell, previous_keys);
+fn print_shell_exports(
+    shell: DotenvShell,
+    previous: &PreviousDotenvState,
+    loaded: &DotenvLoadedSecrets,
+) {
+    print_shell_unload(shell, previous);
     let keys = loaded.values.keys().cloned().collect::<Vec<_>>();
+    print_shell_status_message(
+        shell,
+        &dotenv_status_message(
+            "loading",
+            Some(loaded.env_path.to_string_lossy().as_ref()),
+            keys.len(),
+        ),
+    );
     match shell {
         DotenvShell::Bash | DotenvShell::Zsh => {
             for (key, value) in &loaded.values {
-                println!("export {key}={}", shell_quote(value));
+                println!("export {key}={};", shell_quote(value));
             }
             println!(
-                "export {AV_DOTENV_FILE_ENV}={}",
+                "export {AV_DOTENV_FILE_ENV}={};",
                 shell_quote(loaded.env_path.to_string_lossy().as_ref())
             );
             println!(
-                "export {AV_DOTENV_DIGEST_ENV}={}",
+                "export {AV_DOTENV_DIGEST_ENV}={};",
                 shell_quote(&loaded.env_sha256)
             );
             println!(
-                "export {AV_DOTENV_KEYS_ENV}={}",
+                "export {AV_DOTENV_KEYS_ENV}={};",
                 shell_quote(&keys.join(":"))
             );
         }
@@ -1406,6 +1443,22 @@ fn print_shell_exports(shell: DotenvShell, previous_keys: &[String], loaded: &Do
             );
         }
     }
+}
+
+fn print_shell_status_message(shell: DotenvShell, message: &str) {
+    match shell {
+        DotenvShell::Bash | DotenvShell::Zsh | DotenvShell::Fish => {
+            println!("printf '%s\\n' {} >&2;", shell_quote(message));
+        }
+    }
+}
+
+fn dotenv_status_message(action: &str, env_path: Option<&str>, key_count: usize) -> String {
+    let subject = env_path.unwrap_or("dotenv keys");
+    format!(
+        "av dotenv: {action} {subject} ({key_count} {})",
+        if key_count == 1 { "key" } else { "keys" }
+    )
 }
 
 fn request_dotenv_approval_if_needed(
@@ -2124,6 +2177,14 @@ mod tests {
         };
         assert_eq!(shell_quote("bar baz"), "'bar baz'");
         assert_eq!(loaded.values["FOO"], "bar baz");
+        assert_eq!(
+            dotenv_status_message("loading", Some("/tmp/project/.env"), 1),
+            "av dotenv: loading /tmp/project/.env (1 key)"
+        );
+        assert_eq!(
+            dotenv_status_message("unloading", None, 2),
+            "av dotenv: unloading dotenv keys (2 keys)"
+        );
     }
 
     #[test]
@@ -2705,10 +2766,14 @@ mod tests {
             loaded.env_path
         );
 
-        print_shell_unload(DotenvShell::Bash, &["OLD".to_string()]);
-        print_shell_unload(DotenvShell::Fish, &["OLD".to_string()]);
-        print_shell_exports(DotenvShell::Zsh, &["OLD".to_string()], &loaded);
-        print_shell_exports(DotenvShell::Fish, &["OLD".to_string()], &loaded);
+        let previous = PreviousDotenvState {
+            env_path: Some("/tmp/old/.env".to_string()),
+            keys: vec!["OLD".to_string()],
+        };
+        print_shell_unload(DotenvShell::Bash, &previous);
+        print_shell_unload(DotenvShell::Fish, &previous);
+        print_shell_exports(DotenvShell::Zsh, &previous, &loaded);
+        print_shell_exports(DotenvShell::Fish, &previous, &loaded);
         print_dotenv_hook("av dotenv", DotenvShell::Bash);
         print_dotenv_hook("av dotenv", DotenvShell::Zsh);
         print_dotenv_hook("av dotenv", DotenvShell::Fish);

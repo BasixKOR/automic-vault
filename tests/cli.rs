@@ -347,6 +347,28 @@ fn subs_dotenv_cli_covers_help_version_and_parse_errors() {
     assert!(!output.status.success());
     assert!(stderr(&output).contains("missing --shell"));
 
+    let temp = tempfile::tempdir().unwrap();
+    let output = run_nuke_with_env(
+        &[
+            "dotenv",
+            "export",
+            "--shell",
+            "zsh",
+            "--cwd",
+            temp.path().to_str().unwrap(),
+        ],
+        &[
+            ("AV_DOTENV_FILE", "/tmp/project/.env"),
+            ("AV_DOTENV_KEYS", "FOO:BAR"),
+        ],
+    );
+    assert!(output.status.success());
+    assert!(
+        stdout(&output)
+            .contains("printf '%s\\n' 'av dotenv: unloading /tmp/project/.env (2 keys)' >&2;")
+    );
+    assert!(stdout(&output).contains("unset FOO;"));
+
     let output = run_nuke(&["dotenv", "run", "--help"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av dotenv run"));
