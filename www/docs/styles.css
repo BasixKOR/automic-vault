@@ -99,6 +99,9 @@ ol {
 
 code {
   font-family: var(--font-mono);
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 
 :not(pre) > code {
