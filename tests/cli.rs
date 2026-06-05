@@ -1,5 +1,8 @@
 use std::process::{Command, Output};
-use std::{fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStringExt;
@@ -60,6 +63,22 @@ fn run_nuke_with_forced_color(args: &[&str], columns: &str) -> Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn run_shell_with_test_av(shell: &str, script: &str, cwd: &Path) -> Option<Output> {
+    let av_dir = Path::new(env!("CARGO_BIN_EXE_av")).parent().unwrap();
+    let path = env::join_paths(
+        std::iter::once(av_dir.to_path_buf())
+            .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
+    )
+    .unwrap();
+    Command::new(shell)
+        .arg("-fc")
+        .arg(script)
+        .current_dir(cwd)
+        .env("PATH", path)
+        .output()
+        .ok()
 }
 
 fn write_fake_trace_agent(bin_dir: &std::path::Path, name: &str, response: &str) {
@@ -296,6 +315,25 @@ fn subs_dotenv_cli_covers_help_version_and_parse_errors() {
     assert!(output.status.success());
     assert!(stdout(&output).contains("add-zsh-hook"));
     assert!(stdout(&output).contains("av dotenv export --shell zsh"));
+
+    let temp = tempfile::tempdir().unwrap();
+    if let Some(output) = run_shell_with_test_av("zsh", "eval $(av dotenv hook zsh)", temp.path()) {
+        assert!(
+            output.status.success(),
+            "zsh hook eval failed\nstdout:\n{}\nstderr:\n{}",
+            stdout(&output),
+            stderr(&output)
+        );
+    }
+    if let Some(output) = run_shell_with_test_av("bash", "eval $(av dotenv hook bash)", temp.path())
+    {
+        assert!(
+            output.status.success(),
+            "bash hook eval failed\nstdout:\n{}\nstderr:\n{}",
+            stdout(&output),
+            stderr(&output)
+        );
+    }
 
     let output = run_nuke(&["dotenv", "hook", "powershell"]);
     assert!(!output.status.success());

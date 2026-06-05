@@ -1755,32 +1755,32 @@ fn print_dotenv_hook(program_name: &str, shell: DotenvShell) {
     match shell {
         DotenvShell::Bash => println!(
             r#"__av_dotenv_hook() {{
-  local __av_dotenv
-  __av_dotenv="$({program_name} export --shell bash --cwd "$PWD")" || return $?
-  eval "$__av_dotenv"
-}}
+  local __av_dotenv;
+  __av_dotenv="$({program_name} export --shell bash --cwd "$PWD")" || return $?;
+  eval "$__av_dotenv";
+}};
 if [[ -n "${{PROMPT_COMMAND:-}}" ]]; then
-  PROMPT_COMMAND="__av_dotenv_hook; $PROMPT_COMMAND"
+  PROMPT_COMMAND="__av_dotenv_hook; $PROMPT_COMMAND";
 else
-  PROMPT_COMMAND="__av_dotenv_hook"
-fi
-__av_dotenv_hook"#
+  PROMPT_COMMAND="__av_dotenv_hook";
+fi;
+__av_dotenv_hook;"#
         ),
         DotenvShell::Zsh => println!(
             r#"__av_dotenv_hook() {{
-  local __av_dotenv
-  __av_dotenv="$({program_name} export --shell zsh --cwd "$PWD")" || return $?
-  eval "$__av_dotenv"
-}}
-autoload -Uz add-zsh-hook
-add-zsh-hook chpwd __av_dotenv_hook
-__av_dotenv_hook"#
+  local __av_dotenv;
+  __av_dotenv="$({program_name} export --shell zsh --cwd "$PWD")" || return $?;
+  eval "$__av_dotenv";
+}};
+autoload -Uz add-zsh-hook;
+add-zsh-hook chpwd __av_dotenv_hook;
+__av_dotenv_hook;"#
         ),
         DotenvShell::Fish => println!(
-            r#"function __av_dotenv_hook --on-variable PWD
-  {program_name} export --shell fish --cwd "$PWD" | source
-end
-__av_dotenv_hook"#
+            r#"function __av_dotenv_hook --on-variable PWD;
+  {program_name} export --shell fish --cwd "$PWD" | source;
+end;
+__av_dotenv_hook;"#
         ),
     }
 }
