@@ -20,7 +20,6 @@ fn main() {
     println!("cargo:rerun-if-changed=.env");
     println!("cargo:rerun-if-env-changed=APPLE_TEAM_ID");
     println!("cargo:rerun-if-env-changed=CODESIGN_IDENTITY");
-    println!("cargo:rerun-if-env-changed=CODESIGNING_IDENTITY");
     println!("cargo:rerun-if-env-changed=TEAM_COMMON_NAME");
     println!("cargo:rerun-if-env-changed=TEAM_IDENTIFIER");
     println!("cargo:rerun-if-env-changed=NUKE_HELPER_VERSION");
@@ -58,13 +57,11 @@ fn build_env_var(key: &str) -> Option<String> {
 }
 
 fn codesign_identity() -> Option<String> {
-    non_empty_build_env_var("CODESIGN_IDENTITY")
-        .or_else(|| non_empty_build_env_var("CODESIGNING_IDENTITY"))
-        .or_else(|| {
-            let common_name = non_empty_build_env_var("TEAM_COMMON_NAME")?;
-            let team_identifier = non_empty_build_env_var("TEAM_IDENTIFIER")?;
-            Some(format!("{common_name} ({team_identifier})"))
-        })
+    non_empty_build_env_var("CODESIGN_IDENTITY").or_else(|| {
+        let common_name = non_empty_build_env_var("TEAM_COMMON_NAME")?;
+        let team_identifier = non_empty_build_env_var("TEAM_IDENTIFIER")?;
+        Some(format!("{common_name} ({team_identifier})"))
+    })
 }
 
 fn non_empty_build_env_var(key: &str) -> Option<String> {

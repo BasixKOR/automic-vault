@@ -70,12 +70,6 @@ configure_codesign_identity() {
     return
   fi
 
-  if [[ -n "${CODESIGNING_IDENTITY:-}" ]]; then
-    CODESIGN_IDENTITY="$(unquote_build_env_value "${CODESIGNING_IDENTITY}")"
-    export CODESIGN_IDENTITY
-    return
-  fi
-
   if [[ -z "${TEAM_COMMON_NAME:-}" || -z "${TEAM_IDENTIFIER:-}" ]]; then
     return
   fi
