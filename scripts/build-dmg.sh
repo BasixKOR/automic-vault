@@ -496,7 +496,7 @@ if [[ "${notarize}" == "true" ]]; then
     cli_die "Expected an identity like: Developer ID Application: Name (TEAMID)"
   fi
 
-  "${repo_root}/scripts/notarize.sh" "${final_dmg}"
+  "${repo_root}/scripts/build-dmg-notarize.sh" "${final_dmg}"
 
   cli_step "Stapling notarization ticket"
   xcrun stapler staple "${final_dmg}" >&2
