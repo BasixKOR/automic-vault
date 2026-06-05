@@ -1960,6 +1960,7 @@ unsafe fn take_dotenv_bridge_string(value: *mut c_char) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::ffi::OsStringExt;
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -1983,6 +1984,72 @@ mod tests {
                 .unwrap()
                 .insert(public_key.to_string(), private_key.to_string());
             Ok(())
+        }
+    }
+
+    struct DotenvEnvGuard {
+        previous: Vec<(String, Option<OsString>)>,
+    }
+
+    impl DotenvEnvGuard {
+        fn set(values: &[(&str, &str)]) -> Self {
+            let previous = values
+                .iter()
+                .map(|(key, value)| {
+                    let previous = env::var_os(key);
+                    unsafe {
+                        env::set_var(key, value);
+                    }
+                    ((*key).to_string(), previous)
+                })
+                .collect();
+            Self { previous }
+        }
+
+        fn unset(keys: &[&str]) -> Self {
+            let previous = keys
+                .iter()
+                .map(|key| {
+                    let previous = env::var_os(key);
+                    unsafe {
+                        env::remove_var(key);
+                    }
+                    ((*key).to_string(), previous)
+                })
+                .collect();
+            Self { previous }
+        }
+    }
+
+    impl Drop for DotenvEnvGuard {
+        fn drop(&mut self) {
+            for (key, previous) in self.previous.drain(..).rev() {
+                match previous {
+                    Some(value) => unsafe {
+                        env::set_var(&key, value);
+                    },
+                    None => unsafe {
+                        env::remove_var(&key);
+                    },
+                }
+            }
+        }
+    }
+
+    fn remembered_entry_for(
+        env_path: &Path,
+        mode: DotenvApprovalMode,
+        public_key: &str,
+        keys: &[&str],
+    ) -> DotenvRememberedApprovalEntry {
+        let env_path = fs::canonicalize(env_path).unwrap();
+        DotenvRememberedApprovalEntry {
+            mode,
+            env_file_path: env_path.to_string_lossy().into_owned(),
+            project_root: env_path.parent().unwrap().to_string_lossy().into_owned(),
+            env_sha256: sha256_file_hex(&env_path).unwrap(),
+            public_key_fingerprint: public_key_fingerprint(public_key),
+            keys: keys.iter().map(|key| (*key).to_string()).collect(),
         }
     }
 
@@ -2121,5 +2188,718 @@ mod tests {
         let output = fs::read_to_string(env_path).unwrap();
         assert!(output.contains("DOTENV_PUBLIC_KEY"));
         assert!(output.contains("# comments only"));
+    }
+
+    #[test]
+    fn dotenv_command_parsers_cover_help_version_and_error_edges() {
+        assert_eq!(
+            parse_dotenv_command("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing dotenv command"
+        );
+        assert!(
+            parse_dotenv_command("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_command("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_command("av dotenv", [OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
+            "dotenv command must be valid UTF-8"
+        );
+        assert_eq!(
+            parse_dotenv_command("av dotenv", [OsString::from("bogus")].into_iter()).unwrap_err(),
+            "unknown dotenv command 'bogus'"
+        );
+
+        assert!(
+            parse_dotenv_set("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_set("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_set("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing KEY"
+        );
+        assert_eq!(
+            parse_dotenv_set(
+                "av dotenv",
+                [OsString::from("FOO"), OsString::from("BAR")].into_iter(),
+            )
+            .unwrap_err(),
+            "dotenv set supports one KEY"
+        );
+        assert_eq!(
+            parse_dotenv_set("av dotenv", [OsString::from("1BAD")].into_iter()).unwrap_err(),
+            "invalid dotenv key name: 1BAD"
+        );
+        assert_eq!(
+            parse_dotenv_set("av dotenv", [OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
+            "dotenv set key must be valid UTF-8"
+        );
+        let set = parse_dotenv_set(
+            "av dotenv",
+            [
+                OsString::from("-f"),
+                OsString::from("custom.env"),
+                OsString::from("FOO"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(set.file, PathBuf::from("custom.env"));
+        assert_eq!(set.key, "FOO");
+
+        assert!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--key")].into_iter()).unwrap_err(),
+            "missing value for --key"
+        );
+        assert_eq!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--exclude-key")].into_iter())
+                .unwrap_err(),
+            "missing value for --exclude-key"
+        );
+        assert_eq!(
+            parse_dotenv_encrypt(
+                "av dotenv",
+                [OsString::from("--key"), OsString::from("BAD-NAME")].into_iter(),
+            )
+            .unwrap_err(),
+            "invalid dotenv key name: BAD-NAME"
+        );
+        assert_eq!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--unknown")].into_iter())
+                .unwrap_err(),
+            "unknown dotenv encrypt argument '--unknown'"
+        );
+        assert_eq!(
+            parse_dotenv_encrypt("av dotenv", [OsString::from("--file")].into_iter()).unwrap_err(),
+            "missing value for --file"
+        );
+
+        assert!(
+            parse_dotenv_import("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_import("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_import("av dotenv", [OsString::from("--unknown")].into_iter())
+                .unwrap_err(),
+            "unknown dotenv import argument '--unknown'"
+        );
+        let import = parse_dotenv_import(
+            "av dotenv",
+            [OsString::from("--file"), OsString::from("dir/.env.prod")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(import.keys_file, PathBuf::from("dir/.env.keys"));
+        let import = parse_dotenv_import(
+            "av dotenv",
+            [
+                OsString::from("--file"),
+                OsString::from(".env"),
+                OsString::from("--keys-file"),
+                OsString::from("keys.env"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(import.keys_file, PathBuf::from("keys.env"));
+
+        assert_eq!(
+            parse_dotenv_hook("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing shell"
+        );
+        assert!(
+            parse_dotenv_hook("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_hook("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_hook(
+                "av dotenv",
+                [OsString::from("bash"), OsString::from("extra")].into_iter(),
+            )
+            .unwrap_err(),
+            "dotenv hook supports one shell"
+        );
+        assert_eq!(
+            parse_dotenv_hook("av dotenv", [OsString::from("tcsh")].into_iter()).unwrap_err(),
+            "unsupported shell 'tcsh'"
+        );
+        assert_eq!(
+            parse_dotenv_hook("av dotenv", [OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
+            "shell must be valid UTF-8"
+        );
+
+        assert!(
+            parse_dotenv_export("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_export("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_export("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing --shell"
+        );
+        assert_eq!(
+            parse_dotenv_export("av dotenv", [OsString::from("--shell")].into_iter()).unwrap_err(),
+            "missing value for --shell"
+        );
+        assert_eq!(
+            parse_dotenv_export("av dotenv", [OsString::from("--unknown")].into_iter())
+                .unwrap_err(),
+            "unknown dotenv export argument '--unknown'"
+        );
+        let export = parse_dotenv_export(
+            "av dotenv",
+            [
+                OsString::from("--shell"),
+                OsString::from("fish"),
+                OsString::from("--cwd"),
+                OsString::from("/tmp"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(export.shell, DotenvShell::Fish);
+        assert_eq!(export.cwd, PathBuf::from("/tmp"));
+
+        assert_eq!(
+            parse_dotenv_run("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
+            "missing command"
+        );
+        assert!(
+            parse_dotenv_run("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_run("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_run("av dotenv", [OsString::from("--file")].into_iter()).unwrap_err(),
+            "missing value for --file"
+        );
+        let run = parse_dotenv_run(
+            "av dotenv",
+            [
+                OsString::from("-f"),
+                OsString::from("custom.env"),
+                OsString::from("--"),
+                OsString::from("/bin/echo"),
+                OsString::from("hello"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(run.file, PathBuf::from("custom.env"));
+        assert_eq!(run.command, OsString::from("/bin/echo"));
+        assert_eq!(run.args, vec![OsString::from("hello")]);
+    }
+
+    #[test]
+    fn dotenv_document_helpers_cover_rendering_selection_and_paths() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("nested/.env");
+        let empty = DotenvDocument::load_or_empty(&missing).unwrap();
+        assert!(empty.lines.is_empty());
+        assert!(empty.had_trailing_newline);
+        assert_eq!(empty.path, missing);
+
+        let mut doc = DotenvDocument::parse(
+            PathBuf::from(".env.local.txt"),
+            "export FOO: value # comment\r\nBAR=`raw value`\rBAZ=\"line\\nnext\"\nNO_SEP\n",
+        );
+        assert_eq!(doc.value("FOO").unwrap(), "value");
+        assert_eq!(doc.value("BAR").unwrap(), "raw value");
+        assert_eq!(doc.value("BAZ").unwrap(), "line\nnext");
+        assert!(doc.value("NO_SEP").is_none());
+        assert!(doc.render().ends_with('\n'));
+
+        doc.ensure_public_key("DOTENV_PUBLIC_KEY_LOCAL", "abc123");
+        assert_eq!(
+            doc.public_key(),
+            Some(("DOTENV_PUBLIC_KEY_LOCAL".to_string(), "abc123".to_string()))
+        );
+        doc.set_value("QUOTED", "tabs\tand\nlines\"\\");
+        assert!(
+            doc.render()
+                .contains("QUOTED=\"tabs\\tand\\nlines\\\"\\\\\"")
+        );
+
+        let selected = doc.encryptable_keys(
+            &["FOO".to_string(), "QUOTED".to_string()],
+            &["FOO".to_string()],
+        );
+        assert_eq!(selected, vec!["QUOTED"]);
+        doc.set_value("QUOTED", "encrypted:abc");
+        assert!(doc.encryptable_keys(&[], &[]).contains(&"FOO".to_string()));
+        assert!(
+            !doc.encryptable_keys(&[], &[])
+                .contains(&"QUOTED".to_string())
+        );
+
+        let mut empty_doc = DotenvDocument::parse(PathBuf::from(".env"), "");
+        empty_doc.ensure_public_key("DOTENV_PUBLIC_KEY", "public");
+        assert!(empty_doc.render().contains("DOTENV_PUBLIC_KEY=\"public\""));
+
+        let write_path = temp.path().join("write/.env");
+        let writable = DotenvDocument::parse(write_path.clone(), "FOO=bar");
+        writable.write().unwrap();
+        let loaded = DotenvDocument::load(&write_path).unwrap();
+        assert_eq!(loaded.path, fs::canonicalize(&write_path).unwrap());
+        assert_eq!(loaded.value("FOO").unwrap(), "bar");
+
+        assert_eq!(
+            resolve_dotenv_path(&temp.path().join("absent.env")).unwrap(),
+            temp.path().join("absent.env")
+        );
+        assert_eq!(
+            public_key_name_for_file(Path::new(".env")),
+            "DOTENV_PUBLIC_KEY"
+        );
+        assert_eq!(
+            public_key_name_for_file(Path::new(".env.production.local.txt")),
+            "DOTENV_PUBLIC_KEY_PRODUCTION_LOCAL"
+        );
+        assert_eq!(
+            private_key_name_for_public_key_name("DOTENV_PUBLIC_KEY_PRODUCTION"),
+            "DOTENV_PRIVATE_KEY_PRODUCTION"
+        );
+    }
+
+    #[test]
+    fn dotenv_crypto_helpers_cover_validation_and_decryption_errors() {
+        assert_eq!(decode_hex("0x0A").unwrap(), vec![10]);
+        assert_eq!(
+            decode_hex("abc").unwrap_err(),
+            "hex value must have an even number of characters"
+        );
+        assert_eq!(
+            decode_hex("zz").unwrap_err(),
+            "hex value contains non-hex characters"
+        );
+        assert!(validate_private_key_list("").is_ok());
+        assert_eq!(
+            validate_private_key_list("aa").unwrap_err(),
+            "dotenv private key must be 32 bytes"
+        );
+        assert_eq!(
+            validate_private_key_list("not-hex").unwrap_err(),
+            "hex value must have an even number of characters"
+        );
+
+        assert_eq!(
+            decrypt_dotenv_value("PLAIN", "not encrypted", "").unwrap(),
+            "not encrypted"
+        );
+        assert!(
+            decrypt_dotenv_value("BAD", "encrypted:not-base64", "")
+                .unwrap_err()
+                .contains("malformed encrypted data")
+        );
+        assert_eq!(
+            decrypt_dotenv_value("EMPTY", "encrypted:abcd", "").unwrap_err(),
+            "could not decrypt EMPTY: missing private key"
+        );
+
+        let good = generate_dotenv_keypair(Path::new(".env"));
+        let wrong = generate_dotenv_keypair(Path::new(".env"));
+        let encrypted = encrypt_dotenv_value("secret", &good.public_key).unwrap();
+        assert!(
+            decrypt_dotenv_value("FOO", &encrypted, &wrong.private_key)
+                .unwrap_err()
+                .contains("could not decrypt FOO")
+        );
+        assert!(public_key_fingerprint(&good.public_key).len() == 64);
+        assert!(
+            keychain_account_for_public_key(&good.public_key).starts_with("DOTENV_PRIVATE_KEY:")
+        );
+    }
+
+    #[test]
+    fn dotenv_approval_store_paths_and_decisions_cover_json_edges() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let home_str = home.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[("HOME", home_str)]);
+
+        assert_eq!(
+            dotenv_user_approval_root().unwrap(),
+            home.join("Library/Application Support/Automic Vault/dotenv")
+        );
+        assert!(
+            load_dotenv_remembered_approvals()
+                .unwrap()
+                .entries
+                .is_empty()
+        );
+
+        let entry = DotenvRememberedApprovalEntry {
+            mode: DotenvApprovalMode::Export,
+            env_file_path: "/tmp/project/.env".to_string(),
+            project_root: "/tmp/project".to_string(),
+            env_sha256: "sha".to_string(),
+            public_key_fingerprint: "fingerprint".to_string(),
+            keys: vec!["FOO".to_string()],
+        };
+        remember_dotenv_approval(entry.clone()).unwrap();
+        remember_dotenv_approval(entry.clone()).unwrap();
+        let store = load_dotenv_remembered_approvals().unwrap();
+        assert_eq!(store.entries, vec![entry.clone()]);
+
+        let pending = dotenv_pending_approval_path().unwrap();
+        write_dotenv_json(&pending, &entry).unwrap();
+        assert!(pending.is_file());
+
+        let decision_path = dotenv_decision_path("approved").unwrap();
+        write_dotenv_json(
+            &decision_path,
+            &DotenvApprovalDecision {
+                id: "approved".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        wait_for_dotenv_decision("approved").unwrap();
+        assert!(!pending.exists());
+        assert!(!decision_path.exists());
+
+        write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
+        write_dotenv_json(
+            &dotenv_decision_path("denied").unwrap(),
+            &DotenvApprovalDecision {
+                id: "denied".to_string(),
+                approved: false,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_dotenv_decision("denied").unwrap_err(),
+            "dotenv approval denied"
+        );
+
+        write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
+        write_dotenv_json(
+            &dotenv_decision_path("mismatch").unwrap(),
+            &DotenvApprovalDecision {
+                id: "other".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_dotenv_decision("mismatch").unwrap_err(),
+            "dotenv approval decision id mismatch"
+        );
+
+        fs::write(dotenv_remembered_approvals_path().unwrap(), "not json").unwrap();
+        assert!(
+            load_dotenv_remembered_approvals()
+                .unwrap_err()
+                .contains("failed to decode")
+        );
+        drop(_env);
+        let _env = DotenvEnvGuard::unset(&["HOME"]);
+        assert_eq!(dotenv_user_approval_root().unwrap_err(), "HOME is not set");
+    }
+
+    #[test]
+    fn dotenv_load_export_and_run_cover_approval_bypass_paths() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(project.join("child")).unwrap();
+        let home_str = home.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[("HOME", home_str), (AV_DOTENV_KEYS_ENV, "FOO:BAD-NAME")]);
+        let _unset = DotenvEnvGuard::unset(&["FOO", "BAR", "EXTERNAL"]);
+
+        let keypair = generate_dotenv_keypair(Path::new(".env"));
+        let encrypted_bar = encrypt_dotenv_value("bar secret", &keypair.public_key).unwrap();
+        let env_path = project.join(".env");
+        fs::write(
+            &env_path,
+            format!(
+                "DOTENV_PUBLIC_KEY={}\nFOO=plain secret\nBAR={}\nBAD-NAME=skip\n",
+                keypair.public_key, encrypted_bar
+            ),
+        )
+        .unwrap();
+        let store = StubDotenvPrivateKeyStore::default();
+        store
+            .store_private_key(&keypair.public_key, &keypair.private_key)
+            .unwrap();
+
+        remember_dotenv_approval(remembered_entry_for(
+            &env_path,
+            DotenvApprovalMode::Export,
+            &keypair.public_key,
+            &["BAR", "FOO"],
+        ))
+        .unwrap();
+        let loaded = load_dotenv_secrets(
+            &env_path,
+            DotenvApprovalMode::Export,
+            &[],
+            &store,
+            Some(&["FOO".to_string()]),
+        )
+        .unwrap();
+        assert_eq!(loaded.values["FOO"], "plain secret");
+        assert_eq!(loaded.values["BAR"], "bar secret");
+        assert_eq!(
+            nearest_dotenv_file(&project.join("child")).unwrap(),
+            loaded.env_path
+        );
+
+        print_shell_unload(DotenvShell::Bash, &["OLD".to_string()]);
+        print_shell_unload(DotenvShell::Fish, &["OLD".to_string()]);
+        print_shell_exports(DotenvShell::Zsh, &["OLD".to_string()], &loaded);
+        print_shell_exports(DotenvShell::Fish, &["OLD".to_string()], &loaded);
+        print_dotenv_hook("av dotenv", DotenvShell::Bash);
+        print_dotenv_hook("av dotenv", DotenvShell::Zsh);
+        print_dotenv_hook("av dotenv", DotenvShell::Fish);
+
+        run_dotenv_export(
+            &DotenvExportOptions {
+                shell: DotenvShell::Bash,
+                cwd: temp.path().join("missing"),
+            },
+            &store,
+        )
+        .unwrap();
+
+        let digest = sha256_file_hex(&env_path).unwrap();
+        let _current = DotenvEnvGuard::set(&[
+            (AV_DOTENV_FILE_ENV, env_path.to_str().unwrap()),
+            (AV_DOTENV_DIGEST_ENV, &digest),
+        ]);
+        run_dotenv_export(
+            &DotenvExportOptions {
+                shell: DotenvShell::Bash,
+                cwd: project.clone(),
+            },
+            &store,
+        )
+        .unwrap();
+        drop(_current);
+
+        remember_dotenv_approval(remembered_entry_for(
+            &env_path,
+            DotenvApprovalMode::Run,
+            &keypair.public_key,
+            &["BAR", "FOO"],
+        ))
+        .unwrap();
+        run_dotenv_run(
+            &DotenvRunOptions {
+                file: env_path,
+                command: OsString::from("/bin/sh"),
+                args: vec![
+                    OsString::from("-c"),
+                    OsString::from("printf '%s\\n' \"$FOO:$BAR\""),
+                ],
+            },
+            &store,
+        )
+        .unwrap();
+
+        unsafe {
+            env::set_var("EXTERNAL", "already set");
+        }
+        assert!(env_key_is_preexisting("EXTERNAL", None));
+        assert!(!env_key_is_preexisting(
+            "EXTERNAL",
+            Some(&["EXTERNAL".to_string()])
+        ));
+        assert!(!env_key_is_preexisting("MISSING", None));
+        assert_eq!(previous_dotenv_keys(), vec!["FOO".to_string()]);
+    }
+
+    #[test]
+    fn dotenv_import_set_encrypt_and_store_cover_success_and_errors() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        let keys_path = temp.path().join(".env.keys");
+        let keypair = generate_dotenv_keypair(&env_path);
+        fs::write(
+            &env_path,
+            format!(
+                "DOTENV_PUBLIC_KEY={}\nFOO=plain\nBAR=encrypted:abc\n",
+                keypair.public_key
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &keys_path,
+            format!(
+                "{}={}\n",
+                private_key_name_for_public_key_name("DOTENV_PUBLIC_KEY"),
+                keypair.private_key
+            ),
+        )
+        .unwrap();
+
+        let store = StubDotenvPrivateKeyStore::default();
+        run_dotenv_import(
+            &DotenvImportOptions {
+                file: env_path.clone(),
+                keys_file: keys_path.clone(),
+            },
+            &store,
+        )
+        .unwrap();
+        assert_eq!(
+            store.load_private_key(&keypair.public_key).unwrap(),
+            keypair.private_key
+        );
+
+        run_dotenv_set(
+            &DotenvSetOptions {
+                file: env_path.clone(),
+                key: "NEW_SECRET".to_string(),
+            },
+            "new value",
+            &store,
+        )
+        .unwrap();
+        assert!(
+            fs::read_to_string(&env_path)
+                .unwrap()
+                .contains("NEW_SECRET=\"encrypted:")
+        );
+
+        assert!(
+            run_dotenv_encrypt(
+                &DotenvEncryptOptions {
+                    file: env_path.clone(),
+                    include_keys: vec!["FOO".to_string()],
+                    exclude_keys: Vec::new(),
+                    check: true,
+                },
+                &store,
+            )
+            .unwrap_err()
+            .contains("plaintext dotenv values: FOO")
+        );
+
+        run_dotenv_encrypt(
+            &DotenvEncryptOptions {
+                file: env_path.clone(),
+                include_keys: vec!["FOO".to_string()],
+                exclude_keys: Vec::new(),
+                check: false,
+            },
+            &store,
+        )
+        .unwrap();
+        assert!(
+            fs::read_to_string(&env_path)
+                .unwrap()
+                .contains("FOO=\"encrypted:")
+        );
+
+        run_dotenv_encrypt(
+            &DotenvEncryptOptions {
+                file: env_path.clone(),
+                include_keys: vec!["MISSING".to_string()],
+                exclude_keys: Vec::new(),
+                check: false,
+            },
+            &store,
+        )
+        .unwrap();
+
+        let missing_public = temp.path().join("missing-public.env");
+        fs::write(&missing_public, "FOO=bar\n").unwrap();
+        assert!(
+            run_dotenv_import(
+                &DotenvImportOptions {
+                    file: missing_public,
+                    keys_file: keys_path.clone(),
+                },
+                &store,
+            )
+            .unwrap_err()
+            .contains("is missing DOTENV_PUBLIC_KEY")
+        );
+
+        let missing_private = temp.path().join("missing-private.keys");
+        fs::write(&missing_private, "OTHER=value\n").unwrap();
+        assert!(
+            run_dotenv_import(
+                &DotenvImportOptions {
+                    file: env_path.clone(),
+                    keys_file: missing_private,
+                },
+                &store,
+            )
+            .unwrap_err()
+            .contains("is missing DOTENV_PRIVATE_KEY")
+        );
+
+        let invalid_private = temp.path().join("invalid-private.keys");
+        fs::write(&invalid_private, "DOTENV_PRIVATE_KEY=abc\n").unwrap();
+        assert_eq!(
+            run_dotenv_import(
+                &DotenvImportOptions {
+                    file: env_path,
+                    keys_file: invalid_private,
+                },
+                &store,
+            )
+            .unwrap_err(),
+            "hex value must have an even number of characters"
+        );
     }
 }
