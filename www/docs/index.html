@@ -269,13 +269,22 @@ av contain codex</code></pre>
           </p>
           <div class="code-block" data-copy-scope>
             <div class="code-caption">
-              <span>download</span>
+              <span>install one-liner</span>
               <button class="copy-button" type="button" data-copy>Copy</button>
             </div>
-            <pre><code>open "https://www.automicvault.com/Automic%20Vault.dmg"
+            <pre><code>curl -fsSL https://automicvault.com/install.sh | sh && av open
 av --version
 av help</code></pre>
           </div>
+          <p>
+            The installer downloads and mounts the DMG read-only, lets
+            Gatekeeper inspect the app, verifies the signature and Team ID,
+            copies <code>Automic Vault.app</code> into <code>/Applications</code>,
+            and installs <code>/usr/local/bin/av</code>. If you do not want to
+            pipe a script into <code>sh</code>, download the latest DMG from
+            <a href="https://github.com/automic-vault/automic-vault/releases/latest">GitHub Releases</a>
+            instead.
+          </p>
           <div class="note">
             <strong>Release and debug roots</strong>
             <p>
