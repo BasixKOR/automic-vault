@@ -72,6 +72,7 @@ let package = Package(
                 "MainWindowModelTests.swift",
                 "PackageSecurityStateTests.swift",
                 "UpdateProgressViewModelTests.swift",
+                "VaultApprovalStoreTests.swift",
             ]
         ),
     ],

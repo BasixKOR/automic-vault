@@ -157,6 +157,47 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         case parentProcess = "parent_process"
         case command
     }
+
+    init(
+        id: String,
+        mode: DotenvApprovalMode,
+        envFilePath: String,
+        projectRoot: String,
+        envSha256: String,
+        publicKeyFingerprint: String,
+        keys: [String],
+        cwd: String,
+        parentProcess: IsotopeParentProcessSnapshot,
+        command: [String] = []
+    ) {
+        self.id = id
+        self.mode = mode
+        self.envFilePath = envFilePath
+        self.projectRoot = projectRoot
+        self.envSha256 = envSha256
+        self.publicKeyFingerprint = publicKeyFingerprint
+        self.keys = keys
+        self.cwd = cwd
+        self.parentProcess = parentProcess
+        self.command = command
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        mode = try container.decode(DotenvApprovalMode.self, forKey: .mode)
+        envFilePath = try container.decode(String.self, forKey: .envFilePath)
+        projectRoot = try container.decode(String.self, forKey: .projectRoot)
+        envSha256 = try container.decode(String.self, forKey: .envSha256)
+        publicKeyFingerprint = try container.decode(String.self, forKey: .publicKeyFingerprint)
+        keys = try container.decode([String].self, forKey: .keys)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        parentProcess = try container.decode(
+            IsotopeParentProcessSnapshot.self,
+            forKey: .parentProcess
+        )
+        command = try container.decodeIfPresent([String].self, forKey: .command) ?? []
+    }
 }
 
 struct DotenvApprovalDecision: Codable, Equatable {

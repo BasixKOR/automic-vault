@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        denyPendingDotenvApprovalOnTermination()
         if let openWindowObserver {
             DistributedNotificationCenter.default().removeObserver(openWindowObserver)
         }
@@ -99,6 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appUpdateCoordinator.stop()
         (window?.contentViewController as? MainWindowController)?
             .applicationWillTerminate()
+    }
+
+    private func denyPendingDotenvApprovalOnTermination() {
+        guard let approval = dotenvApprovalStore.loadPendingApproval() else { return }
+        try? dotenvApprovalStore.saveDecision(
+            DotenvApprovalDecision(
+                id: approval.id,
+                approved: false,
+                reason: "Automic Vault quit before dotenv approval"
+            )
+        )
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
