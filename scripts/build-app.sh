@@ -26,6 +26,47 @@ load_build_env() {
   done <"$env_file"
 }
 
+unquote_build_env_value() {
+  local value="$1"
+  case "$value" in
+    \"*\")
+      value="${value#\"}"
+      value="${value%\"}"
+      ;;
+    \'*\')
+      value="${value#\'}"
+      value="${value%\'}"
+      ;;
+  esac
+  printf '%s' "$value"
+}
+
+configure_codesign_identity() {
+  if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    CODESIGN_IDENTITY="$(unquote_build_env_value "$CODESIGN_IDENTITY")"
+    export CODESIGN_IDENTITY
+    return
+  fi
+
+  if [[ -n "${CODESIGNING_IDENTITY:-}" ]]; then
+    CODESIGN_IDENTITY="$(unquote_build_env_value "$CODESIGNING_IDENTITY")"
+    export CODESIGN_IDENTITY
+    return
+  fi
+
+  if [[ -z "${TEAM_COMMON_NAME:-}" || -z "${TEAM_IDENTIFIER:-}" ]]; then
+    return
+  fi
+
+  local team_common_name team_identifier
+  team_common_name="$(unquote_build_env_value "$TEAM_COMMON_NAME")"
+  team_identifier="$(unquote_build_env_value "$TEAM_IDENTIFIER")"
+  [[ -n "$team_common_name" && -n "$team_identifier" ]] || return
+
+  CODESIGN_IDENTITY="${team_common_name} (${team_identifier})"
+  export CODESIGN_IDENTITY
+}
+
 rust_protocol_version() {
   awk -F'"' '/PROTOCOL_VERSION[[:space:]]*:/ { print $2; exit }' "$ROOT_DIR/src/lib/rs/core.rs"
 }
@@ -71,6 +112,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 load_build_env
+configure_codesign_identity
 
 case "$CONFIGURATION" in
   debug|release)

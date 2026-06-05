@@ -5,7 +5,7 @@ fn main() {
     println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");
     println!(
         "cargo:rustc-env=NUKE_CODESIGN_IDENTITY={}",
-        build_env_var("CODESIGN_IDENTITY").unwrap_or_default()
+        codesign_identity().unwrap_or_default()
     );
     generate_isotope_integrations();
 
@@ -20,6 +20,9 @@ fn main() {
     println!("cargo:rerun-if-changed=.env");
     println!("cargo:rerun-if-env-changed=APPLE_TEAM_ID");
     println!("cargo:rerun-if-env-changed=CODESIGN_IDENTITY");
+    println!("cargo:rerun-if-env-changed=CODESIGNING_IDENTITY");
+    println!("cargo:rerun-if-env-changed=TEAM_COMMON_NAME");
+    println!("cargo:rerun-if-env-changed=TEAM_IDENTIFIER");
     println!("cargo:rerun-if-env-changed=NUKE_HELPER_VERSION");
 
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -48,7 +51,24 @@ fn main() {
 }
 
 fn build_env_var(key: &str) -> Option<String> {
-    std::env::var(key).ok().or_else(|| env_file_value(key))
+    std::env::var(key)
+        .ok()
+        .or_else(|| env_file_value(key))
+        .map(unquote_env_value)
+}
+
+fn codesign_identity() -> Option<String> {
+    non_empty_build_env_var("CODESIGN_IDENTITY")
+        .or_else(|| non_empty_build_env_var("CODESIGNING_IDENTITY"))
+        .or_else(|| {
+            let common_name = non_empty_build_env_var("TEAM_COMMON_NAME")?;
+            let team_identifier = non_empty_build_env_var("TEAM_IDENTIFIER")?;
+            Some(format!("{common_name} ({team_identifier})"))
+        })
+}
+
+fn non_empty_build_env_var(key: &str) -> Option<String> {
+    build_env_var(key).filter(|value| !value.is_empty())
 }
 
 fn env_file_value(wanted_key: &str) -> Option<String> {
@@ -73,6 +93,18 @@ fn env_file_value(wanted_key: &str) -> Option<String> {
     }
 
     None
+}
+
+fn unquote_env_value(value: String) -> String {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        value[1..value.len() - 1].to_string()
+    } else {
+        value
+    }
 }
 
 fn is_env_key(key: &str) -> bool {
@@ -573,7 +605,7 @@ fn authorized_client_requirement() -> String {
 }
 
 fn team_id_from_codesign_identity() -> Option<String> {
-    let identity = std::env::var("CODESIGN_IDENTITY").ok()?;
+    let identity = codesign_identity()?;
     let open_paren = identity.rfind('(')?;
     let close_paren = identity.rfind(')')?;
     if close_paren <= open_paren + 1 {

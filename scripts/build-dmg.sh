@@ -31,6 +31,64 @@ install_app=false
 publish_release=false
 clobber_release=false
 
+load_build_env() {
+  local env_file="${repo_root}/.env"
+  [[ -f "${env_file}" ]] || return
+
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    [[ -n "${line}" && "${line}" != \#* && "${line}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    if [[ -z "${!key+x}" ]]; then
+      export "${key}=${value}"
+    fi
+  done <"${env_file}"
+}
+
+unquote_build_env_value() {
+  local value="$1"
+  case "${value}" in
+    \"*\")
+      value="${value#\"}"
+      value="${value%\"}"
+      ;;
+    \'*\')
+      value="${value#\'}"
+      value="${value%\'}"
+      ;;
+  esac
+  printf '%s' "${value}"
+}
+
+configure_codesign_identity() {
+  if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    CODESIGN_IDENTITY="$(unquote_build_env_value "${CODESIGN_IDENTITY}")"
+    export CODESIGN_IDENTITY
+    return
+  fi
+
+  if [[ -n "${CODESIGNING_IDENTITY:-}" ]]; then
+    CODESIGN_IDENTITY="$(unquote_build_env_value "${CODESIGNING_IDENTITY}")"
+    export CODESIGN_IDENTITY
+    return
+  fi
+
+  if [[ -z "${TEAM_COMMON_NAME:-}" || -z "${TEAM_IDENTIFIER:-}" ]]; then
+    return
+  fi
+
+  local team_common_name team_identifier
+  team_common_name="$(unquote_build_env_value "${TEAM_COMMON_NAME}")"
+  team_identifier="$(unquote_build_env_value "${TEAM_IDENTIFIER}")"
+  [[ -n "${team_common_name}" && -n "${team_identifier}" ]] || return
+
+  CODESIGN_IDENTITY="${team_common_name} (${team_identifier})"
+  export CODESIGN_IDENTITY
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
@@ -356,6 +414,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+load_build_env
+configure_codesign_identity
 
 if [[ "${publish_release}" == "true" && "${notarize}" != "true" ]]; then
   cli_die "--publish requires --notarize"
