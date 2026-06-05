@@ -997,6 +997,7 @@ fn always_allows_usage(scope: &IsotopeAlwaysAllowScope, keys: &[String]) -> Resu
     Ok(store.always_allows_keys(scope, keys))
 }
 
+#[cfg(test)]
 fn always_allows_usage_at_path(
     path: &Path,
     scope: &IsotopeAlwaysAllowScope,
