@@ -4164,6 +4164,7 @@ const ZSH_SECRET_SCAN_HOME_FILES: &[&str] =
     &[".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"];
 
 const SECRET_SCAN_MAX_FILE_BYTES: u64 = 1024 * 1024;
+const AUTOMIC_VAULT_DOTENV_ENCRYPTED_PREFIX: &str = "encrypted:";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secret_insecurity_reasons(ShellSecretFlavor::Bash)
@@ -4291,6 +4292,9 @@ fn scan_secret_line(path: &Path, line_number: usize, line: &str) -> Option<Secre
     }
 
     let value = normalized_secret_value(assignment.value);
+    if secret_path_looks_like_env_file(path) && secret_value_looks_like_encrypted_dotenv(value) {
+        return None;
+    }
     let key_is_sensitive = secret_key_name_is_sensitive(assignment.key);
     let value_has_known_shape = secret_value_has_known_secret_shape(value);
     let value_has_strong_shape = secret_value_has_high_entropy_shape(value);
@@ -4856,6 +4860,16 @@ fn secret_sensitive_env_value_is_real(value: &str) -> bool {
     let has_alpha = value.chars().any(|ch| ch.is_ascii_alphabetic());
     let has_digit = value.chars().any(|ch| ch.is_ascii_digit());
     (value.len() >= 16 && has_alpha) || (value.len() >= 12 && has_alpha && has_digit)
+}
+
+fn secret_value_looks_like_encrypted_dotenv(value: &str) -> bool {
+    let Some(payload) = value.strip_prefix(AUTOMIC_VAULT_DOTENV_ENCRYPTED_PREFIX) else {
+        return false;
+    };
+    !payload.is_empty()
+        && payload
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '='))
 }
 
 fn secret_value_has_known_secret_shape(value: &str) -> bool {
@@ -11979,6 +11993,33 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         assert_eq!(findings[0].kind, "secret-assignment");
         assert_eq!(findings[0].line, Some(1));
         assert!(!findings[0].message.contains("sk-test"));
+    }
+
+    #[test]
+    fn secret_file_scanner_ignores_encrypted_dotenv_values() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        fs::write(
+            &env_path,
+            [
+                "DOTENV_PUBLIC_KEY=abc",
+                "POSTHOG_API_KEY=\"encrypted:BHvhiFrrSNTU2wyZKZZyXTJkeE/viMW2B4L40PlAwhMif8P5BPhG1ew9D7pmU3VFAejrrcQhqjiSog/vM8/wIGBHBYpM+0776ulrLQGbSrLtzjMyh0ig0AimnI9YFrctRb2bWkG7bqASerIwV+xvzQ==\"",
+                "OPENAI_API_KEY=sk-test_1234567890abcdef",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let findings = scan_secret_file(&env_path).unwrap();
+
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].kind, "secret-assignment");
+        assert_eq!(findings[0].line, Some(3));
+        assert!(
+            findings[0]
+                .message
+                .contains("assigned to OPENAI_API_KEY")
+        );
     }
 
     #[test]
