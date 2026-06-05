@@ -2193,8 +2193,8 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    #[test]
     fn dotenv_command_parsers_cover_help_version_and_error_edges() {
+        assert_eq!(
             parse_dotenv_command("av dotenv", Vec::<OsString>::new().into_iter()).unwrap_err(),
             "missing dotenv command"
         );
