@@ -47,16 +47,17 @@ class FakeBuildPageModule(FakePageModule):
 
     @staticmethod
     def package_pages_from_sources(_sources):
-        def page(name, indexable):
+        def page(name, indexable, provider="brew", slug=None):
+            slug = slug or name
             return types.SimpleNamespace(
-                provider="brew",
+                provider=provider,
                 name=name,
-                slug=name,
-                path=f"/pkg/brew/{name}/",
+                slug=slug,
+                path=f"/pkg/{provider}/{slug}/",
                 display_name=name,
-                key=f"brew:{name}",
+                key=f"{provider}:{name}",
                 summary=f"{name} summary",
-                package_manager_url=f"https://brew.example/{name}",
+                package_manager_url=f"https://{provider}.example/{name}",
                 version="1.0.0",
                 category="developer-tools",
                 license="MIT",
@@ -80,6 +81,8 @@ class FakeBuildPageModule(FakePageModule):
         return {
             "brew:ripgrep": page("ripgrep", True),
             "brew:thin": page("thin", False),
+            "npm:@playwright/test": page("@playwright/test", True, "npm", "playwright-test"),
+            "npm:playwright-test": page("playwright-test", True, "npm", "playwright-test"),
         }
 
     @staticmethod
@@ -371,9 +374,18 @@ class PackageSqliteTests(unittest.TestCase):
         self.assertEqual(package_by_key["brew:ripgrep"].indexable, True)
         self.assertEqual(package_by_key["brew:thin"].indexable, False)
         self.assertEqual(package_by_key["brew:ripgrep"].install_command, "av install ripgrep")
+        self.assertEqual(package_by_key["npm:playwright-test"].path, "/pkg/npm/playwright-test/")
+        self.assertEqual(package_by_key["npm:@playwright/test"].path, "/pkg/npm/scoped-playwright-test/")
+        self.assertEqual(package_by_key["npm:@playwright/test"].slug, "scoped-playwright-test")
+        self.assertEqual(
+            package_by_key["npm:@playwright/test"].data["full"]["path"],
+            "/pkg/npm/scoped-playwright-test/",
+        )
         self.assertEqual(hubs, [])
         self.assertEqual(hub_packages, [])
         self.assertEqual({document.locale for document in documents}, {"en", "de"})
+        document_paths = [document.path for document in documents]
+        self.assertEqual(len(document_paths), len(set(document_paths)))
         self.assertEqual(metadata["source_hash"], "fixture-hash")
         self.assertIn("last_modified", metadata)
 

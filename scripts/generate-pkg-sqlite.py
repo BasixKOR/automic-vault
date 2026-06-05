@@ -88,6 +88,12 @@ class HubPackageRecord:
     reason: str
 
 
+@dataclass(frozen=True)
+class PackageRoute:
+    path: str
+    slug: str
+
+
 class Terminal:
     def __init__(self, json_mode: bool = False):
         self.json_mode = json_mode
@@ -685,17 +691,71 @@ def jsonable(value: Any) -> Any:
     return str(value)
 
 
-def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
+def is_scoped_npm_package(page: Any) -> bool:
+    name = str(getattr(page, "name", ""))
+    return str(getattr(page, "provider", "")) == "npm" and name.startswith("@") and "/" in name
+
+
+def route_hash(page: Any) -> str:
+    return hashlib.sha256(str(getattr(page, "key", "")).encode("utf-8")).hexdigest()[:8]
+
+
+def collision_slug_candidates(page: Any, base_slug: str) -> list[str]:
+    candidates: list[str] = []
+    if is_scoped_npm_package(page):
+        candidates.append(f"scoped-{base_slug}")
+    candidates.extend([base_slug, f"{base_slug}-{route_hash(page)}"])
+    return candidates
+
+
+def package_routes(pages: list[Any]) -> dict[str, PackageRoute]:
+    groups: dict[tuple[str, str], list[Any]] = {}
+    base_slugs_by_provider: dict[str, set[str]] = {}
+    for page in pages:
+        provider = str(getattr(page, "provider", ""))
+        slug = str(getattr(page, "slug", ""))
+        groups.setdefault((provider, slug), []).append(page)
+        base_slugs_by_provider.setdefault(provider, set()).add(slug)
+
+    assigned_by_provider: dict[str, set[str]] = {}
+    routes: dict[str, PackageRoute] = {}
+    for (provider, base_slug), group in sorted(groups.items()):
+        if len(group) > 1:
+            group = sorted(group, key=lambda page: (is_scoped_npm_package(page), str(getattr(page, "name", ""))))
+        assigned = assigned_by_provider.setdefault(provider, set())
+        for page in group:
+            candidates = [base_slug] if len(group) == 1 else collision_slug_candidates(page, base_slug)
+            slug = ""
+            for candidate in candidates:
+                if candidate in assigned:
+                    continue
+                if candidate != base_slug and candidate in base_slugs_by_provider.get(provider, set()):
+                    continue
+                slug = candidate
+                break
+            if not slug:
+                slug = f"{base_slug}-{route_hash(page)}"
+            assigned.add(slug)
+            routes[str(getattr(page, "key", ""))] = PackageRoute(
+                path=f"/pkg/{provider}/{slug}/",
+                slug=slug,
+            )
+    return routes
+
+
+def full_package_data(page_module: Any, page: Any, route: PackageRoute | None = None) -> dict[str, Any]:
     extra = getattr(page, "extra", {})
     if not isinstance(extra, dict):
         extra = {}
+    slug = route.slug if route else getattr(page, "slug", "")
+    path = route.path if route else getattr(page, "path", "")
     return {
         "provider": getattr(page, "provider", ""),
         "name": getattr(page, "name", ""),
         "displayName": getattr(page, "display_name", ""),
         "key": getattr(page, "key", ""),
-        "slug": getattr(page, "slug", ""),
-        "path": getattr(page, "path", ""),
+        "slug": slug,
+        "path": path,
         "summary": getattr(page, "summary", ""),
         "homepage": getattr(page, "homepage", ""),
         "version": getattr(page, "version", ""),
@@ -745,7 +805,7 @@ def full_package_data(page_module: Any, page: Any) -> dict[str, Any]:
     }
 
 
-def package_data(page_module: Any, page: Any) -> dict[str, Any]:
+def package_data(page_module: Any, page: Any, route: PackageRoute) -> dict[str, Any]:
     data = {
         "aliases": sorted(str(item) for item in getattr(page, "aliases", [])),
         "binaries": string_items(getattr(page, "binaries", [])),
@@ -764,15 +824,15 @@ def package_data(page_module: Any, page: Any) -> dict[str, Any]:
         "related": string_items(getattr(page, "related_packages", []), ("label", "name", "target", "package", "key")),
         "security": package_security_signals(page_module, page),
     }
-    data["full"] = jsonable(full_package_data(page_module, page))
+    data["full"] = jsonable(full_package_data(page_module, page, route))
     return data
 
 
-def package_record(page_module: Any, page: Any, search_text: str) -> PackageRecord:
+def package_record(page_module: Any, page: Any, route: PackageRoute, search_text: str) -> PackageRecord:
     return PackageRecord(
-        path=page.path,
+        path=route.path,
         provider=page.provider,
-        slug=page.slug,
+        slug=route.slug,
         package_key=page.key,
         name=page.name,
         display_name=page.display_name,
@@ -789,7 +849,7 @@ def package_record(page_module: Any, page: Any, search_text: str) -> PackageReco
         rank=page.popularity.get("rank") if isinstance(page.popularity, dict) else None,
         last_updated_at=getattr(page, "last_updated_at", ""),
         indexable=page_module.is_indexable_package_page(page),
-        data=package_data(page_module, page),
+        data=package_data(page_module, page, route),
         search_text=search_text,
     )
 
@@ -817,6 +877,7 @@ def build_records(
     if not pages_by_key:
         raise RuntimeError("no package metadata found")
     pages = sorted(pages_by_key.values(), key=lambda page: (page.provider, page.slug, page.name))
+    routes = package_routes(pages)
     hubs = page_module.package_hub_pages(pages)
     files = page_module.source_files()
     previous_manifest = previous_manifest_from_sqlite(output_path)
@@ -836,7 +897,7 @@ def build_records(
 
     for page in pages:
         search_text = page_search_text(page_module, page, None)
-        package_rows.append(package_record(page_module, page, search_text))
+        package_rows.append(package_record(page_module, page, routes[page.key], search_text))
 
     for hub, hub_pages in hubs:
         for position, page in enumerate(hub_pages, start=1):
@@ -858,7 +919,7 @@ def build_records(
         )
         for page in pages:
             documents.append(SearchDocument(
-                path=page_module.locale_path(page.path, locale),
+                path=page_module.locale_path(routes[page.key].path, locale),
                 locale=locale_code,
                 title=page.display_name,
                 summary=page_module.short_text(page_module.clean_summary(page.summary) or page_module.hero_sentence(page), 180),
