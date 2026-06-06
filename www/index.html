@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=63">
+  <link rel="stylesheet" href="./styles.css?v=64">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -222,22 +222,23 @@
       <section class="feature-section harden-section" id="harden" aria-labelledby="harden-title">
         <div class="feature-copy">
           <p class="eyebrow">01 &middot; Harden</p>
-          <h2 id="harden-title">Make installs immutable. Make plaintext secrets disappear.</h2>
+          <h2 id="harden-title">Make plaintext package secrets disappear.</h2>
           <p>
-            Automic Vault installs packages into controlled roots, links the
-            command you run through an <code>av</code> shim, and hardens
-            supported tools so credentials move out of easy-read files.
+            Automic Vault finds credentials that CLIs leave in dotfiles, moves
+            supported secrets into Keychain, and leaves each tool with a runtime
+            helper the agent can use without reading the secret.
           </p>
         </div>
 
         <div class="terminal-story" aria-label="Terminal examples for package hardening">
           <figure class="terminal-card terminal-card-green">
-            <figcaption>Install into a controlled root</figcaption>
+            <figcaption>Harden package-owned secrets</figcaption>
             <pre><code><span class="prompt">$</span> brew install awscli
 installed: /opt/homebrew/Cellar/awscli
 
-<span class="prompt">$</span> av scan
+<span class="prompt">$</span> av scan --package awscli
 <span class="terminal-danger">plaintext secret exposure</span>: ~/.aws/credentials
+reason agent-readable cloud keys
 
 <span class="prompt">$</span> cat ~/.aws/credentials
 [default]
@@ -245,7 +246,9 @@ aws_access_key_id=AKIA<span class="secret-blur">IOSFODNN7EXAMPLE</span>
 aws_secret_access_key=wJalr<span class="secret-blur">XUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</span>
 
 <span class="prompt">$</span> av harden awscli
-hardened package root: /opt/aws-cli
+saved AWS keys in Keychain
+rewrote credential_process helper
+removed plaintext credentials
 
 <span class="prompt">$</span> cat ~/.aws/credentials
 [default]
@@ -287,73 +290,92 @@ credential_process = /usr/local/bin/av credential-helper aws
         </div>
       </section>
 
+      <section class="feature-section immutable-section" id="immutable" aria-labelledby="immutable-title">
+        <div class="feature-copy">
+          <p class="eyebrow">02 &middot; Harden</p>
+          <h2 id="immutable-title">Make packages immutable after install.</h2>
+          <p>
+            Automic Vault installs developer tools into sealed roots and puts an
+            <code>av</code> shim on <code>PATH</code>. Agents can run the tool;
+            changing the tool itself routes through an approved update.
+          </p>
+        </div>
+
+        <div class="terminal-story" aria-label="Terminal example for immutable package roots">
+          <figure class="terminal-card terminal-card-blue">
+            <figcaption>Agent cannot modify itself</figcaption>
+            <pre><code><span class="prompt">$</span> av install codex
+fetch package codex
+root /opt/automic-vault/pkg/codex/0.42.0
+link /usr/local/bin/codex -> av shim
+seal root read-only
+
+<span class="prompt">$</span> codex exec 'patch $(which codex)'
+av: blocked write to sealed package root
+target /opt/automic-vault/pkg/codex/0.42.0/bin/codex
+reason package root is immutable
+next step av update codex --approve</code></pre>
+          </figure>
+        </div>
+      </section>
+
       <section class="feature-section dotenv-section" id="dotenv" aria-labelledby="dotenv-title">
         <div class="feature-copy">
-          <p class="eyebrow">02 &middot; Securing .env files</p>
-          <h2 id="dotenv-title">Keep <code>.env</code> convenient without leaving plaintext for agents.</h2>
+          <p class="eyebrow">03 &middot; Securing .env files</p>
+          <h2 id="dotenv-title">Keep <code>.env</code> in the workflow, not in the agent&rsquo;s context.</h2>
           <p>
-            <code>av dotenv</code> reads and writes
+            <code>av dotenv</code> writes
             <a href="https://dotenvx.com/" target="_blank" rel="noopener noreferrer">dotenvx</a>-compatible
-            <code>encrypted:</code> values. The private key lives in the
-            Automic Vault Keychain, and exports ask for approval before keys
-            enter a shell or command.
+            <code>encrypted:</code> values while the private key stays in the
+            Automic Vault Keychain. Direnv-style hooks load approved keys only
+            into the shell or command that asked for them.
           </p>
         </div>
 
         <div class="dotenv-terminal-layout" aria-label="Terminal examples for encrypted dotenv files">
-          <figure class="terminal-card terminal-card-green">
-            <figcaption>Create encrypted dotenv values</figcaption>
+          <figure class="terminal-card terminal-card-green dotenv-terminal-single">
+            <figcaption>Encrypted .env with direnv-style loading</figcaption>
             <pre><code><span class="prompt">$</span> av dotenv init
 created .env
 stored DOTENV_PRIVATE_KEY in Keychain
 
 <span class="prompt">$</span> printf '%s\n' "$STRIPE_SECRET_KEY" | av dotenv set STRIPE_SECRET_KEY
 updated .env
-value encrypted</code></pre>
-          </figure>
-
-          <figure class="terminal-card terminal-card-file">
-            <figcaption>.env committed without plaintext</figcaption>
-            <pre><code>DOTENV_PUBLIC_KEY="BP9x..."
+DOTENV_PUBLIC_KEY="BP9x..."
 STRIPE_SECRET_KEY="encrypted:BO/8An..."
 OPENAI_API_KEY="encrypted:BJN9z..."
-DATABASE_URL="encrypted:BI4p3..."</code></pre>
-          </figure>
+DATABASE_URL="encrypted:BI4p3..."
+dotenvx compatible
 
-          <figure class="terminal-card terminal-card-large">
-            <figcaption>Direnv-style shell loading</figcaption>
-            <pre><code><span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
+<span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
 
 <span class="prompt">$</span> cd ~/work/billing-api
-Automic Vault: Approve Dotenv Keys
+Automic Vault: Approve .env Keys
 file /Users/me/work/billing-api/.env
 keys STRIPE_SECRET_KEY OPENAI_API_KEY DATABASE_URL
 
 <span class="prompt">$</span> npm test
-dotenv keys exported into this shell</code></pre>
-          </figure>
-
-          <figure class="terminal-card terminal-card-blue">
-            <figcaption>One command, one approved handoff</figcaption>
-            <pre><code><span class="prompt">$</span> av dotenv run -- npm run deploy
-Approve Dotenv Keys
-command npm run deploy
-digest 21b65d37f0c4bfa9
-redact secret output: enabled</code></pre>
+keys exported into this shell only</code></pre>
           </figure>
         </div>
       </section>
 
-      <section class="feature-section app-section" id="app" aria-labelledby="app-title">
+      <section class="feature-section app-section detect-section" id="detect" aria-labelledby="detect-title">
         <div class="feature-copy">
-          <p class="eyebrow">03 &middot; macOS app</p>
-          <h2 id="app-title">A local console for packages, approvals, and updates.</h2>
+          <p class="eyebrow">04 &middot; Detect</p>
+          <h2 id="detect-title">Detect new risks while your Mac keeps changing.</h2>
           <p>
-            Automic Vault.app keeps the terminal workflow visible: Touch ID for
-            privileged installs and updates, notifications when packages need
-            attention, and package dossiers with homepages, versions, hazards,
-            and security notes.
+            Automic Vault.app runs in the background as you install tools, edit
+            projects, and accidentally expose new secrets. New package hazards
+            are reported as they appear, and supported plaintext secrets are
+            encrypted immediately.
           </p>
+          <ul class="app-feature-list">
+            <li><strong>Touch ID installs.</strong> Approve privileged installs and updates without leaving the terminal.</li>
+            <li><strong>Auto updates.</strong> Keep the app and hardened package rules current in the background.</li>
+            <li><strong>GUI search and discovery.</strong> Browse packages, homepages, versions, hazards, and security notes.</li>
+            <li><strong>Notifications.</strong> Know when new vulnerabilities or exposed secrets appear.</li>
+          </ul>
         </div>
 
         <figure class="app-visual">
@@ -368,34 +390,74 @@ redact secret output: enabled</code></pre>
         </figure>
 
         <div class="app-terminal-grid" aria-label="Terminal examples for the macOS app">
-          <figure class="terminal-card terminal-card-red">
-            <figcaption>Touch ID for installs</figcaption>
-            <pre><code><span class="prompt">$</span> av install jq
-waiting for Touch ID authorization
-authorized by Max
-installing jq 1.8.1
-sealed package root</code></pre>
+          <figure class="terminal-card terminal-card-green">
+            <figcaption>Background detector</figcaption>
+            <pre><code><span class="prompt">$</span> av app watch
+background detector running
+watch paths ~/.aws ~/.config .env
+watch packages Homebrew npm pipx
+
+detected new secret: ~/work/billing-api/.env
+key STRIPE_SECRET_KEY
+encrypted value in place
+private key stored in Keychain
+notification sent: .env protected</code></pre>
           </figure>
 
-          <figure class="terminal-card terminal-card-green">
-            <figcaption>Update notifications</figcaption>
-            <pre><code><span class="prompt">$</span> av outdated
-node 24.0.1 -> 24.2.0
-awscli 2.26.1 -> 2.27.3
-notification sent
-Automic Vault.app: 2 updates available</code></pre>
+          <figure class="terminal-card terminal-card-file">
+            <figcaption>New package hazard</figcaption>
+            <pre><code><span class="prompt">$</span> brew install snowflake-cli
+Automic Vault.app detected new hazard
+path ~/.snowsql/config
+action encrypt password + inject at runtime
+status ready for approval</code></pre>
           </figure>
 
           <figure class="terminal-card terminal-card-blue">
-            <figcaption>Package info without guessing</figcaption>
-            <pre><code><span class="prompt">$</span> av info curl
-homepage https://curl.se/
-source Homebrew
-license curl
-hazards ~/.netrc ~/.curlrc
-status needs hardening</code></pre>
+            <figcaption>Search and discovery</figcaption>
+            <pre><code><span class="prompt">$</span> av search kubernetes
+kubectl
+homepage https://kubernetes.io/
+hazards kubeconfig exec tokens
+status hardening available</code></pre>
           </figure>
         </div>
+      </section>
+
+      <section class="feature-section endorsement-section" id="endorsements" aria-labelledby="endorsements-title">
+        <div class="feature-copy">
+          <p class="eyebrow">05 &middot; Endorsements</p>
+          <h2 id="endorsements-title">Developers recognize the gap.</h2>
+          <p>
+            Agent-era package security is not theoretical. The first reaction
+            from developers has been that this boundary should already exist.
+          </p>
+        </div>
+
+        <a
+          class="tweet-endorsement"
+          href="https://x.com/Hiraweb3/status/2059662670006038857?s=20"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <div class="tweet-endorsement-person">
+            <img
+              src="./assets/hira-avatar.webp"
+              alt="Hira avatar"
+              width="160"
+              height="160"
+              loading="lazy"
+              decoding="async"
+            >
+            <cite class="tweet-endorsement-author">
+              <span>Hira</span>
+              <span>@Hiraweb3</span>
+            </cite>
+          </div>
+          <blockquote>
+            <p>we needed this yesterday but i'll take it now</p>
+          </blockquote>
+        </a>
       </section>
 
       <section class="closing-cta" aria-labelledby="final-title">

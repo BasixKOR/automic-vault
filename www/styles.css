@@ -2495,7 +2495,8 @@ h1 code {
 }
 
 .feature-copy h2,
-.feature-copy p:not(.eyebrow) {
+.feature-copy p:not(.eyebrow),
+.feature-copy .app-feature-list {
   grid-column: 2;
 }
 
@@ -2517,6 +2518,25 @@ h1 code {
   text-underline-offset: 0.2em;
 }
 
+.feature-copy .app-feature-list {
+  display: grid;
+  gap: 12px;
+  max-width: 41rem;
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.24vw, 1.12rem);
+  line-height: 1.52;
+}
+
+.feature-copy .app-feature-list li::marker {
+  color: var(--green);
+}
+
+.feature-copy .app-feature-list strong {
+  color: var(--ink);
+}
+
 .terminal-story {
   display: grid;
   grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
@@ -2530,18 +2550,26 @@ h1 code {
   max-width: 980px;
 }
 
-.harden-section .terminal-card pre {
+.harden-section .terminal-card pre,
+.immutable-section .terminal-card pre {
   font-size: clamp(1.01rem, 1.23vw, 1.2rem);
   line-height: 1.55;
 }
 
-.harden-section .terminal-story {
+.harden-section .terminal-story,
+.immutable-section .terminal-story {
   grid-column: 1;
 }
 
 .harden-section {
   padding-top: clamp(156px, 18vw, 256px);
   padding-bottom: 0;
+}
+
+.immutable-section {
+  background:
+    radial-gradient(circle at 78% 18%, oklch(68% 0.15 246 / 0.1), transparent 28rem),
+    linear-gradient(180deg, oklch(8% 0.006 255), oklch(11% 0.008 255));
 }
 
 .package-hardening-radar {
@@ -2602,17 +2630,28 @@ h1 code {
     linear-gradient(180deg, oklch(10% 0.009 255), oklch(8% 0.006 255));
 }
 
-.dotenv-terminal-layout,
+.dotenv-terminal-layout {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+  gap: 16px clamp(24px, 4.8vw, 78px);
+  min-width: 0;
+  max-width: 1180px;
+}
+
+.dotenv-terminal-layout .terminal-card {
+  grid-column: 2;
+  max-width: 980px;
+}
+
+.dotenv-terminal-single {
+  min-height: 0;
+}
+
 .app-terminal-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
-}
-
-.dotenv-terminal-layout .terminal-card-large {
-  grid-row: span 2;
-  min-height: 100%;
 }
 
 .app-section {
@@ -2649,6 +2688,16 @@ h1 code {
 
 .app-terminal-grid .terminal-card:first-child {
   grid-row: span 2;
+}
+
+.endorsement-section {
+  background:
+    radial-gradient(circle at 74% 20%, oklch(70% 0.17 37 / 0.1), transparent 28rem),
+    linear-gradient(180deg, oklch(9% 0.007 255), oklch(8% 0.006 255));
+}
+
+.endorsement-section .tweet-endorsement {
+  justify-self: center;
 }
 
 .closing-cta {
@@ -2744,6 +2793,7 @@ h1 code {
 
 @media (max-width: 980px) {
   .terminal-story,
+  .dotenv-terminal-layout,
   .app-terminal-grid {
     grid-template-columns: 1fr;
   }
@@ -2767,13 +2817,16 @@ h1 code {
   }
 
   .harden-section .terminal-story,
+  .immutable-section .terminal-story,
+  .dotenv-terminal-layout,
   .package-hardening-radar,
   .app-visual,
   .app-terminal-grid {
     grid-column: 1;
   }
 
-  .terminal-story .terminal-card {
+  .terminal-story .terminal-card,
+  .dotenv-terminal-layout .terminal-card {
     grid-column: 1;
     max-width: none;
   }
@@ -2787,10 +2840,6 @@ h1 code {
     border-bottom: 1px solid var(--line);
   }
 
-  .dotenv-terminal-layout {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .feature-copy,
   .closing-cta {
     grid-template-columns: 1fr;
@@ -2799,6 +2848,7 @@ h1 code {
   .feature-copy > .eyebrow,
   .feature-copy h2,
   .feature-copy p:not(.eyebrow),
+  .feature-copy .app-feature-list,
   .closing-cta > .eyebrow,
   .closing-cta h2,
   .closing-cta > div,
