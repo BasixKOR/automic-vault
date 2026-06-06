@@ -2317,7 +2317,7 @@ h1 code {
 }
 
 .poster-hero-copy > .eyebrow {
-  margin-top: 4em;
+  margin-top: clamp(8.25rem, 15.5vw, 11.25rem);
 }
 
 .poster-hero h1 {
