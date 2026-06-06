@@ -233,13 +233,24 @@
         <div class="terminal-story" aria-label="Terminal examples for package hardening">
           <figure class="terminal-card terminal-card-green">
             <figcaption>Install into a controlled root</figcaption>
-            <pre><code><span class="prompt">$</span> av install awscli
-fetch brew:awscli
-pin version 2.27.3
-verify bottle sha256
-write /opt/automic-vault/pkg/awscli/2.27.3
-seal root read-only
-link /usr/local/bin/aws</code></pre>
+            <pre><code><span class="prompt">$</span> brew install awscli
+installed: /opt/homebrew/Cellar/awscli
+
+<span class="prompt">$</span> av scan
+<span style='color:red'>plaintext secret exposure</span>: ~/.aws/credentials
+
+<span class="prompt">$</span> cat ~/.aws/credentials
+[default]
+aws_access_key_id=AKIA...
+aws_secret_access_key=abcd...
+
+<span class="prompt">$</span> av harden awscli
+hardened package root: /opt/aws-cli
+
+<span class="prompt">$</span> cat ~/.aws/credentials
+[default]
+credential_process = /usr/local/bin/av credential-helper aws
+</code></pre>
           </figure>
 
           <figure class="terminal-card terminal-card-red">
