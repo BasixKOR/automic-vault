@@ -79,10 +79,11 @@ if (toolFlipWord) {
   const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
   const flipDuration = 640;
   const flipInterval = 1900;
+  const visibleDelay = 2000;
   let toolCursor = 0;
 
   if (motionAllowed.matches) {
-    window.setInterval(() => {
+    const flipToNextTool = () => {
       toolCursor = (toolCursor + 1) % toolWords.length;
       toolFlipWord.classList.remove("is-flipping");
       window.requestAnimationFrame(() => {
@@ -96,7 +97,41 @@ if (toolFlipWord) {
       window.setTimeout(() => {
         toolFlipWord.classList.remove("is-flipping");
       }, flipDuration);
-    }, flipInterval);
+    };
+
+    let started = false;
+    let visibleTimer = 0;
+
+    const startToolFlip = () => {
+      if (started) {
+        return;
+      }
+
+      started = true;
+      flipToNextTool();
+      window.setInterval(flipToNextTool, flipInterval);
+    };
+
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver((entries) => {
+        const isVisible = entries.some((entry) => entry.isIntersecting);
+
+        if (isVisible && !visibleTimer && !started) {
+          visibleTimer = window.setTimeout(() => {
+            visibleTimer = 0;
+            startToolFlip();
+            observer.disconnect();
+          }, visibleDelay);
+        } else if (!isVisible && visibleTimer) {
+          window.clearTimeout(visibleTimer);
+          visibleTimer = 0;
+        }
+      }, { threshold: 0.35 });
+
+      observer.observe(toolFlipWord);
+    } else {
+      window.setTimeout(startToolFlip, visibleDelay);
+    }
   }
 }
 

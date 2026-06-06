@@ -2773,6 +2773,10 @@ h1 code {
   vertical-align: -0.05em;
 }
 
+.tool-install-line {
+  display: block;
+}
+
 .tool-flip-word {
   grid-area: 1 / 1;
   display: block;
