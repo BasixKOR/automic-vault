@@ -2714,6 +2714,12 @@ mod tests {
         }
     }
 
+    fn with_core_dump_limit_restored(action: impl FnOnce()) {
+        let core_dump_limit = CoreDumpLimitGuard::capture();
+        action();
+        drop(core_dump_limit);
+    }
+
     impl DotenvEnvGuard {
         fn set(values: &[(&str, &str)]) -> Self {
             let previous = values
@@ -3097,9 +3103,7 @@ mod tests {
                     .contains("failed to read terminal settings")
             );
         }
-        let core_dump_limit = CoreDumpLimitGuard::capture();
-        disable_dotenv_core_dumps().unwrap();
-        drop(core_dump_limit);
+        with_core_dump_limit_restored(|| disable_dotenv_core_dumps().unwrap());
 
         let parent = dotenv_parent_process_snapshot();
         assert!(parent.pid > 0);
