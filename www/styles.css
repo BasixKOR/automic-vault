@@ -114,13 +114,13 @@ code {
 }
 
 .site-shell {
-  width: min(calc(100% - 48px), var(--max));
-  margin: 44px auto;
+  width: min(100%, var(--max));
+  margin: 0 auto 44px;
   overflow: clip;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface-shell);
-  box-shadow: 0 34px 90px var(--shadow);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .masthead {
@@ -131,8 +131,9 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+  width: 100%;
   min-height: 82px;
-  padding: 18px clamp(20px, 3vw, 44px);
+  padding: 18px max(20px, calc((100vw - var(--max)) / 2 + 44px));
   border-bottom: 1px solid var(--line);
   background: var(--surface-nav);
   backdrop-filter: blur(16px);
@@ -1823,8 +1824,8 @@ h1 code {
 
 @media (max-width: 1060px) {
   .site-shell {
-    width: min(calc(100% - 28px), var(--max));
-    margin: 20px auto;
+    width: 100%;
+    margin: 0 auto 20px;
   }
 
   .hero {
@@ -2101,8 +2102,6 @@ h1 code {
   .site-shell {
     width: 100%;
     margin: 0;
-    border-inline: 0;
-    border-radius: 0;
   }
 
   .brand-type {
