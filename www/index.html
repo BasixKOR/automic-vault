@@ -346,8 +346,10 @@ next step av update codex --approve</code></pre>
 created .env
 stored DOTENV_PRIVATE_KEY in Keychain
 
-<span class="prompt">$</span> printf '%s\n' "$STRIPE_SECRET_KEY" | av dotenv set STRIPE_SECRET_KEY
-updated .env
+<span class="prompt">$</span> printf '%s\n' "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> .env
+
+<span class="prompt">$</span> av dotenv encrypt
+encrypted .env
 DOTENV_PUBLIC_KEY="BP9x..."
 STRIPE_SECRET_KEY="encrypted:BO/8An..."
 OPENAI_API_KEY="encrypted:BJN9z..."
