@@ -177,7 +177,6 @@ code {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  min-width: 44px;
   padding: 8px 0;
   transition: color 160ms ease;
 }
