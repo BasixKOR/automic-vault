@@ -12,18 +12,18 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automic Vault | Secure the tools you brew install</title>
-  <meta name="description" content="Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.">
+  <title>Automic Vault | Harden packages, .env files, and Mac installs</title>
+  <meta name="description" content="Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Automic Vault">
-  <meta property="og:title" content="Automic Vault | Secure the tools you brew install">
-  <meta property="og:description" content="Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.">
+  <meta property="og:title" content="Automic Vault | Harden packages, .env files, and Mac installs">
+  <meta property="og:description" content="Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.">
   <meta property="og:url" content="https://www.automicvault.com/">
   <meta property="og:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
-  <meta name="twitter:title" content="Automic Vault | Secure the tools you brew install">
-  <meta name="twitter:description" content="Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.">
+  <meta name="twitter:title" content="Automic Vault | Harden packages, .env files, and Mac installs">
+  <meta name="twitter:description" content="Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.">
   <meta property="twitter:image" content="https://www.automicvault.com/assets/app-hazard-journey.webp">
   <link rel="canonical" href="https://www.automicvault.com/">
   <link rel="alternate" hreflang="en" href="https://www.automicvault.com/">
@@ -44,7 +44,7 @@
         "slogan": "A new kind of package manager for a new kind of threat model",
         "url": "https://www.automicvault.com/",
         "logo": "https://www.automicvault.com/assets/icon@2x.webp",
-        "description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
+        "description": "Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.",
         "founder": {
           "@id": "https://www.automicvault.com/about/#max-howell"
         },
@@ -115,7 +115,7 @@
           "availability": "https://schema.org/InStock",
           "url": "https://www.automicvault.com/pricing/"
         },
-        "description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
+        "description": "Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
         }
@@ -124,11 +124,11 @@
         "@type": "WebPage",
         "@id": "https://www.automicvault.com/#webpage",
         "url": "https://www.automicvault.com/",
-        "name": "Automic Vault | Secure the tools you brew install",
-        "headline": "Secure the tools you brew install",
-        "description": "Automic Vault secures Homebrew tools, CLI secrets, and command approval gates locally on your Mac before AI agents use them.",
+        "name": "Automic Vault | Harden packages, .env files, and Mac installs",
+        "headline": "Harden your Mac before the agent runs",
+        "description": "Automic Vault hardens package installs, secures dotenvx-compatible encrypted .env files, and gates macOS package updates with Touch ID.",
         "datePublished": "2026-05-15",
-        "dateModified": "2026-06-04",
+        "dateModified": "2026-06-06",
         "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
         "publisher": {
           "@id": "https://www.automicvault.com/#organization"
@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=39">
+  <link rel="stylesheet" href="./styles.css?v=40">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -189,10 +189,9 @@
       </button>
 
       <nav class="nav" aria-label="Main navigation">
-        <a href="#hazards">Hazards</a>
         <a href="#harden">Harden</a>
-        <a href="#approval">Gates</a>
-        <a href="#monitor">Monitor</a>
+        <a href="#dotenv">Dotenv</a>
+        <a href="#app">macOS app</a>
         <a href="/pkg/">Packages</a>
         <a href="/blog/">Blog</a>
         <a href="/security/">Security</a>
@@ -202,433 +201,236 @@
       </nav>
     </header>
 
-    <main>
-      <section class="hero" aria-labelledby="hero-title">
-        <img
-          class="hero-visual"
-          src="./assets/hero-perspective-mock.webp"
-          alt=""
-          width="1915"
-          height="821"
-          aria-hidden="true"
-          decoding="async"
-          fetchpriority="high"
-        >
-        <!--
-        <div class="hero-meta">
-          <span>macOS</span>
-          <span>Homebrew</span>
-          <span>local-first</span>
+    <main class="landing-main">
+      <section class="poster-hero" aria-labelledby="hero-title">
+        <div class="poster-hero-top">
+          <span>From the creator of Homebrew</span>
+          <span>For local-first Mac developers</span>
         </div>
-        -->
 
-        <div class="hero-copy">
-          <p class="eyebrow">From the creator of Homebrew</p>
-          <h1 id="hero-title">Secure the tools you brew install</h1>
-          <p class="lede">
-            A new kind of package manager for a new kind of threat model
+        <div class="poster-hero-copy">
+          <p class="eyebrow">Packages &middot; secrets &middot; approvals</p>
+          <h1 id="hero-title">Harden your Mac <span>before the agent runs.</span></h1>
+          <p class="poster-lede">
+            Automic Vault secures package installs, encrypted dotenv files, and
+            approval-gated updates from one local macOS app.
           </p>
         </div>
 
-        <div class="hero-actions">
-          <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
-          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
-          <a class="button text" href="/docs/">Read docs</a>
+        <div class="poster-terminal-grid" aria-label="Automic Vault terminal overview">
+          <figure class="terminal-card terminal-card-large">
+            <figcaption>Package hardening</figcaption>
+            <pre><code><span class="prompt">$</span> av install gh
+fetch brew:gh
+verify bottle checksum
+root /opt/automic-vault/pkg/gh/2.76.0
+link /usr/local/bin/gh -> av shim
+immutable package root: yes</code></pre>
+          </figure>
+          <figure class="terminal-card">
+            <figcaption>Secret scan</figcaption>
+            <pre><code><span class="prompt">$</span> av scan --path .
+hazard .env: STRIPE_SECRET_KEY
+hazard ~/.aws/credentials
+fix: move secrets into Keychain</code></pre>
+          </figure>
+          <figure class="terminal-card">
+            <figcaption>Runtime approval</figcaption>
+            <pre><code><span class="prompt">$</span> av dotenv run -- npm test
+Approve Dotenv Keys
+file .env
+keys OPENAI_API_KEY STRIPE_SECRET_KEY</code></pre>
+          </figure>
         </div>
 
-      </section>
-
-      <section class="highlights" aria-labelledby="highlights-title">
-        <div class="section-label">
-          <h2 id="highlights-title">Scan first. Harden what matters. Keep watching.</h2>
-          <span>how it works</span>
-        </div>
-        <div class="highlight-grid">
-          <a class="highlight-card accent-hot" href="#hazards">
-            <span>01 / detect</span>
-            <strong>Finds readable tokens in files agents can reach.</strong>
-          </a>
-          <a class="highlight-card accent-green" href="#harden">
-            <span>02 / harden</span>
-            <strong>Moves supported secrets into protected runtime access.</strong>
-          </a>
-          <a class="highlight-card accent-blue" href="#approval">
-            <span>03 / gate</span>
-            <strong>Asks before commands publish, change, or reveal credentials.</strong>
-          </a>
-          <a class="highlight-card accent-gold" href="#monitor">
-            <span>04 / monitor</span>
-            <strong>Reports new hazards from installs, stale tools, and local config.</strong>
-          </a>
-        </div>
-      </section>
-
-      <section class="exposure-examples" aria-labelledby="exposure-title">
-        <div class="section-label">
-          <h2 id="exposure-title">The secret is already one command away.</h2>
-          <span>exposure paths</span>
-        </div>
-
-        <div class="terminal-exposure-grid">
-          <article class="terminal-exposure gh-token">
-            <div class="terminal-window" aria-label="Terminal example for gh auth token">
-              <div class="terminal-chrome" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <pre><code><span class="prompt">$</span> <span class="typed-command">gh auth token</span>
-<span class="terminal-output">token=[redacted GitHub token]</span></code></pre>
-            </div>
-            <div class="exposure-summary">
-              <h3>GitHub CLI token</h3>
-              <p>Prints a bearer token any agent, script, or compromised tool can copy into GitHub API calls.</p>
-            </div>
-          </article>
-
-          <article class="terminal-exposure aws-credentials">
-            <div class="terminal-window" aria-label="Terminal example for cat AWS credentials">
-              <div class="terminal-chrome" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <pre><code><span class="prompt">$</span> <span class="typed-command">cat ~/.aws/credentials</span>
-<span class="terminal-output">[default]
-aws_access_key_id=[redacted]
-aws_secret_access_key=[redacted]</span></code></pre>
-            </div>
-            <div class="exposure-summary">
-              <h3>AWS credential file</h3>
-              <p>Turns a readable dotfile into cloud account access before any package or prompt control can intervene.</p>
-            </div>
-          </article>
-
-          <article class="terminal-exposure git-credential">
-            <div class="terminal-window" aria-label="Terminal example for git credential fill">
-              <div class="terminal-chrome" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <pre><code><span class="prompt">$</span> <span class="typed-command">printf 'protocol=https\nhost=github.com\n\n' | git credential fill</span>
-<span class="terminal-output">username=x-access-token
-password=[redacted Git credential]</span></code></pre>
-            </div>
-            <div class="exposure-summary">
-              <h3>Git credential helper</h3>
-              <p>Asks the local helper to reveal repository credentials, even when no obvious token file exists.</p>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="endorsement" aria-label="Endorsement from Hira">
-        <a
-          class="tweet-endorsement"
-          href="https://x.com/Hiraweb3/status/2059662670006038857?s=20"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <div class="tweet-endorsement-person">
-            <img
-              src="./assets/hira-avatar.webp"
-              alt="Hira avatar"
-              width="160"
-              height="160"
-              loading="lazy"
-              decoding="async"
-            >
+        <div class="poster-hero-foot">
+          <div class="poster-stats" aria-label="Automic Vault operating modes">
+            <span><strong>Immutable</strong> package installs</span>
+            <span><strong>Encrypted</strong> dotenv handoff</span>
+            <span><strong>Touch ID</strong> authorization</span>
           </div>
-          <blockquote>
-            <cite class="tweet-endorsement-author">Hira <span>@Hiraweb3</span></cite>
-            <p>
-              <span>we needed this</span>
-              <span>yesterday but</span>
-              <span>i'll take it now</span>
-            </p>
-          </blockquote>
-        </a>
-      </section>
-
-      <section class="problem-strip" id="hazards" aria-labelledby="hazards-title">
-        <div class="section-label">
-          <h2 id="hazards-title">Agents turn local files into reachable secrets.</h2>
-          <span>agent era</span>
-        </div>
-
-        <div class="hazard-board">
-          <div class="hazard-copy">
-            <p>
-              Coding agents treat <code>~/.aws/credentials</code> like any other
-              readable file. Vault finds exposed credential paths and shows what
-              to fix before the next run.
-            </p>
-          </div>
-          <div class="hazard-list" aria-label="Plaintext credential examples">
-            <span><code>~/.netrc</code> HTTP passwords</span>
-            <span><code>~/.aws/credentials</code> cloud keys</span>
-            <span><code>~/.config/gh</code> GitHub tokens</span>
-            <span><code>.env</code> project secrets</span>
-            <span><code>~/.npmrc</code> registry tokens</span>
-            <span><code>mcp.json</code> server credentials</span>
+          <div class="hero-actions">
+            <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
+            <a class="button secondary" href="/secret-scanner-for-ai-agents/">Run the scanner</a>
+            <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
           </div>
         </div>
       </section>
 
-      <section class="story-layout" id="harden" aria-label="Automic Vault product flow">
-        <div class="story-main">
-          <div class="list-heading">
-            <div>
-              <h2>The hardening pass.</h2>
-              <p>Install Vault, scan your Mac, harden supported packages, then leave it running.</p>
-            </div>
-            <span>local control</span>
-          </div>
-
-          <article class="ranked-story">
-            <span class="rank">0</span>
-            <div>
-              <p class="story-kicker">Install normally</p>
-              <h3>Keep using brew, npm, etc. as usual.</h3>
-              <p>
-                Vault fits under the package managers and install paths developers already use,
-                then adds a local safety pass after tools land on the machine.
-              </p>
-              <div class="source-strip" aria-label="Normal package sources">
-                <span>Homebrew</span>
-                <span>npm</span>
-                <span>PyPI</span>
-                <span>Direct installs</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="ranked-story">
-            <span class="rank">1</span>
-            <div>
-              <p class="story-kicker">Detect vulnerable installs</p>
-              <h3>Find vulnerable package installs, whatever the source.</h3>
-              <p>
-                Vault ties readable credentials to the installed tools that can use them, so
-                vulnerable package paths surface before the next agent run.
-              </p>
-              <ul class="story-tags" aria-label="Secret boundary details">
-                <li>curl</li>
-                <li>gh</li>
-                <li>aws-cli</li>
-                <li>mcp</li>
-              </ul>
-            </div>
-          </article>
-
-          <article class="ranked-story">
-            <span class="rank">2</span>
-            <div>
-              <p class="story-kicker">Harden the package</p>
-              <h3>Keep the command. Remove the easy-read secret.</h3>
-              <p>
-                Vault hardening patches supported tools so credentials stay in protected storage
-                and reach the approved executable only when it runs.
-              </p>
-              <div class="source-strip" aria-label="Package sources">
-                <span>Homebrew</span>
-                <span>npm</span>
-                <span>PyPI</span>
-                <span>Keychain-backed</span>
-              </div>
-            </div>
-          </article>
-
-          <article class="ranked-story" id="approval">
-            <span class="rank">3</span>
-            <div>
-              <p class="story-kicker">Gate the command</p>
-              <h3>Ask at the moment a command wants power.</h3>
-              <p>
-                Prompt rules can fail. Vault asks from the local tool layer when a command
-                wants a secret, publishes a package, or changes cloud state.
-              </p>
-              <div class="inline-prompt" aria-label="Example approval request">
-                <span>Automic Vault</span>
-                <strong>Agent wants to run <code>npm publish</code>. Approve this command?</strong>
-                <i>Deny</i>
-                <i>Approve</i>
-              </div>
-            </div>
-          </article>
-
-          <article class="ranked-story" id="monitor">
-            <span class="rank">4</span>
-            <div>
-              <p class="story-kicker">Keep Vault running</p>
-              <h3>New installs create new hazards.</h3>
-              <p>
-                After the first scan, Vault keeps watching for new CLIs, stale tools, and
-                credentials that slip back into local files.
-              </p>
-            </div>
-          </article>
-
-          <article class="ranked-story" id="app">
-            <span class="rank">5</span>
-            <div>
-              <p class="story-kicker">Automic Vault.app</p>
-              <h3>Inspect hazards without leaving the machine.</h3>
-              <p>
-                Search packages, inspect hazards, approve installs with Touch ID, follow updates,
-                and use the <code>av</code> CLI when the terminal is faster.
-              </p>
-              <figure class="app-shot">
-                <img
-                  src="./assets/app-hazard-journey.webp"
-                  alt="Automic Vault app showing a curl plaintext credential hazard beside its Homebrew formula page"
-                  width="1672"
-                  height="941"
-                  loading="lazy"
-                  decoding="async"
-                >
-              </figure>
-            </div>
-          </article>
-        </div>
-
-        <aside class="side-rail" aria-label="Operational notes">
-          <section>
-            <h2>Boundary</h2>
-            <article>
-              <span>detect</span>
-              <strong>Readable files</strong>
-              <p>Vault shows the path, package, and reason before you act.</p>
-            </article>
-            <article>
-              <span>harden</span>
-              <strong>Protected storage</strong>
-              <p>Supported tools get secrets only when the command runs.</p>
-            </article>
-            <article>
-              <span>gate</span>
-              <strong>Approval gates</strong>
-              <p>Commands that use secrets ask before they proceed.</p>
-            </article>
-          </section>
-
-        </aside>
-      </section>
-
-      <section class="compare" aria-labelledby="compare-title">
-        <div class="section-label">
-          <h2 id="compare-title">Fits under the tools you already use.</h2>
-          <span>Zero Friction</span>
-        </div>
-        <div class="compare-grid">
-          <article>
-            <span>Homebrew</span>
-            <h3>Keep the install path</h3>
-            <p>Keep using Homebrew. Add a safety pass after tools land on your Mac.</p>
-          </article>
-          <article>
-            <span>1Password</span>
-            <h3>Keep your team vault</h3>
-            <p>1Password stores shared secrets. Automic Vault controls the local command that asks for one.</p>
-          </article>
-          <article>
-            <span>Agent controls</span>
-            <h3>Put the gate below the prompt</h3>
-            <p>A prompt can be bypassed. A local approval gate still asks when the command runs.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="secured-radar-section" aria-labelledby="secured-title">
-        <div class="secured-radar" aria-label="Homebrew package scan">
-          <div class="radar-copy">
-            <span>11,909 Homebrew packages scanned</span>
-            <strong id="secured-title">A Homebrew scan you can act on.</strong>
-            <p>Vault reviews formula and tap candidates for local secret paths. Fixed packages get hardening. Remaining risks show as hazards.</p>
-          </div>
-
-          <div class="radar-feed" data-secured-feed>
-            <a class="feed-row accent-hot" href="/pkg/brew/docker/">
-              <span>docker</span>
-              <p>flags ambient registry credential helpers</p>
-            </a>
-            <a class="feed-row accent-green" href="/pkg/brew/awscli/">
-              <span>aws-cli</span>
-              <p>serves AWS credentials through av credential-helper</p>
-            </a>
-            <a class="feed-row accent-blue" href="/pkg/brew/tfenv/">
-              <span>terraform</span>
-              <p>serves cloud tokens through Terraform's helper protocol</p>
-            </a>
-            <a class="feed-row accent-gold" href="/pkg/brew/git/">
-              <span>git</span>
-              <p>detects plaintext credential-store files</p>
-            </a>
-            <a class="feed-row accent-hot" href="/pkg/brew/openssh/">
-              <span>openssh</span>
-              <p>reports unencrypted private keys before agent runs</p>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section class="founder-quote" aria-label="Founder note">
-        <div class="section-label">
-          <span>founder note</span>
-        </div>
-        <blockquote class="quote-panel">
-          <p>I built Homebrew. It was designed before AI agents existed.</p>
-          <p>Install with Homebrew. Harden with Automic Vault.</p>
+      <section class="feature-section harden-section" id="harden" aria-labelledby="harden-title">
+        <div class="feature-copy">
+          <p class="eyebrow">01 &middot; Harden</p>
+          <h2 id="harden-title">Make installs immutable. Make plaintext secrets disappear.</h2>
           <p>
-            Stop agents, malware, and compromised tools from accessing secrets
-            or performing sensitive actions without approval.
+            Automic Vault installs packages into controlled roots, links the
+            command you run through an <code>av</code> shim, and hardens
+            supported tools so credentials move out of easy-read files.
           </p>
-          <cite>&ndash; Max Howell, Creator of Homebrew</cite>
-        </blockquote>
+        </div>
+
+        <div class="terminal-story" aria-label="Terminal examples for package hardening">
+          <figure class="terminal-card terminal-card-green">
+            <figcaption>Install into a controlled root</figcaption>
+            <pre><code><span class="prompt">$</span> av install awscli
+fetch brew:awscli
+pin version 2.27.3
+verify bottle sha256
+write /opt/automic-vault/pkg/awscli/2.27.3
+seal root read-only
+link /usr/local/bin/aws</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-red">
+            <figcaption>Find package-owned secret hazards</figcaption>
+            <pre><code><span class="prompt">$</span> av scan --package awscli
+package awscli
+hazard ~/.aws/credentials
+reason plaintext cloud keys
+reachable by shell agents
+recommend av save + av inject</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-blue">
+            <figcaption>Harden the command boundary</figcaption>
+            <pre><code><span class="prompt">$</span> printf '%s\n' "$AWS_SECRET_ACCESS_KEY" | av save AWS_SECRET_ACCESS_KEY
+saved AWS_SECRET_ACCESS_KEY in Keychain
+
+<span class="prompt">$</span> av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /usr/local/bin/aws sts get-caller-identity
+approval requested
+injected for this process</code></pre>
+          </figure>
+        </div>
+
+        <div class="section-console-strip" aria-label="Supported package examples">
+          <span>gh</span>
+          <span>awscli</span>
+          <span>curl</span>
+          <span>git</span>
+          <span>npm</span>
+          <span>terraform</span>
+          <span>kubectl</span>
+          <span>mcp</span>
+        </div>
       </section>
 
-      <section class="final-cta" aria-labelledby="final-title">
+      <section class="feature-section dotenv-section" id="dotenv" aria-labelledby="dotenv-title">
+        <div class="feature-copy">
+          <p class="eyebrow">02 &middot; Securing .env files</p>
+          <h2 id="dotenv-title">Keep dotenv convenient without leaving plaintext for agents.</h2>
+          <p>
+            <code>av dotenv</code> reads and writes
+            <a href="https://dotenvx.com/" target="_blank" rel="noopener noreferrer">dotenvx</a>-compatible
+            <code>encrypted:</code> values. The private key lives in the
+            Automic Vault Keychain, and exports ask for approval before keys
+            enter a shell or command.
+          </p>
+        </div>
+
+        <div class="dotenv-terminal-layout" aria-label="Terminal examples for encrypted dotenv files">
+          <figure class="terminal-card terminal-card-green">
+            <figcaption>Create encrypted dotenv values</figcaption>
+            <pre><code><span class="prompt">$</span> av dotenv init
+created .env
+stored DOTENV_PRIVATE_KEY in Keychain
+
+<span class="prompt">$</span> printf '%s\n' "$STRIPE_SECRET_KEY" | av dotenv set STRIPE_SECRET_KEY
+updated .env
+value encrypted</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-file">
+            <figcaption>.env committed without plaintext</figcaption>
+            <pre><code>DOTENV_PUBLIC_KEY="BP9x..."
+STRIPE_SECRET_KEY="encrypted:BO/8An..."
+OPENAI_API_KEY="encrypted:BJN9z..."
+DATABASE_URL="encrypted:BI4p3..."</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-large">
+            <figcaption>Direnv-style shell loading</figcaption>
+            <pre><code><span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
+
+<span class="prompt">$</span> cd ~/work/billing-api
+Automic Vault: Approve Dotenv Keys
+file /Users/me/work/billing-api/.env
+keys STRIPE_SECRET_KEY OPENAI_API_KEY DATABASE_URL
+
+<span class="prompt">$</span> npm test
+dotenv keys exported into this shell</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-blue">
+            <figcaption>One command, one approved handoff</figcaption>
+            <pre><code><span class="prompt">$</span> av dotenv run -- npm run deploy
+Approve Dotenv Keys
+command npm run deploy
+digest 21b65d37f0c4bfa9
+redact secret output: enabled</code></pre>
+          </figure>
+        </div>
+      </section>
+
+      <section class="feature-section app-section" id="app" aria-labelledby="app-title">
+        <div class="feature-copy">
+          <p class="eyebrow">03 &middot; macOS app</p>
+          <h2 id="app-title">A local console for packages, approvals, and updates.</h2>
+          <p>
+            Automic Vault.app keeps the terminal workflow visible: Touch ID for
+            privileged installs and updates, notifications when packages need
+            attention, and package dossiers with homepages, versions, hazards,
+            and security notes.
+          </p>
+        </div>
+
+        <figure class="app-visual">
+          <img
+            src="./assets/app-hazard-journey.webp"
+            alt="Automic Vault app showing a plaintext credential hazard beside a package homepage"
+            width="1672"
+            height="941"
+            loading="lazy"
+            decoding="async"
+          >
+        </figure>
+
+        <div class="app-terminal-grid" aria-label="Terminal examples for the macOS app">
+          <figure class="terminal-card terminal-card-red">
+            <figcaption>Touch ID for installs</figcaption>
+            <pre><code><span class="prompt">$</span> av install jq
+waiting for Touch ID authorization
+authorized by Max
+installing jq 1.8.1
+sealed package root</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-green">
+            <figcaption>Update notifications</figcaption>
+            <pre><code><span class="prompt">$</span> av outdated
+node 24.0.1 -> 24.2.0
+awscli 2.26.1 -> 2.27.3
+notification sent
+Automic Vault.app: 2 updates available</code></pre>
+          </figure>
+
+          <figure class="terminal-card terminal-card-blue">
+            <figcaption>Package info without guessing</figcaption>
+            <pre><code><span class="prompt">$</span> av info curl
+homepage https://curl.se/
+source Homebrew
+license curl
+hazards ~/.netrc ~/.curlrc
+status needs hardening</code></pre>
+          </figure>
+        </div>
+      </section>
+
+      <section class="closing-cta" aria-labelledby="final-title">
         <p class="eyebrow">Free and open source</p>
-        <h2 id="final-title">Run Vault before your next agent run.</h2>
+        <h2 id="final-title">Install with Homebrew. Secure with Automic Vault.</h2>
         <div>
           <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
-          <a class="button secondary" href="/secret-scanner-for-ai-agents/">Scan for exposed secrets</a>
-          <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
-        </div>
-      </section>
-
-      <section class="guides" aria-labelledby="guides-title">
-        <div class="section-label">
-          <h2 id="guides-title">Appendix refs</h2>
-          <span>guides</span>
-        </div>
-        <div class="guide-list">
-          <a href="/secret-scanner-for-ai-agents/">
-            <span>01</span>
-            <strong>AI Agent Secret Scanner</strong>
-            <p>Find plaintext local credentials before an agent starts.</p>
-          </a>
-          <a href="/secrets-manager-for-ai-agents/">
-            <span>02</span>
-            <strong>Secrets Manager for AI Agents</strong>
-            <p>Store secrets locally and serve them only to approved tools.</p>
-          </a>
-          <a href="/secure-aws-cli-credentials-ai-agents/">
-            <span>03</span>
-            <strong>Secure AWS CLI Credentials</strong>
-            <p>Keep cloud credentials out of ambient config files.</p>
-          </a>
-          <a href="/ai-agent-approval-gates/">
-            <span>04</span>
-            <strong>AI Agent Approval Gates</strong>
-            <p>Put approvals in front of commands that use power.</p>
-          </a>
-          <a href="/security/whitepaper/">
-            <span>05</span>
-            <strong>Security Methods and Gaps</strong>
-            <p>Read the candid white paper on controls, caveats, holes, and hardening work.</p>
-          </a>
+          <a class="button secondary" href="/docs/">Read docs</a>
+          <a class="button text" href="/pkg/">Browse packages</a>
         </div>
       </section>
     </main>
