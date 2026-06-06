@@ -165,7 +165,7 @@ pub(crate) fn run_update(invocation: &Invocation, mut args: env::ArgsOs) -> Resu
 
     let _lock = acquire_package_mutation_lock()?;
     let config = load_config()?;
-    for package in resolve_outdated_package_statuses(&config, &request.selection)? {
+    for package in resolve_update_package_statuses(&config, &request.selection)? {
         run_i_package(
             &config,
             requested_package_from_status(&package),

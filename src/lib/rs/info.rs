@@ -117,11 +117,34 @@ pub(crate) fn resolve_outdated_package_statuses(
     )?))
 }
 
+pub(crate) fn resolve_update_package_statuses(
+    config: &Config,
+    selection: &PackageSelection,
+) -> Result<Vec<PackageStatus>, String> {
+    Ok(filter_update_package_statuses(resolve_package_statuses(
+        config, selection,
+    )?))
+}
+
 pub(crate) fn filter_outdated_package_statuses(statuses: Vec<PackageStatus>) -> Vec<PackageStatus> {
     statuses
         .into_iter()
         .filter(PackageStatus::is_outdated)
         .collect()
+}
+
+pub(crate) fn filter_update_package_statuses(statuses: Vec<PackageStatus>) -> Vec<PackageStatus> {
+    statuses
+        .into_iter()
+        .filter(|status| status.is_outdated() || status_has_radioisotope_remediation(status))
+        .collect()
+}
+
+fn status_has_radioisotope_remediation(status: &PackageStatus) -> bool {
+    match &status.source {
+        PackageReceiptSource::Isotope { isotope_name } => isotope_has_post_install(isotope_name),
+        _ => false,
+    }
 }
 
 pub(crate) fn resolve_scanned_package_records<Resolve, Warn>(
@@ -3402,6 +3425,40 @@ mod tests {
         ]);
         assert_eq!(outdated.len(), 1);
         assert_eq!(outdated[0].package_name, "ripgrep");
+
+        let update_candidates = filter_update_package_statuses(vec![
+            PackageStatus {
+                package_name: "isotope:aws-cli".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "aws-cli".to_string(),
+                },
+                installed_version: "2.34.54".to_string(),
+                latest_version: "2.34.54".to_string(),
+            },
+            PackageStatus {
+                package_name: "isotope:gh".to_string(),
+                source: PackageReceiptSource::Isotope {
+                    isotope_name: "gh".to_string(),
+                },
+                installed_version: "2.83.0".to_string(),
+                latest_version: "2.83.0".to_string(),
+            },
+            PackageStatus {
+                package_name: "deno".to_string(),
+                source: PackageReceiptSource::Vendor {
+                    vendor_name: "deno".to_string(),
+                },
+                installed_version: "2.7.7".to_string(),
+                latest_version: "2.7.8".to_string(),
+            },
+        ]);
+        assert_eq!(
+            update_candidates
+                .into_iter()
+                .map(|status| status.package_name)
+                .collect::<Vec<_>>(),
+            vec!["isotope:aws-cli".to_string(), "deno".to_string()]
+        );
 
         let cask = PackageStatus {
             package_name: "codex".to_string(),

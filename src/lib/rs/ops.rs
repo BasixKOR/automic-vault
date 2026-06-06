@@ -735,13 +735,14 @@ fn update_all_packages(
     if let Ok(mut callback) = progress_callback.lock() {
         callback(ProgressEvent::Resolving);
     }
-    let outdated = resolve_outdated_package_statuses(&config, &PackageSelection::AllInstalled)?;
-    let processed_packages = outdated
+    let update_candidates =
+        resolve_update_package_statuses(&config, &PackageSelection::AllInstalled)?;
+    let processed_packages = update_candidates
         .iter()
         .map(|package| package.package_name.clone())
         .collect::<Vec<_>>();
 
-    for package in outdated {
+    for package in update_candidates {
         run_i_package_with_progress(
             &config,
             requested_package_from_status(&package),
