@@ -2541,6 +2541,7 @@ h1 code {
 
 .harden-section {
   padding-top: clamp(156px, 18vw, 256px);
+  padding-bottom: 0;
 }
 
 .package-hardening-radar {
