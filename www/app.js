@@ -2,6 +2,7 @@ const toggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector(".nav");
 const scrollMeter = document.querySelector(".scroll-meter span");
 const securedFeed = document.querySelector("[data-secured-feed]");
+const toolFlipWord = document.querySelector("[data-tool-flip]");
 
 const securedPackages = [
   ["gh", "GitHub tokens saved in Keychain and injected only for gh commands", "accent-green", "/pkg/brew/gh/"],
@@ -71,6 +72,32 @@ if (scrollMeter) {
   updateScrollMeter();
   window.addEventListener("scroll", scheduleScrollMeterUpdate, { passive: true });
   window.addEventListener("resize", scheduleScrollMeterUpdate);
+}
+
+if (toolFlipWord) {
+  const toolWords = ["brew", "npm", "pip", "cargo", "pnpm", "uv"];
+  const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
+  const flipDuration = 640;
+  const flipInterval = 1900;
+  let toolCursor = 0;
+
+  if (motionAllowed.matches) {
+    window.setInterval(() => {
+      toolCursor = (toolCursor + 1) % toolWords.length;
+      toolFlipWord.classList.remove("is-flipping");
+      window.requestAnimationFrame(() => {
+        toolFlipWord.classList.add("is-flipping");
+      });
+
+      window.setTimeout(() => {
+        toolFlipWord.textContent = toolWords[toolCursor];
+      }, flipDuration / 2);
+
+      window.setTimeout(() => {
+        toolFlipWord.classList.remove("is-flipping");
+      }, flipDuration);
+    }, flipInterval);
+  }
 }
 
 if (securedFeed) {

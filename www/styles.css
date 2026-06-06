@@ -2756,6 +2756,57 @@ h1 code {
   max-width: 13ch;
 }
 
+.tool-flip {
+  position: relative;
+  display: inline-grid;
+  width: 5ch;
+  height: 0.96em;
+  overflow: hidden;
+  color: var(--green);
+  perspective: 14em;
+  vertical-align: -0.05em;
+}
+
+.tool-flip-word {
+  grid-area: 1 / 1;
+  display: block;
+  opacity: 1;
+  transform: translateY(0) rotateX(0);
+  transform-origin: 50% 100%;
+  filter: blur(0);
+  will-change: opacity, transform, filter;
+}
+
+.tool-flip-word.is-flipping {
+  animation: tool-flip-word 640ms cubic-bezier(0.83, 0, 0.17, 1) both;
+}
+
+@keyframes tool-flip-word {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0);
+    filter: blur(0);
+  }
+
+  45% {
+    opacity: 0;
+    transform: translateY(-0.42em) rotateX(-72deg);
+    filter: blur(2px);
+  }
+
+  55% {
+    opacity: 0;
+    transform: translateY(0.42em) rotateX(72deg);
+    filter: blur(2px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0);
+    filter: blur(0);
+  }
+}
+
 .closing-cta > div {
   gap: 12px;
 }
