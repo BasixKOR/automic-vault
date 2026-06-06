@@ -2741,7 +2741,7 @@ h1 code {
 
 .closing-cta {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(500px, 0.82fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 26px;
   align-items: end;
   padding: clamp(184px, 22vw, 312px) clamp(20px, 4vw, 58px);
@@ -2814,13 +2814,6 @@ h1 code {
 
 .closing-cta > div {
   gap: 12px;
-}
-
-.closing-terminal {
-  grid-column: 2;
-  grid-row: 1 / span 3;
-  align-self: end;
-  min-height: 270px;
 }
 
 @media (max-width: 900px) {
@@ -2947,8 +2940,7 @@ h1 code {
   .feature-copy .app-feature-list,
   .closing-cta > .eyebrow,
   .closing-cta h2,
-  .closing-cta > div,
-  .closing-terminal {
+  .closing-cta > div {
     grid-column: 1;
   }
 
@@ -2956,9 +2948,6 @@ h1 code {
     padding-top: 0;
   }
 
-  .closing-terminal {
-    grid-row: auto;
-  }
 }
 
 @media (max-width: 760px) {
