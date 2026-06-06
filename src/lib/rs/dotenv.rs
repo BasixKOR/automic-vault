@@ -26,6 +26,8 @@ const AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV: &str =
 const AV_DOTENV_FILE_ENV: &str = "AV_DOTENV_FILE";
 const AV_DOTENV_DIGEST_ENV: &str = "AV_DOTENV_DIGEST";
 const AV_DOTENV_KEYS_ENV: &str = "AV_DOTENV_KEYS";
+const DOTENV_EXPORT_DENIED_HINT: &str =
+    "hint: use `av dotenv run` to run commands with this project's environment";
 
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: c_int = -25300;
@@ -1816,10 +1818,10 @@ fn request_dotenv_approval(
         let _ = fs::remove_file(&pending_url);
         return Err(err);
     }
-    wait_for_dotenv_decision(&request_id)
+    wait_for_dotenv_decision(&request_id, entry.mode)
 }
 
-fn wait_for_dotenv_decision(id: &str) -> Result<(), String> {
+fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), String> {
     let decision_url = dotenv_decision_path(id)?;
     let pending_url = dotenv_pending_approval_path()?;
     loop {
@@ -1834,11 +1836,20 @@ fn wait_for_dotenv_decision(id: &str) -> Result<(), String> {
             if decision.approved {
                 return Ok(());
             }
-            return Err(decision
+            let reason = decision
                 .reason
-                .unwrap_or_else(|| "dotenv approval denied".to_string()));
+                .unwrap_or_else(|| "dotenv approval denied".to_string());
+            return Err(dotenv_approval_denied_message(mode, &reason));
         }
         thread::sleep(Duration::from_millis(250));
+    }
+}
+
+fn dotenv_approval_denied_message(mode: DotenvApprovalMode, reason: &str) -> String {
+    if mode == DotenvApprovalMode::Export {
+        format!("{reason}\n{DOTENV_EXPORT_DENIED_HINT}")
+    } else {
+        reason.to_string()
     }
 }
 
@@ -3901,7 +3912,7 @@ mod tests {
             },
         )
         .unwrap();
-        wait_for_dotenv_decision("approved").unwrap();
+        wait_for_dotenv_decision("approved", DotenvApprovalMode::Export).unwrap();
         assert!(!pending.exists());
         assert!(!decision_path.exists());
 
@@ -3916,8 +3927,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            wait_for_dotenv_decision("denied").unwrap_err(),
-            "dotenv approval denied"
+            wait_for_dotenv_decision("denied", DotenvApprovalMode::Export).unwrap_err(),
+            "dotenv approval denied\nhint: use `av dotenv run` to run commands with this project's environment"
+        );
+
+        write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
+        write_dotenv_json(
+            &dotenv_decision_path("run-denied").unwrap(),
+            &DotenvApprovalDecision {
+                id: "run-denied".to_string(),
+                approved: false,
+                reason: Some("Denied by operator".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_dotenv_decision("run-denied", DotenvApprovalMode::Run).unwrap_err(),
+            "Denied by operator"
         );
 
         write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
@@ -3931,7 +3957,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            wait_for_dotenv_decision("mismatch").unwrap_err(),
+            wait_for_dotenv_decision("mismatch", DotenvApprovalMode::Export).unwrap_err(),
             "dotenv approval decision id mismatch"
         );
 
