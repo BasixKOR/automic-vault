@@ -3097,8 +3097,9 @@ mod tests {
                     .contains("failed to read terminal settings")
             );
         }
-        let _core_dump_limit = CoreDumpLimitGuard::capture();
+        let core_dump_limit = CoreDumpLimitGuard::capture();
         disable_dotenv_core_dumps().unwrap();
+        drop(core_dump_limit);
 
         let parent = dotenv_parent_process_snapshot();
         assert!(parent.pid > 0);
