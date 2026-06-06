@@ -2252,6 +2252,10 @@ h1 code {
   max-width: 1080px;
 }
 
+.poster-hero-copy > .eyebrow {
+  margin-top: 4em;
+}
+
 .poster-hero h1 {
   max-width: min(100%, 13.8ch);
   margin-top: 12px;
