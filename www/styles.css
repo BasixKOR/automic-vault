@@ -2519,13 +2519,20 @@ h1 code {
 
 .terminal-story {
   display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
-  gap: 12px;
+  grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+  gap: 16px clamp(24px, 4.8vw, 78px);
   min-width: 0;
+  max-width: 1180px;
 }
 
-.terminal-story .terminal-card:first-child {
-  grid-row: span 2;
+.terminal-story .terminal-card {
+  grid-column: 2;
+  max-width: 980px;
+}
+
+.harden-section .terminal-card pre {
+  font-size: clamp(1.01rem, 1.23vw, 1.2rem);
+  line-height: 1.55;
 }
 
 .harden-section .terminal-story {
@@ -2740,7 +2747,6 @@ h1 code {
     grid-template-columns: 1fr;
   }
 
-  .terminal-story .terminal-card:first-child,
   .app-terminal-grid .terminal-card:first-child {
     grid-row: auto;
   }
@@ -2764,6 +2770,11 @@ h1 code {
   .app-visual,
   .app-terminal-grid {
     grid-column: 1;
+  }
+
+  .terminal-story .terminal-card {
+    grid-column: 1;
+    max-width: none;
   }
 
   .package-hardening-radar {

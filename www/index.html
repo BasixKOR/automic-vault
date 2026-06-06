@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=59">
+  <link rel="stylesheet" href="./styles.css?v=60">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -253,25 +253,6 @@ credential_process = /usr/local/bin/av credential-helper aws
 </code></pre>
           </figure>
 
-          <figure class="terminal-card terminal-card-red">
-            <figcaption>Find package-owned secret hazards</figcaption>
-            <pre><code><span class="prompt">$</span> av scan --package awscli
-package awscli
-hazard ~/.aws/credentials
-reason plaintext cloud keys
-reachable by shell agents
-recommend av save + av inject</code></pre>
-          </figure>
-
-          <figure class="terminal-card terminal-card-blue">
-            <figcaption>Harden the command boundary</figcaption>
-            <pre><code><span class="prompt">$</span> printf '%s\n' "$AWS_SECRET_ACCESS_KEY" | av save AWS_SECRET_ACCESS_KEY
-saved AWS_SECRET_ACCESS_KEY in Keychain
-
-<span class="prompt">$</span> av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /usr/local/bin/aws sts get-caller-identity
-approval requested
-injected for this process</code></pre>
-          </figure>
         </div>
 
         <div class="package-hardening-radar secured-radar" aria-label="Packages Automic Vault hardens">
