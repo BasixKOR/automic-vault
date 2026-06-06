@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=54">
+  <link rel="stylesheet" href="./styles.css?v=55">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -408,8 +408,23 @@ Touch ID approvals available</code></pre>
     </main>
 
     <footer class="site-footer">
-      <p>&copy; 2026 Automic Vault.</p>
-      <div class="footer-links">
+      <div class="footer-brand">
+        <img
+          src="./assets/icon@2x.webp"
+          alt=""
+          width="54"
+          height="54"
+          loading="lazy"
+          decoding="async"
+        >
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        <span><strong>Package root</strong> /opt/automic-vault</span>
+        <span><strong>Secrets</strong> Keychain-backed</span>
+        <span><strong>Approvals</strong> Touch ID ready</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
         <a href="/about/">About</a>
         <a href="/security/">Security</a>
         <a href="/blog/">Blog</a>
@@ -417,7 +432,7 @@ Touch ID approvals available</code></pre>
         <a href="/terms/">Terms</a>
         <a href="https://x.com/AutomicVault">X</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
-      </div>
+      </nav>
     </footer>
   </div>
 
