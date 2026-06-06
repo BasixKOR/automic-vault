@@ -2253,12 +2253,12 @@ h1 code {
 }
 
 .poster-hero h1 {
-  max-width: 12ch;
+  max-width: min(100%, 13.8ch);
   margin-top: 12px;
   color: var(--ink);
-  font-size: clamp(3.45rem, 5.65vw, 6.1rem);
+  font-size: clamp(5.2rem, 8.8vw, 9.5rem);
   font-weight: 850;
-  line-height: 0.82;
+  line-height: 0.9;
 }
 
 .poster-hero h1 span {
