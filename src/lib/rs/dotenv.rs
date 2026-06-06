@@ -3,7 +3,7 @@ use super::*;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, IsTerminal};
 
 #[cfg(target_os = "macos")]
 use std::ffi::{CString, c_char, c_int};
@@ -2424,9 +2424,17 @@ fn read_dotenv_secret_line_no_echo(
 }
 
 fn disable_dotenv_core_dumps() -> Result<(), String> {
+    let mut original = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+    if unsafe { libc::getrlimit(libc::RLIMIT_CORE, original.as_mut_ptr()) } != 0 {
+        return Err(format!(
+            "failed to read core dump limit: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    let original = unsafe { original.assume_init() };
     let limit = libc::rlimit {
         rlim_cur: 0,
-        rlim_max: 0,
+        rlim_max: original.rlim_max,
     };
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) } == 0 {
         Ok(())
@@ -2677,6 +2685,33 @@ mod tests {
 
     struct DotenvEnvGuard {
         previous: Vec<(String, Option<OsString>)>,
+    }
+
+    struct CoreDumpLimitGuard {
+        original: Option<libc::rlimit>,
+    }
+
+    impl CoreDumpLimitGuard {
+        fn capture() -> Self {
+            let mut original = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            let original =
+                if unsafe { libc::getrlimit(libc::RLIMIT_CORE, original.as_mut_ptr()) } == 0 {
+                    Some(unsafe { original.assume_init() })
+                } else {
+                    None
+                };
+            Self { original }
+        }
+    }
+
+    impl Drop for CoreDumpLimitGuard {
+        fn drop(&mut self) {
+            if let Some(original) = self.original {
+                unsafe {
+                    libc::setrlimit(libc::RLIMIT_CORE, &original);
+                }
+            }
+        }
     }
 
     impl DotenvEnvGuard {
@@ -3054,12 +3089,15 @@ mod tests {
         .unwrap();
 
         let mut stdin = io::stdin();
-        let mut secret = String::new();
-        assert!(
-            read_dotenv_secret_line_no_echo(&mut stdin, &mut secret)
-                .unwrap_err()
-                .contains("failed to read terminal settings")
-        );
+        if !stdin.is_terminal() {
+            let mut secret = String::new();
+            assert!(
+                read_dotenv_secret_line_no_echo(&mut stdin, &mut secret)
+                    .unwrap_err()
+                    .contains("failed to read terminal settings")
+            );
+        }
+        let _core_dump_limit = CoreDumpLimitGuard::capture();
         disable_dotenv_core_dumps().unwrap();
 
         let parent = dotenv_parent_process_snapshot();
