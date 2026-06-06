@@ -2432,9 +2432,9 @@ h1 code {
 .feature-section {
   display: grid;
   grid-template-columns: 1fr;
-  gap: clamp(34px, 5vw, 68px);
+  gap: clamp(68px, 10vw, 136px);
   align-items: start;
-  padding: clamp(86px, 10vw, 148px) clamp(20px, 4vw, 58px);
+  padding: clamp(172px, 20vw, 296px) clamp(20px, 4vw, 58px);
 }
 
 .feature-section h2,
@@ -2484,7 +2484,7 @@ h1 code {
 }
 
 .harden-section {
-  padding-top: clamp(78px, 9vw, 128px);
+  padding-top: clamp(156px, 18vw, 256px);
 }
 
 .section-console-strip {
@@ -2561,7 +2561,7 @@ h1 code {
 .closing-cta {
   display: grid;
   gap: 26px;
-  padding: clamp(92px, 11vw, 156px) clamp(20px, 4vw, 58px);
+  padding: clamp(184px, 22vw, 312px) clamp(20px, 4vw, 58px);
   background:
     linear-gradient(122deg, oklch(7% 0.006 255), oklch(13% 0.01 255) 72%, oklch(8% 0.006 255)),
     var(--bg-outer);
