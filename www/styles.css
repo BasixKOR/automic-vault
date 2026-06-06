@@ -2305,7 +2305,6 @@ h1 code {
   pointer-events: none;
 }
 
-.section-console-strip,
 .closing-cta div {
   display: flex;
   flex-wrap: wrap;
@@ -2537,32 +2536,56 @@ h1 code {
   padding-top: clamp(156px, 18vw, 256px);
 }
 
-.section-console-strip {
+.package-hardening-radar {
   grid-column: 1;
-  gap: 0;
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, oklch(94% 0.01 82 / 0.025), transparent);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, oklch(94% 0.01 82 / 0.03), transparent 38%),
+    var(--surface-deep);
 }
 
-.section-console-strip span {
-  min-width: 124px;
-  flex: 1 1 124px;
-  padding: 12px 14px;
+.package-hardening-radar .radar-copy {
+  min-height: 0;
+  padding: 16px 18px;
   border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
 }
 
-.section-console-strip .strip-label {
-  flex-basis: 100%;
-  min-width: 100%;
-  color: var(--ink);
-  background: oklch(94% 0.01 82 / 0.035);
+.package-hardening-radar .radar-copy span {
+  color: var(--muted);
+}
+
+.package-hardening-radar .radar-copy strong {
+  max-width: 21rem;
+  font-size: clamp(1.26rem, 1.9vw, 1.76rem);
+}
+
+.package-hardening-radar .radar-copy p {
+  max-width: 24rem;
+}
+
+.package-hardening-radar .radar-feed {
+  min-height: 196px;
+  border-block: 0;
+  background:
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(var(--grid-line-soft) 1px, transparent 1px);
+  background-size: 20% 100%, 100% 38px;
+}
+
+.package-hardening-radar .feed-row {
+  min-height: 196px;
+  padding: 18px;
+}
+
+.package-hardening-radar .feed-row:last-child {
+  border-right: 0;
+}
+
+.package-hardening-radar .feed-row:hover {
+  opacity: 1;
+  background: oklch(94% 0.01 82 / 0.026);
 }
 
 .dotenv-section {
@@ -2737,10 +2760,19 @@ h1 code {
   }
 
   .harden-section .terminal-story,
-  .section-console-strip,
+  .package-hardening-radar,
   .app-visual,
   .app-terminal-grid {
     grid-column: 1;
+  }
+
+  .package-hardening-radar {
+    grid-template-columns: 1fr;
+  }
+
+  .package-hardening-radar .radar-copy {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .dotenv-terminal-layout {
@@ -2803,9 +2835,6 @@ h1 code {
     font-size: 0.74rem;
   }
 
-  .section-console-strip span {
-    flex-basis: 50%;
-  }
 }
 
 @media (max-width: 520px) {
@@ -2824,9 +2853,6 @@ h1 code {
     font-size: 0.68rem;
   }
 
-  .section-console-strip span {
-    flex-basis: 100%;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

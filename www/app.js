@@ -4,10 +4,13 @@ const scrollMeter = document.querySelector(".scroll-meter span");
 const securedFeed = document.querySelector("[data-secured-feed]");
 
 const securedPackages = [
+  ["gh", "GitHub tokens saved in Keychain and injected only for gh commands", "accent-green", "/pkg/brew/gh/"],
+  ["awscli", "AWS keys moved from ~/.aws/credentials to credential_process", "accent-green", "/pkg/brew/awscli/"],
+  ["curl", "netrc and curlrc credentials detected as hazards", "accent-hot", "/pkg/brew/curl/"],
+  ["git", "plaintext credential-store files flagged before agent runs", "accent-gold", "/pkg/brew/git/"],
+  ["npm", "registry tokens mounted through a temporary npm config", "accent-blue", "/pkg/brew/node/"],
   ["docker", "ambient registry credential helpers flagged as hazards", "accent-hot", "/pkg/brew/docker/"],
-  ["aws-cli", "AWS credentials served through av credential-helper", "accent-green", "/pkg/brew/awscli/"],
-  ["terraform", "cloud tokens served through Terraform's helper protocol", "accent-blue", "/pkg/brew/tfenv/"],
-  ["git", "plaintext credential-store files detected in the GUI", "accent-gold", "/pkg/brew/git/"],
+  ["terraform", "cloud tokens served through Terraform helper flow", "accent-blue", "/pkg/brew/tfenv/"],
   ["openssh", "unencrypted private keys reported before agent runs", "accent-hot", "/pkg/brew/openssh/"],
   ["kubectl", "kubeconfig credentials served through exec helpers", "accent-blue", "/pkg/brew/kubernetes-cli/"],
   ["bitwarden", "token-bearing app state moved into Keychain", "accent-green", "/pkg/brew/bitwarden-cli/"],
