@@ -2194,11 +2194,11 @@ h1 code {
 
 .poster-hero {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(310px, 0.52fr);
+  grid-template-columns: 1fr;
   grid-template-areas:
-    "top top"
-    "copy terminals"
-    "foot foot";
+    "top"
+    "copy"
+    "foot";
   gap: clamp(14px, 2vw, 26px) clamp(24px, 4vw, 58px);
   align-content: space-between;
   padding: clamp(20px, 2.5vw, 30px) clamp(20px, 4vw, 58px) clamp(18px, 2.5vw, 28px);
@@ -2273,15 +2273,6 @@ h1 code {
   font-size: clamp(1rem, 1.28vw, 1.2rem);
   font-weight: 500;
   line-height: 1.24;
-}
-
-.poster-terminal-grid {
-  grid-area: terminals;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 9px;
-  align-items: stretch;
-  align-self: end;
 }
 
 .terminal-card {
@@ -2362,22 +2353,6 @@ h1 code {
 
 .terminal-card-large {
   min-height: 254px;
-}
-
-.poster-terminal-grid .terminal-card,
-.poster-terminal-grid .terminal-card-large {
-  min-height: 0;
-}
-
-.poster-terminal-grid .terminal-card pre {
-  padding: 10px 12px;
-  font-size: clamp(0.6rem, 0.69vw, 0.72rem);
-  line-height: 1.42;
-}
-
-.poster-terminal-grid .terminal-card figcaption {
-  min-height: 28px;
-  padding-block: 7px;
 }
 
 .terminal-card-green {
@@ -2611,13 +2586,11 @@ h1 code {
 }
 
 @media (max-width: 1180px) {
-  .poster-terminal-grid,
   .terminal-story,
   .app-terminal-grid {
     grid-template-columns: 1fr;
   }
 
-  .poster-terminal-grid .terminal-card,
   .terminal-story .terminal-card,
   .app-terminal-grid .terminal-card {
     min-height: 0;
@@ -2667,10 +2640,6 @@ h1 code {
   .poster-hero-top {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .poster-terminal-grid {
-    display: none;
   }
 
   .poster-hero-foot {
