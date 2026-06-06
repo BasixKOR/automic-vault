@@ -11557,6 +11557,78 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
     }
 
     #[test]
+    fn secret_scanner_stream_printer_covers_wrapped_events_and_empty_summary() {
+        let finding = SecretScannerFinding {
+            source: "dotenv".to_string(),
+            kind: "plaintext-secret".to_string(),
+            severity: "high".to_string(),
+            path: Some("/tmp/project/.env".to_string()),
+            line: Some(3),
+            message: "API_KEY is plaintext".to_string(),
+        };
+        let error = SecretScannerError {
+            source: "file-probe:zsh".to_string(),
+            path: Some("/tmp/.zshrc".to_string()),
+            message: "permission denied".to_string(),
+        };
+        let report = SecretScannerReport {
+            scope: SecretScannerScope::Full,
+            findings: vec![finding.clone()],
+            errors: vec![error.clone()],
+            summary: SecretScannerSummary {
+                scanned_files: 2,
+                findings: 1,
+                errors: 1,
+                isotope_detectors: 1,
+                file_probes: 1,
+            },
+        };
+        let mut printer = SecretScannerStreamPrinter {
+            format: SecretScannerStreamFormat::Wrapped,
+            color: false,
+            scope: SecretScannerScope::Full,
+            finding_count: 0,
+            printed_findings_header: false,
+            printed_warnings_header: false,
+        };
+        printer.begin().unwrap();
+        printer
+            .print_event(SecretScannerEvent::Finding(&finding))
+            .unwrap();
+        printer
+            .print_event(SecretScannerEvent::Error(&error))
+            .unwrap();
+        printer.finish(&report).unwrap();
+        assert_eq!(printer.finding_count, 1);
+        assert!(printer.printed_findings_header);
+        assert!(printer.printed_warnings_header);
+
+        let empty_report = SecretScannerReport {
+            scope: SecretScannerScope::IsotopesOnly,
+            findings: Vec::new(),
+            errors: Vec::new(),
+            summary: SecretScannerSummary {
+                scanned_files: 0,
+                findings: 0,
+                errors: 0,
+                isotope_detectors: 0,
+                file_probes: 0,
+            },
+        };
+        let mut empty_printer = SecretScannerStreamPrinter {
+            format: SecretScannerStreamFormat::Wrapped,
+            color: false,
+            scope: SecretScannerScope::IsotopesOnly,
+            finding_count: 0,
+            printed_findings_header: false,
+            printed_warnings_header: false,
+        };
+        empty_printer.begin().unwrap();
+        empty_printer.finish(&empty_report).unwrap();
+        assert_eq!(empty_printer.finding_count, 0);
+    }
+
+    #[test]
     fn package_info_metadata_helpers_cover_source_variants() {
         assert_eq!(
             explicit_requested_package_source(&RequestedPackage::HomebrewCask(

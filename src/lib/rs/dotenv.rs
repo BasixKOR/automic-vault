@@ -3,7 +3,7 @@ use super::*;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, IsTerminal};
 
 #[cfg(target_os = "macos")]
 use std::ffi::{CString, c_char, c_int};
@@ -2424,9 +2424,17 @@ fn read_dotenv_secret_line_no_echo(
 }
 
 fn disable_dotenv_core_dumps() -> Result<(), String> {
+    let mut original = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+    if unsafe { libc::getrlimit(libc::RLIMIT_CORE, original.as_mut_ptr()) } != 0 {
+        return Err(format!(
+            "failed to read core dump limit: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    let original = unsafe { original.assume_init() };
     let limit = libc::rlimit {
         rlim_cur: 0,
-        rlim_max: 0,
+        rlim_max: original.rlim_max,
     };
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) } == 0 {
         Ok(())
@@ -2679,6 +2687,39 @@ mod tests {
         previous: Vec<(String, Option<OsString>)>,
     }
 
+    struct CoreDumpLimitGuard {
+        original: Option<libc::rlimit>,
+    }
+
+    impl CoreDumpLimitGuard {
+        fn capture() -> Self {
+            let mut original = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            let original =
+                if unsafe { libc::getrlimit(libc::RLIMIT_CORE, original.as_mut_ptr()) } == 0 {
+                    Some(unsafe { original.assume_init() })
+                } else {
+                    None
+                };
+            Self { original }
+        }
+    }
+
+    impl Drop for CoreDumpLimitGuard {
+        fn drop(&mut self) {
+            if let Some(original) = self.original {
+                unsafe {
+                    libc::setrlimit(libc::RLIMIT_CORE, &original);
+                }
+            }
+        }
+    }
+
+    fn with_core_dump_limit_restored(action: impl FnOnce()) {
+        let core_dump_limit = CoreDumpLimitGuard::capture();
+        action();
+        drop(core_dump_limit);
+    }
+
     impl DotenvEnvGuard {
         fn set(values: &[(&str, &str)]) -> Self {
             let previous = values
@@ -2852,6 +2893,113 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn dotenv_approval_modes_and_parser_edges_cover_raw_values() {
+        assert_eq!(DotenvApprovalMode::Export.raw_value(), "export");
+        assert_eq!(DotenvApprovalMode::Run.raw_value(), "run");
+        assert_eq!(
+            DotenvApprovalMode::from_raw_value("export").unwrap(),
+            DotenvApprovalMode::Export
+        );
+        assert_eq!(
+            DotenvApprovalMode::from_raw_value("run").unwrap(),
+            DotenvApprovalMode::Run
+        );
+        assert_eq!(
+            DotenvApprovalMode::from_raw_value("bogus").unwrap_err(),
+            "unknown dotenv approval mode: bogus"
+        );
+        assert_eq!(
+            DotenvApprovalPolicy::ApproveEveryTime.raw_value(),
+            "approve_every_time"
+        );
+        assert_eq!(
+            DotenvApprovalPolicy::RememberApproved.raw_value(),
+            "remember_approved"
+        );
+        assert_eq!(
+            DotenvApprovalPolicy::from_raw_value("approve_every_time").unwrap(),
+            DotenvApprovalPolicy::ApproveEveryTime
+        );
+        assert_eq!(
+            DotenvApprovalPolicy::from_raw_value("remember_approved").unwrap(),
+            DotenvApprovalPolicy::RememberApproved
+        );
+        assert_eq!(
+            DotenvApprovalPolicy::from_raw_value("bogus").unwrap_err(),
+            "unknown dotenv approval policy: bogus"
+        );
+
+        assert!(
+            parse_dotenv_init("av dotenv", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_dotenv_init("av dotenv", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            parse_dotenv_init("av dotenv", [OsString::from("--bogus")].into_iter()).unwrap_err(),
+            "unknown dotenv init argument '--bogus'"
+        );
+        assert_eq!(
+            parse_dotenv_init("av dotenv", [OsString::from("--file")].into_iter()).unwrap_err(),
+            "missing value for --file"
+        );
+        assert_eq!(
+            parse_dotenv_init(
+                "av dotenv",
+                [OsString::from("--file"), OsString::from(".env.test")].into_iter()
+            )
+            .unwrap()
+            .unwrap()
+            .file,
+            PathBuf::from(".env.test")
+        );
+
+        assert_eq!(
+            parse_dotenv_export("av dotenv", [OsString::from("--cwd")].into_iter()).unwrap_err(),
+            "missing value for --cwd"
+        );
+        let export = parse_dotenv_export(
+            "av dotenv",
+            [OsString::from("--shell"), OsString::from("bash")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(export.shell, DotenvShell::Bash);
+        assert!(export.cwd.is_absolute());
+
+        let run = parse_dotenv_run(
+            "av dotenv",
+            [
+                OsString::from("/bin/echo"),
+                OsString::from("--file"),
+                OsString::from("literal"),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(run.command, OsString::from("/bin/echo"));
+        assert_eq!(
+            run.args,
+            vec![OsString::from("--file"), OsString::from("literal")]
+        );
+
+        assert_eq!(
+            parse_dotenv_encrypt(
+                "av dotenv",
+                [OsString::from("--key"), OsString::from_vec(vec![0xff])].into_iter()
+            )
+            .unwrap_err(),
+            "--key value must be valid UTF-8"
+        );
+    }
+
+    #[test]
     fn dotenv_init_and_encrypt_use_stub_store() {
         let temp = TempDir::new().unwrap();
         let env_path = temp.path().join(".env");
@@ -2875,6 +3023,114 @@ mod tests {
         ));
         assert!(output.contains("DOTENV_PUBLIC_KEY"));
         assert!(output.contains("API_KEY=\"encrypted:"));
+    }
+
+    #[test]
+    fn dotenv_init_check_and_runtime_helpers_cover_edges() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        let store = StubDotenvPrivateKeyStore::default();
+
+        run_dotenv_init(
+            &DotenvFileOption {
+                file: env_path.clone(),
+            },
+            &store,
+        )
+        .unwrap();
+        let initialized = fs::read_to_string(&env_path).unwrap();
+        assert!(initialized.contains("DOTENV_PUBLIC_KEY"));
+        assert!(
+            run_dotenv_init(
+                &DotenvFileOption {
+                    file: env_path.clone(),
+                },
+                &store,
+            )
+            .unwrap_err()
+            .contains("already has a DOTENV_PUBLIC_KEY")
+        );
+
+        run_dotenv_encrypt(
+            &DotenvEncryptOptions {
+                file: env_path.clone(),
+                include_keys: Vec::new(),
+                exclude_keys: Vec::new(),
+                check: true,
+            },
+            &store,
+        )
+        .unwrap();
+
+        let dispatch_env = temp.path().join("dispatch.env");
+        dispatch_dotenv(
+            "av dotenv",
+            [
+                OsString::from("init"),
+                OsString::from("--file"),
+                OsString::from(dispatch_env.as_os_str()),
+            ]
+            .into_iter(),
+            &store,
+        )
+        .unwrap();
+        dispatch_dotenv(
+            "av dotenv",
+            [OsString::from("hook"), OsString::from("fish")].into_iter(),
+            &store,
+        )
+        .unwrap();
+        dispatch_dotenv(
+            "av dotenv",
+            [
+                OsString::from("encrypt"),
+                OsString::from("--file"),
+                OsString::from(dispatch_env.as_os_str()),
+                OsString::from("--check"),
+            ]
+            .into_iter(),
+            &store,
+        )
+        .unwrap();
+
+        let mut stdin = io::stdin();
+        if !stdin.is_terminal() {
+            let mut secret = String::new();
+            assert!(
+                read_dotenv_secret_line_no_echo(&mut stdin, &mut secret)
+                    .unwrap_err()
+                    .contains("failed to read terminal settings")
+            );
+        }
+        with_core_dump_limit_restored(|| disable_dotenv_core_dumps().unwrap());
+
+        let parent = dotenv_parent_process_snapshot();
+        assert!(parent.pid > 0);
+        assert_eq!(
+            dotenv_process_display_name(Some(
+                "/Applications/Automic Vault.app/Contents/MacOS/Automic Vault"
+            ))
+            .as_deref(),
+            Some("Automic Vault")
+        );
+        assert!(dotenv_process_display_name(None).is_none());
+        let _snapshot = dotenv_process_snapshot(process::id() as i32);
+        let ancestry = dotenv_process_ancestry_snapshot(process::id() as i32);
+        if let Some(first) = ancestry.first() {
+            assert!(first.pid > 0);
+        }
+
+        let home = temp.path().join("home");
+        let home_str = home.to_str().unwrap();
+        let _home_env = DotenvEnvGuard::set(&[("HOME", home_str)]);
+        assert_eq!(dotenv_display_path(&home), "~");
+        drop(_home_env);
+        let _no_home = DotenvEnvGuard::unset(&["HOME"]);
+        assert_eq!(
+            dotenv_display_path(Path::new("/var/tmp/project/.env")),
+            "/var/tmp/project/.env"
+        );
     }
 
     #[test]
@@ -2907,6 +3163,231 @@ mod tests {
             "DB_PASSWORD: password # comment\nFEATURE_FLAG: enabled\nBAD-NAME=secret\n# COMMENTED_TOKEN=secret\n",
         );
         assert_eq!(colon.encryptable_keys(&[], &[]), vec!["DB_PASSWORD"]);
+    }
+
+    #[test]
+    fn dotenv_parser_crypto_and_secret_shape_helpers_cover_more_edges() {
+        let relative = PathBuf::from("coverage-missing.env");
+        assert!(
+            resolve_dotenv_path(&relative)
+                .unwrap()
+                .ends_with(relative.as_path())
+        );
+        assert!(parse_dotenv_assignment(": value").is_none());
+        assert_eq!(parse_dotenv_value(" \t "), "");
+        assert_eq!(
+            parse_dotenv_value("\"unterminated\\r\\t"),
+            "unterminated\r\t"
+        );
+        assert_eq!(dotenv_double_quote_escape("a\r"), "a\\r");
+        assert_eq!(
+            public_key_name_for_file(Path::new(".env.production")),
+            "DOTENV_PUBLIC_KEY_PRODUCTION"
+        );
+        assert_eq!(
+            public_key_name_for_file(Path::new(".env.prod.local.extra.txt")),
+            "DOTENV_PUBLIC_KEY_PROD_LOCAL"
+        );
+
+        let keypair = generate_dotenv_keypair(Path::new(".env"));
+        let encrypted = encrypt_dotenv_value("secret", &keypair.public_key).unwrap();
+        assert_eq!(
+            decrypt_dotenv_value(
+                "API_KEY",
+                &encrypted,
+                &format!("bad-key,{}", keypair.private_key)
+            )
+            .unwrap(),
+            "secret"
+        );
+        assert!(
+            decrypt_dotenv_value("API_KEY", "encrypted:not-base64", &keypair.private_key)
+                .unwrap_err()
+                .contains("malformed encrypted data")
+        );
+        assert_eq!(
+            decrypt_dotenv_value("API_KEY", "plain", &keypair.private_key).unwrap(),
+            "plain"
+        );
+        assert_eq!(
+            validate_sha256_hex("bad").unwrap_err(),
+            "dotenv sha256 must be a 64-character hex digest"
+        );
+        assert!(is_public_key_name("DOTENV_PUBLIC_KEY_CI"));
+        assert!(validate_dotenv_key_name("1BAD").is_err());
+
+        assert!(dotenv_key_looks_secret("PRIVATE_KEY", "plain"));
+        assert!(dotenv_key_looks_secret(
+            "DATABASE_URL",
+            "postgres://user:pass@example.com/db"
+        ));
+        assert!(dotenv_key_looks_secret("SECRET_KEY", "plain"));
+        assert!(dotenv_key_looks_secret("STRIPE_KEY", "plain"));
+        assert!(dotenv_key_looks_secret(
+            "DATABASE_DSN",
+            "postgres://user:pass@example.com/db"
+        ));
+        assert!(!dotenv_value_looks_secret(""));
+        assert!(!dotenv_value_looks_secret("encrypted:abc"));
+        assert!(dotenv_value_looks_secret(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----"
+        ));
+        assert!(dotenv_value_looks_secret("AKIA1234567890ABCDEF"));
+        assert!(!dotenv_value_looks_credential_url(
+            "1ttp://user:pass@example.com"
+        ));
+        assert!(dotenv_value_looks_jwt("eyJhbGciOiJIUzI1NiJ9.e30.signature"));
+        assert!(!dotenv_value_looks_jwt("eyJ.bad"));
+        assert!(dotenv_value_has_high_entropy_secret_shape(
+            "Abcdefghijklmnopqrstuvwx12345!@#$"
+        ));
+        assert!(!dotenv_value_has_high_entropy_secret_shape(
+            "/Users/me/token-with-enough-chars-ABC123!"
+        ));
+
+        let mut redacted = Vec::new();
+        assert_eq!(
+            stream_redacted_output(io::Cursor::new(b"plain output"), &mut redacted, Vec::new())
+                .unwrap(),
+            0
+        );
+        assert_eq!(redacted, b"plain output");
+    }
+
+    #[test]
+    fn dotenv_system_policy_trust_and_approval_helpers_cover_edges() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered.json");
+        fs::write(
+            &policy_path,
+            serde_json::to_vec(&DotenvPolicyFile {
+                approval_policy: DotenvApprovalPolicy::RememberApproved,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            &remembered_path,
+            serde_json::to_vec(&DotenvRememberedApprovalStore::default()).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            load_dotenv_approval_policy_at_path(&policy_path, true).unwrap(),
+            DotenvApprovalPolicy::ApproveEveryTime
+        );
+        assert!(
+            load_dotenv_remembered_approvals_at_path(&remembered_path, true)
+                .unwrap()
+                .entries
+                .is_empty()
+        );
+        assert!(!dotenv_system_file_is_trusted(&policy_path).unwrap());
+        assert!(!dotenv_system_directory_is_trusted(temp.path()).unwrap());
+        assert!(
+            write_dotenv_system_json(
+                &temp.path().join("untrusted/policy.json"),
+                &DotenvPolicyFile {
+                    approval_policy: DotenvApprovalPolicy::RememberApproved,
+                },
+                true,
+            )
+            .unwrap_err()
+            .contains("not root-controlled")
+        );
+
+        let _env = DotenvEnvGuard::set(&[
+            (
+                AV_TEST_DOTENV_POLICY_PATH_ENV,
+                policy_path.to_str().unwrap(),
+            ),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path.to_str().unwrap(),
+            ),
+        ]);
+        assert_eq!(dotenv_system_policy_path(), policy_path);
+        assert_eq!(dotenv_system_remembered_approvals_path(), remembered_path);
+        assert!(!dotenv_system_policy_requires_root_control());
+        assert!(!dotenv_system_remembered_approvals_requires_root_control());
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let env_path = project.join(".env");
+        let keypair = generate_dotenv_keypair(&env_path);
+        fs::write(
+            &env_path,
+            format!("DOTENV_PUBLIC_KEY={}\nFOO=plain\n", keypair.public_key),
+        )
+        .unwrap();
+        let digest = sha256_file_hex(&env_path).unwrap();
+        let fingerprint = public_key_fingerprint(&keypair.public_key);
+        let mut keys = vec!["FOO".to_string(), "FOO".to_string()];
+        let entry = validate_dotenv_approval_entry(
+            DotenvApprovalMode::Run,
+            env_path.to_str().unwrap(),
+            project.to_str().unwrap(),
+            &digest,
+            &fingerprint,
+            &mut keys,
+        )
+        .unwrap();
+        assert_eq!(entry.keys, vec!["FOO".to_string()]);
+
+        let mut bad_keys = vec!["BAD-NAME".to_string()];
+        assert!(
+            validate_dotenv_approval_entry(
+                DotenvApprovalMode::Run,
+                env_path.to_str().unwrap(),
+                project.to_str().unwrap(),
+                &digest,
+                &fingerprint,
+                &mut bad_keys,
+            )
+            .unwrap_err()
+            .contains("invalid dotenv key name")
+        );
+        let mut good_keys = vec!["FOO".to_string()];
+        assert_eq!(
+            validate_dotenv_approval_entry(
+                DotenvApprovalMode::Run,
+                env_path.to_str().unwrap(),
+                project.to_str().unwrap(),
+                &digest,
+                "",
+                &mut good_keys,
+            )
+            .unwrap_err(),
+            "dotenv public key fingerprint is empty"
+        );
+        let mut good_keys = vec!["FOO".to_string()];
+        assert_eq!(
+            validate_dotenv_approval_entry(
+                DotenvApprovalMode::Run,
+                env_path.to_str().unwrap(),
+                project.to_str().unwrap(),
+                &digest,
+                &"f".repeat(64),
+                &mut good_keys,
+            )
+            .unwrap_err(),
+            "dotenv public key fingerprint mismatch"
+        );
+
+        remember_dotenv_approval(entry.clone()).unwrap();
+        request_dotenv_approval_if_needed(
+            entry.mode,
+            Path::new(&entry.env_file_path),
+            Path::new(&entry.project_root),
+            &entry.env_sha256,
+            &entry.public_key_fingerprint,
+            &entry.keys,
+            &["/bin/echo".to_string()],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -3301,6 +3782,27 @@ mod tests {
         assert!(public_key_fingerprint(&good.public_key).len() == 64);
         assert!(
             keychain_account_for_public_key(&good.public_key).starts_with("DOTENV_PRIVATE_KEY:")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dotenv_keychain_bridges_reject_invalid_c_strings() {
+        assert_eq!(
+            keychain_read_dotenv_private_key("bad\0service", "account").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_read_dotenv_private_key("service", "bad\0account").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_write_dotenv_private_key("service", "account", "bad\0value").unwrap_err(),
+            "invalid keychain private key"
+        );
+        assert_eq!(
+            dotenv_post_distributed_notification("bad\0notification").unwrap_err(),
+            "invalid distributed notification name"
         );
     }
 
@@ -3736,6 +4238,37 @@ mod tests {
             store.load_private_key(&keypair.public_key).unwrap(),
             keypair.private_key
         );
+
+        let dispatch_env_path = temp.path().join("dispatch.env");
+        let dispatch_keys_path = temp.path().join("dispatch.env.keys");
+        let dispatch_keypair = generate_dotenv_keypair(&dispatch_env_path);
+        fs::write(
+            &dispatch_env_path,
+            format!("DOTENV_PUBLIC_KEY={}\n", dispatch_keypair.public_key),
+        )
+        .unwrap();
+        fs::write(
+            &dispatch_keys_path,
+            format!(
+                "{}={}\n",
+                private_key_name_for_public_key_name("DOTENV_PUBLIC_KEY"),
+                dispatch_keypair.private_key
+            ),
+        )
+        .unwrap();
+        dispatch_dotenv(
+            "av dotenv",
+            [
+                OsString::from("import"),
+                OsString::from("--file"),
+                OsString::from(dispatch_env_path.as_os_str()),
+                OsString::from("--keys-file"),
+                OsString::from(dispatch_keys_path.as_os_str()),
+            ]
+            .into_iter(),
+            &store,
+        )
+        .unwrap();
 
         run_dotenv_set(
             &DotenvSetOptions {

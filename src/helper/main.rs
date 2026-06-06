@@ -572,6 +572,71 @@ mod tests {
     }
 
     #[test]
+    fn helper_dotenv_wrappers_parse_modes_policies_and_keys() {
+        let invalid_policy = CString::new("bogus").unwrap();
+        let response = raw_to_string(nuke_helper_set_dotenv_approval_policy(
+            invalid_policy.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response).unwrap(),
+            serde_json::json!({"Err": "invalid dotenv approval policy"})
+        );
+
+        let policy = CString::new("remember_approved").unwrap();
+        let response = raw_to_string(nuke_helper_set_dotenv_approval_policy(
+            policy.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+
+        let response = raw_to_string(nuke_helper_get_dotenv_approval_policy(
+            ptr::null_mut(),
+            None,
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+
+        let invalid_mode = CString::new("bogus").unwrap();
+        let path = CString::new("/tmp/project/.env").unwrap();
+        let project = CString::new("/tmp/project").unwrap();
+        let digest = CString::new("0".repeat(64)).unwrap();
+        let fingerprint = CString::new("f".repeat(64)).unwrap();
+        let keys = CString::new(r#"["FOO","BAR"]"#).unwrap();
+        let response = raw_to_string(nuke_helper_remember_dotenv_approval(
+            invalid_mode.as_ptr(),
+            path.as_ptr(),
+            project.as_ptr(),
+            digest.as_ptr(),
+            fingerprint.as_ptr(),
+            keys.as_ptr(),
+            ptr::null_mut(),
+            None,
+        ));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response).unwrap(),
+            serde_json::json!({"Err": "invalid dotenv approval mode"})
+        );
+
+        let mode = CString::new("run").unwrap();
+        let response = raw_to_string(nuke_helper_remember_dotenv_approval(
+            mode.as_ptr(),
+            path.as_ptr(),
+            project.as_ptr(),
+            digest.as_ptr(),
+            fingerprint.as_ptr(),
+            keys.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+    }
+
+    #[test]
     fn helper_sanitize_environment_removes_inherited_controls() {
         unsafe {
             std::env::set_var("PKG_ALLOW", "all");

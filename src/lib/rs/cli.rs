@@ -1795,6 +1795,67 @@ mod tests {
         }
     }
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_path(key: &'static str, value: &Path) -> Self {
+            let previous = env::var_os(key);
+            unsafe {
+                env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous {
+                    Some(value) => env::set_var(self.key, value),
+                    None => env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gui_launch_helpers_cover_candidates_and_app_bundle_detection() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let _home = EnvGuard::set_path("HOME", temp.path());
+
+        let candidates = gui_app_launch_candidates();
+        assert!(candidates.contains(&temp.path().join("Applications").join(GUI_APP_BUNDLE_NAME)));
+        assert!(candidates.contains(&PathBuf::from("/Applications").join(GUI_APP_BUNDLE_NAME)));
+
+        let mut paths = vec![PathBuf::from("/Applications/Automic Vault.app")];
+        push_unique_path(&mut paths, PathBuf::from("/Applications/Automic Vault.app"));
+        push_unique_path(
+            &mut paths,
+            temp.path().join("Applications").join(GUI_APP_BUNDLE_NAME),
+        );
+        assert_eq!(paths.len(), 2);
+
+        assert_eq!(
+            main_app_bundle_for_executable_path(Path::new(
+                "/Applications/Automic Vault.app/Contents/MacOS/av"
+            ))
+            .unwrap(),
+            PathBuf::from("/Applications/Automic Vault.app")
+        );
+        assert!(main_app_bundle_for_executable_path(Path::new("/usr/local/bin/av")).is_none());
+
+        let app_path = temp.path().join(GUI_APP_BUNDLE_NAME);
+        assert!(!app_bundle_exists(&app_path));
+        fs::create_dir_all(app_path.join("Contents")).unwrap();
+        fs::write(app_path.join("Contents/Info.plist"), b"plist").unwrap();
+        assert!(app_bundle_exists(&app_path));
+    }
+
     #[test]
     fn secret_scanner_parser_rejects_duplicate_unknown_and_missing_paths() {
         let request = parse_secret_scanner_request_from_iter(
@@ -2492,6 +2553,23 @@ mod tests {
     #[test]
     fn package_helper_variants_cover_pip_npm_and_provider_branches() {
         assert_eq!(
+            PackageAliasTarget::HomebrewFormula("ripgrep".to_string()).display_name(),
+            "brew:ripgrep"
+        );
+        assert_eq!(
+            PackageAliasTarget::HomebrewCask("visual-studio-code".to_string()).display_name(),
+            "cask:visual-studio-code"
+        );
+        assert_eq!(
+            PackageAliasTarget::VendorPackage("bun".to_string()).display_name(),
+            "av:bun"
+        );
+        assert_eq!(
+            PackageAliasTarget::PipPackage("My_Package.Name".to_string()).display_name(),
+            "pip:My_Package.Name"
+        );
+
+        assert_eq!(
             validate_pip_package_name("").unwrap_err(),
             "package qualifier 'pip:' is missing a package name"
         );
@@ -2517,6 +2595,31 @@ mod tests {
         assert_eq!(parse_embedded_provider("pkg:custom").unwrap(), None);
 
         assert_eq!(
+            parse_package_name(&OsString::from("av:bad/name")).unwrap_err(),
+            "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_package_alias_target("brew:").unwrap_err(),
+            "package qualifier 'brew:' is missing a formula name"
+        );
+        assert_eq!(
+            parse_package_alias_target("brew:ripgrep/tools").unwrap_err(),
+            "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_package_alias_target("av:").unwrap_err(),
+            "package qualifier 'av:' is missing a package name"
+        );
+        assert_eq!(
+            parse_package_alias_target("av:bun/tools").unwrap_err(),
+            "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_package_alias_target("av:not-registered").unwrap_err(),
+            "vendor package not-registered is not registered"
+        );
+
+        assert_eq!(
             parse_npm_package_request("@scope/pkg@1.2.3").unwrap(),
             ("@scope/pkg".to_string(), Some("1.2.3".to_string()))
         );
@@ -2536,6 +2639,18 @@ mod tests {
         assert_eq!(
             parse_uninstall_package_name(&OsString::from("brew:ripgrep/tools")).unwrap_err(),
             "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_uninstall_package_name(&OsString::from("av:")).unwrap_err(),
+            "package qualifier 'av:' is missing a package name"
+        );
+        assert_eq!(
+            parse_uninstall_package_name(&OsString::from("av:bun/tools")).unwrap_err(),
+            "qualified package name must not contain additional path separators"
+        );
+        assert_eq!(
+            parse_uninstall_package_name(&OsString::from("av:not-registered")).unwrap_err(),
+            "vendor package not-registered is not registered"
         );
         #[cfg(unix)]
         assert_eq!(
