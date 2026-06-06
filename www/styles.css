@@ -2189,7 +2189,6 @@ h1 code {
 .closing-cta {
   position: relative;
   overflow: hidden;
-  border-bottom: 1px solid var(--line);
   isolation: isolate;
 }
 
@@ -2222,17 +2221,6 @@ h1 code {
   background-size: 100% 38px, 52px 100%;
   opacity: 0.34;
   pointer-events: none;
-}
-
-.poster-hero::after {
-  content: "";
-  position: absolute;
-  right: clamp(20px, 4vw, 58px);
-  bottom: clamp(18px, 3vw, 34px);
-  width: clamp(120px, 16vw, 230px);
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--green));
-  opacity: 0.9;
 }
 
 .poster-hero-top,
@@ -2444,9 +2432,9 @@ h1 code {
 .feature-section {
   display: grid;
   grid-template-columns: 1fr;
-  gap: clamp(24px, 4vw, 44px);
+  gap: clamp(34px, 5vw, 68px);
   align-items: start;
-  padding: clamp(44px, 6vw, 86px) clamp(20px, 4vw, 58px);
+  padding: clamp(86px, 10vw, 148px) clamp(20px, 4vw, 58px);
 }
 
 .feature-section h2,
@@ -2496,7 +2484,7 @@ h1 code {
 }
 
 .harden-section {
-  padding-top: 24px;
+  padding-top: clamp(78px, 9vw, 128px);
 }
 
 .section-console-strip {
@@ -2573,7 +2561,7 @@ h1 code {
 .closing-cta {
   display: grid;
   gap: 26px;
-  padding: clamp(48px, 7vw, 94px) clamp(20px, 4vw, 58px);
+  padding: clamp(92px, 11vw, 156px) clamp(20px, 4vw, 58px);
   background:
     linear-gradient(122deg, oklch(7% 0.006 255), oklch(13% 0.01 255) 72%, oklch(8% 0.006 255)),
     var(--bg-outer);
