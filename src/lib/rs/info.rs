@@ -3770,6 +3770,379 @@ mod tests {
             vec!["https://docs.astral.sh/uv".to_string()]
         );
 
+        let fallback_geiger = geiger_package_result_with_source_metadata(
+            &PackageReceiptSource::Npm {
+                package_name: "left-pad".to_string(),
+            },
+            "npm:left-pad",
+        );
+        assert_eq!(fallback_geiger.package_name, "npm:left-pad");
+        assert_eq!(fallback_geiger.summary, None);
+        assert!(fallback_geiger.docs.is_empty());
+
+        let reference_time = OffsetDateTime::parse("2026-06-06T00:00:00Z", &Rfc3339).unwrap();
+        assert_eq!(
+            pulse_kind_for_timestamp(
+                Some("new".to_string()),
+                "2026-06-05T00:00:00Z",
+                Some(reference_time)
+            ),
+            "new"
+        );
+        assert_eq!(
+            pulse_kind_for_timestamp(
+                Some("new".to_string()),
+                "2026-01-01T00:00:00Z",
+                Some(reference_time)
+            ),
+            "updated"
+        );
+        assert_eq!(
+            pulse_kind_for_timestamp(Some("featured".to_string()), "bad", None),
+            "featured"
+        );
+
+        let mut fallback_info = PackageInfo {
+            package_name: "brew:demo".to_string(),
+            qualified_name: "brew:demo".to_string(),
+            install_root: PathBuf::from("/opt/demo"),
+            installed: false,
+            source: Some(PackageReceiptSource::Formula {
+                root_formula: "demo".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: None,
+            latest_version: None,
+            latest_version_error: None,
+            executable_paths: Vec::new(),
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: None,
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+            version_options: Vec::new(),
+        };
+        apply_formula_db_metadata_to_info(
+            "demo",
+            &EmbeddedFormulaMetadata {
+                summary: " Demo package ".to_string(),
+                homepage: " https://example.com/demo ".to_string(),
+                repository: " https://github.com/example/demo ".to_string(),
+                docs: vec![
+                    " ".to_string(),
+                    " https://docs.example.com/demo ".to_string(),
+                ],
+                ..EmbeddedFormulaMetadata::default()
+            },
+            &mut fallback_info,
+        );
+        let fallback_homebrew = fallback_info.homebrew_info.unwrap();
+        assert_eq!(fallback_homebrew.formula, "demo");
+        assert_eq!(
+            fallback_homebrew.description.as_deref(),
+            Some("Demo package")
+        );
+        assert_eq!(
+            fallback_homebrew.upstream_docs.as_deref(),
+            Some("https://docs.example.com/demo")
+        );
+        assert_eq!(
+            fallback_homebrew.docs,
+            vec!["https://docs.example.com/demo".to_string()]
+        );
+
+        let versioned_entry = FormulaIndexEntry {
+            name: "openssl@3".to_string(),
+            summary: "TLS toolkit".to_string(),
+            aliases: vec!["openssl@3.0".to_string()],
+            oldnames: vec!["libssl@1.1".to_string()],
+            category: "security".to_string(),
+            homepage: "https://openssl.org".to_string(),
+            repository: String::new(),
+            upstream_docs: String::new(),
+            docs: vec![" https://docs.openssl.org ".to_string()],
+            popularity: Some(EmbeddedPackagePopularity {
+                installs_per_365_days: 10,
+                rank: 7,
+            }),
+            last_updated_at: Some("2026-06-05T00:00:00Z".to_string()),
+            pulse_kind: Some("new".to_string()),
+        };
+        assert!(formula_index_entry_matches(&versioned_entry, "libssl"));
+        assert_eq!(
+            formula_search_result_display_names(&versioned_entry, "libssl"),
+            vec!["libssl@1.1".to_string()]
+        );
+        assert_eq!(
+            formula_search_result_display_names(&versioned_entry, "nomatch"),
+            vec!["openssl@3".to_string()]
+        );
+        let versioned_result = formula_search_result(&versioned_entry, "openssl@3.0");
+        assert_eq!(
+            versioned_result.source,
+            PackageReceiptSource::Formula {
+                root_formula: "openssl@3.0".to_string()
+            }
+        );
+        assert_eq!(
+            versioned_result.install_package_names,
+            vec!["openssl@3.0".to_string()]
+        );
+        assert!(search_result_is_versioned_formula(&versioned_result));
+        assert_eq!(
+            formula_upstream_docs(&versioned_entry).as_deref(),
+            Some("https://docs.openssl.org")
+        );
+        assert_eq!(formula_version_alias("openssl", "bad"), None);
+        assert_eq!(
+            formula_version_alias("openssl", "3.2.1"),
+            Some("openssl@3".to_string())
+        );
+        assert_eq!(parsed_stable_version("3.2.1_1"), Some((3, 2, 1)));
+        assert!(!version_is_recommendable("bad"));
+        assert!(version_is_recommendable("3.1.1"));
+        assert_eq!(
+            compare_version_strings("3.10.0", "3.2.0"),
+            std::cmp::Ordering::Greater
+        );
+        let alias_entry = FormulaIndexEntry {
+            name: "openssl".to_string(),
+            aliases: vec!["openssl@3".to_string()],
+            oldnames: Vec::new(),
+            category: String::new(),
+            summary: String::new(),
+            homepage: String::new(),
+            repository: String::new(),
+            upstream_docs: String::new(),
+            docs: Vec::new(),
+            popularity: None,
+            last_updated_at: None,
+            pulse_kind: None,
+        };
+        assert_eq!(
+            formula_display_alias(&alias_entry, "openssl", "3.2.1"),
+            Some("openssl@3".to_string())
+        );
+        assert_eq!(
+            formula_display_alias(&alias_entry, "openssl", "bad"),
+            Some("openssl@3".to_string())
+        );
+        assert_eq!(
+            formula_index_entry_for_security_recommendation(
+                std::slice::from_ref(&alias_entry),
+                "openssl@3",
+            )
+            .unwrap()
+            .name,
+            "openssl"
+        );
+
+        let review_state = PackageSecurityState {
+            isotope_name: "demo".to_string(),
+            install_is_insecure: false,
+            remediation_available: true,
+            reasons: Vec::new(),
+            error: Some("detector failed".to_string()),
+        };
+        assert!(package_security_state_needs_geiger_action(&review_state));
+        assert_eq!(
+            geiger_package_summary(&review_state),
+            "Detector for isotope:demo needs review"
+        );
+
+        fn search_result(
+            package_name: &str,
+            source: PackageReceiptSource,
+            rank: Option<u32>,
+        ) -> PackageSearchResult {
+            PackageSearchResult {
+                package_name: package_name.to_string(),
+                source,
+                summary: None,
+                latest_version: None,
+                homepage: None,
+                repository: None,
+                upstream_docs: None,
+                docs: Vec::new(),
+                category: None,
+                dependencies: Vec::new(),
+                install_package_names: Vec::new(),
+                security_state: None,
+                rank,
+                last_updated_at: None,
+                pulse_kind: None,
+            }
+        }
+        let npm_result = search_result(
+            "npm:left-pad",
+            PackageReceiptSource::Npm {
+                package_name: "left-pad".to_string(),
+            },
+            None,
+        );
+        assert!(!search_result_is_versioned_formula(&npm_result));
+        let mut filtered_results = vec![
+            search_result(
+                "openssl",
+                PackageReceiptSource::Formula {
+                    root_formula: "openssl".to_string(),
+                },
+                None,
+            ),
+            search_result(
+                "openssl@3",
+                PackageReceiptSource::Formula {
+                    root_formula: "openssl@3".to_string(),
+                },
+                None,
+            ),
+            npm_result.clone(),
+        ];
+        suppress_unversioned_formulae_with_versioned_search_results(&mut filtered_results);
+        assert_eq!(
+            filtered_results
+                .iter()
+                .map(|result| result.package_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["openssl@3", "npm:left-pad"]
+        );
+        let mut unversioned_only = vec![search_result(
+            "zlib",
+            PackageReceiptSource::Formula {
+                root_formula: "zlib".to_string(),
+            },
+            None,
+        )];
+        suppress_unversioned_formulae_with_versioned_search_results(&mut unversioned_only);
+        assert_eq!(unversioned_only.len(), 1);
+        assert_eq!(
+            compare_security_recommendation_rank_order(
+                &search_result(
+                    "ranked",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "ranked".to_string(),
+                    },
+                    Some(1),
+                ),
+                &search_result(
+                    "unranked",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "unranked".to_string(),
+                    },
+                    None,
+                ),
+            ),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_security_recommendation_rank_order(
+                &search_result(
+                    "rank-two",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "rank-two".to_string(),
+                    },
+                    Some(2),
+                ),
+                &search_result(
+                    "rank-three",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "rank-three".to_string(),
+                    },
+                    Some(3),
+                ),
+            ),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_security_recommendation_rank_order(
+                &search_result(
+                    "unranked",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "unranked".to_string(),
+                    },
+                    None,
+                ),
+                &search_result(
+                    "ranked",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "ranked".to_string(),
+                    },
+                    Some(1),
+                ),
+            ),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_security_recommendation_rank_order(
+                &search_result(
+                    "left",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "left".to_string(),
+                    },
+                    None,
+                ),
+                &search_result(
+                    "right",
+                    PackageReceiptSource::Vendor {
+                        vendor_name: "right".to_string(),
+                    },
+                    None,
+                ),
+            ),
+            std::cmp::Ordering::Equal
+        );
+
+        let mut recent_pulse = search_result(
+            "recent",
+            PackageReceiptSource::Vendor {
+                vendor_name: "recent".to_string(),
+            },
+            None,
+        );
+        recent_pulse.pulse_kind = Some("updated".to_string());
+        recent_pulse.last_updated_at = Some("2026-06-05T00:00:00Z".to_string());
+        let mut missing_pulse_time = search_result(
+            "missing",
+            PackageReceiptSource::Vendor {
+                vendor_name: "missing".to_string(),
+            },
+            None,
+        );
+        missing_pulse_time.pulse_kind = Some("updated".to_string());
+        assert_eq!(
+            compare_pulse_package_results(&recent_pulse, &missing_pulse_time),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_pulse_package_results(&missing_pulse_time, &recent_pulse),
+            std::cmp::Ordering::Greater
+        );
+        let mut equal_pulse_left = search_result(
+            "a",
+            PackageReceiptSource::Vendor {
+                vendor_name: "a".to_string(),
+            },
+            None,
+        );
+        equal_pulse_left.pulse_kind = Some("updated".to_string());
+        let mut equal_pulse_right = search_result(
+            "b",
+            PackageReceiptSource::Vendor {
+                vendor_name: "b".to_string(),
+            },
+            None,
+        );
+        equal_pulse_right.pulse_kind = Some("updated".to_string());
+        assert_eq!(
+            compare_pulse_package_results(&equal_pulse_left, &equal_pulse_right),
+            std::cmp::Ordering::Less
+        );
+
         let available = resolve_available_package_results(&config).unwrap();
         assert!(!available.is_empty());
         assert!(
