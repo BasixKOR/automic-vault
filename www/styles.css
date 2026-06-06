@@ -2653,7 +2653,7 @@ h1 code {
 
 .closing-cta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(500px, 0.82fr);
   gap: 26px;
   align-items: end;
   padding: clamp(184px, 22vw, 312px) clamp(20px, 4vw, 58px);

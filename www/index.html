@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=62">
+  <link rel="stylesheet" href="./styles.css?v=63">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -407,14 +407,8 @@ status needs hardening</code></pre>
           <a class="button text" href="/pkg/">Browse packages</a>
         </div>
         <figure class="terminal-card terminal-card-green closing-terminal">
-          <figcaption>Install and check local state</figcaption>
-          <pre><code><span class="prompt">$</span> brew install --cask automic-vault
-Automic Vault.app installed
-
-<span class="prompt">$</span> av doctor
-package root /opt/automic-vault
-Keychain access available
-Touch ID approvals available</code></pre>
+          <figcaption>Install one-liner</figcaption>
+          <pre><code><span class="prompt">$</span> curl -fsSL https://automicvault.com/install.sh | sh && av open</code></pre>
         </figure>
       </section>
     </main>
