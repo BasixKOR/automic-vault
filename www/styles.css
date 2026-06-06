@@ -2711,13 +2711,28 @@ h1 code {
 }
 
 .endorsement-section {
+  grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+  column-gap: clamp(24px, 4.8vw, 78px);
   background:
     radial-gradient(circle at 74% 20%, oklch(70% 0.17 37 / 0.1), transparent 28rem),
     linear-gradient(180deg, oklch(9% 0.007 255), oklch(8% 0.006 255));
 }
 
+.endorsement-section .feature-copy {
+  grid-column: 1 / -1;
+}
+
 .endorsement-section .tweet-endorsement {
-  justify-self: center;
+  grid-column: 2;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-self: start;
+  width: min(100%, 46rem);
+  margin-inline: 0;
+}
+
+.endorsement-section .tweet-endorsement blockquote,
+.endorsement-section .tweet-endorsement p {
+  width: auto;
 }
 
 .closing-cta {
@@ -2834,6 +2849,11 @@ h1 code {
 
   .feature-copy {
     position: static;
+  }
+
+  .endorsement-section .feature-copy,
+  .endorsement-section .tweet-endorsement {
+    grid-column: 1;
   }
 
   .harden-section .terminal-story,
