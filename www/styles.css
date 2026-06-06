@@ -2574,35 +2574,55 @@ h1 code {
 
 .package-hardening-radar {
   grid-column: 1;
+  position: relative;
+  grid-template-columns: minmax(360px, 0.36fr) minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  gap: 0;
+  margin-top: clamp(40px, 7vw, 98px);
+  margin-inline: clamp(-58px, -4vw, -20px);
+  border: solid var(--line-strong);
+  border-width: 1px 0;
+  border-radius: 0;
   background:
-    linear-gradient(180deg, oklch(94% 0.01 82 / 0.03), transparent 38%),
+    linear-gradient(90deg, oklch(94% 0.01 82 / 0.035), transparent 32%, oklch(94% 0.01 82 / 0.02)),
+    linear-gradient(180deg, oklch(94% 0.01 82 / 0.035), transparent 45%, oklch(94% 0.01 82 / 0.026)),
     var(--surface-deep);
+  box-shadow:
+    inset 0 1px 0 oklch(94% 0.01 82 / 0.045),
+    inset 0 -1px 0 oklch(94% 0.01 82 / 0.035);
 }
 
 .package-hardening-radar .radar-copy {
   min-height: 0;
-  padding: 16px 18px;
+  padding: 16px 24px 16px clamp(20px, 4vw, 58px);
   border-right: 1px solid var(--line);
+  background:
+    linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(94% 0.01 82 / 0.026), transparent);
+  background-size: 100% 38px, auto;
+  align-content: center;
+  gap: 12px;
 }
 
 .package-hardening-radar .radar-copy span {
-  color: var(--muted);
+  color: var(--dim);
+  font-size: 0.68rem;
 }
 
 .package-hardening-radar .radar-copy strong {
-  max-width: 21rem;
-  font-size: clamp(1.26rem, 1.9vw, 1.76rem);
+  max-width: 18rem;
+  font-size: clamp(1.08rem, 1.45vw, 1.42rem);
+  line-height: 0.96;
 }
 
 .package-hardening-radar .radar-copy p {
-  max-width: 24rem;
+  max-width: 18rem;
+  font-size: 0.82rem;
+  line-height: 1.34;
 }
 
 .package-hardening-radar .radar-feed {
-  min-height: 196px;
+  min-height: 152px;
   border-block: 0;
   background:
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
@@ -2611,8 +2631,8 @@ h1 code {
 }
 
 .package-hardening-radar .feed-row {
-  min-height: 196px;
-  padding: 18px;
+  min-height: 152px;
+  padding: 18px clamp(14px, 2vw, 24px);
 }
 
 .package-hardening-radar .feed-row:last-child {
@@ -2895,6 +2915,15 @@ h1 code {
 
   .terminal-card pre {
     font-size: 0.74rem;
+  }
+
+  .package-hardening-radar .radar-feed {
+    min-height: 0;
+  }
+
+  .package-hardening-radar .feed-row {
+    min-height: 54px;
+    padding: 12px clamp(18px, 4vw, 24px);
   }
 
 }
