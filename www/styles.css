@@ -2570,6 +2570,7 @@ h1 code {
   background:
     radial-gradient(circle at 78% 18%, oklch(68% 0.15 246 / 0.1), transparent 28rem),
     linear-gradient(180deg, oklch(8% 0.006 255), oklch(11% 0.008 255));
+  padding-bottom: clamp(86px, 10vw, 148px);
 }
 
 .package-hardening-radar {
@@ -2648,6 +2649,7 @@ h1 code {
   background:
     radial-gradient(circle at 22% 18%, oklch(72% 0.14 137 / 0.09), transparent 26rem),
     linear-gradient(180deg, oklch(10% 0.009 255), oklch(8% 0.006 255));
+  padding-block: clamp(86px, 10vw, 148px);
 }
 
 .dotenv-terminal-layout {
@@ -2676,6 +2678,7 @@ h1 code {
 
 .app-section {
   grid-template-columns: 1fr;
+  padding-block: clamp(86px, 10vw, 148px);
   background:
     radial-gradient(circle at 84% 14%, oklch(68% 0.15 246 / 0.12), transparent 30rem),
     linear-gradient(180deg, oklch(8% 0.006 255), oklch(12% 0.007 255));
@@ -2713,6 +2716,7 @@ h1 code {
 .endorsement-section {
   grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
   column-gap: clamp(24px, 4.8vw, 78px);
+  padding-block: clamp(86px, 10vw, 148px);
   background:
     radial-gradient(circle at 74% 20%, oklch(70% 0.17 37 / 0.1), transparent 28rem),
     linear-gradient(180deg, oklch(9% 0.007 255), oklch(8% 0.006 255));
@@ -2741,6 +2745,7 @@ h1 code {
   gap: 26px;
   align-items: end;
   padding: clamp(184px, 22vw, 312px) clamp(20px, 4vw, 58px);
+  padding-block: clamp(92px, 11vw, 156px);
   background:
     linear-gradient(122deg, oklch(7% 0.006 255), oklch(13% 0.01 255) 72%, oklch(8% 0.006 255)),
     var(--bg-outer);
