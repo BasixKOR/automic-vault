@@ -2,8 +2,8 @@
 
 Secure the tools you `brew install`.
 
-Automic Vault sits discreetly on top of Homebrew, hardening it by making
-packages store their secrets securely and requiring human approval for
+Automic Vault sits discreetly on top of Homebrew, hardening it. Packages store
+their secrets securely. Human approval is required for
 exfiltration of those secrets & risky commands.
 
 > [!IMPORTANT]
