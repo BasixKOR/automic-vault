@@ -2267,7 +2267,7 @@ h1 code {
 }
 
 .poster-lede {
-  max-width: 720px;
+  max-width: 33em;
   margin-top: 12px;
   color: oklch(84% 0.016 82);
   font-size: clamp(1rem, 1.28vw, 1.2rem);
