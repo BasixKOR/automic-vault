@@ -2420,6 +2420,18 @@ h1 code {
   font-family: inherit;
 }
 
+.terminal-danger {
+  color: var(--hot);
+}
+
+.secret-blur {
+  display: inline-block;
+  filter: blur(3px);
+  opacity: 0.78;
+  user-select: none;
+  vertical-align: baseline;
+}
+
 .terminal-card-large {
   min-height: 254px;
 }

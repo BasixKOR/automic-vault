@@ -166,7 +166,7 @@
   >
   <link rel="icon" href="./favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css?v=57">
+  <link rel="stylesheet" href="./styles.css?v=58">
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
@@ -237,12 +237,12 @@
 installed: /opt/homebrew/Cellar/awscli
 
 <span class="prompt">$</span> av scan
-<span style='color:red'>plaintext secret exposure</span>: ~/.aws/credentials
+<span class="terminal-danger">plaintext secret exposure</span>: ~/.aws/credentials
 
 <span class="prompt">$</span> cat ~/.aws/credentials
 [default]
-aws_access_key_id=AKIA...
-aws_secret_access_key=abcd...
+aws_access_key_id=AKIA<span class="secret-blur">IOSFODNN7EXAMPLE</span>
+aws_secret_access_key=wJalr<span class="secret-blur">XUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</span>
 
 <span class="prompt">$</span> av harden awscli
 hardened package root: /opt/aws-cli
