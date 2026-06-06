@@ -2232,7 +2232,7 @@ h1 code {
 
 .poster-hero-top {
   grid-area: top;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px 24px;
   color: var(--green);
   font-family: var(--font-mono);
