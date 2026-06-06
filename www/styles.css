@@ -2195,7 +2195,6 @@ h1 code {
   display: grid;
   grid-template-columns: 1fr;
   grid-template-areas:
-    "top"
     "copy"
     "foot";
   gap: clamp(14px, 2vw, 26px) clamp(24px, 4vw, 58px);
@@ -2222,26 +2221,10 @@ h1 code {
   pointer-events: none;
 }
 
-.poster-hero-top,
 .section-console-strip,
 .closing-cta div {
   display: flex;
   flex-wrap: wrap;
-}
-
-.poster-hero-top {
-  grid-area: top;
-  justify-content: flex-end;
-  gap: 12px 24px;
-  color: var(--green);
-  font-family: var(--font-mono);
-  font-size: clamp(0.72rem, 0.92vw, 0.88rem);
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.poster-hero-top span:last-child {
-  color: var(--muted);
 }
 
 .poster-hero-copy {
@@ -2616,11 +2599,6 @@ h1 code {
 
   .poster-lede {
     font-size: 1.14rem;
-  }
-
-  .poster-hero-top {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .feature-section h2,
