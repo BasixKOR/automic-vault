@@ -2380,6 +2380,9 @@ h1 code {
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
+  max-width: min(100%, 42rem);
+  padding-top: 18px;
+  border-top: 1px solid var(--line-strong);
 }
 
 .feature-section {
