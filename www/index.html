@@ -389,39 +389,6 @@ keys exported into this shell only</code></pre>
           >
         </figure>
 
-        <div class="app-terminal-grid" aria-label="Terminal examples for the macOS app">
-          <figure class="terminal-card terminal-card-green">
-            <figcaption>Background detector</figcaption>
-            <pre><code><span class="prompt">$</span> av app watch
-background detector running
-watch paths ~/.aws ~/.config .env
-watch packages Homebrew npm pipx
-
-detected new secret: ~/work/billing-api/.env
-key STRIPE_SECRET_KEY
-encrypted value in place
-private key stored in Keychain
-notification sent: .env protected</code></pre>
-          </figure>
-
-          <figure class="terminal-card terminal-card-file">
-            <figcaption>New package hazard</figcaption>
-            <pre><code><span class="prompt">$</span> brew install snowflake-cli
-Automic Vault.app detected new hazard
-path ~/.snowsql/config
-action encrypt password + inject at runtime
-status ready for approval</code></pre>
-          </figure>
-
-          <figure class="terminal-card terminal-card-blue">
-            <figcaption>Search and discovery</figcaption>
-            <pre><code><span class="prompt">$</span> av search kubernetes
-kubectl
-homepage https://kubernetes.io/
-hazards kubeconfig exec tokens
-status hardening available</code></pre>
-          </figure>
-        </div>
       </section>
 
       <section class="feature-section endorsement-section" id="endorsements" aria-labelledby="endorsements-title">
