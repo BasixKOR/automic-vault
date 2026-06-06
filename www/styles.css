@@ -2420,7 +2420,7 @@ h1 code {
 }
 
 .terminal-danger {
-  color: var(--hot);
+  color: var(--gold);
 }
 
 .secret-blur {
