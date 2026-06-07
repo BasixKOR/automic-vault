@@ -11626,6 +11626,90 @@ package or `npm:tsx` for the package that provides the `tsx` executable"
         empty_printer.begin().unwrap();
         empty_printer.finish(&empty_report).unwrap();
         assert_eq!(empty_printer.finding_count, 0);
+
+        for format in [
+            SecretScannerStreamFormat::Plain,
+            SecretScannerStreamFormat::Rich,
+        ] {
+            let mut printer = SecretScannerStreamPrinter {
+                format,
+                color: true,
+                scope: SecretScannerScope::Full,
+                finding_count: 0,
+                printed_findings_header: false,
+                printed_warnings_header: false,
+            };
+            printer.begin().unwrap();
+            printer
+                .print_event(SecretScannerEvent::Finding(&finding))
+                .unwrap();
+            printer
+                .print_event(SecretScannerEvent::Error(&error))
+                .unwrap();
+            printer.finish(&report).unwrap();
+            assert_eq!(printer.finding_count, 1);
+            assert!(printer.printed_findings_header);
+            assert!(printer.printed_warnings_header);
+
+            let mut empty_printer = SecretScannerStreamPrinter {
+                format,
+                color: true,
+                scope: SecretScannerScope::IsotopesOnly,
+                finding_count: 0,
+                printed_findings_header: false,
+                printed_warnings_header: false,
+            };
+            empty_printer.begin().unwrap();
+            empty_printer.finish(&empty_report).unwrap();
+            assert_eq!(empty_printer.finding_count, 0);
+        }
+
+        print_scan_box(
+            "Scan",
+            &[
+                "short".to_string(),
+                "a much longer scanner line that exercises clamped box width".to_string(),
+            ],
+            true,
+        );
+        assert_eq!(strip_ansi_width("\u{1b}[31mred\u{1b}[0m"), 3);
+        assert_eq!(
+            secret_scanner_file_probe_summary(&empty_report),
+            "file probes skipped"
+        );
+        assert_eq!(pluralize(1, "finding", "findings"), "1 finding");
+        assert!(matches!(
+            scan_severity_style(&SecretScannerFinding {
+                severity: "low".to_string(),
+                ..finding.clone()
+            }),
+            ScanStyle::Warning
+        ));
+        assert!(scan_paint("x", ScanStyle::Error, true).contains("\u{1b}[31;1m"));
+        assert_eq!(scan_paint("x", ScanStyle::Error, false), "x");
+
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _clean_env =
+            TestEnvGuard::unset(&["NO_COLOR", "CLICOLOR_FORCE", "TERM", SCANNER_WRAPPER_UI_ENV]);
+        assert!(!scanner_wrapper_ui_enabled());
+        assert!(!output_supports_ansi(false));
+        {
+            let _env = TestEnvGuard::set(&[(SCANNER_WRAPPER_UI_ENV, "1")]);
+            assert!(scanner_wrapper_ui_enabled());
+        }
+        {
+            let _env = TestEnvGuard::set(&[("CLICOLOR_FORCE", "1")]);
+            assert!(scan_stdout_is_rich());
+            assert!(output_supports_ansi(false));
+        }
+        {
+            let _env = TestEnvGuard::set(&[("NO_COLOR", "1")]);
+            assert!(!output_supports_ansi(true));
+        }
+        {
+            let _env = TestEnvGuard::set(&[("TERM", "dumb")]);
+            assert!(!output_supports_ansi(true));
+        }
     }
 
     #[test]
@@ -13245,6 +13329,102 @@ managed_secrets = ["dep:managed-secrets"]"#,
     }
 
     #[test]
+    fn secret_file_probe_paths_cover_direct_files_defaults_and_skip_resolution() {
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        fs::write(&env_path, "SERVICE_TOKEN=secret_secret\n").unwrap();
+
+        let mut findings = Vec::new();
+        let mut errors = Vec::new();
+        let mut seen_findings = HashSet::new();
+        let mut seen_errors = HashSet::new();
+        let (scanned_files, file_probes) = scan_secret_file_probes(
+            Some(&env_path),
+            &[],
+            &mut findings,
+            &mut errors,
+            &mut seen_findings,
+            &mut seen_errors,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!((scanned_files, file_probes), (1, 1));
+        assert_eq!(findings.len(), 1);
+        assert!(errors.is_empty());
+
+        let root_file_skips = SecretScanSkips::new(Some(&env_path), &[PathBuf::from(".env")]);
+        assert!(root_file_skips.should_skip(&env_path));
+        let relative_skip = PathBuf::from("relative-secret.env");
+        let relative_skips = SecretScanSkips::new(None, std::slice::from_ref(&relative_skip));
+        assert!(relative_skips.should_skip(&relative_skip));
+        assert!(!relative_skips.should_skip(Path::new("other-secret.env")));
+
+        let mut none_findings = Vec::new();
+        let mut none_errors = Vec::new();
+        let mut none_seen_findings = HashSet::new();
+        let mut none_seen_errors = HashSet::new();
+        let skipped_defaults = default_secret_scan_paths();
+        assert_eq!(
+            scan_secret_file_probes(
+                None,
+                &skipped_defaults,
+                &mut none_findings,
+                &mut none_errors,
+                &mut none_seen_findings,
+                &mut none_seen_errors,
+                &mut |_| Ok(())
+            )
+            .unwrap(),
+            (0, 0)
+        );
+
+        assert!(
+            scan_secret_file_probes(
+                Some(&temp.path().join("missing")),
+                &[],
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut HashSet::new(),
+                &mut HashSet::new(),
+                &mut |_| Ok(())
+            )
+            .unwrap_err()
+            .contains("scan path does not exist")
+        );
+
+        let fifo_path = temp.path().join("secret.pipe");
+        let fifo_c_path = CString::new(fifo_path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo_c_path.as_ptr(), 0o600) }, 0);
+        assert!(
+            scan_secret_file_probes(
+                Some(&fifo_path),
+                &[],
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut HashSet::new(),
+                &mut HashSet::new(),
+                &mut |_| Ok(())
+            )
+            .unwrap_err()
+            .contains("not a file or directory")
+        );
+
+        assert_eq!(
+            scan_secret_file_probes(
+                Some(temp.path()),
+                &[temp.path().to_path_buf()],
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut HashSet::new(),
+                &mut HashSet::new(),
+                &mut |_| Ok(())
+            )
+            .unwrap(),
+            (0, 0)
+        );
+    }
+
+    #[test]
     fn secret_scanner_runs_isotope_detectors_and_file_probes() {
         let _lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
@@ -14368,6 +14548,29 @@ managed_secrets = ["dep:managed-secrets"]"#,
     }
 
     #[test]
+    fn install_progress_helpers_cover_empty_no_callback_and_style_paths() {
+        let progress = InstallProgress::with_callback("coverage-progress", None);
+
+        progress.emit(ProgressEvent::Resolving);
+        progress.begin_download_phase();
+        progress.add_download_total(None);
+        progress.add_download_total(Some(0));
+        progress.advance_download(0);
+        progress.emit_downloading_for("missing-package");
+        progress.begin_install_phase();
+        progress.begin_install_phase();
+        progress.log("\n\r");
+        progress.log("first line\nsecond line");
+        progress.finish_with_paths(&[]);
+        progress.finish_with_paths(&["/tmp/av".to_string(), "/tmp/nuke-helper".to_string()]);
+        progress.clear();
+
+        let _ = download_progress_style();
+        let _ = install_progress_style();
+        let _ = final_progress_style();
+    }
+
+    #[test]
     fn installed_package_summary_serializes_source() {
         let summary = core::InstalledPackageSummary {
             name: "isotope:gh".to_string(),
@@ -14596,6 +14799,13 @@ managed_secrets = ["dep:managed-secrets"]"#,
             state.reasons
         );
         assert_eq!(state.error, None);
+
+        for identifier in ["node@24", "isotope:node@24", "brew:node@24"] {
+            let state = package_security_state_for_identifiers([identifier.to_string()])
+                .unwrap_or_else(|| panic!("{identifier} should map to node@24"));
+            assert_eq!(isotope_unqualified_name(&state.isotope_name), "node@24");
+            assert!(state.install_is_insecure);
+        }
     }
 
     #[test]
@@ -17069,6 +17279,17 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn configure_debug_install_environment_preserves_existing_debug_flags() {
+        let _env_lock = test_env_lock().lock().unwrap();
+        let _env = TestEnvGuard::set(&[("PKG_ALLOW", "unsupported-formulas:relocation-failures")]);
+
+        configure_debug_install_environment();
+
+        let value = env::var("PKG_ALLOW").unwrap();
+        assert_eq!(value, "unsupported-formulas:relocation-failures");
+    }
+
+    #[test]
     fn pkg_allow_runtime_override_stays_debug_only() {
         let _env_lock = test_env_lock().lock().unwrap();
         let _env = TestEnvGuard::set(&[("PKG_ALLOW", "relocation-failures")]);
@@ -19042,6 +19263,152 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
     }
 
     #[test]
+    fn incremental_update_and_copy_helpers_cover_seed_edges() {
+        let temp = TempDir::new().unwrap();
+        let shared_file = temp.path().join("shared-file");
+        fs::write(&shared_file, b"not a directory").unwrap();
+        assert!(!shared_tmp_root_is_writable(&shared_file.join("child")));
+
+        let missing_receipt = InstallPlan {
+            mode: Mode::I,
+            package_name: "missing-receipt".to_string(),
+            root_formula: "missing-receipt".to_string(),
+            stable_root: temp.path().join("opt/missing-receipt"),
+            install_root: temp.path().join("opt/missing-receipt"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(&missing_receipt.install_root).unwrap();
+        assert!(!install_root_supports_incremental_update(&missing_receipt).unwrap());
+
+        let unreadable_receipts = InstallPlan {
+            package_name: "bad-receipts".to_string(),
+            root_formula: "bad-receipts".to_string(),
+            stable_root: temp.path().join("opt/bad-receipts"),
+            install_root: temp.path().join("opt/bad-receipts"),
+            ..missing_receipt.clone()
+        };
+        fs::create_dir_all(&unreadable_receipts.install_root).unwrap();
+        write_package_receipt(
+            &unreadable_receipts.root_receipt_path(),
+            &PackageReceipt {
+                package_name: unreadable_receipts.package_name.clone(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: unreadable_receipts.root_formula.clone(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        fs::write(unreadable_receipts.install_root.join(RECEIPTS_DIR), b"file").unwrap();
+        assert!(
+            formula_receipts_support_incremental_update(&unreadable_receipts)
+                .unwrap_err()
+                .contains("failed to read")
+        );
+
+        let invalid_receipts = InstallPlan {
+            package_name: "invalid-receipts".to_string(),
+            root_formula: "invalid-receipts".to_string(),
+            stable_root: temp.path().join("opt/invalid-receipts"),
+            install_root: temp.path().join("opt/invalid-receipts"),
+            ..missing_receipt.clone()
+        };
+        fs::create_dir_all(invalid_receipts.install_root.join(RECEIPTS_DIR)).unwrap();
+        write_package_receipt(
+            &invalid_receipts.root_receipt_path(),
+            &PackageReceipt {
+                package_name: invalid_receipts.package_name.clone(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: invalid_receipts.root_formula.clone(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+        fs::write(
+            invalid_receipts
+                .install_root
+                .join(RECEIPTS_DIR)
+                .join("invalid.json"),
+            b"{not-json",
+        )
+        .unwrap();
+        assert!(
+            formula_receipts_support_incremental_update(&invalid_receipts)
+                .unwrap_err()
+                .contains("failed to parse")
+        );
+
+        let seeded = InstallPlan {
+            mode: Mode::I,
+            package_name: "seeded".to_string(),
+            root_formula: "seeded".to_string(),
+            stable_root: temp.path().join("opt/seeded"),
+            install_root: temp.path().join("opt/seeded"),
+            tmp_root: temp.path().join("tmp"),
+        };
+        fs::create_dir_all(seeded.install_root.join("bin")).unwrap();
+        fs::create_dir_all(seeded.install_root.join("share/doc")).unwrap();
+        fs::write(seeded.install_root.join("bin/tool"), b"old tool").unwrap();
+        fs::write(seeded.install_root.join("share/doc/readme"), b"docs").unwrap();
+        symlink("bin/tool", seeded.install_root.join("tool-link")).unwrap();
+        fs::create_dir_all(seeded.install_root.join(RECEIPTS_DIR)).unwrap();
+        fs::write(
+            seeded.install_root.join(RECEIPTS_DIR).join("notes.txt"),
+            b"skip",
+        )
+        .unwrap();
+        write_receipt_with_owned_paths(
+            &seeded.receipt_path("seeded"),
+            &InstalledFormula {
+                spec: FormulaSpec {
+                    name: "seeded".to_string(),
+                    bottle_sha256: "sha".to_string(),
+                    bottle_url: "https://example.invalid/seeded.tar.gz".to_string(),
+                },
+                keg_dir_name: "1.0.0".to_string(),
+                archive_path: PathBuf::new(),
+            },
+            "arm64_tahoe",
+            vec!["bin/tool".to_string()],
+        )
+        .unwrap();
+        write_package_receipt(
+            &seeded.root_receipt_path(),
+            &PackageReceipt {
+                package_name: seeded.package_name.clone(),
+                version: "1.0.0".to_string(),
+                source: PackageReceiptSource::Formula {
+                    root_formula: seeded.root_formula.clone(),
+                },
+                metadata: PackageMetadata::default(),
+            },
+        )
+        .unwrap();
+
+        let prepared = prepare_i_install_plan(&seeded, InstallIntent::Update).unwrap();
+        assert_eq!(
+            fs::read(prepared.plan.install_root.join("bin/tool")).unwrap(),
+            b"old tool"
+        );
+        assert_eq!(
+            fs::read_link(prepared.plan.install_root.join("tool-link")).unwrap(),
+            PathBuf::from("bin/tool")
+        );
+        assert!(prepared.plan.install_root.join("share/doc/readme").exists());
+
+        let source_file = temp.path().join("source-file");
+        let destination_file = temp.path().join("destination-file");
+        fs::write(&source_file, b"replacement").unwrap();
+        fs::write(&destination_file, b"existing").unwrap();
+        let metadata = fs::metadata(&source_file).unwrap();
+        copy_file_preserving_metadata(&source_file, &destination_file, &metadata).unwrap();
+        assert_eq!(fs::read(&destination_file).unwrap(), b"replacement");
+    }
+
+    #[test]
     fn package_install_root_uses_iso_prefix() {
         let temp = TempDir::new().unwrap();
 
@@ -19611,10 +19978,20 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         let older_remote = test_combined_data_with_generated_at("2026-05-17T12:42:37Z");
         let same_remote = test_combined_data_with_generated_at("2026-05-17T13:12:55Z");
         let newer_remote = test_combined_data_with_generated_at("2026-05-17T13:12:56Z");
+        let invalid_remote = test_combined_data_with_generated_at("not-rfc3339");
+        let invalid_embedded = test_combined_data_with_generated_at("not-rfc3339");
 
         assert!(!combined_data_is_at_least_as_new(&older_remote, &embedded));
         assert!(combined_data_is_at_least_as_new(&same_remote, &embedded));
         assert!(combined_data_is_at_least_as_new(&newer_remote, &embedded));
+        assert!(!combined_data_is_at_least_as_new(
+            &invalid_remote,
+            &embedded
+        ));
+        assert!(combined_data_is_at_least_as_new(
+            &same_remote,
+            &invalid_embedded
+        ));
     }
 
     #[test]

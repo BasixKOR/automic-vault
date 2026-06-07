@@ -572,6 +572,40 @@ mod tests {
     }
 
     #[test]
+    fn helper_wrappers_cover_nonempty_packages_callbacks_and_sha_inputs() {
+        CALLBACK_EVENTS.lock().unwrap().clear();
+        let packages = CString::new(r#"[{"name":"rg","version":null}]"#).unwrap();
+
+        for response in [
+            nuke_helper_install(packages.as_ptr(), ptr::null_mut(), Some(capture_progress)),
+            nuke_helper_update(packages.as_ptr(), ptr::null_mut(), Some(capture_progress)),
+            nuke_helper_uninstall(packages.as_ptr(), ptr::null_mut(), Some(capture_progress)),
+            nuke_helper_make_default(packages.as_ptr(), ptr::null_mut(), Some(capture_progress)),
+            nuke_helper_update_all(ptr::null_mut(), Some(capture_progress)),
+        ] {
+            let value =
+                serde_json::from_str::<serde_json::Value>(&raw_to_string(response)).unwrap();
+            assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+        }
+
+        let executable = CString::new("/usr/bin/python3").unwrap();
+        let script = CString::new("/tmp/script.py").unwrap();
+        let sha = CString::new("a".repeat(64)).unwrap();
+        let keys = CString::new(r#"["OPENAI_API_KEY","ANTHROPIC_API_KEY"]"#).unwrap();
+        let response = raw_to_string(nuke_helper_remember_isotope_always_allow(
+            executable.as_ptr(),
+            script.as_ptr(),
+            sha.as_ptr(),
+            keys.as_ptr(),
+            ptr::null_mut(),
+            Some(capture_progress),
+        ));
+        let value = serde_json::from_str::<serde_json::Value>(&response).unwrap();
+        assert!(value.get("Err").is_some() || value.get("Ok").is_some());
+        assert!(!CALLBACK_EVENTS.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn helper_dotenv_wrappers_parse_modes_policies_and_keys() {
         let invalid_policy = CString::new("bogus").unwrap();
         let response = raw_to_string(nuke_helper_set_dotenv_approval_policy(

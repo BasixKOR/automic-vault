@@ -4771,6 +4771,7 @@ mod tests {
     use rusqlite::params;
     use std::io::{Read, Write};
     use std::net::Shutdown;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::thread;
     use tempfile::NamedTempFile;
 
@@ -5290,6 +5291,192 @@ mod tests {
         response
     }
 
+    fn read_raw_request(raw_request: &str) -> Result<Option<Request>, String> {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("listener address");
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept request");
+            read_request(&stream)
+        });
+        let mut client = TcpStream::connect(addr).expect("connect client");
+        client
+            .write_all(raw_request.as_bytes())
+            .expect("write request");
+        client
+            .shutdown(Shutdown::Write)
+            .expect("finish request body");
+        server.join().expect("join server")
+    }
+
+    fn serde_json_package(base: &PackageRow, full: Value) -> PackageRow {
+        let mut package = base.clone();
+        package.data.full = full;
+        package
+    }
+
+    fn markdown_agent_safety_missing_summary(base: &PackageRow) -> String {
+        let package = serde_json_package(base, serde_json::json!({"agentSafetyAnswer": {}}));
+        let mut text = String::new();
+        markdown_agent_safety_section(&mut text, &package, &LOCALES[0]);
+        text
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        values: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn set(values: &[(&'static str, Option<&str>)]) -> Self {
+            let lock = env_lock().lock().unwrap();
+            let guard = Self {
+                _lock: lock,
+                values: values
+                    .iter()
+                    .map(|(key, _)| (*key, env::var_os(key)))
+                    .collect(),
+            };
+            for (key, value) in values {
+                unsafe {
+                    match value {
+                        Some(value) => env::set_var(key, value),
+                        None => env::remove_var(key),
+                    }
+                }
+            }
+            guard
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.values {
+                unsafe {
+                    match value {
+                        Some(value) => env::set_var(key, value),
+                        None => env::remove_var(key),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn app_state_request_and_query_helpers_cover_edge_cases() {
+        let db = test_database();
+        assert_database_ready(db.path()).unwrap();
+        let empty_db = NamedTempFile::new().expect("empty database");
+        assert!(
+            assert_database_ready(empty_db.path())
+                .unwrap_err()
+                .contains("is not ready")
+        );
+
+        {
+            let _env = EnvGuard::set(&[
+                ("AV_WEB_BIND_ADDR", Some("127.0.0.1:3999")),
+                ("AV_WEB_DB_PATH", Some(db.path().to_str().unwrap())),
+                ("AV_WEB_ORIGIN_HEADER", Some("X-Coverage-Origin")),
+                ("AV_WEB_ORIGIN_SECRET", Some("")),
+            ]);
+            let state = AppState::from_env();
+            assert_eq!(state.bind_addr, "127.0.0.1:3999");
+            assert_eq!(state.db_path, db.path());
+            assert_eq!(state.origin_header, "x-coverage-origin");
+            assert_eq!(state.origin_secret, None);
+        }
+
+        {
+            let missing = db.path().with_file_name("missing-av-web.sqlite");
+            let _env = EnvGuard::set(&[
+                ("AV_WEB_BIND_ADDR", Some("127.0.0.1:0")),
+                ("AV_WEB_DB_PATH", Some(missing.to_str().unwrap())),
+                ("AV_WEB_ORIGIN_HEADER", None),
+                ("AV_WEB_ORIGIN_SECRET", None),
+            ]);
+            assert!(run().unwrap_err().contains("failed to open"));
+        }
+
+        let request = read_raw_request(
+            "get /pkg/search.json?q=aws+cli&blank=&bad=%ZZ HTTP/1.1\r\nHost: test\r\nX-Test: One\r\ncontinued\r\n\r\n",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/pkg/search.json");
+        assert_eq!(request.query.as_deref(), Some("q=aws+cli&blank=&bad=%ZZ"));
+        assert_eq!(
+            request.headers.get("x-test").map(String::as_str),
+            Some("One")
+        );
+
+        assert_eq!(read_raw_request("").unwrap(), None);
+        assert!(
+            read_raw_request("BROKEN\r\n")
+                .unwrap_err()
+                .contains("invalid request line")
+        );
+        assert!(
+            read_raw_request("GET /pkg/%FF HTTP/1.1\r\nHost: test\r\n\r\n")
+                .unwrap_err()
+                .contains("invalid request path encoding")
+        );
+
+        let parsed = parse_query("=ignored&q=aws+cli&bad=%ZZ&bare&limit=99");
+        assert_eq!(parsed.get("q").map(String::as_str), Some("aws cli"));
+        assert_eq!(parsed.get("bad").map(String::as_str), Some("%ZZ"));
+        assert_eq!(parsed.get("bare").map(String::as_str), Some(""));
+        assert_eq!(
+            split_target("pkg/brew/awscli#fragment").unwrap(),
+            ("/pkg/brew/awscli".to_string(), None)
+        );
+        assert_eq!(
+            slash_redirect_location("/fr/pkg", None).as_deref(),
+            Some("/fr/pkg/")
+        );
+        assert_eq!(slash_redirect_location("/not-pkg", None), None);
+        assert_eq!(normalize_response_path("/pkg"), "/pkg/index.html");
+        assert_eq!(normalize_response_path("/pkg/search.js"), "/pkg/search.js");
+        assert_eq!(
+            normalize_response_path("/pkg/brew/awscli"),
+            "/pkg/brew/awscli/index.html"
+        );
+        assert!(is_search_path("/ja/pkg/search.json"));
+        assert_eq!(
+            locale_for_search("/zh-hans/pkg/search.json", &BTreeMap::new()),
+            "zh-Hans"
+        );
+        assert_eq!(
+            locale_for_search(
+                "/pkg/search.json",
+                &BTreeMap::from([("locale".to_string(), "ja".to_string())])
+            ),
+            "ja"
+        );
+        assert_eq!(empty_as_unknown(""), "unknown");
+        assert_eq!(empty_as_unknown("1.2.3"), "1.2.3");
+        assert_eq!(non_empty("", "fallback"), "fallback");
+        assert_eq!(non_empty("value", "fallback"), "value");
+        assert!(
+            render_urlset(&[sitemap_url("/pkg/brew/awscli/", "2026-06-03")])
+                .contains("hreflang=\"x-default\"")
+        );
+        assert_eq!(canonical_pkg_route("/fr/pkg").1, "/pkg/index.html");
+        assert_eq!(
+            canonical_pkg_route("/pkg/brew/awscli").1,
+            "/pkg/brew/awscli/index.html"
+        );
+        assert_eq!(
+            dynamic_response_for_path(db.path(), "/not-pkg").unwrap(),
+            None
+        );
+    }
+
     #[test]
     fn route_lookup_handles_trailing_slash_and_index_html() {
         let db = test_database();
@@ -5430,6 +5617,585 @@ mod tests {
                 .expect("private html")
                 .contains("noindex,follow")
         );
+    }
+
+    #[test]
+    fn dynamic_package_fallback_renderers_cover_sparse_metadata() {
+        let db = test_database();
+        let connection = Connection::open(db.path()).expect("open fixture database");
+        insert_package(
+            &connection,
+            PackageFixture {
+                path: "/pkg/brew/sparse/",
+                provider: "brew",
+                slug: "sparse",
+                package_key: "brew:sparse",
+                name: "sparse",
+                display_name: "sparse",
+                summary: "",
+                provider_label: "Homebrew",
+                package_manager_url: "",
+                install_command: "",
+                native_install_command: "",
+                version: "",
+                category: "developer-tools",
+                license: "",
+                homepage: "",
+                repository: "",
+                rank: None,
+                last_updated_at: "2026-06-04",
+                indexable: true,
+                data_json: serde_json::json!({"full": {
+                    "aliases": [
+                        {"label": "sparse-label"},
+                        {"name": "sparse-name"},
+                        {"target": "sparse-target"},
+                        {"source": "sparse-source"},
+                        {"package": "sparse-package"},
+                        {"key": "sparse-key"},
+                        7,
+                        true
+                    ],
+                    "geiger": {
+                        "level": "medium",
+                        "confidence": "low",
+                        "category": "network",
+                        "reasons": [],
+                        "signals": []
+                    },
+                    "installBehavior": {"postInstallDefined": false},
+                    "bottle": {"available": false},
+                    "dependencies": ["openssl@3"],
+                    "popularity": {"downloads_per_30_days": 12345},
+                    "extra": {
+                        "registryInsights": {
+                            "apiURL": "https://example.test/api",
+                            "customMetric": 9876,
+                            "enabled": true,
+                            "emptyList": [],
+                            "nested": {"inner_id": "value"},
+                            "list": ["alpha", false, 12]
+                        }
+                    },
+                    "externalMatches": [
+                        {
+                            "manager": "apk",
+                            "packageName": "sparse",
+                            "evidence": "Alpine package index",
+                            "metadata": {
+                                "description": "Sparse package in an external index.",
+                                "homepage": "https://example.test/sparse"
+                            }
+                        },
+                        {"metadata": {}}
+                    ],
+                    "packageHubs": [
+                        {"slug": "", "label": "skip"},
+                        {"slug": "cloud", "label": "Cloud"}
+                    ],
+                    "relatedPackages": [
+                        {"provider": "brew", "name": "sparse", "label": "self", "rel": "domain_peer"},
+                        {"provider": "", "name": "bad", "rel": "domain_peer"},
+                        {"provider": "npm", "package": "left-pad", "label": "left pad", "rel": "domain_peer"},
+                        {"provider": "brew", "target": "curl", "label": "curl", "rel": "other"}
+                    ],
+                    "alsoAvailableVia": [
+                        {"provider": "pip", "name": "sparse", "label": "sparse-py"}
+                    ],
+                    "sourceNotes": [42, true, {"label": "fixture note"}]
+                }})
+                .to_string(),
+                search_text: "sparse brew fallback rendering",
+            },
+        );
+        connection
+            .execute(
+                "INSERT INTO hub_packages(hub_slug, package_key, position, reason)
+                 VALUES('cloud', 'brew:sparse', 2, '')",
+                [],
+            )
+            .expect("insert sparse hub package");
+        connection
+            .execute(
+                "INSERT INTO hubs(path, slug, title, description, group_name, data_json)
+                 VALUES('/pkg/empty-related/', 'empty-related', 'Empty related', '', 'topical', '{}')",
+                [],
+            )
+            .expect("insert empty related hub");
+        connection
+            .execute(
+                "INSERT INTO hub_packages(hub_slug, package_key, position, reason)
+                 VALUES('empty-related', 'brew:sparse', 1, '')",
+                [],
+            )
+            .expect("insert empty related hub package");
+
+        let sparse = package_by_provider_slug(&connection, "brew", "sparse")
+            .expect("query sparse")
+            .expect("sparse package");
+        let mut manifest_with_counts = metadata_json(&connection, "manifest")
+            .expect("read manifest")
+            .expect("manifest");
+        manifest_with_counts["package_count"] = serde_json::json!(99);
+        manifest_with_counts["approval_gate_count"] = serde_json::json!(11);
+        connection
+            .execute(
+                "UPDATE metadata SET value = ?1 WHERE key = 'manifest'",
+                params![serde_json::to_string(&manifest_with_counts).unwrap()],
+            )
+            .expect("update manifest counts");
+        assert!(
+            render_index_page(&connection, &LOCALES[0])
+                .expect("render counted index")
+                .contains(">99<")
+        );
+        assert_eq!(metadata_json(&connection, "missing").unwrap(), None);
+        assert!(
+            hub_signal_condition("non_low_geiger")
+                .unwrap()
+                .contains("geiger")
+        );
+        assert_eq!(hub_signal_condition("unknown"), None);
+
+        let html = render_package_page(&sparse, &LOCALES[0], "2026-06-07T00:00:00Z");
+        assert!(html.contains("Homebrew metadata was not linked in local data."));
+        assert!(html.contains("No classifier reasons were present."));
+        assert!(html.contains("No classifier signals were present."));
+        assert!(html.contains("No Homebrew post-install hook is recorded"));
+        assert!(html.contains("No Homebrew bottle metadata was recorded."));
+        assert!(html.contains("30d downloads"));
+        assert!(html.contains("12,345"));
+        assert!(html.contains("Source database details"));
+        assert!(html.contains("Custom Metric"));
+        assert!(html.contains("Sparse package in an external index."));
+
+        let markdown = render_package_markdown(&sparse, &LOCALES[0], "2026-06-07T00:00:00Z");
+        assert!(markdown.contains("Bottle: not available"));
+        assert!(markdown.contains("left pad"));
+        assert!(markdown.contains("fixture note"));
+        assert!(markdown.contains("apk - sparse"));
+
+        let dynamic = dynamic_response_for_path(db.path(), "/fr/pkg/brew/sparse/")
+            .expect("dynamic sparse query")
+            .expect("dynamic sparse response");
+        assert_eq!(dynamic.content_type, "text/html; charset=utf-8");
+        assert!(
+            String::from_utf8(dynamic.body)
+                .expect("localized sparse html")
+                .contains("sparse")
+        );
+        assert!(
+            dynamic_response_for_path(db.path(), "/pkg/missing-hub/")
+                .expect("missing hub query")
+                .is_none()
+        );
+
+        let hub_row = hub_package_row(&sparse, "", &LOCALES[0]);
+        assert!(hub_row.contains("Executable aliases include"));
+        assert!(hub_row.contains("sparse-label"));
+        let hub = hub_by_slug(&connection, "cloud")
+            .expect("query cloud hub")
+            .expect("cloud hub");
+        let hub_markdown = render_hub_markdown(&connection, &hub, &LOCALES[0])
+            .expect("render sparse hub markdown");
+        assert!(hub_markdown.contains("Executable aliases include"));
+        let related_hubs = related_hub_links(&connection, &hub, &LOCALES[0]).expect("related hubs");
+        assert!(related_hubs.join("").contains("package graph"));
+        let hub_schema = schema_for_hub(
+            &hub,
+            vec![&sparse],
+            "Sparse hub description",
+            "2026-06-07",
+            &LOCALES[0],
+        );
+        assert_eq!(
+            hub_schema["@graph"][1]["@type"],
+            serde_json::Value::String("Organization".to_string())
+        );
+
+        let mut isotope_only = sparse.clone();
+        isotope_only.summary.clear();
+        isotope_only.install_command.clear();
+        isotope_only.data.full = serde_json::json!({"isotope": {}});
+        assert!(hero_sentence(&isotope_only).contains("secret handling"));
+        let isotope_security = render_security(&isotope_only, &LOCALES[0]);
+        assert!(isotope_security.contains("Protected-tool coverage"));
+        assert!(isotope_security.contains("No caveats were listed"));
+
+        let mut gate_only = sparse.clone();
+        gate_only.summary.clear();
+        gate_only.install_command.clear();
+        gate_only.data.full = serde_json::json!({
+            "approvalGate": {"rule_count": "7", "rules": [], "coverage_status": "draft"}
+        });
+        assert!(hero_sentence(&gate_only).contains("approval-gate metadata"));
+        assert!(render_gate(&gate_only, &LOCALES[0]).contains("No rule descriptions"));
+        let mut security_markdown = String::new();
+        markdown_security_section(&mut security_markdown, &gate_only, &LOCALES[0]);
+        assert!(security_markdown.contains("Approval gate rules"));
+
+        let mut bare = sparse.clone();
+        bare.summary.clear();
+        bare.install_command.clear();
+        bare.version.clear();
+        bare.last_updated_at.clear();
+        bare.data.full = serde_json::json!({});
+        assert!(hero_sentence(&bare).contains("local Automic Vault package sources"));
+        assert!(render_executables(&bare, &LOCALES[0]).contains("No executable data"));
+        assert!(render_agent_safety_answer(&bare, &LOCALES[0]).is_empty());
+        assert!(render_registry_insights(&bare, &LOCALES[0]).is_empty());
+        assert!(render_external_package_manager_matches(&bare, &LOCALES[0]).is_empty());
+        assert!(security_heading(&bare, &LOCALES[0]).contains("No protected-tool"));
+        assert!(related_article("Empty", Vec::new()).is_empty());
+
+        let mut summary_only = bare.clone();
+        summary_only.summary = "Sparse summary without an install command".to_string();
+        assert!(hero_sentence(&summary_only).contains("Nucleus can resolve"));
+
+        let mut dependency_fallback = sparse.clone();
+        dependency_fallback.data.full = serde_json::json!({"dependencies": ["zlib"]});
+        let dependency_links = related_links(
+            &dependency_fallback,
+            &LOCALES[0],
+            "relatedPackages",
+            4,
+            false,
+        );
+        assert!(dependency_links.join("").contains("zlib"));
+
+        assert_eq!(
+            install_command_manager_label(&serde_json::json!({"manager": "apk"})),
+            "Alpine Linux apk"
+        );
+        assert_eq!(
+            install_command_manager_label(&serde_json::json!({"manager": "dnf"})),
+            "Fedora dnf"
+        );
+        assert_eq!(
+            install_command_manager_label(&serde_json::json!({"manager": "npm"})),
+            "npm"
+        );
+        assert_eq!(
+            install_command_manager_label(
+                &serde_json::json!({"manager": "shell", "source": {"manager": "winget"}})
+            ),
+            "Windows Package Manager"
+        );
+        assert_eq!(
+            native_command_provider("brew install --cask visual-studio-code"),
+            Some("cask")
+        );
+        assert_eq!(native_command_provider("npm i sparse"), Some("npm"));
+        assert_eq!(
+            native_command_provider("python3 -m pip install sparse"),
+            Some("pip")
+        );
+        assert_eq!(native_command_provider("curl https://example.test"), None);
+        assert_eq!(fmt_int(-12345), "-12,345");
+        assert_eq!(short_text("superlong", 1), "…");
+        assert_eq!(slugify("Example++"), "example");
+        assert_eq!(html_hreflang_links("https://example.test/pkg/"), "");
+        assert_eq!(metadata_value_html(&serde_json::Value::Null), "");
+        assert_eq!(metadata_value_html(&serde_json::json!([])), "");
+        assert_eq!(metadata_value_html(&serde_json::json!({})), "");
+        assert_eq!(metadata_value_text(&serde_json::json!({"empty": ""})), "");
+        assert!(metadata_value_present(&serde_json::json!(false)));
+        assert_eq!(
+            value_string(&serde_json::json!(false)),
+            Some("false".to_string())
+        );
+        assert_eq!(
+            value_i64_key(&serde_json::json!({"n": "42"}), "n"),
+            Some(42)
+        );
+        assert_eq!(
+            value_f64_key(&serde_json::json!({"n": "0.75"}), "n"),
+            Some(0.75)
+        );
+        assert_eq!(parse_query("&&a=b").get("a").map(String::as_str), Some("b"));
+
+        let mut empty_metadata = sparse.clone();
+        empty_metadata.package_key.clear();
+        empty_metadata.provider_label.clear();
+        empty_metadata.last_updated_at.clear();
+        empty_metadata.data.full = serde_json::json!({});
+        assert!(
+            render_install_metadata(&empty_metadata, &LOCALES[0])
+                .contains("No resolver details were present.")
+        );
+
+        let mut npm_behavior = sparse.clone();
+        npm_behavior.provider = "npm".to_string();
+        npm_behavior.data.full = serde_json::json!({
+            "installBehavior": {"postInstallDefined": true},
+            "bottle": {"available": true}
+        });
+        assert!(
+            render_install_behavior_signals(&npm_behavior)
+                .contains("npm package metadata declares a postinstall script.")
+        );
+        assert!(
+            render_install_behavior_signals(&serde_json_package(
+                &sparse,
+                serde_json::json!({"installBehavior": {}})
+            ))
+            .is_empty()
+        );
+
+        let mut executable_edges = sparse.clone();
+        executable_edges.data.full = serde_json::json!({
+            "executablesDetailed": [
+                {"name": ""},
+                {"name": "dup"},
+                {"name": "dup"}
+            ],
+            "binaries": [
+                {"target": "dup"},
+                {"source": "binary-source"}
+            ],
+            "extra": {"stub_exclusions": ["alias-skip"]},
+            "aliases": ["alias-skip", "dup"]
+        });
+        let executable_html = render_executables(&executable_edges, &LOCALES[0]);
+        assert!(executable_html.contains("Automic Vault stub excluded"));
+        assert!(executable_html.contains("binary-source"));
+
+        let mut freshness_edges = sparse.clone();
+        freshness_edges.data.full = serde_json::json!({
+            "versionFreshness": {
+                "packageManager": {"version": "1.0.0"},
+                "siteData": {},
+                "upstream": {}
+            }
+        });
+        assert!(
+            render_freshness(&freshness_edges, "", &LOCALES[0])
+                .contains("No freshness warnings were generated.")
+        );
+
+        let empty_registry = serde_json_package(
+            &sparse,
+            serde_json::json!({"registryInsights": {"empty": [], "blank": ""}}),
+        );
+        assert!(render_registry_insights(&empty_registry, &LOCALES[0]).is_empty());
+
+        let manager_card = external_package_match_card(&serde_json::json!({
+            "displayName": "Chocolatey",
+            "packageId": "Sparse.Tool",
+            "confidence": "manual",
+            "command": "choco install sparse",
+            "matchedBy": "package_id",
+            "source": {"sourceLabel": "Chocolatey", "sourceUrl": "https://community.chocolatey.org/packages/sparse"},
+            "metadata": {
+                "version": "1.2.3",
+                "license": "MIT",
+                "dependencies": ["dep"],
+                "optionalDependencies": ["optional"],
+                "provides": ["sparse"],
+                "sourcePackage": "sparse-src"
+            }
+        }));
+        assert!(manager_card.contains("choco install sparse"));
+        assert!(manager_card.contains("Matched by: Package ID"));
+        assert!(
+            external_package_match_card(&serde_json::json!({"displayName": "Empty"}))
+                .contains("Empty")
+        );
+
+        assert!(markdown_agent_safety_missing_summary(&sparse).is_empty());
+        assert!(
+            render_agent_safety_answer(
+                &serde_json_package(&sparse, serde_json::json!({"agentSafetyAnswer": {}})),
+                &LOCALES[0]
+            )
+            .is_empty()
+        );
+        assert!(install_command_source_html(&serde_json::json!({"source": {}})).is_empty());
+
+        let command_edges = serde_json_package(
+            &sparse,
+            serde_json::json!({
+                "dependencies": ["zlib"],
+                "installCommands": [
+                    {"platform": "portable", "manager": "Automic Vault", "command": "sudo av install sparse"},
+                    {"platform": "macos", "manager": "Homebrew", "command": "", "confidence": 0.2},
+                    {"platform": "linux", "manager": "apt", "command": "sudo apt install sparse"}
+                ]
+            }),
+        );
+        assert!(schema_for_package(&command_edges, "Install sparse.", "2026-06-07", &LOCALES[0])
+            ["@graph"][6]["step"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 2);
+        let mut install_groups = String::new();
+        markdown_install_groups(&mut install_groups, &command_edges);
+        assert!(install_groups.contains("unknown confidence"));
+
+        assert!(hub_package_reason(&gate_only, &LOCALES[0]).contains("approval-gate"));
+        let geiger_reason = serde_json_package(
+            &sparse,
+            serde_json::json!({
+                "geiger": {"reasons": ["This package reads credentials from many user paths and may mutate remote state when automation runs without review."]}
+            }),
+        );
+        assert!(hub_package_reason(&geiger_reason, &LOCALES[0]).contains("reads credentials"));
+        let mut summary_reason = bare.clone();
+        summary_reason.summary = "Summary reason for a sparse package.".to_string();
+        assert!(hub_package_reason(&summary_reason, &LOCALES[0]).contains("Summary reason"));
+        assert!(
+            hub_package_reason(&bare, &LOCALES[0])
+                .contains("Matched package metadata for this hub.")
+        );
+        assert!(
+            hub_package_row(&bare, "", &LOCALES[0])
+                .contains("Matched package metadata for this hub.")
+        );
+
+        assert_eq!(sentence_text(""), "");
+        assert_eq!(metadata_value_present(&serde_json::Value::Null), false);
+        assert_eq!(metadata_value_present(&serde_json::json!("  ")), false);
+        assert_eq!(
+            metadata_number_text(&serde_json::Number::from(u64::MAX)),
+            u64::MAX.to_string()
+        );
+        assert_eq!(
+            alternate_install_sentence(&serde_json_package(
+                &sparse,
+                serde_json::json!({"installCommands": [
+                    {"manager": "Automic Vault", "command": "sudo av install sparse"},
+                    {"manager": "brew", "command": ""}
+                ]})
+            )),
+            ""
+        );
+        let mut default_command_package = serde_json_package(&sparse, serde_json::json!({}));
+        default_command_package.install_command = "sudo av install sparse".to_string();
+        let default_command = install_command_entries(&default_command_package);
+        assert_eq!(
+            default_command[0]["command"],
+            serde_json::json!("sudo av install sparse")
+        );
+
+        let behavior_items = markdown_install_behavior_items(&serde_json_package(
+            &sparse,
+            serde_json::json!({
+                "installBehavior": {
+                    "postInstallDefined": true,
+                    "service": "com.example.sparse",
+                    "caveats": "Review shell completions.",
+                    "lifecycleScripts": ["prepare"],
+                    "pythonRequires": ">=3.12",
+                    "requiresDistCount": 3
+                },
+                "bottle": {"available": true, "platforms": ["arm64_tahoe"]}
+            }),
+        ));
+        assert!(behavior_items.join("\n").contains("com.example.sparse"));
+        let freshness_items = markdown_freshness_items(
+            &serde_json_package(
+                &sparse,
+                serde_json::json!({
+                    "versionFreshness": {
+                        "upstream": {
+                            "repository": "https://example.test/sparse",
+                            "latestVersion": "2.0.0",
+                            "comparison": "behind"
+                        },
+                        "warnings": [
+                            {"severity": "warning", "message": ""},
+                            {"message": "Manual review needed."}
+                        ]
+                    }
+                }),
+            ),
+            "not-a-date",
+        );
+        assert!(freshness_items.join("\n").contains("Manual review needed."));
+
+        let mut registry_markdown = String::new();
+        markdown_registry_insights(&mut registry_markdown, &bare, &LOCALES[0]);
+        assert!(registry_markdown.is_empty());
+        markdown_registry_insights(&mut registry_markdown, &empty_registry, &LOCALES[0]);
+        assert!(registry_markdown.is_empty());
+
+        let mut external_markdown = String::new();
+        markdown_external_package_manager_matches(&mut external_markdown, &bare, &LOCALES[0]);
+        assert!(external_markdown.is_empty());
+        let external_edges = serde_json_package(
+            &sparse,
+            serde_json::json!({
+                "externalPackageManagerMatches": [
+                    {},
+                    {"displayName": "OnlyName"},
+                    {"packageId": "NoDetails"}
+                ]
+            }),
+        );
+        markdown_external_package_manager_matches(
+            &mut external_markdown,
+            &external_edges,
+            &LOCALES[0],
+        );
+        assert!(external_markdown.contains("OnlyName"));
+
+        let mut related_markdown = String::new();
+        markdown_related(
+            &mut related_markdown,
+            &serde_json_package(
+                &sparse,
+                serde_json::json!({
+                    "packageHubs": [{"slug": ""}, {"slug": "cloud"}],
+                    "relatedPackages": [
+                        {"provider": "", "name": "skip", "label": "skip"},
+                        {"provider": "brew", "name": "curl", "label": "curl"}
+                    ]
+                }),
+            ),
+            &LOCALES[0],
+        );
+        assert!(related_markdown.contains("[curl]"));
+
+        assert!(hub_cluster_block("Empty", &[], &LOCALES[0]).is_empty());
+        assert!(hub_related_block("Empty", &[]).is_empty());
+        assert!(
+            core_security_guides(
+                &serde_json_package(&sparse, serde_json::json!({"aliases": ["gh"]})),
+                &LOCALES[0]
+            )
+            .join("")
+            .contains("GitHub CLI token security")
+        );
+        assert_eq!(
+            SearchResult {
+                title: "Exact".to_string(),
+                url: "/pkg/brew/exact/".to_string(),
+                summary: String::new(),
+                provider: "brew".to_string(),
+                package_key: "brew:exact".to_string(),
+                rank: None,
+                search_text: "exact".to_string(),
+            }
+            .search_rank("exact"),
+            Some(0)
+        );
+        let ranked = SearchResult {
+            title: "Exact".to_string(),
+            url: "/pkg/brew/exact-tool/".to_string(),
+            summary: String::new(),
+            provider: "brew".to_string(),
+            package_key: "brew:exact-tool".to_string(),
+            rank: Some(9),
+            search_text: "body match text".to_string(),
+        };
+        assert_eq!(ranked.search_rank("exa"), Some(1));
+        assert_eq!(ranked.search_rank("tool"), Some(2));
+        assert_eq!(ranked.search_rank("body"), Some(3));
+        assert_eq!(ranked.search_rank("absent"), None);
+        assert_eq!(ranked.match_distance("exact"), 0);
+        assert!(ranked.match_distance("match") < usize::MAX);
+        assert_eq!(ranked.match_distance("absent"), usize::MAX);
     }
 
     #[test]
