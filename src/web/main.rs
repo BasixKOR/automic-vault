@@ -4771,6 +4771,7 @@ mod tests {
     use rusqlite::params;
     use std::io::{Read, Write};
     use std::net::Shutdown;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::thread;
     use tempfile::NamedTempFile;
 
@@ -5320,13 +5321,21 @@ mod tests {
         text
     }
 
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
     struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
         values: Vec<(&'static str, Option<std::ffi::OsString>)>,
     }
 
     impl EnvGuard {
         fn set(values: &[(&'static str, Option<&str>)]) -> Self {
+            let lock = env_lock().lock().unwrap();
             let guard = Self {
+                _lock: lock,
                 values: values
                     .iter()
                     .map(|(key, _)| (*key, env::var_os(key)))
@@ -5368,17 +5377,19 @@ mod tests {
                 .contains("is not ready")
         );
 
-        let _env = EnvGuard::set(&[
-            ("AV_WEB_BIND_ADDR", Some("127.0.0.1:3999")),
-            ("AV_WEB_DB_PATH", Some(db.path().to_str().unwrap())),
-            ("AV_WEB_ORIGIN_HEADER", Some("X-Coverage-Origin")),
-            ("AV_WEB_ORIGIN_SECRET", Some("")),
-        ]);
-        let state = AppState::from_env();
-        assert_eq!(state.bind_addr, "127.0.0.1:3999");
-        assert_eq!(state.db_path, db.path());
-        assert_eq!(state.origin_header, "x-coverage-origin");
-        assert_eq!(state.origin_secret, None);
+        {
+            let _env = EnvGuard::set(&[
+                ("AV_WEB_BIND_ADDR", Some("127.0.0.1:3999")),
+                ("AV_WEB_DB_PATH", Some(db.path().to_str().unwrap())),
+                ("AV_WEB_ORIGIN_HEADER", Some("X-Coverage-Origin")),
+                ("AV_WEB_ORIGIN_SECRET", Some("")),
+            ]);
+            let state = AppState::from_env();
+            assert_eq!(state.bind_addr, "127.0.0.1:3999");
+            assert_eq!(state.db_path, db.path());
+            assert_eq!(state.origin_header, "x-coverage-origin");
+            assert_eq!(state.origin_secret, None);
+        }
 
         {
             let missing = db.path().with_file_name("missing-av-web.sqlite");

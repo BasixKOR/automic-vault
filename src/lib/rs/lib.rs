@@ -17286,11 +17286,7 @@ long_prefix = re.compile(r'/opt/python@3.12/[0-9\\._abrc]+')\n"
         configure_debug_install_environment();
 
         let value = env::var("PKG_ALLOW").unwrap();
-        if cfg!(debug_assertions) {
-            assert_eq!(value, "unsupported-formulas:relocation-failures");
-        } else {
-            assert_eq!(value, "unsupported-formulas:relocation-failures");
-        }
+        assert_eq!(value, "unsupported-formulas:relocation-failures");
     }
 
     #[test]
