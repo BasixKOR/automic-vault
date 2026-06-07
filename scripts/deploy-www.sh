@@ -1407,7 +1407,9 @@ put_bucket_policy() {
 sync_site() {
   local upload_site_dir="${prepared_site_dir:-${site_dir}}"
 
-  ensure_package_origin_prefixes_absent
+  if [[ "${static_only}" != true ]]; then
+    ensure_package_origin_prefixes_absent
+  fi
 
   log_step "Syncing static assets"
   aws s3 sync "${upload_site_dir}/" "s3://${WWW_BUCKET}/" \
