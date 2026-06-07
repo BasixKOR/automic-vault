@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import sys
 import unittest
 
 
@@ -10,6 +11,7 @@ I18N_SCRIPT = ROOT / "scripts" / "generate-www-i18n.py"
 def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -54,14 +56,18 @@ class WebsiteI18nTests(unittest.TestCase):
 
         html = module.render_home_page(record, fr, locales)
 
-        self.assertIn('<link rel="stylesheet" href="/styles.css?v=26">', html)
+        self.assertIn('<link rel="stylesheet" href="/styles.css?v=75">', html)
         self.assertNotIn("seo.css", html)
         self.assertNotIn("i18n-section", html)
         self.assertIn('<a class="brand" href="/fr/" aria-label="Accueil Automic Vault">', html)
-        self.assertIn('class="hero-grid"', html)
-        self.assertIn('class="highlight-grid"', html)
-        self.assertIn('class="ranked-story feature-section"', html)
-        self.assertIn("Limites principales", html)
+        self.assertIn('class="poster-hero"', html)
+        self.assertIn('id="harden"', html)
+        self.assertIn('id="immutable"', html)
+        self.assertIn('id="dotenv"', html)
+        self.assertIn('id="detect"', html)
+        self.assertIn('class="tweet-endorsement"', html)
+        self.assertIn('class="closing-cta"', html)
+        self.assertIn("Durcissez votre Mac", html)
 
 
 if __name__ == "__main__":
