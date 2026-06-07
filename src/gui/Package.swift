@@ -70,6 +70,7 @@ let package = Package(
                 "LocalizationResourceTests.swift",
                 "DeepLinkTests.swift",
                 "MainWindowModelTests.swift",
+                "NukeHelperBridgeTests.swift",
                 "PackageSecurityStateTests.swift",
                 "UpdateProgressViewModelTests.swift",
                 "VaultApprovalStoreTests.swift",

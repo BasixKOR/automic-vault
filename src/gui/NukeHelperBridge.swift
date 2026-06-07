@@ -176,6 +176,105 @@ private final class NukeHelperProgressRelay: NSObject, NukeHelperProgressProtoco
     }
 }
 
+final class NukeHelperStartupReplyGuard<Value> {
+    private let lock = NSLock()
+    private let operationName: String
+    private let startupTimeout: TimeInterval
+    private let activityTimeout: TimeInterval?
+    private let completion: (Result<Value, Error>) -> Void
+    private let onFailure: () -> Void
+    private var didStart = false
+    private var didFinish = false
+    private var activityGeneration = 0
+
+    init(
+        operationName: String,
+        startupTimeout: TimeInterval,
+        activityTimeout: TimeInterval?,
+        completion: @escaping (Result<Value, Error>) -> Void,
+        onFailure: @escaping () -> Void
+    ) {
+        self.operationName = operationName
+        self.startupTimeout = startupTimeout
+        self.activityTimeout = activityTimeout
+        self.completion = completion
+        self.onFailure = onFailure
+    }
+
+    func startWatchdog() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + startupTimeout) {
+            self.failIfNotStarted()
+        }
+    }
+
+    func markStarted() {
+        lock.lock()
+        didStart = true
+        activityGeneration += 1
+        let generation = activityGeneration
+        lock.unlock()
+        scheduleActivityWatchdog(generation: generation)
+    }
+
+    func complete(_ result: Result<Value, Error>) {
+        finish(result, shouldInvalidate: false)
+    }
+
+    func fail(_ error: Error) {
+        finish(.failure(error), shouldInvalidate: true)
+    }
+
+    private func failIfNotStarted() {
+        lock.lock()
+        let shouldFail = !didStart && !didFinish
+        lock.unlock()
+        guard shouldFail else { return }
+
+        fail(NukeHelperBridgeError.connectionFailed(
+            "\(operationName) did not receive a response from the privileged helper. The helper may have crashed or failed its startup checks."
+        ))
+    }
+
+    private func scheduleActivityWatchdog(generation: Int) {
+        guard let activityTimeout else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + activityTimeout) {
+            self.failIfInactive(since: generation)
+        }
+    }
+
+    private func failIfInactive(since generation: Int) {
+        lock.lock()
+        let shouldFail = didStart && !didFinish && activityGeneration == generation
+        lock.unlock()
+        guard shouldFail else { return }
+
+        fail(NukeHelperBridgeError.connectionFailed(
+            "\(operationName) stopped receiving responses from the privileged helper. The helper may have crashed during the operation."
+        ))
+    }
+
+    private func finish(
+        _ result: Result<Value, Error>,
+        shouldInvalidate: Bool
+    ) {
+        lock.lock()
+        guard didFinish == false else {
+            lock.unlock()
+            return
+        }
+        didFinish = true
+        lock.unlock()
+
+        if shouldInvalidate {
+            onFailure()
+        }
+        DispatchQueue.main.async {
+            self.completion(result)
+        }
+    }
+}
+
 private struct NukeHelperCodeIdentity {
     let identifier: String
     let teamIdentifier: String?
@@ -185,6 +284,9 @@ private struct NukeHelperCodeIdentity {
 final class NukeHelperBridge {
     static let serviceName = "com.automicvault.nuke-helper"
     static let appBundleIdentifier = "com.automicvault"
+
+    private static let helperStartupTimeout: TimeInterval = 15
+    private static let helperActivityTimeout: TimeInterval = 120
 
     private let queue = DispatchQueue(label: "com.automicvault.helper.bridge")
     private var connection: NSXPCConnection?
@@ -428,18 +530,31 @@ final class NukeHelperBridge {
         completion: @escaping (Result<NukeHelperMaintenanceResult, Error>) -> Void
     ) {
         queue.async {
+            let replyGuard = NukeHelperStartupReplyGuard<NukeHelperMaintenanceResult>(
+                operationName: L10n.string("Update Helper"),
+                startupTimeout: Self.helperStartupTimeout,
+                activityTimeout: nil,
+                completion: completion
+            ) { [weak self] in
+                self?.invalidateConnection()
+            }
+
             do {
                 let hadPendingMaintenance = try self.helperRequiresBlessing()
-                let proxy = try self.privilegedRemoteProxy(progressHandler: nil)
-                proxy.checkForUpdates { _ in
-                    DispatchQueue.main.async {
-                        completion(.success(.completed(updated: hadPendingMaintenance)))
+                let proxy = try self.privilegedRemoteProxy(
+                    progressHandler: nil,
+                    errorHandler: { error in
+                        replyGuard.fail(NukeHelperBridgeError.connectionFailed(
+                            "Privileged helper connection failed: \(error.localizedDescription)"
+                        ))
                     }
+                )
+                replyGuard.startWatchdog()
+                proxy.checkForUpdates { _ in
+                    replyGuard.complete(.success(.completed(updated: hadPendingMaintenance)))
                 }
             } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
+                replyGuard.fail(error)
             }
         }
     }
@@ -448,17 +563,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.updateAll { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Update All"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.updateAll(reply)
         }
     }
 
@@ -467,17 +577,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.installAv(sourcePath) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Install Automic Vault CLT"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.installAv(sourcePath, reply: reply)
         }
     }
 
@@ -486,17 +591,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.installIsotopeStubs(isotopeName) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Install Isotope Stubs"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.installIsotopeStubs(isotopeName, reply: reply)
         }
     }
 
@@ -505,17 +605,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.installIsotopeRoot(isotopeName) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Install Isotope Root"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.installIsotopeRoot(isotopeName, reply: reply)
         }
     }
 
@@ -524,17 +619,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.convertRadioisotope(isotopeName) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Convert Radioisotope"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.convertRadioisotope(isotopeName, reply: reply)
         }
     }
 
@@ -678,17 +768,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.install(packages) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Install Package"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.install(packages, reply: reply)
         }
     }
 
@@ -697,17 +782,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.update(packages) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Update Package"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.update(packages, reply: reply)
         }
     }
 
@@ -716,17 +796,12 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
-        queue.async {
-            do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.uninstall(packages) { result in
-                    self.complete(result, completion: completion)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Uninstall Package"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.uninstall(packages, reply: reply)
         }
     }
 
@@ -735,16 +810,50 @@ final class NukeHelperBridge {
         progress: @escaping (NukeHelperProgressEvent) -> Void,
         completion: @escaping (Result<NukeHelperResult, Error>) -> Void
     ) {
+        performPrivilegedResultCommand(
+            operationName: L10n.string("Make Package Default"),
+            progress: progress,
+            completion: completion
+        ) { proxy, reply in
+            proxy.makeDefault(packages, reply: reply)
+        }
+    }
+
+    private func performPrivilegedResultCommand(
+        operationName: String,
+        progress: @escaping (NukeHelperProgressEvent) -> Void,
+        completion: @escaping (Result<NukeHelperResult, Error>) -> Void,
+        invoke: @escaping (NukeHelperProtocol, @escaping ([String: Any]) -> Void) -> Void
+    ) {
         queue.async {
+            let replyGuard = NukeHelperStartupReplyGuard(
+                operationName: operationName,
+                startupTimeout: Self.helperStartupTimeout,
+                activityTimeout: Self.helperActivityTimeout,
+                completion: completion
+            ) { [weak self] in
+                self?.invalidateConnection()
+            }
+            let guardedProgress: (NukeHelperProgressEvent) -> Void = { event in
+                replyGuard.markStarted()
+                progress(event)
+            }
+
             do {
-                let proxy = try self.privilegedRemoteProxy(progressHandler: progress)
-                proxy.makeDefault(packages) { result in
-                    self.complete(result, completion: completion)
+                let proxy = try self.privilegedRemoteProxy(
+                    progressHandler: guardedProgress,
+                    errorHandler: { error in
+                        replyGuard.fail(NukeHelperBridgeError.connectionFailed(
+                            "Privileged helper connection failed: \(error.localizedDescription)"
+                        ))
+                    }
+                )
+                replyGuard.startWatchdog()
+                invoke(proxy) { result in
+                    replyGuard.complete(self.parseResult(result))
                 }
             } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
+                replyGuard.fail(error)
             }
         }
     }
@@ -949,6 +1058,13 @@ final class NukeHelperBridge {
         connection.resume()
         self.connection = connection
         return connection
+    }
+
+    private func invalidateConnection() {
+        queue.async {
+            self.connection?.invalidate()
+            self.connection = nil
+        }
     }
 
     private func makeRemoteInterface() -> NSXPCInterface {
