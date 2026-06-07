@@ -6,11 +6,11 @@
       "dateModified": "2026-06-03",
       "translations": {
         "ja": {
-          "title": "Automic Vault | brew install したツールを安全に",
-          "description": "Automic Vault は、AI エージェントが使う前に、Homebrew ツール、CLI シークレット、コマンド承認ゲートを Mac 上でローカルに保護します。",
+          "title": "Automic Vault | パッケージ、.env、Mac インストールを堅牢化",
+          "description": "Automic Vault はパッケージインストールを堅牢化し、dotenvx 互換の暗号化 .env ファイルを保護し、macOS のパッケージ更新を Touch ID で承認します。",
           "kicker": "Homebrew 作者による macOS セキュリティ",
-          "h1": "brew install したツールを安全に。",
-          "lede": "Automic Vault は、AI エージェントが使う前に、Homebrew ツール、CLI シークレット、コマンド承認ゲートを Mac 上でローカルに保護します。",
+          "h1": "エージェントが動く前に Mac を堅牢化。",
+          "lede": "平文キー、書き換え可能なツール、承認なしの本番変更を、エージェントの下にあるローカル境界で止めます。",
           "sections": [
             ["シークレットを平文ファイルから移動", "API キー、クラウド認証情報、GitHub トークンを .env やシェル設定から取り出し、承認されたツールだけに渡します。"],
             ["危険なコマンドに人間の承認を追加", "公開、インフラ変更、トークン表示、その他の高リスク操作を、エージェントが実行する前に確認できます。"],
@@ -18,11 +18,11 @@
           ]
         },
         "de": {
-          "title": "Automic Vault | Sichere die Tools, die du mit brew install installierst",
-          "description": "Automic Vault sichert Homebrew-Tools, CLI-Secrets und Command-Approval-Gates lokal auf deinem Mac, bevor AI-Agents sie verwenden.",
+          "title": "Automic Vault | Pakete, .env-Dateien und Mac-Installationen härten",
+          "description": "Automic Vault härtet Paketinstallationen, schützt dotenvx-kompatible verschlüsselte .env-Dateien und gate macOS-Paketupdates mit Touch ID.",
           "kicker": "macOS-Sicherheit vom Homebrew-Erfinder",
-          "h1": "Sichere die Tools, die du mit brew install installierst.",
-          "lede": "Automic Vault sichert Homebrew-Tools, CLI-Secrets und Command-Approval-Gates lokal auf deinem Mac, bevor AI-Agents sie verwenden.",
+          "h1": "Härtet deinen Mac, bevor der Agent läuft.",
+          "lede": "Stoppe Klartext-Keys, beschreibbare Tools und ungeprüfte Produktionsänderungen an der lokalen Schicht unter dem Agent.",
           "sections": [
             ["Secrets aus Klartextdateien entfernen", "API-Schlüssel, Cloud-Credentials und GitHub-Tokens verlassen .env-Dateien und Shell-Profile und werden nur an genehmigte Tools weitergegeben."],
             ["Menschliche Freigabe für riskante Befehle", "Veröffentlichen, Infrastrukturänderungen, Token-Ausgabe und andere riskante Aktionen können geprüft werden, bevor ein Agent sie ausführt."],
@@ -30,11 +30,11 @@
           ]
         },
         "fr": {
-          "title": "Automic Vault | Sécurisez les outils que vous installez avec brew",
-          "description": "Automic Vault sécurise localement sur votre Mac les outils Homebrew, les secrets CLI et les portes d'approbation des commandes avant que les agents IA les utilisent.",
+          "title": "Automic Vault | Durcir les paquets, .env et installations Mac",
+          "description": "Automic Vault durcit les installations de paquets, protège les fichiers .env chiffrés compatibles dotenvx et valide les mises à jour macOS avec Touch ID.",
           "kicker": "Sécurité macOS par le créateur de Homebrew",
-          "h1": "Sécurisez les outils que vous installez avec brew.",
-          "lede": "Automic Vault sécurise localement sur votre Mac les outils Homebrew, les secrets CLI et les portes d'approbation des commandes avant que les agents IA les utilisent.",
+          "h1": "Durcissez votre Mac avant que l’agent s’exécute.",
+          "lede": "Bloquez les clés en clair, les outils modifiables et les changements de production non approuvés dans la couche locale sous l’agent.",
           "sections": [
             ["Sortir les secrets des fichiers en clair", "Les clés API, identifiants cloud et jetons GitHub quittent les fichiers .env et les profils shell pour n'être injectés que dans les outils approuvés."],
             ["Ajouter une approbation humaine aux commandes risquées", "Publication, mutations d'infrastructure, affichage de jetons et autres actions sensibles peuvent être vérifiés avant exécution par un agent."],
@@ -42,11 +42,11 @@
           ]
         },
         "zh-Hans": {
-          "title": "Automic Vault | 保护你用 brew install 装上的工具",
-          "description": "Automic Vault 在 AI 代理使用之前，在你的 Mac 本地保护 Homebrew 工具、CLI 密钥和命令审批门。",
+          "title": "Automic Vault | 加固软件包、.env 文件和 Mac 安装",
+          "description": "Automic Vault 加固软件包安装，保护 dotenvx 兼容的加密 .env 文件，并用 Touch ID 审批 macOS 软件包更新。",
           "kicker": "Homebrew 作者打造的 macOS 安全层",
-          "h1": "保护你用 brew install 装上的工具。",
-          "lede": "Automic Vault 在 AI 代理使用之前，在你的 Mac 本地保护 Homebrew 工具、CLI 密钥和命令审批门。",
+          "h1": "在代理运行前加固你的 Mac。",
+          "lede": "在代理下方的本地边界阻止明文密钥、可写工具和未经审批的生产变更。",
           "sections": [
             ["让密钥离开明文文件", "API 密钥、云凭据和 GitHub 令牌不再留在 .env 与 shell 配置中，只会注入到已批准的工具。"],
             ["为高风险命令加入人工审批", "发布、基础设施变更、令牌显示等敏感操作可在代理执行前先由人确认。"],
