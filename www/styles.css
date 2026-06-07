@@ -2498,6 +2498,13 @@ h1 code {
   padding: clamp(172px, 20vw, 296px) clamp(20px, 4vw, 58px);
 }
 
+.harden-section,
+.immutable-section,
+.dotenv-section,
+.detect-section {
+  gap: clamp(42px, 6vw, 72px);
+}
+
 .feature-section h2,
 .closing-cta h2 {
   max-width: 980px;
