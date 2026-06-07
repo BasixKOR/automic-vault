@@ -342,14 +342,23 @@ next step av update codex --approve</code></pre>
         <div class="dotenv-terminal-layout" aria-label="Terminal examples for encrypted dotenv files">
           <figure class="terminal-card terminal-card-green dotenv-terminal-single">
             <figcaption>Encrypted .env with direnv-style loading</figcaption>
-            <pre><code><span class="prompt">$</span> av dotenv init
-created .env
-stored DOTENV_PRIVATE_KEY in Keychain
+            <pre><code><span class="prompt">$</span> cd ~/work/billing-api
 
-<span class="prompt">$</span> printf '%s\n' "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> .env
+<span class="prompt">$</span> cat .env
+APP_ENV=development
+LOG_LEVEL=debug
+PUBLIC_SITE_URL=https://billing.example
+STRIPE_SECRET_KEY=sk_live_<span class="secret-blur">4eC39HqLyjWDarjtT1zdp7dc</span>
+OPENAI_API_KEY=sk-proj-<span class="secret-blur">BJN9zqY2Q9p7xWm8kL3n</span>
+DATABASE_URL=postgres://billing:<span class="secret-blur">s3cr3t</span>@db.internal/app
+
+<span class="prompt">$</span> av dotenv init
+found existing .env
+stored DOTENV_PRIVATE_KEY in Keychain
 
 <span class="prompt">$</span> av dotenv encrypt
 encrypted .env
+skipped APP_ENV LOG_LEVEL PUBLIC_SITE_URL (not secret-like)
 DOTENV_PUBLIC_KEY="BP9x..."
 STRIPE_SECRET_KEY="encrypted:BO/8An..."
 OPENAI_API_KEY="encrypted:BJN9z..."
@@ -359,7 +368,7 @@ dotenvx compatible
 <span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
 
 <span class="prompt">$</span> cd ~/work/billing-api
-Automic Vault: Approve .env Keys
+av: human approval required…
 file /Users/me/work/billing-api/.env
 keys STRIPE_SECRET_KEY OPENAI_API_KEY DATABASE_URL
 
