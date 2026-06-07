@@ -232,11 +232,11 @@
 
         <div class="terminal-story" aria-label="Terminal examples for package hardening">
           <aside class="terminal-notes" aria-label="What this terminal demonstrates">
-            <p><span>01</span> Install your tools as normal.</p>
-            <p><span>02</span> <code>av scan</code> detects secret exposure.</p>
-            <p><span>03</span> AWS keys are world-readable by default.</p>
-            <p><span>04</span> <code>av</code> hardens packages from Homebrew, npm, and pip.</p>
-            <p><span>05</span> Best-in-class <code>av</code> credential helpers keep anything but AWS from getting your AWS keys.</p>
+            <p>Install your tools as normal.</p>
+            <p><code>av scan</code> detects secret exposure.</p>
+            <p>AWS keys in default CLI files are agent-readable.</p>
+            <p><code>av harden</code> moves keys into Keychain and rewrites the helper.</p>
+            <p><code>credential_process</code> lets AWS receive keys without exposing them to the agent.</p>
           </aside>
           <figure class="terminal-card terminal-card-green">
             <figcaption>Harden package-owned secrets</figcaption>

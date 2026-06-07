@@ -2586,30 +2586,59 @@ h1 code {
 
 .terminal-notes {
   grid-column: 1;
-  display: grid;
-  gap: clamp(12px, 1.8vw, 20px);
-  align-self: start;
-  padding-top: clamp(54px, 5vw, 68px);
-  color: var(--muted);
-  font-size: clamp(0.78rem, 0.9vw, 0.88rem);
+  position: relative;
+  display: block;
+  align-self: stretch;
+  min-height: 100%;
+  padding-top: 0;
+  color: oklch(74% 0.018 82 / 0.78);
+  font-size: clamp(0.76rem, 0.86vw, 0.84rem);
   line-height: 1.35;
+  --terminal-note-line: calc(clamp(1.01rem, 1.23vw, 1.2rem) * 1.55);
 }
 
 .terminal-notes p {
-  display: grid;
-  grid-template-columns: 3.4ch minmax(0, 1fr);
-  gap: 10px;
+  position: absolute;
+  top: calc(54px + var(--terminal-note-line) * 0);
+  left: 0;
   margin: 0;
+  max-width: 15.5rem;
 }
 
-.terminal-notes span {
-  color: var(--green);
-  font-family: var(--font-mono);
-  font-weight: 800;
+.terminal-notes p::before {
+  content: "";
+  position: absolute;
+  top: 0.72em;
+  left: -1.35rem;
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  background: oklch(72% 0.11 137 / 0.62);
+  box-shadow: 0 0 14px oklch(72% 0.11 137 / 0.16);
+}
+
+.terminal-notes p + p {
+  margin-top: 0;
+}
+
+.terminal-notes p:nth-child(2) {
+  top: calc(54px + var(--terminal-note-line) * 3);
+}
+
+.terminal-notes p:nth-child(3) {
+  top: calc(54px + var(--terminal-note-line) * 7);
+}
+
+.terminal-notes p:nth-child(4) {
+  top: calc(54px + var(--terminal-note-line) * 12);
+}
+
+.terminal-notes p:nth-child(5) {
+  top: calc(54px + var(--terminal-note-line) * 18);
 }
 
 .terminal-notes code {
-  color: var(--green);
+  color: oklch(77% 0.09 137 / 0.88);
   font-family: var(--font-mono);
   font-size: 0.94em;
 }
@@ -2991,8 +3020,19 @@ h1 code {
 
   .terminal-notes {
     grid-column: 1;
+    position: static;
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    align-self: start;
+    min-height: 0;
     padding-top: 0;
+  }
+
+  .terminal-notes p {
+    position: relative;
+    top: auto;
+    left: auto;
   }
 
   .package-hardening-radar {
