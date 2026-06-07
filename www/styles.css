@@ -2822,7 +2822,12 @@ h1 code {
 }
 
 .closing-cta h2 {
-  max-width: 13ch;
+  max-width: 17ch;
+}
+
+.tool-command-line {
+  display: block;
+  white-space: nowrap;
 }
 
 .tool-flip {
