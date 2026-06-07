@@ -1968,6 +1968,10 @@ mod tests {
         let geiger = list_geiger_packages(0, 1).unwrap();
         assert!(geiger.total_count >= geiger.packages.len());
         assert!(geiger.packages.len() <= 1);
+
+        let recommendations = list_security_recommendation_packages(0, 1).unwrap();
+        assert!(recommendations.total_count >= recommendations.packages.len());
+        assert!(recommendations.packages.len() <= 1);
     }
 
     #[test]
@@ -2078,10 +2082,192 @@ mod tests {
     }
 
     #[test]
+    fn catalog_metadata_helpers_cover_source_variants_and_defaults() {
+        let formula = catalog_metadata_for_source(&PackageReceiptSource::Formula {
+            root_formula: "uv".to_string(),
+        });
+        assert_eq!(
+            formula.summary.as_deref(),
+            Some("Extremely fast Python package installer and resolver, written in Rust")
+        );
+        assert_eq!(
+            formula.homepage.as_deref(),
+            Some("https://docs.astral.sh/uv/")
+        );
+        assert_eq!(
+            formula.repository.as_deref(),
+            Some("https://github.com/astral-sh/uv")
+        );
+        assert_eq!(
+            formula.upstream_docs.as_deref(),
+            Some("https://docs.astral.sh/uv")
+        );
+        assert_eq!(formula.docs, vec!["https://docs.astral.sh/uv".to_string()]);
+        assert_eq!(formula.category.as_deref(), Some("developer-tools"));
+        assert!(formula.has_visible_fields());
+
+        let alias = formula_catalog_metadata("rg");
+        assert_eq!(alias.summary.as_deref(), Some("Search tool"));
+        assert!(alias.has_visible_fields());
+
+        let cask = catalog_metadata_for_source(&PackageReceiptSource::Cask {
+            cask_name: "codex".to_string(),
+        });
+        assert!(cask.summary.is_some());
+        assert!(cask.homepage.is_some());
+
+        let isotope_with_formula = catalog_metadata_for_source(&PackageReceiptSource::Isotope {
+            isotope_name: "uv".to_string(),
+        });
+        assert_eq!(
+            isotope_with_formula.repository.as_deref(),
+            Some("https://github.com/astral-sh/uv")
+        );
+
+        let versioned_isotope = catalog_metadata_for_source(&PackageReceiptSource::Isotope {
+            isotope_name: "node@24".to_string(),
+        });
+        assert_eq!(
+            versioned_isotope.summary.as_deref(),
+            Some("JavaScript runtime")
+        );
+
+        let detector_only_isotope = catalog_metadata_for_source(&PackageReceiptSource::Isotope {
+            isotope_name: "curl".to_string(),
+        });
+        assert!(detector_only_isotope.homepage.is_none());
+        assert!(!detector_only_isotope.has_visible_fields());
+
+        let npm = catalog_metadata_for_source(&PackageReceiptSource::Npm {
+            package_name: "coverage-npm".to_string(),
+        });
+        assert_eq!(npm.summary.as_deref(), Some("Coverage npm tool"));
+        assert_eq!(npm.homepage.as_deref(), Some("https://example.test/npm"));
+
+        let missing = catalog_metadata_for_source(&PackageReceiptSource::Pip {
+            package_name: "coverage-pip".to_string(),
+        });
+        assert!(!missing.has_visible_fields());
+        assert!(!formula_catalog_metadata("missing-formula").has_visible_fields());
+        assert!(!cask_catalog_metadata("missing-cask").has_visible_fields());
+        assert!(!isotope_catalog_metadata("missing-isotope").has_visible_fields());
+        assert!(!npm_catalog_metadata("missing-npm").has_visible_fields());
+    }
+
+    #[test]
+    fn search_package_summary_covers_hardened_source_and_install_name_variants() {
+        let isotope = search_package_summary(PackageSearchResult {
+            source: PackageReceiptSource::Isotope {
+                isotope_name: "gh".to_string(),
+            },
+            ..ranked_search_result("isotope:gh", None)
+        });
+        assert!(isotope.installs_hardened);
+
+        let vendor = search_package_summary(PackageSearchResult {
+            source: PackageReceiptSource::Vendor {
+                vendor_name: "terraform".to_string(),
+            },
+            ..ranked_search_result("terraform", None)
+        });
+        assert!(vendor.installs_hardened);
+
+        let plain_sources = [
+            PackageReceiptSource::Cask {
+                cask_name: "codex".to_string(),
+            },
+            PackageReceiptSource::Npm {
+                package_name: "coverage-npm".to_string(),
+            },
+            PackageReceiptSource::Pip {
+                package_name: "coverage-pip".to_string(),
+            },
+        ];
+        for source in plain_sources {
+            let summary = search_package_summary(PackageSearchResult {
+                source,
+                ..ranked_search_result("plain", None)
+            });
+            assert!(!summary.installs_hardened);
+        }
+
+        let mut names = ranked_search_result("mixed", None);
+        names.install_package_names = vec![
+            "bad/name".to_string(),
+            "cask:codex".to_string(),
+            "isotope:gh".to_string(),
+        ];
+        assert!(search_package_summary(names).installs_hardened);
+
+        for package_name in [
+            "isotope:gh",
+            "brew:node@24",
+            "terraform",
+            "cask:codex",
+            "npm:coverage-npm",
+            "pip:coverage-pip",
+            "bad/name",
+        ] {
+            let _ = install_package_name_installs_hardened(package_name);
+        }
+        assert!(install_package_name_installs_hardened("isotope:gh"));
+        assert!(install_package_name_installs_hardened("brew:node@24"));
+        assert!(install_package_name_installs_hardened("terraform"));
+        assert!(!install_package_name_installs_hardened("cask:codex"));
+        assert!(!install_package_name_installs_hardened("npm:coverage-npm"));
+        assert!(!install_package_name_installs_hardened("pip:coverage-pip"));
+        assert!(!install_package_name_installs_hardened("bad/name"));
+    }
+
+    #[test]
+    fn helper_command_routes_dotenv_approval_errors_through_progress() {
+        let commands = [
+            HelperCommand::GetDotenvApprovalPolicy,
+            HelperCommand::SetDotenvApprovalPolicy {
+                policy: dotenv::DotenvApprovalPolicy::RememberApproved,
+            },
+            HelperCommand::RememberDotenvApproval {
+                mode: dotenv::DotenvApprovalMode::Run,
+                env_file_path: "/tmp/project/.env".to_string(),
+                project_root: "/tmp/project".to_string(),
+                env_sha256: "0".repeat(64),
+                public_key_fingerprint: "f".repeat(64),
+                keys: vec!["API_TOKEN".to_string()],
+            },
+        ];
+
+        for command in commands {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let captured = Arc::clone(&events);
+            let result = execute_helper_command(command, move |event| {
+                captured.lock().unwrap().push(event);
+            });
+            assert!(result.is_err());
+            assert!(matches!(
+                events.lock().unwrap().last(),
+                Some(ProgressEvent::Error { message }) if message.contains("root")
+            ));
+        }
+    }
+
+    #[test]
     fn validation_helpers_cover_limits_versions_and_isotope_names() {
         assert_eq!(search_page_size(0), DEFAULT_SEARCH_PAGE_SIZE);
         assert_eq!(search_page_size(1), 1);
         assert_eq!(search_page_size(usize::MAX), MAX_SEARCH_PAGE_SIZE);
+        assert_eq!(
+            normalized_requested_category(Some(" developer-tools ")),
+            Some("developer-tools")
+        );
+        assert_eq!(normalized_requested_category(Some(" ")), None);
+        assert_eq!(normalized_requested_category(None), None);
+        for (raw, expected) in [
+            (Some("security"), Some("security")),
+            (Some("\tcloud\n"), Some("cloud")),
+            (Some(""), None),
+        ] {
+            assert_eq!(normalized_requested_category(raw), expected);
+        }
 
         assert_eq!(normalized_isotope_name("isotope:gh").unwrap(), "gh");
         assert_eq!(normalized_isotope_name("aws-cli").unwrap(), "aws-cli");
@@ -2096,6 +2282,11 @@ mod tests {
             validate_optional_version(Some(" 1.2.3 ")).unwrap(),
             Some("1.2.3".to_string())
         );
+        assert_eq!(
+            validate_optional_version(Some("1.2.3")).unwrap(),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(validate_optional_version(None).unwrap(), None);
         assert!(validate_optional_version(Some(" ")).is_err());
         assert!(validate_optional_version(Some("1.2.3 beta")).is_err());
 
@@ -2216,6 +2407,21 @@ mod tests {
         assert_eq!(
             validate_isotope_always_allow_script("/bin/echo", None, None).unwrap(),
             None
+        );
+        assert!(
+            validate_isotope_always_allow_script("/usr/bin/env", Some("/tmp/script"), None)
+                .unwrap_err()
+                .contains("env always-allow")
+        );
+        assert!(
+            validate_isotope_always_allow_script("/bin/sh", Some("relative.sh"), None)
+                .unwrap_err()
+                .contains("must be absolute")
+        );
+        assert!(
+            validate_isotope_always_allow_script("/bin/sh", Some("/tmp/missing-script"), Some("z"))
+                .unwrap_err()
+                .contains("64-character")
         );
     }
 
