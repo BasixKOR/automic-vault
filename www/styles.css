@@ -2605,7 +2605,7 @@ h1 code {
 .terminal-story {
   display: grid;
   grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
-  gap: 16px clamp(24px, 4.8vw, 78px);
+  gap: 16px 1em;
   min-width: 0;
   max-width: 1180px;
 }
@@ -2630,22 +2630,16 @@ h1 code {
 
 .terminal-notes p {
   position: absolute;
-  top: calc(54px + var(--terminal-note-line) * 0);
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 0);
   left: 0;
+  right: 0;
   margin: 0;
-  max-width: 15.5rem;
+  text-align: right;
+  text-wrap: balance;
 }
 
 .terminal-notes p::before {
-  content: "";
-  position: absolute;
-  top: 0.72em;
-  left: -1.35rem;
-  width: 0.34rem;
-  height: 0.34rem;
-  border-radius: 999px;
-  background: oklch(72% 0.11 137 / 0.62);
-  box-shadow: 0 0 14px oklch(72% 0.11 137 / 0.16);
+  content: none;
 }
 
 .terminal-notes p + p {
@@ -2653,19 +2647,19 @@ h1 code {
 }
 
 .terminal-notes p:nth-child(2) {
-  top: calc(54px + var(--terminal-note-line) * 3);
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 3);
 }
 
 .terminal-notes p:nth-child(3) {
-  top: calc(54px + var(--terminal-note-line) * 7);
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 7);
 }
 
 .terminal-notes p:nth-child(4) {
-  top: calc(54px + var(--terminal-note-line) * 12);
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 12);
 }
 
 .terminal-notes p:nth-child(5) {
-  top: calc(54px + var(--terminal-note-line) * 18);
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 18);
 }
 
 .terminal-notes code {
@@ -3069,6 +3063,9 @@ h1 code {
     position: relative;
     top: auto;
     left: auto;
+    right: auto;
+    text-align: left;
+    text-wrap: auto;
   }
 
   .package-hardening-radar {
