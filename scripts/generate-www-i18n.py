@@ -662,6 +662,161 @@ SUPPORT_SECTIONS: dict[str, list[list[str]]] = {
     ],
 }
 
+LANDING_HOME: dict[str, dict[str, Any]] = {
+    "ja": {
+        "nav": ["パッケージ", "ブログ", "セキュリティ", "ドキュメント", "ダウンロード"],
+        "hero_eyebrow": "Homebrew 作者より",
+        "hero_h1": "エージェントが動く前に Mac を堅牢化。",
+        "hero_lede": "Mac には、エージェントが読める、漏らせる、マルウェアに渡せる平文キーが残りがちです。Automic Vault は重要な層を堅牢化します。暗号化されたシークレット、封印されたツール、本番変更前の承認です。",
+        "download_short": "av.dmg をダウンロード",
+        "run_scanner": "スキャナーを実行",
+        "view_source": "ソースを見る",
+        "harden_title": "パッケージ由来の平文シークレットを消す。",
+        "harden_body": "Automic Vault は CLI が dotfile に残す認証情報を見つけ、対応済みのシークレットを Keychain に移し、エージェントが値を読まずに使える実行時ヘルパーを残します。",
+        "harden_notes": ["いつも通りツールをインストール", "シークレット露出を検出", "平文シークレットは残念ながらオープンソースでよくあります", "av harden がキーを Keychain に移してヘルパーを書き換えます", "credential_process で aws はキーを受け取り、エージェントやマルウェアには露出しません"],
+        "radar_title": "既知のツール、見える制御。",
+        "radar_body": "Automic Vault はヘルパープロトコル、一時ホーム、Keychain-backed トークン、平文 hazard 検出のパッケージルールを巡回します。",
+        "immutable_title": "インストール後のパッケージを不変に。",
+        "immutable_body": "Automic Vault は Homebrew、npm、PyPI のツールを封印された root にインストールし、PATH に av shim を置きます。エージェントはツールを実行できますが、ツール自体の変更は承認済みアップデート経由になります。",
+        "immutable_note": "エージェントは自分自身を変更できません",
+        "dotenv_title": "ワークフローには .env を。エージェントの文脈には入れない。",
+        "dotenv_body": "av dotenv は、秘密鍵を Automic Vault Keychain に残したまま、dotenvx 互換の encrypted: 値を書きます。direnv 風の hook は、承認済みキーだけを、それを要求した shell やコマンドへ読み込みます。",
+        "detect_title": "Mac が変わり続ける間に、新しいリスクを検出。",
+        "detect_body": "Automic Vault.app は、ツールをインストールし、プロジェクトを編集し、うっかり新しいシークレットを露出する間もバックグラウンドで動きます。新しいパッケージ hazard は発生時に通知され、対応済みの平文シークレットは即座に暗号化されます。",
+        "features": [
+            ["マルチソースパッケージ", "Homebrew、npm、PyPI のツールをインストールして堅牢化。対応元は今後も増えます。"],
+            ["Touch ID インストール", "ターミナルを離れずに権限付きインストールとアップデートを承認。"],
+            ["自動アップデート", "アプリと堅牢化ルールをバックグラウンドで最新に保ちます。"],
+            ["GUI 検索と発見", "パッケージ、ホームページ、バージョン、hazard、セキュリティノートを閲覧。"],
+            ["通知", "新しい脆弱性や露出したシークレットが現れたら分かります。"],
+        ],
+        "field_eyebrow": "05 · フィールドノート",
+        "field_title": "正しい境界は、ずっと前から必要だったように感じる。",
+        "field_body": "最初に役立った反応は、数値でもローンチ記事でもありませんでした。ローカルのエージェントセキュリティは、すでにツールチェーンの一部であるべきだという感覚でした。",
+        "final_eyebrow": "無料のオープンソース",
+        "final_a11y": "brew、npm、pip、cargo、pnpm、uv でインストールするツールを保護します。",
+        "final_prefix": "ツールを保護",
+        "final_you": "あなたが",
+        "read_docs": "ドキュメントを読む",
+        "browse_packages": "パッケージを見る",
+        "footer_state": [["Hazard", "検出"], ["Secrets", "Keychain-backed"], ["Approvals", "Touch ID ready"]],
+    },
+    "de": {
+        "nav": ["Pakete", "Blog", "Sicherheit", "Dokumentation", "Download"],
+        "hero_eyebrow": "Vom Homebrew-Erfinder",
+        "hero_h1": "Härtet deinen Mac, bevor der Agent läuft.",
+        "hero_lede": "Auf deinem Mac liegen Klartext-Keys, die ein Agent lesen, leaken oder Malware übergeben kann. Automic Vault härtet die Schicht, die zählt: verschlüsselte Secrets, versiegelte Tools und Freigabe vor Produktionsänderungen.",
+        "download_short": "av.dmg herunterladen",
+        "run_scanner": "Scanner starten",
+        "view_source": "Quellcode ansehen",
+        "harden_title": "Lass Klartext-Secrets aus Paketen verschwinden.",
+        "harden_body": "Automic Vault findet Credentials, die CLIs in Dotfiles ablegen, verschiebt unterstützte Secrets in den Keychain und hinterlässt jedem Tool einen Laufzeit-Helper, den der Agent nutzen kann, ohne das Secret zu lesen.",
+        "harden_notes": ["Installiere Tools wie immer", "Erkenne Secret-Exposure", "Klartext-Secrets sind leider üblich in Open Source", "av harden verschiebt Keys in den Keychain und schreibt den Helper um", "credential_process gibt aws Keys, ohne sie Agents oder Malware offenzulegen"],
+        "radar_title": "Bekannte Tools, sichtbare Kontrollen.",
+        "radar_body": "Automic Vault rotiert durch Paketregeln für Helper-Protokolle, temporäre Homes, Keychain-gestützte Tokens und Klartext-Hazard-Erkennung.",
+        "immutable_title": "Mache Pakete nach der Installation unveränderlich.",
+        "immutable_body": "Automic Vault installiert Tools aus Homebrew, npm oder PyPI in versiegelte Roots und setzt einen av-Shim auf PATH. Agents können das Tool ausführen; Änderungen am Tool selbst laufen über ein genehmigtes Update.",
+        "immutable_note": "Agent kann sich nicht selbst ändern",
+        "dotenv_title": ".env bleibt im Workflow, nicht im Agent-Kontext.",
+        "dotenv_body": "av dotenv schreibt dotenvx-kompatible encrypted:-Werte, während der private Key im Automic-Vault-Keychain bleibt. Direnv-artige Hooks laden nur genehmigte Keys in die Shell oder den Befehl, der sie angefordert hat.",
+        "detect_title": "Erkenne neue Risiken, während dein Mac sich weiter verändert.",
+        "detect_body": "Automic Vault.app läuft im Hintergrund, während du Tools installierst, Projekte bearbeitest und versehentlich neue Secrets offenlegst. Neue Paket-Hazards werden sofort gemeldet, und unterstützte Klartext-Secrets werden direkt verschlüsselt.",
+        "features": [
+            ["Multi-Source-Pakete", "Installiere und härte Tools aus Homebrew, npm und PyPI; weitere Quellen folgen."],
+            ["Touch-ID-Installationen", "Genehmige privilegierte Installationen und Updates, ohne das Terminal zu verlassen."],
+            ["Auto-Updates", "Halte App und Paketregeln im Hintergrund aktuell."],
+            ["GUI-Suche und Discovery", "Durchsuche Pakete, Homepages, Versionen, Hazards und Security Notes."],
+            ["Benachrichtigungen", "Erfahre, wenn neue Schwachstellen oder offengelegte Secrets erscheinen."],
+        ],
+        "field_eyebrow": "05 · Feldnotiz",
+        "field_title": "Die richtige Grenze fühlt sich überfällig an.",
+        "field_body": "Das erste nützliche Signal war keine Metrik und kein Launch-Post. Es war das Gefühl, dass lokale Agent-Sicherheit längst Teil der Toolchain sein sollte.",
+        "final_eyebrow": "Kostenlos und Open Source",
+        "final_a11y": "Sichere die Tools, die du mit brew, npm, pip, cargo, pnpm und uv installierst.",
+        "final_prefix": "Sichere die Tools",
+        "final_you": "die du",
+        "read_docs": "Doku lesen",
+        "browse_packages": "Pakete ansehen",
+        "footer_state": [["Hazards", "erkannt"], ["Secrets", "Keychain-backed"], ["Approvals", "Touch ID ready"]],
+    },
+    "fr": {
+        "nav": ["Paquets", "Blog", "Sécurité", "Docs", "Télécharger"],
+        "hero_eyebrow": "Par le créateur de Homebrew",
+        "hero_h1": "Durcissez votre Mac avant que l’agent s’exécute.",
+        "hero_lede": "Votre Mac contient des clés en clair qu’un agent peut lire, divulguer ou transmettre à un malware. Automic Vault durcit la couche qui compte : secrets chiffrés, outils scellés et approbation avant les changements en production.",
+        "download_short": "Télécharger av.dmg",
+        "run_scanner": "Lancer le scanner",
+        "view_source": "Voir le code",
+        "harden_title": "Faites disparaître les secrets en clair des paquets.",
+        "harden_body": "Automic Vault trouve les identifiants que les CLI laissent dans les dotfiles, déplace les secrets pris en charge dans le trousseau et laisse à chaque outil un helper d’exécution utilisable par l’agent sans lire le secret.",
+        "harden_notes": ["Installez les outils comme d’habitude", "Détectez l’exposition des secrets", "Les secrets en clair sont malheureusement courants dans l’open source", "av harden déplace les clés dans le trousseau et réécrit le helper", "credential_process donne les clés à aws sans les exposer aux agents ou aux malwares"],
+        "radar_title": "Outils connus, contrôles visibles.",
+        "radar_body": "Automic Vault parcourt les règles de paquets pour les protocoles helper, homes temporaires, jetons adossés au trousseau et détection de dangers en clair.",
+        "immutable_title": "Rendez les paquets immuables après installation.",
+        "immutable_body": "Automic Vault installe les outils Homebrew, npm ou PyPI dans des racines scellées et place un shim av sur PATH. Les agents peuvent lancer l’outil; modifier l’outil lui-même passe par une mise à jour approuvée.",
+        "immutable_note": "l’agent ne peut pas se modifier lui-même",
+        "dotenv_title": "Gardez .env dans le workflow, pas dans le contexte de l’agent.",
+        "dotenv_body": "av dotenv écrit des valeurs encrypted: compatibles dotenvx pendant que la clé privée reste dans le trousseau Automic Vault. Des hooks façon direnv chargent seulement les clés approuvées dans le shell ou la commande qui les a demandées.",
+        "detect_title": "Détectez les nouveaux risques pendant que votre Mac change.",
+        "detect_body": "Automic Vault.app tourne en arrière-plan quand vous installez des outils, modifiez des projets et exposez accidentellement de nouveaux secrets. Les nouveaux dangers de paquets sont signalés dès leur apparition, et les secrets en clair pris en charge sont chiffrés immédiatement.",
+        "features": [
+            ["Paquets multi-sources", "Installez et durcissez des outils Homebrew, npm et PyPI, avec d’autres sources à venir."],
+            ["Installations Touch ID", "Approuvez les installations et mises à jour privilégiées sans quitter le terminal."],
+            ["Mises à jour automatiques", "Gardez l’app et les règles de durcissement à jour en arrière-plan."],
+            ["Recherche et découverte GUI", "Parcourez paquets, homepages, versions, dangers et notes de sécurité."],
+            ["Notifications", "Soyez averti quand de nouvelles vulnérabilités ou des secrets exposés apparaissent."],
+        ],
+        "field_eyebrow": "05 · Note de terrain",
+        "field_title": "La bonne limite semble déjà en retard.",
+        "field_body": "Le premier signal utile n’était pas une métrique ni un billet de lancement. C’était l’impression que la sécurité locale des agents devrait déjà faire partie de la toolchain.",
+        "final_eyebrow": "Gratuit et open source",
+        "final_a11y": "Sécurisez les outils que vous installez avec brew, npm, pip, cargo, pnpm et uv.",
+        "final_prefix": "Sécurisez les outils",
+        "final_you": "que vous",
+        "read_docs": "Lire la doc",
+        "browse_packages": "Voir les paquets",
+        "footer_state": [["Dangers", "détectés"], ["Secrets", "Keychain-backed"], ["Approvals", "Touch ID ready"]],
+    },
+    "zh-Hans": {
+        "nav": ["软件包", "博客", "安全", "文档", "下载"],
+        "hero_eyebrow": "来自 Homebrew 作者",
+        "hero_h1": "在代理运行前加固你的 Mac。",
+        "hero_lede": "你的 Mac 上可能有代理能读取、泄露，甚至交给恶意软件的明文密钥。Automic Vault 加固真正关键的一层：加密密钥、封印工具，以及生产变更前的审批。",
+        "download_short": "下载 av.dmg",
+        "run_scanner": "运行扫描器",
+        "view_source": "查看源码",
+        "harden_title": "让软件包里的明文密钥消失。",
+        "harden_body": "Automic Vault 会发现 CLI 留在 dotfile 中的凭据，将支持的密钥移入 Keychain，并给每个工具留下运行时 helper，让代理无需读取密钥也能使用工具。",
+        "harden_notes": ["照常安装工具", "检测密钥暴露", "明文密钥在开源工具中很常见", "av harden 将密钥移入 Keychain 并重写 helper", "credential_process 让 aws 获得密钥，但不暴露给代理或恶意软件"],
+        "radar_title": "已知工具，可见控制。",
+        "radar_body": "Automic Vault 会轮询软件包规则，覆盖 helper 协议、临时 home、Keychain-backed token 和明文 hazard 检测。",
+        "immutable_title": "安装后让软件包不可变。",
+        "immutable_body": "Automic Vault 将来自 Homebrew、npm 或 PyPI 的工具安装到封印 root 中，并在 PATH 上放置 av shim。代理可以运行工具；修改工具本身会转到已批准的更新流程。",
+        "immutable_note": "代理不能修改自己",
+        "dotenv_title": ".env 留在工作流中，不进入代理上下文。",
+        "dotenv_body": "av dotenv 写入 dotenvx 兼容的 encrypted: 值，同时私钥留在 Automic Vault Keychain 中。direnv 风格的 hook 只把已批准的密钥加载到请求它们的 shell 或命令里。",
+        "detect_title": "在 Mac 持续变化时检测新风险。",
+        "detect_body": "Automic Vault.app 会在后台运行：你安装工具、编辑项目、意外暴露新密钥时，它都会继续监控。新的软件包 hazard 会在出现时报告，支持的明文密钥会立即加密。",
+        "features": [
+            ["多来源软件包", "安装并加固来自 Homebrew、npm 和 PyPI 的工具，更多来源即将支持。"],
+            ["Touch ID 安装", "无需离开终端即可审批特权安装和更新。"],
+            ["自动更新", "在后台保持应用和加固规则最新。"],
+            ["GUI 搜索与发现", "浏览软件包、主页、版本、hazard 和安全说明。"],
+            ["通知", "新的漏洞或暴露密钥出现时及时知道。"],
+        ],
+        "field_eyebrow": "05 · 现场反馈",
+        "field_title": "正确的边界早就该存在了。",
+        "field_body": "最有用的第一条信号不是指标，也不是发布文章，而是一种感觉：本地代理安全本应已经是工具链的一部分。",
+        "final_eyebrow": "免费且开源",
+        "final_a11y": "保护你用 brew、npm、pip、cargo、pnpm 和 uv 安装的工具。",
+        "final_prefix": "保护你的工具",
+        "final_you": "当你",
+        "read_docs": "阅读文档",
+        "browse_packages": "浏览软件包",
+        "footer_state": [["Hazards", "已检测"], ["Secrets", "Keychain-backed"], ["Approvals", "Touch ID ready"]],
+    },
+}
+
 
 def normalized_title(title: str, locale: Locale) -> str:
     if locale.code == "en":
@@ -861,60 +1016,23 @@ def render_i18n_js(locales: list[Locale]) -> str:
 
 def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
     t = record["translations"][locale.code]
-    detail = HOME_DETAIL[locale.code]
     ui = ui_copy(locale.code)
+    landing = LANDING_HOME[locale.code]
     canonical = href("/", locale)
-    meta = "".join(f"<span>{html.escape(item)}</span>" for item in detail["meta"])
-    brief = "\n".join(
-        f"""            <div>
-              <span class="tiny-icon{icon_class}" aria-hidden="true"></span>
-              <p>{html.escape(text)}</p>
-            </div>"""
-        for text, icon_class in zip(detail["brief"], ["", " square", " triangle"])
+    nav = landing["nav"]
+    harden_notes = "\n".join(
+        f"            <p>{html.escape(note)}</p>"
+        for note in landing["harden_notes"]
     )
-    highlights = "\n".join(
-        f"""          <a class="highlight-card {accent}" href="{target}">
-            <span>{html.escape(label)}</span>
-            <strong>{html.escape(body)}</strong>
-          </a>"""
-        for (label, body), accent, target in zip(
-            detail["highlights"],
-            ["accent-hot", "accent-blue", "accent-green", "accent-gold"],
-            ["#secrets", "#approval", "#nucleus", locale_path("/av-trace/", locale)],
-        )
+    feature_items = "\n".join(
+        f"            <li><strong>{html.escape(title)}.</strong> {html.escape(body)}</li>"
+        for title, body in landing["features"]
     )
-    approval_prompt = f'{html.escape(ui["approvalPrompt"])} <code>npm publish</code> {html.escape(ui["approvalQuestion"])}'
-    story_extras = [
-        f'<ul class="story-tags" aria-label="{html.escape(ui["secretBoundaryDetailsAria"], quote=True)}"><li>gh</li><li>aws-cli</li><li>av inject</li><li>secret scanner</li></ul>',
-        f'<div class="inline-prompt" aria-label="{html.escape(ui["approvalRequestAria"], quote=True)}"><span>Automic Vault</span><strong>{approval_prompt}</strong><i>{html.escape(ui["deny"])}</i><i>{html.escape(ui["approve"])}</i></div>',
-        f'<div class="source-strip" aria-label="{html.escape(ui["packageSourcesAria"], quote=True)}"><span>Homebrew</span><span>npm</span><span>PyPI</span><span>/opt</span></div>',
-        "<!-- no extra content -->",
-        f'<figure class="app-shot"><img src="/assets/gui-screenshot.webp" alt="{html.escape(ui["screenshotAlt"], quote=True)}" width="1693" height="929"></figure>',
-    ]
-    stories = "\n".join(
-        f"""          <article class="ranked-story feature-section" id="{story_id}">
-            <span class="rank">{index}</span>
-            <div>
-              <p class="story-kicker">{html.escape(kicker)}</p>
-              <h3>{html.escape(title)}</h3>
-              <p>{html.escape(body)}</p>
-              {extra}
-            </div>
-          </article>"""
-        for index, ((kicker, title, body), story_id, extra) in enumerate(
-            zip(detail["stories"], ["secrets", "approval", "nucleus", "scanner", "app"], story_extras),
-            start=1,
-        )
+    footer_state = "\n        ".join(
+        f"<span><strong>{html.escape(title)}</strong> {html.escape(body)}</span>"
+        for title, body in landing["footer_state"]
     )
-    fit_cards = "\n".join(
-        f"""          <article>
-            <span>{html.escape(label)}</span>
-            <h3>{html.escape(title)}</h3>
-            <p>{html.escape(body)}</p>
-          </article>"""
-        for label, title, body in detail["fit"]
-    )
-    nav_labels = detail["nav"]
+    language_nav = language_links("/", locale, locales)
     return f"""<!DOCTYPE html>
 <html lang="{html.escape(locale.html_lang)}">
 <head>
@@ -928,118 +1046,263 @@ def render_home_page(record: dict[str, Any], locale: Locale, locales: list[Local
   <meta property="og:title" content="{html.escape(t["title"], quote=True)}">
   <meta property="og:description" content="{html.escape(t["description"], quote=True)}">
   <meta property="og:url" content="{html.escape(canonical, quote=True)}">
-  <meta property="og:image" content="{SITE_ORIGIN}/preview.jpg">
+  <meta property="og:image" content="{SITE_ORIGIN}/assets/app-hazard-journey.webp">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{html.escape(t["title"], quote=True)}">
   <meta name="twitter:description" content="{html.escape(t["description"], quote=True)}">
-  <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
+  <meta name="twitter:image" content="{SITE_ORIGIN}/assets/app-hazard-journey.webp">
   <link rel="canonical" href="{html.escape(canonical, quote=True)}">
 {alternate_link_block("/", locales)}
+  <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=26">
+  <link rel="stylesheet" href="/styles.css?v=75">
   <script type="application/ld+json">
   {{
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "{canonical}",
     "name": {json.dumps(t["title"], ensure_ascii=False)},
+    "headline": {json.dumps(landing["hero_h1"], ensure_ascii=False)},
     "description": {json.dumps(t["description"], ensure_ascii=False)},
     "inLanguage": "{locale.html_lang}",
+    "image": "{SITE_ORIGIN}/assets/app-hazard-journey.webp",
     "isPartOf": {{"@type": "WebSite", "name": "Automic Vault", "url": "{SITE_ORIGIN}/"}}
   }}
   </script>
 </head>
 <body>
   <div class="scroll-meter" aria-hidden="true"><span></span></div>
-  <div class="site-shell" id="top">
-    <header class="masthead">
-      <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
-        <span class="brand-type">Automic Vault</span>
-      </a>
-      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="{html.escape(ui["toggleNavigationAria"], quote=True)}"><span></span><span></span></button>
-      <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
-        <a href="#ranked">{html.escape(nav_labels[0])}</a>
-        <a href="#secrets">{html.escape(nav_labels[1])}</a>
-        <a href="#approval">{html.escape(nav_labels[2])}</a>
-        <a href="#nucleus">{html.escape(nav_labels[3])}</a>
-        <a href="{locale_path('/pkg/', locale)}">{html.escape(nav_labels[4])}</a>
-        <a href="{locale_path('/docs/', locale)}">{html.escape(nav_labels[5])}</a>
-        <a href="{locale_path('/download/', locale)}">{html.escape(nav_labels[6])}</a>
-        <a href="https://github.com/automic-vault/">GitHub</a>
-      </nav>
-    </header>
-    <main>
-      <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-meta">{meta}</div>
-        <div class="hero-grid">
-          <div class="hero-copy">
-            <p class="eyebrow">{html.escape(t["kicker"])}</p>
-            <h1 id="hero-title">{html.escape(t["h1"])}</h1>
-            <p class="lede">{html.escape(t["lede"])}</p>
+  <header class="masthead" id="top">
+    <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
+      <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+      <span class="brand-type">Automic Vault</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-label="{html.escape(ui["toggleNavigationAria"], quote=True)}"><span></span><span></span></button>
+    <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
+      <a href="{locale_path('/pkg/', locale)}">{html.escape(nav[0])}</a>
+      <a href="{locale_path('/blog/', locale)}">{html.escape(nav[1])}</a>
+      <a href="{locale_path('/security/', locale)}">{html.escape(nav[2])}</a>
+      <a href="{locale_path('/docs/', locale)}">{html.escape(nav[3])}</a>
+      <a href="{locale_path('/download/', locale)}">{html.escape(nav[4])}</a>
+      <a href="https://github.com/automic-vault/">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="site-shell">
+    <main class="landing-main">
+      <section class="poster-hero" aria-labelledby="hero-title">
+        <div class="poster-hero-copy">
+          <p class="eyebrow">{html.escape(landing["hero_eyebrow"])}</p>
+          <h1 id="hero-title">{html.escape(landing["hero_h1"])}</h1>
+          <p class="poster-lede">{html.escape(landing["hero_lede"])}</p>
+        </div>
+
+        <div class="poster-hero-foot">
+          <div class="hero-actions">
+            <a class="button primary" href="/Automic Vault.dmg">{html.escape(landing["download_short"])}</a>
+            <a class="button secondary" href="{locale_path('/secret-scanner-for-ai-agents/', locale)}">{html.escape(landing["run_scanner"])}</a>
+            <a class="button text" href="https://github.com/automic-vault/automic-vault">{html.escape(landing["view_source"])}</a>
           </div>
-          <aside class="hero-brief" aria-label="{html.escape(ui["currentSecurityPostureAria"], quote=True)}">
-{brief}
+        </div>
+      </section>
+
+      <section class="feature-section harden-section" id="harden" aria-labelledby="harden-title">
+        <div class="feature-copy">
+          <p class="eyebrow">01 &middot; Harden</p>
+          <h2 id="harden-title">{html.escape(landing["harden_title"])}</h2>
+          <p>{html.escape(landing["harden_body"])}</p>
+        </div>
+
+        <div class="terminal-story" aria-label="Terminal examples for package hardening">
+          <aside class="terminal-notes" aria-label="What this terminal demonstrates">
+{harden_notes}
           </aside>
+          <figure class="terminal-card terminal-card-green">
+            <figcaption>Harden package-owned secrets</figcaption>
+            <pre><code><span class="prompt">$</span> brew install awscli
+installed: /opt/homebrew/Cellar/awscli
+
+<span class="prompt">$</span> av scan
+<span class="terminal-danger">plaintext secret exposure</span>: ~/.aws/credentials
+reason agent-readable cloud keys
+
+<span class="prompt">$</span> cat ~/.aws/credentials
+[default]
+aws_access_key_id=AKIA<span class="secret-blur">IOSFODNN7EXAMPLE</span>
+aws_secret_access_key=wJalr<span class="secret-blur">XUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</span>
+
+<span class="prompt">$</span> av harden awscli
+saved AWS keys in Keychain
+rewrote credential_process helper
+removed plaintext credentials
+made install immutable
+
+<span class="prompt">$</span> cat ~/.aws/credentials
+[default]
+credential_process = /usr/local/bin/av credential-helper aws
+</code></pre>
+          </figure>
         </div>
-        <div class="hero-actions">
-          <a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a>
-          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(detail["actions"][1])}</a>
-          <a class="button text" href="{locale_path('/secret-scanner-for-ai-agents/', locale)}">{html.escape(detail["actions"][2])}</a>
+
+        <div class="package-hardening-radar secured-radar" aria-label="Packages Automic Vault hardens">
+          <div class="radar-copy">
+            <span>Package hardening feed</span>
+            <strong>{html.escape(landing["radar_title"])}</strong>
+            <p>{html.escape(landing["radar_body"])}</p>
+          </div>
+          <div class="radar-feed" data-secured-feed>
+            <a class="feed-row accent-green" href="/pkg/brew/gh/" aria-label="gh"><span>gh</span><p>GitHub tokens saved in Keychain and injected only for gh commands</p></a>
+            <a class="feed-row accent-green" href="/pkg/brew/awscli/" aria-label="awscli"><span>awscli</span><p>AWS keys moved from ~/.aws/credentials to credential_process</p></a>
+            <a class="feed-row accent-hot" href="/pkg/brew/curl/" aria-label="curl"><span>curl</span><p>netrc and curlrc credentials detected as hazards</p></a>
+            <a class="feed-row accent-gold" href="/pkg/brew/git/" aria-label="git"><span>git</span><p>plaintext credential-store files flagged before agent runs</p></a>
+            <a class="feed-row accent-blue" href="/pkg/brew/node/" aria-label="npm"><span>npm</span><p>registry tokens mounted through a temporary npm config</p></a>
+          </div>
         </div>
       </section>
-      <section class="highlights" aria-labelledby="highlights-title">
-        <div class="section-label"><h2 id="highlights-title">{html.escape(ui["highlights"])}</h2><span>{html.escape(ui["securityMap"])}</span></div>
-        <div class="highlight-grid">
-{highlights}
+
+      <section class="feature-section immutable-section" id="immutable" aria-labelledby="immutable-title">
+        <div class="feature-copy">
+          <p class="eyebrow">02 &middot; Harden</p>
+          <h2 id="immutable-title">{html.escape(landing["immutable_title"])}</h2>
+          <p>{html.escape(landing["immutable_body"])}</p>
+        </div>
+        <div class="terminal-story" aria-label="Terminal example for immutable package roots">
+          <aside class="terminal-notes immutable-terminal-notes" aria-label="What this terminal demonstrates">
+            <p>{html.escape(landing["immutable_note"])}</p>
+          </aside>
+          <figure class="terminal-card terminal-card-blue" aria-label="Agent cannot modify itself">
+            <figcaption aria-hidden="true"></figcaption>
+            <pre><code><span class="prompt">$</span> av install codex
+awaiting Touch ID for root escalation… approved
+prefix: /opt/codex
+shim: /usr/local/bin/codex -> /opt/codex/bin/codex
+
+<span class="prompt">$</span> codex exec "patch $(which codex)"
+permission denied</code></pre>
+          </figure>
         </div>
       </section>
-      <section class="story-layout" id="ranked" aria-label="{html.escape(ui["rankedFeaturesAria"], quote=True)}">
-        <div class="story-main">
-          <div class="list-heading"><div><h2>{html.escape(detail["storiesTitle"])}</h2><p>{html.escape(detail["storiesLede"])}</p></div><span>{html.escape(ui["v0Surface"])}</span></div>
-{stories}
+
+      <section class="feature-section dotenv-section" id="dotenv" aria-labelledby="dotenv-title">
+        <div class="feature-copy">
+          <p class="eyebrow">03 &middot; Securing .env files</p>
+          <h2 id="dotenv-title">{html.escape(landing["dotenv_title"])}</h2>
+          <p>{html.escape(landing["dotenv_body"])}</p>
         </div>
-        <aside class="side-rail" aria-label="{html.escape(ui["operationalNotesAria"], quote=True)}">
-          <section>
-            <h2>{html.escape(ui["runtime"])}</h2>
-            <article><span>{html.escape(ui["releaseLabel"])}</span><strong>/opt</strong><p>{html.escape(ui["releaseNote"])}</p></article>
-            <article><span>{html.escape(ui["stubsLabel"])}</span><strong>/usr/local/bin</strong><p>{html.escape(ui["stableEntrypoints"])}</p></article>
-          </section>
-          <section>
-            <h2>{html.escape(ui["caseFiles"])}</h2>
-            <a class="rail-link" href="{locale_path('/github-cli-token-security-ai-agents/', locale)}"><span>gh</span><strong>{html.escape(ui["caseGithub"])}</strong></a>
-            <a class="rail-link" href="{locale_path('/secure-aws-cli-credentials-ai-agents/', locale)}"><span>aws</span><strong>{html.escape(ui["caseAws"])}</strong></a>
-            <a class="rail-link" href="{locale_path('/ai-agent-approval-gates/', locale)}"><span>gate</span><strong>{html.escape(ui["caseApproval"])}</strong></a>
-          </section>
-        </aside>
-      </section>
-      <section class="compare feature-section" aria-labelledby="compare-title">
-        <div class="section-label"><h2 id="compare-title">{html.escape(detail["fitTitle"])}</h2><span>{html.escape(detail["fitKicker"])}</span></div>
-        <div class="compare-grid">
-{fit_cards}
+        <div class="dotenv-terminal-layout" aria-label="Terminal examples for encrypted dotenv files">
+          <figure class="terminal-card terminal-card-green dotenv-terminal-single">
+            <figcaption>Encrypted .env with direnv-style loading</figcaption>
+            <pre><code><span class="prompt">$</span> cd ~/work/billing-api
+
+<span class="prompt">$</span> cat .env
+APP_ENV=development
+LOG_LEVEL=debug
+PUBLIC_SITE_URL=https://billing.example
+STRIPE_SECRET_KEY=sk_live_<span class="secret-blur">4eC39HqLyjWDarjtT1zdp7dc</span>
+OPENAI_API_KEY=sk-proj-<span class="secret-blur">BJN9zqY2Q9p7xWm8kL3n</span>
+DATABASE_URL=postgres://billing:<span class="secret-blur">s3cr3t</span>@db.internal/app
+
+<span class="prompt">$</span> av dotenv init
+found existing .env
+stored DOTENV_PRIVATE_KEY in Keychain
+
+<span class="prompt">$</span> av dotenv encrypt
+encrypted .env
+
+<span class="prompt">$</span> cat .env
+DOTENV_PUBLIC_KEY="BP9x..."
+APP_ENV=development
+LOG_LEVEL=debug
+PUBLIC_SITE_URL=https://billing.example
+STRIPE_SECRET_KEY="<span class="terminal-encrypted">encrypted:</span>BO/8An..."
+OPENAI_API_KEY="<span class="terminal-encrypted">encrypted:</span>BJN9z..."
+DATABASE_URL="<span class="terminal-encrypted">encrypted:</span>BI4p3..."
+<span class="terminal-comment"># ^^ dotenvx compatible</span>
+
+<span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
+
+<span class="terminal-session-divider">----- NEW TERMINAL SESSION -----</span>
+
+<span class="prompt">$</span> cd ~/work/billing-api
+av: human approval required… approved
+av: +STRIPE_SECRET_KEY +OPENAI_API_KEY +DATABASE_URL
+
+<span class="prompt">$</span> npm run dev
+<span class="terminal-comment"># keys exported into this shell only</span></code></pre>
+          </figure>
         </div>
       </section>
-      <section class="final-cta" aria-labelledby="final-title">
-        <p class="eyebrow">{html.escape(ui["finalKicker"])}</p>
-        <h2 id="final-title">{html.escape(detail["final"])}</h2>
-        <div><a class="button primary" href="/Automic Vault.dmg">{html.escape(detail["actions"][0])}</a><a class="button secondary" href="https://github.com/automic-vault/automic-vault">{html.escape(ui["viewSource"])}</a></div>
+
+      <section class="feature-section app-section detect-section" id="detect" aria-labelledby="detect-title">
+        <div class="feature-copy">
+          <p class="eyebrow">04 &middot; Detect</p>
+          <h2 id="detect-title">{html.escape(landing["detect_title"])}</h2>
+          <p>{html.escape(landing["detect_body"])}</p>
+          <ul class="app-feature-list">
+{feature_items}
+          </ul>
+        </div>
+        <figure class="app-visual">
+          <img src="/assets/app-hazard-journey.webp" alt="Automic Vault app" width="1672" height="941" loading="lazy" decoding="async">
+        </figure>
       </section>
-      {language_links("/", locale, locales)}
+
+      <section class="feature-section endorsement-section" id="endorsements" aria-labelledby="endorsements-title">
+        <div class="feature-copy">
+          <p class="eyebrow">{html.escape(landing["field_eyebrow"])}</p>
+          <h2 id="endorsements-title">{html.escape(landing["field_title"])}</h2>
+          <p>{html.escape(landing["field_body"])}</p>
+        </div>
+        <a class="tweet-endorsement" href="https://x.com/Hiraweb3/status/2059662670006038857?s=20" target="_blank" rel="noopener noreferrer">
+          <div class="tweet-endorsement-person">
+            <img src="/assets/hira-avatar.webp" alt="Hira avatar" width="160" height="160" loading="lazy" decoding="async">
+            <cite class="tweet-endorsement-author"><span>Hira</span><span class="tweet-endorsement-handle">@Hiraweb3</span><span class="tweet-endorsement-source" aria-hidden="true">𝕏</span></cite>
+          </div>
+          <blockquote><p>we needed this yesterday but i'll take it now</p></blockquote>
+        </a>
+      </section>
+
+      <section class="closing-cta" aria-labelledby="final-title">
+        <p class="eyebrow">{html.escape(landing["final_eyebrow"])}</p>
+        <h2 id="final-title" aria-label="{html.escape(landing["final_a11y"], quote=True)}">
+          {html.escape(landing["final_prefix"])}
+          <span class="tool-command-line">{html.escape(landing["final_you"])} <span class="tool-flip" aria-hidden="true"><span class="tool-flip-word" data-tool-flip>brew install</span></span></span>
+        </h2>
+        <div>
+          <a class="button primary" href="/Automic Vault.dmg">{html.escape(ui["download"])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(landing["read_docs"])}</a>
+          <a class="button text" href="{locale_path('/pkg/', locale)}">{html.escape(landing["browse_packages"])}</a>
+        </div>
+      </section>
     </main>
+
     <footer class="site-footer">
-      <p>&copy; 2026 Automic Vault.</p>
-      <div class="footer-links">
+      <div class="footer-brand">
+        <img src="/assets/icon@2x.webp" alt="" width="54" height="54" loading="lazy" decoding="async">
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        {footer_state}
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
         <a href="{locale_path('/about/', locale)}">{html.escape(ui["about"])}</a>
         <a href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
+        <a href="{locale_path('/blog/', locale)}">Blog</a>
         <a href="{locale_path('/privacy/', locale)}">{html.escape(ui["privacy"])}</a>
         <a href="{locale_path('/terms/', locale)}">{html.escape(ui["terms"])}</a>
         <a href="https://x.com/AutomicVault">X</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
-      </div>
+      </nav>
     </footer>
   </div>
-  <script src="/app.js?v=17"></script>
+
+  <script src="/app.js?v=21"></script>
+  {language_nav}
+  <script src="/i18n.js" defer></script>
 </body>
 </html>
 """
