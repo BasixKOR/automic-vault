@@ -257,6 +257,7 @@ stamp_product_version() {
 
 prepare_site_for_upload() {
   local product_version scanned_package_count scanned_package_display_count index_path
+  local stamped_scan_count
   log_step "Preparing deploy-time site content"
   product_version="$(read_product_version)"
   scanned_package_count="$(count_scan_log_entries)"
@@ -274,24 +275,39 @@ prepare_site_for_upload() {
     die "Missing prepared index: ${index_path}"
   fi
 
-  SCANNED_PACKAGE_COUNT="${scanned_package_display_count}" perl -0pi -e '
-    BEGIN {
-      $count = $ENV{"SCANNED_PACKAGE_COUNT"};
-      $matches = 0;
-    }
-    $matches += s{(<([a-zA-Z][a-zA-Z0-9:-]*)\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</\2>)}{$1$count$3}g;
-    $matches += s{(<span>)[0-9,]+ Homebrew packages scanned(</span>)}{$1$count Homebrew packages scanned$2}g;
-    END {
-      die "Expected exactly one scanned package count replacement, got $matches\n"
-        unless $matches == 1;
-    }
-  ' "${index_path}"
+  stamped_scan_count=false
+  if perl -0ne '
+    exit(
+      /<([a-zA-Z][a-zA-Z0-9:-]*)\b[^>]*\bdata-secured-package-count\b[^>]*>[^<]*<\/\1>/ ||
+      /<span>[0-9,]+ Homebrew packages scanned<\/span>/
+        ? 0
+        : 1
+    );
+  ' "${index_path}"; then
+    SCANNED_PACKAGE_COUNT="${scanned_package_display_count}" perl -0pi -e '
+      BEGIN {
+        $count = $ENV{"SCANNED_PACKAGE_COUNT"};
+        $matches = 0;
+      }
+      $matches += s{(<([a-zA-Z][a-zA-Z0-9:-]*)\b[^>]*\bdata-secured-package-count\b[^>]*>)[^<]*(</\2>)}{$1$count$3}g;
+      $matches += s{(<span>)[0-9,]+ Homebrew packages scanned(</span>)}{$1$count Homebrew packages scanned$2}g;
+      END {
+        die "Expected exactly one scanned package count replacement, got $matches\n"
+          unless $matches == 1;
+      }
+    ' "${index_path}"
+    stamped_scan_count=true
+  else
+    log_warn "No homepage scanned package count marker; skipped scan-count stamp"
+  fi
 
   node "${llms_full_generator}" "${prepared_site_dir}" "${prepared_site_dir}/llms-full.txt"
   stamp_product_version "${product_version}"
 
   log_ok "Stamped Automic Vault ${product_version}"
-  log_ok "Stamped ${scanned_package_display_count} scanned packages"
+  if [[ "${stamped_scan_count}" == "true" ]]; then
+    log_ok "Stamped ${scanned_package_display_count} scanned packages"
+  fi
 }
 
 assert_www_i18n_current() {
