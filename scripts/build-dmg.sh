@@ -63,9 +63,18 @@ unquote_build_env_value() {
   printf '%s' "${value}"
 }
 
+normalize_codesign_identity() {
+  local identity="${1}"
+  if [[ "${identity}" == "-" || "${identity}" == *:* ]]; then
+    printf '%s' "${identity}"
+  else
+    printf 'Developer ID Application: %s' "${identity}"
+  fi
+}
+
 configure_codesign_identity() {
   if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-    CODESIGN_IDENTITY="$(unquote_build_env_value "${CODESIGN_IDENTITY}")"
+    CODESIGN_IDENTITY="$(normalize_codesign_identity "$(unquote_build_env_value "${CODESIGN_IDENTITY}")")"
     export CODESIGN_IDENTITY
     return
   fi
@@ -79,7 +88,7 @@ configure_codesign_identity() {
   team_identifier="$(unquote_build_env_value "${TEAM_IDENTIFIER}")"
   [[ -n "${team_common_name}" && -n "${team_identifier}" ]] || return
 
-  CODESIGN_IDENTITY="${team_common_name} (${team_identifier})"
+  CODESIGN_IDENTITY="$(normalize_codesign_identity "${team_common_name} (${team_identifier})")"
   export CODESIGN_IDENTITY
 }
 

@@ -57,11 +57,22 @@ fn build_env_var(key: &str) -> Option<String> {
 }
 
 fn codesign_identity() -> Option<String> {
-    non_empty_build_env_var("CODESIGN_IDENTITY").or_else(|| {
-        let common_name = non_empty_build_env_var("TEAM_COMMON_NAME")?;
-        let team_identifier = non_empty_build_env_var("TEAM_IDENTIFIER")?;
-        Some(format!("{common_name} ({team_identifier})"))
-    })
+    non_empty_build_env_var("CODESIGN_IDENTITY")
+        .map(normalize_codesign_identity)
+        .or_else(|| {
+            let common_name = non_empty_build_env_var("TEAM_COMMON_NAME")?;
+            let team_identifier = non_empty_build_env_var("TEAM_IDENTIFIER")?;
+            Some(normalize_codesign_identity(format!(
+                "{common_name} ({team_identifier})"
+            )))
+        })
+}
+
+fn normalize_codesign_identity(identity: String) -> String {
+    if identity == "-" || identity.contains(':') {
+        return identity;
+    }
+    format!("Developer ID Application: {identity}")
 }
 
 fn non_empty_build_env_var(key: &str) -> Option<String> {

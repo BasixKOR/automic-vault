@@ -956,7 +956,7 @@ fn ensure_expected_codesign_identity_with_expected(
         return Ok(());
     };
     match authorities.first() {
-        Some(actual) if actual == expected => Ok(()),
+        Some(actual) if codesign_authority_matches_expected(actual, expected) => Ok(()),
         Some(actual) => Err(format!(
             "{label} signature identity mismatch for {}: expected {expected}, got {actual}",
             path.display()
@@ -966,6 +966,14 @@ fn ensure_expected_codesign_identity_with_expected(
             path.display()
         )),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn codesign_authority_matches_expected(actual: &str, expected: &str) -> bool {
+    actual == expected
+        || actual
+            .strip_prefix("Developer ID Application: ")
+            .is_some_and(|short| short == expected)
 }
 
 #[cfg(target_os = "macos")]
@@ -1604,6 +1612,15 @@ mod tests {
                 path,
                 &authorities,
                 Some("Developer ID Application: Example")
+            )
+            .is_ok()
+        );
+        assert!(
+            ensure_expected_codesign_identity_with_expected(
+                "helper",
+                path,
+                &authorities,
+                Some("Example")
             )
             .is_ok()
         );
