@@ -2644,7 +2644,8 @@ h1 code {
 }
 
 .harden-section .terminal-card pre,
-.immutable-section .terminal-card pre {
+.immutable-section .terminal-card pre,
+.dotenv-section .terminal-card pre {
   font-size: clamp(1.01rem, 1.23vw, 1.2rem);
   line-height: 1.55;
 }
