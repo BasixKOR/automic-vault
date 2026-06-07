@@ -2610,7 +2610,8 @@ h1 code {
   max-width: 1180px;
 }
 
-.harden-section .terminal-story {
+.harden-section .terminal-story,
+.immutable-section .terminal-story {
   grid-template-columns: minmax(12rem, 0.27fr) minmax(0, 1fr);
   column-gap: 1em;
 }
@@ -2667,6 +2668,11 @@ h1 code {
 
 .terminal-notes p:nth-child(5) {
   top: calc(54px + 0.5em + var(--terminal-note-line) * 18);
+}
+
+.immutable-terminal-notes p {
+  top: calc(54px + 0.5em + var(--terminal-note-line) * 5);
+  text-transform: lowercase;
 }
 
 .terminal-notes code {

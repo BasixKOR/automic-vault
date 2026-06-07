@@ -310,8 +310,11 @@ credential_process = /usr/local/bin/av credential-helper aws
         </div>
 
         <div class="terminal-story" aria-label="Terminal example for immutable package roots">
-          <figure class="terminal-card terminal-card-blue">
-            <figcaption>Agent cannot modify itself</figcaption>
+          <aside class="terminal-notes immutable-terminal-notes" aria-label="What this terminal demonstrates">
+            <p>agent cannot modify itself</p>
+          </aside>
+          <figure class="terminal-card terminal-card-blue" aria-label="Agent cannot modify itself">
+            <figcaption aria-hidden="true"></figcaption>
             <pre><code><span class="prompt">$</span> av install codex
 awaiting Touch ID for root escalation… approved
 prefix: /opt/codex
