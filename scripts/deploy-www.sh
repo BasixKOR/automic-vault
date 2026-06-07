@@ -39,7 +39,11 @@ log() {
 
 log_header() {
   log "${bold}Deploying ${WWW_DOMAIN:-www}${reset}"
-  log "${dim}Static site -> S3 -> CloudFront${reset}"
+  if [[ "${static_only:-false}" == true ]]; then
+    log "${dim}Static site -> S3${reset}"
+  else
+    log "${dim}Static site -> S3 -> CloudFront${reset}"
+  fi
 }
 
 log_step() {
@@ -71,6 +75,36 @@ on_error() {
 
 trap 'on_error "$LINENO"' ERR
 
+static_only=false
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: deploy-www.sh [--static-only]
+
+Options:
+  --static-only  Sync prepared website files to S3 without changing CloudFront,
+                 bucket policy, package origin routing, or certificates.
+  -h, --help     Show this help.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --static-only)
+      static_only=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
 require_env() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
@@ -78,7 +112,12 @@ require_env() {
   fi
 }
 
-for tool in aws jq node; do
+required_tools=(aws node python3)
+if [[ "${static_only}" != true ]]; then
+  required_tools+=(jq)
+fi
+
+for tool in "${required_tools[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || {
     die "Missing required tool: ${tool}."
   }
@@ -98,18 +137,25 @@ export WWW_HTML_CACHE_CONTROL="${WWW_HTML_CACHE_CONTROL:-public, max-age=60, mus
 export WWW_ASSET_CACHE_CONTROL="${WWW_ASSET_CACHE_CONTROL:-public, max-age=31536000, immutable}"
 
 for env_name in \
-  WWW_WWW_DOMAIN \
-  WWW_CANONICAL_HOST \
   WWW_BUCKET \
-  WWW_CERTIFICATE_ARN \
-  WWW_CLOUDFRONT_PRICE_CLASS \
   WWW_HTML_CACHE_CONTROL \
-  WWW_ASSET_CACHE_CONTROL \
-  WWW_PKG_ORIGIN_DOMAIN \
-  WWW_PKG_ORIGIN_HEADER_VALUE
+  WWW_ASSET_CACHE_CONTROL
 do
   require_env "${env_name}"
 done
+
+if [[ "${static_only}" != true ]]; then
+  for env_name in \
+    WWW_WWW_DOMAIN \
+    WWW_CANONICAL_HOST \
+    WWW_CERTIFICATE_ARN \
+    WWW_CLOUDFRONT_PRICE_CLASS \
+    WWW_PKG_ORIGIN_DOMAIN \
+    WWW_PKG_ORIGIN_HEADER_VALUE
+  do
+    require_env "${env_name}"
+  done
+fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
@@ -1480,6 +1526,29 @@ ensure_certificate_issued() {
 log_header
 assert_www_i18n_current
 prepare_site_for_upload
+if [[ "${static_only}" == true ]]; then
+  log_step "Checking S3 bucket"
+  aws s3api head-bucket --bucket "${WWW_BUCKET}" >/dev/null
+  log_ok "S3 bucket exists"
+  sync_site
+
+  if [[ "${use_color}" == true ]]; then
+    cat <<EOF
+
+${green}${glyph_ok}${reset} ${bold}Static deployment complete${reset}
+  Bucket                      ${WWW_BUCKET}
+  CloudFront configuration    skipped
+EOF
+  else
+    cat <<EOF
+
+Static deployment complete.
+Bucket: ${WWW_BUCKET}
+CloudFront configuration: skipped
+EOF
+  fi
+  exit 0
+fi
 ensure_bucket
 oac_id="$(ensure_oac)"
 ensure_redirect_function
