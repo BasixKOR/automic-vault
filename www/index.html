@@ -204,9 +204,9 @@
           <p class="eyebrow">From the creator of Homebrew</p>
           <h1 id="hero-title">Harden your Mac <span>before the agent runs.</span></h1>
           <p class="poster-lede">
-            Install agent tools into sealed package roots, harden them so they
-            stop storing plaintext secrets, keep .env secrets encrypted, and
-            approve sensitive updates before they change your Mac.
+            Install tools into sealed package roots, harden them so they
+            stop storing plaintext secrets, keep <code>.env</code> secrets encrypted, and
+            add human-in-the-loop at a layer the agent cannot change.
           </p>
         </div>
 
@@ -243,7 +243,7 @@
             <pre><code><span class="prompt">$</span> brew install awscli
 installed: /opt/homebrew/Cellar/awscli
 
-<span class="prompt">$</span> av scan --package awscli
+<span class="prompt">$</span> av scan
 <span class="terminal-danger">plaintext secret exposure</span>: ~/.aws/credentials
 reason agent-readable cloud keys
 
@@ -256,6 +256,7 @@ aws_secret_access_key=wJalr<span class="secret-blur">XUtnFEMI/K7MDENG/bPxRfiCYEX
 saved AWS keys in Keychain
 rewrote credential_process helper
 removed plaintext credentials
+made install immutable
 
 <span class="prompt">$</span> cat ~/.aws/credentials
 [default]
@@ -312,16 +313,13 @@ credential_process = /usr/local/bin/av credential-helper aws
           <figure class="terminal-card terminal-card-blue">
             <figcaption>Agent cannot modify itself</figcaption>
             <pre><code><span class="prompt">$</span> av install codex
-fetch package codex
-root /opt/automic-vault/pkg/codex/0.42.0
-link /usr/local/bin/codex -> av shim
-seal root read-only
+awaiting Touch ID for root escalation…
+escalation approved
+prefix: /opt/codex
+shim: /usr/local/bin/codex -> av shim
 
 <span class="prompt">$</span> codex exec 'patch $(which codex)'
-av: blocked write to sealed package root
-target /opt/automic-vault/pkg/codex/0.42.0/bin/codex
-reason package root is immutable
-next step av update codex --approve</code></pre>
+permission denied</code></pre>
           </figure>
         </div>
       </section>
@@ -450,7 +448,7 @@ keys exported into this shell only</code></pre>
       <section class="closing-cta" aria-labelledby="final-title">
         <p class="eyebrow">Free and open source</p>
         <h2 id="final-title" aria-label="Secure the tools you install with brew, npm, pip, cargo, pnpm, and uv.">
-          secure the tools you
+          Secure the tools you
           <span class="tool-flip" aria-hidden="true"><span class="tool-flip-word" data-tool-flip>brew install</span></span>
         </h2>
         <div>

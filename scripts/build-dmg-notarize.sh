@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +APPLE_PASSWORD +APPLE_USERNAME /bin/sh
+#!/usr/local/bin/av inject +APPLE_PASSWORD /bin/sh
 
 /usr/bin/xcrun notarytool submit \
   --apple-id "${APPLE_USERNAME}" \
