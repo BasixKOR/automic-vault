@@ -313,12 +313,11 @@ credential_process = /usr/local/bin/av credential-helper aws
           <figure class="terminal-card terminal-card-blue">
             <figcaption>Agent cannot modify itself</figcaption>
             <pre><code><span class="prompt">$</span> av install codex
-awaiting Touch ID for root escalation…
-escalation approved
+awaiting Touch ID for root escalation… approved
 prefix: /opt/codex
-shim: /usr/local/bin/codex -> av shim
+shim: /usr/local/bin/codex -> /opt/codex/bin/codex
 
-<span class="prompt">$</span> codex exec 'patch $(which codex)'
+<span class="prompt">$</span> codex exec "patch $(which codex)"
 permission denied</code></pre>
           </figure>
         </div>
