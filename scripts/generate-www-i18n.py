@@ -848,7 +848,7 @@ def expanded_sections(translations: dict[str, Any], locale: Locale) -> list[list
     return sections
 
 
-def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
+def render_legacy_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
     path = record["path"]
     t = record["translations"][locale.code]
     ui = ui_copy(locale.code)
@@ -946,6 +946,153 @@ def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -
       </div>
     </footer>
   </div>
+</body>
+</html>
+"""
+
+
+def render_page(record: dict[str, Any], locale: Locale, locales: list[Locale]) -> str:
+    if record.get("kind") == "docs":
+        return render_legacy_page(record, locale, locales)
+
+    path = record["path"]
+    t = record["translations"][locale.code]
+    ui = ui_copy(locale.code)
+    root = rel_root(path, locale)
+    canonical = href(path, locale)
+    page_title = normalized_title(t["title"], locale)
+    page_description = normalized_description(t["description"], locale)
+    section_markup = "\n".join(
+        f"""      <section class="i18n-section" aria-labelledby="section-{index}">
+        <p class="eyebrow">{index:02d} &middot; {html.escape(t.get("kicker", "Automic Vault"))}</p>
+        <h2 id="section-{index}">{html.escape(title)}</h2>
+        <p>{html.escape(body)}</p>
+      </section>"""
+        for index, (title, body) in enumerate(expanded_sections(t, locale), start=1)
+    )
+    if path == "/download/":
+        hero_actions = f"""          <a class="button primary" href="/Automic Vault.dmg">{html.escape(ui["downloadDmg"])}</a>
+          <a class="button secondary" href="/install.sh">{html.escape(ui["installerScript"])}</a>"""
+    elif path == "/security/whitepaper/":
+        hero_actions = f"""          <a class="button primary" href="/security/whitepaper/">{html.escape(ui["whitePaperEnglish"])}</a>
+          <a class="button secondary" href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>"""
+    else:
+        hero_actions = f"""          <a class="button primary" href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>"""
+    language_nav = language_links(path, locale, locales)
+    return f"""<!DOCTYPE html>
+<html lang="{html.escape(locale.html_lang)}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(page_title)}</title>
+  <meta name="description" content="{html.escape(page_description, quote=True)}">
+  <meta name="robots" content="index,follow">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Automic Vault">
+  <meta property="og:title" content="{html.escape(page_title, quote=True)}">
+  <meta property="og:description" content="{html.escape(page_description, quote=True)}">
+  <meta property="og:url" content="{html.escape(canonical, quote=True)}">
+  <meta property="og:image" content="{SITE_ORIGIN}/preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{html.escape(page_title, quote=True)}">
+  <meta name="twitter:description" content="{html.escape(page_description, quote=True)}">
+  <meta name="twitter:image" content="{SITE_ORIGIN}/preview.jpg">
+  <link rel="canonical" href="{html.escape(canonical, quote=True)}">
+{alternate_link_block(path, locales)}
+  <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="icon" href="{root}favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="{root}apple-touch-icon.png">
+  <link rel="stylesheet" href="{root}styles.css?v=75">
+  <link rel="stylesheet" href="{root}landing-pages.css?v=1">
+  <script type="application/ld+json">
+  {{
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "url": "{canonical}",
+    "name": {json.dumps(page_title, ensure_ascii=False)},
+    "headline": {json.dumps(t["h1"], ensure_ascii=False)},
+    "description": {json.dumps(page_description, ensure_ascii=False)},
+    "inLanguage": "{locale.html_lang}",
+    "image": "{SITE_ORIGIN}/preview.jpg",
+    "isPartOf": {{"@type": "WebSite", "name": "Automic Vault", "url": "{SITE_ORIGIN}/"}}
+  }}
+  </script>
+</head>
+<body>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <header class="masthead" id="top">
+    <a class="brand" href="{locale_path('/', locale)}" aria-label="{html.escape(ui["brandHomeAria"], quote=True)}">
+      <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+      <span class="brand-type">Automic Vault</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-label="{html.escape(ui["toggleNavigationAria"], quote=True)}"><span></span><span></span></button>
+    <nav class="nav" aria-label="{html.escape(ui["mainNavigationAria"], quote=True)}">
+      <a href="{locale_path('/pkg/', locale)}">{html.escape(ui["packages"])}</a>
+      <a href="{locale_path('/blog/', locale)}">Blog</a>
+      <a href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
+      <a href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
+      <a href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
+      <a href="https://github.com/automic-vault/">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="site-shell">
+    <main class="landing-main landing-page-main">
+      <section class="poster-hero landing-page-hero" aria-labelledby="hero-title">
+        <div class="poster-hero-copy">
+          <p class="eyebrow">{html.escape(t.get("kicker", "Automic Vault"))}</p>
+          <h1 id="hero-title">{html.escape(t["h1"])}</h1>
+          <p class="poster-lede">{html.escape(t.get("lede", t["description"]))}</p>
+        </div>
+
+        <div class="poster-hero-foot">
+          <div class="hero-actions">
+{hero_actions}
+          </div>
+        </div>
+      </section>
+
+{section_markup}
+
+      <section class="closing-cta landing-page-cta" aria-labelledby="final-title">
+        <p class="eyebrow">Automic Vault</p>
+        <h2 id="final-title">{html.escape(t["h1"])}</h2>
+        <div class="hero-actions">
+          <a class="button primary" href="{locale_path('/download/', locale)}">{html.escape(ui["download"])}</a>
+          <a class="button secondary" href="{locale_path('/docs/', locale)}">{html.escape(ui["docs"])}</a>
+          <a class="button text" href="{locale_path('/pkg/', locale)}">{html.escape(ui["packages"])}</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <img src="/assets/icon@2x.webp" alt="" width="54" height="54" loading="lazy" decoding="async">
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        <span><strong>Hazards</strong> detected</span>
+        <span><strong>Secrets</strong> Keychain-backed</span>
+        <span><strong>Approvals</strong> Touch ID ready</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="{locale_path('/about/', locale)}">{html.escape(ui["about"])}</a>
+        <a href="{locale_path('/security/', locale)}">{html.escape(ui["security"])}</a>
+        <a href="{locale_path('/blog/', locale)}">Blog</a>
+        <a href="{locale_path('/privacy/', locale)}">{html.escape(ui["privacy"])}</a>
+        <a href="{locale_path('/terms/', locale)}">{html.escape(ui["terms"])}</a>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
+    </footer>
+  </div>
+
+  <script src="{root}app.js?v=21"></script>
+  {language_nav}
+  <script src="{root}i18n.js" defer></script>
 </body>
 </html>
 """

@@ -23,99 +23,153 @@
   <link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/terms/">
   <link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/terms/">
   <link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/terms/">
+  <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="../../favicon.ico" sizes="16x16 32x32 48x48">
-  <link rel="stylesheet" href="../../styles.css">
-  <link rel="stylesheet" href="../../seo.css">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+  <link rel="stylesheet" href="../../styles.css?v=75">
+  <link rel="stylesheet" href="../../landing-pages.css?v=1">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "https://www.automicvault.com/de/terms/",
     "name": "Automic Vault Bedingungen | Schutz für AI-Agents und Entwickler-Tools",
+    "headline": "Open-Source-Werkzeug für lokale Sicherheit",
     "description": "Nutzungsbedingungen, Open-Source-Lizenz und Website-Hinweise für Automic Vault. Kontrolliere Homebrew-Tools, CLI-Secrets und Approval Gates lokal auf dem Mac.",
     "inLanguage": "de",
+    "image": "https://www.automicvault.com/preview.jpg",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
   </script>
 </head>
 <body>
-  <div class="site-shell i18n-page">
-    <header class="masthead">
-      <a class="brand" href="/de/" aria-label="Automic Vault Startseite">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
-        <span class="brand-type">Automic Vault</span>
-      </a>
-      <nav class="nav" aria-label="Hauptnavigation">
-        <a href="/de/docs/">Dokumentation</a>
-        <a href="/de/security/">Sicherheit</a>
-        <a href="/de/pkg/">Pakete</a>
-        <a href="https://github.com/automic-vault/">GitHub</a>
-      </nav>
-    </header>
-    <main>
-      <section class="hero i18n-hero">
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <header class="masthead" id="top">
+    <a class="brand" href="/de/" aria-label="Automic Vault Startseite">
+      <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+      <span class="brand-type">Automic Vault</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Navigation umschalten"><span></span><span></span></button>
+    <nav class="nav" aria-label="Hauptnavigation">
+      <a href="/de/pkg/">Pakete</a>
+      <a href="/de/blog/">Blog</a>
+      <a href="/de/security/">Sicherheit</a>
+      <a href="/de/docs/">Dokumentation</a>
+      <a href="/de/download/">Herunterladen</a>
+      <a href="https://github.com/automic-vault/">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="site-shell">
+    <main class="landing-main landing-page-main">
+      <section class="poster-hero landing-page-hero" aria-labelledby="hero-title">
+        <div class="poster-hero-copy">
+          <p class="eyebrow">Automic Vault</p>
+          <h1 id="hero-title">Open-Source-Werkzeug für lokale Sicherheit</h1>
+          <p class="poster-lede">Nutzungsbedingungen, Open-Source-Lizenz und Website-Hinweise für Automic Vault.</p>
+        </div>
+
+        <div class="poster-hero-foot">
+          <div class="hero-actions">
+          <a class="button primary" href="/de/download/">Herunterladen</a>
+          <a class="button secondary" href="/de/docs/">Dokumentation</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="i18n-section" aria-labelledby="section-1">
+        <p class="eyebrow">01 &middot; Automic Vault</p>
+        <h2 id="section-1">Lizenz</h2>
+        <p>Automic Vault wird unter der Apache License 2.0 bereitgestellt.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-2">
+        <p class="eyebrow">02 &middot; Automic Vault</p>
+        <h2 id="section-2">Nutzung</h2>
+        <p>Diese Website stellt Produktinformationen, Dokumentation und Paketmetadaten bereit.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-3">
+        <p class="eyebrow">03 &middot; Automic Vault</p>
+        <h2 id="section-3">Lokale Laufzeitgrenze</h2>
+        <p>Automic Vault trennt Dateien, die ein Agent lesen kann, von Credentials, die nur genehmigte Tools erhalten. Die Kontrolle sitzt im Ausführungspfad auf dem Mac, nicht nur in einer Agent-Anweisung.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-4">
+        <p class="eyebrow">04 &middot; Automic Vault</p>
+        <h2 id="section-4">Homebrew und CLIs</h2>
+        <p>Viele Entwicklerwerkzeuge kommen über Homebrew, npm, PyPI und Cloud-CLIs. Vault erkennt Credential-Dateien und riskante Aktionen, die diese Tools hinterlassen, und setzt Freigaben an die passende Stelle.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-5">
+        <p class="eyebrow">05 &middot; Automic Vault</p>
+        <h2 id="section-5">Nächste Schritte</h2>
+        <p>Starte zuerst den Scanner, verschiebe unterstützte Secrets in geschützten lokalen Speicher und lasse Automic Vault laufen, damit neue Hazard-Hinweise sofort sichtbar bleiben.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-6">
+        <p class="eyebrow">06 &middot; Automic Vault</p>
+        <h2 id="section-6">Was sich nach der Installation ändert</h2>
+        <p>Die bekannten CLIs bleiben nutzbar. Der Unterschied ist, dass Secrets nicht mehr als einfache Konfigurationsdateien herumliegen, sondern nur an die genehmigte Ausführung übergeben werden, die sie wirklich braucht.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-7">
+        <p class="eyebrow">07 &middot; Automic Vault</p>
+        <h2 id="section-7">Zusammenspiel mit zentralen Vaults</h2>
+        <p>1Password, HashiCorp Vault und Cloud-Secret-Systeme können weiter die Quelle der Wahrheit bleiben. Automic Vault schützt den lokalen Moment, in dem ein Mac-Tool diese Werte verwenden will.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-8">
+        <p class="eyebrow">08 &middot; Automic Vault</p>
+        <h2 id="section-8">Weiterführende Seiten</h2>
+        <p>Dokumentation, Download, Secret Scanner und Paketkatalog zeigen den Weg von Erkennung zu Härtung, Approval Gates und laufender Überwachung der Entwickler-Maschine.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-9">
+        <p class="eyebrow">09 &middot; Automic Vault</p>
+        <h2 id="section-9">Laufende Überwachung</h2>
+        <p>Neue Pakete, veraltete Tools und neu erzeugte Konfigurationsdateien können nach der ersten Bereinigung wieder Risiken schaffen. Automic Vault bleibt aktiv und meldet frische Hazards.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-10">
+        <p class="eyebrow">10 &middot; Automic Vault</p>
+        <h2 id="section-10">Vertrauenshinweise</h2>
+        <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-11">
+        <p class="eyebrow">11 &middot; Automic Vault</p>
+        <h2 id="section-11">Wann einsetzen</h2>
+        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
+      </section>
+
+      <section class="closing-cta landing-page-cta" aria-labelledby="final-title">
         <p class="eyebrow">Automic Vault</p>
-        <h1>Open-Source-Werkzeug für lokale Sicherheit</h1>
-        <p class="lede">Nutzungsbedingungen, Open-Source-Lizenz und Website-Hinweise für Automic Vault.</p>
+        <h2 id="final-title">Open-Source-Werkzeug für lokale Sicherheit</h2>
         <div class="hero-actions">
           <a class="button primary" href="/de/download/">Herunterladen</a>
           <a class="button secondary" href="/de/docs/">Dokumentation</a>
+          <a class="button text" href="/de/pkg/">Pakete</a>
         </div>
       </section>
-      <section class="i18n-section">
-        <h2>Lizenz</h2>
-        <p>Automic Vault wird unter der Apache License 2.0 bereitgestellt.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Nutzung</h2>
-        <p>Diese Website stellt Produktinformationen, Dokumentation und Paketmetadaten bereit.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Lokale Laufzeitgrenze</h2>
-        <p>Automic Vault trennt Dateien, die ein Agent lesen kann, von Credentials, die nur genehmigte Tools erhalten. Die Kontrolle sitzt im Ausführungspfad auf dem Mac, nicht nur in einer Agent-Anweisung.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Homebrew und CLIs</h2>
-        <p>Viele Entwicklerwerkzeuge kommen über Homebrew, npm, PyPI und Cloud-CLIs. Vault erkennt Credential-Dateien und riskante Aktionen, die diese Tools hinterlassen, und setzt Freigaben an die passende Stelle.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Nächste Schritte</h2>
-        <p>Starte zuerst den Scanner, verschiebe unterstützte Secrets in geschützten lokalen Speicher und lasse Automic Vault laufen, damit neue Hazard-Hinweise sofort sichtbar bleiben.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Was sich nach der Installation ändert</h2>
-        <p>Die bekannten CLIs bleiben nutzbar. Der Unterschied ist, dass Secrets nicht mehr als einfache Konfigurationsdateien herumliegen, sondern nur an die genehmigte Ausführung übergeben werden, die sie wirklich braucht.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Zusammenspiel mit zentralen Vaults</h2>
-        <p>1Password, HashiCorp Vault und Cloud-Secret-Systeme können weiter die Quelle der Wahrheit bleiben. Automic Vault schützt den lokalen Moment, in dem ein Mac-Tool diese Werte verwenden will.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Weiterführende Seiten</h2>
-        <p>Dokumentation, Download, Secret Scanner und Paketkatalog zeigen den Weg von Erkennung zu Härtung, Approval Gates und laufender Überwachung der Entwickler-Maschine.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Laufende Überwachung</h2>
-        <p>Neue Pakete, veraltete Tools und neu erzeugte Konfigurationsdateien können nach der ersten Bereinigung wieder Risiken schaffen. Automic Vault bleibt aktiv und meldet frische Hazards.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Vertrauenshinweise</h2>
-        <p>Öffentliches Repository, Sicherheitsseite, Lizenz und der Homebrew-Hintergrund von Max Howell sind verlinkt. Eine lokale Sicherheitsgrenze sollte überprüfbar sein.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Wann einsetzen</h2>
-        <p>Nutze Automic Vault vor Agent-Läufen in Repositories, vor Cloud-CLI-Arbeit und bevor Befehle wie npm publish, gh release oder Infrastrukturänderungen echte Berechtigungen ausgeben.</p>
-      </section>
-      <nav class="language-links" aria-label="Sprachversionen"><a href="/terms/" lang="en">English</a> <a href="/ja/terms/" lang="ja">日本語</a> <a href="/de/terms/" lang="de">Deutsch</a> <a href="/fr/terms/" lang="fr">Français</a> <a href="/zh-hans/terms/" lang="zh-Hans">简体中文</a></nav>
     </main>
+
     <footer class="site-footer">
-      <p>Automic Vault</p>
-      <div class="footer-links">
+      <div class="footer-brand">
+        <img src="/assets/icon@2x.webp" alt="" width="54" height="54" loading="lazy" decoding="async">
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        <span><strong>Hazards</strong> detected</span>
+        <span><strong>Secrets</strong> Keychain-backed</span>
+        <span><strong>Approvals</strong> Touch ID ready</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="/de/about/">Über uns</a>
+        <a href="/de/security/">Sicherheit</a>
+        <a href="/de/blog/">Blog</a>
         <a href="/de/privacy/">Datenschutz</a>
         <a href="/de/terms/">Bedingungen</a>
-        <a href="/de/llms.txt">llms.txt</a>
-      </div>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
     </footer>
   </div>
+
+  <script src="../../app.js?v=21"></script>
+  <nav class="language-links" aria-label="Sprachversionen"><a href="/terms/" lang="en">English</a> <a href="/ja/terms/" lang="ja">日本語</a> <a href="/de/terms/" lang="de">Deutsch</a> <a href="/fr/terms/" lang="fr">Français</a> <a href="/zh-hans/terms/" lang="zh-Hans">简体中文</a></nav>
+  <script src="../../i18n.js" defer></script>
 </body>
 </html>

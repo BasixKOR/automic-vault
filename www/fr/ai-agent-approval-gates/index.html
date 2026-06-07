@@ -23,99 +23,153 @@
   <link rel="alternate" hreflang="fr" href="https://www.automicvault.com/fr/ai-agent-approval-gates/">
   <link rel="alternate" hreflang="zh-Hans" href="https://www.automicvault.com/zh-hans/ai-agent-approval-gates/">
   <link rel="alternate" hreflang="x-default" href="https://www.automicvault.com/ai-agent-approval-gates/">
+  <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Geist+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="icon" href="../../favicon.ico" sizes="16x16 32x32 48x48">
-  <link rel="stylesheet" href="../../styles.css">
-  <link rel="stylesheet" href="../../seo.css">
+  <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+  <link rel="stylesheet" href="../../styles.css?v=75">
+  <link rel="stylesheet" href="../../landing-pages.css?v=1">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
     "url": "https://www.automicvault.com/fr/ai-agent-approval-gates/",
     "name": "Portes d'approbation pour agents IA",
+    "headline": "Portes d'approbation pour les commandes exécutées par les agents IA",
     "description": "Vérifiez les commandes risquées des agents IA avec une approbation humaine au niveau outil. Contrôlez localement sur Mac les outils Homebrew, les secrets CLI et les portes d'approbation.",
     "inLanguage": "fr",
+    "image": "https://www.automicvault.com/preview.jpg",
     "isPartOf": {"@type": "WebSite", "name": "Automic Vault", "url": "https://www.automicvault.com/"}
   }
   </script>
 </head>
 <body>
-  <div class="site-shell i18n-page">
-    <header class="masthead">
-      <a class="brand" href="/fr/" aria-label="Accueil Automic Vault">
-        <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
-        <span class="brand-type">Automic Vault</span>
-      </a>
-      <nav class="nav" aria-label="Navigation principale">
-        <a href="/fr/docs/">Documentation</a>
-        <a href="/fr/security/">Sécurité</a>
-        <a href="/fr/pkg/">Paquets</a>
-        <a href="https://github.com/automic-vault/">GitHub</a>
-      </nav>
-    </header>
-    <main>
-      <section class="hero i18n-hero">
-        <p class="eyebrow">approbation de commandes</p>
-        <h1>Portes d&#x27;approbation pour les commandes exécutées par les agents IA</h1>
-        <p class="lede">N&#x27;approuvez pas seulement l&#x27;intention: approuvez l&#x27;exécutable, les arguments et l&#x27;accès aux secrets. Automic Vault place le point d&#x27;arrêt sous l&#x27;agent.</p>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <header class="masthead" id="top">
+    <a class="brand" href="/fr/" aria-label="Accueil Automic Vault">
+      <img class="brand-mark" src="/assets/icon@2x.webp" alt="Automic Vault" width="54" height="54">
+      <span class="brand-type">Automic Vault</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Afficher ou masquer la navigation"><span></span><span></span></button>
+    <nav class="nav" aria-label="Navigation principale">
+      <a href="/fr/pkg/">Paquets</a>
+      <a href="/fr/blog/">Blog</a>
+      <a href="/fr/security/">Sécurité</a>
+      <a href="/fr/docs/">Documentation</a>
+      <a href="/fr/download/">Télécharger</a>
+      <a href="https://github.com/automic-vault/">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="site-shell">
+    <main class="landing-main landing-page-main">
+      <section class="poster-hero landing-page-hero" aria-labelledby="hero-title">
+        <div class="poster-hero-copy">
+          <p class="eyebrow">approbation de commandes</p>
+          <h1 id="hero-title">Portes d&#x27;approbation pour les commandes exécutées par les agents IA</h1>
+          <p class="poster-lede">N&#x27;approuvez pas seulement l&#x27;intention: approuvez l&#x27;exécutable, les arguments et l&#x27;accès aux secrets. Automic Vault place le point d&#x27;arrêt sous l&#x27;agent.</p>
+        </div>
+
+        <div class="poster-hero-foot">
+          <div class="hero-actions">
+          <a class="button primary" href="/fr/download/">Télécharger</a>
+          <a class="button secondary" href="/fr/docs/">Documentation</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="i18n-section" aria-labelledby="section-1">
+        <p class="eyebrow">01 &middot; approbation de commandes</p>
+        <h2 id="section-1">Avant / après</h2>
+        <p>Avant, après une validation générale, l&#x27;agent pouvait lancer git push, npm publish ou aws s3 rm dans la même session. Après, chaque commande risquée demande une approbation juste avant exécution.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-2">
+        <p class="eyebrow">02 &middot; approbation de commandes</p>
+        <h2 id="section-2">Exemple de commande</h2>
+        <p>Faites passer le travail de l&#x27;agent par av contain et placez des portes sur publication, suppression, déploiement, affichage d&#x27;identifiants et mutation cloud.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-3">
+        <p class="eyebrow">03 &middot; approbation de commandes</p>
+        <h2 id="section-3">Priorité</h2>
+        <p>Commencez par npm publish, twine upload, gh auth token, git push --force, ainsi que les suppressions AWS et changements IAM.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-4">
+        <p class="eyebrow">04 &middot; approbation de commandes</p>
+        <h2 id="section-4">Limite d&#x27;exécution locale</h2>
+        <p>Automic Vault sépare les fichiers lisibles par un agent des identifiants transmis uniquement aux outils approuvés. Le contrôle vit dans le chemin d&#x27;exécution sur Mac, pas seulement dans une consigne d&#x27;agent.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-5">
+        <p class="eyebrow">05 &middot; approbation de commandes</p>
+        <h2 id="section-5">Homebrew et CLI</h2>
+        <p>Beaucoup d&#x27;outils développeur arrivent par Homebrew, npm, PyPI et les CLI cloud. Vault détecte les fichiers d&#x27;identifiants et les actions risquées laissés par ces outils, puis place l&#x27;approbation au bon endroit.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-6">
+        <p class="eyebrow">06 &middot; approbation de commandes</p>
+        <h2 id="section-6">Étapes suivantes</h2>
+        <p>Lancez d&#x27;abord le scanner, déplacez les secrets pris en charge vers un stockage local protégé et gardez Automic Vault actif pour recevoir les nouveaux avis de danger.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-7">
+        <p class="eyebrow">07 &middot; approbation de commandes</p>
+        <h2 id="section-7">Ce qui change après installation</h2>
+        <p>Les CLI habituelles continuent de fonctionner. La différence est que les secrets ne restent pas dans de simples fichiers de configuration; ils sont transmis seulement à l&#x27;exécution approuvée qui en a besoin.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-8">
+        <p class="eyebrow">08 &middot; approbation de commandes</p>
+        <h2 id="section-8">Avec un coffre central</h2>
+        <p>1Password, HashiCorp Vault et les systèmes cloud peuvent rester la source de vérité. Automic Vault protège le moment local où un outil Mac veut utiliser ces valeurs.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-9">
+        <p class="eyebrow">09 &middot; approbation de commandes</p>
+        <h2 id="section-9">Pages liées</h2>
+        <p>Documentation, téléchargement, scanner de secrets et catalogue de paquets montrent le parcours complet: détection, durcissement, approbation et surveillance continue du poste développeur.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-10">
+        <p class="eyebrow">10 &middot; approbation de commandes</p>
+        <h2 id="section-10">Surveillance continue</h2>
+        <p>Nouveaux paquets, outils obsolètes et fichiers de configuration recréés peuvent ramener des risques après la première correction. Automic Vault reste actif et signale les nouveaux dangers.</p>
+      </section>
+      <section class="i18n-section" aria-labelledby="section-11">
+        <p class="eyebrow">11 &middot; approbation de commandes</p>
+        <h2 id="section-11">Signaux de confiance</h2>
+        <p>Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée.</p>
+      </section>
+
+      <section class="closing-cta landing-page-cta" aria-labelledby="final-title">
+        <p class="eyebrow">Automic Vault</p>
+        <h2 id="final-title">Portes d&#x27;approbation pour les commandes exécutées par les agents IA</h2>
         <div class="hero-actions">
           <a class="button primary" href="/fr/download/">Télécharger</a>
           <a class="button secondary" href="/fr/docs/">Documentation</a>
+          <a class="button text" href="/fr/pkg/">Paquets</a>
         </div>
       </section>
-      <section class="i18n-section">
-        <h2>Avant / après</h2>
-        <p>Avant, après une validation générale, l&#x27;agent pouvait lancer git push, npm publish ou aws s3 rm dans la même session. Après, chaque commande risquée demande une approbation juste avant exécution.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Exemple de commande</h2>
-        <p>Faites passer le travail de l&#x27;agent par av contain et placez des portes sur publication, suppression, déploiement, affichage d&#x27;identifiants et mutation cloud.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Priorité</h2>
-        <p>Commencez par npm publish, twine upload, gh auth token, git push --force, ainsi que les suppressions AWS et changements IAM.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Limite d&#x27;exécution locale</h2>
-        <p>Automic Vault sépare les fichiers lisibles par un agent des identifiants transmis uniquement aux outils approuvés. Le contrôle vit dans le chemin d&#x27;exécution sur Mac, pas seulement dans une consigne d&#x27;agent.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Homebrew et CLI</h2>
-        <p>Beaucoup d&#x27;outils développeur arrivent par Homebrew, npm, PyPI et les CLI cloud. Vault détecte les fichiers d&#x27;identifiants et les actions risquées laissés par ces outils, puis place l&#x27;approbation au bon endroit.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Étapes suivantes</h2>
-        <p>Lancez d&#x27;abord le scanner, déplacez les secrets pris en charge vers un stockage local protégé et gardez Automic Vault actif pour recevoir les nouveaux avis de danger.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Ce qui change après installation</h2>
-        <p>Les CLI habituelles continuent de fonctionner. La différence est que les secrets ne restent pas dans de simples fichiers de configuration; ils sont transmis seulement à l&#x27;exécution approuvée qui en a besoin.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Avec un coffre central</h2>
-        <p>1Password, HashiCorp Vault et les systèmes cloud peuvent rester la source de vérité. Automic Vault protège le moment local où un outil Mac veut utiliser ces valeurs.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Pages liées</h2>
-        <p>Documentation, téléchargement, scanner de secrets et catalogue de paquets montrent le parcours complet: détection, durcissement, approbation et surveillance continue du poste développeur.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Surveillance continue</h2>
-        <p>Nouveaux paquets, outils obsolètes et fichiers de configuration recréés peuvent ramener des risques après la première correction. Automic Vault reste actif et signale les nouveaux dangers.</p>
-      </section>
-      <section class="i18n-section">
-        <h2>Signaux de confiance</h2>
-        <p>Le dépôt public, la page sécurité, la licence et le contexte Homebrew de Max Howell sont liés. Une limite de sécurité locale doit pouvoir être vérifiée.</p>
-      </section>
-      <nav class="language-links" aria-label="Versions linguistiques"><a href="/ai-agent-approval-gates/" lang="en">English</a> <a href="/ja/ai-agent-approval-gates/" lang="ja">日本語</a> <a href="/de/ai-agent-approval-gates/" lang="de">Deutsch</a> <a href="/fr/ai-agent-approval-gates/" lang="fr">Français</a> <a href="/zh-hans/ai-agent-approval-gates/" lang="zh-Hans">简体中文</a></nav>
     </main>
+
     <footer class="site-footer">
-      <p>Automic Vault</p>
-      <div class="footer-links">
+      <div class="footer-brand">
+        <img src="/assets/icon@2x.webp" alt="" width="54" height="54" loading="lazy" decoding="async">
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        <span><strong>Hazards</strong> detected</span>
+        <span><strong>Secrets</strong> Keychain-backed</span>
+        <span><strong>Approvals</strong> Touch ID ready</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="/fr/about/">À propos</a>
+        <a href="/fr/security/">Sécurité</a>
+        <a href="/fr/blog/">Blog</a>
         <a href="/fr/privacy/">Confidentialité</a>
         <a href="/fr/terms/">Conditions</a>
-        <a href="/fr/llms.txt">llms.txt</a>
-      </div>
+        <a href="https://github.com/automic-vault/">GitHub</a>
+      </nav>
     </footer>
   </div>
+
+  <script src="../../app.js?v=21"></script>
+  <nav class="language-links" aria-label="Versions linguistiques"><a href="/ai-agent-approval-gates/" lang="en">English</a> <a href="/ja/ai-agent-approval-gates/" lang="ja">日本語</a> <a href="/de/ai-agent-approval-gates/" lang="de">Deutsch</a> <a href="/fr/ai-agent-approval-gates/" lang="fr">Français</a> <a href="/zh-hans/ai-agent-approval-gates/" lang="zh-Hans">简体中文</a></nav>
+  <script src="../../i18n.js" defer></script>
 </body>
 </html>
