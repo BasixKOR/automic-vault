@@ -361,10 +361,10 @@ DOTENV_PUBLIC_KEY="BP9x..."
 APP_ENV=development
 LOG_LEVEL=debug
 PUBLIC_SITE_URL=https://billing.example
-STRIPE_SECRET_KEY="encrypted:BO/8An..."
-OPENAI_API_KEY="encrypted:BJN9z..."
-DATABASE_URL="encrypted:BI4p3..."
-# ^^ dotenvx compatible
+STRIPE_SECRET_KEY="<span class="terminal-encrypted">encrypted:</span>BO/8An..."
+OPENAI_API_KEY="<span class="terminal-encrypted">encrypted:</span>BJN9z..."
+DATABASE_URL="<span class="terminal-encrypted">encrypted:</span>BI4p3..."
+<span class="terminal-comment"># ^^ dotenvx compatible</span>
 
 <span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
 
@@ -375,7 +375,7 @@ av: human approval required… approved
 av: +STRIPE_SECRET_KEY +OPENAI_API_KEY +DATABASE_URL
 
 <span class="prompt">$</span> npm run dev
-# keys exported into this shell only</code></pre>
+<span class="terminal-comment"># keys exported into this shell only</span></code></pre>
           </figure>
         </div>
       </section>
