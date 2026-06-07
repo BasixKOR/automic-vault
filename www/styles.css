@@ -796,6 +796,13 @@ h1 code {
   font-weight: 700;
 }
 
+.terminal-session-divider {
+  color: oklch(66% 0.01 82);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.68;
+}
+
 .typed-command {
   display: inline-block;
   width: 0;
