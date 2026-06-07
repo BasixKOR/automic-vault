@@ -355,24 +355,27 @@ stored DOTENV_PRIVATE_KEY in Keychain
 
 <span class="prompt">$</span> av dotenv encrypt
 encrypted .env
-skipped APP_ENV LOG_LEVEL PUBLIC_SITE_URL (not secret-like)
+
+<span class="prompt">$</span> cat .env
 DOTENV_PUBLIC_KEY="BP9x..."
+APP_ENV=development
+LOG_LEVEL=debug
+PUBLIC_SITE_URL=https://billing.example
 STRIPE_SECRET_KEY="encrypted:BO/8An..."
 OPENAI_API_KEY="encrypted:BJN9z..."
 DATABASE_URL="encrypted:BI4p3..."
-dotenvx compatible
+# ^^ dotenvx compatible
 
 <span class="prompt">$</span> echo 'eval "$(av dotenv hook zsh)"' >> ~/.zshrc
 
 <span class="terminal-session-divider">----- NEW TERMINAL SESSION -----</span>
 
 <span class="prompt">$</span> cd ~/work/billing-api
-av: human approval required…
-file /Users/me/work/billing-api/.env
-keys STRIPE_SECRET_KEY OPENAI_API_KEY DATABASE_URL
+av: human approval required… approved
+av: +STRIPE_SECRET_KEY +OPENAI_API_KEY +DATABASE_URL
 
-<span class="prompt">$</span> npm test
-keys exported into this shell only</code></pre>
+<span class="prompt">$</span> npm run dev
+# keys exported into this shell only</code></pre>
           </figure>
         </div>
       </section>
