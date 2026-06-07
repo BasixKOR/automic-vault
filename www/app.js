@@ -75,7 +75,7 @@ if (scrollMeter) {
 }
 
 if (toolFlipWord) {
-  const toolWords = ["brew", "npm", "pip", "cargo", "pnpm", "uv"];
+  const toolWords = ["brew install", "npm install", "pip install", "cargo install", "pnpm install", "uv install"];
   const motionAllowed = window.matchMedia("(prefers-reduced-motion: no-preference)");
   const flipDuration = 640;
   const flipInterval = 1900;

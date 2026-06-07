@@ -2814,16 +2814,12 @@ h1 code {
 .tool-flip {
   position: relative;
   display: inline-grid;
-  width: 5ch;
+  width: 13ch;
   height: 0.96em;
   overflow: hidden;
   color: var(--green);
   perspective: 14em;
   vertical-align: -0.05em;
-}
-
-.tool-install-line {
-  display: block;
 }
 
 .tool-flip-word {
@@ -3062,6 +3058,10 @@ h1 code {
 
   .poster-hero h1 {
     font-size: 3.05rem;
+  }
+
+  .closing-cta h2 {
+    font-size: clamp(2.25rem, 9.8vw, 3.05rem);
   }
 
   .terminal-card pre {
