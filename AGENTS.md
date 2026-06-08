@@ -19,6 +19,10 @@
 
 ## Package Website Origin
 
+- Static website pages and S3/CloudFront static-origin deployment live in the
+  separate `automic-vault/website` repository.
+- Use `scripts/export-website-inputs.py` to export product-owned deploy inputs
+  for the static website repository.
 - Package catalog routes under `/pkg/` and localized equivalents are served by
   the Rust `av-web` service from the private SQLite artifact at
   `cache/pkg.sqlite` locally and `/var/lib/automic-vault-web/pkg.sqlite` on

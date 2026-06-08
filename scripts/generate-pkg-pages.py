@@ -35,8 +35,8 @@ PKG_GRAPH_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
 PKG_GRAPH_CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 PKG_CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 PKG_AGENT_SAFETY_ANSWERS_PATH = Path("data/pkg-agent-safety-answers.json")
-I18N_LOCALES_PATH = Path("data/www-i18n/locales.json")
-I18N_PKG_TEMPLATES_PATH = Path("data/www-i18n/pkg/templates.json")
+I18N_LOCALES_PATH = Path("data/pkg-i18n/locales.json")
+I18N_PKG_TEMPLATES_PATH = Path("data/pkg-i18n/templates.json")
 INDEXABLE_MIN_SIGNAL_COUNT = 2
 GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
@@ -1572,7 +1572,7 @@ def source_files() -> list[Path]:
     supplement_root = Path("data/pkg-pages")
     if supplement_root.exists():
         files.extend(path for path in supplement_root.rglob("*.json") if path.is_file())
-    i18n_root = Path("data/www-i18n")
+    i18n_root = Path("data/pkg-i18n")
     if i18n_root.exists():
         files.extend(path for path in i18n_root.rglob("*.json") if path.is_file())
     isotope_root = Path("data/isotopes")

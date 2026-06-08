@@ -1,8 +1,0 @@
-# Automic Vault
-
-保护你用 brew install 装上的工具。
-
-Automic Vault 在 AI 代理使用之前，在你的 Mac 本地保护 Homebrew 工具、CLI 密钥和命令审批门。
-
-- 网站: https://www.automicvault.com/zh-hans/
-- 软件包: https://www.automicvault.com/zh-hans/pkg/

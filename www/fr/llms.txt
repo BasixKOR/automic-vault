@@ -1,8 +1,0 @@
-# Automic Vault
-
-Sécurisez les outils que vous installez avec brew.
-
-Automic Vault sécurise localement sur votre Mac les outils Homebrew, les secrets CLI et les portes d'approbation des commandes avant que les agents IA les utilisent.
-
-- Site web: https://www.automicvault.com/fr/
-- Paquets: https://www.automicvault.com/fr/pkg/

@@ -7,25 +7,27 @@ daily_hour=3
 color_mode="auto"
 skip_isotope_builds=false
 skip_daily=false
-run_website_now=false
+run_pkg_origin_now=false
 run_once=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/update-all [--skip-isotope-builds] [--skip-daily]
-                          [--website-now] [--once]
+                          [--pkg-origin-now] [--website-now] [--once]
                           [--color auto|always|never] [--no-color]
 
 Run the full publishing cadence:
   - refresh av.db Homebrew authority, rebuild, and upload /db.json at the top
     of every hour
-  - refresh package-origin enrichment, deploy the Atlas package SQLite origin,
-    and deploy the static site once daily at or after the 3 AM local-hour mark
+  - refresh package-origin enrichment and deploy the Atlas package SQLite
+    origin once daily at or after the 3 AM local-hour mark
 
 Options:
   --skip-isotope-builds             Pass --skip-builds through to update-db.sh.
-  --skip-daily                      Disable scheduled daily website publishes.
-  --website-now                     Run the website publish immediately on startup.
+  --skip-daily                      Disable scheduled daily package-origin publishes.
+  --pkg-origin-now                  Run the package-origin publish immediately
+                                    on startup.
+  --website-now                     Deprecated alias for --pkg-origin-now.
   --once                            Run a database update immediately and exit.
   --color auto|always|never         Control terminal color output.
                                     Defaults to auto.
@@ -62,8 +64,13 @@ while [[ $# -gt 0 ]]; do
       skip_daily=true
       shift
       ;;
+    --pkg-origin-now)
+      run_pkg_origin_now=true
+      shift
+      ;;
     --website-now)
-      run_website_now=true
+      run_pkg_origin_now=true
+      echo "--website-now is deprecated; use --pkg-origin-now." >&2
       shift
       ;;
     --once)
@@ -237,7 +244,7 @@ require_daily_publish_env() {
   local missing=()
   local name
 
-  for name in AV_WEB_ORIGIN_SECRET WWW_PKG_ORIGIN_DOMAIN WWW_PKG_ORIGIN_HEADER_VALUE; do
+  for name in AV_WEB_ORIGIN_SECRET; do
     if [[ -z "${!name:-}" ]]; then
       missing+=("${name}")
     fi
@@ -245,19 +252,17 @@ require_daily_publish_env() {
 
   if [[ "${#missing[@]}" -gt 0 ]]; then
     for name in "${missing[@]}"; do
-      log ERROR "Set ${name} in .envrc before running the website publish."
+      log ERROR "Set ${name} in .envrc before running the package-origin publish."
     done
     return 1
   fi
 
-  if [[ "${WWW_PKG_ORIGIN_HEADER_VALUE}" != "${AV_WEB_ORIGIN_SECRET}" ]]; then
-    log ERROR "WWW_PKG_ORIGIN_HEADER_VALUE must match AV_WEB_ORIGIN_SECRET."
-    return 1
+  if [[ -n "${WWW_PKG_ORIGIN_HEADER_VALUE:-}" && "${WWW_PKG_ORIGIN_HEADER_VALUE}" != "${AV_WEB_ORIGIN_SECRET}" ]]; then
+    log WARN "WWW_PKG_ORIGIN_HEADER_VALUE is set but does not match AV_WEB_ORIGIN_SECRET; update the website repo CloudFront config before deploying static site changes."
   fi
 
-  if [[ "${WWW_PKG_ORIGIN_HEADER_NAME:-X-Automic-Vault-Origin}" != "${AV_WEB_ORIGIN_HEADER:-X-Automic-Vault-Origin}" ]]; then
-    log ERROR "WWW_PKG_ORIGIN_HEADER_NAME must match AV_WEB_ORIGIN_HEADER."
-    return 1
+  if [[ -n "${WWW_PKG_ORIGIN_HEADER_NAME:-}" && "${WWW_PKG_ORIGIN_HEADER_NAME}" != "${AV_WEB_ORIGIN_HEADER:-X-Automic-Vault-Origin}" ]]; then
+    log WARN "WWW_PKG_ORIGIN_HEADER_NAME is set but does not match AV_WEB_ORIGIN_HEADER; update the website repo CloudFront config before deploying static site changes."
   fi
 
   if [[ -z "${AV_WEB_CERTBOT_EMAIL:-}" ]]; then
@@ -285,8 +290,6 @@ run_daily_publish() {
     python3 "${script_dir}/generate-pkg-sqlite.py" || return 1
   run_step "Atlas package-origin deploy" \
     "${script_dir}/deploy-pkg-origin.sh" --skip-refresh --skip-sqlite || return 1
-  run_step "static site deploy" \
-    "${script_dir}/deploy-www.sh" || return 1
 }
 
 next_hour_epoch() {
@@ -344,13 +347,13 @@ fi
 
 last_daily_date=""
 
-if [[ "${run_website_now}" == "true" ]]; then
-  log INFO "Immediate website publish requested"
+if [[ "${run_pkg_origin_now}" == "true" ]]; then
+  log INFO "Immediate package-origin publish requested"
   if run_daily_publish; then
     last_daily_date="$(date '+%Y-%m-%d')"
-    log OK "Immediate website publish completed"
+    log OK "Immediate package-origin publish completed"
   else
-    log ERROR "Immediate website publish failed"
+    log ERROR "Immediate package-origin publish failed"
     exit 1
   fi
 fi

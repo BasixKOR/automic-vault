@@ -17,7 +17,7 @@ const DEFAULT_ORIGIN_HEADER: &str = "x-automic-vault-origin";
 const HTML_CACHE_CONTROL: &str = "public, max-age=86400, s-maxage=86400";
 const DEFAULT_SEARCH_LIMIT: usize = 8;
 const MAX_SEARCH_LIMIT: usize = 50;
-const I18N_PKG_TEMPLATES_JSON: &str = include_str!("../../data/www-i18n/pkg/templates.json");
+const I18N_PKG_TEMPLATES_JSON: &str = include_str!("../../data/pkg-i18n/templates.json");
 static I18N_PKG_TEMPLATES: OnceLock<Value> = OnceLock::new();
 
 fn main() {
