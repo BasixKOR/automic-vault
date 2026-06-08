@@ -34,6 +34,13 @@ const DOTENV_EXPORT_DENIED_HINT: &str =
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: c_int = -25300;
 
+#[cfg(test)]
+thread_local! {
+    static TEST_DOTENV_PROCESS_CONTEXT: std::cell::RefCell<
+        Option<(DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>)>
+    > = std::cell::RefCell::new(None);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DotenvCommand {
     Init(DotenvFileOption),
@@ -1775,8 +1782,7 @@ fn request_dotenv_approval_if_needed(
         public_key_fingerprint: public_key_fingerprint.to_string(),
         keys: keys.to_vec(),
     };
-    let parent_process = dotenv_parent_process_snapshot();
-    let process_ancestry = dotenv_process_ancestry_snapshot(parent_process.pid);
+    let (parent_process, process_ancestry) = dotenv_approval_process_context();
     if let Some(source) =
         dotenv_codex_export_rejection_source(mode, &parent_process, &process_ancestry)
     {
@@ -1797,6 +1803,23 @@ fn request_dotenv_approval_if_needed(
     }
     request_dotenv_approval(&entry, command, parent_process, process_ancestry)?;
     Ok(())
+}
+
+fn dotenv_approval_process_context() -> (DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>) {
+    #[cfg(test)]
+    if let Some(context) = test_dotenv_process_context() {
+        return context;
+    }
+
+    let parent_process = dotenv_parent_process_snapshot();
+    let process_ancestry = dotenv_process_ancestry_snapshot(parent_process.pid);
+    (parent_process, process_ancestry)
+}
+
+#[cfg(test)]
+fn test_dotenv_process_context() -> Option<(DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>)>
+{
+    TEST_DOTENV_PROCESS_CONTEXT.with(|context| context.borrow().clone())
 }
 
 fn request_dotenv_approval(
@@ -2893,6 +2916,68 @@ mod tests {
         }
     }
 
+    struct DotenvProcessContextGuard {
+        previous: Option<(DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>)>,
+    }
+
+    impl DotenvProcessContextGuard {
+        fn set(parent: DotenvParentProcessSnapshot, ancestry: Vec<DotenvProcessSnapshot>) -> Self {
+            let previous = TEST_DOTENV_PROCESS_CONTEXT
+                .with(|context| context.replace(Some((parent, ancestry))));
+            Self { previous }
+        }
+
+        fn non_codex_shell() -> Self {
+            Self::set(
+                DotenvParentProcessSnapshot {
+                    pid: 100,
+                    executable_path: Some("/bin/zsh".to_string()),
+                    display_name: Some("zsh".to_string()),
+                },
+                vec![DotenvProcessSnapshot {
+                    pid: 100,
+                    parent_pid: 1,
+                    executable_path: Some("/bin/zsh".to_string()),
+                    display_name: Some("zsh".to_string()),
+                }],
+            )
+        }
+
+        fn codex_shell() -> Self {
+            Self::set(
+                DotenvParentProcessSnapshot {
+                    pid: 100,
+                    executable_path: Some("/bin/zsh".to_string()),
+                    display_name: Some("zsh".to_string()),
+                },
+                vec![
+                    DotenvProcessSnapshot {
+                        pid: 100,
+                        parent_pid: 200,
+                        executable_path: Some("/bin/zsh".to_string()),
+                        display_name: Some("zsh".to_string()),
+                    },
+                    DotenvProcessSnapshot {
+                        pid: 200,
+                        parent_pid: 1,
+                        executable_path: Some(
+                            "/Applications/Codex.app/Contents/MacOS/Codex".to_string(),
+                        ),
+                        display_name: Some("Codex".to_string()),
+                    },
+                ],
+            )
+        }
+    }
+
+    impl Drop for DotenvProcessContextGuard {
+        fn drop(&mut self) {
+            TEST_DOTENV_PROCESS_CONTEXT.with(|context| {
+                context.replace(self.previous.take());
+            });
+        }
+    }
+
     fn remembered_entry_for(
         env_path: &Path,
         mode: DotenvApprovalMode,
@@ -3328,6 +3413,49 @@ mod tests {
     }
 
     #[test]
+    fn dotenv_codex_export_auto_rejection_preempts_remembered_approval() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let _process_context = DotenvProcessContextGuard::codex_shell();
+        let temp = TempDir::new().unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+        ]);
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+        let entry = DotenvRememberedApprovalEntry {
+            mode: DotenvApprovalMode::Export,
+            env_file_path: "/tmp/project/.env".to_string(),
+            project_root: "/tmp/project".to_string(),
+            env_sha256: "sha".to_string(),
+            public_key_fingerprint: "fingerprint".to_string(),
+            keys: vec!["FOO".to_string()],
+        };
+        remember_dotenv_approval(entry.clone()).unwrap();
+
+        let error = request_dotenv_approval_if_needed(
+            entry.mode,
+            Path::new(&entry.env_file_path),
+            Path::new(&entry.project_root),
+            &entry.env_sha256,
+            &entry.public_key_fingerprint,
+            &entry.keys,
+            &[],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("auto-rejected"), "{error}");
+        assert!(error.contains("Codex.app"), "{error}");
+        assert!(error.contains("hint: use `av dotenv run`"), "{error}");
+    }
+
+    #[test]
     fn dotenv_encryptable_keys_only_select_secret_shaped_plaintext() {
         let ordinary = DotenvDocument::parse(
             PathBuf::from(".env"),
@@ -3451,6 +3579,7 @@ mod tests {
     #[test]
     fn dotenv_system_policy_trust_and_approval_helpers_cover_edges() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let _process_context = DotenvProcessContextGuard::non_codex_shell();
         let temp = TempDir::new().unwrap();
         let policy_path = temp.path().join("policy.json");
         let remembered_path = temp.path().join("remembered.json");
@@ -4287,6 +4416,7 @@ mod tests {
     #[test]
     fn dotenv_load_export_and_run_cover_approval_bypass_paths() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let _process_context = DotenvProcessContextGuard::non_codex_shell();
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
