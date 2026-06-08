@@ -93,10 +93,18 @@ fn collect_av_inject_shell_wrappers(root: &Path) -> Vec<WrapperTemplate> {
 
 fn radioisotope_root() -> PathBuf {
     std::env::var_os("AUTOMIC_VAULT_RADIOISOTOPES_REPO")
-        .or_else(|| option_env!("AUTOMIC_VAULT_RADIOISOTOPES_REPO").map(std::ffi::OsString::from))
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("data/radioisotopes"))
+        .map(absolute_radioisotope_path)
+        .unwrap_or_else(|| PathBuf::from(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO")))
+}
+
+fn absolute_radioisotope_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
 }
 
 fn raw_string_literals(contents: &str) -> Vec<(usize, String)> {

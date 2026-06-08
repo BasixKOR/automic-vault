@@ -8,12 +8,14 @@ fn global_test_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(Mutex::default)
 }
 
+macro_rules! radioisotope_source {
+    ($path:literal) => {
+        concat!(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"), $path)
+    };
+}
+
 mod snyk_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/snyk/migrate.rs"
-    ));
+    include!(radioisotope_source!("/snyk/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -55,11 +57,7 @@ mod snyk_migrate {
 }
 
 mod algolia_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/algolia/migrate.rs"
-    ));
+    include!(radioisotope_source!("/algolia/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -104,11 +102,7 @@ mod algolia_migrate {
 }
 
 mod akamai_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/akamai/migrate.rs"
-    ));
+    include!(radioisotope_source!("/akamai/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -172,11 +166,7 @@ mod akamai_migrate {
 }
 
 mod twine_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/twine/migrate.rs"
-    ));
+    include!(radioisotope_source!("/twine/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -224,11 +214,7 @@ mod twine_migrate {
 }
 
 mod luarocks_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/luarocks/migrate.rs"
-    ));
+    include!(radioisotope_source!("/luarocks/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -267,11 +253,7 @@ mod luarocks_migrate {
 }
 
 mod midnight_commander_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/midnight-commander/migrate.rs"
-    ));
+    include!(radioisotope_source!("/midnight-commander/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -293,11 +275,7 @@ mod midnight_commander_migrate {
 }
 
 mod snowflake_cli_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/snowflake-cli/migrate.rs"
-    ));
+    include!(radioisotope_source!("/snowflake-cli/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -492,11 +470,7 @@ mod snowflake_cli_migrate {
 }
 
 mod grafanactl_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/grafanactl/migrate.rs"
-    ));
+    include!(radioisotope_source!("/grafanactl/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -648,11 +622,7 @@ mod grafanactl_migrate {
 }
 
 mod nuget_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/nuget/migrate.rs"
-    ));
+    include!(radioisotope_source!("/nuget/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -826,11 +796,7 @@ mod nuget_migrate {
 }
 
 mod aws_cli_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/aws-cli/migrate.rs"
-    ));
+    include!(radioisotope_source!("/aws-cli/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -1004,11 +970,7 @@ mod aws_cli_migrate {
 }
 
 mod openstack_migrate {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/openstackclient/migrate.rs"
-    ));
+    include!(radioisotope_source!("/openstackclient/migrate.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {

@@ -4,6 +4,12 @@
 use std::cell::RefCell;
 use std::ffi::OsString;
 
+macro_rules! radioisotope_source {
+    ($path:literal) => {
+        concat!(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"), $path)
+    };
+}
+
 mod isotope {
     use std::path::Path;
 
@@ -201,11 +207,7 @@ macro_rules! docker_extra_tests {
 }
 
 mod podman_helper {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/podman/credential-helper.rs"
-    ));
+    include!(radioisotope_source!("/podman/credential-helper.rs"));
 
     docker_extra_tests!(
         "podman",
@@ -215,11 +217,7 @@ mod podman_helper {
 }
 
 mod skopeo_helper {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/skopeo/credential-helper.rs"
-    ));
+    include!(radioisotope_source!("/skopeo/credential-helper.rs"));
 
     docker_extra_tests!(
         "skopeo",
@@ -229,27 +227,15 @@ mod skopeo_helper {
 }
 
 mod terraform_helper {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/terraform/credential-helper.rs"
-    ));
+    include!(radioisotope_source!("/terraform/credential-helper.rs"));
 }
 
 mod opentofu_helper {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/opentofu/credential-helper.rs"
-    ));
+    include!(radioisotope_source!("/opentofu/credential-helper.rs"));
 }
 
 mod cargo_helper {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/rust/credential-helper.rs"
-    ));
+    include!(radioisotope_source!("/rust/credential-helper.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {

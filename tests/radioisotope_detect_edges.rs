@@ -8,12 +8,14 @@ fn global_test_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(Mutex::default)
 }
 
+macro_rules! radioisotope_source {
+    ($path:literal) => {
+        concat!(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"), $path)
+    };
+}
+
 mod docker_detect {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/docker/detect.rs"
-    ));
+    include!(radioisotope_source!("/docker/detect.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -172,11 +174,7 @@ mod docker_detect {
 }
 
 mod aws_cli_detect {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/aws-cli/detect.rs"
-    ));
+    include!(radioisotope_source!("/aws-cli/detect.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {
@@ -276,11 +274,7 @@ mod aws_cli_detect {
 }
 
 mod pulumi_detect {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/data/radioisotopes",
-        "/pulumi/detect.rs"
-    ));
+    include!(radioisotope_source!("/pulumi/detect.rs"));
 
     #[cfg(test)]
     mod av_extra_tests {

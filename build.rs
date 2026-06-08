@@ -132,13 +132,17 @@ fn generate_isotope_integrations() {
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
-    let isotope_roots = [
-        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes")),
-        path_env_or_default(
-            "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
-            repo_root.join("data/radioisotopes"),
-        ),
-    ];
+    let isotope_root =
+        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", repo_root.join("data/isotopes"));
+    let radioisotope_root = path_env_or_default(
+        "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
+        repo_root.join("data/radioisotopes"),
+    );
+    println!(
+        "cargo:rustc-env=AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO={}",
+        radioisotope_root.display()
+    );
+    let isotope_roots = [isotope_root, radioisotope_root];
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let generated_sources_dir = std::path::Path::new(&out_dir).join("isotope-generated");
     let output_path = std::path::Path::new(&out_dir).join("isotope_integrations.rs");
