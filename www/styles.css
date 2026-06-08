@@ -2326,10 +2326,10 @@ h1 code {
 
 .poster-hero {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(286px, 0.34fr);
   grid-template-areas:
-    "copy"
-    "foot";
+    "copy scan"
+    "foot scan";
   gap: clamp(14px, 2vw, 26px) clamp(24px, 4vw, 58px);
   align-content: space-between;
   padding: clamp(20px, 2.5vw, 30px) clamp(20px, 4vw, 58px) clamp(18px, 2.5vw, 28px);
@@ -2390,6 +2390,73 @@ h1 code {
   font-size: clamp(1.22rem, 1.62vw, 1.45rem);
   font-weight: 500;
   line-height: 1.3;
+}
+
+.poster-scan {
+  grid-area: scan;
+  align-self: start;
+  justify-self: end;
+  width: min(100%, 380px);
+  margin-top: clamp(2.25rem, 5.8vw, 5.9rem);
+  border-top: 1px solid color-mix(in oklch, var(--green), transparent 34%);
+}
+
+.poster-scan-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.poster-scan ul {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.poster-scan li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  padding: 15px 0 16px;
+  border-top: 1px solid var(--line);
+}
+
+.poster-scan li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: 0.47rem;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 16px oklch(72% 0.14 137 / 0.34);
+}
+
+.poster-scan strong,
+.poster-scan span {
+  grid-column: 2;
+}
+
+.poster-scan strong {
+  color: var(--ink);
+  font-size: clamp(0.98rem, 1.2vw, 1.12rem);
+  font-weight: 760;
+  line-height: 1.08;
+}
+
+.poster-scan span {
+  max-width: 28ch;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.34;
 }
 
 .terminal-card {
@@ -3017,6 +3084,21 @@ h1 code {
 }
 
 @media (max-width: 980px) {
+  .poster-hero {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "copy"
+      "scan"
+      "foot";
+  }
+
+  .poster-scan {
+    justify-self: stretch;
+    width: 100%;
+    max-width: 42rem;
+    margin-top: clamp(0.75rem, 2vw, 1.5rem);
+  }
+
   .terminal-story,
   .dotenv-terminal-layout,
   .app-terminal-grid {
@@ -3116,6 +3198,7 @@ h1 code {
     grid-template-columns: 1fr;
     grid-template-areas:
       "copy"
+      "scan"
       "foot";
     min-height: auto;
     align-content: start;
@@ -3138,6 +3221,19 @@ h1 code {
     margin-top: 10px;
     font-size: clamp(1rem, 3.6vw, 1.14rem);
     line-height: 1.28;
+  }
+
+  .poster-scan {
+    max-width: 100%;
+    margin-top: 0;
+  }
+
+  .poster-scan ul {
+    grid-template-columns: 1fr;
+  }
+
+  .poster-scan span {
+    max-width: none;
   }
 
   .poster-hero-foot {
