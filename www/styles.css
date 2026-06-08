@@ -2398,7 +2398,7 @@ h1 code {
   align-self: start;
   justify-self: end;
   width: min(100%, 380px);
-  margin-top: clamp(9.75rem, 15vw, 13.75rem);
+  margin-top: clamp(18rem, 28.75vw, 21.5625rem);
   border-top: 1px solid color-mix(in oklch, var(--scan-accent), transparent 34%);
 }
 
