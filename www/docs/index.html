@@ -92,7 +92,7 @@
         "headline": "Automic Vault CLI Documentation",
         "description": "Automic Vault CLI documentation for package installs, secret injection, encrypted dotenv files, approval gates, command containment, and local agent security workflows.",
         "datePublished": "2026-05-15",
-        "dateModified": "2026-06-05",
+        "dateModified": "2026-06-08",
         "image": "https://www.automicvault.com/assets/app-hazard-journey.webp",
         "author": {
           "@id": "https://www.automicvault.com/about/#max-howell"
@@ -212,7 +212,7 @@
 
         <div class="nav-group">
           <h2>Guides</h2>
-          <a href="#guide-secrets">Secret Injection</a>
+          <a href="#guide-secrets">Stop Shell Exports</a>
           <a href="#guide-shebang">Shebang Injection</a>
           <a href="#guide-dotenv">Encrypted .env Files</a>
           <a href="#guide-containment">Contained Agents</a>
@@ -243,7 +243,7 @@
           <div class="intro-meta" aria-label="Documentation metadata">
             <span>macOS</span>
             <span>Local-first</span>
-            <span>Last updated June 5, 2026</span>
+            <span>Last updated June 8, 2026</span>
           </div>
 
           <div class="code-block intro-code" data-copy-scope>
@@ -365,35 +365,91 @@ av help</code></pre>
         </section>
 
         <section class="doc-section" id="guide-secrets">
-          <h2>Guide: Secret Injection</h2>
+          <h2>Guide: Stop Exporting Secrets From Your Shell</h2>
           <p>
-            Do not keep long-lived credentials in shell startup files,
-            <code>.envrc</code>, project <code>.env</code> files, or agent-readable
-            config. Store each value once, remove it from the ambient shell, and
-            inject it into the exact executable that needs it.
+            Do not put long-lived credentials in <code>.zshrc</code>,
+            <code>.zprofile</code>, <code>.zshenv</code>, <code>.bashrc</code>,
+            <code>.bash_profile</code>, <code>.profile</code>,
+            <code>.envrc</code>, or project <code>.env</code> files that agents
+            can read. Those files are convenient, but they make every shell and
+            every local automation process an ambient credential carrier.
           </p>
+          <p>Save the value once:</p>
           <div class="code-block" data-copy-scope>
             <div class="code-caption">
-              <span>keychain injection</span>
+              <span>save one key</span>
               <button class="copy-button" type="button" data-copy>Copy</button>
             </div>
             <pre><code>printf '%s\n' "$OPENAI_API_KEY" | av save OPENAI_API_KEY
-unset OPENAI_API_KEY
-
-av inject +OPENAI_API_KEY /opt/homebrew/bin/opencode run
+unset OPENAI_API_KEY</code></pre>
+          </div>
+          <p>Then inject it only into the tool that needs it:</p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>inject into tools</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+<pre><code>av inject +OPENAI_API_KEY /opt/homebrew/bin/opencode run
 av inject +GITHUB_TOKEN /opt/homebrew/bin/gh repo view automic-vault/automic-vault
-av inject --replace-existing-env +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY \
+av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY \
   /opt/homebrew/bin/aws sts get-caller-identity</code></pre>
           </div>
-          <div class="note">
-            <strong>Approval scope</strong>
-            <p>
-              Approval shows the key names, target executable, arguments,
-              current directory, parent process, and script context. Always-allow
-              decisions are intentionally narrow and are tied to trusted paths,
-              plus script identity when an interpreter is involved.
-            </p>
+          <p>
+            <code>+KEY</code> names a value stored in the Automic Vault
+            keychain. The target must be an absolute executable or script path.
+            By default, <code>av inject</code> refuses to overwrite an
+            environment variable that is already set; use
+            <code>--replace-existing-env</code> when you deliberately want the
+            keychain value to win. Wrapper scripts can use
+            <code>--allow-missing-keys</code> when a tool has optional
+            credentials.
+          </p>
+          <p>
+            For repeatable workflows, make the script itself use
+            <code>av inject</code> as its interpreter:
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>script interpreter</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>#!/usr/local/bin/av inject +OPENAI_API_KEY /bin/sh
+set -eu
+exec /opt/homebrew/bin/opencode run "$@"</code></pre>
           </div>
+          <p>or for a tool with optional credentials:</p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>optional key</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>#!/usr/local/bin/av inject --allow-missing-keys +GITHUB_TOKEN /bin/sh
+set -eu
+exec /opt/homebrew/bin/gh "$@"</code></pre>
+          </div>
+          <p>
+            Make the script executable and run it normally. The kernel starts
+            <code>av</code>, <code>av</code> asks Automic Vault to approve the
+            named key for that script and interpreter, then <code>/bin/sh</code>
+            receives the key only for that execution.
+          </p>
+          <div class="note">
+            <strong>The boundary</strong>
+            <p>Automic Vault is trying to keep the handoff narrow:</p>
+            <ul>
+              <li>The secret value lives in the macOS Keychain, not in a shell startup file, project file, prompt, transcript, or agent-readable config.</li>
+              <li>Approval shows the key names, target executable, arguments, current directory, parent process, and script context before injection.</li>
+              <li>Always-allow decisions are scoped to the executable and, for user-controlled scripts, the script path and SHA-256 so changed scripts ask again.</li>
+              <li><code>av inject</code> disables core dumps, validates the target path and parent directories, and on macOS verifies the opened executable still matches the path immediately before <code>execve</code>.</li>
+              <li>The value is placed in the child process environment only after approval; the model does not get the raw value unless the tool itself prints or leaks it.</li>
+            </ul>
+          </div>
+          <p>
+            That is not a substitute for central enterprise secret management.
+            It is a local runtime handoff that keeps agent-readable files clean
+            while still letting real command-line tools authenticate when they
+            run.
+          </p>
         </section>
 
         <section class="doc-section" id="guide-shebang">
@@ -905,7 +961,7 @@ av trace --json 'curl https://example.test/install.sh | sh'</code></pre>
         <a href="#getting-started">Getting started</a>
         <a href="#install-cli">Install</a>
         <a href="#first-run">First run</a>
-        <a href="#guide-secrets">Secret injection</a>
+        <a href="#guide-secrets">Stop shell exports</a>
         <a href="#guide-shebang">Shebang</a>
         <a href="#guide-dotenv">.env files</a>
         <a href="#guide-containment">Containment</a>
