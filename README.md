@@ -85,6 +85,9 @@ For the rest:
 $ av <subcommand> --help
 ```
 
+&nbsp;
+
+
 ## Guides
 
 Pick the job you are actually trying to finish:
@@ -101,6 +104,9 @@ Pick the job you are actually trying to finish:
   through approval.
 - [Trace an installer before running it][guide-trace]: you found a tiny
   `curl | sh` command and want to inspect likely file changes first.
+
+&nbsp;
+
 
 ## What Ships
 
@@ -122,6 +128,9 @@ No, this is not a cloud policy engine.
 It is a local macOS runtime boundary beneath agent sessions. That is already a
 lot, and it is the part we can actually ship.
 
+&nbsp;
+
+
 ## Platform
 
 macOS: first. Linux & Windows: soon.
@@ -140,15 +149,6 @@ $ ./scripts/run-gui.sh
 The native app lives in `src/gui`. The CLI and package/security core live in
 `src/lib/rs` and `src/nucleus`.
 
-## Dependencies
-
-- `ecies` is used by `av dotenv` to read and write dotenvx-compatible
-  `encrypted:` values using the same secp256k1 ECIES scheme as dotenvx.
-- `base64` is used by `av dotenv` for dotenvx-compatible encrypted value
-  encoding.
-- `rusqlite` with bundled SQLite is used by `av-web`, the private Atlas package
-  origin. It serves the locally generated `pkg.sqlite` artifact without adding a
-  system SQLite shared-library dependency on Atlas.
 
 [releases]: https://github.com/automic-vault/automic-vault/releases/latest
 [guide-secrets]: https://www.automicvault.com/docs/#guide-secrets
