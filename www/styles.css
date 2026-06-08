@@ -2393,19 +2393,20 @@ h1 code {
 }
 
 .poster-scan {
+  --scan-accent: var(--gold);
   grid-area: scan;
   align-self: start;
   justify-self: end;
   width: min(100%, 380px);
-  margin-top: clamp(2.25rem, 5.8vw, 5.9rem);
-  border-top: 1px solid color-mix(in oklch, var(--green), transparent 34%);
+  margin-top: clamp(9.75rem, 15vw, 13.75rem);
+  border-top: 1px solid color-mix(in oklch, var(--scan-accent), transparent 34%);
 }
 
 .poster-scan-label {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
-  color: var(--green);
+  color: var(--scan-accent);
   font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 800;
@@ -2435,8 +2436,8 @@ h1 code {
   height: 6px;
   margin-top: 0.47rem;
   border-radius: 999px;
-  background: var(--green);
-  box-shadow: 0 0 16px oklch(72% 0.14 137 / 0.34);
+  background: var(--scan-accent);
+  box-shadow: 0 0 16px oklch(76% 0.13 82 / 0.34);
 }
 
 .poster-scan strong,
