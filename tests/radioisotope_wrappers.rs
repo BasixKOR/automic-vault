@@ -54,7 +54,7 @@ fn radioisotope_av_inject_shell_wrappers_run_with_missing_optional_credentials()
 }
 
 fn collect_av_inject_shell_wrappers(root: &Path) -> Vec<WrapperTemplate> {
-    let mut entries = fs::read_dir(&root)
+    let mut entries = fs::read_dir(root)
         .unwrap_or_else(|err| panic!("failed to read radioisotope root {}: {err}", root.display()))
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir())
