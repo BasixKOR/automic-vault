@@ -690,8 +690,8 @@ final class MainWindowModelTests: XCTestCase {
             }
         )
         XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:newer"]), [.new])
-        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:older"]), [])
-        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:undated"]), [])
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:older"]), [.new])
+        XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:undated"]), [.new])
         XCTAssertEqual(try XCTUnwrap(badgesBySelectionID["pulse:brew:updated"]), [.new])
     }
 

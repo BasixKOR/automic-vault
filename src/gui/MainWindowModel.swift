@@ -1149,6 +1149,10 @@ final class MainWindowModel: ObservableObject {
               selectedSection == .newUpdated else {
             return false
         }
+        if case .available(let result) = package.item,
+           result.isNewPulse {
+            return true
+        }
         return isUnreadPulsePackage(package)
     }
 
