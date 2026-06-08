@@ -21,10 +21,12 @@ fn radioisotope_av_inject_shell_wrappers_run_with_missing_optional_credentials()
         return;
     }
 
-    let templates = collect_av_inject_shell_wrappers();
+    let root = radioisotope_root();
+    let templates = collect_av_inject_shell_wrappers(&root);
     assert!(
         templates.len() >= MIN_AV_INJECT_SHELL_WRAPPER_COUNT,
-        "expected at least {MIN_AV_INJECT_SHELL_WRAPPER_COUNT} radioisotope av inject shell wrappers, found {}",
+        "expected at least {MIN_AV_INJECT_SHELL_WRAPPER_COUNT} radioisotope av inject shell wrappers under {}, found {}",
+        root.display(),
         templates.len()
     );
 
@@ -51,10 +53,9 @@ fn radioisotope_av_inject_shell_wrappers_run_with_missing_optional_credentials()
     );
 }
 
-fn collect_av_inject_shell_wrappers() -> Vec<WrapperTemplate> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/radioisotopes");
-    let mut entries = fs::read_dir(&root)
-        .unwrap()
+fn collect_av_inject_shell_wrappers(root: &Path) -> Vec<WrapperTemplate> {
+    let mut entries = fs::read_dir(root)
+        .unwrap_or_else(|err| panic!("failed to read radioisotope root {}: {err}", root.display()))
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
@@ -88,6 +89,22 @@ fn collect_av_inject_shell_wrappers() -> Vec<WrapperTemplate> {
         }
     }
     wrappers
+}
+
+fn radioisotope_root() -> PathBuf {
+    std::env::var_os("AUTOMIC_VAULT_RADIOISOTOPES_REPO")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(absolute_radioisotope_path)
+        .unwrap_or_else(|| PathBuf::from(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO")))
+}
+
+fn absolute_radioisotope_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
 }
 
 fn raw_string_literals(contents: &str) -> Vec<(usize, String)> {
