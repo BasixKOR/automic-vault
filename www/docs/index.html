@@ -495,36 +495,203 @@ exec /opt/homebrew/bin/gh "$@"</code></pre>
         <section class="doc-section" id="guide-dotenv">
           <h2>Guide: Encrypted <code>.env</code> Files</h2>
           <p>
-            <code>av dotenv</code> gives dotenv workflows a safer shape: the
-            file can stay in the project, values are stored as dotenvx-compatible
-            <code>encrypted:</code> entries, and the private key lives in the
-            macOS Keychain. Loading or running with those values requires
-            Automic Vault approval.
+            <code>av dotenv</code> gives dotenv workflows a safer shape. The
+            <code>.env</code> file can stay in the project, secret values are
+            stored as dotenvx-compatible <code>encrypted:</code> entries, and
+            the matching private key lives in the macOS Keychain. Loading or
+            running with decrypted values requires Automic Vault approval.
+          </p>
+          <h3>Start a new encrypted dotenv file</h3>
+          <p>
+            Use this when the project has no dotenvx keypair yet. The public
+            key is written into the file; the private key is stored locally in
+            the Automic Vault keychain service.
           </p>
           <div class="code-block" data-copy-scope>
             <div class="code-caption">
-              <span>create and encrypt</span>
+              <span>new project</span>
               <button class="copy-button" type="button" data-copy>Copy</button>
             </div>
             <pre><code>av dotenv init --file .env
 printf '%s\n' "$STRIPE_SECRET_KEY" | av dotenv set --file .env STRIPE_SECRET_KEY
+av dotenv encrypt --file .env --check</code></pre>
+          </div>
+          <p>
+            <code>av dotenv set</code> reads from stdin or an interactive hidden
+            prompt, encrypts the value with <code>DOTENV_PUBLIC_KEY</code>, and
+            writes an <code>encrypted:</code> value back to the file.
+            <code>av dotenv encrypt --check</code> fails if secret-shaped
+            plaintext remains.
+          </p>
+          <h3>Import an existing dotenvx key file</h3>
+          <p>
+            Use this when you already have a dotenvx-style <code>.env</code>
+            and <code>.env.keys</code>. The <code>.env</code> file contains a
+            <code>DOTENV_PUBLIC_KEY</code> line. The keys file contains the
+            matching <code>DOTENV_PRIVATE_KEY</code> value.
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>existing dotenvx</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>grep '^DOTENV_PUBLIC_KEY' .env
+grep '^DOTENV_PRIVATE_KEY' .env.keys
+
+av dotenv import --file .env --keys-file .env.keys
 av dotenv encrypt --file .env --check
+av dotenv run --file .env -- /bin/sh -c 'test -n "$STRIPE_SECRET_KEY"'</code></pre>
+          </div>
+          <p>
+            For files such as <code>.env.production</code>, import that file
+            explicitly:
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>named environment</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>av dotenv import --file .env.production --keys-file .env.keys</code></pre>
+          </div>
+          <p>
+            If the public key line is <code>DOTENV_PUBLIC_KEY_PRODUCTION</code>,
+            the keys file must contain <code>DOTENV_PRIVATE_KEY_PRODUCTION</code>.
+            <code>av dotenv import</code> validates the private key and stores
+            it in the local Keychain so future <code>av dotenv run</code> and
+            <code>av dotenv export</code> requests do not need
+            <code>.env.keys</code>.
+          </p>
+          <h3>Move the private key to another machine</h3>
+          <p>
+            The clean path is to move a deliberate private-key file through a
+            secret manager you already trust, then import it on the next Mac.
+            Do not commit <code>.env.keys</code>.
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>second Mac</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code># On the source machine, keep .env.keys out of git and move it through
+# your password manager, MDM secret store, or production secret manager.
 
-# Load encrypted keys when you cd into a project.
-eval "$(av dotenv hook zsh)"
+# On the destination Mac:
+av dotenv import --file .env --keys-file .env.keys
+rm .env.keys
+av dotenv run --file .env -- /bin/sh -c 'test -n "$STRIPE_SECRET_KEY"'</code></pre>
+          </div>
+          <p>
+            If the key only exists in Automic Vault because you created it with
+            <code>av dotenv init</code>, there is no public
+            <code>av dotenv</code> command that prints it back out. You can
+            deliberately read the Keychain item and create a one-time
+            <code>.env.keys</code> file:
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>keychain handoff</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>PUBLIC_KEY=$(
+  awk -F= '/^DOTENV_PUBLIC_KEY(_[A-Z0-9_]+)?=/ {
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+    gsub(/^"|"$/, "", $2)
+    print $2
+    exit
+  }' .env
+)
+PRIVATE_KEY_NAME=$(
+  awk -F= '/^DOTENV_PUBLIC_KEY(_[A-Z0-9_]+)?=/ {
+    name=$1
+    sub(/^DOTENV_PUBLIC_KEY/, "DOTENV_PRIVATE_KEY", name)
+    print name
+    exit
+  }' .env
+)
+ACCOUNT="DOTENV_PRIVATE_KEY:$(printf '%s' "$PUBLIC_KEY" | shasum -a 256 | awk '{print $1}')"
+PRIVATE_KEY=$(security find-generic-password \
+  -s com.automicvault.dotenv \
+  -a "$ACCOUNT" \
+  -w)
 
-# Or run one command with decrypted values.
-av dotenv run --file .env -- npm test</code></pre>
+umask 077
+printf '%s=%s\n' "$PRIVATE_KEY_NAME" "$PRIVATE_KEY" > .env.keys</code></pre>
+          </div>
+          <p>
+            That command may ask Keychain for permission. Treat the resulting
+            file as live secret material: move it through the intended secure
+            channel, import it on the destination Mac, then remove the file.
+          </p>
+          <h3>Store the private key in AWS Secrets Manager</h3>
+          <p>
+            Store the private-key file content as a Secrets Manager secret when
+            production, CI, or another Mac needs to retrieve it later. Prefer a
+            file argument so the key is not placed directly in shell history.
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>create secret</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>aws secretsmanager create-secret \
+  --name automic-vault/dotenv/my-app \
+  --secret-string file://.env.keys</code></pre>
+          </div>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>rotate secret value</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>aws secretsmanager put-secret-value \
+  --secret-id automic-vault/dotenv/my-app \
+  --secret-string file://.env.keys</code></pre>
+          </div>
+          <p>
+            To hydrate a new Mac from Secrets Manager, retrieve the stored
+            string, import it, and delete the local file:
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>retrieve and import</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code>umask 077
+aws secretsmanager get-secret-value \
+  --secret-id automic-vault/dotenv/my-app \
+  --query SecretString \
+  --output text > .env.keys
+
+av dotenv import --file .env --keys-file .env.keys
+rm .env.keys</code></pre>
           </div>
           <div class="note">
             <strong>Commit the public key, protect the private key</strong>
             <p>
               The <code>DOTENV_PUBLIC_KEY</code> line is not a secret. The
               matching private key is stored in the Automic Vault keychain
-              service. Use <code>av dotenv import</code> when you need to move
-              a dotenvx private key from a <code>.env.keys</code> file into the
-              keychain.
+              service under <code>com.automicvault.dotenv</code>. Production
+              systems that do not run Automic Vault should receive the matching
+              private key through their own secret manager and expose it only
+              to the dotenvx-compatible loader that needs to decrypt the file.
             </p>
+          </div>
+          <h3>Load values while working</h3>
+          <p>
+            Use the shell hook when you want encrypted values loaded as you
+            enter a project. Use <code>av dotenv run</code> when one command
+            should receive decrypted values and the rest of the shell should
+            stay clean.
+          </p>
+          <div class="code-block" data-copy-scope>
+            <div class="code-caption">
+              <span>runtime use</span>
+              <button class="copy-button" type="button" data-copy>Copy</button>
+            </div>
+            <pre><code># Load encrypted keys when you cd into a project.
+eval "$(av dotenv hook zsh)"
+
+# Or run one command with decrypted values.
+av dotenv run --file .env -- npm test</code></pre>
           </div>
         </section>
 
