@@ -497,10 +497,13 @@
       align-self: end;
       display: block;
       width: 100%;
+      height: clamp(360px, 46vw, 560px);
       margin-top: clamp(18px, 4vw, 42px);
       border: 1px solid var(--line-strong);
       border-radius: 8px;
       background: var(--surface-deep);
+      object-fit: cover;
+      object-position: center center;
     }
 
     .download-feature-stack {
@@ -800,6 +803,10 @@
 
       .download-copy .button.primary {
         grid-column: 1 / -1;
+      }
+
+      .download-feature-primary img {
+        height: 320px;
       }
 
       .download-command-line,
