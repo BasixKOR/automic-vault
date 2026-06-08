@@ -66,7 +66,7 @@
         "headline": "Download Automic Vault for macOS - Secure Homebrew Tools",
         "description": "Download Automic Vault for macOS to scan Homebrew tools, move supported credentials out of plaintext files, and gate sensitive agent actions.",
         "datePublished": "2026-05-23",
-        "dateModified": "2026-06-01",
+        "dateModified": "2026-06-08",
         "image": "https://www.automicvault.com/preview.jpg",
         "isPartOf": {
           "@id": "https://www.automicvault.com/#website"
@@ -134,43 +134,100 @@
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <link rel="stylesheet" href="../styles.css?v=77">
   <style>
-    .download-hero {
-      display: grid;
-      grid-template-columns: minmax(0, 0.72fr) minmax(380px, 0.78fr);
-      gap: clamp(32px, 5vw, 78px);
-      align-items: end;
-      padding: clamp(42px, 7vw, 92px) clamp(20px, 3vw, 44px) clamp(34px, 6vw, 76px);
-      border-bottom: 1px solid var(--line);
+    .download-main {
+      background:
+        linear-gradient(180deg, oklch(8% 0.006 255), oklch(10% 0.008 255) 42%, oklch(8% 0.006 255)),
+        var(--bg-outer);
     }
 
-    .download-hero h1 {
-      max-width: 7.2ch;
-      font-size: clamp(4.05rem, 7vw, 7.4rem);
-      line-height: 0.84;
-      text-transform: uppercase;
+    .download-hero,
+    .download-section,
+    .download-radar,
+    .download-faq {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .download-hero::before,
+    .download-section::before,
+    .download-radar::before,
+    .download-faq::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(94% 0.01 82 / 0.026) 1px, transparent 1px);
+      background-size: 100% 38px, 52px 100%;
+      opacity: 0.3;
+    }
+
+    .download-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(420px, 0.72fr);
+      gap: clamp(30px, 5vw, 76px);
+      align-items: end;
+      min-height: clamp(620px, 74dvh, 820px);
+      padding: clamp(34px, 5vw, 68px) clamp(20px, 4vw, 58px) clamp(24px, 3.8vw, 52px);
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 82% 20%, oklch(72% 0.14 137 / 0.11), transparent 30rem),
+        radial-gradient(circle at 22% 72%, oklch(70% 0.17 37 / 0.08), transparent 32rem),
+        linear-gradient(118deg, oklch(5.5% 0.006 255), oklch(9% 0.009 255) 58%, oklch(6.5% 0.006 255)),
+        var(--bg-outer);
     }
 
     .download-copy {
       display: grid;
-      gap: 24px;
+      align-content: end;
+      gap: clamp(13px, 1.8vw, 20px);
+      min-width: 0;
+      max-width: 820px;
+      padding-top: clamp(4.5rem, 10vw, 7.5rem);
+    }
+
+    .download-hero h1 {
+      max-width: 13.6ch;
+      color: var(--ink);
+      font-size: clamp(3.15rem, 6vw, 5.95rem);
+      font-weight: 850;
+      line-height: 0.92;
+    }
+
+    .download-hero h1 span {
+      display: block;
+      color: var(--green);
     }
 
     .download-copy .lede {
-      max-width: 100%;
-      font-size: clamp(1.42rem, 2.3vw, 2.05rem);
+      max-width: 34rem;
+      color: oklch(84% 0.016 82);
+      font-size: clamp(1.12rem, 1.62vw, 1.42rem);
+      font-weight: 500;
+      line-height: 1.34;
+    }
+
+    .download-copy .hero-actions {
+      margin-top: 2px;
     }
 
     .download-command-panel {
       display: grid;
       gap: 14px;
-      margin-top: 4px;
-      padding: clamp(16px, 2.4vw, 24px);
+      max-width: 700px;
+      margin-top: clamp(6px, 1.2vw, 14px);
+      padding: clamp(15px, 2vw, 22px);
       border: 1px solid var(--line-strong);
       border-radius: 8px;
       background:
-        linear-gradient(90deg, oklch(76% 0.13 82 / 0.11), transparent 58%),
-        var(--surface-2);
-      box-shadow: inset 0 1px 0 oklch(94% 0.01 82 / 0.07);
+        linear-gradient(90deg, oklch(76% 0.13 82 / 0.1), transparent 58%),
+        linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+        var(--surface-deep);
+      background-size: auto, 100% 28px, auto;
+      box-shadow: inset 0 1px 0 oklch(94% 0.01 82 / 0.08);
     }
 
     .download-command-header {
@@ -180,8 +237,8 @@
       gap: 18px;
       color: var(--gold);
       font-family: var(--font-mono);
-      font-size: 0.76rem;
-      font-weight: 700;
+      font-size: 0.74rem;
+      font-weight: 800;
       text-transform: uppercase;
     }
 
@@ -207,7 +264,7 @@
     .download-command-line code {
       color: var(--ink);
       font-family: var(--font-mono);
-      font-size: clamp(0.86rem, 1.28vw, 1.08rem);
+      font-size: clamp(0.84rem, 1.1vw, 1rem);
       font-weight: 700;
       line-height: 1.5;
       overflow-wrap: anywhere;
@@ -260,87 +317,27 @@
 
     .download-visual {
       display: grid;
-      gap: 16px;
+      align-content: end;
+      gap: clamp(12px, 2vw, 20px);
       min-width: 0;
-    }
-
-    .download-panel {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 14px 20px;
-      align-items: center;
-      padding-top: 16px;
-      border-top: 1px solid var(--line-strong);
-    }
-
-    .download-panel h2 {
-      color: var(--ink);
-      font-size: clamp(1.12rem, 2vw, 1.45rem);
-      line-height: 1.05;
-      text-transform: uppercase;
-    }
-
-    .download-panel p,
-    .download-note p,
-    .download-card p {
-      color: var(--muted);
-      font-size: 0.98rem;
-      line-height: 1.45;
-    }
-
-    .download-panel .button {
-      white-space: nowrap;
-    }
-
-    .download-note {
-      display: grid;
-      gap: 10px;
-      grid-column: 1 / -1;
-      padding-top: 14px;
-      border-top: 1px solid var(--line);
-    }
-
-    .download-note span,
-    .download-card span {
-      color: var(--gold);
-      font-family: var(--font-mono);
-      font-size: 0.74rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .download-section {
-      padding: clamp(28px, 4vw, 52px) clamp(20px, 3vw, 44px);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .download-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .download-card {
-      display: grid;
-      align-content: start;
-      gap: 14px;
-      min-height: 178px;
-      padding: 18px;
-      border: 1px solid var(--line-strong);
-      background: var(--surface);
-    }
-
-    .download-card h2 {
-      color: var(--ink);
-      font-size: 1.16rem;
-      line-height: 1.2;
-      text-transform: uppercase;
+      padding-bottom: clamp(0px, 2vw, 26px);
     }
 
     .download-shot {
+      position: relative;
       display: block;
       min-width: 0;
-      transform: translateY(6px);
+      margin: 0;
+      transform: translateY(0);
+    }
+
+    .download-shot::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border: 1px solid oklch(94% 0.01 82 / 0.12);
+      border-radius: 10px;
+      pointer-events: none;
     }
 
     .download-shot img {
@@ -351,90 +348,573 @@
       border: 1px solid var(--line-strong);
       border-radius: 10px;
       background: var(--surface-2);
-      box-shadow: 0 26px 54px rgba(0, 0, 0, 0.26);
+      box-shadow: 0 28px 80px oklch(6% 0.006 255 / 0.38);
     }
 
-    @media (max-width: 1060px) {
+    .download-terminal-card {
+      justify-self: end;
+      width: min(92%, 560px);
+      margin-top: clamp(-74px, -5vw, -42px);
+      transform: translateX(clamp(0px, 2vw, 28px));
+    }
+
+    .download-terminal-card pre {
+      font-size: clamp(0.74rem, 0.9vw, 0.84rem);
+    }
+
+    .download-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.92fr) minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, oklch(94% 0.01 82 / 0.03), transparent 50%),
+        var(--surface-deep);
+      box-shadow: inset 0 1px 0 oklch(94% 0.01 82 / 0.07);
+    }
+
+    .download-panel div {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      min-height: 122px;
+      padding: 16px;
+      border-right: 1px solid var(--line);
+    }
+
+    .download-panel div:last-child {
+      border-right: 0;
+    }
+
+    .download-panel span,
+    .download-feature-kicker,
+    .download-step span,
+    .download-faq-label {
+      color: var(--gold);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .download-panel strong {
+      color: var(--ink);
+      font-size: clamp(1.05rem, 1.45vw, 1.34rem);
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .download-panel p,
+    .download-feature p,
+    .download-step p,
+    .download-section-copy p,
+    .download-faq details p {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.5;
+    }
+
+    .download-section {
+      display: grid;
+      grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+      gap: 18px clamp(24px, 4.8vw, 78px);
+      padding: clamp(86px, 10vw, 148px) clamp(20px, 4vw, 58px);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .download-hero + .download-section {
+      padding-top: clamp(48px, 6vw, 84px);
+    }
+
+    .download-section-copy {
+      display: grid;
+      grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+      grid-column: 1 / -1;
+      gap: 18px clamp(24px, 4.8vw, 78px);
+      min-width: 0;
+    }
+
+    .download-section-copy .eyebrow {
+      grid-column: 1;
+      padding-top: 0.44em;
+    }
+
+    .download-section-copy h2,
+    .download-section-copy p {
+      grid-column: 2;
+    }
+
+    .download-section h2,
+    .download-radar h2,
+    .download-faq h2 {
+      max-width: 980px;
+      color: var(--ink);
+      font-size: clamp(2.65rem, 5vw, 5.65rem);
+      font-weight: 820;
+      line-height: 0.9;
+    }
+
+    .download-section-copy p {
+      max-width: 39rem;
+      font-size: clamp(1rem, 1.35vw, 1.18rem);
+      line-height: 1.58;
+    }
+
+    .download-feature-board {
+      grid-column: 2;
+      display: grid;
+      grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
+      min-width: 0;
+      margin-top: clamp(22px, 4vw, 48px);
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, oklch(94% 0.01 82 / 0.035), transparent 56%),
+        var(--surface-deep);
+    }
+
+    .download-feature {
+      display: grid;
+      align-content: start;
+      gap: 14px;
+      min-width: 0;
+      padding: clamp(18px, 2.7vw, 30px);
+    }
+
+    .download-feature-primary {
+      min-height: 420px;
+      border-right: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 84% 18%, oklch(72% 0.14 137 / 0.13), transparent 18rem),
+        linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+        var(--surface);
+      background-size: auto, 100% 32px, auto;
+    }
+
+    .download-feature-primary img {
+      align-self: end;
+      display: block;
+      width: 100%;
+      margin-top: clamp(18px, 4vw, 42px);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface-deep);
+    }
+
+    .download-feature-stack {
+      display: grid;
+      min-width: 0;
+    }
+
+    .download-feature-stack .download-feature {
+      min-height: 140px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .download-feature-stack .download-feature:last-child {
+      border-bottom: 0;
+    }
+
+    .download-feature h3 {
+      max-width: 18rem;
+      color: var(--ink);
+      font-size: clamp(1.34rem, 2.1vw, 2.05rem);
+      line-height: 0.98;
+      text-transform: uppercase;
+    }
+
+    .download-feature code,
+    .download-step code,
+    .download-faq code {
+      color: var(--green);
+      font-family: var(--font-mono);
+    }
+
+    .download-runbook {
+      grid-column: 2;
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(320px, 0.62fr);
+      gap: clamp(18px, 3vw, 34px);
+      align-items: start;
+      min-width: 0;
+      margin-top: clamp(22px, 4vw, 48px);
+    }
+
+    .download-step-list {
+      display: grid;
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .download-step {
+      display: grid;
+      grid-template-columns: minmax(5rem, 0.2fr) minmax(0, 1fr);
+      gap: clamp(16px, 3vw, 34px);
+      padding: clamp(18px, 3vw, 28px) 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .download-step h3 {
+      color: var(--ink);
+      font-size: clamp(1.28rem, 2vw, 1.86rem);
+      line-height: 1.02;
+      text-transform: uppercase;
+    }
+
+    .download-step div {
+      display: grid;
+      gap: 10px;
+    }
+
+    .download-runbook .terminal-card {
+      position: sticky;
+      top: 108px;
+    }
+
+    .download-radar {
+      padding: clamp(76px, 9vw, 136px) clamp(20px, 4vw, 58px);
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 78% 18%, oklch(68% 0.15 246 / 0.1), transparent 30rem),
+        linear-gradient(180deg, oklch(8% 0.006 255), oklch(11% 0.008 255));
+    }
+
+    .download-package-radar {
+      grid-template-columns: minmax(300px, 0.32fr) minmax(0, 1fr);
+      gap: 0;
+      margin-top: clamp(24px, 4vw, 52px);
+      overflow: hidden;
+      border: solid var(--line-strong);
+      border-width: 1px 0;
+      border-radius: 0;
+      background:
+        linear-gradient(90deg, oklch(94% 0.01 82 / 0.035), transparent 32%, oklch(94% 0.01 82 / 0.02)),
+        linear-gradient(180deg, oklch(94% 0.01 82 / 0.035), transparent 45%, oklch(94% 0.01 82 / 0.026)),
+        var(--surface-deep);
+      box-shadow:
+        inset 0 1px 0 oklch(94% 0.01 82 / 0.045),
+        inset 0 -1px 0 oklch(94% 0.01 82 / 0.035);
+    }
+
+    .download-package-radar .radar-copy {
+      padding: 20px clamp(20px, 4vw, 34px);
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(94% 0.01 82 / 0.026), transparent);
+      background-size: 100% 38px, auto;
+    }
+
+    .download-package-radar .radar-feed {
+      min-height: 166px;
+      border-block: 0;
+    }
+
+    .download-package-radar .feed-row {
+      min-height: 166px;
+      padding: 18px clamp(14px, 2vw, 24px);
+    }
+
+    .download-faq {
+      display: grid;
+      grid-template-columns: minmax(8.5rem, 0.22fr) minmax(0, 1fr);
+      gap: 18px clamp(24px, 4.8vw, 78px);
+      padding: clamp(86px, 10vw, 148px) clamp(20px, 4vw, 58px);
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 18% 22%, oklch(72% 0.14 137 / 0.08), transparent 28rem),
+        linear-gradient(180deg, oklch(10% 0.008 255), oklch(8% 0.006 255));
+    }
+
+    .download-faq .eyebrow {
+      grid-column: 1;
+      padding-top: 0.44em;
+    }
+
+    .download-faq h2,
+    .download-faq-list {
+      grid-column: 2;
+    }
+
+    .download-faq-list {
+      display: grid;
+      margin-top: clamp(18px, 3vw, 36px);
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .download-faq details {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .download-faq summary {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(8rem, 0.24fr) minmax(0, 1fr) auto;
+      gap: clamp(14px, 3vw, 28px);
+      align-items: center;
+      min-height: 86px;
+      padding: 18px 0;
+      color: var(--ink);
+      cursor: pointer;
+      list-style: none;
+      transition: color 160ms ease, transform 160ms ease;
+    }
+
+    .download-faq summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .download-faq summary::after {
+      content: "+";
+      color: var(--gold);
+      font-family: var(--font-mono);
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+
+    .download-faq details[open] summary::after {
+      content: "-";
+    }
+
+    .download-faq summary:hover {
+      color: var(--green);
+      transform: translateY(-1px);
+    }
+
+    .download-faq summary:active {
+      transform: translateY(0);
+    }
+
+    .download-faq summary strong {
+      font-size: clamp(1.1rem, 1.7vw, 1.54rem);
+      line-height: 1.08;
+      text-transform: uppercase;
+    }
+
+    .download-faq details p {
+      max-width: 48rem;
+      padding: 0 3rem 22px calc(24% + clamp(14px, 3vw, 28px));
+    }
+
+    @media (max-width: 1120px) {
       .download-hero,
-      .download-grid {
+      .download-feature-board,
+      .download-runbook {
         grid-template-columns: 1fr;
+      }
+
+      .download-hero {
+        min-height: auto;
+      }
+
+      .download-copy {
+        padding-top: clamp(5rem, 12vw, 8rem);
+      }
+
+      .download-terminal-card {
+        justify-self: stretch;
+        width: 100%;
+        margin-top: 0;
+        transform: none;
+      }
+
+      .download-feature-primary {
+        min-height: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .download-runbook .terminal-card {
+        position: static;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .download-section,
+      .download-section-copy,
+      .download-faq {
+        grid-template-columns: 1fr;
+      }
+
+      .download-section-copy .eyebrow,
+      .download-section-copy h2,
+      .download-section-copy p,
+      .download-feature-board,
+      .download-runbook,
+      .download-faq .eyebrow,
+      .download-faq h2,
+      .download-faq-list {
+        grid-column: 1;
+      }
+
+      .download-section-copy .eyebrow,
+      .download-faq .eyebrow {
+        padding-top: 0;
+      }
+
+      .download-package-radar {
+        grid-template-columns: 1fr;
+      }
+
+      .download-package-radar .radar-copy {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
       }
     }
 
     @media (max-width: 760px) {
-      .download-panel {
+      .download-hero {
         grid-template-columns: 1fr;
+        gap: 22px;
+        padding-top: clamp(34px, 8svh, 72px);
+        padding-bottom: clamp(22px, 5svh, 38px);
       }
 
-      .download-panel .button {
-        width: 100%;
+      .download-copy {
+        padding-top: 0;
       }
 
-      .download-command-line {
+      .download-hero h1,
+      .download-section h2,
+      .download-faq h2 {
+        font-size: clamp(2.45rem, 11.2vw, 4rem);
+      }
+
+      .download-copy .lede {
+        font-size: clamp(1rem, 3.6vw, 1.14rem);
+        line-height: 1.28;
+      }
+
+      .download-copy .hero-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .download-copy .button {
+        min-height: 44px;
+        padding: 10px 12px;
+        font-size: clamp(0.68rem, 2.85vw, 0.78rem);
+      }
+
+      .download-copy .button.primary {
+        grid-column: 1 / -1;
+      }
+
+      .download-command-line,
+      .download-panel,
+      .download-step,
+      .download-faq summary {
         grid-template-columns: 1fr;
       }
 
       .download-copy-button {
         width: 100%;
       }
+
+      .download-panel div {
+        min-height: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .download-panel div:last-child {
+        border-bottom: 0;
+      }
+
+      .download-package-radar .radar-feed {
+        min-height: 0;
+      }
+
+      .download-package-radar .feed-row {
+        min-height: 54px;
+        padding: 12px clamp(18px, 4vw, 24px);
+      }
+
+      .download-terminal-card,
+      .download-panel {
+        display: none;
+      }
+
+      .download-faq details p {
+        padding: 0 0 22px;
+      }
     }
 
     @media (max-width: 520px) {
       .download-hero,
-      .download-section {
+      .download-section,
+      .download-radar,
+      .download-faq {
         padding-inline: 18px;
       }
 
       .download-hero h1 {
-        font-size: 3.9rem;
+        font-size: clamp(2.12rem, 10.75vw, 2.9rem);
+      }
+
+      .download-feature {
+        padding: 16px;
+      }
+
+      .download-terminal-card pre,
+      .download-runbook .terminal-card pre {
+        padding: 13px;
+        font-size: 0.68rem;
       }
     }
   </style>
 </head>
 <body>
-  <div class="site-shell" id="top">
-    <header class="masthead">
-      <a class="brand" href="../" aria-label="Automic Vault home">
-        <img
-          class="brand-mark"
-          src="../assets/icon@2x.webp"
-          alt="Automic Vault"
-          width="54"
-          height="54"
-        >
-        <span class="brand-type">Automic Vault</span>
-      </a>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <header class="masthead" id="top">
+    <a class="brand" href="../" aria-label="Automic Vault home">
+      <img
+        class="brand-mark"
+        src="../assets/icon@2x.webp"
+        alt="Automic Vault"
+        width="54"
+        height="54"
+      >
+      <span class="brand-type">Automic Vault</span>
+    </a>
 
-      <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">
-        <span></span>
-        <span></span>
-      </button>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">
+      <span></span>
+      <span></span>
+    </button>
 
-      <nav class="nav" aria-label="Main navigation">
-        <a href="../docs/">Docs</a>
-        <a href="../security/">Security</a>
-        <a href="../privacy/">Privacy</a>
-        <a href="https://github.com/automic-vault/">GitHub</a>
-      </nav>
-    </header>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="/pkg/">Packages</a>
+      <a href="/blog/">Blog</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/">Docs</a>
+      <a href="/download/">Download</a>
+      <a href="https://github.com/automic-vault/">GitHub</a>
+    </nav>
+  </header>
 
-    <main>
+  <div class="site-shell">
+    <main class="download-main">
       <section class="download-hero" aria-labelledby="download-title">
         <div class="download-copy">
           <div class="hero-meta">
             <span>macOS</span>
             <span>native app</span>
+            <span>av CLI</span>
             <span>open source</span>
-            <span>updated May 31, 2026</span>
           </div>
           <p class="eyebrow">Download</p>
-          <h1 id="download-title">Download Automic Vault for macOS</h1>
+          <h1 id="download-title">Download Automic Vault <span>for macOS.</span></h1>
           <p class="lede">
-            Install the local security layer for Homebrew packages, CLI secrets, and AI agent actions on macOS.
+            Install the local security layer for Homebrew packages, CLI
+            secrets, and agent-triggered commands before the next agent run.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
             <a class="button secondary" href="/install.sh">Installer script</a>
+            <a class="button text" href="https://github.com/automic-vault/automic-vault">View source</a>
           </div>
           <div class="download-command-panel" aria-label="Terminal install command">
             <div class="download-command-header">
@@ -442,7 +922,7 @@
               <strong>one-liner</strong>
             </div>
             <div class="download-command-line">
-              <pre><code id="download-install-command">curl -fsSL https://automicvault.com/install.sh | sh && av open</code></pre>
+              <pre><code id="download-install-command">curl -fsSL https://automicvault.com/install.sh | sh &amp;&amp; av open</code></pre>
               <button
                 class="download-copy-button"
                 type="button"
@@ -463,152 +943,259 @@
             >
           </figure>
 
+          <figure class="terminal-card terminal-card-green download-terminal-card" aria-label="First scan after installing Automic Vault">
+            <figcaption>First run</figcaption>
+            <pre><code><span class="prompt">$</span> av scan
+found ~/.aws/credentials
+found ~/.npmrc
+hazard: agent-readable token paths
+
+<span class="prompt">$</span> av harden gh awscli npm
+stored supported secrets in Keychain
+rewrote helpers for approved runtime access</code></pre>
+          </figure>
+
           <aside class="download-panel" aria-label="Download details">
             <div>
-              <h2>Automic Vault for macOS</h2>
-              <p>
-                Includes the native app, the <code>av</code> command-line tool, and Nucleus package controls.
-              </p>
+              <span>Includes</span>
+              <strong>App and CLI</strong>
+              <p>Native macOS app, <code>av</code>, scanner workflows, approval gates, and Nucleus package controls.</p>
             </div>
-            <a class="button primary" href="/Automic Vault.dmg">Download .dmg</a>
-            <div class="download-note">
-              <span>Install roots</span>
+            <div>
+              <span>Roots</span>
+              <strong>Predictable paths</strong>
               <p>Release builds install packages under <code>/opt</code> and command stubs under <code>/usr/local/bin</code>.</p>
+            </div>
+            <div>
+              <span>Boundary</span>
+              <strong>Local approval</strong>
+              <p>Secrets and privileged tool actions are gated below the agent prompt, where execution happens.</p>
             </div>
           </aside>
         </div>
       </section>
 
       <section class="download-section" aria-labelledby="included-title">
-        <div class="section-label">
-          <h2 id="included-title">Included</h2>
-          <span>local runtime surface</span>
+        <div class="download-section-copy">
+          <p class="eyebrow">01 &middot; Included</p>
+          <h2 id="included-title">One install covers the app, terminal, and package root.</h2>
+          <p>
+            Automic Vault is not just a download link. It installs the macOS
+            control surface, the command-line tool agents will encounter, and
+            the package boundary that keeps mutable toolchains visible.
+          </p>
         </div>
-        <div class="download-grid">
-          <article class="download-card">
-            <span>App</span>
-            <h2>Native package control</h2>
-            <p>Search packages, inspect metadata, follow updates, and approve privileged installs from a macOS interface.</p>
-          </article>
-          <article class="download-card">
-            <span>CLI</span>
-            <h2><code>av</code> command surface</h2>
-            <p>Use package, secret, scanner, and approval workflows from the terminal where agent work already happens.</p>
-          </article>
-          <article class="download-card">
-            <span>Nucleus</span>
-            <h2>Hardened package roots</h2>
-            <p>Install familiar Homebrew, npm, and PyPI packages with predictable macOS ownership boundaries.</p>
-          </article>
-        </div>
-      </section>
 
-      <section class="download-section" aria-labelledby="why-download-title">
-        <div class="section-label">
-          <h2 id="why-download-title">Why install it</h2>
-          <span>before the next agent run</span>
-        </div>
-        <div class="download-grid">
-          <article class="download-card">
-            <span>Homebrew tools</span>
-            <h2>Find what installed tools can read</h2>
-            <p>Homebrew makes developer tools easy to add. Automic Vault checks the tool layer those packages create and reports credential paths, package hazards, and approval opportunities before an agent reaches them.</p>
+        <div class="download-feature-board">
+          <article class="download-feature download-feature-primary">
+            <span class="download-feature-kicker">Native app</span>
+            <h3>Search packages, inspect hazards, approve installs.</h3>
+            <p>
+              The app stays close to the workflow: package metadata, hazard
+              notifications, security notes, and privileged install approval
+              live in one local Mac interface.
+            </p>
+            <img
+              src="../assets/app-hazard-journey.webp"
+              alt="Automic Vault app showing a plaintext credential hazard beside a package homepage"
+              width="1672"
+              height="941"
+              loading="lazy"
+              decoding="async"
+            >
           </article>
-          <article class="download-card">
-            <span>Plaintext files</span>
-            <h2>Move supported secrets out of easy reach</h2>
-            <p>Tokens in <code>.env</code>, <code>.npmrc</code>, <code>.netrc</code>, AWS config, and GitHub CLI state are convenient for humans and readable for local processes. Vault moves supported credentials into protected local storage.</p>
-          </article>
-          <article class="download-card">
-            <span>Approval gates</span>
-            <h2>Ask before commands use power</h2>
-            <p>Package publishing, token reveal, cloud mutation, and installer execution should not be silent agent side effects. Automic Vault puts the approval where the command runs, below the agent prompt.</p>
-          </article>
+
+          <div class="download-feature-stack">
+            <article class="download-feature">
+              <span class="download-feature-kicker">Command line</span>
+              <h3><code>av</code> where agents work.</h3>
+              <p>Scan, harden, install, approve, and open the app from the terminal session where tool calls happen.</p>
+            </article>
+            <article class="download-feature">
+              <span class="download-feature-kicker">Nucleus</span>
+              <h3>Hardened package roots.</h3>
+              <p>Install familiar Homebrew, npm, and PyPI packages with ownership boundaries that are easier to inspect.</p>
+            </article>
+            <article class="download-feature">
+              <span class="download-feature-kicker">Scanner</span>
+              <h3>Plaintext paths reported first.</h3>
+              <p>Credential files, package state, and local config hazards are surfaced before an autonomous coding run starts.</p>
+            </article>
+          </div>
         </div>
       </section>
 
       <section class="download-section" aria-labelledby="after-install-title">
-        <div class="section-label">
-          <h2 id="after-install-title">After install</h2>
-          <span>scan, harden, monitor</span>
+        <div class="download-section-copy">
+          <p class="eyebrow">02 &middot; First run</p>
+          <h2 id="after-install-title">Install it, then close the easy-read paths.</h2>
+          <p>
+            The first useful run is deliberately small: scan what your Mac
+            already exposes, harden the supported credentials, then keep the
+            app running for new package and secret hazards.
+          </p>
         </div>
-        <div class="download-grid">
-          <article class="download-card">
-            <span>1 / scan</span>
-            <h2>Run the secret scanner first</h2>
-            <p>Use the scanner to surface plaintext credential files and package-specific hazards before an autonomous coding session starts.</p>
-          </article>
-          <article class="download-card">
-            <span>2 / harden</span>
-            <h2>Patch the package surface</h2>
-            <p>Move supported credentials into Vault, keep command stubs under a predictable root, and leave old easy-read file paths out of the agent's reach.</p>
-          </article>
-          <article class="download-card">
-            <span>3 / monitor</span>
-            <h2>Keep Vault running</h2>
-            <p>New installs, stale tools, and fresh local config can reopen holes. The running app keeps reporting hazards so you can close them quickly.</p>
-          </article>
+
+        <div class="download-runbook">
+          <div class="download-step-list" aria-label="After install runbook">
+            <article class="download-step">
+              <span>1 / scan</span>
+              <div>
+                <h3>Find what installed tools can read.</h3>
+                <p>Run the scanner before the next autonomous coding session and review plaintext credential files, package hazards, and approval opportunities.</p>
+              </div>
+            </article>
+            <article class="download-step">
+              <span>2 / harden</span>
+              <div>
+                <h3>Move supported secrets into Vault.</h3>
+                <p>Use <code>av harden</code> to replace easy-read files with Keychain-backed helper flows for supported tools.</p>
+              </div>
+            </article>
+            <article class="download-step">
+              <span>3 / monitor</span>
+              <div>
+                <h3>Leave the local boundary running.</h3>
+                <p>New installs, stale tools, and fresh config can reopen holes. The app keeps reporting changes as they appear.</p>
+              </div>
+            </article>
+          </div>
+
+          <figure class="terminal-card terminal-card-blue">
+            <figcaption>Install path</figcaption>
+            <pre><code><span class="prompt">$</span> av open
+Automic Vault.app ready
+
+<span class="prompt">$</span> av scan --plain
+~/.npmrc token detected
+~/.netrc credential detected
+~/.aws/credentials detected
+
+<span class="prompt">$</span> av harden npm awscli gh
+Keychain-backed helpers installed
+old plaintext paths removed where supported</code></pre>
+          </figure>
         </div>
       </section>
 
-      <section class="download-section" aria-labelledby="works-with-title">
-        <div class="section-label">
-          <h2 id="works-with-title">Works with the tools already on your Mac</h2>
-          <span>local boundary</span>
+      <section class="download-radar" aria-labelledby="works-with-title">
+        <div class="download-section-copy">
+          <p class="eyebrow">03 &middot; Package surface</p>
+          <h2 id="works-with-title">Works with the tools already on your Mac.</h2>
+          <p>
+            Automic Vault keeps normal developer tooling familiar while making
+            package-owned secrets, helper protocols, and command approval
+            points visible at the local execution layer.
+          </p>
         </div>
-        <div class="download-grid">
-          <article class="download-card">
-            <span>Package managers</span>
-            <h2>Homebrew, npm, and PyPI remain familiar</h2>
-            <p>Automic Vault does not ask you to abandon normal developer tooling. It adds scanner output, package metadata, hardened roots, and approval points around the tools agents are most likely to call.</p>
-          </article>
-          <article class="download-card">
-            <span>Team vaults</span>
-            <h2>Use central secret stores where they fit</h2>
-            <p>1Password, HashiCorp Vault, and cloud secret systems can remain the source of truth. Automic Vault controls the local moment when a CLI, script, or package command tries to receive those credentials.</p>
-          </article>
-          <article class="download-card">
-            <span>Agents</span>
-            <h2>Put the boundary below the prompt</h2>
-            <p>Agent-side policy is useful, but a compromised or confused agent controls its own prompt surface. Vault keeps the approval and secret boundary at the local tool layer where execution happens.</p>
-          </article>
+
+        <div class="secured-radar download-package-radar" aria-label="Packages Automic Vault hardens">
+          <div class="radar-copy">
+            <span>Package hardening feed</span>
+            <strong>Known tools, visible controls.</strong>
+            <p>Rules rotate through helper protocols, temporary homes, Keychain-backed tokens, and plaintext hazard detection.</p>
+          </div>
+
+          <div class="radar-feed" data-secured-feed>
+            <a class="feed-row accent-green" href="/pkg/brew/gh/" aria-label="gh: GitHub tokens saved in Keychain and injected only for gh commands">
+              <span>gh</span>
+              <p>GitHub tokens saved in Keychain and injected only for gh commands</p>
+            </a>
+            <a class="feed-row accent-green" href="/pkg/brew/awscli/" aria-label="awscli: AWS keys moved from ~/.aws/credentials to credential_process">
+              <span>awscli</span>
+              <p>AWS keys moved from ~/.aws/credentials to credential_process</p>
+            </a>
+            <a class="feed-row accent-hot" href="/pkg/brew/curl/" aria-label="curl: netrc and curlrc credentials detected as hazards">
+              <span>curl</span>
+              <p>netrc and curlrc credentials detected as hazards</p>
+            </a>
+            <a class="feed-row accent-gold" href="/pkg/brew/git/" aria-label="git: plaintext credential-store files flagged before agent runs">
+              <span>git</span>
+              <p>plaintext credential-store files flagged before agent runs</p>
+            </a>
+            <a class="feed-row accent-blue" href="/pkg/brew/node/" aria-label="npm: registry tokens mounted through a temporary npm config">
+              <span>npm</span>
+              <p>registry tokens mounted through a temporary npm config</p>
+            </a>
+          </div>
         </div>
       </section>
 
-      <section class="download-section" aria-labelledby="download-faq-title">
-        <div class="section-label">
-          <h2 id="download-faq-title">Download FAQ</h2>
-          <span>install notes</span>
-        </div>
-        <div class="download-grid">
-          <article class="download-card">
-            <span>What installs?</span>
-            <h2>App, CLI, scanner, and package controls</h2>
+      <section class="download-faq" aria-labelledby="download-faq-title">
+        <p class="eyebrow">04 &middot; Download FAQ</p>
+        <h2 id="download-faq-title">Install notes without burying the answer.</h2>
+        <div class="download-faq-list">
+          <details open>
+            <summary>
+              <span class="download-faq-label">What installs?</span>
+              <strong>App, CLI, scanner, and package controls.</strong>
+            </summary>
             <p>The download includes the native app, <code>av</code>, scanner workflows, approval gates, and Nucleus package controls for local developer tools.</p>
-          </article>
-          <article class="download-card">
-            <span>Homebrew</span>
-            <h2>Keep the familiar install path</h2>
+          </details>
+          <details>
+            <summary>
+              <span class="download-faq-label">Homebrew</span>
+              <strong>Keep the familiar install path.</strong>
+            </summary>
             <p>You can keep using the tools developers already use. Automic Vault adds detection, hardening, and approval around the package and secret paths agents can reach.</p>
-          </article>
-          <article class="download-card">
-            <span>Provenance</span>
-            <h2>Maintained by Max Howell</h2>
+          </details>
+          <details>
+            <summary>
+              <span class="download-faq-label">Secret stores</span>
+              <strong>Use central vaults where they fit.</strong>
+            </summary>
+            <p>1Password, HashiCorp Vault, and cloud secret systems can remain the source of truth. Automic Vault controls the local moment when a CLI, script, or package command tries to receive those credentials.</p>
+          </details>
+          <details>
+            <summary>
+              <span class="download-faq-label">Provenance</span>
+              <strong>Maintained by Max Howell.</strong>
+            </summary>
             <p>Automic Vault is maintained by Max Howell, creator of Homebrew. Source, issues, security disclosure, and licensing live in the public GitHub project.</p>
-          </article>
+          </details>
         </div>
       </section>
 
+      <section class="closing-cta" aria-labelledby="final-title">
+        <p class="eyebrow">Free and open source</p>
+        <h2 id="final-title" aria-label="Secure the tools you install with brew, npm, pip, cargo, pnpm, and uv.">
+          Secure the tools
+          <span class="tool-command-line">you <span class="tool-flip" aria-hidden="true"><span class="tool-flip-word" data-tool-flip>brew install</span></span></span>
+        </h2>
+        <div>
+          <a class="button primary" href="/Automic Vault.dmg">Download Automic Vault</a>
+          <a class="button secondary" href="/docs/">Read docs</a>
+          <a class="button text" href="/pkg/">Browse packages</a>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">
-      <p>&copy; 2026 Automic Vault.</p>
-      <div class="footer-links">
+      <div class="footer-brand">
+        <img
+          src="../assets/icon@2x.webp"
+          alt=""
+          width="54"
+          height="54"
+          loading="lazy"
+          decoding="async"
+        >
+        <p>&copy; 2026 Automic Vault.</p>
+      </div>
+      <div class="footer-state" aria-label="Automic Vault local boundary">
+        <span><strong>Hazards</strong> Detected</span>
+        <span><strong>Secrets</strong> Keychain-backed</span>
+        <span><strong>Approvals</strong> Touch ID ready</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="/about/">About</a>
         <a href="/security/">Security</a>
+        <a href="/blog/">Blog</a>
         <a href="/privacy/">Privacy</a>
         <a href="/terms/">Terms</a>
+        <a href="https://x.com/AutomicVault">X</a>
         <a href="https://github.com/automic-vault/">GitHub</a>
-      </div>
+      </nav>
     </footer>
   </div>
 
