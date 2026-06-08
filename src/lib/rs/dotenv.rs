@@ -698,16 +698,26 @@ fn run_dotenv_encrypt(
         if keys.is_empty() {
             return Ok(());
         }
+        let description = if options.include_keys.is_empty() {
+            "secret-shaped plaintext dotenv values"
+        } else {
+            "plaintext dotenv values"
+        };
         return Err(format!(
-            "{} has secret-shaped plaintext dotenv values: {}",
+            "{} has {}: {}",
             document.path.display(),
+            description,
             keys.join(", ")
         ));
     }
     let public_key = ensure_document_public_key(&mut document, store)?;
     if keys.is_empty() {
         document.write()?;
-        println!("no secret-shaped plaintext values to encrypt");
+        if options.include_keys.is_empty() {
+            println!("no secret-shaped plaintext values to encrypt");
+        } else {
+            println!("no plaintext values to encrypt");
+        }
         return Ok(());
     }
     for key in &keys {
@@ -1065,6 +1075,7 @@ impl DotenvDocument {
     fn encryptable_keys(&self, include_keys: &[String], exclude_keys: &[String]) -> Vec<String> {
         let include = include_keys.iter().collect::<HashSet<_>>();
         let exclude = exclude_keys.iter().collect::<HashSet<_>>();
+        let explicit_includes = !include.is_empty();
         let mut keys = Vec::new();
         for line in &self.lines {
             let Some(assignment) = &line.assignment else {
@@ -1079,7 +1090,9 @@ impl DotenvDocument {
             if exclude.contains(&assignment.key) || is_encrypted_value(&assignment.value) {
                 continue;
             }
-            if !is_secret_shaped_dotenv_assignment(&assignment.key, &assignment.value) {
+            if !explicit_includes
+                && !is_secret_shaped_dotenv_assignment(&assignment.key, &assignment.value)
+            {
                 continue;
             }
             push_unique_string(&mut keys, assignment.key.clone());
@@ -3456,12 +3469,16 @@ mod tests {
     }
 
     #[test]
-    fn dotenv_encryptable_keys_only_select_secret_shaped_plaintext() {
+    fn dotenv_encryptable_keys_auto_select_secret_shaped_plaintext() {
         let ordinary = DotenvDocument::parse(
             PathBuf::from(".env"),
-            "DOTENV_PUBLIC_KEY=abc\nMIN_MACOS_VERSION=26.0\nNUKE_HELPER_VERSION=12\nTEAM_COMMON_NAME=\"Developer ID Application: Example\"\nTEAM_IDENTIFIER=ZU76A67LGU\nAPI_BASE_URL=https://api.example.test\nAUTH_TOKEN_URL=https://auth.example.test/oauth/token\nNEXT_PUBLIC_TOKEN=visible\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghijklmnopqrstuvwxyz\nVITE_API_KEY=public-browser-config\nALREADY_SECRET=encrypted:abc\n",
+            "DOTENV_PUBLIC_KEY=abc\nMIN_MACOS_VERSION=26.0\nNUKE_HELPER_VERSION=12\nTEAM_COMMON_NAME=\"Developer ID Application: Example\"\nTEAM_IDENTIFIER=ZU76A67LGU\nAWS_ACCOUNT_ID=123456789012\nAPI_BASE_URL=https://api.example.test\nAUTH_TOKEN_URL=https://auth.example.test/oauth/token\nNEXT_PUBLIC_TOKEN=visible\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghijklmnopqrstuvwxyz\nVITE_API_KEY=public-browser-config\nALREADY_SECRET=encrypted:abc\n",
         );
         assert!(ordinary.encryptable_keys(&[], &[]).is_empty());
+        assert_eq!(
+            ordinary.encryptable_keys(&["AWS_ACCOUNT_ID".to_string()], &[]),
+            vec!["AWS_ACCOUNT_ID"]
+        );
 
         let secrets = DotenvDocument::parse(
             PathBuf::from(".env"),
@@ -4640,7 +4657,7 @@ mod tests {
                 &store,
             )
             .unwrap_err()
-            .contains("secret-shaped plaintext dotenv values: API_KEY")
+            .contains("plaintext dotenv values: API_KEY")
         );
 
         run_dotenv_encrypt(
@@ -4654,7 +4671,7 @@ mod tests {
         )
         .unwrap();
         let encrypted_env = fs::read_to_string(&env_path).unwrap();
-        assert!(encrypted_env.contains("FOO=plain"));
+        assert!(encrypted_env.contains("FOO=\"encrypted:"));
         assert!(encrypted_env.contains("API_KEY=\"encrypted:"));
 
         run_dotenv_encrypt(
