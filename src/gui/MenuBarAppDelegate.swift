@@ -838,108 +838,182 @@ private final class PackageStatusMenuItemView: NSView {
 }
 
 private final class MenuBarInlineNotification {
-    private let panel: NSPanel
-    private let label = NSTextField(labelWithString: "")
-    private var hideWorkItem: DispatchWorkItem?
-
-    init() {
-        panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 24),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.ignoresMouseEvents = true
-
-        let container = NSVisualEffectView()
-        container.frame = NSRect(x: 0, y: 0, width: 220, height: 24)
-        container.autoresizingMask = [.width, .height]
-        container.material = .popover
-        container.blendingMode = .behindWindow
-        container.state = .active
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 6
-        container.layer?.masksToBounds = true
-        container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
-
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .labelColor
-        label.alignment = .center
-        label.lineBreakMode = .byTruncatingTail
-        label.maximumNumberOfLines = 1
-
-        container.addSubview(label)
-        panel.contentView = container
-
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
+    private enum Metrics {
+        static let baseWidth: CGFloat = 220
+        static let baseHeight: CGFloat = 24
+        static let minimumHeight: CGFloat = 22
+        static let maximumHeight: CGFloat = 28
+        static let minimumWidth: CGFloat = 178
+        static let maximumWidth: CGFloat = 340
+        static let horizontalTextPadding: CGFloat = 24
+        static let menuBarOffset: CGFloat = 8
+        static let screenInset: CGFloat = 4
+        static let verticalGap: CGFloat = 6
+        static let fadeInDuration: TimeInterval = 0.12
+        static let fadeOutDuration: TimeInterval = 0.18
+        static let visibleDuration: TimeInterval = 3.6
     }
+
+    private final class Toast {
+        let message: String
+        let panel: NSPanel
+        let label = NSTextField(labelWithString: "")
+        var hideWorkItem: DispatchWorkItem?
+        var isHiding = false
+
+        init(message: String) {
+            self.message = message
+            panel = NSPanel(
+                contentRect: NSRect(
+                    x: 0,
+                    y: 0,
+                    width: Metrics.baseWidth,
+                    height: Metrics.baseHeight
+                ),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.hasShadow = true
+            panel.ignoresMouseEvents = true
+
+            let container = NSVisualEffectView()
+            container.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: Metrics.baseWidth,
+                height: Metrics.baseHeight
+            )
+            container.autoresizingMask = [.width, .height]
+            container.material = .popover
+            container.blendingMode = .behindWindow
+            container.state = .active
+            container.wantsLayer = true
+            container.layer?.cornerRadius = 6
+            container.layer?.masksToBounds = true
+            container.layer?.borderWidth = 1
+            container.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = .labelColor
+            label.alignment = .center
+            label.lineBreakMode = .byTruncatingTail
+            label.maximumNumberOfLines = 1
+            label.stringValue = message
+
+            container.addSubview(label)
+            panel.contentView = container
+
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+                label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            ])
+        }
+    }
+
+    private var toasts: [Toast] = []
+    private weak var anchorButton: NSStatusBarButton?
 
     func show(message: String, anchoredTo button: NSStatusBarButton) {
         guard let buttonWindow = button.window else { return }
+        anchorButton = button
 
-        hideWorkItem?.cancel()
-        label.stringValue = message
+        let toast = Toast(message: message)
+        toasts.insert(toast, at: 0)
+        layoutToasts(relativeTo: button, in: buttonWindow)
 
-        let anchorFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let height = max(22, min(28, NSStatusBar.system.thickness))
-        let width = preferredWidth(for: message)
-        let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
-        let preferredY = screenFrame.map { $0.maxY - height - 8 }
-            ?? anchorFrame.minY - height - 8
-        var frame = NSRect(
-            x: anchorFrame.midX - width / 2,
-            y: min(anchorFrame.minY - height - 8, preferredY),
-            width: width,
-            height: height
-        )
+        toast.panel.alphaValue = 0
+        toast.panel.orderFrontRegardless()
 
-        if let screenFrame {
-            frame.origin.x = min(
-                max(frame.minX, screenFrame.minX + 4),
-                screenFrame.maxX - width - 4
-            )
-            frame.origin.y = max(frame.minY, screenFrame.minY + 4)
-        }
-
-        panel.setFrame(frame, display: false)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+        NSAnimationContext.runAnimationGroup { [panel = toast.panel] context in
+            context.duration = Metrics.fadeInDuration
             panel.animator().alphaValue = 1
         }
 
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.hide()
+        let workItem = DispatchWorkItem { [weak self, weak toast] in
+            guard let toast else { return }
+            self?.hide(toast)
         }
-        hideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4, execute: workItem)
+        toast.hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Metrics.visibleDuration,
+            execute: workItem
+        )
     }
 
-    private func hide() {
-        NSAnimationContext.runAnimationGroup { [panel] context in
-            context.duration = 0.18
+    private func hide(_ toast: Toast) {
+        guard toasts.contains(where: { $0 === toast }), toast.isHiding == false else {
+            return
+        }
+
+        toast.isHiding = true
+        toast.hideWorkItem = nil
+
+        NSAnimationContext.runAnimationGroup { [panel = toast.panel] context in
+            context.duration = Metrics.fadeOutDuration
             panel.animator().alphaValue = 0
-        } completionHandler: { [panel] in
+        } completionHandler: { [weak self, weak toast] in
+            guard let self, let toast else { return }
+            let panel = toast.panel
             panel.orderOut(nil)
+            self.toasts.removeAll { $0 === toast }
+            self.layoutToasts()
         }
     }
 
-    private func preferredWidth(for message: String) -> CGFloat {
-        let font = label.font ?? .systemFont(ofSize: 12, weight: .semibold)
+    private func layoutToasts() {
+        guard let anchorButton, let buttonWindow = anchorButton.window else { return }
+        layoutToasts(relativeTo: anchorButton, in: buttonWindow)
+    }
+
+    private func layoutToasts(relativeTo button: NSStatusBarButton, in buttonWindow: NSWindow) {
+        let anchorFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let height = max(
+            Metrics.minimumHeight,
+            min(Metrics.maximumHeight, NSStatusBar.system.thickness)
+        )
+        let screenFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        let preferredY = screenFrame.map { $0.maxY - height - Metrics.menuBarOffset }
+            ?? anchorFrame.minY - height - Metrics.menuBarOffset
+        let baseY = min(
+            anchorFrame.minY - height - Metrics.menuBarOffset,
+            preferredY
+        )
+
+        for (index, toast) in toasts.enumerated() {
+            let width = preferredWidth(for: toast)
+            var frame = NSRect(
+                x: anchorFrame.midX - width / 2,
+                y: baseY - CGFloat(index) * (height + Metrics.verticalGap),
+                width: width,
+                height: height
+            )
+
+            if let screenFrame {
+                frame.origin.x = min(
+                    max(frame.minX, screenFrame.minX + Metrics.screenInset),
+                    screenFrame.maxX - width - Metrics.screenInset
+                )
+                frame.origin.y = max(frame.minY, screenFrame.minY + Metrics.screenInset)
+            }
+
+            toast.panel.setFrame(frame, display: false)
+        }
+    }
+
+    private func preferredWidth(for toast: Toast) -> CGFloat {
+        let font = toast.label.font ?? .systemFont(ofSize: 12, weight: .semibold)
+        let message = toast.message
         let measured = (message as NSString).size(withAttributes: [.font: font]).width
-        return min(max(ceil(measured) + 24, 178), 340)
+        return min(
+            max(ceil(measured) + Metrics.horizontalTextPadding, Metrics.minimumWidth),
+            Metrics.maximumWidth
+        )
     }
 }
