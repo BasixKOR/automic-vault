@@ -281,8 +281,8 @@ update_once() {
 log_header
 if update_once; then
   exit 0
+else
+  status=$?
+  log ERROR "Update failed with exit status ${status}"
+  exit "${status}"
 fi
-
-status=$?
-log ERROR "Update failed with exit status ${status}"
-exit "${status}"
