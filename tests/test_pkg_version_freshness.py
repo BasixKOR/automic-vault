@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import pathlib
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ PAGES_SCRIPT = ROOT / "scripts" / "generate-pkg-pages.py"
 def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 

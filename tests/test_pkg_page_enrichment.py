@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -10,11 +11,13 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ENRICHMENT_SCRIPT = ROOT / "scripts" / "generate-pkg-page-enrichment.py"
 PAGES_SCRIPT = ROOT / "scripts" / "generate-pkg-pages.py"
+WEBSITE_INPUTS_SCRIPT = ROOT / "scripts" / "export-website-inputs.py"
 
 
 def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -55,7 +58,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             },
         }
 
-        artifact = module.build_enrichment([formula], db)
+        artifact = module.build_enrichment([formula], [], db)
         awscli = artifact["packages"]["brew:awscli"]
 
         self.assertEqual(awscli["version"], "2.34.50")
@@ -93,6 +96,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
                     "versions": {"stable": "1.0.0"},
                 },
             ],
+            [],
             {"entries": {}},
         )
 
@@ -268,7 +272,7 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn("cache/pkg-version-freshness.json", source_paths)
         self.assertIn("data/isotopes/gh-cli/automic-vault.yml", source_paths)
 
-    def test_package_index_reports_manifest_radioisotope_count(self):
+    def test_package_index_reports_protected_tool_manifest_count(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_manifest_count_test")
         radioisotope_count = module.local_radioisotope_manifest_count()
         full_isotope_count = module.local_full_isotope_manifest_count()
@@ -285,13 +289,14 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertEqual(radioisotope_count, len(list((ROOT / "data/radioisotopes").glob("*/automic-vault.yml"))))
         self.assertEqual(full_isotope_count, len(list((ROOT / "data/isotopes").glob("*/automic-vault.yml"))))
         self.assertIn(
-            f"<div class=\"metric\"><span>radioisotopes</span><strong>{radioisotope_count:,}</strong></div>",
+            f"<div class=\"metric\"><span>protected tools</span><strong>{radioisotope_count:,}</strong></div>",
             html,
         )
-        self.assertNotIn("<span>radioisotopes</span><strong>1</strong>", html)
+        self.assertNotIn("<span>protected tools</span><strong>1</strong>", html)
 
-    def test_tracked_radioisotope_inventory_copy_matches_manifest_counts(self):
+    def test_website_input_export_reports_scanned_package_count(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_tracked_inventory_copy_test")
+        inputs_module = load_module(WEBSITE_INPUTS_SCRIPT, "export_website_inputs_count_test")
         radioisotope_count = module.local_radioisotope_manifest_count()
         scan_log = ROOT / "data" / "radioisotopes" / "SCAN_LOG.md"
         scanned_package_count = sum(
@@ -300,13 +305,10 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             if line.startswith("| ") and line.split("|", 3)[1].strip().isdigit()
         )
 
-        main_readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        radio_readme = (ROOT / "data/radioisotopes/README.md").read_text(encoding="utf-8")
-        homepage = (ROOT / "www/index.html").read_text(encoding="utf-8")
+        payload = inputs_module.website_inputs()
 
-        self.assertIn(f"- {radioisotope_count} radioisotope manifests", main_readme)
-        self.assertIn(f"- Total radioisotope manifests: {radioisotope_count}", radio_readme)
-        self.assertIn(f"<span>{scanned_package_count:,} Homebrew packages scanned</span>", homepage)
+        self.assertEqual(radioisotope_count, len(list((ROOT / "data/radioisotopes").glob("*/automic-vault.yml"))))
+        self.assertEqual(payload["scannedPackageCount"], scanned_package_count)
 
     def test_package_page_scope_requires_executable_surface(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")
@@ -544,7 +546,8 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         self.assertIn("Exécutables installés", html)
         self.assertIn("Version et fraîcheur", html)
         self.assertIn("Métadonnées du paquet", html)
-        self.assertIn("Paquets liés", html)
+        self.assertIn("Liens internes de paquets", html)
+        self.assertIn("Outils liés", html)
         self.assertIn("Généré depuis les données du dépôt", html)
         for phrase in (
             ">Package summary<",
@@ -552,7 +555,8 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             ">Installed executables<",
             ">Version and freshness<",
             ">Package metadata<",
-            ">Related packages<",
+            ">Internal package links<",
+            ">Related tools<",
             ">Generated from repository data<",
         ):
             self.assertNotIn(phrase, html)

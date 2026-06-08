@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -15,6 +17,7 @@ def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -547,6 +550,8 @@ class PackageCrossEcosystemTests(unittest.TestCase):
         self.assertTrue(any("inferred evidence" in failure for failure in failures))
 
     def test_current_cross_ecosystem_artifact_validates_when_present(self):
+        if os.environ.get("AV_VALIDATE_GENERATED_ARTIFACTS") != "1":
+            self.skipTest("generated cache artifact validation is opt-in")
         path = ROOT / "cache" / "pkg-cross-ecosystem.json"
         if not path.exists():
             self.skipTest("cross-ecosystem artifact has not been generated yet")

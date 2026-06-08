@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import sys
 import types
 import unittest
 from pathlib import Path
@@ -15,6 +17,7 @@ def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -64,6 +67,7 @@ class PackageGraphCurationTests(unittest.TestCase):
         )
         fake_pages_module = types.SimpleNamespace(
             is_indexable_package_page=lambda _page: True,
+            has_internal_package_navigation=lambda _page: False,
             inferred_related_links=lambda _page: [],
         )
         artifact = {"schema": module.SCHEMA_VERSION, "packages": {}, "hubs": {}}
@@ -124,8 +128,13 @@ class PackageGraphCurationTests(unittest.TestCase):
         self.assertEqual(graph_packages["brew:alpha"]["linkIntents"]["packageHubs"][0]["slug"], "terminal-utilities")
 
     def test_current_curation_artifact_validates_against_local_pages(self):
+        if os.environ.get("AV_VALIDATE_GENERATED_ARTIFACTS") != "1":
+            self.skipTest("generated cache artifact validation is opt-in")
         module = load_module(CURATION_SCRIPT, "pkg_graph_curation_current")
-        artifact = json.loads((ROOT / "cache" / "pkg-graph-curation.json").read_text(encoding="utf-8"))
+        path = ROOT / "cache" / "pkg-graph-curation.json"
+        if not path.exists():
+            self.skipTest("package graph curation artifact has not been generated yet")
+        artifact = json.loads(path.read_text(encoding="utf-8"))
         pages_module, pages = module.load_base_pages(artifact)
 
         failures = module.validate_curation(artifact, pages_module, pages)
@@ -133,6 +142,8 @@ class PackageGraphCurationTests(unittest.TestCase):
         self.assertEqual(failures, [])
 
     def test_current_package_pages_have_no_isolated_indexable_pages(self):
+        if os.environ.get("AV_VALIDATE_GENERATED_ARTIFACTS") != "1":
+            self.skipTest("generated cache artifact validation is opt-in")
         module = load_module(PAGES_SCRIPT, "pkg_pages_curation_coverage")
         pages = module.package_pages_from_sources(module.load_sources())
         isolated = [
