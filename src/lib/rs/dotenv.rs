@@ -14,6 +14,8 @@ const DOTENV_PUBLIC_KEY_PREFIX: &str = "DOTENV_PUBLIC_KEY";
 const DOTENV_PRIVATE_KEY_PREFIX: &str = "DOTENV_PRIVATE_KEY";
 const DOTENV_USER_APPROVAL_SUBDIR: &str = "dotenv";
 const DOTENV_APPROVAL_NOTIFICATION: &str = "com.automicvault.dotenv-approval.pending-changed";
+const DOTENV_AUTOMATIC_EXPORT_REJECTION_NOTIFICATION: &str =
+    "com.automicvault.dotenv-approval.automatic-export-rejected";
 const DOTENV_SYSTEM_POLICY_PATH: &str =
     "/Library/Application Support/Automic Vault/dotenv/policy.json";
 const DOTENV_SYSTEM_REMEMBERED_APPROVALS_PATH: &str =
@@ -1773,19 +1775,35 @@ fn request_dotenv_approval_if_needed(
         public_key_fingerprint: public_key_fingerprint.to_string(),
         keys: keys.to_vec(),
     };
+    let parent_process = dotenv_parent_process_snapshot();
+    let process_ancestry = dotenv_process_ancestry_snapshot(parent_process.pid);
+    if let Some(source) =
+        dotenv_codex_export_rejection_source(mode, &parent_process, &process_ancestry)
+    {
+        let _ = dotenv_post_distributed_notification_with_object(
+            DOTENV_AUTOMATIC_EXPORT_REJECTION_NOTIFICATION,
+            &source,
+        );
+        return Err(dotenv_approval_denied_message(
+            mode,
+            &dotenv_codex_export_rejection_reason(&source),
+        ));
+    }
     let policy = load_dotenv_approval_policy().unwrap_or_default();
     if policy == DotenvApprovalPolicy::RememberApproved
         && load_dotenv_remembered_approvals()?.contains(&entry)
     {
         return Ok(());
     }
-    request_dotenv_approval(&entry, command)?;
+    request_dotenv_approval(&entry, command, parent_process, process_ancestry)?;
     Ok(())
 }
 
 fn request_dotenv_approval(
     entry: &DotenvRememberedApprovalEntry,
     command: &[String],
+    parent_process: DotenvParentProcessSnapshot,
+    process_ancestry: Vec<DotenvProcessSnapshot>,
 ) -> Result<(), String> {
     let request_id = format!(
         "{}-{}",
@@ -1795,7 +1813,6 @@ fn request_dotenv_approval(
             .map_err(|err| format!("failed to compute request timestamp: {err}"))?
             .as_millis()
     );
-    let parent_process = dotenv_parent_process_snapshot();
     let request = DotenvApprovalRequestSnapshot {
         id: request_id.clone(),
         mode: entry.mode,
@@ -1808,7 +1825,7 @@ fn request_dotenv_approval(
             .map_err(|err| format!("failed to resolve current directory: {err}"))?
             .to_string_lossy()
             .into_owned(),
-        process_ancestry: dotenv_process_ancestry_snapshot(parent_process.pid),
+        process_ancestry,
         parent_process,
         command: command.to_vec(),
     };
@@ -1843,6 +1860,68 @@ fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), St
         }
         thread::sleep(Duration::from_millis(250));
     }
+}
+
+fn dotenv_codex_export_rejection_source(
+    mode: DotenvApprovalMode,
+    parent_process: &DotenvParentProcessSnapshot,
+    process_ancestry: &[DotenvProcessSnapshot],
+) -> Option<String> {
+    if mode != DotenvApprovalMode::Export {
+        return None;
+    }
+    dotenv_codex_process_source_name(
+        parent_process.executable_path.as_deref(),
+        parent_process.display_name.as_deref(),
+    )
+    .or_else(|| {
+        process_ancestry.iter().find_map(|process| {
+            dotenv_codex_process_source_name(
+                process.executable_path.as_deref(),
+                process.display_name.as_deref(),
+            )
+        })
+    })
+}
+
+fn dotenv_codex_process_source_name(
+    executable_path: Option<&str>,
+    display_name: Option<&str>,
+) -> Option<String> {
+    if let Some(app_name) = executable_path.and_then(dotenv_codex_app_component_name) {
+        return Some(app_name);
+    }
+    if let Some(display_name) = display_name
+        && dotenv_codex_name_matches(display_name)
+    {
+        return Some(display_name.to_string());
+    }
+    executable_path
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .filter(|name| dotenv_codex_name_matches(name))
+        .map(str::to_string)
+}
+
+fn dotenv_codex_app_component_name(executable_path: &str) -> Option<String> {
+    Path::new(executable_path)
+        .components()
+        .find_map(|component| {
+            let name = component.as_os_str().to_str()?;
+            let lower = name.to_ascii_lowercase();
+            let app_name = lower.strip_suffix(".app")?;
+            dotenv_codex_name_matches(app_name).then(|| name.to_string())
+        })
+}
+
+fn dotenv_codex_name_matches(value: &str) -> bool {
+    let lower = value.trim().to_ascii_lowercase();
+    let normalized = lower.strip_suffix(".app").unwrap_or(&lower);
+    matches!(normalized, "codex" | "openai codex")
+}
+
+fn dotenv_codex_export_rejection_reason(source: &str) -> String {
+    format!("av dotenv export was auto-rejected because it was requested by {source}")
 }
 
 fn dotenv_approval_denied_message(mode: DotenvApprovalMode, reason: &str) -> String {
@@ -2648,6 +2727,44 @@ fn dotenv_post_distributed_notification(name: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
+fn dotenv_post_distributed_notification_with_object(
+    name: &str,
+    object: &str,
+) -> Result<(), String> {
+    unsafe extern "C" {
+        fn isotope_post_distributed_notification_with_object(
+            name_cstr: *const c_char,
+            object_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+        ) -> bool;
+    }
+    let name_cstr =
+        CString::new(name).map_err(|_| "invalid distributed notification name".to_string())?;
+    let object_cstr =
+        CString::new(object).map_err(|_| "invalid distributed notification object".to_string())?;
+    let mut error = std::ptr::null_mut();
+    if unsafe {
+        isotope_post_distributed_notification_with_object(
+            name_cstr.as_ptr(),
+            object_cstr.as_ptr(),
+            &mut error,
+        )
+    } {
+        return Ok(());
+    }
+    Err(unsafe { take_dotenv_bridge_string(error) }
+        .unwrap_or_else(|| "failed to post dotenv approval notification".to_string()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn dotenv_post_distributed_notification_with_object(
+    _name: &str,
+    _object: &str,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 unsafe fn take_dotenv_bridge_string(value: *mut c_char) -> Option<String> {
     if value.is_null() {
         return None;
@@ -3142,6 +3259,72 @@ mod tests {
             dotenv_display_path(Path::new("/var/tmp/project/.env")),
             "/var/tmp/project/.env"
         );
+    }
+
+    #[test]
+    fn dotenv_codex_export_auto_rejection_matches_process_tree() {
+        let shell_parent = DotenvParentProcessSnapshot {
+            pid: 100,
+            executable_path: Some("/bin/zsh".to_string()),
+            display_name: Some("zsh".to_string()),
+        };
+        let codex_ancestry = vec![
+            DotenvProcessSnapshot {
+                pid: 100,
+                parent_pid: 200,
+                executable_path: Some("/bin/zsh".to_string()),
+                display_name: Some("zsh".to_string()),
+            },
+            DotenvProcessSnapshot {
+                pid: 200,
+                parent_pid: 1,
+                executable_path: Some("/Applications/Codex.app/Contents/MacOS/Codex".to_string()),
+                display_name: Some("Codex".to_string()),
+            },
+        ];
+        assert_eq!(
+            dotenv_codex_export_rejection_source(
+                DotenvApprovalMode::Export,
+                &shell_parent,
+                &codex_ancestry,
+            )
+            .as_deref(),
+            Some("Codex.app")
+        );
+        assert!(
+            dotenv_codex_export_rejection_source(
+                DotenvApprovalMode::Run,
+                &shell_parent,
+                &codex_ancestry,
+            )
+            .is_none()
+        );
+
+        let codex_parent = DotenvParentProcessSnapshot {
+            pid: 201,
+            executable_path: Some("/usr/local/bin/codex".to_string()),
+            display_name: Some("codex".to_string()),
+        };
+        assert_eq!(
+            dotenv_codex_export_rejection_source(DotenvApprovalMode::Export, &codex_parent, &[])
+                .as_deref(),
+            Some("codex")
+        );
+        let vscode_ancestry = vec![DotenvProcessSnapshot {
+            pid: 202,
+            parent_pid: 1,
+            executable_path: Some("/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)".to_string()),
+            display_name: Some("Code Helper (Plugin)".to_string()),
+        }];
+        assert!(
+            dotenv_codex_export_rejection_source(
+                DotenvApprovalMode::Export,
+                &shell_parent,
+                &vscode_ancestry,
+            )
+            .is_none()
+        );
+        assert!(dotenv_codex_export_rejection_reason("Codex.app").contains("Codex.app"));
     }
 
     #[test]
@@ -3814,6 +3997,11 @@ mod tests {
         assert_eq!(
             dotenv_post_distributed_notification("bad\0notification").unwrap_err(),
             "invalid distributed notification name"
+        );
+        assert_eq!(
+            dotenv_post_distributed_notification_with_object("notification", "bad\0object")
+                .unwrap_err(),
+            "invalid distributed notification object"
         );
     }
 

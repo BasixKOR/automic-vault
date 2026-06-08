@@ -257,6 +257,8 @@
 "Secret auto-approved: %@" = "密钥已自动批准：%@";
 "Secrets Access" = "密钥访问";
 "Secrets auto-approved: %@" = "密钥已自动批准：%@";
+"Dotenv export auto-rejected" = "dotenv export 已自动拒绝";
+"Dotenv export auto-rejected: %@" = "dotenv export 已自动拒绝：%@";
 "Security" = "安全";
 "Security Alerts" = "安全警报";
 "Sec Recs" = "Sec Recs";

@@ -149,6 +149,70 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertFalse(text.contains("Code Helper (Plugin).app"), text)
     }
 
+    func testDotenvApprovalAutoRejectsCodexExportProcessTree() throws {
+        let approval = dotenvApproval(
+            keys: ["FOO"],
+            processAncestry: [
+                DotenvProcessSnapshot(
+                    pid: 123,
+                    parentPid: 456,
+                    executablePath: "/bin/zsh",
+                    displayName: "zsh"
+                ),
+                DotenvProcessSnapshot(
+                    pid: 456,
+                    parentPid: 1,
+                    executablePath: "/Applications/Codex.app/Contents/MacOS/Codex",
+                    displayName: "Codex"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(approval.automaticExportRejectionSourceName, "Codex.app")
+    }
+
+    func testDotenvApprovalAutoRejectsCodexCLIParent() throws {
+        let approval = dotenvApproval(
+            keys: ["FOO"],
+            parentProcess: IsotopeParentProcessSnapshot(
+                pid: 123,
+                executablePath: "/usr/local/bin/codex",
+                displayName: "codex"
+            )
+        )
+
+        XCTAssertEqual(approval.automaticExportRejectionSourceName, "codex")
+    }
+
+    func testDotenvApprovalDoesNotAutoRejectRunModeOrOtherApplications() throws {
+        let runApproval = dotenvApproval(
+            mode: .run,
+            keys: ["FOO"],
+            processAncestry: [
+                DotenvProcessSnapshot(
+                    pid: 456,
+                    parentPid: 1,
+                    executablePath: "/Applications/Codex.app/Contents/MacOS/Codex",
+                    displayName: "Codex"
+                ),
+            ]
+        )
+        let vscodeApproval = dotenvApproval(
+            keys: ["FOO"],
+            processAncestry: [
+                DotenvProcessSnapshot(
+                    pid: 456,
+                    parentPid: 1,
+                    executablePath: "/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)",
+                    displayName: "Code Helper (Plugin)"
+                ),
+            ]
+        )
+
+        XCTAssertNil(runApproval.automaticExportRejectionSourceName)
+        XCTAssertNil(vscodeApproval.automaticExportRejectionSourceName)
+    }
+
     func testDotenvApprovalViewWrapsOverflowingKeyPills() throws {
         let compactView = DotenvApprovalView(approval: dotenvApproval(keys: ["FOO", "BAR"]))
         let wrappedView = DotenvApprovalView(approval: dotenvApproval(keys: [
@@ -176,23 +240,25 @@ final class VaultApprovalStoreTests: XCTestCase {
     }
 
     private func dotenvApproval(
+        mode: DotenvApprovalMode = .export,
         keys: [String],
+        parentProcess: IsotopeParentProcessSnapshot = IsotopeParentProcessSnapshot(
+            pid: 123,
+            executablePath: "/bin/zsh",
+            displayName: "zsh"
+        ),
         processAncestry: [DotenvProcessSnapshot] = []
     ) -> DotenvApprovalRequestSnapshot {
         DotenvApprovalRequestSnapshot(
             id: "request-1",
-            mode: .export,
+            mode: mode,
             envFilePath: "/tmp/project/.env",
             projectRoot: "/tmp/project",
             envSha256: "abc",
             publicKeyFingerprint: "def",
             keys: keys,
             cwd: "/tmp/project",
-            parentProcess: IsotopeParentProcessSnapshot(
-                pid: 123,
-                executablePath: "/bin/zsh",
-                displayName: "zsh"
-            ),
+            parentProcess: parentProcess,
             processAncestry: processAncestry
         )
     }

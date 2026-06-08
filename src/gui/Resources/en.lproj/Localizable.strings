@@ -257,6 +257,8 @@
 "Secret auto-approved: %@" = "Secret auto-approved: %@";
 "Secrets Access" = "Secrets Access";
 "Secrets auto-approved: %@" = "Secrets auto-approved: %@";
+"Dotenv export auto-rejected" = "Dotenv export auto-rejected";
+"Dotenv export auto-rejected: %@" = "Dotenv export auto-rejected: %@";
 "Security" = "Security";
 "Security Alerts" = "Security Alerts";
 "Sec Recs" = "Sec Recs";

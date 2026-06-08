@@ -257,6 +257,8 @@
 "Secret auto-approved: %@" = "シークレットを自動承認しました: %@";
 "Secrets Access" = "シークレットアクセス";
 "Secrets auto-approved: %@" = "シークレットを自動承認しました: %@";
+"Dotenv export auto-rejected" = "dotenv exportを自動拒否しました";
+"Dotenv export auto-rejected: %@" = "dotenv exportを自動拒否しました: %@";
 "Security" = "セキュリティ";
 "Security Alerts" = "セキュリティ警告";
 "Sec Recs" = "Sec Recs";

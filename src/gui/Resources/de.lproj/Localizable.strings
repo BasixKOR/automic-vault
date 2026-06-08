@@ -257,6 +257,8 @@
 "Secret auto-approved: %@" = "Secret automatisch genehmigt: %@";
 "Secrets Access" = "Secret-Zugriff";
 "Secrets auto-approved: %@" = "Secrets automatisch genehmigt: %@";
+"Dotenv export auto-rejected" = "Dotenv export automatisch abgelehnt";
+"Dotenv export auto-rejected: %@" = "Dotenv export automatisch abgelehnt: %@";
 "Security" = "Sicherheit";
 "Security Alerts" = "Sicherheitswarnungen";
 "Sec Recs" = "Sec Recs";

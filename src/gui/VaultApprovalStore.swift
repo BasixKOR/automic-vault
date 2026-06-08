@@ -232,6 +232,60 @@ enum DotenvNotification {
     static let pendingApprovalChanged = Notification.Name(
         "com.automicvault.dotenv-approval.pending-changed"
     )
+    static let automaticExportRejected = Notification.Name(
+        "com.automicvault.dotenv-approval.automatic-export-rejected"
+    )
+}
+
+extension DotenvApprovalRequestSnapshot {
+    var automaticExportRejectionSourceName: String? {
+        guard mode == .export else { return nil }
+        return Self.codexSourceName(
+            executablePath: parentProcess.executablePath,
+            displayName: parentProcess.displayName
+        ) ?? processAncestry.compactMap { process in
+            Self.codexSourceName(
+                executablePath: process.executablePath,
+                displayName: process.displayName
+            )
+        }.first
+    }
+
+    private static func codexSourceName(
+        executablePath: String?,
+        displayName: String?
+    ) -> String? {
+        if let executablePath,
+           let appName = codexApplicationName(from: executablePath) {
+            return appName
+        }
+        if let displayName,
+           codexNameMatches(displayName) {
+            return displayName
+        }
+        if let executableName = executablePath.map({ URL(fileURLWithPath: $0).lastPathComponent }),
+           codexNameMatches(executableName) {
+            return executableName
+        }
+        return nil
+    }
+
+    private static func codexApplicationName(from executablePath: String) -> String? {
+        URL(fileURLWithPath: executablePath)
+            .pathComponents
+            .first { component in
+                let lower = component.lowercased()
+                guard lower.hasSuffix(".app") else { return false }
+                let appName = String(lower.dropLast(4))
+                return codexNameMatches(appName)
+            }
+    }
+
+    private static func codexNameMatches(_ value: String) -> Bool {
+        let lower = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalized = lower.hasSuffix(".app") ? String(lower.dropLast(4)) : lower
+        return normalized == "codex" || normalized == "openai codex"
+    }
 }
 
 final class VaultApprovalStore {
@@ -601,6 +655,15 @@ final class DotenvApprovalStore {
         distributedCenter.postNotificationName(
             DotenvNotification.pendingApprovalChanged,
             object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+    }
+
+    func postAutomaticExportRejected(sourceName: String?) {
+        distributedCenter.postNotificationName(
+            DotenvNotification.automaticExportRejected,
+            object: sourceName,
             userInfo: nil,
             deliverImmediately: true
         )

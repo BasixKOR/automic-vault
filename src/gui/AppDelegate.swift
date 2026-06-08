@@ -572,6 +572,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard activeDotenvApprovalID != approval.id else { return }
         activeDotenvApprovalID = approval.id
+        if let sourceName = approval.automaticExportRejectionSourceName {
+            saveDotenvDecision(
+                approval,
+                approved: false,
+                reason: dotenvAutomaticExportRejectionReason(sourceName: sourceName)
+            )
+            dotenvApprovalStore.postAutomaticExportRejected(sourceName: sourceName)
+            return
+        }
 
         let window = makeOrRestoreMainWindow()
         if NSApp.isActive == false || window.isKeyWindow == false {
@@ -614,13 +623,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func saveDotenvDecision(
         _ approval: DotenvApprovalRequestSnapshot,
-        approved: Bool
+        approved: Bool,
+        reason: String? = nil
     ) {
         try? dotenvApprovalStore.saveDecision(
             DotenvApprovalDecision(
                 id: approval.id,
                 approved: approved,
-                reason: approved ? nil : "Denied by operator"
+                reason: approved ? nil : (reason ?? "Denied by operator")
             )
         )
         if approved {
@@ -630,6 +640,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             self.presentPendingDotenvApprovalIfNeeded()
         }
+    }
+
+    private func dotenvAutomaticExportRejectionReason(sourceName: String) -> String {
+        "av dotenv export was auto-rejected because it was requested by \(sourceName)"
     }
 
     private func rememberIsotopeAlwaysAllow(_ approval: IsotopeApprovalRequestSnapshot) {

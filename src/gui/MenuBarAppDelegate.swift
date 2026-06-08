@@ -53,6 +53,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var startAtLoginObserver: NSObjectProtocol?
     private var appUpdateObserver: NSObjectProtocol?
     private var autoApprovedSecretObserverInstalled = false
+    private var autoRejectedDotenvObserverInstalled = false
     private var refreshInFlight = false
     private var snapshot = NucleusStatusSnapshot.empty
     private var appUpdateSnapshot = AppUpdateSnapshot.empty
@@ -69,6 +70,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         installStartAtLoginObserverIfNeeded()
         installAppUpdateObserverIfNeeded()
         installAutoApprovedSecretObserverIfNeeded()
+        installAutoRejectedDotenvObserverIfNeeded()
         startRemoteDatabaseRefreshTimer()
         refreshSnapshot(reason: "launch")
         startRefreshTimer()
@@ -91,6 +93,13 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             DistributedNotificationCenter.default().removeObserver(
                 self,
                 name: IsotopeNotification.automaticApprovalGranted,
+                object: nil
+            )
+        }
+        if autoRejectedDotenvObserverInstalled {
+            DistributedNotificationCenter.default().removeObserver(
+                self,
+                name: DotenvNotification.automaticExportRejected,
                 object: nil
             )
         }
@@ -325,14 +334,38 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         autoApprovedSecretObserverInstalled = true
     }
 
+    private func installAutoRejectedDotenvObserverIfNeeded() {
+        guard autoRejectedDotenvObserverInstalled == false else { return }
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(autoRejectedDotenvNotification(_:)),
+            name: DotenvNotification.automaticExportRejected,
+            object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+        autoRejectedDotenvObserverInstalled = true
+    }
+
     @objc private func autoApprovedSecretNotification(_ notification: Notification) {
         showAutomaticSecretApprovalNotification(secretNames: notification.object as? String)
+    }
+
+    @objc private func autoRejectedDotenvNotification(_ notification: Notification) {
+        showAutomaticDotenvRejectionNotification(sourceName: notification.object as? String)
     }
 
     private func showAutomaticSecretApprovalNotification(secretNames: String?) {
         guard let button = statusItem.button else { return }
         automaticSecretApprovalToast.show(
             message: automaticSecretApprovalMessage(secretNames: secretNames),
+            anchoredTo: button
+        )
+    }
+
+    private func showAutomaticDotenvRejectionNotification(sourceName: String?) {
+        guard let button = statusItem.button else { return }
+        automaticSecretApprovalToast.show(
+            message: automaticDotenvRejectionMessage(sourceName: sourceName),
             anchoredTo: button
         )
     }
@@ -345,6 +378,14 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         return names.contains(",")
             ? L10n.format("Secrets auto-approved: %@", names)
             : L10n.format("Secret auto-approved: %@", names)
+    }
+
+    private func automaticDotenvRejectionMessage(sourceName: String?) -> String {
+        let name = sourceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard name.isEmpty == false else {
+            return L10n.string("Dotenv export auto-rejected")
+        }
+        return L10n.format("Dotenv export auto-rejected: %@", name)
     }
 
     private func mainApplicationIsRunning() -> Bool {
