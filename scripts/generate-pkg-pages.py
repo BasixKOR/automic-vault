@@ -832,8 +832,14 @@ def apply_agent_safety_answers(pages: dict[str, PackagePage], data: dict[str, An
         raise ValueError("pkg agent safety answers must exactly match priorityPackageKeys (" + "; ".join(details) + ")")
     missing_pages = sorted(key for key in priority_keys if key not in pages)
     if missing_pages:
-        raise ValueError(f"pkg agent safety answers reference missing package pages: {', '.join(missing_pages[:12])}")
+        print(
+            "WARN Skipping pkg agent safety answers for missing package pages: "
+            + ", ".join(missing_pages[:12]),
+            file=sys.stderr,
+        )
     for package_key in priority_keys:
+        if package_key not in pages:
+            continue
         answer = answers.get(package_key)
         if not isinstance(answer, dict):
             raise ValueError(f"pkg agent safety answer for {package_key} must be an object")
