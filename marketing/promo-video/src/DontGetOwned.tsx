@@ -32,7 +32,6 @@ const green = "#6bffb0";
 const amber = "#ffb347";
 const blue = "#6aa9ff";
 const ink = "#f2e1b8";
-const inkMuted = "#b89b73";
 const line = "rgba(242, 225, 184, 0.32)";
 const lineFaint = "rgba(242, 225, 184, 0.16)";
 const display =
@@ -241,11 +240,11 @@ const FlashWord: React.FC<{
 
 const HazardPanel: React.FC<{ local: number }> = ({ local }) => {
   const hazards = [
-    { at: 42, text: "HAZARD: postinstall beacon", y: 196 },
-    { at: 64, text: "DETECTED: npm token in env", y: 306 },
-    { at: 86, text: "ALERT: new maintainer publish", y: 416 },
-    { at: 108, text: "TRACE: C2 domain requested", y: 526 },
-    { at: 130, text: "FINDING: credential file read", y: 636 },
+    { at: 42, text: "POSTINSTALL", y: 196 },
+    { at: 64, text: "NPM TOKEN", y: 306 },
+    { at: 86, text: "NEW MAINTAINER", y: 416 },
+    { at: 108, text: "C2 REQUEST", y: 526 },
+    { at: 130, text: "SECRET READ", y: 636 },
   ];
   const sweep = interpolate(local % 42, [0, 42], [-120, 920], clamp);
   const pulse = interpolate(local % 18, [0, 9, 18], [0.48, 1, 0.48], clamp);
@@ -299,7 +298,7 @@ const HazardPanel: React.FC<{ local: number }> = ({ local }) => {
           letterSpacing: 0,
         }}
       >
-        AUTOMIC VAULT DETECTOR STREAM
+        DETECTOR STREAM
       </div>
       {hazards.map((hazard) => (
         <FlashWord
@@ -341,22 +340,6 @@ const DetectScene: React.FC = () => {
       <Brand />
       <StepLabel local={local} step="Step 1" verb="Detect" color={redHot} />
       <HazardPanel local={local} />
-      <div
-        style={{
-          position: "absolute",
-          left: 92,
-          bottom: 118,
-          width: 690,
-          color: inkMuted,
-          fontFamily: mono,
-          fontSize: 34,
-          fontWeight: 750,
-          lineHeight: 1.35,
-        }}
-      >
-        Package-specific detectors. Secret checks. Behavior that smells wrong
-        before it gets a shell.
-      </div>
     </AbsoluteFill>
   );
 };
@@ -368,7 +351,7 @@ const Shield: React.FC<{ local: number; start: number; label: string; x: number;
   x,
   y,
 }) => {
-  const opacity = fade(local, start, start + 14);
+  const opacity = fade(local, start, start + 4) * fadeOut(local, start + 10, start + 14);
   const scale = pop(local, start, start + 18);
   const glow = interpolate(local % 32, [0, 16, 32], [0.42, 0.85, 0.42], clamp);
 
@@ -378,19 +361,19 @@ const Shield: React.FC<{ local: number; start: number; label: string; x: number;
         position: "absolute",
         left: x,
         top: y,
-        width: 242,
-        height: 176,
+        width: 430,
+        height: 300,
         opacity,
         transform: `scale(${scale})`,
       }}
     >
       <svg
-        width="104"
-        height="120"
+        width="190"
+        height="220"
         viewBox="0 0 104 120"
         style={{
           position: "absolute",
-          left: 69,
+          left: 120,
           top: 0,
           filter: `drop-shadow(0 0 ${28 * glow}px rgba(107,255,176,0.56))`,
         }}
@@ -417,7 +400,7 @@ const Shield: React.FC<{ local: number; start: number; label: string; x: number;
           left: 0,
           right: 0,
           bottom: 0,
-          height: 54,
+          height: 74,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -426,7 +409,7 @@ const Shield: React.FC<{ local: number; start: number; label: string; x: number;
           background: "rgba(6, 18, 14, 0.82)",
           border: "1px solid rgba(107,255,176,0.38)",
           fontFamily: mono,
-          fontSize: 23,
+          fontSize: 34,
           fontWeight: 900,
           letterSpacing: 0,
           boxShadow: "0 18px 40px rgba(0,0,0,0.34)",
@@ -458,30 +441,14 @@ const HardenScene: React.FC = () => {
       <Background mode="harden" />
       <Brand />
       <StepLabel local={local} step="Step 2" verb="Harden" color={green} />
-      <div
-        style={{
-          position: "absolute",
-          left: 98,
-          bottom: 126,
-          width: 660,
-          color: inkMuted,
-          fontFamily: mono,
-          fontSize: 34,
-          fontWeight: 750,
-          lineHeight: 1.35,
-        }}
-      >
-        Lock risky install behavior behind reviewable package rules. Agents can
-        move fast without inheriting blind trust.
-      </div>
       {packages.map((pkg, index) => (
         <Shield
           key={pkg}
           local={local}
-          start={42 + index * 10}
+          start={38 + index * 17}
           label={pkg}
-          x={850 + (index % 3) * 286}
-          y={142 + Math.floor(index / 3) * 216}
+          x={1038 + (index % 3) * 42}
+          y={266 + (index % 2) * 42}
         />
       ))}
       <div
@@ -498,93 +465,67 @@ const HardenScene: React.FC = () => {
           opacity: fade(local, 118, 138),
         }}
       >
-        approved behaviors only
+        approved only
       </div>
     </AbsoluteFill>
   );
 };
 
 const incidentPackages = [
-  { name: "node-ipc", detail: "9.1.6 / 9.2.3 / 12.0.1", tone: redHot },
-  { name: "durabletask", detail: "1.4.1 - 1.4.3", tone: amber },
-  { name: "axios", detail: "1.14.1 / 0.30.4", tone: redHot },
-  { name: "plain-crypto-js", detail: "4.2.1", tone: amber },
-  { name: "litellm", detail: "1.82.7 / 1.82.8", tone: redHot },
-  { name: "telnyx", detail: "PyPI compromise", tone: amber },
-  { name: "@tanstack/*", detail: "Mini Shai-Hulud", tone: redHot },
-  { name: "@mistralai/*", detail: "campaign wave", tone: amber },
-  { name: "UiPath packages", detail: "campaign wave", tone: amber },
-  { name: "@antv/g2", detail: "May 19 wave", tone: redHot },
-  { name: "@antv/g6", detail: "May 19 wave", tone: redHot },
-  { name: "echarts-for-react", detail: "affected", tone: amber },
-  { name: "size-sensor", detail: "affected", tone: amber },
-  { name: "timeago.js", detail: "affected", tone: amber },
-  { name: "@antv/x6", detail: "affected", tone: redHot },
-  { name: "@antv/l7", detail: "affected", tone: redHot },
+  { name: "node-ipc", tone: redHot },
+  { name: "durabletask", tone: amber },
+  { name: "axios", tone: redHot },
+  { name: "plain-crypto-js", tone: amber },
+  { name: "litellm", tone: redHot },
+  { name: "telnyx", tone: amber },
+  { name: "@tanstack/*", tone: redHot },
+  { name: "@mistralai/*", tone: amber },
+  { name: "UiPath", tone: amber },
+  { name: "@antv/g2", tone: redHot },
+  { name: "@antv/g6", tone: redHot },
+  { name: "echarts-for-react", tone: amber },
+  { name: "size-sensor", tone: amber },
+  { name: "timeago.js", tone: amber },
+  { name: "@antv/x6", tone: redHot },
+  { name: "@antv/l7", tone: redHot },
 ];
 
-const IncidentTile: React.FC<{
+const IncidentFlash: React.FC<{
   local: number;
   index: number;
   name: string;
-  detail: string;
   tone: string;
-}> = ({ local, index, name, detail, tone }) => {
-  const row = Math.floor(index / 4);
-  const column = index % 4;
-  const start = 70 + index * 5;
-  const opacity = fade(local, start, start + 8);
-  const y = softY(local, start, start + 10, 20);
-  const pulse = interpolate((local + index * 7) % 22, [0, 11, 22], [0.38, 0.94, 0.38], clamp);
+}> = ({ local, index, name, tone }) => {
+  const start = 54 + index * 11;
+  const end = start + 18;
+  const visible = local >= start && local < end;
+  const opacity = fade(local, start, start + 3) * fadeOut(local, end - 4, end);
+  const scale = interpolate(local, [start, start + 5, end], [0.82, 1.08, 0.98], clamp);
+  const x = visible ? ((local * 37 + index * 11) % 24) - 12 : 0;
+  const rotate = visible ? (((local + index) % 7) - 3) * 0.5 : 0;
 
   return (
     <div
       style={{
         position: "absolute",
-        left: 104 + column * 428,
-        top: 340 + row * 132,
-        width: 372,
-        height: 96,
+        left: 0,
+        right: 0,
+        top: 470,
         opacity,
-        transform: `translateY(${y}px)`,
-        borderRadius: 8,
-        overflow: "hidden",
-        border: `1px solid ${tone}66`,
-        background: `linear-gradient(90deg, ${tone}22, rgba(12,18,22,0.84))`,
-        boxShadow: `0 0 ${34 * pulse}px ${tone}44, 0 20px 46px rgba(0,0,0,0.42)`,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          top: 16,
-          color: ink,
-          fontFamily: mono,
-          fontSize: 25,
-          fontWeight: 950,
+        transform: `translateX(${x}px) rotate(${rotate}deg) scale(${scale})`,
+          color: tone,
+          fontFamily: display,
+          fontSize: 132,
+          fontWeight: 900,
           letterSpacing: 0,
-          lineHeight: 1,
+          lineHeight: 0.86,
+          textAlign: "center",
+          textTransform: "uppercase",
+          textShadow: `0 0 38px ${tone}88, 0 20px 40px rgba(0,0,0,0.62)`,
         }}
       >
         {name}
       </div>
-      <div
-        style={{
-          position: "absolute",
-          left: 18,
-          top: 54,
-          color: tone,
-          fontFamily: mono,
-          fontSize: 18,
-          fontWeight: 850,
-          letterSpacing: 0,
-          textTransform: "uppercase",
-        }}
-      >
-        {detail}
-      </div>
-    </div>
   );
 };
 
@@ -635,50 +576,15 @@ const OwnedScene: React.FC = () => {
       >
         Don&apos;t get owned.
       </div>
-      <div
-        style={{
-          position: "absolute",
-          right: 100,
-          top: 156,
-          width: 520,
-          color: inkMuted,
-          fontFamily: mono,
-          fontSize: 29,
-          fontWeight: 750,
-          lineHeight: 1.35,
-          textAlign: "right",
-          opacity: fade(local, 24, 42),
-        }}
-      >
-        These were real package incidents. Your terminal only said install
-        succeeded.
-      </div>
       {incidentPackages.map((pkg, index) => (
-        <IncidentTile
-          key={`${pkg.name}-${pkg.detail}`}
+        <IncidentFlash
+          key={pkg.name}
           local={local}
           index={index}
           name={pkg.name}
-          detail={pkg.detail}
           tone={pkg.tone}
         />
       ))}
-      <div
-        style={{
-          position: "absolute",
-          left: 104,
-          bottom: 76,
-          color: redHot,
-          fontFamily: mono,
-          fontSize: 28,
-          fontWeight: 900,
-          letterSpacing: 0,
-          textTransform: "uppercase",
-          opacity: fade(local, 142, 160),
-        }}
-      >
-        assume compromise. rotate secrets. harden before the next wave.
-      </div>
     </AbsoluteFill>
   );
 };
@@ -708,9 +614,9 @@ const IntroScene: React.FC = () => {
           textShadow: "0 20px 46px rgba(0,0,0,0.62)",
         }}
       >
-        Packages move fast.
+        Detect.
         <br />
-        Attackers move faster.
+        Harden.
       </div>
       <div
         style={{
@@ -725,7 +631,7 @@ const IntroScene: React.FC = () => {
           textTransform: "uppercase",
         }}
       >
-        detect / harden / don&apos;t get owned
+        don&apos;t get owned
       </div>
     </AbsoluteFill>
   );

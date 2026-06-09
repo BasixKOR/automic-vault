@@ -36,6 +36,6 @@ npm run still:scanner-one-liner -- out/stills/scanner-command.jpg --frame=96 --s
 npm run still:scanner-one-liner -- out/stills/scanner-findings.jpg --frame=420 --scale=0.25
 npm run still:scanner-one-liner -- out/stills/scanner-end-card.jpg --frame=600 --scale=0.25
 npm run still:dont-get-owned -- out/stills/dont-get-owned-detect.jpg --frame=172 --scale=0.25
-npm run still:dont-get-owned -- out/stills/dont-get-owned-harden.jpg --frame=392 --scale=0.25
+npm run still:dont-get-owned -- out/stills/dont-get-owned-harden.jpg --frame=382 --scale=0.25
 npm run still:dont-get-owned -- out/stills/dont-get-owned-owned.jpg --frame=610 --scale=0.25
 ```
