@@ -2,9 +2,15 @@
 
 Secure the tools you `brew install`.
 
-Automic Vault sits discreetly on top of Homebrew, hardening it. Packages store
-their secrets securely. Human approval is required for
-exfiltration of those secrets & risky commands.
+Homebrew made installing developer tools effortless. AI agents changed who is
+running them.
+
+Automic Vault adds a local boundary beneath agent sessions: scan for plaintext
+credentials, install agent-used packages under controlled roots, keep secrets in
+the macOS Keychain, inject them only into approved processes, and ask a human
+before commands cross a meaningful risk line.
+
+No magic. Just fewer ambient privileges.
 
 > [!IMPORTANT]
 > Automic Vault is not affiliated with any cryptocurrency or token.
@@ -16,10 +22,11 @@ exfiltration of those secrets & risky commands.
 
 ## Why Automic Vault
 
-Homebrew taught developer machines to install whatever tools the job needs.
-AI agents change the deal: the thing running those tools may not be you.
+Developer machines are full of useful ambient authority: package paths, shell
+startup files, dotenv files, cloud credentials, GitHub config, MCP servers, and
+tools that can publish, delete, deploy, or mutate infrastructure.
 
-Automic Vault adds a local boundary for agent work:
+Automic Vault makes that authority inspectable and gated:
 
 - packages install as self-contained packages under controlled roots
 - the app and `av` show package metadata, install state, updates, and security
@@ -31,8 +38,6 @@ Automic Vault adds a local boundary for agent work:
 - `av` can scan local files and isotope detectors for plaintext credentials
 - `av contain` can run an agent command through a vaulted sandbox and proxy
   toolchain
-
-No magic. Just fewer ambient privileges.
 
 &nbsp;
 

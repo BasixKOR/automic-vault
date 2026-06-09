@@ -20,6 +20,25 @@ Success looks like this: a developer can give an agent useful local tools while 
 
 Automic Vault is not a general enterprise vault replacement, cloud console, or agent wrapper. It is the local runtime boundary beneath the agent.
 
+## Messaging Contract
+
+The canonical story lives in `BRAND.md`. Product copy should preserve this
+shape:
+
+1. Start from the familiar developer action: installing and running real tools.
+2. Name the changed threat model: agents and compromised tools can read files
+   and run commands without human judgment.
+3. Show the concrete boundary: package root, executable path, requester,
+   command, secret name, detector finding, or approval target.
+4. Make the user the operator. Automic Vault is the control layer, not the hero.
+5. End on a concrete action: scan, harden, save, inject, contain, approve, or
+   deny.
+
+The product should not present itself as generic AI safety, a cloud policy
+console, or a promise that agents are safe. The claim is narrower and stronger:
+useful developer tools can keep working while secrets, package mutations, and
+risky commands stop being ambient authority.
+
 ## Brand Personality
 
 Controlled, direct, technically credible.

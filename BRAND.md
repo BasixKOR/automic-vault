@@ -15,6 +15,61 @@ The secrets manager for the open source ecosystem.
 
 A new kind of package manager for a new kind of threat model
 
+## Story Spine
+
+### Audience
+
+Developers, founders, and security-conscious teams who use AI coding agents on
+local Macs and still need real command-line tools, package managers, cloud
+CLIs, GitHub credentials, project dotenv files, and MCP servers to work.
+
+They are not trying to buy an abstract AI safety promise. They are trying to
+keep useful local automation from inheriting every package path, writable tool,
+plaintext credential, and risky command their human account can reach.
+
+### Desired Action
+
+Install Automic Vault, run the scanner, harden what it finds, move supported
+secrets out of plaintext, and leave the local boundary running before agent
+sessions touch real tools.
+
+### Transformation
+
+Old world: developer machines assumed a trusted human was choosing commands,
+reading output, and deciding when credentials or infrastructure actions should
+cross a line.
+
+New world: agents, compromised tools, and local automation can read files and
+run commands without human memory, hesitation, or judgment.
+
+Automic Vault makes that shift explicit. It does not ask users to stop using
+powerful tools. It makes the package, path, command, requester, secret, and
+approval boundary visible at the moment authority would otherwise be ambient.
+
+### Five-Second Moment
+
+An agent reaches for a real developer tool and tries to use a secret, publish
+an artifact, mutate infrastructure, delete data, or run a command with a wide
+blast radius. Instead of silently succeeding, the machine stops and shows the
+human what is crossing the boundary.
+
+### Core Narrative
+
+Homebrew made installing developer tools effortless. AI agents changed who is
+running them. Automic Vault adds the local boundary beneath agent sessions:
+scan for plaintext credentials, harden exposed tools, keep secrets out of
+model-readable files, inject them only into approved processes, and require
+human approval when commands cross a meaningful risk line.
+
+### Repeatable Lines
+
+- Secure the tools you `brew install`.
+- Install with Homebrew. Secure with Automic Vault.
+- Find plaintext secrets before the agent does.
+- Keep the command. Remove the easy-read secret.
+- No magic. Just fewer ambient privileges.
+- Human approval at the moment authority crosses the line.
+
 ## Founder Quote
 
 > I built Homebrew. It was designed before AI agents existed.
