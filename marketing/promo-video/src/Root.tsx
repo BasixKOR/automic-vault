@@ -6,6 +6,10 @@ import {
 } from "./BrewInstallSecurity";
 import { MyComposition, durationInFrames } from "./Composition";
 import {
+  DontGetOwnedComposition,
+  dontGetOwnedDurationInFrames,
+} from "./DontGetOwned";
+import {
   ScannerOneLinerComposition,
   scannerOneLinerDurationInFrames,
 } from "./ScannerOneLiner";
@@ -42,6 +46,14 @@ export const RemotionRoot: React.FC = () => {
         id="AutomicVaultScannerOneLiner"
         component={ScannerOneLinerComposition}
         durationInFrames={scannerOneLinerDurationInFrames}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="AutomicVaultDontGetOwned"
+        component={DontGetOwnedComposition}
+        durationInFrames={dontGetOwnedDurationInFrames}
         fps={30}
         width={1920}
         height={1080}

@@ -9,6 +9,7 @@ The compositions are 1920x1080 at 30 fps. Rendered output is ignored under
 - `AutomicVaultSkillSecrets`
 - `AutomicVaultBrewInstallSecurity`
 - `AutomicVaultScannerOneLiner`
+- `AutomicVaultDontGetOwned`
 
 ## Commands
 
@@ -19,6 +20,7 @@ npm run lint
 npm run render
 npm run render:brew-install-security
 npm run render:scanner-one-liner
+npm run render:dont-get-owned
 ```
 
 Useful still checks:
@@ -33,4 +35,7 @@ npm run still:brew-install-security -- out/stills/brew-act-3.jpg --frame=790 --s
 npm run still:scanner-one-liner -- out/stills/scanner-command.jpg --frame=96 --scale=0.25
 npm run still:scanner-one-liner -- out/stills/scanner-findings.jpg --frame=420 --scale=0.25
 npm run still:scanner-one-liner -- out/stills/scanner-end-card.jpg --frame=600 --scale=0.25
+npm run still:dont-get-owned -- out/stills/dont-get-owned-detect.jpg --frame=172 --scale=0.25
+npm run still:dont-get-owned -- out/stills/dont-get-owned-harden.jpg --frame=392 --scale=0.25
+npm run still:dont-get-owned -- out/stills/dont-get-owned-owned.jpg --frame=610 --scale=0.25
 ```
