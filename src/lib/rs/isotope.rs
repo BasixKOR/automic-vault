@@ -2401,6 +2401,54 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn keychain_and_notification_bridges_reject_invalid_c_strings_before_ffi() {
+        assert_eq!(
+            keychain_read_secret_if_present("bad\0service", "TOKEN").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_read_secret("service", "bad\0account").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_secret_exists("bad\0service", "TOKEN").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_secret_exists("service", "bad\0account").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_write_secret("bad\0service", "TOKEN", "value").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_write_secret("service", "bad\0account", "value").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_write_secret("service", "TOKEN", "bad\0value").unwrap_err(),
+            "invalid keychain secret value"
+        );
+        assert_eq!(
+            post_distributed_notification("bad\0name").unwrap_err(),
+            "invalid distributed notification name"
+        );
+        assert_eq!(
+            post_distributed_notification_with_object("bad\0name", "object").unwrap_err(),
+            "invalid distributed notification name"
+        );
+        assert_eq!(
+            post_distributed_notification_with_object("name", "bad\0object").unwrap_err(),
+            "invalid distributed notification object"
+        );
+        unsafe {
+            assert!(take_bridge_string(std::ptr::null_mut()).is_none());
+        }
+    }
+
     #[test]
     fn isotopes_exec_environment_and_zeroize_helpers_cover_errors() {
         assert!(build_exec_cstrings(&[OsString::from("ok")]).is_ok());
@@ -2440,6 +2488,48 @@ mod tests {
         assert!(disable_core_dumps().is_ok());
         let snapshot = parent_process_snapshot();
         assert!(snapshot.pid > 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn isotopes_fd_path_validation_covers_success_and_error_edges() {
+        use std::os::fd::AsRawFd;
+
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("tool");
+        let other = temp.path().join("other-tool");
+        fs::write(&tool, b"tool").unwrap();
+        fs::write(&other, b"other").unwrap();
+        let file = File::open(&tool).unwrap();
+        let fd = file.as_raw_fd();
+        let open_path = path_for_open_fd(fd).unwrap();
+        let canonical_tool = fs::canonicalize(&tool).unwrap();
+
+        assert_eq!(Path::new(&open_path), canonical_tool);
+        verify_fd_matches_path(fd, &open_path).unwrap();
+        assert!(
+            path_for_open_fd(-1)
+                .unwrap_err()
+                .contains("failed to resolve executable path")
+        );
+        assert!(
+            verify_fd_matches_path(-1, &open_path)
+                .unwrap_err()
+                .contains("failed to stat validated descriptor")
+        );
+        assert_eq!(
+            verify_fd_matches_path(fd, "bad\0path").unwrap_err(),
+            "validated descriptor path contains interior NUL"
+        );
+        assert!(
+            verify_fd_matches_path(fd, temp.path().join("missing").to_str().unwrap())
+                .unwrap_err()
+                .contains("failed to stat executable path")
+        );
+        assert_eq!(
+            verify_fd_matches_path(fd, other.to_str().unwrap()).unwrap_err(),
+            "validated executable changed before exec"
+        );
     }
 
     #[test]

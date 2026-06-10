@@ -975,7 +975,22 @@ mod openstack_migrate {
     #[cfg(test)]
     mod av_extra_tests {
         use super::*;
+        use std::cell::RefCell;
         use std::path::PathBuf;
+
+        #[derive(Default)]
+        struct Store {
+            values: RefCell<Vec<(String, String)>>,
+        }
+
+        impl CredentialStore for Store {
+            fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+                self.values
+                    .borrow_mut()
+                    .push((key.to_string(), value.to_string()));
+                Ok(())
+            }
+        }
 
         fn state(original: &str) -> FileState {
             FileState {
@@ -1044,5 +1059,476 @@ mod openstack_migrate {
                     .contains("line breaks")
             );
         }
+
+        #[test]
+        fn covers_file_state_errors_and_secure_payload_fallback() {
+            let _guard = crate::global_test_env_lock().lock().unwrap();
+            let home = std::env::temp_dir().join(format!(
+                "openstack-extra-{}-{}",
+                module_path!().replace("::", "_"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&home);
+            let config_dir = home.join(".config/openstack");
+            std::fs::create_dir_all(&config_dir).unwrap();
+            assert!(load_file_state(&config_dir.join("missing.yaml")).unwrap().is_none());
+            assert!(
+                load_file_state(&config_dir)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+
+            let secure = config_dir.join("secure.yaml");
+            std::fs::write(&secure, "clouds:\n  prod:\n    password: secret\n").unwrap();
+            let previous_home = std::env::var_os("HOME");
+            unsafe { std::env::set_var("HOME", &home) };
+
+            let store = Store::default();
+            assert!(migrate_default_configs(&store).unwrap());
+
+            unsafe {
+                match previous_home {
+                    Some(value) => std::env::set_var("HOME", value),
+                    None => std::env::remove_var("HOME"),
+                }
+            }
+            assert_eq!(store.values.borrow()[0].0, "OPENSTACK_SECURE_YAML");
+            assert!(store.values.borrow()[0].1.contains("password: secret"));
+            assert!(std::fs::read_to_string(&secure)
+                .unwrap()
+                .contains("password: \"\""));
+            std::fs::remove_dir_all(home).unwrap();
+        }
     }
+}
+
+mod ansible_migrate {
+    include!(radioisotope_source!("/ansible/migrate.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::cell::RefCell;
+
+        #[derive(Default)]
+        struct Store {
+            values: RefCell<Vec<(String, String)>>,
+        }
+
+        impl CredentialStore for Store {
+            fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+                self.values
+                    .borrow_mut()
+                    .push((key.to_string(), value.to_string()));
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn covers_path_parser_no_token_and_fallback_edges() {
+            let _guard = crate::global_test_env_lock().lock().unwrap();
+            let temp = std::env::temp_dir().join(format!(
+                "ansible-extra-{}-{}",
+                module_path!().replace("::", "_"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&temp);
+            std::fs::create_dir_all(&temp).unwrap();
+            let previous_home = std::env::var_os("HOME");
+            let previous_token_path = std::env::var_os("ANSIBLE_GALAXY_TOKEN_PATH");
+
+            unsafe {
+                std::env::set_var("HOME", temp.join("home"));
+                std::env::set_var("ANSIBLE_GALAXY_TOKEN_PATH", temp.join("custom-token"));
+            }
+            let paths = candidate_token_paths().unwrap();
+            assert!(paths.contains(&temp.join("custom-token")));
+            assert!(paths.iter().any(|path| path.ends_with(".ansible/galaxy_token")));
+
+            unsafe {
+                std::env::remove_var("HOME");
+                std::env::remove_var("ANSIBLE_GALAXY_TOKEN_PATH");
+            }
+            assert_eq!(home_dir().unwrap_err(), "HOME is not set");
+            assert_eq!(candidate_token_paths().unwrap_err(), "HOME is not set");
+
+            assert_eq!(keys(), &["ANSIBLE_GALAXY_TOKEN"]);
+            assert_eq!(
+                galaxy_token_value("\n# comment\nnot-token\nserver: ignored\ntoken: #comment\ntoken: null\ntoken: ~\n")
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                galaxy_token_value("token: 'abc123'\n").unwrap().as_deref(),
+                Some("abc123")
+            );
+            assert!(reject_env_line_breaks("a\nb")
+                .unwrap_err()
+                .contains("line breaks"));
+
+            let dir = temp.join("dir");
+            std::fs::create_dir_all(&dir).unwrap();
+            assert!(migrate_token_files(&[dir], &Store::default())
+                .unwrap_err()
+                .contains("failed to read"));
+            let empty = temp.join("empty-token");
+            std::fs::write(&empty, "token: null\n").unwrap();
+            assert!(!migrate_token_files(&[temp.join("missing"), empty], &Store::default()).unwrap());
+            assert!(keychain_store_secret("service", "account", "value")
+                .unwrap_err()
+                .contains("keychain integration"));
+
+            unsafe {
+                match previous_home {
+                    Some(value) => std::env::set_var("HOME", value),
+                    None => std::env::remove_var("HOME"),
+                }
+                match previous_token_path {
+                    Some(value) => std::env::set_var("ANSIBLE_GALAXY_TOKEN_PATH", value),
+                    None => std::env::remove_var("ANSIBLE_GALAXY_TOKEN_PATH"),
+                }
+            }
+            std::fs::remove_dir_all(temp).unwrap();
+        }
+    }
+}
+
+mod argocd_migrate {
+    include!(radioisotope_source!("/argocd/migrate.rs"));
+}
+
+mod doctl_migrate {
+    include!(radioisotope_source!("/doctl/migrate.rs"));
+}
+
+mod glab_migrate {
+    include!(radioisotope_source!("/glab/migrate.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::cell::RefCell;
+
+        #[derive(Default)]
+        struct Store {
+            values: RefCell<Vec<(String, String)>>,
+        }
+
+        impl CredentialStore for Store {
+            fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+                self.values
+                    .borrow_mut()
+                    .push((key.to_string(), value.to_string()));
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn covers_config_paths_file_edges_and_host_token_parser() {
+            let _guard = crate::global_test_env_lock().lock().unwrap();
+            let temp = std::env::temp_dir().join(format!(
+                "glab-extra-{}-{}",
+                module_path!().replace("::", "_"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&temp);
+            std::fs::create_dir_all(&temp).unwrap();
+            let previous = [
+                ("GLAB_CONFIG_DIR", std::env::var_os("GLAB_CONFIG_DIR")),
+                ("XDG_CONFIG_HOME", std::env::var_os("XDG_CONFIG_HOME")),
+                ("HOME", std::env::var_os("HOME")),
+            ];
+
+            unsafe {
+                std::env::set_var("GLAB_CONFIG_DIR", temp.join("glab"));
+            }
+            assert_eq!(
+                candidate_config_paths().unwrap(),
+                vec![temp.join("glab/config.yml")]
+            );
+
+            unsafe {
+                std::env::remove_var("GLAB_CONFIG_DIR");
+                std::env::set_var("HOME", temp.join("home"));
+                std::env::set_var("XDG_CONFIG_HOME", temp.join("xdg"));
+            }
+            let paths = candidate_config_paths().unwrap();
+            assert_eq!(paths.len(), 3);
+
+            assert!(glab_config_contains_token("hosts:\n  gitlab.com:\n    token: abc\n"));
+            assert!(glab_config_contains_oauth_refresh_token(
+                "oauth2_refresh_token: refresh\n"
+            ));
+            assert_eq!(unquote_yaml_scalar("'quoted'"), "quoted");
+            assert_eq!(
+                glab_env_assignments("hosts:\n  gitlab.com:\n    token: abc\n").unwrap(),
+                vec![
+                    "GITLAB_TOKEN=abc".to_string(),
+                    "GITLAB_HOST=gitlab.com".to_string()
+                ]
+            );
+            assert!(
+                glab_env_assignments(
+                    "hosts:\n  one.example:\n    token: one\n  two.example:\n    token: two\n"
+                )
+                .unwrap_err()
+                .contains("multiple host tokens")
+            );
+            assert_eq!(
+                sanitized_glab_config("hosts:\n  gitlab.com:\n    token: abc\n"),
+                "hosts:\n  gitlab.com:\n    token: \"\"\n"
+            );
+
+            let missing = temp.join("missing.yml");
+            assert!(!migrate_credentials_file(&missing, &Store::default()).unwrap());
+            let config = temp.join("config.yml");
+            std::fs::write(&config, "hosts:\n  gitlab.com:\n    token: abc\n").unwrap();
+            let store = Store::default();
+            assert!(migrate_credentials_file(&config, &store).unwrap());
+            assert_eq!(store.values.borrow()[0].0, "GLAB_ENV_ASSIGNMENTS");
+            assert!(std::fs::read_to_string(&config)
+                .unwrap()
+                .contains("token: \"\""));
+
+            unsafe {
+                for (key, value) in previous {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
+            std::fs::remove_dir_all(temp).unwrap();
+        }
+    }
+}
+
+mod jfrog_cli_migrate {
+    include!(radioisotope_source!("/jfrog-cli/migrate.rs"));
+}
+
+mod maestro_migrate {
+    include!(radioisotope_source!("/maestro/migrate.rs"));
+}
+
+mod minio_mc_migrate {
+    include!(radioisotope_source!("/minio-mc/migrate.rs"));
+}
+
+mod opentofu_migrate {
+    include!(radioisotope_source!("/opentofu/migrate.rs"));
+}
+
+mod podman_migrate {
+    include!(radioisotope_source!("/podman/migrate.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::cell::RefCell;
+
+        #[derive(Default)]
+        struct Store {
+            values: RefCell<Vec<(String, String)>>,
+        }
+
+        impl CredentialStore for Store {
+            fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+                self.values
+                    .borrow_mut()
+                    .push((key.to_string(), value.to_string()));
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn covers_candidate_paths_and_auth_json_error_shapes() {
+            let _guard = crate::global_test_env_lock().lock().unwrap();
+            let temp = std::env::temp_dir().join(format!(
+                "podman-extra-{}-{}",
+                module_path!().replace("::", "_"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&temp);
+            std::fs::create_dir_all(&temp).unwrap();
+            let previous = [
+                ("REGISTRY_AUTH_FILE", std::env::var_os("REGISTRY_AUTH_FILE")),
+                ("XDG_RUNTIME_DIR", std::env::var_os("XDG_RUNTIME_DIR")),
+                ("XDG_CONFIG_HOME", std::env::var_os("XDG_CONFIG_HOME")),
+                ("HOME", std::env::var_os("HOME")),
+            ];
+
+            unsafe {
+                std::env::set_var("REGISTRY_AUTH_FILE", temp.join("auth.json"));
+            }
+            assert_eq!(candidate_auth_paths().unwrap(), vec![temp.join("auth.json")]);
+
+            unsafe {
+                std::env::remove_var("REGISTRY_AUTH_FILE");
+                std::env::set_var("XDG_RUNTIME_DIR", temp.join("runtime"));
+                std::env::set_var("XDG_CONFIG_HOME", temp.join("xdg"));
+                std::env::set_var("HOME", temp.join("home"));
+            }
+            assert_eq!(candidate_auth_paths().unwrap().len(), 3);
+
+            assert!(!auth_json_contains_secret("not json"));
+            assert!(!auth_entry_contains_secret(&serde_json::json!("not object")));
+            assert_eq!(
+                auth_json_with_credential_helpers(r#"{"auths":{}}"#).unwrap(),
+                r#"{"auths":{}}"#
+            );
+            assert!(auth_json_with_credential_helpers("[]")
+                .unwrap_err()
+                .contains("root must be an object"));
+            assert!(auth_json_with_credential_helpers(r#"{"auths":[]}"#)
+                .unwrap_err()
+                .contains("auths field must be an object"));
+            assert!(auth_json_with_credential_helpers(
+                r#"{"auths":{"registry.example":{"auth":"base64"}},"credHelpers":{"registry.example":"other"}}"#
+            )
+            .unwrap_err()
+            .contains("refusing to overwrite"));
+
+            let missing = temp.join("missing.json");
+            assert!(!migrate_credentials_file(&missing, &Store::default()).unwrap());
+            let auth = temp.join("auth.json");
+            std::fs::write(&auth, r#"{"auths":{"registry.example":{"identityToken":"token"}}}"#)
+                .unwrap();
+            let store = Store::default();
+            assert!(migrate_credentials_file(&auth, &store).unwrap());
+            assert_eq!(store.values.borrow()[0].0, "PODMAN_AUTH_JSON");
+            assert!(std::fs::read_to_string(&auth)
+                .unwrap()
+                .contains("av-podman"));
+
+            unsafe {
+                for (key, value) in previous {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
+            std::fs::remove_dir_all(temp).unwrap();
+        }
+    }
+}
+
+mod qwen_code_migrate {
+    include!(radioisotope_source!("/qwen-code/migrate.rs"));
+}
+
+mod rust_migrate {
+    include!(radioisotope_source!("/rust/migrate.rs"));
+}
+
+mod s3cmd_migrate {
+    include!(radioisotope_source!("/s3cmd/migrate.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::cell::RefCell;
+
+        #[derive(Default)]
+        struct Store {
+            values: RefCell<Vec<(String, String)>>,
+        }
+
+        impl CredentialStore for Store {
+            fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+                self.values
+                    .borrow_mut()
+                    .push((key.to_string(), value.to_string()));
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn covers_config_path_parser_validation_and_file_migration_edges() {
+            let _guard = crate::global_test_env_lock().lock().unwrap();
+            let temp = std::env::temp_dir().join(format!(
+                "s3cmd-extra-{}-{}",
+                module_path!().replace("::", "_"),
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&temp);
+            std::fs::create_dir_all(&temp).unwrap();
+            let previous_home = std::env::var_os("HOME");
+
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+            assert_eq!(s3cmd_config_path().unwrap_err(), "HOME is not set");
+            unsafe {
+                std::env::set_var("HOME", &temp);
+            }
+            assert_eq!(s3cmd_config_path().unwrap(), temp.join(".s3cfg"));
+
+            assert_eq!(keys(), &["S3CMD_ENV_ASSIGNMENTS"]);
+            assert_eq!(sanitized_config("# comment\n"), "# comment\n");
+            assert_eq!(
+                sanitized_config("gpg_passphrase = pass\n"),
+                "gpg_passphrase = $S3CMD_GPG_PASSPHRASE\n"
+            );
+            let mut changed = false;
+            assert_eq!(sanitize_line("missing equals", &mut changed), "missing equals");
+            assert_eq!(sanitize_line("access_key = ", &mut changed), "access_key = ");
+            assert!(s3cmd_env_assignments("# comment\nmissing equals\nunknown = value\naccess_key = \n")
+                .unwrap()
+                .is_empty());
+            assert_eq!(unquote_config_value("\"quoted\""), "quoted");
+            assert!(s3cmd_env_assignments("access_key = only\n")
+                .unwrap_err()
+                .contains("both be present"));
+            assert!(s3cmd_env_assignments("session_token = token\n")
+                .unwrap_err()
+                .contains("without access_key"));
+            assert!(
+                s3cmd_env_assignments("access_key = one\naccess_key = two\n")
+                    .unwrap_err()
+                    .contains("multiple s3cmd values")
+            );
+            assert!(reject_env_line_breaks("AWS_ACCESS_KEY_ID", "a\nb").is_err());
+
+            let missing = temp.join("missing");
+            assert!(!migrate_config_file(&missing, &Store::default()).unwrap());
+            let config = temp.join("config");
+            std::fs::write(
+                &config,
+                "access_key = key\nsecret_key = secret\nsession_token = token\n",
+            )
+            .unwrap();
+            let store = Store::default();
+            assert!(migrate_config_file(&config, &store).unwrap());
+            assert_eq!(store.values.borrow()[0].0, "S3CMD_ENV_ASSIGNMENTS");
+            assert!(std::fs::read_to_string(&config)
+                .unwrap()
+                .contains("access_key = "));
+
+            unsafe {
+                match previous_home {
+                    Some(value) => std::env::set_var("HOME", value),
+                    None => std::env::remove_var("HOME"),
+                }
+            }
+            std::fs::remove_dir_all(temp).unwrap();
+        }
+    }
+}
+
+mod skopeo_migrate {
+    include!(radioisotope_source!("/skopeo/migrate.rs"));
+}
+
+mod terraform_migrate {
+    include!(radioisotope_source!("/terraform/migrate.rs"));
+}
+
+mod transifex_cli_migrate {
+    include!(radioisotope_source!("/transifex-cli/migrate.rs"));
+}
+
+mod wakatime_cli_migrate {
+    include!(radioisotope_source!("/wakatime-cli/migrate.rs"));
 }

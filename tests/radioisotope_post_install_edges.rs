@@ -107,6 +107,173 @@ macro_rules! launcher_post_install_extra_tests {
     };
 }
 
+macro_rules! two_stage_launcher_post_install_extra_tests {
+    ($module:ident, $path:literal, $wrap:ident, $script:ident) => {
+        mod $module {
+            include!(radioisotope_source!($path));
+
+            #[cfg(test)]
+            mod av_extra_tests {
+                use super::*;
+                use std::fs;
+                use std::path::{Path, PathBuf};
+                use std::time::{SystemTime, UNIX_EPOCH};
+
+                #[cfg(unix)]
+                use std::os::unix::fs::PermissionsExt;
+
+                fn temp_dir(label: &str) -> PathBuf {
+                    let suffix = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos();
+                    std::env::temp_dir().join(format!(
+                        "{}-{}-{}",
+                        module_path!().replace("::", "_"),
+                        label,
+                        suffix
+                    ))
+                }
+
+                fn write_executable(path: &Path, contents: &[u8]) {
+                    fs::write(path, contents).unwrap();
+                    let mut permissions = fs::metadata(path).unwrap().permissions();
+                    permissions.set_mode(0o755);
+                    fs::set_permissions(path, permissions).unwrap();
+                }
+
+                #[test]
+                fn covers_existing_original_invalid_data_and_quoting_edges() {
+                    let temp = temp_dir("existing-original");
+                    fs::create_dir_all(&temp).unwrap();
+                    let launcher = temp.join("launcher");
+                    write_executable(&launcher, b"#!/bin/sh\nprintf launcher\n");
+                    let original = original_launcher_path(&launcher).unwrap();
+                    write_executable(&original, b"#!/bin/sh\nprintf existing\n");
+
+                    let _ = $wrap(&launcher).unwrap();
+
+                    let original_contents = fs::read_to_string(&original).unwrap();
+                    assert!(
+                        original_contents == "#!/bin/sh\nprintf existing\n"
+                            || original_contents == "#!/bin/sh\nprintf launcher\n"
+                    );
+                    assert!(launcher_is_wrapped(&launcher).unwrap());
+
+                    let invalid = temp.join("invalid");
+                    fs::write(&invalid, [0xff, 0xfe]).unwrap();
+                    assert!(!launcher_is_wrapped(&invalid).unwrap());
+                    assert!(
+                        launcher_is_wrapped(&temp.join("missing-launcher"))
+                            .unwrap_err()
+                            .contains("failed to read")
+                    );
+                    assert!(
+                        original_launcher_path(Path::new("/"))
+                            .unwrap_err()
+                            .contains("failed to resolve")
+                    );
+
+                    let script = $script(Path::new("/tmp/it isn't"), Path::new("/tmp/inject isn't"));
+                    assert!(script.contains(r#"'\''"#));
+
+                    fs::remove_dir_all(temp).unwrap();
+                }
+
+                #[cfg(unix)]
+                #[test]
+                fn covers_relative_symlink_original_resolution() {
+                    let temp = temp_dir("relative-symlink");
+                    fs::create_dir_all(&temp).unwrap();
+                    let target = temp.join("target-launcher");
+                    write_executable(&target, b"#!/bin/sh\nprintf target\n");
+                    let launcher = temp.join("launcher");
+                    std::os::unix::fs::symlink("target-launcher", &launcher).unwrap();
+
+                    assert_eq!(original_launcher_path(&launcher).unwrap(), target);
+
+                    let _ = $wrap(&launcher).unwrap();
+
+                    assert_eq!(
+                        fs::read_to_string(temp.join("target-launcher")).unwrap(),
+                        "#!/bin/sh\nprintf target\n"
+                    );
+                    assert!(launcher_is_wrapped(&launcher).unwrap());
+
+                    fs::remove_dir_all(temp).unwrap();
+                }
+            }
+        }
+    };
+}
+
+mod aws_cli_post_install {
+    include!(radioisotope_source!("/aws-cli/post-install.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::path::PathBuf;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        fn temp_path(name: &str) -> PathBuf {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            std::env::temp_dir().join(format!(
+                "{}-{name}-{suffix}",
+                module_path!().replace("::", "_")
+            ))
+        }
+
+        #[test]
+        fn covers_post_install_and_patch_error_edges() {
+            let root = temp_path("post-install-errors");
+            let launcher = root.join("aws");
+            let lib = root.join("lib");
+            assert!(
+                prefix_aws_launcher(&launcher, ENTRYPOINT_PREFIX)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(&launcher, format!("{ENTRYPOINT_PREFIX}print('aws')\n")).unwrap();
+            prefix_aws_launcher(&launcher, ENTRYPOINT_PREFIX).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(&launcher).unwrap(),
+                format!("{ENTRYPOINT_PREFIX}print('aws')\n")
+            );
+
+            assert!(
+                patch_aws_plugin_loaders(&lib)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+            std::fs::create_dir_all(&lib).unwrap();
+            assert!(
+                patch_aws_plugin_loaders(&lib)
+                    .unwrap_err()
+                    .contains("failed to find")
+            );
+            assert!(
+                patch_aws_plugin_loader(&launcher)
+                    .unwrap_err()
+                    .contains("failed to patch")
+            );
+            assert!(
+                patch_aws_plugin_loader_contents(
+                    "def load_plugins():\n    _load_plugins(BUILTIN_PLUGINS, event_hooks)\n"
+                )
+                .unwrap_err()
+                .contains("legacy external plugin")
+            );
+
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
 launcher_post_install_extra_tests!(
     censys_post_install,
     "/censys/post-install.rs",
@@ -616,4 +783,88 @@ launcher_post_install_extra_tests!(
     "/plumber/post-install.rs",
     wrap_plumber_launcher,
     plumber_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    imap_backup_post_install,
+    "/imap-backup/post-install.rs",
+    wrap_imap_backup_launcher,
+    imap_backup_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    kubernetes_cli_post_install,
+    "/kubernetes-cli/post-install.rs",
+    wrap_kubectl_launcher,
+    kubectl_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    luarocks_post_install,
+    "/luarocks/post-install.rs",
+    wrap_luarocks_launcher,
+    luarocks_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    node_post_install,
+    "/node/post-install.rs",
+    wrap_npm_launcher,
+    npm_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    node_18_post_install,
+    "/node@18/post-install.rs",
+    wrap_npm_launcher,
+    npm_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    openhue_cli_post_install,
+    "/openhue-cli/post-install.rs",
+    wrap_openhue_launcher,
+    openhue_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    opentofu_post_install,
+    "/opentofu/post-install.rs",
+    wrap_opentofu_launcher,
+    opentofu_wrapper_script
+);
+two_stage_launcher_post_install_extra_tests!(
+    pnpm_post_install,
+    "/pnpm/post-install.rs",
+    wrap_pnpm_launcher,
+    pnpm_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    podman_post_install,
+    "/podman/post-install.rs",
+    wrap_podman_launcher,
+    podman_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    rclone_post_install,
+    "/rclone/post-install.rs",
+    wrap_rclone_launcher,
+    rclone_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    terraform_core_post_install,
+    "/terraform-core/post-install.rs",
+    wrap_terraform_launcher,
+    terraform_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    uv_post_install,
+    "/uv/post-install.rs",
+    wrap_uv_launcher,
+    uv_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    vagrant_post_install,
+    "/vagrant/post-install.rs",
+    wrap_vagrant_launcher,
+    vagrant_wrapper_script
+);
+launcher_post_install_extra_tests!(
+    wakatime_cli_post_install,
+    "/wakatime-cli/post-install.rs",
+    wrap_wakatime_launcher,
+    wakatime_wrapper_script
 );

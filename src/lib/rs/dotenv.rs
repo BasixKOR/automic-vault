@@ -2884,6 +2884,46 @@ mod tests {
         drop(core_dump_limit);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dotenv_keychain_and_notification_bridges_reject_invalid_c_strings_before_ffi() {
+        assert_eq!(
+            keychain_read_dotenv_private_key("bad\0service", "account").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_read_dotenv_private_key("service", "bad\0account").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_write_dotenv_private_key("bad\0service", "account", "value").unwrap_err(),
+            "invalid keychain service name"
+        );
+        assert_eq!(
+            keychain_write_dotenv_private_key("service", "bad\0account", "value").unwrap_err(),
+            "invalid keychain account name"
+        );
+        assert_eq!(
+            keychain_write_dotenv_private_key("service", "account", "bad\0value").unwrap_err(),
+            "invalid keychain private key"
+        );
+        assert_eq!(
+            dotenv_post_distributed_notification("bad\0name").unwrap_err(),
+            "invalid distributed notification name"
+        );
+        assert_eq!(
+            dotenv_post_distributed_notification_with_object("bad\0name", "object").unwrap_err(),
+            "invalid distributed notification name"
+        );
+        assert_eq!(
+            dotenv_post_distributed_notification_with_object("name", "bad\0object").unwrap_err(),
+            "invalid distributed notification object"
+        );
+        unsafe {
+            assert!(take_dotenv_bridge_string(std::ptr::null_mut()).is_none());
+        }
+    }
+
     impl DotenvEnvGuard {
         fn set(values: &[(&str, &str)]) -> Self {
             let previous = values
@@ -4325,6 +4365,14 @@ mod tests {
         assert!(parse_dotenv_process_info_line("not-a-pid /bin/zsh").is_none());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dotenv_process_snapshot_helpers_cover_missing_processes() {
+        assert!(dotenv_parent_process_path(0).is_none());
+        assert!(dotenv_process_snapshot(0).is_none());
+        assert!(dotenv_process_ancestry_snapshot(0).is_empty());
+    }
+
     #[test]
     fn dotenv_helper_remember_validates_policy_and_snapshot() {
         let _lock = global_test_env_lock().lock().unwrap();
@@ -4726,5 +4774,53 @@ mod tests {
             .unwrap_err(),
             "hex value must have an even number of characters"
         );
+    }
+
+    #[test]
+    fn dotenv_renderers_and_default_paths_cover_remaining_branches() {
+        let _guard = DotenvEnvGuard::unset(&[
+            AV_TEST_DOTENV_POLICY_PATH_ENV,
+            AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+        ]);
+
+        print_dotenv_hook("av", DotenvShell::Bash);
+        print_dotenv_hook("av", DotenvShell::Zsh);
+        print_dotenv_hook("av", DotenvShell::Fish);
+        print_dotenv_usage("av");
+        print_dotenv_init_usage("av");
+        print_dotenv_set_usage("av");
+        print_dotenv_encrypt_usage("av");
+        print_dotenv_import_usage("av");
+        print_dotenv_hook_usage("av");
+        print_dotenv_export_usage("av");
+        print_dotenv_run_usage("av");
+
+        assert_eq!(
+            dotenv_system_policy_path(),
+            PathBuf::from(DOTENV_SYSTEM_POLICY_PATH)
+        );
+        assert_eq!(
+            dotenv_system_remembered_approvals_path(),
+            PathBuf::from(DOTENV_SYSTEM_REMEMBERED_APPROVALS_PATH)
+        );
+        assert!(dotenv_system_policy_requires_root_control());
+        assert!(dotenv_system_remembered_approvals_requires_root_control());
+
+        let parent = dotenv_parent_process_snapshot();
+        assert!(parent.pid > 0);
+        assert_eq!(dotenv_process_display_name(None), None);
+        assert_eq!(
+            dotenv_process_display_name(Some(
+                "/Applications/Automic Vault.app/Contents/MacOS/Automic Vault"
+            )),
+            Some("Automic Vault".to_string())
+        );
+        assert!(dotenv_process_ancestry_snapshot(0).is_empty());
+        assert!(dotenv_process_ancestry_snapshot(-1).is_empty());
+        assert_eq!(
+            parse_dotenv_process_info_line("  12 /usr/bin/zsh"),
+            Some((12, Some("/usr/bin/zsh".to_string())))
+        );
+        assert_eq!(parse_dotenv_process_info_line("not-a-pid zsh"), None);
     }
 }

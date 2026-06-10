@@ -3602,6 +3602,15 @@ mod tests {
             })
         );
         assert_eq!(
+            explicit_requested_package_source(&RequestedPackage::NpmPackage {
+                package: "@scope/tool".to_string(),
+                version: Some("1.2.3".to_string()),
+            }),
+            Some(PackageReceiptSource::Npm {
+                package_name: "@scope/tool".to_string(),
+            })
+        );
+        assert_eq!(
             explicit_requested_package_source(&RequestedPackage::Auto("bun".to_string())),
             None
         );
@@ -3733,6 +3742,30 @@ mod tests {
             "av:bun"
         );
         assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Formula {
+                root_formula: "ripgrep".to_string(),
+            }),
+            "brew:ripgrep"
+        );
+        assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Cask {
+                cask_name: "codex".to_string(),
+            }),
+            "cask:codex"
+        );
+        assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Isotope {
+                isotope_name: "gh".to_string(),
+            }),
+            "isotope:gh"
+        );
+        assert_eq!(
+            package_source_qualified_name(&PackageReceiptSource::Npm {
+                package_name: "@scope/tool".to_string(),
+            }),
+            "npm:@scope/tool"
+        );
+        assert_eq!(
             package_source_qualified_name(&PackageReceiptSource::Pip {
                 package_name: "My_Package.Name".to_string(),
             }),
@@ -3759,7 +3792,7 @@ mod tests {
             package_name: "isotope:uv".to_string(),
             qualified_name: "isotope:uv".to_string(),
             install_root: PathBuf::from("/opt/iso/uv"),
-            installed: false,
+            installed: true,
             source: Some(PackageReceiptSource::Isotope {
                 isotope_name: "uv".to_string(),
             }),
@@ -3863,7 +3896,7 @@ mod tests {
             package_name: "brew:demo".to_string(),
             qualified_name: "brew:demo".to_string(),
             install_root: PathBuf::from("/opt/demo"),
-            installed: false,
+            installed: true,
             source: Some(PackageReceiptSource::Formula {
                 root_formula: "demo".to_string(),
             }),
@@ -4288,5 +4321,99 @@ mod tests {
         );
 
         remove_path(&opt_root.join("awscli")).unwrap();
+    }
+
+    #[test]
+    fn format_package_info_covers_wrapped_metadata_and_error_sections() {
+        let info = PackageInfo {
+            package_name: "coverage-formula".to_string(),
+            qualified_name:
+                "brew:coverage-formula-with-a-very-long-name-that-wraps-in-the-title".to_string(),
+            install_root: PathBuf::from("/opt/pkg/coverage-formula"),
+            installed: true,
+            source: Some(PackageReceiptSource::Formula {
+                root_formula: "coverage-formula".to_string(),
+            }),
+            source_error: None,
+            aliases: vec![
+                "coverage-alias".to_string(),
+                "coverage-second-alias-that-wraps".to_string(),
+            ],
+            aliases_error: None,
+            installed_version: Some("1.0.0".to_string()),
+            latest_version: None,
+            latest_version_error: Some("registry unavailable".to_string()),
+            executable_paths: Vec::new(),
+            executable_paths_error: Some("stub manifest missing".to_string()),
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: Some(HomebrewPackageInfo {
+                formula: "coverage-formula".to_string(),
+                description: Some("A long description that should wrap over multiple lines in the package info renderer".to_string()),
+                homepage: Some("https://example.test/coverage-formula".to_string()),
+                repository: Some("https://github.com/example/coverage-formula".to_string()),
+                upstream_docs: Some("https://docs.example.test/coverage-formula".to_string()),
+                docs: Vec::new(),
+                license: Some("MIT".to_string()),
+                dependencies: vec![
+                    "dependency-one".to_string(),
+                    "dependency-two-with-a-long-name".to_string(),
+                    "dependency-three".to_string(),
+                ],
+            }),
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: None,
+            security_state: None,
+            version_options: Vec::new(),
+        };
+
+        let rendered = format_package_info(&info);
+        assert!(rendered.contains("brew:coverage-formula"));
+        assert!(rendered.contains("registry unavailable"));
+        assert!(rendered.contains("Description"));
+        assert!(rendered.contains("Repository"));
+        assert!(rendered.contains("Docs"));
+        assert!(rendered.contains("Dependencies"));
+        assert!(rendered.contains("stub manifest missing"));
+
+        let npm_info = PackageInfo {
+            package_name: "coverage-npm".to_string(),
+            qualified_name: "npm:coverage-npm".to_string(),
+            install_root: PathBuf::from("/opt/npm/coverage-npm"),
+            installed: true,
+            source: Some(PackageReceiptSource::Npm {
+                package_name: "coverage-npm".to_string(),
+            }),
+            source_error: None,
+            aliases: Vec::new(),
+            aliases_error: None,
+            installed_version: None,
+            latest_version: Some("2.0.0".to_string()),
+            latest_version_error: None,
+            executable_paths: vec![
+                "/opt/npm/bin/coverage-npm-with-a-long-executable-name".to_string(),
+            ],
+            executable_paths_error: None,
+            popularity: None,
+            last_updated_at: None,
+            homebrew_info: None,
+            homebrew_info_error: None,
+            npm_homepage: None,
+            npm_package_info_error: Some("npm metadata timeout".to_string()),
+            security_state: None,
+            version_options: Vec::new(),
+        };
+        let rendered = format_package_info(&npm_info);
+        assert!(rendered.contains("npm metadata timeout"));
+        assert!(rendered.contains("coverage-npm-with-a-long-executable-name"));
+
+        let mut lines = Vec::new();
+        push_wrapped_field(&mut lines, "Empty", "");
+        assert_eq!(lines, vec![format!("  {:<INFO_LABEL_WIDTH$}", "Empty")]);
+        assert_eq!(wrap_text("", 4), vec![String::new()]);
+        assert_eq!(split_text_hard("abcdef", 2), vec!["ab", "cd", "ef"]);
+        assert!(wrap_tokens(&[], 2, 3).is_empty());
+        assert!(wrap_tokens(&["a".repeat(INFO_WIDTH), "b".to_string()], 2, 3).len() > 1);
     }
 }
