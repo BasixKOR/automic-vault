@@ -11,6 +11,7 @@ macro_rules! radioisotope_source {
 }
 
 mod isotope {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
     #[derive(Debug)]
@@ -28,7 +29,24 @@ mod isotope {
 
     pub(crate) trait CredentialHelperSecretStore {
         fn load_secret(&self, key: &str) -> Result<String, String>;
-        fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
+        fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+            Err("credential helper store is read-only".to_string())
+        }
+    }
+
+    pub(crate) fn load_credentials(
+        store: &dyn CredentialHelperSecretStore,
+        keys: &[String],
+    ) -> Result<BTreeMap<String, String>, String> {
+        keys.iter()
+            .map(|key| store.load_secret(key).map(|value| (key.clone(), value)))
+            .collect()
+    }
+
+    pub(crate) fn zeroize_credentials(credentials: &mut BTreeMap<String, String>) {
+        for value in credentials.values_mut() {
+            value.clear();
+        }
     }
 
     pub(crate) fn validate_root_controlled_path(path: &Path) -> Result<(), String> {
@@ -226,12 +244,528 @@ mod skopeo_helper {
     );
 }
 
+mod aws_cli_helper {
+    include!(radioisotope_source!("/aws-cli/credential-helper.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::path::Path;
+
+        struct MissingSecretStore;
+
+        impl crate::isotope::CredentialHelperSecretStore for MissingSecretStore {
+            fn load_secret(&self, key: &str) -> Result<String, String> {
+                if key == AWS_ACCESS_KEY_ID_ENV_KEY {
+                    Ok("AKIAEXAMPLE".to_string())
+                } else {
+                    Err(format!("missing {key}"))
+                }
+            }
+        }
+
+        fn caller() -> crate::isotope::CredentialHelperCallerContext {
+            crate::isotope::CredentialHelperCallerContext {
+                token: Some("x".repeat(MIN_CREDENTIAL_HELPER_TOKEN_LEN)),
+                parent_executable_path: Some(AWS_CLI_PYTHON_PATH.to_string()),
+                parent_command: Some(format!(
+                    "{AWS_CLI_PYTHON_PATH} {AWS_CLI_PYTHON_ISOLATED_FLAG} {AWS_CLI_LAUNCHER_PATH} sts get-caller-identity"
+                )),
+            }
+        }
+
+        #[test]
+        fn covers_top_level_dispatch_and_validation_errors() {
+            let store = MissingSecretStore;
+            credential_helper_with_validator(
+                crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("--help")],
+                    caller: caller(),
+                    store: &store,
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+            credential_helper_with_validator(
+                crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("--version")],
+                    caller: caller(),
+                    store: &store,
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+            assert!(
+                credential_helper_with_validator(
+                    crate::isotope::CredentialHelperInvocation {
+                        args: vec![OsString::from("extra")],
+                        caller: caller(),
+                        store: &store,
+                    },
+                    |_| Ok(()),
+                )
+                .unwrap_err()
+                .contains("does not accept arguments")
+            );
+            assert!(
+                credential_helper_with_validator(
+                    crate::isotope::CredentialHelperInvocation {
+                        args: Vec::new(),
+                        caller: caller(),
+                        store: &store,
+                    },
+                    |path: &Path| Err(format!("untrusted {}", path.display())),
+                )
+                .unwrap_err()
+                .contains("untrusted")
+            );
+            assert!(
+                credential_helper_with_validator(
+                    crate::isotope::CredentialHelperInvocation {
+                        args: Vec::new(),
+                        caller: caller(),
+                        store: &store,
+                    },
+                    |_| Ok(()),
+                )
+                .unwrap_err()
+                .contains(AWS_SECRET_ACCESS_KEY_ENV_KEY)
+            );
+        }
+    }
+}
+
+mod kubernetes_cli_helper {
+    include!(radioisotope_source!("/kubernetes-cli/credential-helper.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::ffi::OsString;
+
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStringExt;
+
+        struct ErrorStore;
+
+        impl crate::isotope::CredentialHelperSecretStore for ErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("kube store denied".to_string())
+            }
+        }
+
+        #[test]
+        fn covers_validation_json_and_response_edges() {
+            assert!(is_kubectl_parent_executable(
+                "/opt/kubernetes-cli/bin/kubectl"
+            ));
+            assert!(is_kubectl_parent_executable(
+                "/opt/kubernetes-cli/bin/kubectl.av-orig"
+            ));
+            assert!(!is_kubectl_parent_executable("/tmp/kubectl"));
+
+            assert!(
+                parse_kubernetes_helper_args(&[])
+                    .unwrap_err()
+                    .contains("expects one")
+            );
+            assert!(
+                parse_kubernetes_helper_args(&[OsString::from("   ")])
+                    .unwrap_err()
+                    .contains("empty")
+            );
+            #[cfg(unix)]
+            assert!(
+                parse_kubernetes_helper_args(&[OsString::from_vec(vec![0xff])])
+                    .unwrap_err()
+                    .contains("valid UTF-8")
+            );
+
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("dev")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: Some("short".to_string()),
+                        parent_executable_path: Some("/opt/kubernetes-cli/bin/kubectl".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("invalid")
+            );
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("dev")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: Some("x".repeat(32)),
+                        parent_executable_path: Some("/tmp/not-kubectl".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("kubectl")
+            );
+
+            assert!(
+                kubernetes_credential_for_user(&ErrorStore, "dev")
+                    .unwrap_err()
+                    .contains("kube store denied")
+            );
+            assert!(
+                kubernetes_credential_for_user(&crate::MemoryStore::with("not json"), "dev")
+                    .unwrap_err()
+                    .contains("decode")
+            );
+            assert!(
+                kubernetes_credential_for_user(&crate::MemoryStore::with(r#"{"users":{}}"#), "dev")
+                    .unwrap_err()
+                    .contains("missing users")
+            );
+            assert!(
+                kubernetes_credential_for_user(
+                    &crate::MemoryStore::with(r#"{"users":[{"name":"other"}]}"#),
+                    "dev"
+                )
+                .unwrap_err()
+                .contains("not found")
+            );
+            let certificate = KubernetesCredential {
+                token: None,
+                client_certificate_data: Some("cert".to_string()),
+                client_key_data: Some("key".to_string()),
+            };
+            let response = exec_credential_json(&certificate).unwrap();
+            assert!(response.contains("clientCertificateData"));
+        }
+    }
+}
+
+mod nuget_helper {
+    include!(radioisotope_source!("/nuget/credential-helper.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::ffi::OsString;
+
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStringExt;
+
+        struct ErrorStore;
+
+        impl crate::isotope::CredentialHelperSecretStore for ErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("nuget store denied".to_string())
+            }
+        }
+
+        #[test]
+        fn covers_uri_validation_store_and_match_edges() {
+            assert_eq!(
+                parse_nuget_provider_uri(&[
+                    OsString::from("-Uri"),
+                    OsString::from("https://example.test/index.json")
+                ])
+                .unwrap(),
+                Some("https://example.test/index.json".to_string())
+            );
+            assert_eq!(
+                parse_nuget_provider_uri(&[OsString::from("-Uri:https://example.test/")]).unwrap(),
+                Some("https://example.test/".to_string())
+            );
+            assert_eq!(
+                parse_nuget_provider_uri(&[OsString::from("-Uri"), OsString::from("   ")]).unwrap(),
+                None
+            );
+            assert!(
+                parse_nuget_provider_uri(&[OsString::from("-Uri")])
+                    .unwrap_err()
+                    .contains("missing a value")
+            );
+            #[cfg(unix)]
+            assert!(
+                parse_nuget_provider_uri(&[OsString::from_vec(vec![0xff])])
+                    .unwrap_err()
+                    .contains("valid UTF-8")
+            );
+            assert!(is_nuget_parent_executable("/opt/nuget/bin/nuget"));
+            assert!(is_nuget_parent_executable("/opt/nuget/bin/nuget.av-orig"));
+            assert!(!is_nuget_parent_executable("/tmp/nuget"));
+            assert!(credential_store_miss("not found in store"));
+            assert!(credential_store_miss("missing stub credential"));
+            assert!(!credential_store_miss("permission denied"));
+            assert_eq!(
+                normalize_uri("HTTPS://EXAMPLE.TEST/"),
+                "https://example.test"
+            );
+
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("-Uri"), OsString::from("source")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: None,
+                        parent_executable_path: Some("/opt/nuget/bin/nuget".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("approval token")
+            );
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("-Uri"), OsString::from("source")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: Some("x".repeat(32)),
+                        parent_executable_path: Some("/tmp/not-nuget".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("NuGet launcher")
+            );
+
+            assert_eq!(
+                nuget_credentials_for_uri(&crate::MemoryStore::default(), "source").unwrap(),
+                None
+            );
+            assert!(
+                nuget_credentials_for_uri(&ErrorStore, "source")
+                    .unwrap_err()
+                    .contains("nuget store denied")
+            );
+            assert!(
+                nuget_credentials_for_uri(&crate::MemoryStore::with("not json"), "source")
+                    .unwrap_err()
+                    .contains("decode")
+            );
+            assert_eq!(
+                nuget_credentials_for_uri(&crate::MemoryStore::with(r#"{"sources":{}}"#), "source")
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                nuget_credentials_for_uri(
+                    &crate::MemoryStore::with(
+                        r#"{"sources":[{"name":"source","username":"u"},{"uri":"https://example.test/","password":"p"}]}"#
+                    ),
+                    "source"
+                )
+                .unwrap(),
+                None
+            );
+        }
+    }
+}
+
 mod terraform_helper {
     include!(radioisotope_source!("/terraform/credential-helper.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::ffi::OsString;
+
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStringExt;
+
+        struct ErrorStore;
+        struct WriteErrorStore;
+
+        impl crate::isotope::CredentialHelperSecretStore for ErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("terraform store denied".to_string())
+            }
+        }
+
+        impl crate::isotope::CredentialHelperSecretStore for WriteErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("missing stub credential".to_string())
+            }
+
+            fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+                Err("terraform write denied".to_string())
+            }
+        }
+
+        #[test]
+        fn covers_parse_validation_and_store_shape_edges() {
+            assert!(is_terraform_parent_executable(
+                "/opt/terraform/bin/terraform"
+            ));
+            assert!(is_terraform_parent_executable(
+                "/opt/terraform/bin/terraform.av-orig"
+            ));
+            assert!(!is_terraform_parent_executable("/tmp/terraform"));
+            assert!(
+                parse_terraform_helper_args(&[])
+                    .unwrap_err()
+                    .contains("<verb> <hostname>")
+            );
+            assert!(
+                parse_terraform_helper_args(&[OsString::from("get"), OsString::from(" ")])
+                    .unwrap_err()
+                    .contains("empty")
+            );
+            #[cfg(unix)]
+            assert!(
+                parse_terraform_helper_args(&[OsString::from_vec(vec![0xff]), OsString::from("h")])
+                    .unwrap_err()
+                    .contains("valid UTF-8")
+            );
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("get"), OsString::from("host")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: Some("short".to_string()),
+                        parent_executable_path: Some("/opt/terraform/bin/terraform".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("invalid")
+            );
+            assert!(
+                load_terraform_credentials_root(&ErrorStore)
+                    .unwrap_err()
+                    .contains("terraform store denied")
+            );
+            assert!(
+                load_terraform_credentials_root(&crate::MemoryStore::with("not json"))
+                    .unwrap_err()
+                    .contains("decode")
+            );
+            assert!(
+                store_terraform_credentials_for_host(
+                    &crate::MemoryStore::with("[]"),
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("root must be a JSON object")
+            );
+            assert!(
+                store_terraform_credentials_for_host(
+                    &crate::MemoryStore::with(r#"{"credentials":[]}"#),
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("field must be a JSON object")
+            );
+            assert!(
+                store_terraform_credentials_for_host(
+                    &WriteErrorStore,
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("terraform write denied")
+            );
+        }
+    }
 }
 
 mod opentofu_helper {
     include!(radioisotope_source!("/opentofu/credential-helper.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::ffi::OsString;
+
+        struct ErrorStore;
+        struct WriteErrorStore;
+
+        impl crate::isotope::CredentialHelperSecretStore for ErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("opentofu store denied".to_string())
+            }
+        }
+
+        impl crate::isotope::CredentialHelperSecretStore for WriteErrorStore {
+            fn load_secret(&self, _key: &str) -> Result<String, String> {
+                Err("missing stub credential".to_string())
+            }
+
+            fn store_secret(&self, _key: &str, _value: &str) -> Result<(), String> {
+                Err("opentofu write denied".to_string())
+            }
+        }
+
+        #[test]
+        fn covers_parse_validation_and_store_shape_edges() {
+            assert!(is_opentofu_parent_executable("/opt/opentofu/bin/tofu"));
+            assert!(is_opentofu_parent_executable(
+                "/opt/opentofu/bin/tofu.av-orig"
+            ));
+            assert!(!is_opentofu_parent_executable("/tmp/tofu"));
+            assert!(
+                parse_opentofu_helper_args(&[])
+                    .unwrap_err()
+                    .contains("<verb> <hostname>")
+            );
+            assert!(
+                parse_opentofu_helper_args(&[OsString::from("get"), OsString::from(" ")])
+                    .unwrap_err()
+                    .contains("empty")
+            );
+            assert!(
+                validate_caller_context(&crate::isotope::CredentialHelperInvocation {
+                    args: vec![OsString::from("get"), OsString::from("host")],
+                    caller: crate::isotope::CredentialHelperCallerContext {
+                        token: Some("short".to_string()),
+                        parent_executable_path: Some("/opt/opentofu/bin/tofu".to_string()),
+                        parent_command: None,
+                    },
+                    store: &crate::MemoryStore::default(),
+                })
+                .unwrap_err()
+                .contains("invalid")
+            );
+            assert!(
+                load_opentofu_credentials_root(&ErrorStore)
+                    .unwrap_err()
+                    .contains("opentofu store denied")
+            );
+            assert!(
+                load_opentofu_credentials_root(&crate::MemoryStore::with("not json"))
+                    .unwrap_err()
+                    .contains("decode")
+            );
+            assert!(
+                store_opentofu_credentials_for_host(
+                    &crate::MemoryStore::with("[]"),
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("root must be a JSON object")
+            );
+            assert!(
+                store_opentofu_credentials_for_host(
+                    &crate::MemoryStore::with(r#"{"credentials":[]}"#),
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("field must be a JSON object")
+            );
+            assert!(
+                store_opentofu_credentials_for_host(
+                    &WriteErrorStore,
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("opentofu write denied")
+            );
+        }
+    }
 }
 
 mod cargo_helper {
@@ -392,8 +926,37 @@ mod cargo_helper {
                     .unwrap_err()
                     .contains("write")
             );
+
+            assert!(request_is_crates_io(&serde_json::json!({
+                "registry": { "index-url": "https://github.com/rust-lang/crates.io-index" }
+            })));
+            assert!(!request_is_crates_io(&serde_json::json!({
+                "registry": { "index-url": "https://example.test/index" }
+            })));
+            assert!(!request_is_crates_io(
+                &serde_json::json!({ "registry": [] })
+            ));
+            assert!(credential_store_miss("not found in store"));
+            assert!(credential_store_miss("missing stub credential"));
+            assert!(!credential_store_miss("permission denied"));
+            assert_eq!(
+                load_cargo_token(&crate::MemoryStore::default()).unwrap(),
+                None
+            );
+            assert_eq!(
+                cargo_err("custom"),
+                serde_json::json!({ "Err": { "kind": "custom" } })
+            );
+            assert_eq!(
+                cargo_other_err("message"),
+                serde_json::json!({ "Err": { "kind": "other", "message": "message" } })
+            );
         }
     }
+}
+
+mod wakatime_cli_helper {
+    include!(radioisotope_source!("/wakatime-cli/credential-helper.rs"));
 }
 
 #[derive(Default)]

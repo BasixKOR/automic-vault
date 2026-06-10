@@ -8,6 +8,11 @@ const ISOTOPE_ALWAYS_ALLOW_PATH: &str =
     "/Library/Application Support/Automic Vault/isotope/always-allow.json";
 const DEFAULT_SEARCH_PAGE_SIZE: usize = 100;
 const MAX_SEARCH_PAGE_SIZE: usize = 200;
+
+#[cfg(test)]
+static TEST_ASSUME_HELPER_ROOT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HelperCommand {
     Install {
@@ -1460,6 +1465,57 @@ mod tests {
         EndpointOverrideGuard
     }
 
+    struct TestHelperRootGuard {
+        previous: bool,
+    }
+
+    impl TestHelperRootGuard {
+        fn enable() -> Self {
+            Self {
+                previous: TEST_ASSUME_HELPER_ROOT.swap(true, std::sync::atomic::Ordering::SeqCst),
+            }
+        }
+    }
+
+    impl Drop for TestHelperRootGuard {
+        fn drop(&mut self) {
+            TEST_ASSUME_HELPER_ROOT.store(self.previous, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    struct TestEnvVarGuard {
+        previous: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl TestEnvVarGuard {
+        fn set(values: &[(&'static str, &str)]) -> Self {
+            let previous = values
+                .iter()
+                .map(|(key, value)| {
+                    let previous = std::env::var_os(key);
+                    unsafe {
+                        std::env::set_var(key, value);
+                    }
+                    (*key, previous)
+                })
+                .collect();
+            Self { previous }
+        }
+    }
+
+    impl Drop for TestEnvVarGuard {
+        fn drop(&mut self) {
+            for (key, previous) in self.previous.drain(..).rev() {
+                unsafe {
+                    match previous {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
+        }
+    }
+
     fn start_ops_test_http_server(
         routes: Vec<(String, Vec<u8>)>,
         requests: usize,
@@ -1892,6 +1948,112 @@ mod tests {
         assert!(matches!(
             events.lock().unwrap().last(),
             Some(ProgressEvent::Error { .. })
+        ));
+    }
+
+    #[test]
+    fn helper_command_bodies_cover_root_bypassed_safe_errors() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let _root = TestHelperRootGuard::enable();
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let env_path = project.join(".env");
+        fs::write(&env_path, "DOTENV_PUBLIC_KEY=public-key\nAPI_TOKEN=plain\n").unwrap();
+        let policy_path = temp.path().join("dotenv-policy.json");
+        let approvals_path = temp.path().join("dotenv-approvals.json");
+        let _dotenv_env = TestEnvVarGuard::set(&[
+            ("AV_TEST_DOTENV_POLICY_PATH", policy_path.to_str().unwrap()),
+            (
+                "AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH",
+                approvals_path.to_str().unwrap(),
+            ),
+        ]);
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let formula_api_root = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let _endpoint = set_formula_api_root(formula_api_root);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let progress = || {
+            let captured = Arc::clone(&events);
+            Arc::new(Mutex::new(Box::new(move |event| {
+                captured.lock().unwrap().push(event);
+            }) as Box<ProgressCallback>))
+        };
+        let formula = PackageSpec {
+            name: "brew:coverage-helper-formula".to_string(),
+            version: None,
+        };
+
+        assert!(
+            install_packages(vec![formula.clone()], progress())
+                .unwrap_err()
+                .contains("coverage-helper-formula")
+        );
+        assert!(
+            update_packages(Vec::new(), progress())
+                .unwrap_err()
+                .contains("at least one package")
+        );
+        let _ = update_all_packages(progress());
+        assert!(
+            uninstall_packages(
+                vec![PackageSpec {
+                    name: "coverage-missing-package".to_string(),
+                    version: None,
+                }],
+                progress()
+            )
+            .unwrap_err()
+            .contains("not installed")
+        );
+        assert!(
+            install_isotope_stubs_with_helper("", progress())
+                .unwrap_err()
+                .contains("missing isotope name")
+        );
+        assert!(
+            install_isotope_root_with_helper("bad/name", progress())
+                .unwrap_err()
+                .contains("invalid isotope name")
+        );
+        assert!(
+            convert_radioisotope_with_helper("bad/name", progress())
+                .unwrap_err()
+                .contains("invalid isotope name")
+        );
+        assert!(
+            install_cli_tools(
+                "/tmp/coverage-missing-av",
+                "/tmp/Coverage Caller.app",
+                progress()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            get_dotenv_approval_policy().unwrap().value.as_deref(),
+            Some("approve_every_time")
+        );
+        assert_eq!(
+            set_dotenv_approval_policy(dotenv::DotenvApprovalPolicy::RememberApproved)
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("remember_approved")
+        );
+        assert!(
+            remember_dotenv_approval_with_helper(
+                dotenv::DotenvApprovalMode::Run,
+                env_path.to_str().unwrap(),
+                project.to_str().unwrap(),
+                "f15d64528dce9aa1e20497a5d9ef60783080fe5e3d5051de19c8fae7c78c4607",
+                "43a46f1d081d270130e2210a1de59f9715de033307d068edc65a335b27e95d3d",
+                vec!["API_TOKEN".to_string(), "API_TOKEN".to_string()],
+            )
+            .is_ok()
+        );
+        assert!(events.lock().unwrap().iter().any(
+            |event| matches!(event, ProgressEvent::Installing { package } if package == "coverage-missing-package" || package == PKG_DISPLAY_NAME)
         ));
     }
 
@@ -2661,6 +2823,11 @@ mod tests {
 }
 
 fn require_root() -> Result<(), String> {
+    #[cfg(test)]
+    if TEST_ASSUME_HELPER_ROOT.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
+
     if is_root() {
         return Ok(());
     }

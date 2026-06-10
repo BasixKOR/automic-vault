@@ -1,17 +1,227 @@
 #![cfg(coverage)]
 #![allow(dead_code)]
 
+use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn global_test_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(Mutex::default)
 }
 
+fn unique_temp_dir(label: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("radioisotope-detect-{label}-{suffix}"))
+}
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        unsafe {
+            std::env::set_var(key, value);
+        }
+        Self { key, previous }
+    }
+
+    fn remove(key: &'static str) -> Self {
+        let previous = std::env::var_os(key);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
+
 macro_rules! radioisotope_source {
     ($path:literal) => {
         concat!(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"), $path)
     };
+}
+
+macro_rules! top_level_file_detector_tests {
+    ($module:ident, $source:literal, $paths:expr, $contents:expr) => {
+        mod $module {
+            include!(radioisotope_source!($source));
+
+            #[cfg(test)]
+            mod av_extra_tests {
+                use super::*;
+                use std::fs;
+
+                #[test]
+                fn covers_top_level_detection_with_temp_paths() {
+                    let _lock = crate::global_test_env_lock().lock().unwrap();
+                    let root = crate::unique_temp_dir(stringify!($module));
+                    let home = root.join("home");
+                    let xdg_config = root.join("xdg-config");
+                    let xdg_data = root.join("xdg-data");
+                    let xdg_state = root.join("xdg-state");
+                    fs::create_dir_all(&home).unwrap();
+                    fs::create_dir_all(&xdg_config).unwrap();
+                    fs::create_dir_all(&xdg_data).unwrap();
+                    fs::create_dir_all(&xdg_state).unwrap();
+
+                    let _home = crate::EnvGuard::set("HOME", &home);
+                    let _xdg_config = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg_config);
+                    let _xdg_data = crate::EnvGuard::set("XDG_DATA_HOME", &xdg_data);
+                    let _xdg_state = crate::EnvGuard::set("XDG_STATE_HOME", &xdg_state);
+                    let _custom_guards = [
+                        crate::EnvGuard::remove("ARGOCD_CONFIG_DIR"),
+                        crate::EnvGuard::remove("AZURE_CONFIG_DIR"),
+                        crate::EnvGuard::remove("CIVO_CONFIG"),
+                        crate::EnvGuard::remove("COMPOSER_HOME"),
+                        crate::EnvGuard::remove("CX_CONFIG_FILE_PATH"),
+                        crate::EnvGuard::remove("DIGITALOCEAN_CONFIG"),
+                        crate::EnvGuard::remove("HELM_CONFIG_HOME"),
+                        crate::EnvGuard::remove("HELM_REPOSITORY_CONFIG"),
+                        crate::EnvGuard::remove("LUAROCKS_CONFIG"),
+                        crate::EnvGuard::remove("LUAROCKS_CONFIG_SYSTEM"),
+                        crate::EnvGuard::remove("LUAROCKS_CONFIG_USER"),
+                    ];
+
+                    let paths: Vec<std::path::PathBuf> = $paths;
+                    assert!(!paths.is_empty());
+                    for path in &paths {
+                        fs::create_dir_all(path.parent().unwrap()).unwrap();
+                        fs::write(path, $contents).unwrap();
+                    }
+
+                    let reasons = install_insecurity_reasons().unwrap();
+                    assert!(
+                        !reasons.is_empty(),
+                        "expected detector reason for {paths:?}"
+                    );
+
+                    fs::remove_dir_all(root).unwrap();
+                }
+            }
+        }
+    };
+}
+
+top_level_file_detector_tests!(
+    acli_detect,
+    "/acli/detect.rs",
+    acli_configs()
+        .unwrap()
+        .into_iter()
+        .map(|config| config.path)
+        .collect::<Vec<_>>(),
+    "profiles:\n  - token: fake-atlassian-token\n"
+);
+
+top_level_file_detector_tests!(
+    algolia_detect,
+    "/algolia/detect.rs",
+    vec![algolia_config_path().unwrap()],
+    "api_key = \"fake-algolia-key\"\n"
+);
+
+top_level_file_detector_tests!(
+    aliyun_cli_detect,
+    "/aliyun-cli/detect.rs",
+    vec![aliyun_config_path().unwrap()],
+    r#"{"profiles":[{"access_key_secret":"secret","oauth_refresh_token":"refresh"}]}"#
+);
+
+top_level_file_detector_tests!(
+    argocd_detect,
+    "/argocd/detect.rs",
+    candidate_config_paths().unwrap(),
+    "users:\n- name: prod\n  auth-token: token\n"
+);
+
+top_level_file_detector_tests!(
+    ast_cli_detect,
+    "/ast-cli/detect.rs",
+    vec![checkmarx_config_path().unwrap()],
+    "cx_apikey: ast_secret\n"
+);
+
+top_level_file_detector_tests!(
+    astra_detect,
+    "/astra/detect.rs",
+    vec![astra_config_path().unwrap()],
+    "token=AstraCS:fake-test-token\n"
+);
+
+top_level_file_detector_tests!(
+    azure_cli_detect,
+    "/azure-cli/detect.rs",
+    candidate_cache_files()
+        .unwrap()
+        .into_iter()
+        .map(|file| file.path)
+        .collect::<Vec<_>>(),
+    r#"{"secret":"access-token","client_secret":"client-secret"}"#
+);
+
+top_level_file_detector_tests!(
+    civo_detect,
+    "/civo/detect.rs",
+    vec![civo_config_path().unwrap()],
+    r#"{"apikey":"fake-civo-key","region":"NYC1"}"#
+);
+
+top_level_file_detector_tests!(
+    composer_detect,
+    "/composer/detect.rs",
+    candidate_auth_paths().unwrap(),
+    r#"{"github-oauth":{"github.com":"token"}}"#
+);
+
+top_level_file_detector_tests!(
+    doctl_detect,
+    "/doctl/detect.rs",
+    vec![doctl_config_path().unwrap()],
+    "access-token: do_secret\n"
+);
+
+top_level_file_detector_tests!(
+    helm_detect,
+    "/helm/detect.rs",
+    vec![helm_repository_config_path().unwrap()],
+    "repositories:\n- name: private\n  password: secret\n"
+);
+
+top_level_file_detector_tests!(
+    luarocks_detect,
+    "/luarocks/detect.rs",
+    upload_config_paths().unwrap(),
+    "return {\n  key = \"lr_secret\",\n}\n"
+);
+
+mod httpie_detect {
+    include!(radioisotope_source!("/httpie/detect.rs"));
+}
+
+mod openssh_detect {
+    include!(radioisotope_source!("/openssh/detect.rs"));
+}
+
+mod openvpn_detect {
+    include!(radioisotope_source!("/openvpn/detect.rs"));
 }
 
 mod docker_detect {
@@ -367,6 +577,405 @@ mod pulumi_detect {
                 Some((r#"a"b"#.to_string(), 6))
             );
             assert!(parse_json_string("unterminated", 0).is_none());
+        }
+    }
+}
+
+mod ansible_detect {
+    include!(radioisotope_source!("/ansible/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_env_path_detection_and_file_errors() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("ansible");
+            let home = root.join("home");
+            let token = root.join("galaxy-token");
+            fs::create_dir_all(&home).unwrap();
+            fs::write(&token, "token: galaxy-token-value\n").unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _token = crate::EnvGuard::set("ANSIBLE_GALAXY_TOKEN_PATH", &token);
+
+            let paths = candidate_token_paths().unwrap();
+            assert!(paths.contains(&token));
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("galaxy-token"));
+            assert!(
+                read_to_string(&root)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod certbot_detect {
+    include!(radioisotope_source!("/certbot/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_recursive_scan_and_top_level_reasons() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("certbot");
+            let home = root.join("home");
+            let live = home.join(".config/letsencrypt/live/example.test");
+            fs::create_dir_all(&live).unwrap();
+            fs::write(
+                live.join("privkey.pem"),
+                "-----BEGIN RSA PRIVATE KEY-----\nsecret\n-----END RSA PRIVATE KEY-----\n",
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("privkey.pem"));
+
+            let mut skipped = Vec::new();
+            scan_dir(&live, MAX_SCAN_DEPTH + 1, &mut skipped).unwrap();
+            assert!(skipped.is_empty());
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod opencode_detect {
+    include!(radioisotope_source!("/opencode/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_xdg_auth_path_and_json_errors() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("opencode");
+            let home = root.join("home");
+            let xdg = root.join("xdg");
+            let opencode = xdg.join("opencode");
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&opencode).unwrap();
+            let auth = opencode.join("auth.json");
+            fs::write(
+                &auth,
+                r#"{"accounts":{"main":{"credential":{"access":"opencode-access-token"}}}}"#,
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _xdg = crate::EnvGuard::set("XDG_DATA_HOME", &xdg);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("auth.json"));
+
+            fs::write(&auth, "{not json").unwrap();
+            assert!(
+                install_insecurity_reasons()
+                    .unwrap_err()
+                    .contains("opencode auth JSON")
+            );
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod mongodb_atlas_cli_detect {
+    include!(radioisotope_source!("/mongodb-atlas-cli/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_xdg_config_path_and_read_error() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("atlas");
+            let home = root.join("home");
+            let xdg = root.join("xdg");
+            let config_dir = xdg.join("atlascli");
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&config_dir).unwrap();
+            fs::write(
+                config_dir.join("config.toml"),
+                "client_secret = 'atlas-client-secret'\n",
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _xdg = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("atlascli"));
+            assert!(
+                read_to_string(&root)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod pianobar_detect {
+    include!(radioisotope_source!("/pianobar/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_xdg_config_path_and_space_assignment() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("pianobar");
+            let home = root.join("home");
+            let xdg = root.join("xdg");
+            let config_dir = xdg.join("pianobar");
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&config_dir).unwrap();
+            fs::write(config_dir.join("config"), "password supersecret\n").unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _xdg = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("pianobar"));
+            assert_eq!(
+                parse_assignment("password supersecret"),
+                Some(("password", "supersecret"))
+            );
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod stripe_cli_detect {
+    include!(radioisotope_source!("/stripe-cli/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_xdg_config_path_and_home_errors() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("stripe");
+            let home = root.join("home");
+            let xdg = root.join("xdg");
+            let config_dir = xdg.join("stripe");
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&config_dir).unwrap();
+            fs::write(
+                config_dir.join("config.toml"),
+                "secret_key = 'sk_test_123456789'\n",
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _xdg = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("stripe"));
+            assert!(
+                read_to_string(&root)
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod skopeo_detect {
+    include!(radioisotope_source!("/skopeo/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_auth_file_detection_and_home_error() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("skopeo");
+            let home = root.join("home");
+            let auth_dir = home.join(".config/containers");
+            fs::create_dir_all(&auth_dir).unwrap();
+            fs::write(
+                auth_dir.join("auth.json"),
+                r#"{"auths":{"registry.example":{"auth":"dXNlcjpwYXNz"}}}"#,
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("auth.json"));
+            drop(_home);
+            let _no_home = crate::EnvGuard::remove("HOME");
+            assert!(install_insecurity_reasons().unwrap_err().contains("HOME"));
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod maestro_detect {
+    include!(radioisotope_source!("/maestro/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_both_token_files_and_home_error() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("maestro");
+            let home = root.join("home");
+            let mobiledev = home.join(".mobiledev");
+            fs::create_dir_all(&mobiledev).unwrap();
+            fs::write(mobiledev.join("authtoken"), "maestro-cloud-token\n").unwrap();
+            fs::write(mobiledev.join("openaitoken"), "sk-test-openai-token\n").unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 2);
+            assert!(reasons.iter().any(|reason| reason.contains("Cloud")));
+            assert!(reasons.iter().any(|reason| reason.contains("OpenAI")));
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod kubernetes_cli_detect {
+    include!(radioisotope_source!("/kubernetes-cli/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_explicit_kubeconfig_path_and_list_marker_values() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("kube");
+            fs::create_dir_all(&root).unwrap();
+            let config = root.join("kubeconfig");
+            fs::write(&config, "users:\n- password: kube-password\n").unwrap();
+
+            let _kubeconfig = crate::EnvGuard::set("KUBECONFIG", &config);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("kubeconfig"));
+            assert_eq!(trim_yaml_list_marker("- token: abc"), "token: abc");
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod fauna_shell_detect {
+    include!(radioisotope_source!("/fauna-shell/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_secret_and_account_key_files() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("fauna");
+            let home = root.join("home");
+            let credentials = home.join(".fauna/credentials");
+            fs::create_dir_all(&credentials).unwrap();
+            fs::write(
+                credentials.join("account_keys"),
+                r#"{"default":{"accountKey":"fake-fauna-account-key"}}"#,
+            )
+            .unwrap();
+            fs::write(
+                credentials.join("secret_keys"),
+                r#"{"db":{"accessToken":"fake-fauna-access-token"}}"#,
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 2);
+            assert!(json_string_key_has_nonempty_value(
+                r#"{"refreshToken":"fake-refresh"}"#,
+                "refreshToken"
+            ));
+
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+mod git_detect {
+    include!(radioisotope_source!("/git/detect.rs"));
+
+    #[cfg(test)]
+    mod av_extra_tests {
+        use super::*;
+        use std::fs;
+
+        #[test]
+        fn covers_store_helper_paths_and_top_level_detection() {
+            let _lock = crate::global_test_env_lock().lock().unwrap();
+            let root = crate::unique_temp_dir("git");
+            let home = root.join("home");
+            fs::create_dir_all(&home).unwrap();
+            fs::write(
+                home.join(".gitconfig"),
+                "[credential]\nhelper = store --file ~/.custom-git-credentials\n",
+            )
+            .unwrap();
+            fs::write(
+                home.join(".custom-git-credentials"),
+                "https://user:secret@example.com/repo.git\n",
+            )
+            .unwrap();
+
+            let _home = crate::EnvGuard::set("HOME", &home);
+            let _xdg = crate::EnvGuard::remove("XDG_CONFIG_HOME");
+            let _disable_probe =
+                crate::EnvGuard::remove("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR");
+            let reasons = install_insecurity_reasons().unwrap();
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].contains("custom-git-credentials"));
+            assert_eq!(
+                store_helper_file_path("store --file ~/.custom-git-credentials")
+                    .unwrap()
+                    .unwrap(),
+                home.join(".custom-git-credentials")
+            );
+            assert_eq!(expand_home_path("~/tokens").unwrap(), home.join("tokens"));
+
+            fs::remove_dir_all(root).unwrap();
         }
     }
 }
