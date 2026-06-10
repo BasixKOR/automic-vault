@@ -54,6 +54,7 @@ enum TransferBundleItem {
     },
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TransferImportPlan {
     approval_request: KeyTransferApprovalRequest,
@@ -61,6 +62,7 @@ struct TransferImportPlan {
     already_present: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TransferImportAction {
     StoreDotenvPrivateKey {
@@ -79,9 +81,13 @@ trait TransferSecretStore {
         file: &Path,
     ) -> Result<dotenv::DotenvPrivateKeyTransferMaterial, String>;
     fn load_isotope_secret(&self, key: &str) -> Result<String, String>;
+    #[cfg(test)]
     fn load_existing_dotenv_private_key(&self, public_key: &str) -> Result<Option<String>, String>;
+    #[cfg(test)]
     fn store_dotenv_private_key(&self, public_key: &str, private_key: &str) -> Result<(), String>;
+    #[cfg(test)]
     fn load_existing_isotope_secret(&self, key: &str) -> Result<Option<String>, String>;
+    #[cfg(test)]
     fn store_isotope_secret(&self, key: &str, value: &str) -> Result<(), String>;
 }
 
@@ -99,18 +105,22 @@ impl TransferSecretStore for KeychainTransferSecretStore {
         isotope::load_isotope_secret_for_transfer(key)
     }
 
+    #[cfg(test)]
     fn load_existing_dotenv_private_key(&self, public_key: &str) -> Result<Option<String>, String> {
         dotenv::load_existing_dotenv_private_key_for_transfer(public_key)
     }
 
+    #[cfg(test)]
     fn store_dotenv_private_key(&self, public_key: &str, private_key: &str) -> Result<(), String> {
         dotenv::store_dotenv_private_key_for_transfer(public_key, private_key)
     }
 
+    #[cfg(test)]
     fn load_existing_isotope_secret(&self, key: &str) -> Result<Option<String>, String> {
         isotope::load_existing_isotope_secret_for_transfer(key)
     }
 
+    #[cfg(test)]
     fn store_isotope_secret(&self, key: &str, value: &str) -> Result<(), String> {
         isotope::store_isotope_secret_for_transfer(key, value)
     }
@@ -122,11 +132,9 @@ pub(crate) fn run_transfer_entry(program_name: &str, args: env::ArgsOs) -> Resul
     };
     match command {
         TransferCommand::Send(options) => run_transfer_send(&options, &KeychainTransferSecretStore),
-        TransferCommand::Receive(options) => {
-            run_transfer_receive(&options, &KeychainTransferSecretStore, |request| {
-                vault::request_key_transfer_approval(request)
-            })
-        }
+        TransferCommand::Receive(options) => run_transfer_receive(&options, |request| {
+            vault::request_key_transfer_import(request)
+        }),
     }
 }
 
@@ -424,13 +432,9 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn run_transfer_receive<A>(
-    options: &TransferReceiveOptions,
-    store: &dyn TransferSecretStore,
-    approval: A,
-) -> Result<(), String>
+fn run_transfer_receive<I>(options: &TransferReceiveOptions, import: I) -> Result<(), String>
 where
-    A: FnOnce(KeyTransferApprovalRequest) -> Result<(), String>,
+    I: FnOnce(KeyTransferImportRequest) -> Result<KeyTransferImportResponse, String>,
 {
     if !options.stdin {
         return Err("transfer receive requires --stdin".to_string());
@@ -442,18 +446,55 @@ where
     let mut bundle: TransferBundle = serde_json::from_str(&input)
         .map_err(|err| format!("failed to decode transfer bundle: {err}"))?;
     zeroize_string(&mut input);
-    let mut plan = plan_transfer_import(&bundle, options.replace, store)?;
+    let request = build_key_transfer_import_request(&bundle, options.replace)?;
     zeroize_transfer_bundle(&mut bundle);
-    approval(plan.approval_request.clone())?;
-    let (imported, already_present) = apply_transfer_import(&mut plan, store)?;
+    let response = import(request)?;
     println!(
         "imported {}; {} already present",
-        pluralize(imported, "key", "keys"),
-        pluralize(already_present, "key", "keys")
+        pluralize(response.imported, "key", "keys"),
+        pluralize(response.already_present, "key", "keys")
     );
     Ok(())
 }
 
+fn build_key_transfer_import_request(
+    bundle: &TransferBundle,
+    replace: bool,
+) -> Result<KeyTransferImportRequest, String> {
+    validate_transfer_bundle(bundle)?;
+    Ok(KeyTransferImportRequest {
+        id: vault::new_vault_request_id()?,
+        source: bundle.source.clone(),
+        replace,
+        items: bundle
+            .items
+            .iter()
+            .map(|item| match item {
+                TransferBundleItem::DotenvPrivateKey {
+                    env_file_path,
+                    public_key_name,
+                    public_key,
+                    public_key_fingerprint,
+                    private_key,
+                } => KeyTransferImportItem::DotenvPrivateKey {
+                    env_file_path: env_file_path.clone(),
+                    public_key_name: public_key_name.clone(),
+                    public_key: public_key.clone(),
+                    public_key_fingerprint: public_key_fingerprint.clone(),
+                    private_key: private_key.clone(),
+                },
+                TransferBundleItem::IsotopeSecret { key, value } => {
+                    KeyTransferImportItem::IsotopeSecret {
+                        key: key.clone(),
+                        value: value.clone(),
+                    }
+                }
+            })
+            .collect(),
+    })
+}
+
+#[cfg(test)]
 fn plan_transfer_import(
     bundle: &TransferBundle,
     replace: bool,
@@ -588,6 +629,7 @@ fn validate_transfer_bundle(bundle: &TransferBundle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
 fn apply_transfer_import(
     plan: &mut TransferImportPlan,
     store: &dyn TransferSecretStore,
@@ -1071,6 +1113,41 @@ mod tests {
             ]))
             .unwrap_err()
             .contains("duplicate isotope key")
+        );
+    }
+
+    #[test]
+    fn transfer_builds_daemon_import_request_with_secret_payload() {
+        let (public_key, private_key) = transfer_keypair();
+        let request = build_key_transfer_import_request(
+            &bundle(vec![
+                dotenv_item(public_key.clone(), private_key.clone()),
+                TransferBundleItem::IsotopeSecret {
+                    key: "TOKEN".to_string(),
+                    value: "secret".to_string(),
+                },
+            ]),
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(request.source, test_source());
+        assert!(request.replace);
+        assert_eq!(request.items.len(), 2);
+        assert!(matches!(
+            &request.items[0],
+            KeyTransferImportItem::DotenvPrivateKey {
+                public_key: imported_public_key,
+                private_key: imported_private_key,
+                ..
+            } if imported_public_key == &public_key && imported_private_key == &private_key
+        ));
+        assert_eq!(
+            request.items[1],
+            KeyTransferImportItem::IsotopeSecret {
+                key: "TOKEN".to_string(),
+                value: "secret".to_string(),
+            }
         );
     }
 }

@@ -468,6 +468,7 @@ pub(crate) fn load_isotope_secret_for_transfer(key: &str) -> Result<String, Stri
     KeychainCredentialStore.load_secret(key)
 }
 
+#[cfg(test)]
 pub(crate) fn load_existing_isotope_secret_for_transfer(
     key: &str,
 ) -> Result<Option<String>, String> {
@@ -475,6 +476,7 @@ pub(crate) fn load_existing_isotope_secret_for_transfer(
     KeychainCredentialStore.load_secret_if_present(key)
 }
 
+#[cfg(test)]
 pub(crate) fn store_isotope_secret_for_transfer(key: &str, value: &str) -> Result<(), String> {
     validate_key_name(key)?;
     CredentialStore::store_secret(&KeychainCredentialStore, key, value)

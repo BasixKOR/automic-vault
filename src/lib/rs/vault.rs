@@ -92,6 +92,37 @@ pub struct KeyTransferApprovalRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyTransferImportRequest {
+    pub id: String,
+    pub source: KeyTransferApprovalSource,
+    pub replace: bool,
+    pub items: Vec<KeyTransferImportItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum KeyTransferImportItem {
+    DotenvPrivateKey {
+        env_file_path: String,
+        public_key_name: String,
+        public_key: String,
+        public_key_fingerprint: String,
+        private_key: String,
+    },
+    IsotopeSecret {
+        key: String,
+        value: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyTransferImportResponse {
+    pub id: String,
+    pub imported: usize,
+    pub already_present: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VaultApprovalResponse {
     pub id: String,
     pub approved: bool,
@@ -132,6 +163,7 @@ pub enum VaultClientRequest {
     ContainmentStarted { session: VaultContainmentSession },
     ApprovalRequest { id: String, intent: ExecutionIntent },
     KeyTransferApprovalRequest { request: KeyTransferApprovalRequest },
+    KeyTransferImportRequest { request: KeyTransferImportRequest },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -150,6 +182,11 @@ pub enum VaultDaemonEvent {
     ExecComplete {
         id: String,
         exit_code: i32,
+    },
+    KeyTransferImportResponse {
+        id: String,
+        imported: usize,
+        already_present: usize,
     },
     Error {
         id: Option<String>,
@@ -531,10 +568,14 @@ fn request_vault_execution(intent: ExecutionIntent) -> Result<(), String> {
                 }
                 return Err(format!("vaultd error {code}: {message}"));
             }
+            VaultDaemonEvent::KeyTransferImportResponse { .. } => {
+                return Err("vaultd returned an unexpected key transfer import event".to_string());
+            }
         }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn request_key_transfer_approval(
     request: KeyTransferApprovalRequest,
 ) -> Result<(), String> {
@@ -594,11 +635,112 @@ pub(crate) fn request_key_transfer_approval(
                 }
                 return Err(format!("vaultd error {code}: {message}"));
             }
-            VaultDaemonEvent::ExecChunk { .. } | VaultDaemonEvent::ExecComplete { .. } => {
+            VaultDaemonEvent::ExecChunk { .. }
+            | VaultDaemonEvent::ExecComplete { .. }
+            | VaultDaemonEvent::KeyTransferImportResponse { .. } => {
                 return Err("vaultd returned an unexpected execution event".to_string());
             }
         }
     }
+}
+
+pub(crate) fn request_key_transfer_import(
+    request: KeyTransferImportRequest,
+) -> Result<KeyTransferImportResponse, String> {
+    let request_id = request.id.clone();
+    let socket_path = resolve_vault_socket_path()?;
+    let mut stream = UnixStream::connect(&socket_path)
+        .map_err(|err| format!("vaultd unavailable at {}: {err}", socket_path.display()))?;
+    let request = VaultClientRequest::KeyTransferImportRequest { request };
+    let mut encoded = match serde_json::to_string(&request) {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            let VaultClientRequest::KeyTransferImportRequest { mut request } = request else {
+                unreachable!();
+            };
+            zeroize_key_transfer_import_request(&mut request);
+            return Err(format!("failed to encode vault request: {err}"));
+        }
+    };
+    let VaultClientRequest::KeyTransferImportRequest { mut request } = request else {
+        unreachable!();
+    };
+    zeroize_key_transfer_import_request(&mut request);
+    let write_result = stream
+        .write_all(encoded.as_bytes())
+        .and_then(|_| stream.write_all(b"\n"))
+        .and_then(|_| stream.flush())
+        .map_err(|err| format!("failed to send vault request: {err}"));
+    zeroize_string(&mut encoded);
+    write_result?;
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| format!("failed to read vault response: {err}"))?;
+        if bytes == 0 {
+            return Err("vaultd closed the connection before key transfer import".to_string());
+        }
+
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let event: VaultDaemonEvent = serde_json::from_str(trimmed)
+            .map_err(|err| format!("failed to decode vault response: {err}"))?;
+        match event {
+            VaultDaemonEvent::KeyTransferImportResponse {
+                id,
+                imported,
+                already_present,
+            } => {
+                if id != request_id {
+                    return Err("vaultd returned a mismatched key transfer import".to_string());
+                }
+                return Ok(KeyTransferImportResponse {
+                    id,
+                    imported,
+                    already_present,
+                });
+            }
+            VaultDaemonEvent::Error { id, code, message } => {
+                if let Some(id) = id
+                    && id != request_id
+                {
+                    return Err("vaultd returned a mismatched error".to_string());
+                }
+                if code == DEFAULT_VAULT_APPROVAL_ERROR_CODE {
+                    return Err(message);
+                }
+                return Err(format!("vaultd error {code}: {message}"));
+            }
+            _ => return Err("vaultd returned an unexpected key transfer import event".to_string()),
+        }
+    }
+}
+
+fn zeroize_key_transfer_import_request(request: &mut KeyTransferImportRequest) {
+    for item in &mut request.items {
+        match item {
+            KeyTransferImportItem::DotenvPrivateKey { private_key, .. } => {
+                zeroize_string(private_key);
+            }
+            KeyTransferImportItem::IsotopeSecret { value, .. } => {
+                zeroize_string(value);
+            }
+        }
+    }
+}
+
+fn zeroize_string(value: &mut String) {
+    unsafe {
+        value.as_mut_vec().fill(0);
+    }
+    value.clear();
 }
 
 fn notify_containment_started(session: &VaultContainmentSession) {
@@ -1479,6 +1621,23 @@ mod tests {
             }
         }
 
+        fn import_request(id: &str) -> KeyTransferImportRequest {
+            KeyTransferImportRequest {
+                id: id.to_string(),
+                source: KeyTransferApprovalSource {
+                    user: "alice".to_string(),
+                    host: "source-mac".to_string(),
+                    cwd: "/repo".to_string(),
+                    ssh_target: Some("bob@dest".to_string()),
+                },
+                replace: false,
+                items: vec![KeyTransferImportItem::IsotopeSecret {
+                    key: "TOKEN".to_string(),
+                    value: "secret".to_string(),
+                }],
+            }
+        }
+
         let _lock = crate::global_test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
 
@@ -1529,6 +1688,38 @@ mod tests {
             assert_eq!(
                 request_key_transfer_approval(approval_request("transfer-denied")).unwrap_err(),
                 "Denied by operator"
+            );
+            handle.join().unwrap();
+        }
+
+        {
+            let socket = temp.path().join("transfer-import.sock");
+            let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap())]);
+            let handle = serve_once(&socket, |request, stream| {
+                let VaultClientRequest::KeyTransferImportRequest { request } = request else {
+                    panic!("expected key transfer import request");
+                };
+                assert_eq!(request.id, "transfer-import");
+                assert_eq!(request.items.len(), 1);
+                writeln!(
+                    stream,
+                    "{}",
+                    serde_json::to_string(&VaultDaemonEvent::KeyTransferImportResponse {
+                        id: request.id,
+                        imported: 1,
+                        already_present: 0,
+                    })
+                    .unwrap()
+                )
+                .unwrap();
+            });
+            assert_eq!(
+                request_key_transfer_import(import_request("transfer-import")).unwrap(),
+                KeyTransferImportResponse {
+                    id: "transfer-import".to_string(),
+                    imported: 1,
+                    already_present: 0,
+                }
             );
             handle.join().unwrap();
         }

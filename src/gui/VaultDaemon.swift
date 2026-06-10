@@ -1,5 +1,7 @@
 import AppKit
+import CryptoKit
 import Foundation
+import Security
 #if canImport(Darwin)
 import Darwin
 #endif
@@ -37,10 +39,92 @@ private struct VaultClientContainmentSession: Codable {
     }
 }
 
+private struct KeyTransferImportRequest: Codable {
+    let id: String
+    let source: KeyTransferApprovalSource
+    let replace: Bool
+    let items: [KeyTransferImportItem]
+}
+
+private enum KeyTransferImportItem: Codable {
+    case dotenvPrivateKey(
+        envFilePath: String,
+        publicKeyName: String,
+        publicKey: String,
+        publicKeyFingerprint: String,
+        privateKey: String
+    )
+    case isotopeSecret(key: String, value: String)
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case envFilePath = "env_file_path"
+        case publicKeyName = "public_key_name"
+        case publicKey = "public_key"
+        case publicKeyFingerprint = "public_key_fingerprint"
+        case privateKey = "private_key"
+        case key
+        case value
+    }
+
+    enum Kind: String, Codable {
+        case dotenvPrivateKey = "dotenv_private_key"
+        case isotopeSecret = "isotope_secret"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .dotenvPrivateKey:
+            self = .dotenvPrivateKey(
+                envFilePath: try container.decode(String.self, forKey: .envFilePath),
+                publicKeyName: try container.decode(String.self, forKey: .publicKeyName),
+                publicKey: try container.decode(String.self, forKey: .publicKey),
+                publicKeyFingerprint: try container.decode(String.self, forKey: .publicKeyFingerprint),
+                privateKey: try container.decode(String.self, forKey: .privateKey)
+            )
+        case .isotopeSecret:
+            self = .isotopeSecret(
+                key: try container.decode(String.self, forKey: .key),
+                value: try container.decode(String.self, forKey: .value)
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .dotenvPrivateKey(let envFilePath, let publicKeyName, let publicKey, let publicKeyFingerprint, let privateKey):
+            try container.encode(Kind.dotenvPrivateKey, forKey: .kind)
+            try container.encode(envFilePath, forKey: .envFilePath)
+            try container.encode(publicKeyName, forKey: .publicKeyName)
+            try container.encode(publicKey, forKey: .publicKey)
+            try container.encode(publicKeyFingerprint, forKey: .publicKeyFingerprint)
+            try container.encode(privateKey, forKey: .privateKey)
+        case .isotopeSecret(let key, let value):
+            try container.encode(Kind.isotopeSecret, forKey: .kind)
+            try container.encode(key, forKey: .key)
+            try container.encode(value, forKey: .value)
+        }
+    }
+}
+
+private struct KeyTransferImportPlan {
+    let approval: KeyTransferApprovalRequestSnapshot
+    let actions: [KeyTransferImportAction]
+    let alreadyPresent: Int
+}
+
+private enum KeyTransferImportAction {
+    case storeDotenvPrivateKey(publicKeyFingerprint: String, privateKey: String)
+    case storeIsotopeSecret(key: String, value: String)
+}
+
 private enum VaultClientRequest: Codable {
     case containmentStarted(VaultClientContainmentSession)
     case approvalRequest(VaultClientApprovalRequest)
     case keyTransferApprovalRequest(KeyTransferApprovalRequestSnapshot)
+    case keyTransferImportRequest(KeyTransferImportRequest)
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -54,6 +138,7 @@ private enum VaultClientRequest: Codable {
         case containmentStarted = "containment_started"
         case approvalRequest = "approval_request"
         case keyTransferApprovalRequest = "key_transfer_approval_request"
+        case keyTransferImportRequest = "key_transfer_import_request"
     }
 
     init(from decoder: Decoder) throws {
@@ -75,6 +160,10 @@ private enum VaultClientRequest: Codable {
             self = .keyTransferApprovalRequest(
                 try container.decode(KeyTransferApprovalRequestSnapshot.self, forKey: .request)
             )
+        case .keyTransferImportRequest:
+            self = .keyTransferImportRequest(
+                try container.decode(KeyTransferImportRequest.self, forKey: .request)
+            )
         }
     }
 
@@ -93,6 +182,10 @@ private enum VaultClientRequest: Codable {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(RequestType.keyTransferApprovalRequest, forKey: .type)
             try container.encode(request, forKey: .request)
+        case .keyTransferImportRequest(let request):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(RequestType.keyTransferImportRequest, forKey: .type)
+            try container.encode(request, forKey: .request)
         }
     }
 }
@@ -101,6 +194,7 @@ private enum VaultDaemonEvent: Encodable {
     case approvalResponse(id: String, approved: Bool, reason: String?)
     case execChunk(id: String, stream: String, data: String)
     case execComplete(id: String, exitCode: Int32)
+    case keyTransferImportResponse(id: String, imported: Int, alreadyPresent: Int)
     case error(id: String?, code: Int, message: String)
 
     enum CodingKeys: String, CodingKey {
@@ -111,6 +205,8 @@ private enum VaultDaemonEvent: Encodable {
         case stream
         case data
         case exitCode = "exit_code"
+        case imported
+        case alreadyPresent = "already_present"
         case code
         case message
     }
@@ -119,6 +215,7 @@ private enum VaultDaemonEvent: Encodable {
         case approvalResponse = "approval_response"
         case execChunk = "exec_chunk"
         case execComplete = "exec_complete"
+        case keyTransferImportResponse = "key_transfer_import_response"
         case error
     }
 
@@ -139,6 +236,11 @@ private enum VaultDaemonEvent: Encodable {
             try container.encode(EventType.execComplete, forKey: .type)
             try container.encode(id, forKey: .id)
             try container.encode(exitCode, forKey: .exitCode)
+        case .keyTransferImportResponse(let id, let imported, let alreadyPresent):
+            try container.encode(EventType.keyTransferImportResponse, forKey: .type)
+            try container.encode(id, forKey: .id)
+            try container.encode(imported, forKey: .imported)
+            try container.encode(alreadyPresent, forKey: .alreadyPresent)
         case .error(let id, let code, let message):
             try container.encode(EventType.error, forKey: .type)
             try container.encodeIfPresent(id, forKey: .id)
@@ -203,7 +305,11 @@ final class VaultDaemon {
         try FileManager.default.createDirectory(
             at: configuration.socketURL.deletingLastPathComponent(),
             withIntermediateDirectories: true,
-            attributes: nil
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: configuration.socketURL.deletingLastPathComponent().path
         )
         try? FileManager.default.removeItem(at: configuration.socketURL)
 
@@ -244,6 +350,7 @@ final class VaultDaemon {
             Darwin.close(socketFD)
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
         }
+        chmod(configuration.socketURL.path, 0o600)
 
         guard listen(socketFD, 8) == 0 else {
             let code = errno
@@ -293,6 +400,8 @@ final class VaultDaemon {
             processApprovalRequest(request, clientFD: clientFD)
         case .keyTransferApprovalRequest(let request):
             processKeyTransferApprovalRequest(request, clientFD: clientFD)
+        case .keyTransferImportRequest(let request):
+            processKeyTransferImportRequest(request, clientFD: clientFD)
         }
     }
 
@@ -400,6 +509,338 @@ final class VaultDaemon {
                 to: clientFD
             )
         }
+    }
+
+    private func processKeyTransferImportRequest(
+        _ request: KeyTransferImportRequest,
+        clientFD: Int32
+    ) {
+        guard beginRequest(id: request.id) else {
+            send(.error(id: request.id, code: 409, message: "vaultd is already processing a request"), to: clientFD)
+            return
+        }
+        defer { endRequest(id: request.id) }
+
+        do {
+            let plan = try keyTransferImportPlan(for: request)
+            try keyTransferApprovalStore.savePendingApproval(plan.approval)
+            routeApprovalPresentation()
+            let decision = waitForKeyTransferDecision(id: request.id)
+                ?? KeyTransferApprovalDecision(
+                    id: request.id,
+                    approved: false,
+                    reason: "approval unavailable"
+                )
+            guard decision.approved else {
+                keyTransferApprovalStore.clearPendingApproval(id: request.id)
+                send(
+                    .error(
+                        id: request.id,
+                        code: 1,
+                        message: decision.reason ?? "key transfer denied"
+                    ),
+                    to: clientFD
+                )
+                return
+            }
+            let imported = try applyKeyTransferImport(plan.actions)
+            send(
+                .keyTransferImportResponse(
+                    id: request.id,
+                    imported: imported,
+                    alreadyPresent: plan.alreadyPresent
+                ),
+                to: clientFD
+            )
+            keyTransferApprovalStore.clearPendingApproval(id: request.id)
+        } catch {
+            keyTransferApprovalStore.clearPendingApproval(id: request.id)
+            send(
+                .error(
+                    id: request.id,
+                    code: 500,
+                    message: error.localizedDescription
+                ),
+                to: clientFD
+            )
+        }
+    }
+
+    private func keyTransferImportPlan(
+        for request: KeyTransferImportRequest
+    ) throws -> KeyTransferImportPlan {
+        guard request.items.isEmpty == false else {
+            throw daemonError("transfer bundle contains no keys")
+        }
+
+        var approvalItems: [KeyTransferApprovalItem] = []
+        var actions: [KeyTransferImportAction] = []
+        var alreadyPresent = 0
+        var conflicts: [String] = []
+        var seen: Set<String> = []
+
+        for item in request.items {
+            switch item {
+            case .dotenvPrivateKey(
+                let envFilePath,
+                let publicKeyName,
+                let publicKey,
+                let publicKeyFingerprint,
+                let privateKey
+            ):
+                try validateDotenvPublicKeyName(publicKeyName)
+                try validateHex(publicKey, bytes: 33, label: "dotenv public key")
+                try validateHex(publicKeyFingerprint, bytes: 32, label: "dotenv public key fingerprint")
+                guard sha256Hex(publicKey) == publicKeyFingerprint else {
+                    throw daemonError("dotenv public key fingerprint mismatch")
+                }
+                try validateDotenvPrivateKey(privateKey)
+                guard seen.insert("dotenv:\(publicKeyFingerprint)").inserted else {
+                    throw daemonError("duplicate dotenv private key \(fingerprintPrefix(publicKeyFingerprint))")
+                }
+
+                let existing = try keychainRead(
+                    service: "com.automicvault.dotenv",
+                    account: dotenvPrivateKeyAccount(publicKeyFingerprint: publicKeyFingerprint)
+                )
+                let replacingExisting = existing.map { $0 != privateKey } ?? false
+                approvalItems.append(
+                    KeyTransferApprovalItem(
+                        kind: "dotenv",
+                        name: publicKeyName,
+                        detail: "\(envFilePath) (\(fingerprintPrefix(publicKeyFingerprint)))",
+                        replacingExisting: replacingExisting
+                    )
+                )
+                if let existing {
+                    if existing == privateKey {
+                        alreadyPresent += 1
+                    } else if request.replace {
+                        actions.append(
+                            .storeDotenvPrivateKey(
+                                publicKeyFingerprint: publicKeyFingerprint,
+                                privateKey: privateKey
+                            )
+                        )
+                    } else {
+                        conflicts.append("dotenv private key \(fingerprintPrefix(publicKeyFingerprint))")
+                    }
+                } else {
+                    actions.append(
+                        .storeDotenvPrivateKey(
+                            publicKeyFingerprint: publicKeyFingerprint,
+                            privateKey: privateKey
+                        )
+                    )
+                }
+            case .isotopeSecret(let key, let value):
+                try validateIsotopeKeyName(key)
+                guard seen.insert("isotope:\(key)").inserted else {
+                    throw daemonError("duplicate isotope key \(key)")
+                }
+                let existing = try keychainRead(
+                    service: "com.automicvault.isotope",
+                    account: key
+                )
+                let replacingExisting = existing.map { $0 != value } ?? false
+                approvalItems.append(
+                    KeyTransferApprovalItem(
+                        kind: "isotope",
+                        name: key,
+                        detail: nil,
+                        replacingExisting: replacingExisting
+                    )
+                )
+                if let existing {
+                    if existing == value {
+                        alreadyPresent += 1
+                    } else if request.replace {
+                        actions.append(.storeIsotopeSecret(key: key, value: value))
+                    } else {
+                        conflicts.append("isotope key \(key)")
+                    }
+                } else {
+                    actions.append(.storeIsotopeSecret(key: key, value: value))
+                }
+            }
+        }
+
+        if conflicts.isEmpty == false {
+            throw daemonError(
+                "destination already has different values for \(conflicts.joined(separator: ", ")); rerun with --replace to overwrite"
+            )
+        }
+
+        return KeyTransferImportPlan(
+            approval: KeyTransferApprovalRequestSnapshot(
+                id: request.id,
+                source: request.source,
+                itemCount: request.items.count,
+                replace: request.replace,
+                items: approvalItems
+            ),
+            actions: actions,
+            alreadyPresent: alreadyPresent
+        )
+    }
+
+    private func applyKeyTransferImport(_ actions: [KeyTransferImportAction]) throws -> Int {
+        for action in actions {
+            switch action {
+            case .storeDotenvPrivateKey(let publicKeyFingerprint, let privateKey):
+                try keychainWrite(
+                    service: "com.automicvault.dotenv",
+                    account: dotenvPrivateKeyAccount(publicKeyFingerprint: publicKeyFingerprint),
+                    value: privateKey
+                )
+            case .storeIsotopeSecret(let key, let value):
+                try keychainWrite(
+                    service: "com.automicvault.isotope",
+                    account: key,
+                    value: value
+                )
+            }
+        }
+        return actions.count
+    }
+
+    private func dotenvPrivateKeyAccount(publicKeyFingerprint: String) -> String {
+        "DOTENV_PRIVATE_KEY:\(publicKeyFingerprint)"
+    }
+
+    private func validateDotenvPublicKeyName(_ name: String) throws {
+        guard name == "DOTENV_PUBLIC_KEY"
+            || (name.hasPrefix("DOTENV_PUBLIC_KEY_") && name.count > "DOTENV_PUBLIC_KEY_".count)
+        else {
+            throw daemonError("invalid dotenv public key name: \(name)")
+        }
+    }
+
+    private func validateDotenvPrivateKey(_ value: String) throws {
+        for part in value.split(separator: ",") where part.isEmpty == false {
+            try validateHex(String(part), bytes: 32, label: "dotenv private key")
+        }
+    }
+
+    private func validateIsotopeKeyName(_ key: String) throws {
+        guard let first = key.unicodeScalars.first else {
+            throw daemonError("empty isotope key name")
+        }
+        guard first == "_" || CharacterSet.letters.contains(first) else {
+            throw daemonError("invalid isotope key name: \(key)")
+        }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+        guard key.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            throw daemonError("invalid isotope key name: \(key)")
+        }
+    }
+
+    private func validateHex(_ value: String, bytes: Int, label: String) throws {
+        guard value.count == bytes * 2 else {
+            throw daemonError("\(label) must be \(bytes) bytes")
+        }
+        let hex = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard value.unicodeScalars.allSatisfy({ hex.contains($0) }) else {
+            throw daemonError("\(label) must be hex")
+        }
+    }
+
+    private func sha256Hex(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func fingerprintPrefix(_ value: String) -> String {
+        String(value.prefix(12))
+    }
+
+    private func keychainRead(service: String, account: String) throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return nil
+        }
+        guard status == errSecSuccess else {
+            throw daemonError("failed to load keychain item \(account): \(securityErrorMessage(status))")
+        }
+        guard let data = result as? Data,
+              let value = String(data: data, encoding: .utf8)
+        else {
+            throw daemonError("keychain lookup did not return UTF-8 data")
+        }
+        return value
+    }
+
+    private func keychainWrite(service: String, account: String, value: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data
+        ]
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var createQuery = query
+            createQuery[kSecValueData as String] = data
+            createQuery[kSecAttrAccess as String] = try passwordAccess(service: service)
+            status = SecItemAdd(createQuery as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            throw daemonError("failed to store keychain item \(account): \(securityErrorMessage(status))")
+        }
+    }
+
+    private func passwordAccess(service: String) throws -> SecAccess {
+        var trustedApplications: [SecTrustedApplication] = []
+        var currentApplication: SecTrustedApplication?
+        var status = SecTrustedApplicationCreateFromPath(nil, &currentApplication)
+        guard status == errSecSuccess, let currentApplication else {
+            throw daemonError("trusted application failed: \(securityErrorMessage(status))")
+        }
+        trustedApplications.append(currentApplication)
+
+        let avPath = "/usr/local/bin/av"
+        if FileManager.default.isExecutableFile(atPath: avPath) {
+            var avApplication: SecTrustedApplication?
+            status = avPath.withCString { path in
+                SecTrustedApplicationCreateFromPath(path, &avApplication)
+            }
+            guard status == errSecSuccess, let avApplication else {
+                throw daemonError("trusted application failed for \(avPath): \(securityErrorMessage(status))")
+            }
+            trustedApplications.append(avApplication)
+        }
+
+        var access: SecAccess?
+        status = SecAccessCreate(service as CFString, trustedApplications as CFArray, &access)
+        guard status == errSecSuccess, let access else {
+            throw daemonError("keychain access failed: \(securityErrorMessage(status))")
+        }
+        return access
+    }
+
+    private func securityErrorMessage(_ status: OSStatus) -> String {
+        if let message = SecCopyErrorMessageString(status, nil) as String? {
+            return message
+        }
+        return "Security error \(status)"
+    }
+
+    private func daemonError(_ message: String) -> NSError {
+        NSError(domain: "com.automicvault.vaultd", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: message
+        ])
     }
 
     private func routeApprovalPresentation() {

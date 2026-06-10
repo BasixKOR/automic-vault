@@ -908,6 +908,7 @@ pub(crate) fn dotenv_public_key_fingerprint_for_transfer(public_key: &str) -> St
     public_key_fingerprint(public_key)
 }
 
+#[cfg(test)]
 pub(crate) fn load_existing_dotenv_private_key_for_transfer(
     public_key: &str,
 ) -> Result<Option<String>, String> {
@@ -916,6 +917,7 @@ pub(crate) fn load_existing_dotenv_private_key_for_transfer(
     keychain_read_dotenv_private_key_if_present(DOTENV_KEYCHAIN_SERVICE, &account)
 }
 
+#[cfg(test)]
 pub(crate) fn store_dotenv_private_key_for_transfer(
     public_key: &str,
     private_key: &str,

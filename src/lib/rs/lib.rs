@@ -82,7 +82,8 @@ pub(crate) use trace::*;
 pub use vault::vault_main_entry;
 pub use vault::{
     ExecutionIntent, KeyTransferApprovalItem, KeyTransferApprovalRequest,
-    KeyTransferApprovalSource, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
+    KeyTransferApprovalSource, KeyTransferImportItem, KeyTransferImportRequest,
+    KeyTransferImportResponse, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
     VaultContainmentSession, VaultDaemonEvent, VaultExecChunk, VaultExecCompletion,
     VaultExecutionEnvironment, VaultProcessSnapshot, VaultToolAlias, VaultToolchainManifest,
 };
