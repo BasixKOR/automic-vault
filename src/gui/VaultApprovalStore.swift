@@ -35,6 +35,62 @@ enum VaultNotification {
     )
 }
 
+struct KeyTransferApprovalSource: Codable, Equatable {
+    let user: String
+    let host: String
+    let cwd: String
+    let sshTarget: String?
+
+    enum CodingKeys: String, CodingKey {
+        case user
+        case host
+        case cwd
+        case sshTarget = "ssh_target"
+    }
+}
+
+struct KeyTransferApprovalItem: Codable, Equatable {
+    let kind: String
+    let name: String
+    let detail: String?
+    let replacingExisting: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case name
+        case detail
+        case replacingExisting = "replacing_existing"
+    }
+}
+
+struct KeyTransferApprovalRequestSnapshot: Codable, Equatable {
+    let id: String
+    let source: KeyTransferApprovalSource
+    let itemCount: Int
+    let replace: Bool
+    let items: [KeyTransferApprovalItem]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case source
+        case itemCount = "item_count"
+        case replace
+        case items
+    }
+}
+
+struct KeyTransferApprovalDecision: Codable, Equatable {
+    let id: String
+    let approved: Bool
+    let reason: String?
+}
+
+enum KeyTransferNotification {
+    static let pendingApprovalChanged = Notification.Name(
+        "com.automicvault.key-transfer-approval.pending-changed"
+    )
+}
+
 struct IsotopeApprovalRequestSnapshot: Codable, Equatable {
     let id: String
     let keys: [String]
@@ -392,6 +448,123 @@ final class VaultApprovalStore {
     private func decisionURL(for id: String) -> URL {
         rootURL()
             .appendingPathComponent("vault/decisions", isDirectory: true)
+            .appendingPathComponent("\(id).json", isDirectory: false)
+    }
+}
+
+final class KeyTransferApprovalStore {
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+    private let fileManager = FileManager.default
+    private let distributedCenter = DistributedNotificationCenter.default()
+    private let rootOverrideURL: URL?
+
+    init(rootURL: URL? = nil) {
+        rootOverrideURL = rootURL
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    }
+
+    func loadPendingApproval() -> KeyTransferApprovalRequestSnapshot? {
+        guard let approval = load(
+            KeyTransferApprovalRequestSnapshot.self,
+            from: pendingApprovalURL()
+        ) else {
+            return nil
+        }
+        if fileManager.fileExists(atPath: decisionURL(for: approval.id).path) {
+            removePendingApproval(id: approval.id)
+            return nil
+        }
+        return approval
+    }
+
+    func savePendingApproval(_ approval: KeyTransferApprovalRequestSnapshot) throws {
+        try write(approval, to: pendingApprovalURL())
+        postPendingApprovalChanged()
+    }
+
+    func clearPendingApproval(id: String) {
+        removePendingApproval(id: id)
+        try? fileManager.removeItem(at: decisionURL(for: id))
+    }
+
+    func saveDecision(_ decision: KeyTransferApprovalDecision) throws {
+        try write(decision, to: decisionURL(for: decision.id))
+        removePendingApproval(id: decision.id)
+        postPendingApprovalChanged()
+    }
+
+    func loadDecision(id: String) -> KeyTransferApprovalDecision? {
+        load(KeyTransferApprovalDecision.self, from: decisionURL(for: id))
+    }
+
+    private func removePendingApproval(id: String) {
+        let pendingURL = pendingApprovalURL()
+        if let current = load(KeyTransferApprovalRequestSnapshot.self, from: pendingURL),
+           current.id == id {
+            try? fileManager.removeItem(at: pendingURL)
+            postPendingApprovalChanged()
+        }
+    }
+
+    func observePendingApprovalChanges(
+        using block: @escaping (Notification) -> Void
+    ) -> NSObjectProtocol {
+        distributedCenter.addObserver(
+            forName: KeyTransferNotification.pendingApprovalChanged,
+            object: nil,
+            queue: .main,
+            using: block
+        )
+    }
+
+    func postPendingApprovalChanged() {
+        distributedCenter.postNotificationName(
+            KeyTransferNotification.pendingApprovalChanged,
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+    }
+
+    private func write<T: Encodable>(_ value: T, to url: URL) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        let data = try encoder.encode(value)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? decoder.decode(type, from: data)
+    }
+
+    private func rootURL() -> URL {
+        if let rootOverrideURL {
+            return rootOverrideURL
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Application Support/Automic Vault",
+                isDirectory: true
+            )
+    }
+
+    private func pendingApprovalURL() -> URL {
+        rootURL().appendingPathComponent(
+            "key-transfer/pending-approval.json",
+            isDirectory: false
+        )
+    }
+
+    private func decisionURL(for id: String) -> URL {
+        rootURL()
+            .appendingPathComponent("key-transfer/decisions", isDirectory: true)
             .appendingPathComponent("\(id).json", isDirectory: false)
     }
 }

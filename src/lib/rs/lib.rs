@@ -43,6 +43,7 @@ mod ops;
 mod pip;
 mod protocol;
 mod state;
+mod transfer;
 #[path = "../../../manifests/packages.rs"]
 pub mod vendor;
 
@@ -80,7 +81,8 @@ pub(crate) use stubs::*;
 pub(crate) use trace::*;
 pub use vault::vault_main_entry;
 pub use vault::{
-    ExecutionIntent, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
+    ExecutionIntent, KeyTransferApprovalItem, KeyTransferApprovalRequest,
+    KeyTransferApprovalSource, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,
     VaultContainmentSession, VaultDaemonEvent, VaultExecChunk, VaultExecCompletion,
     VaultExecutionEnvironment, VaultProcessSnapshot, VaultToolAlias, VaultToolchainManifest,
 };

@@ -342,3 +342,11 @@
 "This command will receive the dotenv keys" = "This command will receive the dotenv keys";
 "Dotenv keys encrypted" = "Dotenv keys encrypted";
 "New dotenv entries in %@ were encrypted automatically." = "New dotenv entries in %@ were encrypted automatically.";
+"Approve Key Transfer" = "Approve Key Transfer";
+"Import %d Automic Vault key from %@." = "Import %d Automic Vault key from %@.";
+"Import %d Automic Vault keys from %@." = "Import %d Automic Vault keys from %@.";
+"Items" = "Items";
+"Replacing existing keychain values" = "Replacing existing keychain values";
+"replaces existing" = "replaces existing";
+"Source" = "Source";
+"SSH Target" = "SSH Target";

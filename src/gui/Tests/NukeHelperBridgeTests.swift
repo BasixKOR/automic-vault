@@ -6,7 +6,7 @@ final class NukeHelperBridgeTests: XCTestCase {
         let completion = expectation(description: "timeout completes")
         var invalidatedConnection = false
 
-        let guard = NukeHelperStartupReplyGuard<NukeHelperResult>(
+        let replyGuard = NukeHelperStartupReplyGuard<NukeHelperResult>(
             operationName: "Update Package",
             startupTimeout: 0.01,
             activityTimeout: nil,
@@ -23,7 +23,7 @@ final class NukeHelperBridgeTests: XCTestCase {
             }
         )
 
-        guard.startWatchdog()
+        replyGuard.startWatchdog()
 
         wait(for: [completion], timeout: 1)
         XCTAssertTrue(invalidatedConnection)
@@ -33,7 +33,7 @@ final class NukeHelperBridgeTests: XCTestCase {
         let completion = expectation(description: "single completion")
         completion.expectedFulfillmentCount = 1
 
-        let guard = NukeHelperStartupReplyGuard<NukeHelperResult>(
+        let replyGuard = NukeHelperStartupReplyGuard<NukeHelperResult>(
             operationName: "Update Package",
             startupTimeout: 1,
             activityTimeout: nil,
@@ -43,9 +43,9 @@ final class NukeHelperBridgeTests: XCTestCase {
             onFailure: {}
         )
 
-        guard.fail(NukeHelperBridgeError.connectionFailed("first failure"))
-        guard.fail(NukeHelperBridgeError.connectionFailed("second failure"))
-        guard.complete(.success(NukeHelperResult(
+        replyGuard.fail(NukeHelperBridgeError.connectionFailed("first failure"))
+        replyGuard.fail(NukeHelperBridgeError.connectionFailed("second failure"))
+        replyGuard.complete(.success(NukeHelperResult(
             message: "late success",
             processedPackages: [],
             value: nil
@@ -57,7 +57,7 @@ final class NukeHelperBridgeTests: XCTestCase {
     func testStartupReplyGuardTimesOutAfterProgressStops() {
         let completion = expectation(description: "activity timeout completes")
 
-        let guard = NukeHelperStartupReplyGuard<NukeHelperResult>(
+        let replyGuard = NukeHelperStartupReplyGuard<NukeHelperResult>(
             operationName: "Update Package",
             startupTimeout: 1,
             activityTimeout: 0.01,
@@ -72,8 +72,8 @@ final class NukeHelperBridgeTests: XCTestCase {
             onFailure: {}
         )
 
-        guard.startWatchdog()
-        guard.markStarted()
+        replyGuard.startWatchdog()
+        replyGuard.markStarted()
 
         wait(for: [completion], timeout: 1)
     }

@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusStore = NucleusStatusStore()
     private let vaultApprovalStore = VaultApprovalStore()
     private let containmentLogStore = ContainmentLogStore()
+    private let keyTransferApprovalStore = KeyTransferApprovalStore()
     private let isotopeApprovalStore = IsotopeApprovalStore()
     private let gateApprovalStore = GateApprovalStore()
     private let dotenvApprovalStore = DotenvApprovalStore()
@@ -29,10 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusSnapshotObserver: NSObjectProtocol?
     private var containmentLogObserver: NSObjectProtocol?
     private var pendingApprovalObserver: NSObjectProtocol?
+    private var pendingKeyTransferApprovalObserver: NSObjectProtocol?
     private var pendingIsotopeApprovalObserver: NSObjectProtocol?
     private var pendingGateApprovalObserver: NSObjectProtocol?
     private var pendingDotenvApprovalObserver: NSObjectProtocol?
     private var activeApprovalID: String?
+    private var activeKeyTransferApprovalID: String?
     private var activeIsotopeApprovalID: String?
     private var activeGateApprovalID: String?
     private var activeDotenvApprovalID: String?
@@ -55,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusSnapshotObserverIfNeeded()
         installContainmentLogObserverIfNeeded()
         installVaultApprovalObserverIfNeeded()
+        installKeyTransferApprovalObserverIfNeeded()
         installIsotopeApprovalObserverIfNeeded()
         installGateApprovalObserverIfNeeded()
         installDotenvApprovalObserverIfNeeded()
@@ -63,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
         appUpdateCoordinator.startAutomaticChecks()
         presentPendingVaultApprovalIfNeeded()
+        presentPendingKeyTransferApprovalIfNeeded()
         presentPendingIsotopeApprovalIfNeeded()
         presentPendingGateApprovalIfNeeded()
         presentPendingDotenvApprovalIfNeeded()
@@ -70,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         denyPendingDotenvApprovalOnTermination()
+        denyPendingKeyTransferApprovalOnTermination()
         if let openWindowObserver {
             DistributedNotificationCenter.default().removeObserver(openWindowObserver)
         }
@@ -84,6 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let pendingApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingApprovalObserver)
+        }
+        if let pendingKeyTransferApprovalObserver {
+            DistributedNotificationCenter.default().removeObserver(pendingKeyTransferApprovalObserver)
         }
         if let pendingIsotopeApprovalObserver {
             DistributedNotificationCenter.default().removeObserver(pendingIsotopeApprovalObserver)
@@ -108,6 +117,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 id: approval.id,
                 approved: false,
                 reason: "Automic Vault quit before dotenv approval"
+            )
+        )
+    }
+
+    private func denyPendingKeyTransferApprovalOnTermination() {
+        guard let approval = keyTransferApprovalStore.loadPendingApproval() else { return }
+        try? keyTransferApprovalStore.saveDecision(
+            KeyTransferApprovalDecision(
+                id: approval.id,
+                approved: false,
+                reason: "Automic Vault quit before key transfer approval"
             )
         )
     }
@@ -350,6 +370,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func installKeyTransferApprovalObserverIfNeeded() {
+        guard pendingKeyTransferApprovalObserver == nil else { return }
+        pendingKeyTransferApprovalObserver = keyTransferApprovalStore.observePendingApprovalChanges { [weak self] _ in
+            self?.presentPendingKeyTransferApprovalIfNeeded()
+        }
+    }
+
     private func installIsotopeApprovalObserverIfNeeded() {
         guard pendingIsotopeApprovalObserver == nil else { return }
         pendingIsotopeApprovalObserver = isotopeApprovalStore.observePendingApprovalChanges { [weak self] _ in
@@ -479,6 +506,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.activeApprovalID = nil
             DispatchQueue.main.async {
                 self.presentPendingVaultApprovalIfNeeded()
+            }
+        }
+    }
+
+    private func presentPendingKeyTransferApprovalIfNeeded() {
+        guard let approval = keyTransferApprovalStore.loadPendingApproval() else {
+            activeKeyTransferApprovalID = nil
+            return
+        }
+        guard activeKeyTransferApprovalID != approval.id else { return }
+        activeKeyTransferApprovalID = approval.id
+
+        let window = makeOrRestoreMainWindow()
+        if NSApp.isActive == false || window.isKeyWindow == false {
+            _ = NSApp.requestUserAttention(.criticalRequest)
+        }
+        showMainWindow()
+
+        let alert = NSAlert()
+        alert.messageText = L10n.string("Approve Key Transfer")
+        alert.informativeText = keyTransferApprovalSummary(for: approval)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.string("Allow"))
+        alert.addButton(withTitle: L10n.string("Deny"))
+        alert.accessoryView = keyTransferApprovalAccessoryView(for: approval)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            try? self.keyTransferApprovalStore.saveDecision(
+                KeyTransferApprovalDecision(
+                    id: approval.id,
+                    approved: response == .alertFirstButtonReturn,
+                    reason: response == .alertFirstButtonReturn ? nil : "Denied by operator"
+                )
+            )
+            self.activeKeyTransferApprovalID = nil
+            DispatchQueue.main.async {
+                self.presentPendingKeyTransferApprovalIfNeeded()
             }
         }
     }
@@ -703,6 +767,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func isotopeApprovalSummary(for approval: IsotopeApprovalRequestSnapshot) -> String {
         ""
+    }
+
+    private func keyTransferApprovalSummary(
+        for approval: KeyTransferApprovalRequestSnapshot
+    ) -> String {
+        let source = "\(approval.source.user)@\(approval.source.host)"
+        if approval.itemCount == 1 {
+            return L10n.format("Import %d Automic Vault key from %@.", approval.itemCount, source)
+        }
+        return L10n.format("Import %d Automic Vault keys from %@.", approval.itemCount, source)
+    }
+
+    private func keyTransferApprovalAccessoryView(
+        for approval: KeyTransferApprovalRequestSnapshot
+    ) -> NSView {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        let textView = NSTextView(frame: scrollView.bounds)
+        textView.isEditable = false
+        textView.isRichText = false
+        textView.font = UIStyle.monoFont(size: 11, weight: .regular)
+        textView.string = keyTransferApprovalDetailText(for: approval)
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    private func keyTransferApprovalDetailText(
+        for approval: KeyTransferApprovalRequestSnapshot
+    ) -> String {
+        var lines = [
+            L10n.string("Source"),
+            "\(approval.source.user)@\(approval.source.host)",
+            "",
+            L10n.string("Working Directory"),
+            approval.source.cwd
+        ]
+        if let sshTarget = approval.source.sshTarget {
+            lines.append(contentsOf: ["", L10n.string("SSH Target"), sshTarget])
+        }
+        lines.append(contentsOf: ["", L10n.string("Items")])
+        for item in approval.items {
+            var line = "\(item.kind): \(item.name)"
+            if let detail = item.detail, detail.isEmpty == false {
+                line += " - \(detail)"
+            }
+            if item.replacingExisting {
+                line += " (\(L10n.string("replaces existing")))"
+            }
+            lines.append(line)
+        }
+        if approval.items.contains(where: { $0.replacingExisting }) {
+            lines.append(contentsOf: ["", L10n.string("Replacing existing keychain values")])
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func isotopeApprovalAccessoryView(for approval: IsotopeApprovalRequestSnapshot) -> NSView {

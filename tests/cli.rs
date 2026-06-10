@@ -161,6 +161,7 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     assert!(stdout(&output).contains("install (i)"));
     assert!(stdout(&output).contains("list (ls)"));
     assert!(stdout(&output).contains("scan"));
+    assert!(stdout(&output).contains("transfer"));
     assert!(stdout(&output).contains("trace"));
     assert!(stdout(&output).contains("open"));
     assert!(!stdout(&output).contains("secret-scanner"));
@@ -242,6 +243,10 @@ fn subs_top_level_cli_paths_cover_help_version_and_unknown_subcommands() {
     let output = run_nuke(&["help", "dotenv"]);
     assert!(output.status.success());
     assert!(stdout(&output).contains("Usage: av dotenv"));
+
+    let output = run_nuke(&["help", "transfer"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av transfer"));
 
     let output = run_nuke(&["help", "gate"]);
     assert!(output.status.success());
@@ -376,6 +381,31 @@ fn subs_dotenv_cli_covers_help_version_and_parse_errors() {
     let output = run_nuke(&["dotenv", "run"]);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("missing command"));
+}
+
+#[test]
+fn subs_transfer_cli_covers_help_version_and_receive_errors() {
+    let output = run_nuke(&["transfer", "--help"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Usage: av transfer"));
+
+    let output = run_nuke(&["transfer", "--version"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(&format!("av transfer {}", pkg_version())));
+
+    let output = run_nuke(&["transfer"]);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("Usage: av transfer"));
+    assert!(stderr(&output).contains("missing ssh target"));
+
+    let output = run_nuke(&["transfer", "receive"]);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("Usage: av transfer receive"));
+    assert!(stderr(&output).contains("transfer receive requires --stdin"));
+
+    let output = run_nuke(&["transfer", "receive", "--stdin"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("failed to decode transfer bundle"));
 }
 
 #[test]

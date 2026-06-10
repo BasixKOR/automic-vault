@@ -459,6 +459,27 @@ fn validate_key_name(key: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn validate_isotope_key_name_for_transfer(key: &str) -> Result<(), String> {
+    validate_key_name(key)
+}
+
+pub(crate) fn load_isotope_secret_for_transfer(key: &str) -> Result<String, String> {
+    validate_key_name(key)?;
+    KeychainCredentialStore.load_secret(key)
+}
+
+pub(crate) fn load_existing_isotope_secret_for_transfer(
+    key: &str,
+) -> Result<Option<String>, String> {
+    validate_key_name(key)?;
+    KeychainCredentialStore.load_secret_if_present(key)
+}
+
+pub(crate) fn store_isotope_secret_for_transfer(key: &str, value: &str) -> Result<(), String> {
+    validate_key_name(key)?;
+    CredentialStore::store_secret(&KeychainCredentialStore, key, value)
+}
+
 fn run_save(
     options: &SaveSecretOptions,
     value: &str,

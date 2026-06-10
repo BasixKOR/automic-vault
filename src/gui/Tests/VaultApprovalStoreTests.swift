@@ -3,6 +3,93 @@ import XCTest
 @testable import AutomicVaultApp
 
 final class VaultApprovalStoreTests: XCTestCase {
+    func testKeyTransferApprovalRequestDecodesMetadataOnly() throws {
+        let data = Data("""
+        {
+          "id": "transfer-1",
+          "source": {
+            "user": "alice",
+            "host": "source-mac",
+            "cwd": "/Users/alice/project",
+            "ssh_target": "bob@dest"
+          },
+          "item_count": 2,
+          "replace": true,
+          "items": [
+            {
+              "kind": "dotenv",
+              "name": "DOTENV_PUBLIC_KEY",
+              "detail": "/Users/alice/project/.env (abcdef123456)",
+              "replacing_existing": false
+            },
+            {
+              "kind": "isotope",
+              "name": "AWS_SECRET_ACCESS_KEY",
+              "replacing_existing": true
+            }
+          ]
+        }
+        """.utf8)
+
+        let approval = try JSONDecoder().decode(
+            KeyTransferApprovalRequestSnapshot.self,
+            from: data
+        )
+
+        XCTAssertEqual(approval.id, "transfer-1")
+        XCTAssertEqual(approval.source.user, "alice")
+        XCTAssertEqual(approval.source.host, "source-mac")
+        XCTAssertEqual(approval.source.sshTarget, "bob@dest")
+        XCTAssertEqual(approval.itemCount, 2)
+        XCTAssertTrue(approval.replace)
+        XCTAssertEqual(approval.items[0].kind, "dotenv")
+        XCTAssertEqual(approval.items[1].name, "AWS_SECRET_ACCESS_KEY")
+        XCTAssertTrue(approval.items[1].replacingExisting)
+    }
+
+    func testKeyTransferApprovalStorePendingAndDecisionLifecycle() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("av-key-transfer-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let store = KeyTransferApprovalStore(rootURL: rootURL)
+        let approval = KeyTransferApprovalRequestSnapshot(
+            id: "transfer-2",
+            source: KeyTransferApprovalSource(
+                user: "alice",
+                host: "source-mac",
+                cwd: "/repo",
+                sshTarget: nil
+            ),
+            itemCount: 1,
+            replace: false,
+            items: [
+                KeyTransferApprovalItem(
+                    kind: "isotope",
+                    name: "TOKEN",
+                    detail: nil,
+                    replacingExisting: false
+                )
+            ]
+        )
+
+        try store.savePendingApproval(approval)
+        XCTAssertEqual(store.loadPendingApproval(), approval)
+
+        let decision = KeyTransferApprovalDecision(
+            id: "transfer-2",
+            approved: true,
+            reason: nil
+        )
+        try store.saveDecision(decision)
+        XCTAssertNil(store.loadPendingApproval())
+        XCTAssertEqual(store.loadDecision(id: "transfer-2"), decision)
+
+        store.clearPendingApproval(id: "transfer-2")
+        XCTAssertNil(store.loadDecision(id: "transfer-2"))
+    }
+
     func testDotenvApprovalRequestDefaultsMissingCommandToEmpty() throws {
         let data = Data("""
         {

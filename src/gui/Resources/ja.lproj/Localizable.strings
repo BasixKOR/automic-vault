@@ -342,3 +342,11 @@
 "Updating dotenv approval policy" = "dotenv承認ポリシーを更新中";
 "Updating dotenv approvals to remember approved files" = "承認済みファイルを記憶するようdotenv承認を更新中";
 "Updating dotenv approvals to require approval every time" = "毎回承認を求めるようdotenv承認を更新中";
+"Approve Key Transfer" = "Approve Key Transfer";
+"Import %d Automic Vault key from %@." = "Import %d Automic Vault key from %@.";
+"Import %d Automic Vault keys from %@." = "Import %d Automic Vault keys from %@.";
+"Items" = "Items";
+"Replacing existing keychain values" = "Replacing existing keychain values";
+"replaces existing" = "replaces existing";
+"Source" = "Source";
+"SSH Target" = "SSH Target";

@@ -65,6 +65,33 @@ pub struct VaultApprovalRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyTransferApprovalSource {
+    pub user: String,
+    pub host: String,
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyTransferApprovalItem {
+    pub kind: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub replacing_existing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyTransferApprovalRequest {
+    pub id: String,
+    pub source: KeyTransferApprovalSource,
+    pub item_count: usize,
+    pub replace: bool,
+    pub items: Vec<KeyTransferApprovalItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VaultApprovalResponse {
     pub id: String,
     pub approved: bool,
@@ -104,6 +131,7 @@ pub struct VaultExecCompletion {
 pub enum VaultClientRequest {
     ContainmentStarted { session: VaultContainmentSession },
     ApprovalRequest { id: String, intent: ExecutionIntent },
+    KeyTransferApprovalRequest { request: KeyTransferApprovalRequest },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -414,14 +442,7 @@ where
 }
 
 fn request_vault_execution(intent: ExecutionIntent) -> Result<(), String> {
-    let request_id = format!(
-        "{}-{}",
-        process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|err| format!("failed to compute request timestamp: {err}"))?
-            .as_millis()
-    );
+    let request_id = new_vault_request_id()?;
     let request = VaultClientRequest::ApprovalRequest {
         id: request_id.clone(),
         intent,
@@ -509,6 +530,72 @@ fn request_vault_execution(intent: ExecutionIntent) -> Result<(), String> {
                     return Err(message);
                 }
                 return Err(format!("vaultd error {code}: {message}"));
+            }
+        }
+    }
+}
+
+pub(crate) fn request_key_transfer_approval(
+    request: KeyTransferApprovalRequest,
+) -> Result<(), String> {
+    let request_id = request.id.clone();
+    let request = VaultClientRequest::KeyTransferApprovalRequest { request };
+    let socket_path = resolve_vault_socket_path()?;
+    let mut stream = UnixStream::connect(&socket_path)
+        .map_err(|err| format!("vaultd unavailable at {}: {err}", socket_path.display()))?;
+    let encoded = serde_json::to_string(&request)
+        .map_err(|err| format!("failed to encode vault request: {err}"))?;
+    stream
+        .write_all(encoded.as_bytes())
+        .and_then(|_| stream.write_all(b"\n"))
+        .and_then(|_| stream.flush())
+        .map_err(|err| format!("failed to send vault request: {err}"))?;
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| format!("failed to read vault response: {err}"))?;
+        if bytes == 0 {
+            return Err("vaultd closed the connection before key transfer approval".to_string());
+        }
+
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let event: VaultDaemonEvent = serde_json::from_str(trimmed)
+            .map_err(|err| format!("failed to decode vault response: {err}"))?;
+        match event {
+            VaultDaemonEvent::ApprovalResponse {
+                id,
+                approved,
+                reason,
+            } => {
+                if id != request_id {
+                    return Err("vaultd returned a mismatched key transfer approval".to_string());
+                }
+                if approved {
+                    return Ok(());
+                }
+                return Err(reason.unwrap_or_else(|| "key transfer denied".to_string()));
+            }
+            VaultDaemonEvent::Error { id, code, message } => {
+                if let Some(id) = id
+                    && id != request_id
+                {
+                    return Err("vaultd returned a mismatched error".to_string());
+                }
+                if code == DEFAULT_VAULT_APPROVAL_ERROR_CODE {
+                    return Err(message);
+                }
+                return Err(format!("vaultd error {code}: {message}"));
+            }
+            VaultDaemonEvent::ExecChunk { .. } | VaultDaemonEvent::ExecComplete { .. } => {
+                return Err("vaultd returned an unexpected execution event".to_string());
             }
         }
     }
@@ -650,6 +737,17 @@ where
         }
     }
     None
+}
+
+pub(crate) fn new_vault_request_id() -> Result<String, String> {
+    Ok(format!(
+        "{}-{}",
+        process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| format!("failed to compute request timestamp: {err}"))?
+            .as_millis()
+    ))
 }
 
 fn resolve_vault_socket_path() -> Result<PathBuf, String> {
@@ -1341,6 +1439,99 @@ mod tests {
             "vaultd returned a mismatched error"
         );
         mismatched_error.join().unwrap();
+    }
+
+    #[test]
+    fn subs_key_transfer_approval_uses_vaultd_socket() {
+        fn serve_once<F>(socket: &Path, respond: F) -> thread::JoinHandle<()>
+        where
+            F: FnOnce(VaultClientRequest, &mut UnixStream) + Send + 'static,
+        {
+            let listener = UnixListener::bind(socket).unwrap();
+            thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request = serde_json::from_str::<VaultClientRequest>(&line).unwrap();
+                respond(request, &mut stream);
+            })
+        }
+
+        fn approval_request(id: &str) -> KeyTransferApprovalRequest {
+            KeyTransferApprovalRequest {
+                id: id.to_string(),
+                source: KeyTransferApprovalSource {
+                    user: "alice".to_string(),
+                    host: "source-mac".to_string(),
+                    cwd: "/repo".to_string(),
+                    ssh_target: Some("bob@dest".to_string()),
+                },
+                item_count: 1,
+                replace: false,
+                items: vec![KeyTransferApprovalItem {
+                    kind: "isotope".to_string(),
+                    name: "TOKEN".to_string(),
+                    detail: None,
+                    replacing_existing: false,
+                }],
+            }
+        }
+
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+
+        {
+            let socket = temp.path().join("transfer-approved.sock");
+            let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap())]);
+            let handle = serve_once(&socket, |request, stream| {
+                let VaultClientRequest::KeyTransferApprovalRequest { request } = request else {
+                    panic!("expected key transfer approval request");
+                };
+                assert_eq!(request.id, "transfer-approved");
+                assert_eq!(request.source.user, "alice");
+                writeln!(
+                    stream,
+                    "{}",
+                    serde_json::to_string(&VaultDaemonEvent::ApprovalResponse {
+                        id: request.id,
+                        approved: true,
+                        reason: None,
+                    })
+                    .unwrap()
+                )
+                .unwrap();
+            });
+            request_key_transfer_approval(approval_request("transfer-approved")).unwrap();
+            handle.join().unwrap();
+        }
+
+        {
+            let socket = temp.path().join("transfer-denied.sock");
+            let _env = EnvGuard::set(&[(VAULT_SOCKET_PATH_ENV, socket.to_str().unwrap())]);
+            let handle = serve_once(&socket, |request, stream| {
+                let VaultClientRequest::KeyTransferApprovalRequest { request } = request else {
+                    panic!("expected key transfer approval request");
+                };
+                writeln!(
+                    stream,
+                    "{}",
+                    serde_json::to_string(&VaultDaemonEvent::ApprovalResponse {
+                        id: request.id,
+                        approved: false,
+                        reason: Some("Denied by operator".to_string()),
+                    })
+                    .unwrap()
+                )
+                .unwrap();
+            });
+            assert_eq!(
+                request_key_transfer_approval(approval_request("transfer-denied")).unwrap_err(),
+                "Denied by operator"
+            );
+            handle.join().unwrap();
+        }
     }
 
     #[test]

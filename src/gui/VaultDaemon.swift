@@ -40,17 +40,20 @@ private struct VaultClientContainmentSession: Codable {
 private enum VaultClientRequest: Codable {
     case containmentStarted(VaultClientContainmentSession)
     case approvalRequest(VaultClientApprovalRequest)
+    case keyTransferApprovalRequest(KeyTransferApprovalRequestSnapshot)
 
     enum CodingKeys: String, CodingKey {
         case type
         case session
         case id
         case intent
+        case request
     }
 
     enum RequestType: String, Codable {
         case containmentStarted = "containment_started"
         case approvalRequest = "approval_request"
+        case keyTransferApprovalRequest = "key_transfer_approval_request"
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +71,10 @@ private enum VaultClientRequest: Codable {
                     intent: try container.decode(VaultExecutionIntent.self, forKey: .intent)
                 )
             )
+        case .keyTransferApprovalRequest:
+            self = .keyTransferApprovalRequest(
+                try container.decode(KeyTransferApprovalRequestSnapshot.self, forKey: .request)
+            )
         }
     }
 
@@ -82,6 +89,10 @@ private enum VaultClientRequest: Codable {
             try container.encode(RequestType.approvalRequest, forKey: .type)
             try container.encode(request.id, forKey: .id)
             try container.encode(request.intent, forKey: .intent)
+        case .keyTransferApprovalRequest(let request):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(RequestType.keyTransferApprovalRequest, forKey: .type)
+            try container.encode(request, forKey: .request)
         }
     }
 }
@@ -144,6 +155,7 @@ final class VaultDaemon {
 
     private let configuration: Configuration
     private let approvalStore = VaultApprovalStore()
+    private let keyTransferApprovalStore = KeyTransferApprovalStore()
     private let containmentLogStore = ContainmentLogStore()
     private let statusStore = NucleusStatusStore()
     private let queue = DispatchQueue(label: "com.automicvault.vault.daemon", qos: .userInitiated)
@@ -279,6 +291,8 @@ final class VaultDaemon {
             processContainmentStarted(session)
         case .approvalRequest(let request):
             processApprovalRequest(request, clientFD: clientFD)
+        case .keyTransferApprovalRequest(let request):
+            processKeyTransferApprovalRequest(request, clientFD: clientFD)
         }
     }
 
@@ -347,6 +361,47 @@ final class VaultDaemon {
         }
     }
 
+    private func processKeyTransferApprovalRequest(
+        _ request: KeyTransferApprovalRequestSnapshot,
+        clientFD: Int32
+    ) {
+        guard beginRequest(id: request.id) else {
+            send(.error(id: request.id, code: 409, message: "vaultd is already processing a request"), to: clientFD)
+            return
+        }
+        defer { endRequest(id: request.id) }
+
+        do {
+            try keyTransferApprovalStore.savePendingApproval(request)
+            routeApprovalPresentation()
+            let decision = waitForKeyTransferDecision(id: request.id)
+                ?? KeyTransferApprovalDecision(
+                    id: request.id,
+                    approved: false,
+                    reason: "approval unavailable"
+                )
+            send(
+                .approvalResponse(
+                    id: decision.id,
+                    approved: decision.approved,
+                    reason: decision.reason
+                ),
+                to: clientFD
+            )
+            keyTransferApprovalStore.clearPendingApproval(id: request.id)
+        } catch {
+            keyTransferApprovalStore.clearPendingApproval(id: request.id)
+            send(
+                .error(
+                    id: request.id,
+                    code: 500,
+                    message: error.localizedDescription
+                ),
+                to: clientFD
+            )
+        }
+    }
+
     private func routeApprovalPresentation() {
         if NSRunningApplication.runningApplications(withBundleIdentifier: "com.automicvault").isEmpty {
             notifyUser()
@@ -356,6 +411,16 @@ final class VaultDaemon {
     private func waitForDecision(id: String) -> VaultApprovalDecision? {
         while isRunning {
             if let decision = approvalStore.loadDecision(id: id) {
+                return decision
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return nil
+    }
+
+    private func waitForKeyTransferDecision(id: String) -> KeyTransferApprovalDecision? {
+        while isRunning {
+            if let decision = keyTransferApprovalStore.loadDecision(id: id) {
                 return decision
             }
             Thread.sleep(forTimeInterval: 0.2)

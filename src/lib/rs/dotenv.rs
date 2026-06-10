@@ -226,6 +226,15 @@ trait DotenvPrivateKeyStore {
 struct KeychainDotenvPrivateKeyStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DotenvPrivateKeyTransferMaterial {
+    pub(crate) env_file_path: PathBuf,
+    pub(crate) public_key_name: String,
+    pub(crate) public_key: String,
+    pub(crate) public_key_fingerprint: String,
+    pub(crate) private_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct DotenvLine {
     raw: String,
     assignment: Option<DotenvAssignment>,
@@ -853,6 +862,67 @@ fn run_dotenv_run(
     } else {
         Err("dotenv command terminated by signal".to_string())
     }
+}
+
+pub(crate) fn load_dotenv_private_key_for_transfer(
+    file: &Path,
+) -> Result<DotenvPrivateKeyTransferMaterial, String> {
+    let document = DotenvDocument::load(file)?;
+    let (public_key_name, public_key) = document
+        .public_key()
+        .ok_or_else(|| format!("{} is missing DOTENV_PUBLIC_KEY", document.path.display()))?;
+    validate_dotenv_public_key_for_transfer(&public_key)?;
+    let private_key = KeychainDotenvPrivateKeyStore.load_private_key(&public_key)?;
+    validate_private_key_list(&private_key)?;
+    Ok(DotenvPrivateKeyTransferMaterial {
+        env_file_path: document.path,
+        public_key_name,
+        public_key_fingerprint: public_key_fingerprint(&public_key),
+        public_key,
+        private_key,
+    })
+}
+
+pub(crate) fn validate_dotenv_public_key_name_for_transfer(name: &str) -> Result<(), String> {
+    if is_public_key_name(name) {
+        Ok(())
+    } else {
+        Err(format!("invalid dotenv public key name: {name}"))
+    }
+}
+
+pub(crate) fn validate_dotenv_public_key_for_transfer(public_key: &str) -> Result<(), String> {
+    let decoded = decode_hex(public_key)?;
+    if decoded.len() == 33 {
+        Ok(())
+    } else {
+        Err("dotenv public key must be 33 bytes".to_string())
+    }
+}
+
+pub(crate) fn validate_dotenv_private_key_for_transfer(private_key: &str) -> Result<(), String> {
+    validate_private_key_list(private_key)
+}
+
+pub(crate) fn dotenv_public_key_fingerprint_for_transfer(public_key: &str) -> String {
+    public_key_fingerprint(public_key)
+}
+
+pub(crate) fn load_existing_dotenv_private_key_for_transfer(
+    public_key: &str,
+) -> Result<Option<String>, String> {
+    validate_dotenv_public_key_for_transfer(public_key)?;
+    let account = keychain_account_for_public_key(public_key);
+    keychain_read_dotenv_private_key_if_present(DOTENV_KEYCHAIN_SERVICE, &account)
+}
+
+pub(crate) fn store_dotenv_private_key_for_transfer(
+    public_key: &str,
+    private_key: &str,
+) -> Result<(), String> {
+    validate_dotenv_public_key_for_transfer(public_key)?;
+    validate_dotenv_private_key_for_transfer(private_key)?;
+    KeychainDotenvPrivateKeyStore.store_private_key(public_key, private_key)
 }
 
 fn ensure_document_public_key(
@@ -2659,6 +2729,16 @@ impl DotenvPrivateKeyStore for KeychainDotenvPrivateKeyStore {
 
 #[cfg(target_os = "macos")]
 fn keychain_read_dotenv_private_key(service: &str, account: &str) -> Result<String, String> {
+    keychain_read_dotenv_private_key_if_present(service, account)?.ok_or_else(|| {
+        "failed to load dotenv private key: The specified item could not be found in the keychain. Run av dotenv import or av dotenv init.".to_string()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_read_dotenv_private_key_if_present(
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
     unsafe extern "C" {
         fn isotope_copy_generic_password_json_with_status(
             service_cstr: *const c_char,
@@ -2685,18 +2765,25 @@ fn keychain_read_dotenv_private_key(service: &str, account: &str) -> Result<Stri
         let message = unsafe { take_dotenv_bridge_string(error) }
             .unwrap_or_else(|| "keychain lookup failed".to_string());
         if status == ERR_SEC_ITEM_NOT_FOUND {
-            return Err(format!(
-                "failed to load dotenv private key: {message}. Run av dotenv import or av dotenv init."
-            ));
+            return Ok(None);
         }
         return Err(format!("failed to load dotenv private key: {message}"));
     }
     unsafe { take_dotenv_bridge_string(value) }
+        .map(Some)
         .ok_or_else(|| "keychain returned invalid UTF-8".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
 fn keychain_read_dotenv_private_key(_service: &str, _account: &str) -> Result<String, String> {
+    Err("dotenv keychain integration is only available on macOS".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_read_dotenv_private_key_if_present(
+    _service: &str,
+    _account: &str,
+) -> Result<Option<String>, String> {
     Err("dotenv keychain integration is only available on macOS".to_string())
 }
 
