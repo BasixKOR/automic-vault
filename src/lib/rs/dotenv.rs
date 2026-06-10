@@ -1894,13 +1894,18 @@ fn request_dotenv_approval_if_needed(
         ));
     }
     let policy = load_dotenv_approval_policy().unwrap_or_default();
-    if policy == DotenvApprovalPolicy::RememberApproved
+    if dotenv_remembered_approval_applies_to_mode(mode)
+        && policy == DotenvApprovalPolicy::RememberApproved
         && load_dotenv_remembered_approvals()?.contains(&entry)
     {
         return Ok(());
     }
     request_dotenv_approval(&entry, command, parent_process, process_ancestry)?;
     Ok(())
+}
+
+fn dotenv_remembered_approval_applies_to_mode(mode: DotenvApprovalMode) -> bool {
+    mode == DotenvApprovalMode::Run
 }
 
 fn dotenv_approval_process_context() -> (DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>) {
@@ -2213,6 +2218,9 @@ pub(crate) fn remember_dotenv_approval_from_helper(
     public_key_fingerprint: &str,
     mut keys: Vec<String>,
 ) -> Result<(), String> {
+    if !dotenv_remembered_approval_applies_to_mode(mode) {
+        return Ok(());
+    }
     if load_dotenv_approval_policy()? != DotenvApprovalPolicy::RememberApproved {
         return Ok(());
     }
@@ -3401,6 +3409,12 @@ mod tests {
             DotenvApprovalMode::from_raw_value("bogus").unwrap_err(),
             "unknown dotenv approval mode: bogus"
         );
+        assert!(!dotenv_remembered_approval_applies_to_mode(
+            DotenvApprovalMode::Export
+        ));
+        assert!(dotenv_remembered_approval_applies_to_mode(
+            DotenvApprovalMode::Run
+        ));
         assert_eq!(
             DotenvApprovalPolicy::ApproveEveryTime.raw_value(),
             "approve_every_time"
@@ -4798,9 +4812,24 @@ mod tests {
         );
 
         write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+        remember_dotenv_approval_from_helper(
+            DotenvApprovalMode::Export,
+            env_path_str,
+            temp.path().to_str().unwrap(),
+            &digest,
+            &fingerprint,
+            vec!["FOO".to_string()],
+        )
+        .unwrap();
+        assert!(
+            load_dotenv_remembered_approvals()
+                .unwrap()
+                .entries
+                .is_empty()
+        );
         assert_eq!(
             remember_dotenv_approval_from_helper(
-                DotenvApprovalMode::Export,
+                DotenvApprovalMode::Run,
                 env_path_str,
                 temp.path().to_str().unwrap(),
                 &digest,
@@ -4812,7 +4841,7 @@ mod tests {
         );
         assert_eq!(
             remember_dotenv_approval_from_helper(
-                DotenvApprovalMode::Export,
+                DotenvApprovalMode::Run,
                 env_path_str,
                 project_str,
                 &"0".repeat(64),
@@ -4824,7 +4853,7 @@ mod tests {
         );
         assert_eq!(
             remember_dotenv_approval_from_helper(
-                DotenvApprovalMode::Export,
+                DotenvApprovalMode::Run,
                 env_path_str,
                 project_str,
                 &digest,
@@ -4836,7 +4865,7 @@ mod tests {
         );
 
         remember_dotenv_approval_from_helper(
-            DotenvApprovalMode::Export,
+            DotenvApprovalMode::Run,
             env_path_str,
             project_str,
             &digest,
@@ -4899,15 +4928,15 @@ mod tests {
 
         remember_dotenv_approval(remembered_entry_for(
             &env_path,
-            DotenvApprovalMode::Export,
+            DotenvApprovalMode::Run,
             &keypair.public_key,
             &["BAR", "FOO"],
         ))
         .unwrap();
         let loaded = load_dotenv_secrets(
             &env_path,
-            DotenvApprovalMode::Export,
-            &[],
+            DotenvApprovalMode::Run,
+            &["/bin/echo".to_string()],
             &store,
             Some(&["FOO".to_string()]),
         )
@@ -4941,8 +4970,9 @@ mod tests {
         .unwrap();
 
         let digest = sha256_file_hex(&env_path).unwrap();
+        let loaded_env_path = loaded.env_path.to_string_lossy().into_owned();
         let _current = DotenvEnvGuard::set(&[
-            (AV_DOTENV_FILE_ENV, env_path.to_str().unwrap()),
+            (AV_DOTENV_FILE_ENV, &loaded_env_path),
             (AV_DOTENV_DIGEST_ENV, &digest),
         ]);
         run_dotenv_export(
