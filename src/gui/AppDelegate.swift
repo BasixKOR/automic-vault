@@ -810,7 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lines.append(contentsOf: ["", L10n.string("Items")])
         for item in approval.items {
-            var line = "\(item.kind): \(item.name)"
+            var line = keyTransferApprovalItemLabel(for: item)
             if let detail = item.detail, detail.isEmpty == false {
                 line += " - \(detail)"
             }
@@ -823,6 +823,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lines.append(contentsOf: ["", L10n.string("Replacing existing keychain values")])
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func keyTransferApprovalItemLabel(for item: KeyTransferApprovalItem) -> String {
+        if item.kind == "dotenv" {
+            return L10n.format("dotenv private key for %@", item.name)
+        }
+        return "\(item.kind): \(item.name)"
     }
 
     private func isotopeApprovalAccessoryView(for approval: IsotopeApprovalRequestSnapshot) -> NSView {

@@ -346,6 +346,7 @@
 "Import %d Automic Vault key from %@." = "Import %d Automic Vault key from %@.";
 "Import %d Automic Vault keys from %@." = "Import %d Automic Vault keys from %@.";
 "Items" = "Items";
+"dotenv private key for %@" = "dotenv private key for %@";
 "Replacing existing keychain values" = "Replacing existing keychain values";
 "replaces existing" = "replaces existing";
 "Source" = "Source";
