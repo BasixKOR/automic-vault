@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use std::io;
 
 const TRANSFER_BUNDLE_SCHEMA_VERSION: u32 = 1;
+const DEFAULT_REMOTE_AV: &str = "av";
+const INSTALLED_REMOTE_AV: &str = "/usr/local/bin/av";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TransferCommand {
@@ -20,6 +22,7 @@ struct TransferSendOptions {
     replace: bool,
     ssh_options: Vec<String>,
     remote_av: String,
+    remote_av_explicit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,7 +165,8 @@ fn parse_transfer_send(
     let mut seen_keys = BTreeSet::new();
     let mut replace = false;
     let mut ssh_options = Vec::new();
-    let mut remote_av = "av".to_string();
+    let mut remote_av = DEFAULT_REMOTE_AV.to_string();
+    let mut remote_av_explicit = false;
     let mut args = args.peekable();
 
     while let Some(arg) = args.next() {
@@ -201,6 +205,7 @@ fn parse_transfer_send(
         }
         if arg == "--remote-av" {
             remote_av = next_transfer_value(&mut args, "--remote-av")?;
+            remote_av_explicit = true;
             if remote_av.trim().is_empty() {
                 return Err("--remote-av must not be empty".to_string());
             }
@@ -230,6 +235,7 @@ fn parse_transfer_send(
         replace,
         ssh_options,
         remote_av,
+        remote_av_explicit,
     }))
 }
 
@@ -378,11 +384,27 @@ fn local_hostname() -> String {
 fn build_ssh_command_args(options: &TransferSendOptions) -> Vec<String> {
     let mut args = options.ssh_options.clone();
     args.push(options.ssh_target.clone());
-    args.push(remote_receive_command(&options.remote_av, options.replace));
+    args.push(remote_receive_command(
+        &options.remote_av,
+        options.remote_av_explicit,
+        options.replace,
+    ));
     args
 }
 
-fn remote_receive_command(remote_av: &str, replace: bool) -> String {
+fn remote_receive_command(remote_av: &str, remote_av_explicit: bool, replace: bool) -> String {
+    if !remote_av_explicit && remote_av == DEFAULT_REMOTE_AV {
+        return format!(
+            "if command -v {} >/dev/null 2>&1; then exec {}; else exec {}; fi",
+            shell_quote(DEFAULT_REMOTE_AV),
+            remote_receive_invocation(DEFAULT_REMOTE_AV, replace),
+            remote_receive_invocation(INSTALLED_REMOTE_AV, replace)
+        );
+    }
+    remote_receive_invocation(remote_av, replace)
+}
+
+fn remote_receive_invocation(remote_av: &str, replace: bool) -> String {
     let mut parts = vec![
         shell_quote(remote_av),
         shell_quote("transfer"),
@@ -776,6 +798,7 @@ mod tests {
         assert!(options.replace);
         assert_eq!(options.ssh_options, vec!["-p 2222"]);
         assert_eq!(options.remote_av, "/opt/homebrew/bin/av");
+        assert!(options.remote_av_explicit);
     }
 
     #[test]
@@ -833,7 +856,8 @@ mod tests {
             keys: vec!["TOKEN".to_string()],
             replace: false,
             ssh_options: Vec::new(),
-            remote_av: "av".to_string(),
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
         };
 
         let bundle = build_transfer_bundle(&options, &store).unwrap();
@@ -852,7 +876,8 @@ mod tests {
             keys: Vec::new(),
             replace: false,
             ssh_options: Vec::new(),
-            remote_av: "av".to_string(),
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
         };
 
         assert!(
@@ -872,6 +897,7 @@ mod tests {
             replace: true,
             ssh_options: vec!["-p 2222".to_string()],
             remote_av: "/Applications/Automic Vault/av".to_string(),
+            remote_av_explicit: true,
         };
 
         let args = build_ssh_command_args(&options);
@@ -881,6 +907,28 @@ mod tests {
         assert_eq!(
             args[2],
             "'/Applications/Automic Vault/av' 'transfer' 'receive' '--stdin' '--replace'"
+        );
+    }
+
+    #[test]
+    fn transfer_ssh_command_falls_back_to_usr_local_bin_for_default_remote_av() {
+        let options = TransferSendOptions {
+            ssh_target: "me@mac".to_string(),
+            file: PathBuf::from(".env"),
+            include_dotenv: true,
+            keys: Vec::new(),
+            replace: false,
+            ssh_options: Vec::new(),
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
+        };
+
+        let args = build_ssh_command_args(&options);
+
+        assert_eq!(args[0], "me@mac");
+        assert_eq!(
+            args[1],
+            "if command -v 'av' >/dev/null 2>&1; then exec 'av' 'transfer' 'receive' '--stdin'; else exec '/usr/local/bin/av' 'transfer' 'receive' '--stdin'; fi"
         );
     }
 
