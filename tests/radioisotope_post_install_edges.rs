@@ -174,7 +174,8 @@ macro_rules! two_stage_launcher_post_install_extra_tests {
                             .contains("failed to resolve")
                     );
 
-                    let script = $script(Path::new("/tmp/it isn't"), Path::new("/tmp/inject isn't"));
+                    let script =
+                        $script(Path::new("/tmp/it isn't"), Path::new("/tmp/inject isn't"));
                     assert!(script.contains(r#"'\''"#));
 
                     fs::remove_dir_all(temp).unwrap();

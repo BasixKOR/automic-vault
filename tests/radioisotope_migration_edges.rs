@@ -1,11 +1,46 @@
 #![cfg(coverage)]
 #![allow(dead_code)]
 
+use std::ffi::{OsStr, OsString};
 use std::sync::{Mutex, OnceLock};
 
 fn global_test_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(Mutex::default)
+}
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        unsafe {
+            std::env::set_var(key, value);
+        }
+        Self { key, previous }
+    }
+
+    fn remove(key: &'static str) -> Self {
+        let previous = std::env::var_os(key);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 }
 
 macro_rules! radioisotope_source {
@@ -429,11 +464,10 @@ mod snowflake_cli_migrate {
         #[test]
         fn covers_default_directory_selection_and_multi_match_error() {
             let _lock = crate::global_test_env_lock().lock().unwrap();
-            let previous_home = std::env::var_os("HOME");
-            unsafe {
-                std::env::remove_var("HOME");
+            {
+                let _home = crate::EnvGuard::remove("HOME");
+                assert!(candidate_directories().unwrap_err().contains("HOME"));
             }
-            assert!(candidate_directories().unwrap_err().contains("HOME"));
 
             let home = std::env::temp_dir().join(format!("snowflake-home-{}", std::process::id()));
             let _ = fs::remove_dir_all(&home);
@@ -449,21 +483,13 @@ mod snowflake_cli_migrate {
                 "[prod]\npassword = 'two'\n",
             )
             .unwrap();
-            unsafe {
-                std::env::set_var("HOME", &home);
-            }
+            let _home = crate::EnvGuard::set("HOME", &home);
             assert_eq!(candidate_directories().unwrap().len(), 3);
             assert!(
                 migrate_default_configs(&Store::default())
                     .unwrap_err()
                     .contains("multiple Snowflake")
             );
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
             fs::remove_dir_all(home).unwrap();
         }
     }
@@ -564,24 +590,23 @@ mod grafanactl_migrate {
         #[test]
         fn covers_config_paths_and_file_errors() {
             let _lock = crate::global_test_env_lock().lock().unwrap();
-            let previous_home = std::env::var_os("HOME");
-            let previous_xdg = std::env::var_os("XDG_CONFIG_HOME");
             let root = std::env::temp_dir().join(format!("grafanactl-home-{}", std::process::id()));
             let xdg = root.join("xdg");
             let _ = fs::remove_dir_all(&root);
             fs::create_dir_all(&xdg).unwrap();
-            unsafe {
-                std::env::set_var("XDG_CONFIG_HOME", &xdg);
-                std::env::remove_var("HOME");
+            {
+                let _xdg = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg);
+                let _home = crate::EnvGuard::remove("HOME");
+                assert_eq!(
+                    grafanactl_config_path().unwrap(),
+                    xdg.join("grafanactl/config.yaml")
+                );
             }
-            assert_eq!(
-                grafanactl_config_path().unwrap(),
-                xdg.join("grafanactl/config.yaml")
-            );
-            unsafe {
-                std::env::remove_var("XDG_CONFIG_HOME");
+            {
+                let _xdg = crate::EnvGuard::remove("XDG_CONFIG_HOME");
+                let _home = crate::EnvGuard::remove("HOME");
+                assert!(grafanactl_config_path().unwrap_err().contains("HOME"));
             }
-            assert!(grafanactl_config_path().unwrap_err().contains("HOME"));
 
             let path = root.join("config.yaml");
             fs::write(
@@ -606,16 +631,6 @@ mod grafanactl_migrate {
                     .contains("failed to read")
             );
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-                match previous_xdg {
-                    Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
-                    None => std::env::remove_var("XDG_CONFIG_HOME"),
-                }
-            }
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -722,22 +737,18 @@ mod nuget_migrate {
         #[test]
         fn covers_env_paths_and_migration_error_edges() {
             let _lock = crate::global_test_env_lock().lock().unwrap();
-            let previous_home = std::env::var_os("HOME");
-            let previous_xdg = std::env::var_os("XDG_CONFIG_HOME");
-            unsafe {
-                std::env::remove_var("HOME");
-                std::env::remove_var("XDG_CONFIG_HOME");
+            {
+                let _home = crate::EnvGuard::remove("HOME");
+                let _xdg = crate::EnvGuard::remove("XDG_CONFIG_HOME");
+                assert!(user_home().unwrap_err().contains("HOME"));
             }
-            assert!(user_home().unwrap_err().contains("HOME"));
 
             let root = std::env::temp_dir().join(format!("nuget-home-{}", std::process::id()));
             let xdg = root.join("xdg");
             let _ = fs::remove_dir_all(&root);
             fs::create_dir_all(&xdg).unwrap();
-            unsafe {
-                std::env::set_var("HOME", &root);
-                std::env::set_var("XDG_CONFIG_HOME", &xdg);
-            }
+            let _home = crate::EnvGuard::set("HOME", &root);
+            let _xdg = crate::EnvGuard::set("XDG_CONFIG_HOME", &xdg);
             let configs = nuget_configs().unwrap();
             assert_eq!(configs[0].path, xdg.join("NuGet/NuGet.Config"));
 
@@ -780,16 +791,6 @@ mod nuget_migrate {
                 .contains("failed to read")
             );
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-                match previous_xdg {
-                    Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
-                    None => std::env::remove_var("XDG_CONFIG_HOME"),
-                }
-            }
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -906,11 +907,10 @@ mod aws_cli_migrate {
         #[test]
         fn covers_store_home_login_cache_and_file_errors() {
             let _lock = crate::global_test_env_lock().lock().unwrap();
-            let previous_home = std::env::var_os("HOME");
-            unsafe {
-                std::env::remove_var("HOME");
+            {
+                let _home = crate::EnvGuard::remove("HOME");
+                assert!(home_path().unwrap_err().contains("HOME"));
             }
-            assert!(home_path().unwrap_err().contains("HOME"));
 
             let credentials = AwsCredentials {
                 access_key_id: "AKIA".to_string(),
@@ -958,12 +958,6 @@ mod aws_cli_migrate {
                     .contains("failed to read")
             );
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -1071,7 +1065,11 @@ mod openstack_migrate {
             let _ = std::fs::remove_dir_all(&home);
             let config_dir = home.join(".config/openstack");
             std::fs::create_dir_all(&config_dir).unwrap();
-            assert!(load_file_state(&config_dir.join("missing.yaml")).unwrap().is_none());
+            assert!(
+                load_file_state(&config_dir.join("missing.yaml"))
+                    .unwrap()
+                    .is_none()
+            );
             assert!(
                 load_file_state(&config_dir)
                     .unwrap_err()
@@ -1080,23 +1078,18 @@ mod openstack_migrate {
 
             let secure = config_dir.join("secure.yaml");
             std::fs::write(&secure, "clouds:\n  prod:\n    password: secret\n").unwrap();
-            let previous_home = std::env::var_os("HOME");
-            unsafe { std::env::set_var("HOME", &home) };
+            let _home = crate::EnvGuard::set("HOME", &home);
 
             let store = Store::default();
             assert!(migrate_default_configs(&store).unwrap());
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
             assert_eq!(store.values.borrow()[0].0, "OPENSTACK_SECURE_YAML");
             assert!(store.values.borrow()[0].1.contains("password: secret"));
-            assert!(std::fs::read_to_string(&secure)
-                .unwrap()
-                .contains("password: \"\""));
+            assert!(
+                std::fs::read_to_string(&secure)
+                    .unwrap()
+                    .contains("password: \"\"")
+            );
             std::fs::remove_dir_all(home).unwrap();
         }
     }
@@ -1134,23 +1127,26 @@ mod ansible_migrate {
             ));
             let _ = std::fs::remove_dir_all(&temp);
             std::fs::create_dir_all(&temp).unwrap();
-            let previous_home = std::env::var_os("HOME");
-            let previous_token_path = std::env::var_os("ANSIBLE_GALAXY_TOKEN_PATH");
 
-            unsafe {
-                std::env::set_var("HOME", temp.join("home"));
-                std::env::set_var("ANSIBLE_GALAXY_TOKEN_PATH", temp.join("custom-token"));
+            {
+                let _home = crate::EnvGuard::set("HOME", temp.join("home"));
+                let _token_path =
+                    crate::EnvGuard::set("ANSIBLE_GALAXY_TOKEN_PATH", temp.join("custom-token"));
+                let paths = candidate_token_paths().unwrap();
+                assert!(paths.contains(&temp.join("custom-token")));
+                assert!(
+                    paths
+                        .iter()
+                        .any(|path| path.ends_with(".ansible/galaxy_token"))
+                );
             }
-            let paths = candidate_token_paths().unwrap();
-            assert!(paths.contains(&temp.join("custom-token")));
-            assert!(paths.iter().any(|path| path.ends_with(".ansible/galaxy_token")));
 
-            unsafe {
-                std::env::remove_var("HOME");
-                std::env::remove_var("ANSIBLE_GALAXY_TOKEN_PATH");
+            {
+                let _home = crate::EnvGuard::remove("HOME");
+                let _token_path = crate::EnvGuard::remove("ANSIBLE_GALAXY_TOKEN_PATH");
+                assert_eq!(home_dir().unwrap_err(), "HOME is not set");
+                assert_eq!(candidate_token_paths().unwrap_err(), "HOME is not set");
             }
-            assert_eq!(home_dir().unwrap_err(), "HOME is not set");
-            assert_eq!(candidate_token_paths().unwrap_err(), "HOME is not set");
 
             assert_eq!(keys(), &["ANSIBLE_GALAXY_TOKEN"]);
             assert_eq!(
@@ -1162,32 +1158,30 @@ mod ansible_migrate {
                 galaxy_token_value("token: 'abc123'\n").unwrap().as_deref(),
                 Some("abc123")
             );
-            assert!(reject_env_line_breaks("a\nb")
-                .unwrap_err()
-                .contains("line breaks"));
+            assert!(
+                reject_env_line_breaks("a\nb")
+                    .unwrap_err()
+                    .contains("line breaks")
+            );
 
             let dir = temp.join("dir");
             std::fs::create_dir_all(&dir).unwrap();
-            assert!(migrate_token_files(&[dir], &Store::default())
-                .unwrap_err()
-                .contains("failed to read"));
+            assert!(
+                migrate_token_files(&[dir], &Store::default())
+                    .unwrap_err()
+                    .contains("failed to read")
+            );
             let empty = temp.join("empty-token");
             std::fs::write(&empty, "token: null\n").unwrap();
-            assert!(!migrate_token_files(&[temp.join("missing"), empty], &Store::default()).unwrap());
-            assert!(keychain_store_secret("service", "account", "value")
-                .unwrap_err()
-                .contains("keychain integration"));
+            assert!(
+                !migrate_token_files(&[temp.join("missing"), empty], &Store::default()).unwrap()
+            );
+            assert!(
+                keychain_store_secret("service", "account", "value")
+                    .unwrap_err()
+                    .contains("keychain integration")
+            );
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-                match previous_token_path {
-                    Some(value) => std::env::set_var("ANSIBLE_GALAXY_TOKEN_PATH", value),
-                    None => std::env::remove_var("ANSIBLE_GALAXY_TOKEN_PATH"),
-                }
-            }
             std::fs::remove_dir_all(temp).unwrap();
         }
     }
@@ -1233,29 +1227,26 @@ mod glab_migrate {
             ));
             let _ = std::fs::remove_dir_all(&temp);
             std::fs::create_dir_all(&temp).unwrap();
-            let previous = [
-                ("GLAB_CONFIG_DIR", std::env::var_os("GLAB_CONFIG_DIR")),
-                ("XDG_CONFIG_HOME", std::env::var_os("XDG_CONFIG_HOME")),
-                ("HOME", std::env::var_os("HOME")),
-            ];
 
-            unsafe {
-                std::env::set_var("GLAB_CONFIG_DIR", temp.join("glab"));
+            {
+                let _glab_config_dir = crate::EnvGuard::set("GLAB_CONFIG_DIR", temp.join("glab"));
+                assert_eq!(
+                    candidate_config_paths().unwrap(),
+                    vec![temp.join("glab/config.yml")]
+                );
             }
-            assert_eq!(
-                candidate_config_paths().unwrap(),
-                vec![temp.join("glab/config.yml")]
-            );
 
-            unsafe {
-                std::env::remove_var("GLAB_CONFIG_DIR");
-                std::env::set_var("HOME", temp.join("home"));
-                std::env::set_var("XDG_CONFIG_HOME", temp.join("xdg"));
+            {
+                let _glab_config_dir = crate::EnvGuard::remove("GLAB_CONFIG_DIR");
+                let _home = crate::EnvGuard::set("HOME", temp.join("home"));
+                let _xdg_config_home = crate::EnvGuard::set("XDG_CONFIG_HOME", temp.join("xdg"));
+                let paths = candidate_config_paths().unwrap();
+                assert_eq!(paths.len(), 3);
             }
-            let paths = candidate_config_paths().unwrap();
-            assert_eq!(paths.len(), 3);
 
-            assert!(glab_config_contains_token("hosts:\n  gitlab.com:\n    token: abc\n"));
+            assert!(glab_config_contains_token(
+                "hosts:\n  gitlab.com:\n    token: abc\n"
+            ));
             assert!(glab_config_contains_oauth_refresh_token(
                 "oauth2_refresh_token: refresh\n"
             ));
@@ -1286,18 +1277,12 @@ mod glab_migrate {
             let store = Store::default();
             assert!(migrate_credentials_file(&config, &store).unwrap());
             assert_eq!(store.values.borrow()[0].0, "GLAB_ENV_ASSIGNMENTS");
-            assert!(std::fs::read_to_string(&config)
-                .unwrap()
-                .contains("token: \"\""));
+            assert!(
+                std::fs::read_to_string(&config)
+                    .unwrap()
+                    .contains("token: \"\"")
+            );
 
-            unsafe {
-                for (key, value) in previous {
-                    match value {
-                        Some(value) => std::env::set_var(key, value),
-                        None => std::env::remove_var(key),
-                    }
-                }
-            }
             std::fs::remove_dir_all(temp).unwrap();
         }
     }
@@ -1351,38 +1336,42 @@ mod podman_migrate {
             ));
             let _ = std::fs::remove_dir_all(&temp);
             std::fs::create_dir_all(&temp).unwrap();
-            let previous = [
-                ("REGISTRY_AUTH_FILE", std::env::var_os("REGISTRY_AUTH_FILE")),
-                ("XDG_RUNTIME_DIR", std::env::var_os("XDG_RUNTIME_DIR")),
-                ("XDG_CONFIG_HOME", std::env::var_os("XDG_CONFIG_HOME")),
-                ("HOME", std::env::var_os("HOME")),
-            ];
 
-            unsafe {
-                std::env::set_var("REGISTRY_AUTH_FILE", temp.join("auth.json"));
+            {
+                let _registry_auth_file =
+                    crate::EnvGuard::set("REGISTRY_AUTH_FILE", temp.join("auth.json"));
+                assert_eq!(
+                    candidate_auth_paths().unwrap(),
+                    vec![temp.join("auth.json")]
+                );
             }
-            assert_eq!(candidate_auth_paths().unwrap(), vec![temp.join("auth.json")]);
 
-            unsafe {
-                std::env::remove_var("REGISTRY_AUTH_FILE");
-                std::env::set_var("XDG_RUNTIME_DIR", temp.join("runtime"));
-                std::env::set_var("XDG_CONFIG_HOME", temp.join("xdg"));
-                std::env::set_var("HOME", temp.join("home"));
+            {
+                let _registry_auth_file = crate::EnvGuard::remove("REGISTRY_AUTH_FILE");
+                let _runtime = crate::EnvGuard::set("XDG_RUNTIME_DIR", temp.join("runtime"));
+                let _config = crate::EnvGuard::set("XDG_CONFIG_HOME", temp.join("xdg"));
+                let _home = crate::EnvGuard::set("HOME", temp.join("home"));
+                assert_eq!(candidate_auth_paths().unwrap().len(), 3);
             }
-            assert_eq!(candidate_auth_paths().unwrap().len(), 3);
 
             assert!(!auth_json_contains_secret("not json"));
-            assert!(!auth_entry_contains_secret(&serde_json::json!("not object")));
+            assert!(!auth_entry_contains_secret(&serde_json::json!(
+                "not object"
+            )));
             assert_eq!(
                 auth_json_with_credential_helpers(r#"{"auths":{}}"#).unwrap(),
                 r#"{"auths":{}}"#
             );
-            assert!(auth_json_with_credential_helpers("[]")
-                .unwrap_err()
-                .contains("root must be an object"));
-            assert!(auth_json_with_credential_helpers(r#"{"auths":[]}"#)
-                .unwrap_err()
-                .contains("auths field must be an object"));
+            assert!(
+                auth_json_with_credential_helpers("[]")
+                    .unwrap_err()
+                    .contains("root must be an object")
+            );
+            assert!(
+                auth_json_with_credential_helpers(r#"{"auths":[]}"#)
+                    .unwrap_err()
+                    .contains("auths field must be an object")
+            );
             assert!(auth_json_with_credential_helpers(
                 r#"{"auths":{"registry.example":{"auth":"base64"}},"credHelpers":{"registry.example":"other"}}"#
             )
@@ -1392,23 +1381,20 @@ mod podman_migrate {
             let missing = temp.join("missing.json");
             assert!(!migrate_credentials_file(&missing, &Store::default()).unwrap());
             let auth = temp.join("auth.json");
-            std::fs::write(&auth, r#"{"auths":{"registry.example":{"identityToken":"token"}}}"#)
-                .unwrap();
+            std::fs::write(
+                &auth,
+                r#"{"auths":{"registry.example":{"identityToken":"token"}}}"#,
+            )
+            .unwrap();
             let store = Store::default();
             assert!(migrate_credentials_file(&auth, &store).unwrap());
             assert_eq!(store.values.borrow()[0].0, "PODMAN_AUTH_JSON");
-            assert!(std::fs::read_to_string(&auth)
-                .unwrap()
-                .contains("av-podman"));
+            assert!(
+                std::fs::read_to_string(&auth)
+                    .unwrap()
+                    .contains("av-podman")
+            );
 
-            unsafe {
-                for (key, value) in previous {
-                    match value {
-                        Some(value) => std::env::set_var(key, value),
-                        None => std::env::remove_var(key),
-                    }
-                }
-            }
             std::fs::remove_dir_all(temp).unwrap();
         }
     }
@@ -1454,16 +1440,15 @@ mod s3cmd_migrate {
             ));
             let _ = std::fs::remove_dir_all(&temp);
             std::fs::create_dir_all(&temp).unwrap();
-            let previous_home = std::env::var_os("HOME");
 
-            unsafe {
-                std::env::remove_var("HOME");
+            {
+                let _home = crate::EnvGuard::remove("HOME");
+                assert_eq!(s3cmd_config_path().unwrap_err(), "HOME is not set");
             }
-            assert_eq!(s3cmd_config_path().unwrap_err(), "HOME is not set");
-            unsafe {
-                std::env::set_var("HOME", &temp);
+            {
+                let _home = crate::EnvGuard::set("HOME", &temp);
+                assert_eq!(s3cmd_config_path().unwrap(), temp.join(".s3cfg"));
             }
-            assert_eq!(s3cmd_config_path().unwrap(), temp.join(".s3cfg"));
 
             assert_eq!(keys(), &["S3CMD_ENV_ASSIGNMENTS"]);
             assert_eq!(sanitized_config("# comment\n"), "# comment\n");
@@ -1472,18 +1457,32 @@ mod s3cmd_migrate {
                 "gpg_passphrase = $S3CMD_GPG_PASSPHRASE\n"
             );
             let mut changed = false;
-            assert_eq!(sanitize_line("missing equals", &mut changed), "missing equals");
-            assert_eq!(sanitize_line("access_key = ", &mut changed), "access_key = ");
-            assert!(s3cmd_env_assignments("# comment\nmissing equals\nunknown = value\naccess_key = \n")
+            assert_eq!(
+                sanitize_line("missing equals", &mut changed),
+                "missing equals"
+            );
+            assert_eq!(
+                sanitize_line("access_key = ", &mut changed),
+                "access_key = "
+            );
+            assert!(
+                s3cmd_env_assignments(
+                    "# comment\nmissing equals\nunknown = value\naccess_key = \n"
+                )
                 .unwrap()
-                .is_empty());
+                .is_empty()
+            );
             assert_eq!(unquote_config_value("\"quoted\""), "quoted");
-            assert!(s3cmd_env_assignments("access_key = only\n")
-                .unwrap_err()
-                .contains("both be present"));
-            assert!(s3cmd_env_assignments("session_token = token\n")
-                .unwrap_err()
-                .contains("without access_key"));
+            assert!(
+                s3cmd_env_assignments("access_key = only\n")
+                    .unwrap_err()
+                    .contains("both be present")
+            );
+            assert!(
+                s3cmd_env_assignments("session_token = token\n")
+                    .unwrap_err()
+                    .contains("without access_key")
+            );
             assert!(
                 s3cmd_env_assignments("access_key = one\naccess_key = two\n")
                     .unwrap_err()
@@ -1502,16 +1501,12 @@ mod s3cmd_migrate {
             let store = Store::default();
             assert!(migrate_config_file(&config, &store).unwrap());
             assert_eq!(store.values.borrow()[0].0, "S3CMD_ENV_ASSIGNMENTS");
-            assert!(std::fs::read_to_string(&config)
-                .unwrap()
-                .contains("access_key = "));
+            assert!(
+                std::fs::read_to_string(&config)
+                    .unwrap()
+                    .contains("access_key = ")
+            );
 
-            unsafe {
-                match previous_home {
-                    Some(value) => std::env::set_var("HOME", value),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
             std::fs::remove_dir_all(temp).unwrap();
         }
     }

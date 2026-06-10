@@ -356,7 +356,9 @@ mod kubernetes_cli_helper {
 
         #[test]
         fn covers_validation_json_and_response_edges() {
-            assert!(is_kubectl_parent_executable("/opt/kubernetes-cli/bin/kubectl"));
+            assert!(is_kubectl_parent_executable(
+                "/opt/kubernetes-cli/bin/kubectl"
+            ));
             assert!(is_kubectl_parent_executable(
                 "/opt/kubernetes-cli/bin/kubectl.av-orig"
             ));
@@ -384,9 +386,7 @@ mod kubernetes_cli_helper {
                     args: vec![OsString::from("dev")],
                     caller: crate::isotope::CredentialHelperCallerContext {
                         token: Some("short".to_string()),
-                        parent_executable_path: Some(
-                            "/opt/kubernetes-cli/bin/kubectl".to_string()
-                        ),
+                        parent_executable_path: Some("/opt/kubernetes-cli/bin/kubectl".to_string()),
                         parent_command: None,
                     },
                     store: &crate::MemoryStore::default(),
@@ -476,8 +476,7 @@ mod nuget_helper {
                 Some("https://example.test/".to_string())
             );
             assert_eq!(
-                parse_nuget_provider_uri(&[OsString::from("-Uri"), OsString::from("   ")])
-                    .unwrap(),
+                parse_nuget_provider_uri(&[OsString::from("-Uri"), OsString::from("   ")]).unwrap(),
                 None
             );
             assert!(
@@ -497,7 +496,10 @@ mod nuget_helper {
             assert!(credential_store_miss("not found in store"));
             assert!(credential_store_miss("missing stub credential"));
             assert!(!credential_store_miss("permission denied"));
-            assert_eq!(normalize_uri("HTTPS://EXAMPLE.TEST/"), "https://example.test");
+            assert_eq!(
+                normalize_uri("HTTPS://EXAMPLE.TEST/"),
+                "https://example.test"
+            );
 
             assert!(
                 validate_caller_context(&crate::isotope::CredentialHelperInvocation {
@@ -591,7 +593,9 @@ mod terraform_helper {
 
         #[test]
         fn covers_parse_validation_and_store_shape_edges() {
-            assert!(is_terraform_parent_executable("/opt/terraform/bin/terraform"));
+            assert!(is_terraform_parent_executable(
+                "/opt/terraform/bin/terraform"
+            ));
             assert!(is_terraform_parent_executable(
                 "/opt/terraform/bin/terraform.av-orig"
             ));
@@ -654,9 +658,13 @@ mod terraform_helper {
                 .contains("field must be a JSON object")
             );
             assert!(
-                store_terraform_credentials_for_host(&WriteErrorStore, "host", r#"{"token":"secret"}"#)
-                    .unwrap_err()
-                    .contains("terraform write denied")
+                store_terraform_credentials_for_host(
+                    &WriteErrorStore,
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("terraform write denied")
             );
         }
     }
@@ -692,7 +700,9 @@ mod opentofu_helper {
         #[test]
         fn covers_parse_validation_and_store_shape_edges() {
             assert!(is_opentofu_parent_executable("/opt/opentofu/bin/tofu"));
-            assert!(is_opentofu_parent_executable("/opt/opentofu/bin/tofu.av-orig"));
+            assert!(is_opentofu_parent_executable(
+                "/opt/opentofu/bin/tofu.av-orig"
+            ));
             assert!(!is_opentofu_parent_executable("/tmp/tofu"));
             assert!(
                 parse_opentofu_helper_args(&[])
@@ -746,9 +756,13 @@ mod opentofu_helper {
                 .contains("field must be a JSON object")
             );
             assert!(
-                store_opentofu_credentials_for_host(&WriteErrorStore, "host", r#"{"token":"secret"}"#)
-                    .unwrap_err()
-                    .contains("opentofu write denied")
+                store_opentofu_credentials_for_host(
+                    &WriteErrorStore,
+                    "host",
+                    r#"{"token":"secret"}"#
+                )
+                .unwrap_err()
+                .contains("opentofu write denied")
             );
         }
     }
@@ -919,7 +933,9 @@ mod cargo_helper {
             assert!(!request_is_crates_io(&serde_json::json!({
                 "registry": { "index-url": "https://example.test/index" }
             })));
-            assert!(!request_is_crates_io(&serde_json::json!({ "registry": [] })));
+            assert!(!request_is_crates_io(
+                &serde_json::json!({ "registry": [] })
+            ));
             assert!(credential_store_miss("not found in store"));
             assert!(credential_store_miss("missing stub credential"));
             assert!(!credential_store_miss("permission denied"));
@@ -927,7 +943,10 @@ mod cargo_helper {
                 load_cargo_token(&crate::MemoryStore::default()).unwrap(),
                 None
             );
-            assert_eq!(cargo_err("custom"), serde_json::json!({ "Err": { "kind": "custom" } }));
+            assert_eq!(
+                cargo_err("custom"),
+                serde_json::json!({ "Err": { "kind": "custom" } })
+            );
             assert_eq!(
                 cargo_other_err("message"),
                 serde_json::json!({ "Err": { "kind": "other", "message": "message" } })
