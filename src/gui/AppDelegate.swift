@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? dotenvApprovalStore.saveDecision(
             DotenvApprovalDecision(
                 id: approval.id,
+                approvalToken: approval.approvalToken,
                 approved: false,
                 reason: "Automic Vault quit before dotenv approval"
             )
@@ -707,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? dotenvApprovalStore.saveDecision(
             DotenvApprovalDecision(
                 id: approval.id,
+                approvalToken: approval.approvalToken,
                 approved: approved,
                 reason: approved ? nil : (reason ?? "Denied by operator")
             )

@@ -30,6 +30,12 @@ const AV_DOTENV_DIGEST_ENV: &str = "AV_DOTENV_DIGEST";
 const AV_DOTENV_KEYS_ENV: &str = "AV_DOTENV_KEYS";
 const DOTENV_EXPORT_DENIED_HINT: &str =
     "hint: use `av dotenv run` to run commands with this project's environment";
+const DOTENV_AGENT_EXPORT_ENV_MARKERS: &[(&str, &str)] = &[
+    ("CODEX_SHELL", "Codex"),
+    ("CODEX_THREAD_ID", "Codex"),
+    ("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "Codex"),
+    ("CODEX_SANDBOX", "Codex"),
+];
 
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: c_int = -25300;
@@ -124,6 +130,7 @@ impl DotenvApprovalMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct DotenvApprovalRequestSnapshot {
     id: String,
+    approval_token: String,
     mode: DotenvApprovalMode,
     env_file_path: String,
     project_root: String,
@@ -156,6 +163,8 @@ struct DotenvProcessSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct DotenvApprovalDecision {
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approval_token: Option<String>,
     approved: bool,
     reason: Option<String>,
 }
@@ -951,11 +960,9 @@ fn load_dotenv_secrets(
     let (_public_key_name, public_key) = document
         .public_key()
         .ok_or_else(|| format!("{} is missing DOTENV_PUBLIC_KEY", document.path.display()))?;
-    let private_key = store.load_private_key(&public_key)?;
-    validate_private_key_list(&private_key)?;
     let env_sha256 = sha256_file_hex(&document.path)?;
     let public_key_fingerprint = public_key_fingerprint(&public_key);
-    let mut values = BTreeMap::new();
+    let mut assignments = BTreeMap::new();
     for line in &document.lines {
         let Some(assignment) = &line.assignment else {
             continue;
@@ -966,12 +973,9 @@ fn load_dotenv_secrets(
         if env_key_is_preexisting(&assignment.key, previous_av_keys) {
             continue;
         }
-        values.insert(
-            assignment.key.clone(),
-            decrypt_dotenv_value(&assignment.key, &assignment.value, &private_key)?,
-        );
+        assignments.insert(assignment.key.clone(), assignment.value.clone());
     }
-    let keys = values.keys().cloned().collect::<Vec<_>>();
+    let keys = assignments.keys().cloned().collect::<Vec<_>>();
     let project_root = document
         .path
         .parent()
@@ -986,6 +990,15 @@ fn load_dotenv_secrets(
         &keys,
         command,
     )?;
+    let private_key = store.load_private_key(&public_key)?;
+    validate_private_key_list(&private_key)?;
+    let mut values = BTreeMap::new();
+    for (key, value) in assignments {
+        values.insert(
+            key.clone(),
+            decrypt_dotenv_value(&key, &value, &private_key)?,
+        );
+    }
     Ok(DotenvLoadedSecrets {
         env_path: document.path,
         project_root,
@@ -1868,8 +1881,8 @@ fn request_dotenv_approval_if_needed(
         keys: keys.to_vec(),
     };
     let (parent_process, process_ancestry) = dotenv_approval_process_context();
-    if let Some(source) =
-        dotenv_codex_export_rejection_source(mode, &parent_process, &process_ancestry)
+    if let Some(source) = dotenv_agent_export_rejection_source(mode)
+        .or_else(|| dotenv_codex_export_rejection_source(mode, &parent_process, &process_ancestry))
     {
         let _ = dotenv_post_distributed_notification_with_object(
             DOTENV_AUTOMATIC_EXPORT_REJECTION_NOTIFICATION,
@@ -1914,8 +1927,10 @@ fn request_dotenv_approval(
     process_ancestry: Vec<DotenvProcessSnapshot>,
 ) -> Result<(), String> {
     let request_id = new_dotenv_approval_request_id()?;
+    let approval_token = new_dotenv_approval_token()?;
     let request = DotenvApprovalRequestSnapshot {
         id: request_id.clone(),
+        approval_token: approval_token.clone(),
         mode: entry.mode,
         env_file_path: entry.env_file_path.clone(),
         project_root: entry.project_root.clone(),
@@ -1936,7 +1951,7 @@ fn request_dotenv_approval(
         let _ = fs::remove_file(&pending_url);
         return Err(err);
     }
-    wait_for_dotenv_decision(&request_id, entry.mode)
+    wait_for_dotenv_decision(&request_id, &approval_token, entry.mode)
 }
 
 fn new_dotenv_approval_request_id() -> Result<String, String> {
@@ -1951,6 +1966,12 @@ fn new_dotenv_approval_request_id() -> Result<String, String> {
         process::id(),
         encode_hex(&random)
     ))
+}
+
+fn new_dotenv_approval_token() -> Result<String, String> {
+    let mut random = [0_u8; 32];
+    fill_dotenv_random_bytes(&mut random)?;
+    Ok(encode_hex(&random))
 }
 
 #[cfg(unix)]
@@ -1988,7 +2009,11 @@ fn prepare_dotenv_approval_request_files(id: &str) -> Result<PathBuf, String> {
     dotenv_pending_approval_path()
 }
 
-fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), String> {
+fn wait_for_dotenv_decision(
+    id: &str,
+    approval_token: &str,
+    mode: DotenvApprovalMode,
+) -> Result<(), String> {
     let decision_url = dotenv_decision_path(id)?;
     let pending_url = dotenv_pending_approval_path()?;
     loop {
@@ -1997,6 +2022,9 @@ fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), St
                 .map_err(|err| format!("failed to decode dotenv approval decision: {err}"))?;
             if decision.id != id {
                 return Err("dotenv approval decision id mismatch".to_string());
+            }
+            if decision.approval_token.as_deref() != Some(approval_token) {
+                return Err("dotenv approval token mismatch".to_string());
             }
             let _ = fs::remove_file(&pending_url);
             let _ = fs::remove_file(&decision_url);
@@ -2010,6 +2038,19 @@ fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), St
         }
         thread::sleep(Duration::from_millis(250));
     }
+}
+
+fn dotenv_agent_export_rejection_source(mode: DotenvApprovalMode) -> Option<String> {
+    if mode != DotenvApprovalMode::Export {
+        return None;
+    }
+    DOTENV_AGENT_EXPORT_ENV_MARKERS
+        .iter()
+        .find_map(|(name, source)| {
+            env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(|_| (*source).to_string())
+        })
 }
 
 fn dotenv_codex_export_rejection_source(
@@ -2523,9 +2564,32 @@ fn write_dotenv_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String>
         .ok_or_else(|| format!("invalid dotenv approval path {}", path.display()))?;
     fs::create_dir_all(parent)
         .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    secure_dotenv_approval_directory(parent)?;
     let payload = serde_json::to_vec_pretty(value)
         .map_err(|err| format!("failed to encode dotenv approval JSON: {err}"))?;
-    fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))
+    fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    secure_dotenv_approval_file(path)?;
+    Ok(())
+}
+
+fn secure_dotenv_approval_directory(path: &Path) -> Result<(), String> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|err| format!("failed to chmod {}: {err}", path.display()))?;
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "decisions")
+        && let Some(parent) = path.parent()
+    {
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+            .map_err(|err| format!("failed to chmod {}: {err}", parent.display()))?;
+    }
+    Ok(())
+}
+
+fn secure_dotenv_approval_file(path: &Path) -> Result<(), String> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .map_err(|err| format!("failed to chmod {}: {err}", path.display()))
 }
 
 #[cfg(target_os = "macos")]
@@ -3203,6 +3267,13 @@ mod tests {
         }
     }
 
+    fn dotenv_agent_export_env_marker_names() -> Vec<&'static str> {
+        DOTENV_AGENT_EXPORT_ENV_MARKERS
+            .iter()
+            .map(|(name, _source)| *name)
+            .collect()
+    }
+
     #[test]
     fn dotenv_parse_handles_comments_quotes_and_public_key() {
         let doc = DotenvDocument::parse(
@@ -3623,6 +3694,8 @@ mod tests {
     #[test]
     fn dotenv_codex_export_auto_rejection_preempts_remembered_approval() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let agent_env_markers = dotenv_agent_export_env_marker_names();
+        let _agent_env = DotenvEnvGuard::unset(&agent_env_markers);
         let _process_context = DotenvProcessContextGuard::codex_shell();
         let temp = TempDir::new().unwrap();
         let policy_path = temp.path().join("policy.json");
@@ -3661,6 +3734,72 @@ mod tests {
         assert!(error.contains("auto-rejected"), "{error}");
         assert!(error.contains("Codex.app"), "{error}");
         assert!(error.contains("hint: use `av dotenv run`"), "{error}");
+    }
+
+    #[test]
+    fn dotenv_agent_env_export_auto_rejection_preempts_remembered_approval() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let _process_context = DotenvProcessContextGuard::non_codex_shell();
+        let temp = TempDir::new().unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+            ("CODEX_SHELL", "1"),
+        ]);
+        write_dotenv_approval_policy(DotenvApprovalPolicy::RememberApproved).unwrap();
+        let entry = DotenvRememberedApprovalEntry {
+            mode: DotenvApprovalMode::Export,
+            env_file_path: "/tmp/project/.env".to_string(),
+            project_root: "/tmp/project".to_string(),
+            env_sha256: "sha".to_string(),
+            public_key_fingerprint: "fingerprint".to_string(),
+            keys: vec!["FOO".to_string()],
+        };
+        remember_dotenv_approval(entry.clone()).unwrap();
+
+        let error = request_dotenv_approval_if_needed(
+            entry.mode,
+            Path::new(&entry.env_file_path),
+            Path::new(&entry.project_root),
+            &entry.env_sha256,
+            &entry.public_key_fingerprint,
+            &entry.keys,
+            &[],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("auto-rejected"), "{error}");
+        assert!(error.contains("Codex"), "{error}");
+        assert!(error.contains("hint: use `av dotenv run`"), "{error}");
+    }
+
+    #[test]
+    fn dotenv_agent_export_rejects_before_private_key_lookup() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let _process_context = DotenvProcessContextGuard::non_codex_shell();
+        let temp = TempDir::new().unwrap();
+        let env_path = temp.path().join(".env");
+        let keypair = generate_dotenv_keypair(&env_path);
+        fs::write(
+            &env_path,
+            format!("DOTENV_PUBLIC_KEY={}\nFOO=plain\n", keypair.public_key),
+        )
+        .unwrap();
+        let _env = DotenvEnvGuard::set(&[("CODEX_SHELL", "1")]);
+        let store = StubDotenvPrivateKeyStore::default();
+
+        let error = load_dotenv_secrets(&env_path, DotenvApprovalMode::Export, &[], &store, None)
+            .unwrap_err();
+
+        assert!(error.contains("auto-rejected"), "{error}");
+        assert!(!error.contains("stub private key"), "{error}");
     }
 
     #[test]
@@ -3791,6 +3930,8 @@ mod tests {
     #[test]
     fn dotenv_system_policy_trust_and_approval_helpers_cover_edges() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let agent_env_markers = dotenv_agent_export_env_marker_names();
+        let _agent_env = DotenvEnvGuard::unset(&agent_env_markers);
         let _process_context = DotenvProcessContextGuard::non_codex_shell();
         let temp = TempDir::new().unwrap();
         let policy_path = temp.path().join("policy.json");
@@ -4349,6 +4490,8 @@ mod tests {
     #[test]
     fn dotenv_approval_store_paths_and_decisions_cover_json_edges() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let agent_env_markers = dotenv_agent_export_env_marker_names();
+        let _agent_env = DotenvEnvGuard::unset(&agent_env_markers);
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
         fs::create_dir_all(&home).unwrap();
@@ -4446,6 +4589,7 @@ mod tests {
             &stale_decision_path,
             &DotenvApprovalDecision {
                 id: "stale".to_string(),
+                approval_token: Some("stale-token".to_string()),
                 approved: true,
                 reason: None,
             },
@@ -4461,18 +4605,40 @@ mod tests {
         let pending = dotenv_pending_approval_path().unwrap();
         write_dotenv_json(&pending, &entry).unwrap();
         assert!(pending.is_file());
+        assert_eq!(
+            fs::metadata(&pending).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(pending.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
 
+        let approval_token = "approval-token";
         let decision_path = dotenv_decision_path("approved").unwrap();
         write_dotenv_json(
             &decision_path,
             &DotenvApprovalDecision {
                 id: "approved".to_string(),
+                approval_token: Some(approval_token.to_string()),
                 approved: true,
                 reason: None,
             },
         )
         .unwrap();
-        wait_for_dotenv_decision("approved", DotenvApprovalMode::Export).unwrap();
+        assert_eq!(
+            fs::metadata(decision_path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        wait_for_dotenv_decision("approved", approval_token, DotenvApprovalMode::Export).unwrap();
         assert!(!pending.exists());
         assert!(!decision_path.exists());
 
@@ -4481,13 +4647,15 @@ mod tests {
             &dotenv_decision_path("denied").unwrap(),
             &DotenvApprovalDecision {
                 id: "denied".to_string(),
+                approval_token: Some(approval_token.to_string()),
                 approved: false,
                 reason: None,
             },
         )
         .unwrap();
         assert_eq!(
-            wait_for_dotenv_decision("denied", DotenvApprovalMode::Export).unwrap_err(),
+            wait_for_dotenv_decision("denied", approval_token, DotenvApprovalMode::Export)
+                .unwrap_err(),
             "dotenv approval denied\nhint: use `av dotenv run` to run commands with this project's environment"
         );
 
@@ -4496,13 +4664,15 @@ mod tests {
             &dotenv_decision_path("run-denied").unwrap(),
             &DotenvApprovalDecision {
                 id: "run-denied".to_string(),
+                approval_token: Some(approval_token.to_string()),
                 approved: false,
                 reason: Some("Denied by operator".to_string()),
             },
         )
         .unwrap();
         assert_eq!(
-            wait_for_dotenv_decision("run-denied", DotenvApprovalMode::Run).unwrap_err(),
+            wait_for_dotenv_decision("run-denied", approval_token, DotenvApprovalMode::Run)
+                .unwrap_err(),
             "Denied by operator"
         );
 
@@ -4511,14 +4681,33 @@ mod tests {
             &dotenv_decision_path("mismatch").unwrap(),
             &DotenvApprovalDecision {
                 id: "other".to_string(),
+                approval_token: Some(approval_token.to_string()),
                 approved: true,
                 reason: None,
             },
         )
         .unwrap();
         assert_eq!(
-            wait_for_dotenv_decision("mismatch", DotenvApprovalMode::Export).unwrap_err(),
+            wait_for_dotenv_decision("mismatch", approval_token, DotenvApprovalMode::Export)
+                .unwrap_err(),
             "dotenv approval decision id mismatch"
+        );
+
+        write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
+        write_dotenv_json(
+            &dotenv_decision_path("token-mismatch").unwrap(),
+            &DotenvApprovalDecision {
+                id: "token-mismatch".to_string(),
+                approval_token: Some("wrong-token".to_string()),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_dotenv_decision("token-mismatch", approval_token, DotenvApprovalMode::Export)
+                .unwrap_err(),
+            "dotenv approval token mismatch"
         );
 
         fs::write(&remembered_path, "not json").unwrap();
@@ -4667,6 +4856,8 @@ mod tests {
     #[test]
     fn dotenv_load_export_and_run_cover_approval_bypass_paths() {
         let _lock = global_test_env_lock().lock().unwrap();
+        let agent_env_markers = dotenv_agent_export_env_marker_names();
+        let _agent_env = DotenvEnvGuard::unset(&agent_env_markers);
         let _process_context = DotenvProcessContextGuard::non_codex_shell();
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
@@ -4964,10 +5155,13 @@ mod tests {
 
     #[test]
     fn dotenv_renderers_and_default_paths_cover_remaining_branches() {
-        let _guard = DotenvEnvGuard::unset(&[
+        let _lock = global_test_env_lock().lock().unwrap();
+        let mut env_names = vec![
             AV_TEST_DOTENV_POLICY_PATH_ENV,
             AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
-        ]);
+        ];
+        env_names.extend(dotenv_agent_export_env_marker_names());
+        let _guard = DotenvEnvGuard::unset(&env_names);
 
         print_dotenv_hook("av", DotenvShell::Bash);
         print_dotenv_hook("av", DotenvShell::Zsh);
