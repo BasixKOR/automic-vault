@@ -3,7 +3,7 @@ use super::*;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use std::collections::BTreeMap;
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Read};
 
 #[cfg(target_os = "macos")]
 use std::ffi::{CString, c_char, c_int};
@@ -1913,14 +1913,7 @@ fn request_dotenv_approval(
     parent_process: DotenvParentProcessSnapshot,
     process_ancestry: Vec<DotenvProcessSnapshot>,
 ) -> Result<(), String> {
-    let request_id = format!(
-        "{}-{}",
-        process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|err| format!("failed to compute request timestamp: {err}"))?
-            .as_millis()
-    );
+    let request_id = new_dotenv_approval_request_id()?;
     let request = DotenvApprovalRequestSnapshot {
         id: request_id.clone(),
         mode: entry.mode,
@@ -1937,13 +1930,62 @@ fn request_dotenv_approval(
         parent_process,
         command: command.to_vec(),
     };
-    let pending_url = dotenv_pending_approval_path()?;
+    let pending_url = prepare_dotenv_approval_request_files(&request_id)?;
     write_dotenv_json(&pending_url, &request)?;
     if let Err(err) = ping_dotenv_approval_app() {
         let _ = fs::remove_file(&pending_url);
         return Err(err);
     }
     wait_for_dotenv_decision(&request_id, entry.mode)
+}
+
+fn new_dotenv_approval_request_id() -> Result<String, String> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|err| format!("failed to compute request timestamp: {err}"))?
+        .as_nanos();
+    let mut random = [0_u8; 16];
+    fill_dotenv_random_bytes(&mut random)?;
+    Ok(format!(
+        "{}-{timestamp}-{}",
+        process::id(),
+        encode_hex(&random)
+    ))
+}
+
+#[cfg(unix)]
+fn fill_dotenv_random_bytes(bytes: &mut [u8]) -> Result<(), String> {
+    File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(bytes))
+        .map_err(|err| format!("failed to read random bytes for dotenv approval: {err}"))
+}
+
+#[cfg(not(unix))]
+fn fill_dotenv_random_bytes(bytes: &mut [u8]) -> Result<(), String> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|err| format!("failed to compute request timestamp: {err}"))?
+        .as_nanos();
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = (timestamp.rotate_left((index % 8) as u32) as u8)
+            ^ (process::id().rotate_left((index % 4) as u32) as u8);
+    }
+    Ok(())
+}
+
+fn prepare_dotenv_approval_request_files(id: &str) -> Result<PathBuf, String> {
+    let decision_url = dotenv_decision_path(id)?;
+    match fs::remove_file(&decision_url) {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::NotFound => {}
+        Err(err) => {
+            return Err(format!(
+                "failed to remove stale dotenv approval decision {}: {err}",
+                decision_url.display()
+            ));
+        }
+    }
+    dotenv_pending_approval_path()
 }
 
 fn wait_for_dotenv_decision(id: &str, mode: DotenvApprovalMode) -> Result<(), String> {
@@ -4391,6 +4433,30 @@ mod tests {
                 .entries
                 .is_empty()
         );
+
+        let generated_id = new_dotenv_approval_request_id().unwrap();
+        let id_parts = generated_id.split('-').collect::<Vec<_>>();
+        assert_eq!(id_parts.len(), 3);
+        assert_eq!(id_parts[0], process::id().to_string());
+        assert_eq!(id_parts[2].len(), 32);
+        assert!(id_parts[2].chars().all(|ch| ch.is_ascii_hexdigit()));
+
+        let stale_decision_path = dotenv_decision_path("stale").unwrap();
+        write_dotenv_json(
+            &stale_decision_path,
+            &DotenvApprovalDecision {
+                id: "stale".to_string(),
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert!(stale_decision_path.is_file());
+        assert_eq!(
+            prepare_dotenv_approval_request_files("stale").unwrap(),
+            dotenv_pending_approval_path().unwrap()
+        );
+        assert!(!stale_decision_path.exists());
 
         let pending = dotenv_pending_approval_path().unwrap();
         write_dotenv_json(&pending, &entry).unwrap();
