@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.16";
+pub(crate) const PROTOCOL_VERSION: &str = "1.17";
 
 fn is_false(value: &bool) -> bool {
     !*value
