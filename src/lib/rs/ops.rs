@@ -1133,6 +1133,9 @@ fn get_dotenv_approval_policy() -> HelperCommandResult {
 
 fn set_dotenv_approval_policy(policy: dotenv::DotenvApprovalPolicy) -> HelperCommandResult {
     require_root()?;
+    if policy == dotenv::DotenvApprovalPolicy::ApproveEveryTime {
+        dotenv::clear_dotenv_remembered_approvals()?;
+    }
     dotenv::write_dotenv_approval_policy(policy)?;
     Ok(HelperCommandSuccess {
         message: "Dotenv approval policy updated".to_string(),
@@ -2052,6 +2055,19 @@ mod tests {
             )
             .is_ok()
         );
+        let remembered: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&approvals_path).unwrap()).unwrap();
+        assert_eq!(remembered["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            set_dotenv_approval_policy(dotenv::DotenvApprovalPolicy::ApproveEveryTime)
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("approve_every_time")
+        );
+        let remembered: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&approvals_path).unwrap()).unwrap();
+        assert!(remembered["entries"].as_array().unwrap().is_empty());
         assert!(events.lock().unwrap().iter().any(
             |event| matches!(event, ProgressEvent::Installing { package } if package == "coverage-missing-package" || package == PKG_DISPLAY_NAME)
         ));

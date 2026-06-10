@@ -2080,12 +2080,25 @@ fn remember_dotenv_approval(entry: DotenvRememberedApprovalEntry) -> Result<(), 
     )
 }
 
+pub(crate) fn clear_dotenv_remembered_approvals() -> Result<(), String> {
+    let path = dotenv_system_remembered_approvals_path();
+    clear_dotenv_remembered_approvals_at_path(
+        &path,
+        dotenv_system_remembered_approvals_requires_root_control(),
+    )
+}
+
 #[cfg(test)]
 fn remember_dotenv_approval_for_test(
     path: &Path,
     entry: DotenvRememberedApprovalEntry,
 ) -> Result<(), String> {
     remember_dotenv_approval_at_path(path, entry, false)
+}
+
+#[cfg(test)]
+fn clear_dotenv_remembered_approvals_for_test(path: &Path) -> Result<(), String> {
+    clear_dotenv_remembered_approvals_at_path(path, false)
 }
 
 fn remember_dotenv_approval_at_path(
@@ -2096,6 +2109,17 @@ fn remember_dotenv_approval_at_path(
     let mut store = load_dotenv_remembered_approvals_at_path(path, require_root_controlled_parent)?;
     store.remember(entry);
     write_dotenv_system_json(path, &store, require_root_controlled_parent)
+}
+
+fn clear_dotenv_remembered_approvals_at_path(
+    path: &Path,
+    require_root_controlled_parent: bool,
+) -> Result<(), String> {
+    write_dotenv_system_json(
+        path,
+        &DotenvRememberedApprovalStore::default(),
+        require_root_controlled_parent,
+    )
 }
 
 pub(crate) fn remember_dotenv_approval_from_helper(
@@ -4359,6 +4383,13 @@ mod tests {
                 .unwrap()
                 .entries,
             vec![entry.clone()]
+        );
+        clear_dotenv_remembered_approvals_for_test(&direct_remembered_path).unwrap();
+        assert!(
+            load_dotenv_remembered_approvals_for_test(&direct_remembered_path)
+                .unwrap()
+                .entries
+                .is_empty()
         );
 
         let pending = dotenv_pending_approval_path().unwrap();
