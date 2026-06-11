@@ -394,8 +394,9 @@ class NpmIndexTests(unittest.TestCase):
             self.assertEqual(state["full_scan_page_count"], 0)
             self.assertIsNone(state["full_scan_total_rows"])
 
-    def test_npm_collect_fails_without_usable_cache_on_rate_limit(self):
+    def test_npm_collect_explicit_full_scan_fails_without_usable_cache_on_rate_limit(self):
         build_db = load_build_db()
+        build_db.NPM_FULL_SCAN = True
         state = build_db._default_npm_index_state()
 
         with (
@@ -444,8 +445,9 @@ class NpmIndexTests(unittest.TestCase):
         self.assertEqual(list(packages), ["example-cli"])
         self.assertEqual(packages["example-cli"]["popularity"]["rank"], 1)
 
-    def test_npm_collect_runs_full_scan_until_one_has_completed(self):
+    def test_npm_collect_runs_explicit_full_scan(self):
         build_db = load_build_db()
+        build_db.NPM_FULL_SCAN = True
         state = build_db._default_npm_index_state()
         state["last_seq"] = "10"
         state["packages"] = {
@@ -494,6 +496,38 @@ class NpmIndexTests(unittest.TestCase):
             packages["openclaw"]["popularity"]["rank"],
             packages["seed-cli"]["popularity"]["rank"],
         )
+
+    def test_npm_collect_skips_incomplete_full_scan_without_flag(self):
+        build_db = load_build_db()
+        state = build_db._default_npm_index_state()
+        state["last_seq"] = "10"
+        state["full_scan_cursor"] = "left-off"
+        state["packages"] = {
+            "seed-cli": {
+                "executable": "seed-cli",
+                "homepage": "",
+                "last_updated_at": "2026-01-01T00:00:00.000Z",
+                "popularity": {"downloads_per_30_days": 60000, "rank": 99},
+                "summary": "seed",
+                "version": "1.0.0",
+            }
+        }
+
+        with (
+            mock.patch.object(build_db, "_read_npm_index_state", return_value=state),
+            mock.patch.object(build_db, "_run_npm_full_scan") as scan,
+            mock.patch.object(
+                build_db,
+                "_fetch_npm_changes_since",
+                return_value=(set(), set(), "11", False),
+            ) as changes,
+            mock.patch.object(build_db, "_write_npm_index_state"),
+        ):
+            packages = build_db._collect_npm_metadata()
+
+        scan.assert_not_called()
+        changes.assert_called_once_with("10")
+        self.assertEqual(list(packages), ["seed-cli"])
 
     def test_npm_changes_stop_at_refresh_limit_and_return_processed_sequence(self):
         build_db = load_build_db()

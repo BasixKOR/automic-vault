@@ -1595,17 +1595,17 @@ def _collect_npm_metadata():
     )
 
     try:
-        needs_full_scan = (
-            NPM_FULL_SCAN
-            or not packages
-            or state.get("full_scan_cursor")
-            or not state.get("last_full_scan_at")
-        )
         changes_since = state.get("last_seq")
-        if needs_full_scan:
+        if NPM_FULL_SCAN:
             changes_since = _current_npm_changes_sequence()
             print("Starting npm full metadata scan...", file=sys.stderr)
             _run_npm_full_scan(state)
+        elif state.get("full_scan_cursor") or not state.get("last_full_scan_at"):
+            print(
+                "Skipping npm full metadata scan; run "
+                "scripts/build-db.py --npm-full-scan to refresh the full npm index",
+                file=sys.stderr,
+            )
 
         changed, deleted, next_seq, has_more_changes = _fetch_npm_changes_since(
             changes_since
