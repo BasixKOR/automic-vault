@@ -7,8 +7,35 @@ macro_rules! radioisotope_source {
     };
 }
 
+macro_rules! assert_missing_launcher_errors {
+    ($wrap:ident, $temp:ident) => {
+        assert!(
+            $wrap(&$temp.join("missing-launcher"))
+                .unwrap_err()
+                .contains("failed to read")
+        );
+    };
+}
+
+macro_rules! assert_missing_launcher_noops {
+    ($wrap:ident, $temp:ident) => {
+        let missing = $temp.join("missing-launcher");
+        let _ = $wrap(&missing).unwrap();
+        assert!(!missing.exists());
+    };
+}
+
 macro_rules! launcher_post_install_extra_tests {
     ($module:ident, $path:literal, $wrap:ident, $script:ident) => {
+        launcher_post_install_extra_tests!(
+            $module,
+            $path,
+            $wrap,
+            $script,
+            assert_missing_launcher_errors
+        );
+    };
+    ($module:ident, $path:literal, $wrap:ident, $script:ident, $missing_launcher_assertion:ident) => {
         mod $module {
             include!(radioisotope_source!($path));
 
@@ -60,9 +87,7 @@ macro_rules! launcher_post_install_extra_tests {
                     );
                     assert!(launcher_is_wrapped(&launcher).unwrap());
                     let _ = $wrap(&launcher).unwrap();
-                    if let Err(err) = $wrap(&temp.join("missing-launcher")) {
-                        assert!(err.contains("failed to read"));
-                    }
+                    $missing_launcher_assertion!($wrap, temp);
 
                     let invalid = temp.join("invalid");
                     fs::write(&invalid, [0xff, 0xfe]).unwrap();
@@ -135,6 +160,15 @@ macro_rules! launcher_post_install_extra_tests {
 
 macro_rules! two_stage_launcher_post_install_extra_tests {
     ($module:ident, $path:literal, $wrap:ident, $script:ident) => {
+        two_stage_launcher_post_install_extra_tests!(
+            $module,
+            $path,
+            $wrap,
+            $script,
+            assert_missing_launcher_errors
+        );
+    };
+    ($module:ident, $path:literal, $wrap:ident, $script:ident, $missing_launcher_assertion:ident) => {
         mod $module {
             include!(radioisotope_source!($path));
 
@@ -186,9 +220,7 @@ macro_rules! two_stage_launcher_post_install_extra_tests {
                     );
                     assert!(launcher_is_wrapped(&launcher).unwrap());
                     let _ = $wrap(&launcher).unwrap();
-                    if let Err(err) = $wrap(&temp.join("missing-launcher")) {
-                        assert!(err.contains("failed to read"));
-                    }
+                    $missing_launcher_assertion!($wrap, temp);
 
                     let invalid = temp.join("invalid");
                     fs::write(&invalid, [0xff, 0xfe]).unwrap();
@@ -607,31 +639,36 @@ launcher_post_install_extra_tests!(
     mariadb_post_install,
     "/mariadb/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_client_post_install,
     "/mysql-client/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_post_install,
     "/mysql/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_8_0_post_install,
     "/mysql@8.0/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_8_4_post_install,
     "/mysql@8.4/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     bitwarden_cli_post_install,
