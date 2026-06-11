@@ -5,13 +5,19 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 automation_dir="${repo_root}/cache/automation"
+av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
+av_www_root="${AV_WWW_ROOT:-${repo_root}/../av.www}"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/automation-runner.sh <db|pkg-origin|npm-full-scan>
 
-Run one scheduled Automic Vault maintenance job with repo-local logging,
-environment loading, locking, timeout handling, and status recording.
+Compatibility dispatcher for moved Automic Vault maintenance jobs.
+
+Delegates:
+  db             -> ../av.db/scripts/automation-runner.sh db
+  npm-full-scan  -> ../av.db/scripts/automation-runner.sh npm-full-scan
+  pkg-origin     -> ../av.www/scripts/automation-runner.sh pkg-origin
 EOF
 }
 
@@ -145,6 +151,15 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   usage
   exit 0
 fi
+
+case "${1:-}" in
+  db|npm-full-scan)
+    exec "${av_db_root}/scripts/automation-runner.sh" "$@"
+    ;;
+  pkg-origin)
+    exec "${av_www_root}/scripts/automation-runner.sh" "$@"
+    ;;
+esac
 
 if [[ "${1:-}" == "--run-unlocked" ]]; then
   [[ $# -eq 2 ]] || {

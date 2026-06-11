@@ -4,26 +4,15 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-automation_dir="${repo_root}/cache/automation"
+av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
+av_www_root="${AV_WWW_ROOT:-${repo_root}/../av.www}"
 
 printf 'workspace: %s\n' "${repo_root}"
+printf 'database workspace: %s\n' "${av_db_root}"
+printf 'website workspace: %s\n' "${av_www_root}"
 
-for job in db pkg-origin npm-full-scan; do
-  status_path="${automation_dir}/${job}.status.json"
-  log_path="${automation_dir}/${job}.log"
-  printf '\n== %s status ==\n' "${job}"
-  if [[ -f "${status_path}" ]]; then
-    cat "${status_path}"
-  else
-    printf 'no status yet\n'
-  fi
-  if [[ -f "${log_path}" ]]; then
-    printf '\n-- last 40 log lines: %s --\n' "${log_path}"
-    tail -40 "${log_path}"
-  fi
-done
+printf '\n# av.db automations\n'
+"${av_db_root}/scripts/codex-automation-status.sh"
 
-printf '\n== active maintenance processes ==\n'
-ps -axo pid,ppid,etime,pcpu,pmem,stat,command \
-  | rg 'automation-runner|update-db|run-pkg-origin-update|build-db.py --refresh|generate-pkg|deploy-pkg-origin' \
-  | rg -v 'rg automation-runner|rg -v' || true
+printf '\n# av.www automations\n'
+"${av_www_root}/scripts/codex-automation-status.sh"
