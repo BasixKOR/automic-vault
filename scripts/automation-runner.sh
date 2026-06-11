@@ -161,4 +161,12 @@ fi
 }
 
 mkdir -p "${automation_dir}"
-exec lockf -t 0 "${automation_dir}/$1.lock" "$0" --run-unlocked "$1"
+case "$1" in
+  db|npm-full-scan)
+    lock_name="db"
+    ;;
+  *)
+    lock_name="$1"
+    ;;
+esac
+exec lockf -t 0 "${automation_dir}/${lock_name}.lock" "$0" --run-unlocked "$1"
