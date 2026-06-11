@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+import os as _av_os
+import runpy as _av_runpy
+import sys as _av_sys
+from pathlib import Path as _AvPath
+
+if __name__ == "__main__" and _av_os.environ.get("AV_USE_LOCAL_DB_GENERATORS") != "1":
+    _av_root = _AvPath(_av_os.environ.get("AV_DB_ROOT", _AvPath(__file__).resolve().parents[2] / "av.db")).expanduser()
+    _av_target = _av_root / "scripts" / _AvPath(__file__).name
+    if not _av_target.exists():
+        raise SystemExit(f"missing av.db script: {_av_target}")
+    _av_sys.path.insert(0, str(_av_target.parent))
+    _av_runpy.run_path(str(_av_target), run_name="__main__")
+    raise SystemExit
+
 import argparse
 import datetime as dt
 import hashlib

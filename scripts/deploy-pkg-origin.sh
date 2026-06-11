@@ -4,6 +4,13 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
+av_www_root="${AV_WWW_ROOT:-${repo_root}/../av.www}"
+target="${av_www_root}/scripts/$(basename "$0")"
+if [[ ! -x "${target}" ]]; then
+  echo "missing av.www package-origin deploy script: ${target}" >&2
+  exit 1
+fi
+exec "${target}" "$@"
 
 ATLAS_SSH_TARGET="${ATLAS_SSH_TARGET:-ec2-user@16.58.147.215}"
 DEPLOY_PORT="${DEPLOY_PORT:-22}"

@@ -4,6 +4,13 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
+av_www_root="${AV_WWW_ROOT:-${repo_root}/../av.www}"
+target="${av_www_root}/scripts/$(basename "$0")"
+if [[ ! -x "${target}" ]]; then
+  echo "missing av.www package-origin update script: ${target}" >&2
+  exit 1
+fi
+exec "${target}" "$@"
 
 cd "${repo_root}"
 

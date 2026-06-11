@@ -2,6 +2,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-env-changed=NUKE_BUILD_ID");
     println!("cargo:rerun-if-env-changed=AV_DOTENV_KEYCHAIN_ACCESS_GROUP");
+    prepare_packaged_combined_db();
     let build_id = build_id();
     println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");
     println!(
@@ -93,6 +94,28 @@ fn team_identifier_from_identity(identity: &str) -> Option<String> {
         Some(candidate.to_string())
     } else {
         None
+    }
+}
+
+fn prepare_packaged_combined_db() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let repo_root = std::path::Path::new(&manifest_dir);
+    println!("cargo:rerun-if-env-changed=AV_COMBINED_DB_PATH");
+    let source = path_env_or_default(
+        "AV_COMBINED_DB_PATH",
+        repo_root.join("../av.db/cache/automic-vault/combined.json"),
+    );
+    let fallback = repo_root.join("data/combined.json");
+    let selected = if source.exists() { source } else { fallback };
+    println!("cargo:rerun-if-changed={}", selected.display());
+
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+    let output_path = std::path::Path::new(&out_dir).join("combined.json");
+    if let Err(err) = std::fs::copy(&selected, &output_path) {
+        panic!(
+            "failed to prepare packaged combined database from {}: {err}",
+            selected.display()
+        );
     }
 }
 

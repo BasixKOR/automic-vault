@@ -241,6 +241,7 @@ fi
 if [[ -n "$MENU_PROVISIONING_PROFILE" ]]; then
   MENU_PROVISIONING_PROFILE="$(normalize_profile_path "$MENU_PROVISIONING_PROFILE")"
 fi
+COMBINED_DB_PATH="${AV_COMBINED_DB_PATH:-${ROOT_DIR}/../av.db/cache/automic-vault/combined.json}"
 
 cli_step "Validating package database"
 if package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"; then
@@ -861,7 +862,7 @@ fi
 
 cli_step "Assembling app bundle"
 cp "$RUST_BIN_DIR/av" "$RESOURCES_DIR/av"
-cp "$ROOT_DIR/data/combined.json" "$RESOURCES_DIR/combined.json"
+cp "$COMBINED_DB_PATH" "$RESOURCES_DIR/combined.json"
 rm -f "$RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$RESOURCES_DIR/enrichment-manifests.json"
 cp "$RUST_BIN_DIR/nuke-helper" "$HELPER_EXECUTABLE"
@@ -870,7 +871,7 @@ copy_localizations "$RESOURCES_DIR"
 copy_pack_images "$RESOURCES_DIR"
 cp "$ICON_ICNS" "$MENU_RESOURCES_DIR/$MENU_APP_ICON_NAME.icns"
 cp "$RUST_BIN_DIR/av" "$MENU_RESOURCES_DIR/av"
-cp "$ROOT_DIR/data/combined.json" "$MENU_RESOURCES_DIR/combined.json"
+cp "$COMBINED_DB_PATH" "$MENU_RESOURCES_DIR/combined.json"
 rm -f "$MENU_RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$MENU_RESOURCES_DIR/enrichment-manifests.json"
 copy_localizations "$MENU_RESOURCES_DIR"

@@ -132,7 +132,7 @@ mod post_install_hooks {
 
 const DB_SCHEMA_VERSION: u32 = 7;
 #[cfg(all(not(test), feature = "packaged-db"))]
-const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("../../../data/combined.json");
+const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/combined.json"));
 #[cfg(any(test, not(feature = "packaged-db")))]
 const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("fixtures/coverage-combined.json");
 const EMBEDDED_POST_INSTALL_CHECK_SKIP: &str =

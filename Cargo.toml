@@ -6,7 +6,6 @@ autobins = false
 build = "build.rs"
 
 [workspace]
-members = ["src/web"]
 resolver = "3"
 
 [features]

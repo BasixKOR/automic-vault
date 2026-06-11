@@ -4,9 +4,9 @@ set -uo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-combined_path="${repo_root}/data/combined.json"
-radioisotopes_dir="${repo_root}/data/radioisotopes"
 av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
+combined_path="${AV_COMBINED_DB_PATH:-${av_db_root}/cache/automic-vault/combined.json}"
+radioisotopes_dir="${repo_root}/data/radioisotopes"
 cache_control="public, no-cache"
 color_mode="auto"
 isotope_args=()
@@ -17,7 +17,8 @@ Usage: scripts/update-db.sh [--skip-isotope-builds] [--once]
                             [--color auto|always|never] [--no-color]
 
 Refresh isotope metadata, refresh the av.db Homebrew authority, rebuild the
-package database, rebuild data/combined.json, and upload it as /db.json.
+package database, rebuild av.db's cache/automic-vault/combined.json, and upload
+it as /db.json.
 
 This script runs one update and exits. Use scripts/update-all for the
 hourly database loop and daily package-page deploy cadence.
@@ -164,7 +165,7 @@ log() {
 
 log_header() {
   log INFO "${bold}Publishing combined database${reset}"
-  log INFO "${dim}data/combined.json -> s3://${WWW_BUCKET}/db.json${reset}"
+  log INFO "${dim}${combined_path} -> s3://${WWW_BUCKET}/db.json${reset}"
 }
 
 die() {
