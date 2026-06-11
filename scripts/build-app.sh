@@ -873,8 +873,8 @@ fi
 
 if uses_real_codesign_identity; then
   cli_step "Signing bundle with Developer ID"
-  sign_binary "$RESOURCES_DIR/av" "$APP_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
-  sign_binary "$MENU_RESOURCES_DIR/av" "$MENU_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
+  sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av"
+  sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av"
   sign_binary \
     "$HELPER_EXECUTABLE" \
     "$HELPER_BUNDLE_ID" \
@@ -887,8 +887,8 @@ if uses_real_codesign_identity; then
     "$DOTENV_ENTITLEMENTS"
 else
   cli_step "Signing bundle ad-hoc"
-  adhoc_sign_binary "$RESOURCES_DIR/av" "$DOTENV_ENTITLEMENTS"
-  adhoc_sign_binary "$MENU_RESOURCES_DIR/av" "$DOTENV_ENTITLEMENTS"
+  adhoc_sign_binary "$RESOURCES_DIR/av"
+  adhoc_sign_binary "$MENU_RESOURCES_DIR/av"
   adhoc_sign_binary \
     "$HELPER_EXECUTABLE" \
     "$HELPER_ENTITLEMENTS"
@@ -906,8 +906,6 @@ verify_codesign_signature "$MENU_EXECUTABLE" "menu helper executable"
 verify_codesign_signature "$MENU_APP_DIR" "menu helper app"
 verify_codesign_signature "$APP_DIR" "Automic Vault app"
 if [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" == "true" ]]; then
-  verify_keychain_access_group_entitlement "$RESOURCES_DIR/av" "bundled av"
-  verify_keychain_access_group_entitlement "$MENU_RESOURCES_DIR/av" "menu bundled av"
   verify_keychain_access_group_entitlement "$MENU_APP_DIR" "menu helper app"
   verify_keychain_access_group_entitlement "$APP_DIR" "Automic Vault app"
 fi

@@ -14,6 +14,13 @@ Companion apps that need dotenv private-key access must be signed by Team ID
 team are not enough by themselves; macOS grants access only to signed binaries
 with the shared keychain access-group entitlement.
 
+Developer ID macOS builds that carry this restricted entitlement must also
+include an eligible provisioning profile. Embed it in each entitled app bundle
+as `Contents/embedded.provisionprofile` before signing. A loose command-line
+executable cannot carry an embedded app-bundle provisioning profile; do not add
+the keychain-sharing entitlement to loose helper binaries unless they are
+packaged with their own eligible profile context.
+
 Every dotenv private-key `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`,
 and `SecItemDelete` query against the shared store must include:
 
