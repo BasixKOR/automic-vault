@@ -235,7 +235,29 @@ class NpmFetchTests(unittest.TestCase):
             )
 
         self.assertEqual(downloads, {"@scope/example": 654321, "plain": 654321})
-        self.assertEqual(len(urls), 3)
+        self.assertEqual(len(urls), 2)
+        self.assertFalse(any("," in url for url in urls))
+
+    def test_npm_download_batch_can_skip_single_package_fallback(self):
+        build_db = load_build_db()
+        urls = []
+
+        def fetch(url, accept="application/json", use_cache=True):
+            urls.append(url)
+            raise build_db.NpmTransientFetchError("no batch")
+
+        with mock.patch.object(build_db, "_npm_fetch_json", fetch):
+            downloads = build_db._npm_monthly_downloads_batch(
+                ["@scope/example", "plain"],
+                {},
+                allow_single_fallback=False,
+            )
+
+        self.assertEqual(downloads, {})
+        self.assertEqual(
+            urls,
+            [build_db._npm_downloads_batch_url(["plain"])],
+        )
 
     def test_npm_download_batches_split_by_count_and_url_length(self):
         build_db = load_build_db()

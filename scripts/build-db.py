@@ -1084,6 +1084,10 @@ def _npm_downloads_batch_url(packages):
     return f"{NPM_DOWNLOADS_POINT_ROOT}/{urllib.parse.quote(joined, safe='@/,')}"
 
 
+def _npm_package_supports_downloads_batch(package):
+    return not package.startswith("@")
+
+
 def _npm_download_batches(packages):
     batch = []
     for package in packages:
@@ -1328,20 +1332,38 @@ def _fetch_npm_changes_since(last_seq, max_changes=NPM_CHANGE_REFRESH_LIMIT):
     return changed, deleted, next_seq, False
 
 
-def _npm_monthly_downloads_batch(packages, existing_packages):
+def _npm_monthly_downloads_batch(
+    packages,
+    existing_packages,
+    allow_single_fallback=True,
+):
     downloads = {}
+    missing_packages = []
     for package in packages:
         stale = existing_packages.get(package) or {}
         popularity = stale.get("popularity") or {}
         stale_downloads = _parse_count(popularity.get("downloads_per_30_days"))
         if stale_downloads is not None:
             downloads[package] = stale_downloads
+        else:
+            missing_packages.append(package)
 
-    for batch in _npm_download_batches(packages):
+    batchable_packages = [
+        package
+        for package in missing_packages
+        if _npm_package_supports_downloads_batch(package)
+    ]
+    single_packages = [
+        package
+        for package in missing_packages
+        if not _npm_package_supports_downloads_batch(package)
+    ]
+
+    for batch in _npm_download_batches(batchable_packages):
         try:
             payload = _npm_fetch_json(_npm_downloads_batch_url(batch))
         except NpmFetchError as err:
-            if not isinstance(err, NpmRateLimitExceeded):
+            if allow_single_fallback and not isinstance(err, NpmRateLimitExceeded):
                 for package in batch:
                     try:
                         payload = _npm_fetch_json(_npm_downloads_url(package))
@@ -1372,6 +1394,16 @@ def _npm_monthly_downloads_batch(packages, existing_packages):
             count = _parse_count(item.get("downloads"))
             if count is not None:
                 downloads[package] = count
+    if allow_single_fallback:
+        for package in single_packages:
+            try:
+                payload = _npm_fetch_json(_npm_downloads_url(package))
+            except NpmFetchError:
+                continue
+            if isinstance(payload, dict):
+                count = _parse_count(payload.get("downloads"))
+                if count is not None:
+                    downloads[package] = count
     return downloads
 
 
@@ -1490,7 +1522,11 @@ def _run_npm_full_scan(state):
                 continue
             if isinstance(package, str) and package:
                 page_packages.append(package)
-        downloads = _npm_monthly_downloads_batch(page_packages, packages)
+        downloads = _npm_monthly_downloads_batch(
+            page_packages,
+            packages,
+            allow_single_fallback=False,
+        )
         popular_packages = [
             package
             for package in page_packages
