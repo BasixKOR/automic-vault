@@ -2028,8 +2028,15 @@ fn wait_for_dotenv_decision(
             if decision.id != id {
                 return Err("dotenv approval decision id mismatch".to_string());
             }
-            if decision.approval_token.as_deref() != Some(approval_token) {
-                return Err("dotenv approval token mismatch".to_string());
+            match decision.approval_token.as_deref() {
+                Some(token) if token == approval_token => {}
+                Some(_) => return Err("dotenv approval token mismatch".to_string()),
+                None => {
+                    return Err(
+                        "dotenv approval decision missing token; update the approval client"
+                            .to_string(),
+                    );
+                }
             }
             let _ = fs::remove_file(&pending_url);
             let _ = fs::remove_file(&decision_url);
@@ -4722,6 +4729,23 @@ mod tests {
             wait_for_dotenv_decision("token-mismatch", approval_token, DotenvApprovalMode::Export)
                 .unwrap_err(),
             "dotenv approval token mismatch"
+        );
+
+        write_dotenv_json(&dotenv_pending_approval_path().unwrap(), &entry).unwrap();
+        write_dotenv_json(
+            &dotenv_decision_path("missing-token").unwrap(),
+            &DotenvApprovalDecision {
+                id: "missing-token".to_string(),
+                approval_token: None,
+                approved: true,
+                reason: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            wait_for_dotenv_decision("missing-token", approval_token, DotenvApprovalMode::Export)
+                .unwrap_err(),
+            "dotenv approval decision missing token; update the approval client"
         );
 
         fs::write(&remembered_path, "not json").unwrap();
