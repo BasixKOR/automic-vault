@@ -33,21 +33,6 @@ scripts/automation-runner.sh pkg-origin
 After it finishes, inspect cache/automation/pkg-origin.status.json and the tail of cache/automation/pkg-origin.log. If it failed or timed out, diagnose the failure, make the smallest safe fix in the repo, run the relevant tests, commit at a sensible interval, and then rerun scripts/automation-runner.sh pkg-origin once. Remember that package catalog routes are served by av-web from cache/pkg.sqlite locally and /var/lib/automic-vault-web/pkg.sqlite on Atlas; keep public /db.json backward-compatible.
 ```
 
-## Daily NPM Full Scan
-
-Schedule: daily at 00:15 local time.
-
-Prompt:
-
-```text
-In /Users/mxcl/src/automic-vault, run the daily Automic Vault npm full metadata scan.
-
-Use this command:
-scripts/automation-runner.sh npm-full-scan
-
-After it finishes, inspect cache/automation/npm-full-scan.status.json and the tail of cache/automation/npm-full-scan.log. If it failed or timed out, diagnose the failure, make the smallest safe fix in the repo, run the relevant tests, commit at a sensible interval, and then rerun scripts/automation-runner.sh npm-full-scan once. This job refreshes the local npm metadata cache with an explicit full registry scan; the hourly database publish is responsible for publishing /db.json. Preserve public /db.json schema compatibility: do not bump scripts/build-db.py SCHEMA_VERSION or src/lib/rs/lib.rs DB_SCHEMA_VERSION for additive fields.
-```
-
 ## Health Check
 
 Schedule: every day at 08:00 local time.
@@ -60,5 +45,5 @@ In /Users/mxcl/src/automic-vault, check the Automic Vault Codex automation statu
 Use this command:
 scripts/codex-automation-status.sh
 
-If any job is failed, timed out, stale, or currently running far beyond its expected cadence, inspect the relevant log under cache/automation/, diagnose the issue, make the smallest safe fix in the repo, run the relevant tests, commit at a sensible interval, and rerun only the affected scripts/automation-runner.sh job once.
+If either job is failed, timed out, stale, or currently running far beyond its expected cadence, inspect the relevant log under cache/automation/, diagnose the issue, make the smallest safe fix in the repo, run the relevant tests, commit at a sensible interval, and rerun only the affected scripts/automation-runner.sh job once.
 ```
