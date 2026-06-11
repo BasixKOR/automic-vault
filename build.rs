@@ -60,12 +60,25 @@ fn dotenv_keychain_access_group() -> String {
         return group;
     }
     let team_id = non_empty_build_env_var("APPLE_TEAM_ID")
-        .or_else(|| non_empty_build_env_var("TEAM_IDENTIFIER"))
+        .and_then(valid_team_identifier)
+        .or_else(|| non_empty_build_env_var("TEAM_IDENTIFIER").and_then(valid_team_identifier))
         .or_else(|| {
             codesign_identity().and_then(|identity| team_identifier_from_identity(&identity))
         })
         .unwrap_or_else(|| "ZU76A67LGU".to_string());
     format!("{team_id}.com.automicvault.dotenv")
+}
+
+fn valid_team_identifier(value: String) -> Option<String> {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+        && !value.is_empty()
+    {
+        Some(value)
+    } else {
+        None
+    }
 }
 
 fn team_identifier_from_identity(identity: &str) -> Option<String> {

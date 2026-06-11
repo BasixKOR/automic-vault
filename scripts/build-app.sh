@@ -77,6 +77,13 @@ team_identifier_from_identity() {
   fi
 }
 
+valid_team_identifier() {
+  local team_identifier="$1"
+  if [[ "$team_identifier" =~ '^[A-Z0-9]+$' ]]; then
+    printf '%s' "$team_identifier"
+  fi
+}
+
 configure_dotenv_keychain_access_group() {
   if [[ -n "${AV_DOTENV_KEYCHAIN_ACCESS_GROUP:-}" ]]; then
     AV_DOTENV_KEYCHAIN_ACCESS_GROUP="$(unquote_build_env_value "$AV_DOTENV_KEYCHAIN_ACCESS_GROUP")"
@@ -86,10 +93,12 @@ configure_dotenv_keychain_access_group() {
 
   local team_identifier=""
   if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
-    team_identifier="$(unquote_build_env_value "$APPLE_TEAM_ID")"
-  elif [[ -n "${TEAM_IDENTIFIER:-}" ]]; then
-    team_identifier="$(unquote_build_env_value "$TEAM_IDENTIFIER")"
-  elif [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$APPLE_TEAM_ID")")"
+  fi
+  if [[ -z "$team_identifier" && -n "${TEAM_IDENTIFIER:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$TEAM_IDENTIFIER")")"
+  fi
+  if [[ -z "$team_identifier" && -n "${CODESIGN_IDENTITY:-}" ]]; then
     team_identifier="$(team_identifier_from_identity "$CODESIGN_IDENTITY")"
   fi
   [[ -n "$team_identifier" ]] || team_identifier="ZU76A67LGU"

@@ -2983,6 +2983,7 @@ trait DotenvKeychainBackend {
         access_group: &str,
         value: &str,
     ) -> Result<(), String>;
+    #[allow(dead_code)]
     fn delete_new(&self, service: &str, account: &str, access_group: &str) -> Result<bool, String>;
     fn read_legacy_if_present(
         &self,
@@ -3374,6 +3375,7 @@ fn bridge_write_dotenv_private_key_to_new_store(
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn bridge_delete_dotenv_private_key_from_new_store(
     service: &str,
     account: &str,
