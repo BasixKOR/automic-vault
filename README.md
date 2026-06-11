@@ -1,5 +1,13 @@
 # Automic Vault
 
+<p align="center">
+  <img
+    src="assets/readme-loop.gif"
+    alt="Automic Vault CLI in three steps: av scan finds plaintext credentials in ~/.netrc and .env, av save stores the secret in the Automic Vault keychain, and av contain gates a risky npm publish for human approval."
+    width="900"
+  />
+</p>
+
 Secure the tools you `brew install`.
 
 Homebrew made installing developer tools effortless. AI agents changed who is
