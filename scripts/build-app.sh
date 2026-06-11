@@ -111,6 +111,15 @@ uses_real_codesign_identity() {
   [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]
 }
 
+normalize_profile_path() {
+  local path="$1"
+  path="$(unquote_build_env_value "$path")"
+  if [[ "$path" == "~/"* ]]; then
+    path="$HOME/${path#~/}"
+  fi
+  printf '%s' "$path"
+}
+
 rust_protocol_version() {
   awk -F'"' '/PROTOCOL_VERSION[[:space:]]*:/ { print $2; exit }' "$ROOT_DIR/src/lib/rs/core.rs"
 }
@@ -224,6 +233,14 @@ fi
 APP_BUNDLE_ID="com.automicvault"
 MENU_BUNDLE_ID="com.automicvault.menu-helper"
 HELPER_BUNDLE_ID="com.automicvault.nuke-helper"
+APP_PROVISIONING_PROFILE="${AV_APP_PROVISIONING_PROFILE:-}"
+MENU_PROVISIONING_PROFILE="${AV_MENU_PROVISIONING_PROFILE:-}"
+if [[ -n "$APP_PROVISIONING_PROFILE" ]]; then
+  APP_PROVISIONING_PROFILE="$(normalize_profile_path "$APP_PROVISIONING_PROFILE")"
+fi
+if [[ -n "$MENU_PROVISIONING_PROFILE" ]]; then
+  MENU_PROVISIONING_PROFILE="$(normalize_profile_path "$MENU_PROVISIONING_PROFILE")"
+fi
 
 cli_step "Validating package database"
 if package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"; then
@@ -454,6 +471,93 @@ verify_codesign_signature() {
   fi
 }
 
+decode_provisioning_profile() {
+  local profile_path="$1"
+  local output_path="$2"
+
+  if /usr/bin/security cms -D -i "$profile_path" >"$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  if command -v openssl >/dev/null 2>&1 &&
+      openssl smime \
+        -inform DER \
+        -verify \
+        -noverify \
+        -in "$profile_path" \
+        -out "$output_path" \
+        >/dev/null 2>&1; then
+    return 0
+  fi
+
+  cli_die "Unable to decode provisioning profile: $profile_path"
+}
+
+profile_plist_value() {
+  local plist_path="$1"
+  local key_path="$2"
+
+  /usr/libexec/PlistBuddy -c "Print $key_path" "$plist_path" 2>/dev/null || true
+}
+
+validate_provisioning_profile() {
+  local profile_path="$1"
+  local bundle_id="$2"
+  local label="$3"
+  local decoded_path app_identifier team_identifier expected_app_identifier keychain_groups
+
+  [[ -f "$profile_path" ]] || cli_die "$label provisioning profile not found: $profile_path"
+
+  decoded_path="$(mktemp "$BUILD_DIR/${label//[^A-Za-z0-9]/-}.profile.XXXXXX.plist")"
+  decode_provisioning_profile "$profile_path" "$decoded_path"
+
+  app_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.application-identifier")"
+  team_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.developer.team-identifier")"
+  keychain_groups="$(profile_plist_value "$decoded_path" ":Entitlements:keychain-access-groups")"
+  rm -f "$decoded_path"
+
+  expected_app_identifier="${team_identifier}.${bundle_id}"
+  if [[ -z "$team_identifier" || "$app_identifier" != "$expected_app_identifier" ]]; then
+    cli_error "Profile application identifier: ${app_identifier:-missing}"
+    cli_die "$label provisioning profile must contain application identifier $expected_app_identifier"
+  fi
+
+  if [[ "$AV_DOTENV_KEYCHAIN_ACCESS_GROUP" != "${team_identifier}."* ]]; then
+    cli_error "Profile team identifier: $team_identifier"
+    cli_die "$label provisioning profile team does not match access group $AV_DOTENV_KEYCHAIN_ACCESS_GROUP"
+  fi
+
+  if [[ "$keychain_groups" != *"$AV_DOTENV_KEYCHAIN_ACCESS_GROUP"* &&
+        "$keychain_groups" != *"${team_identifier}.*"* ]]; then
+    cli_error "$keychain_groups"
+    cli_die "$label provisioning profile does not cover keychain access group $AV_DOTENV_KEYCHAIN_ACCESS_GROUP"
+  fi
+}
+
+require_dotenv_provisioning_profiles() {
+  [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" == "true" ]] || return 0
+
+  if [[ -z "$APP_PROVISIONING_PROFILE" ]]; then
+    cli_die "Set AV_APP_PROVISIONING_PROFILE to the Developer ID profile for $APP_BUNDLE_ID"
+  fi
+  if [[ -z "$MENU_PROVISIONING_PROFILE" ]]; then
+    cli_die "Set AV_MENU_PROVISIONING_PROFILE to the Developer ID profile for $MENU_BUNDLE_ID"
+  fi
+
+  validate_provisioning_profile "$APP_PROVISIONING_PROFILE" "$APP_BUNDLE_ID" "Automic Vault app"
+  validate_provisioning_profile "$MENU_PROVISIONING_PROFILE" "$MENU_BUNDLE_ID" "menu helper app"
+}
+
+embed_provisioning_profile() {
+  local profile_path="$1"
+  local target_bundle="$2"
+  local bundle_id="$3"
+  local label="$4"
+
+  validate_provisioning_profile "$profile_path" "$bundle_id" "$label"
+  cp "$profile_path" "$target_bundle/Contents/embedded.provisionprofile"
+}
+
 build_icon() {
   local source_png="$1"
   local iconset_dir="$2"
@@ -544,6 +648,7 @@ mkdir -p "$BUILD_DIR"
 if [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" != "true" ]]; then
   cli_warn "Skipping dotenv keychain access-group entitlement for ad-hoc signing"
 fi
+require_dotenv_provisioning_profiles
 write_entitlements "$DOTENV_ENTITLEMENTS" "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED"
 write_entitlements "$HELPER_ENTITLEMENTS" false
 cli_step "Building Rust binaries"
@@ -585,6 +690,9 @@ mkdir -p \
   "$HELPERS_DIR" \
   "$MENU_MACOS_DIR" \
   "$MENU_RESOURCES_DIR"
+rm -f \
+  "$APP_DIR/Contents/embedded.provisionprofile" \
+  "$MENU_APP_DIR/Contents/embedded.provisionprofile"
 
 cp "$SWIFT_PACKAGE_BIN_DIR/AutomicVaultApp" "$EXECUTABLE"
 
@@ -749,10 +857,24 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" == "true" ]]; then
+  cli_step "Embedding Developer ID provisioning profiles"
+  embed_provisioning_profile \
+    "$APP_PROVISIONING_PROFILE" \
+    "$APP_DIR" \
+    "$APP_BUNDLE_ID" \
+    "Automic Vault app"
+  embed_provisioning_profile \
+    "$MENU_PROVISIONING_PROFILE" \
+    "$MENU_APP_DIR" \
+    "$MENU_BUNDLE_ID" \
+    "menu helper app"
+fi
+
 if uses_real_codesign_identity; then
   cli_step "Signing bundle with Developer ID"
-  sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
-  sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
+  sign_binary "$RESOURCES_DIR/av" "$APP_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
+  sign_binary "$MENU_RESOURCES_DIR/av" "$MENU_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
   sign_binary \
     "$HELPER_EXECUTABLE" \
     "$HELPER_BUNDLE_ID" \
