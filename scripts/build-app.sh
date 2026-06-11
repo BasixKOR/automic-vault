@@ -496,11 +496,148 @@ decode_provisioning_profile() {
   cli_die "Unable to decode provisioning profile: $profile_path"
 }
 
+try_decode_provisioning_profile() {
+  local profile_path="$1"
+  local output_path="$2"
+
+  if /usr/bin/security cms -D -i "$profile_path" >"$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  if command -v openssl >/dev/null 2>&1 &&
+      openssl smime \
+        -inform DER \
+        -verify \
+        -noverify \
+        -in "$profile_path" \
+        -out "$output_path" \
+        >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
 profile_plist_value() {
   local plist_path="$1"
   local key_path="$2"
 
   /usr/libexec/PlistBuddy -c "Print $key_path" "$plist_path" 2>/dev/null || true
+}
+
+profile_matches_bundle() {
+  local profile_path="$1"
+  local bundle_id="$2"
+  local decoded_path app_identifier team_identifier expected_app_identifier keychain_groups
+
+  decoded_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-profile.XXXXXX.plist")"
+  if ! try_decode_provisioning_profile "$profile_path" "$decoded_path"; then
+    rm -f "$decoded_path"
+    return 1
+  fi
+
+  app_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.application-identifier")"
+  team_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.developer.team-identifier")"
+  keychain_groups="$(profile_plist_value "$decoded_path" ":Entitlements:keychain-access-groups")"
+  rm -f "$decoded_path"
+
+  expected_app_identifier="${team_identifier}.${bundle_id}"
+  [[ -n "$team_identifier" ]] || return 1
+  [[ "$app_identifier" == "$expected_app_identifier" ]] || return 1
+  [[ "$AV_DOTENV_KEYCHAIN_ACCESS_GROUP" == "${team_identifier}."* ]] || return 1
+  [[ "$keychain_groups" == *"$AV_DOTENV_KEYCHAIN_ACCESS_GROUP"* ||
+     "$keychain_groups" == *"${team_identifier}.*"* ]]
+}
+
+describe_provisioning_profile() {
+  local profile_path="$1"
+  local decoded_path name app_identifier team_identifier keychain_groups
+
+  decoded_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-profile.XXXXXX.plist")"
+  if ! try_decode_provisioning_profile "$profile_path" "$decoded_path"; then
+    rm -f "$decoded_path"
+    cli_error "  $profile_path: unable to decode"
+    return
+  fi
+
+  name="$(profile_plist_value "$decoded_path" ":Name")"
+  app_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.application-identifier")"
+  team_identifier="$(profile_plist_value "$decoded_path" ":Entitlements:com.apple.developer.team-identifier")"
+  keychain_groups="$(profile_plist_value "$decoded_path" ":Entitlements:keychain-access-groups" | tr '\n' ' ')"
+  rm -f "$decoded_path"
+
+  cli_info "$profile_path"
+  cli_info "  name: ${name:-unknown}"
+  cli_info "  application-identifier: ${app_identifier:-missing}"
+  cli_info "  team: ${team_identifier:-missing}"
+  cli_info "  keychain-access-groups: ${keychain_groups:-missing}"
+}
+
+print_provisioning_profile_diagnostics() {
+  local bundle_id="$1"
+  local env_var="$2"
+  local search_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+  local team_identifier="${AV_DOTENV_KEYCHAIN_ACCESS_GROUP%%.*}"
+  local profile found=false
+
+  cli_error "No matching Developer ID provisioning profile found for $bundle_id."
+  cli_error "Required application-identifier: ${team_identifier}.${bundle_id}"
+  cli_error "Required keychain access group: $AV_DOTENV_KEYCHAIN_ACCESS_GROUP"
+  cli_error "Searched: $search_dir"
+
+  if [[ -d "$search_dir" ]]; then
+    while IFS= read -r profile; do
+      if [[ "$found" == "false" ]]; then
+        cli_error "Installed profiles:"
+        found=true
+      fi
+      describe_provisioning_profile "$profile"
+    done < <(find "$search_dir" -type f \( -name '*.provisionprofile' -o -name '*.mobileprovision' \) 2>/dev/null | sort)
+  fi
+
+  if [[ "$found" == "false" ]]; then
+    cli_error "Installed profiles: none"
+  fi
+
+  cli_die "Set $env_var to an explicit profile path if it is stored elsewhere."
+}
+
+find_provisioning_profile() {
+  local bundle_id="$1"
+  local search_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+  local profile
+  [[ -d "$search_dir" ]] || return 1
+
+  while IFS= read -r profile; do
+    if profile_matches_bundle "$profile" "$bundle_id"; then
+      printf '%s\n' "$profile"
+      return 0
+    fi
+  done < <(find "$search_dir" -type f \( -name '*.provisionprofile' -o -name '*.mobileprovision' \) 2>/dev/null | sort)
+
+  return 1
+}
+
+resolve_provisioning_profile() {
+  local current_profile="$1"
+  local bundle_id="$2"
+  local env_var="$3"
+  local label="$4"
+
+  if [[ -n "$current_profile" ]]; then
+    current_profile="$(normalize_profile_path "$current_profile")"
+    [[ -f "$current_profile" ]] || cli_die "$label provisioning profile not found: $current_profile"
+    printf '%s\n' "$current_profile"
+    return 0
+  fi
+
+  if current_profile="$(find_provisioning_profile "$bundle_id")"; then
+    cli_info "Using $label provisioning profile: $current_profile"
+    printf '%s\n' "$current_profile"
+    return 0
+  fi
+
+  print_provisioning_profile_diagnostics "$bundle_id" "$env_var"
 }
 
 validate_provisioning_profile() {
@@ -540,12 +677,20 @@ validate_provisioning_profile() {
 require_dotenv_provisioning_profiles() {
   [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" == "true" ]] || return 0
 
-  if [[ -z "$APP_PROVISIONING_PROFILE" ]]; then
-    cli_die "Set AV_APP_PROVISIONING_PROFILE to the Developer ID profile for $APP_BUNDLE_ID"
-  fi
-  if [[ -z "$MENU_PROVISIONING_PROFILE" ]]; then
-    cli_die "Set AV_MENU_PROVISIONING_PROFILE to the Developer ID profile for $MENU_BUNDLE_ID"
-  fi
+  APP_PROVISIONING_PROFILE="$(
+    resolve_provisioning_profile \
+      "$APP_PROVISIONING_PROFILE" \
+      "$APP_BUNDLE_ID" \
+      "AV_APP_PROVISIONING_PROFILE" \
+      "Automic Vault app"
+  )"
+  MENU_PROVISIONING_PROFILE="$(
+    resolve_provisioning_profile \
+      "$MENU_PROVISIONING_PROFILE" \
+      "$MENU_BUNDLE_ID" \
+      "AV_MENU_PROVISIONING_PROFILE" \
+      "menu helper app"
+  )"
 
   validate_provisioning_profile "$APP_PROVISIONING_PROFILE" "$APP_BUNDLE_ID" "Automic Vault app"
   validate_provisioning_profile "$MENU_PROVISIONING_PROFILE" "$MENU_BUNDLE_ID" "menu helper app"
