@@ -107,6 +107,10 @@ configure_dotenv_keychain_access_group() {
   export AV_DOTENV_KEYCHAIN_ACCESS_GROUP
 }
 
+uses_real_codesign_identity() {
+  [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]
+}
+
 rust_protocol_version() {
   awk -F'"' '/PROTOCOL_VERSION[[:space:]]*:/ { print $2; exit }' "$ROOT_DIR/src/lib/rs/core.rs"
 }
@@ -188,6 +192,10 @@ ICONSET_DIR="$BUILD_DIR/$ICON_NAME.iconset"
 ICON_ICNS="$BUILD_DIR/$ICON_NAME.icns"
 DOTENV_ENTITLEMENTS="$BUILD_DIR/dotenv-keychain.entitlements"
 HELPER_ENTITLEMENTS="$BUILD_DIR/nuke-helper.entitlements"
+DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED=false
+if uses_real_codesign_identity; then
+  DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED=true
+fi
 [[ -n "${MIN_MACOS_VERSION:-}" ]] || cli_die "Set MIN_MACOS_VERSION in .env"
 NUKE_PROTOCOL_VERSION="$(rust_protocol_version)"
 [[ -n "$NUKE_PROTOCOL_VERSION" ]] || cli_die "Could not read PROTOCOL_VERSION from src/lib/rs/core.rs"
@@ -535,7 +543,10 @@ cli_info "Configuration: $CONFIGURATION"
 cli_info "Output: $APP_DIR"
 
 mkdir -p "$BUILD_DIR"
-write_entitlements "$DOTENV_ENTITLEMENTS" true
+if [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" != "true" ]]; then
+  cli_warn "Skipping dotenv keychain access-group entitlement for ad-hoc signing"
+fi
+write_entitlements "$DOTENV_ENTITLEMENTS" "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED"
 write_entitlements "$HELPER_ENTITLEMENTS" false
 cli_step "Building Rust binaries"
 cargo build \
@@ -740,7 +751,7 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+if uses_real_codesign_identity; then
   cli_step "Signing bundle with Developer ID"
   sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
   sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
@@ -774,10 +785,12 @@ verify_codesign_signature "$HELPER_EXECUTABLE" "privileged helper"
 verify_codesign_signature "$MENU_EXECUTABLE" "menu helper executable"
 verify_codesign_signature "$MENU_APP_DIR" "menu helper app"
 verify_codesign_signature "$APP_DIR" "Automic Vault app"
-verify_keychain_access_group_entitlement "$RESOURCES_DIR/av" "bundled av"
-verify_keychain_access_group_entitlement "$MENU_RESOURCES_DIR/av" "menu bundled av"
-verify_keychain_access_group_entitlement "$MENU_APP_DIR" "menu helper app"
-verify_keychain_access_group_entitlement "$APP_DIR" "Automic Vault app"
+if [[ "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED" == "true" ]]; then
+  verify_keychain_access_group_entitlement "$RESOURCES_DIR/av" "bundled av"
+  verify_keychain_access_group_entitlement "$MENU_RESOURCES_DIR/av" "menu bundled av"
+  verify_keychain_access_group_entitlement "$MENU_APP_DIR" "menu helper app"
+  verify_keychain_access_group_entitlement "$APP_DIR" "Automic Vault app"
+fi
 
 cli_done "App bundle ready"
 echo "$APP_DIR"
