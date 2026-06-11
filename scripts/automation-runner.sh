@@ -8,7 +8,7 @@ automation_dir="${repo_root}/cache/automation"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/automation-runner.sh <db|pkg-origin>
+Usage: scripts/automation-runner.sh <db|pkg-origin|npm-full-scan>
 
 Run one scheduled Automic Vault maintenance job with repo-local logging,
 environment loading, locking, timeout handling, and status recording.
@@ -113,6 +113,12 @@ run_job_unlocked() {
       run_with_timeout "${timeout_seconds}" "${script_dir}/run-pkg-origin-update.sh"
       exit_code=$?
       ;;
+    npm-full-scan)
+      timeout_seconds="${AV_AUTOMATION_NPM_FULL_SCAN_TIMEOUT_SECONDS:-21600}"
+      run_with_timeout "${timeout_seconds}" \
+        "${script_dir}/build-db.py" --refresh --npm-full-scan
+      exit_code=$?
+      ;;
     *)
       usage
       exit_code=64
@@ -134,6 +140,11 @@ run_job_unlocked() {
 
   return "${exit_code}"
 }
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
 
 if [[ "${1:-}" == "--run-unlocked" ]]; then
   [[ $# -eq 2 ]] || {

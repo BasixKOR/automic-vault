@@ -8,7 +8,7 @@ automation_dir="${repo_root}/cache/automation"
 
 printf 'workspace: %s\n' "${repo_root}"
 
-for job in db pkg-origin; do
+for job in db pkg-origin npm-full-scan; do
   status_path="${automation_dir}/${job}.status.json"
   log_path="${automation_dir}/${job}.log"
   printf '\n== %s status ==\n' "${job}"
