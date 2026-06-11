@@ -9,6 +9,7 @@ use std::io::{self, IsTerminal, Read};
 use std::ffi::{CString, c_char, c_int};
 
 const DOTENV_KEYCHAIN_SERVICE: &str = "com.automicvault.dotenv";
+const DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP: &str = "ZU76A67LGU.com.automicvault.dotenv";
 const ENCRYPTED_PREFIX: &str = "encrypted:";
 const DOTENV_PUBLIC_KEY_PREFIX: &str = "DOTENV_PUBLIC_KEY";
 const DOTENV_PRIVATE_KEY_PREFIX: &str = "DOTENV_PRIVATE_KEY";
@@ -39,6 +40,8 @@ const DOTENV_AGENT_EXPORT_ENV_MARKERS: &[(&str, &str)] = &[
 
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: c_int = -25300;
+#[cfg(target_os = "macos")]
+const ERR_SEC_MISSING_ENTITLEMENT: c_int = -34018;
 
 #[cfg(test)]
 thread_local! {
@@ -53,9 +56,15 @@ enum DotenvCommand {
     Set(DotenvSetOptions),
     Encrypt(DotenvEncryptOptions),
     Import(DotenvImportOptions),
+    Keychain(DotenvKeychainCommand),
     Hook(DotenvShell),
     Export(DotenvExportOptions),
     Run(DotenvRunOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DotenvKeychainCommand {
+    Migrate(DotenvKeychainMigrateOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +90,12 @@ struct DotenvEncryptOptions {
 struct DotenvImportOptions {
     file: PathBuf,
     keys_file: PathBuf,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DotenvKeychainMigrateOptions {
+    replace: bool,
+    delete_legacy: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -315,6 +330,9 @@ fn dispatch_dotenv(
         }
         DotenvCommand::Encrypt(options) => run_dotenv_encrypt(&options, store),
         DotenvCommand::Import(options) => run_dotenv_import(&options, store),
+        DotenvCommand::Keychain(DotenvKeychainCommand::Migrate(options)) => {
+            run_dotenv_keychain_migrate(&options)
+        }
         DotenvCommand::Hook(shell) => {
             print_dotenv_hook(program_name, shell);
             Ok(())
@@ -353,6 +371,8 @@ fn parse_dotenv_command(
         "import" => {
             parse_dotenv_import(program_name, args).map(|value| value.map(DotenvCommand::Import))
         }
+        "keychain" => parse_dotenv_keychain(program_name, args)
+            .map(|value| value.map(DotenvCommand::Keychain)),
         "hook" => parse_dotenv_hook(program_name, args).map(|value| value.map(DotenvCommand::Hook)),
         "export" => {
             parse_dotenv_export(program_name, args).map(|value| value.map(DotenvCommand::Export))
@@ -492,6 +512,64 @@ fn parse_dotenv_import(
             .unwrap_or_else(|| PathBuf::from(".env.keys"))
     });
     Ok(Some(DotenvImportOptions { file, keys_file }))
+}
+
+fn parse_dotenv_keychain(
+    program_name: &str,
+    mut args: impl Iterator<Item = OsString>,
+) -> Result<Option<DotenvKeychainCommand>, String> {
+    let nested_program_name = format!("{program_name} keychain");
+    let Some(command) = args.next() else {
+        print_dotenv_keychain_usage(&nested_program_name);
+        return Err("missing dotenv keychain command".to_string());
+    };
+    if is_help_flag(&command) {
+        print_dotenv_keychain_usage(&nested_program_name);
+        return Ok(None);
+    }
+    if is_version_flag(&command) {
+        println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+        return Ok(None);
+    }
+
+    let command = command
+        .to_str()
+        .ok_or_else(|| "dotenv keychain command must be valid UTF-8".to_string())?;
+    match command {
+        "migrate" => parse_dotenv_keychain_migrate(&nested_program_name, args)
+            .map(|value| value.map(DotenvKeychainCommand::Migrate)),
+        other => Err(format!("unknown dotenv keychain command '{other}'")),
+    }
+}
+
+fn parse_dotenv_keychain_migrate(
+    program_name: &str,
+    args: impl Iterator<Item = OsString>,
+) -> Result<Option<DotenvKeychainMigrateOptions>, String> {
+    let mut options = DotenvKeychainMigrateOptions::default();
+    for arg in args {
+        if is_help_flag(&arg) {
+            print_dotenv_keychain_migrate_usage(program_name);
+            return Ok(None);
+        }
+        if is_version_flag(&arg) {
+            println!("{program_name} {}", env!("CARGO_PKG_VERSION"));
+            return Ok(None);
+        }
+        if arg == "--replace" {
+            options.replace = true;
+            continue;
+        }
+        if arg == "--delete-legacy" {
+            options.delete_legacy = true;
+            continue;
+        }
+        return Err(format!(
+            "unknown dotenv keychain migrate argument '{}'",
+            arg.to_string_lossy()
+        ));
+    }
+    Ok(Some(options))
 }
 
 fn parse_dotenv_hook(
@@ -2826,7 +2904,7 @@ __av_dotenv_hook;"#
 pub(crate) fn print_dotenv_usage(program_name: &str) {
     println!(
         "\
-Usage: {program_name} <init|set|encrypt|import|hook|export|run> [options]
+Usage: {program_name} <init|set|encrypt|import|keychain|hook|export|run> [options]
 
 Loads encrypted dotenvx-compatible .env files with Automic Vault approval."
     );
@@ -2848,6 +2926,14 @@ fn print_dotenv_encrypt_usage(program_name: &str) {
 
 fn print_dotenv_import_usage(program_name: &str) {
     println!("Usage: {program_name} import [--file .env] [--keys-file .env.keys]");
+}
+
+fn print_dotenv_keychain_usage(program_name: &str) {
+    println!("Usage: {program_name} migrate [--replace] [--delete-legacy]");
+}
+
+fn print_dotenv_keychain_migrate_usage(program_name: &str) {
+    println!("Usage: {program_name} migrate [--replace] [--delete-legacy]");
 }
 
 fn print_dotenv_hook_usage(program_name: &str) {
@@ -2874,6 +2960,122 @@ impl DotenvPrivateKeyStore for KeychainDotenvPrivateKeyStore {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DotenvKeychainMigrationReport {
+    discovered: usize,
+    migrated: usize,
+    skipped_existing: usize,
+    missing_legacy: usize,
+    deleted_legacy: usize,
+}
+
+trait DotenvKeychainBackend {
+    fn read_new_if_present(
+        &self,
+        service: &str,
+        account: &str,
+        access_group: &str,
+    ) -> Result<Option<String>, String>;
+    fn write_new(
+        &self,
+        service: &str,
+        account: &str,
+        access_group: &str,
+        value: &str,
+    ) -> Result<(), String>;
+    fn delete_new(&self, service: &str, account: &str, access_group: &str) -> Result<bool, String>;
+    fn read_legacy_if_present(
+        &self,
+        service: &str,
+        account: &str,
+    ) -> Result<Option<String>, String>;
+    fn enumerate_legacy_accounts(&self, service: &str) -> Result<Vec<String>, String>;
+    fn delete_legacy(&self, service: &str, account: &str) -> Result<bool, String>;
+}
+
+struct SystemDotenvKeychainBackend;
+
+fn dotenv_keychain_access_group() -> &'static str {
+    option_env!("AV_DOTENV_KEYCHAIN_ACCESS_GROUP")
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP)
+}
+
+fn run_dotenv_keychain_migrate(options: &DotenvKeychainMigrateOptions) -> Result<(), String> {
+    let report = migrate_dotenv_keychain(
+        &SystemDotenvKeychainBackend,
+        DOTENV_KEYCHAIN_SERVICE,
+        dotenv_keychain_access_group(),
+        options,
+    )?;
+    println!(
+        "av dotenv keychain migrate: discovered {} legacy dotenv private keys; migrated {}; skipped existing {}; missing legacy {}; deleted legacy {}",
+        report.discovered,
+        report.migrated,
+        report.skipped_existing,
+        report.missing_legacy,
+        report.deleted_legacy
+    );
+    Ok(())
+}
+
+fn migrate_dotenv_keychain(
+    backend: &dyn DotenvKeychainBackend,
+    service: &str,
+    access_group: &str,
+    options: &DotenvKeychainMigrateOptions,
+) -> Result<DotenvKeychainMigrationReport, String> {
+    let mut accounts = backend.enumerate_legacy_accounts(service)?;
+    accounts.retain(|account| account.starts_with("DOTENV_PRIVATE_KEY:"));
+    accounts.sort();
+    accounts.dedup();
+
+    let mut report = DotenvKeychainMigrationReport {
+        discovered: accounts.len(),
+        ..DotenvKeychainMigrationReport::default()
+    };
+
+    for account in accounts {
+        if !options.replace
+            && backend
+                .read_new_if_present(service, &account, access_group)?
+                .is_some()
+        {
+            report.skipped_existing += 1;
+            continue;
+        }
+
+        let Some(legacy_value) = backend.read_legacy_if_present(service, &account)? else {
+            report.missing_legacy += 1;
+            continue;
+        };
+        validate_private_key_list(&legacy_value)
+            .map_err(|err| format!("legacy dotenv private key {account} is invalid: {err}"))?;
+
+        backend.write_new(service, &account, access_group, &legacy_value)?;
+        match backend.read_new_if_present(service, &account, access_group)? {
+            Some(value) if value == legacy_value => {}
+            Some(_) => {
+                return Err(format!(
+                    "failed to verify migrated dotenv private key {account}: new keychain value differed"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "failed to verify migrated dotenv private key {account}: new keychain item was not found"
+                ));
+            }
+        }
+        report.migrated += 1;
+
+        if options.delete_legacy && backend.delete_legacy(service, &account)? {
+            report.deleted_legacy += 1;
+        }
+    }
+
+    Ok(report)
+}
+
 #[cfg(target_os = "macos")]
 fn keychain_read_dotenv_private_key(service: &str, account: &str) -> Result<String, String> {
     keychain_read_dotenv_private_key_if_present(service, account)?.ok_or_else(|| {
@@ -2883,6 +3085,170 @@ fn keychain_read_dotenv_private_key(service: &str, account: &str) -> Result<Stri
 
 #[cfg(target_os = "macos")]
 fn keychain_read_dotenv_private_key_if_present(
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    keychain_read_dotenv_private_key_if_present_with_backend(
+        &SystemDotenvKeychainBackend,
+        service,
+        account,
+        dotenv_keychain_access_group(),
+    )
+}
+
+fn keychain_read_dotenv_private_key_if_present_with_backend(
+    backend: &dyn DotenvKeychainBackend,
+    service: &str,
+    account: &str,
+    access_group: &str,
+) -> Result<Option<String>, String> {
+    match backend.read_new_if_present(service, account, access_group)? {
+        Some(value) => Ok(Some(value)),
+        None => backend.read_legacy_if_present(service, account),
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl DotenvKeychainBackend for SystemDotenvKeychainBackend {
+    fn read_new_if_present(
+        &self,
+        service: &str,
+        account: &str,
+        access_group: &str,
+    ) -> Result<Option<String>, String> {
+        bridge_read_dotenv_private_key_from_new_store_if_present(service, account, access_group)
+    }
+
+    fn write_new(
+        &self,
+        service: &str,
+        account: &str,
+        access_group: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        bridge_write_dotenv_private_key_to_new_store(service, account, access_group, value)
+    }
+
+    fn delete_new(&self, service: &str, account: &str, access_group: &str) -> Result<bool, String> {
+        bridge_delete_dotenv_private_key_from_new_store(service, account, access_group)
+    }
+
+    fn read_legacy_if_present(
+        &self,
+        service: &str,
+        account: &str,
+    ) -> Result<Option<String>, String> {
+        bridge_read_legacy_dotenv_private_key_if_present(service, account)
+    }
+
+    fn enumerate_legacy_accounts(&self, service: &str) -> Result<Vec<String>, String> {
+        bridge_enumerate_legacy_dotenv_private_key_accounts(service)
+    }
+
+    fn delete_legacy(&self, service: &str, account: &str) -> Result<bool, String> {
+        bridge_delete_legacy_dotenv_private_key(service, account)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl DotenvKeychainBackend for SystemDotenvKeychainBackend {
+    fn read_new_if_present(
+        &self,
+        _service: &str,
+        _account: &str,
+        _access_group: &str,
+    ) -> Result<Option<String>, String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+
+    fn write_new(
+        &self,
+        _service: &str,
+        _account: &str,
+        _access_group: &str,
+        _value: &str,
+    ) -> Result<(), String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+
+    fn delete_new(
+        &self,
+        _service: &str,
+        _account: &str,
+        _access_group: &str,
+    ) -> Result<bool, String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+
+    fn read_legacy_if_present(
+        &self,
+        _service: &str,
+        _account: &str,
+    ) -> Result<Option<String>, String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+
+    fn enumerate_legacy_accounts(&self, _service: &str) -> Result<Vec<String>, String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+
+    fn delete_legacy(&self, _service: &str, _account: &str) -> Result<bool, String> {
+        Err("dotenv keychain integration is only available on macOS".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_read_dotenv_private_key_from_new_store_if_present(
+    service: &str,
+    account: &str,
+    access_group: &str,
+) -> Result<Option<String>, String> {
+    unsafe extern "C" {
+        fn isotope_copy_dotenv_private_key_with_status(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            access_group_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
+        ) -> *mut c_char;
+    }
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let access_group_cstr =
+        CString::new(access_group).map_err(|_| "invalid keychain access group".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let mut status = 0;
+    let value = unsafe {
+        isotope_copy_dotenv_private_key_with_status(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            access_group_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
+    };
+    if value.is_null() {
+        let message = unsafe { take_dotenv_bridge_string(error) }
+            .unwrap_or_else(|| "keychain lookup failed".to_string());
+        if status == ERR_SEC_ITEM_NOT_FOUND {
+            return Ok(None);
+        }
+        return Err(dotenv_data_protection_keychain_error(
+            "load",
+            access_group,
+            status,
+            &message,
+        ));
+    }
+    unsafe { take_dotenv_bridge_string(value) }
+        .map(Some)
+        .ok_or_else(|| "keychain returned invalid UTF-8".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_read_legacy_dotenv_private_key_if_present(
     service: &str,
     account: &str,
 ) -> Result<Option<String>, String> {
@@ -2940,33 +3306,206 @@ fn keychain_write_dotenv_private_key(
     account: &str,
     value: &str,
 ) -> Result<(), String> {
+    keychain_write_dotenv_private_key_with_backend(
+        &SystemDotenvKeychainBackend,
+        service,
+        account,
+        dotenv_keychain_access_group(),
+        value,
+    )
+}
+
+fn keychain_write_dotenv_private_key_with_backend(
+    backend: &dyn DotenvKeychainBackend,
+    service: &str,
+    account: &str,
+    access_group: &str,
+    value: &str,
+) -> Result<(), String> {
+    backend.write_new(service, account, access_group, value)
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_write_dotenv_private_key_to_new_store(
+    service: &str,
+    account: &str,
+    access_group: &str,
+    value: &str,
+) -> Result<(), String> {
     unsafe extern "C" {
-        fn isotope_store_generic_password_json(
+        fn isotope_store_dotenv_private_key(
             service_cstr: *const c_char,
             account_cstr: *const c_char,
+            access_group_cstr: *const c_char,
             value_cstr: *const c_char,
             error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
         ) -> bool;
     }
     let service_cstr =
         CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
     let account_cstr =
         CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let access_group_cstr =
+        CString::new(access_group).map_err(|_| "invalid keychain access group".to_string())?;
     let value_cstr = CString::new(value).map_err(|_| "invalid keychain private key".to_string())?;
     let mut error = std::ptr::null_mut();
+    let mut status = 0;
     if unsafe {
-        isotope_store_generic_password_json(
+        isotope_store_dotenv_private_key(
             service_cstr.as_ptr(),
             account_cstr.as_ptr(),
+            access_group_cstr.as_ptr(),
             value_cstr.as_ptr(),
             &mut error,
+            &mut status,
         )
     } {
         return Ok(());
     }
     let message = unsafe { take_dotenv_bridge_string(error) }
         .unwrap_or_else(|| "keychain write failed".to_string());
-    Err(format!("failed to store dotenv private key: {message}"))
+    Err(dotenv_data_protection_keychain_error(
+        "store",
+        access_group,
+        status,
+        &message,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_delete_dotenv_private_key_from_new_store(
+    service: &str,
+    account: &str,
+    access_group: &str,
+) -> Result<bool, String> {
+    unsafe extern "C" {
+        fn isotope_delete_dotenv_private_key_with_status(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            access_group_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
+        ) -> bool;
+    }
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let access_group_cstr =
+        CString::new(access_group).map_err(|_| "invalid keychain access group".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let mut status = 0;
+    if unsafe {
+        isotope_delete_dotenv_private_key_with_status(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            access_group_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
+    } {
+        return Ok(status != ERR_SEC_ITEM_NOT_FOUND);
+    }
+    let message = unsafe { take_dotenv_bridge_string(error) }
+        .unwrap_or_else(|| "keychain delete failed".to_string());
+    Err(dotenv_data_protection_keychain_error(
+        "delete",
+        access_group,
+        status,
+        &message,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_enumerate_legacy_dotenv_private_key_accounts(
+    service: &str,
+) -> Result<Vec<String>, String> {
+    unsafe extern "C" {
+        fn isotope_copy_legacy_dotenv_private_key_accounts_json_with_status(
+            service_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
+        ) -> *mut c_char;
+    }
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let mut status = 0;
+    let value = unsafe {
+        isotope_copy_legacy_dotenv_private_key_accounts_json_with_status(
+            service_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
+    };
+    if value.is_null() {
+        let message = unsafe { take_dotenv_bridge_string(error) }
+            .unwrap_or_else(|| "keychain enumeration failed".to_string());
+        return Err(format!(
+            "failed to enumerate legacy dotenv private keys: {message}"
+        ));
+    }
+    let json = unsafe { take_dotenv_bridge_string(value) }
+        .ok_or_else(|| "legacy keychain account list returned invalid UTF-8".to_string())?;
+    serde_json::from_str::<Vec<String>>(&json)
+        .map_err(|err| format!("failed to parse legacy keychain account list: {err}"))
+}
+
+#[cfg(target_os = "macos")]
+fn bridge_delete_legacy_dotenv_private_key(service: &str, account: &str) -> Result<bool, String> {
+    unsafe extern "C" {
+        fn isotope_delete_legacy_generic_password_with_status(
+            service_cstr: *const c_char,
+            account_cstr: *const c_char,
+            error_cstr: *mut *mut c_char,
+            status_out: *mut c_int,
+        ) -> bool;
+    }
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let mut error = std::ptr::null_mut();
+    let mut status = 0;
+    if unsafe {
+        isotope_delete_legacy_generic_password_with_status(
+            service_cstr.as_ptr(),
+            account_cstr.as_ptr(),
+            &mut error,
+            &mut status,
+        )
+    } {
+        return Ok(status != ERR_SEC_ITEM_NOT_FOUND);
+    }
+    let message = unsafe { take_dotenv_bridge_string(error) }
+        .unwrap_or_else(|| "keychain delete failed".to_string());
+    Err(format!(
+        "failed to delete legacy dotenv private key {account}: {message}"
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn dotenv_data_protection_keychain_error(
+    action: &str,
+    access_group: &str,
+    status: c_int,
+    message: &str,
+) -> String {
+    let mut error = format!(
+        "failed to {action} dotenv private key in Data Protection keychain access group {access_group}: {message}"
+    );
+    if status == ERR_SEC_MISSING_ENTITLEMENT
+        || message.to_ascii_lowercase().contains("entitlement")
+        || message.to_ascii_lowercase().contains("access group")
+    {
+        error.push_str(
+            "; ensure this binary is signed with a keychain-access-groups entitlement containing ",
+        );
+        error.push_str(access_group);
+        error.push_str("; verify with `codesign -d --entitlements :- <path>`");
+    }
+    error
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -3081,6 +3620,103 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct StubDotenvKeychainBackend {
+        new_values: Mutex<BTreeMap<String, String>>,
+        legacy_values: Mutex<BTreeMap<String, String>>,
+        legacy_accounts: Mutex<Vec<String>>,
+        new_writes: Mutex<Vec<String>>,
+        legacy_deletes: Mutex<Vec<String>>,
+    }
+
+    impl StubDotenvKeychainBackend {
+        fn with_legacy(account: &str, value: &str) -> Self {
+            let backend = Self::default();
+            backend
+                .legacy_values
+                .lock()
+                .unwrap()
+                .insert(account.to_string(), value.to_string());
+            backend
+                .legacy_accounts
+                .lock()
+                .unwrap()
+                .push(account.to_string());
+            backend
+        }
+
+        fn insert_new(&self, account: &str, value: &str) {
+            self.new_values
+                .lock()
+                .unwrap()
+                .insert(account.to_string(), value.to_string());
+        }
+
+        fn set_legacy_accounts(&self, accounts: Vec<&str>) {
+            *self.legacy_accounts.lock().unwrap() =
+                accounts.into_iter().map(str::to_string).collect();
+        }
+    }
+
+    impl DotenvKeychainBackend for StubDotenvKeychainBackend {
+        fn read_new_if_present(
+            &self,
+            _service: &str,
+            account: &str,
+            _access_group: &str,
+        ) -> Result<Option<String>, String> {
+            Ok(self.new_values.lock().unwrap().get(account).cloned())
+        }
+
+        fn write_new(
+            &self,
+            _service: &str,
+            account: &str,
+            _access_group: &str,
+            value: &str,
+        ) -> Result<(), String> {
+            self.new_values
+                .lock()
+                .unwrap()
+                .insert(account.to_string(), value.to_string());
+            self.new_writes.lock().unwrap().push(account.to_string());
+            Ok(())
+        }
+
+        fn delete_new(
+            &self,
+            _service: &str,
+            account: &str,
+            _access_group: &str,
+        ) -> Result<bool, String> {
+            Ok(self.new_values.lock().unwrap().remove(account).is_some())
+        }
+
+        fn read_legacy_if_present(
+            &self,
+            _service: &str,
+            account: &str,
+        ) -> Result<Option<String>, String> {
+            Ok(self.legacy_values.lock().unwrap().get(account).cloned())
+        }
+
+        fn enumerate_legacy_accounts(&self, _service: &str) -> Result<Vec<String>, String> {
+            Ok(self.legacy_accounts.lock().unwrap().clone())
+        }
+
+        fn delete_legacy(&self, _service: &str, account: &str) -> Result<bool, String> {
+            self.legacy_deletes
+                .lock()
+                .unwrap()
+                .push(account.to_string());
+            Ok(self.legacy_values.lock().unwrap().remove(account).is_some())
+        }
+    }
+
+    fn dotenv_test_private_key(byte: u8) -> String {
+        format!("{byte:064x}")
+    }
+
     struct DotenvEnvGuard {
         previous: Vec<(String, Option<OsString>)>,
     }
@@ -3116,6 +3752,208 @@ mod tests {
         let core_dump_limit = CoreDumpLimitGuard::capture();
         action();
         drop(core_dump_limit);
+    }
+
+    #[test]
+    fn dotenv_keychain_read_prefers_new_store_and_falls_back_to_legacy() {
+        let account =
+            "DOTENV_PRIVATE_KEY:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let legacy_value = dotenv_test_private_key(1);
+        let new_value = dotenv_test_private_key(2);
+        let backend = StubDotenvKeychainBackend::with_legacy(account, &legacy_value);
+
+        assert_eq!(
+            keychain_read_dotenv_private_key_if_present_with_backend(
+                &backend,
+                "service",
+                account,
+                "TEAM.group"
+            )
+            .unwrap(),
+            Some(legacy_value.clone())
+        );
+
+        backend.insert_new(account, &new_value);
+        assert_eq!(
+            keychain_read_dotenv_private_key_if_present_with_backend(
+                &backend,
+                "service",
+                account,
+                "TEAM.group"
+            )
+            .unwrap(),
+            Some(new_value)
+        );
+    }
+
+    #[test]
+    fn dotenv_keychain_write_uses_new_store_only() {
+        let account =
+            "DOTENV_PRIVATE_KEY:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let value = dotenv_test_private_key(3);
+        let backend = StubDotenvKeychainBackend::default();
+
+        keychain_write_dotenv_private_key_with_backend(
+            &backend,
+            "service",
+            account,
+            "TEAM.group",
+            &value,
+        )
+        .unwrap();
+
+        assert_eq!(
+            backend.new_values.lock().unwrap().get(account),
+            Some(&value)
+        );
+        assert!(backend.legacy_values.lock().unwrap().is_empty());
+        assert_eq!(backend.new_writes.lock().unwrap().as_slice(), [account]);
+    }
+
+    #[test]
+    fn dotenv_keychain_migration_counts_and_skips_existing_without_secrets() {
+        let migrate_account =
+            "DOTENV_PRIVATE_KEY:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let existing_account =
+            "DOTENV_PRIVATE_KEY:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let missing_account =
+            "DOTENV_PRIVATE_KEY:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let ignored_account =
+            "OTHER:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let migrated_value = dotenv_test_private_key(4);
+        let existing_value = dotenv_test_private_key(5);
+        let backend = StubDotenvKeychainBackend::default();
+        backend.set_legacy_accounts(vec![
+            migrate_account,
+            existing_account,
+            missing_account,
+            ignored_account,
+            migrate_account,
+        ]);
+        backend
+            .legacy_values
+            .lock()
+            .unwrap()
+            .insert(migrate_account.to_string(), migrated_value.clone());
+        backend
+            .legacy_values
+            .lock()
+            .unwrap()
+            .insert(existing_account.to_string(), existing_value.clone());
+        backend.insert_new(existing_account, &existing_value);
+
+        let report = migrate_dotenv_keychain(
+            &backend,
+            "service",
+            "TEAM.group",
+            &DotenvKeychainMigrateOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report,
+            DotenvKeychainMigrationReport {
+                discovered: 3,
+                migrated: 1,
+                skipped_existing: 1,
+                missing_legacy: 1,
+                deleted_legacy: 0,
+            }
+        );
+        assert_eq!(
+            backend.new_values.lock().unwrap().get(migrate_account),
+            Some(&migrated_value)
+        );
+        let report_debug = format!("{report:?}");
+        assert!(!report_debug.contains(&migrated_value));
+        assert!(!report_debug.contains(&existing_value));
+    }
+
+    #[test]
+    fn dotenv_keychain_migration_replace_and_delete_legacy_after_verify() {
+        let account =
+            "DOTENV_PRIVATE_KEY:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let legacy_value = dotenv_test_private_key(6);
+        let backend = StubDotenvKeychainBackend::with_legacy(account, &legacy_value);
+        backend.insert_new(account, &dotenv_test_private_key(7));
+
+        let report = migrate_dotenv_keychain(
+            &backend,
+            "service",
+            "TEAM.group",
+            &DotenvKeychainMigrateOptions {
+                replace: true,
+                delete_legacy: true,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            report,
+            DotenvKeychainMigrationReport {
+                discovered: 1,
+                migrated: 1,
+                skipped_existing: 0,
+                missing_legacy: 0,
+                deleted_legacy: 1,
+            }
+        );
+        assert_eq!(
+            backend.new_values.lock().unwrap().get(account),
+            Some(&legacy_value)
+        );
+        assert!(!backend.legacy_values.lock().unwrap().contains_key(account));
+        assert_eq!(backend.legacy_deletes.lock().unwrap().as_slice(), [account]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dotenv_data_protection_keychain_roundtrips_when_opted_in_and_entitled() {
+        if std::env::var_os("AV_TEST_DOTENV_DP_KEYCHAIN").is_none() {
+            eprintln!(
+                "skipping dotenv DP keychain integration test; set AV_TEST_DOTENV_DP_KEYCHAIN=1 to run"
+            );
+            return;
+        }
+
+        let access_group = dotenv_keychain_access_group();
+        let current_exe = std::env::current_exe().expect("current test executable");
+        let entitlements = std::process::Command::new("/usr/bin/codesign")
+            .args(["-d", "--entitlements", ":-"])
+            .arg(&current_exe)
+            .output();
+        let Ok(entitlements) = entitlements else {
+            eprintln!("skipping dotenv DP keychain integration test; codesign is unavailable");
+            return;
+        };
+        let entitlement_text = String::from_utf8_lossy(&entitlements.stdout);
+        if !entitlement_text.contains(access_group) {
+            eprintln!(
+                "skipping dotenv DP keychain integration test; {} lacks keychain group {}",
+                current_exe.display(),
+                access_group
+            );
+            return;
+        }
+
+        let account = format!("DOTENV_PRIVATE_KEY:{:064x}", std::process::id());
+        let value = dotenv_test_private_key(8);
+        let backend = SystemDotenvKeychainBackend;
+        let _ = backend.delete_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group);
+        backend
+            .write_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group, &value)
+            .unwrap();
+        assert_eq!(
+            backend
+                .read_new_if_present(DOTENV_KEYCHAIN_SERVICE, &account, access_group)
+                .unwrap(),
+            Some(value)
+        );
+        assert!(
+            backend
+                .delete_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group)
+                .unwrap()
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -4135,6 +4973,51 @@ mod tests {
         assert_eq!(
             parse_dotenv_command("av dotenv", [OsString::from("bogus")].into_iter()).unwrap_err(),
             "unknown dotenv command 'bogus'"
+        );
+        assert_eq!(
+            parse_dotenv_command(
+                "av dotenv",
+                [
+                    OsString::from("keychain"),
+                    OsString::from("migrate"),
+                    OsString::from("--replace"),
+                    OsString::from("--delete-legacy"),
+                ]
+                .into_iter()
+            )
+            .unwrap(),
+            Some(DotenvCommand::Keychain(DotenvKeychainCommand::Migrate(
+                DotenvKeychainMigrateOptions {
+                    replace: true,
+                    delete_legacy: true,
+                }
+            )))
+        );
+        assert_eq!(
+            parse_dotenv_command("av dotenv", [OsString::from("keychain")].into_iter())
+                .unwrap_err(),
+            "missing dotenv keychain command"
+        );
+        assert_eq!(
+            parse_dotenv_command(
+                "av dotenv",
+                [OsString::from("keychain"), OsString::from("bogus")].into_iter()
+            )
+            .unwrap_err(),
+            "unknown dotenv keychain command 'bogus'"
+        );
+        assert_eq!(
+            parse_dotenv_command(
+                "av dotenv",
+                [
+                    OsString::from("keychain"),
+                    OsString::from("migrate"),
+                    OsString::from("--bogus"),
+                ]
+                .into_iter()
+            )
+            .unwrap_err(),
+            "unknown dotenv keychain migrate argument '--bogus'"
         );
 
         assert!(

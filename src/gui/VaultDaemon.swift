@@ -251,6 +251,9 @@ private enum VaultDaemonEvent: Encodable {
 }
 
 final class VaultDaemon {
+    private static let dotenvKeychainService = "com.automicvault.dotenv"
+    private static let defaultDotenvKeychainAccessGroup = "ZU76A67LGU.com.automicvault.dotenv"
+
     struct Configuration {
         let socketURL: URL
     }
@@ -263,6 +266,7 @@ final class VaultDaemon {
     private let queue = DispatchQueue(label: "com.automicvault.vault.daemon", qos: .userInitiated)
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let dotenvKeychainAccessGroup: String
     private let activeRequestLock = NSLock()
     private let stateLock = NSLock()
     private var activeRequestID: String?
@@ -279,6 +283,9 @@ final class VaultDaemon {
         self.configuration = configuration
         self.openMainWindow = openMainWindow
         self.notifyUser = notifyUser
+        self.dotenvKeychainAccessGroup =
+            Bundle.main.object(forInfoDictionaryKey: "AVDotenvKeychainAccessGroup") as? String
+            ?? Self.defaultDotenvKeychainAccessGroup
     }
 
     func start() {
@@ -599,8 +606,7 @@ final class VaultDaemon {
                     throw daemonError("duplicate dotenv private key \(fingerprintPrefix(publicKeyFingerprint))")
                 }
 
-                let existing = try keychainRead(
-                    service: "com.automicvault.dotenv",
+                let existing = try dotenvPrivateKeyRead(
                     account: dotenvPrivateKeyAccount(publicKeyFingerprint: publicKeyFingerprint)
                 )
                 let replacingExisting = existing.map { $0 != privateKey } ?? false
@@ -688,8 +694,7 @@ final class VaultDaemon {
         for action in actions {
             switch action {
             case .storeDotenvPrivateKey(let publicKeyFingerprint, let privateKey):
-                try keychainWrite(
-                    service: "com.automicvault.dotenv",
+                try dotenvPrivateKeyWrite(
                     account: dotenvPrivateKeyAccount(publicKeyFingerprint: publicKeyFingerprint),
                     value: privateKey
                 )
@@ -753,6 +758,63 @@ final class VaultDaemon {
 
     private func fingerprintPrefix(_ value: String) -> String {
         String(value.prefix(12))
+    }
+
+    private func dotenvPrivateKeyRead(account: String) throws -> String? {
+        let query = dotenvPrivateKeyQuery(account: account).merging([
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]) { _, new in new }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return try keychainRead(service: Self.dotenvKeychainService, account: account)
+        }
+        guard status == errSecSuccess else {
+            throw dotenvKeychainError(action: "load", account: account, status: status)
+        }
+        guard let data = result as? Data,
+              let value = String(data: data, encoding: .utf8)
+        else {
+            throw daemonError("dotenv keychain lookup did not return UTF-8 data")
+        }
+        return value
+    }
+
+    private func dotenvPrivateKeyWrite(account: String, value: String) throws {
+        let data = Data(value.utf8)
+        let query = dotenvPrivateKeyQuery(account: account)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data
+        ]
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var createQuery = query
+            createQuery[kSecValueData as String] = data
+            status = SecItemAdd(createQuery as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            throw dotenvKeychainError(action: "store", account: account, status: status)
+        }
+    }
+
+    private func dotenvPrivateKeyQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.dotenvKeychainService,
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecAttrAccessGroup as String: dotenvKeychainAccessGroup
+        ]
+    }
+
+    private func dotenvKeychainError(action: String, account: String, status: OSStatus) -> Error {
+        let securityMessage = securityErrorMessage(status)
+        var message = "failed to \(action) dotenv private key \(account) in Data Protection keychain access group \(dotenvKeychainAccessGroup): \(securityMessage)"
+        if status == -34018 || securityMessage.localizedCaseInsensitiveContains("entitlement") {
+            message += "; ensure this binary is signed with keychain-access-groups containing \(dotenvKeychainAccessGroup); verify with `codesign -d --entitlements :- <path>`"
+        }
+        return daemonError(message)
     }
 
     private func keychainRead(service: String, account: String) throws -> String? {

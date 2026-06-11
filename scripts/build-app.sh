@@ -70,6 +70,34 @@ configure_codesign_identity() {
   export CODESIGN_IDENTITY
 }
 
+team_identifier_from_identity() {
+  local identity="$1"
+  if [[ "$identity" =~ '\(([A-Z0-9]+)\)[[:space:]]*$' ]]; then
+    printf '%s' "$match[1]"
+  fi
+}
+
+configure_dotenv_keychain_access_group() {
+  if [[ -n "${AV_DOTENV_KEYCHAIN_ACCESS_GROUP:-}" ]]; then
+    AV_DOTENV_KEYCHAIN_ACCESS_GROUP="$(unquote_build_env_value "$AV_DOTENV_KEYCHAIN_ACCESS_GROUP")"
+    export AV_DOTENV_KEYCHAIN_ACCESS_GROUP
+    return
+  fi
+
+  local team_identifier=""
+  if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
+    team_identifier="$(unquote_build_env_value "$APPLE_TEAM_ID")"
+  elif [[ -n "${TEAM_IDENTIFIER:-}" ]]; then
+    team_identifier="$(unquote_build_env_value "$TEAM_IDENTIFIER")"
+  elif [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    team_identifier="$(team_identifier_from_identity "$CODESIGN_IDENTITY")"
+  fi
+  [[ -n "$team_identifier" ]] || team_identifier="ZU76A67LGU"
+
+  AV_DOTENV_KEYCHAIN_ACCESS_GROUP="${team_identifier}.com.automicvault.dotenv"
+  export AV_DOTENV_KEYCHAIN_ACCESS_GROUP
+}
+
 rust_protocol_version() {
   awk -F'"' '/PROTOCOL_VERSION[[:space:]]*:/ { print $2; exit }' "$ROOT_DIR/src/lib/rs/core.rs"
 }
@@ -116,6 +144,7 @@ done
 
 load_build_env
 configure_codesign_identity
+configure_dotenv_keychain_access_group
 
 case "$CONFIGURATION" in
   debug|release)
@@ -148,6 +177,8 @@ ENRICHMENT_MANIFESTS_JSON="$BUILD_DIR/enrichment-manifests.json"
 ICON_NAME="gui-icon"
 ICONSET_DIR="$BUILD_DIR/$ICON_NAME.iconset"
 ICON_ICNS="$BUILD_DIR/$ICON_NAME.icns"
+DOTENV_ENTITLEMENTS="$BUILD_DIR/dotenv-keychain.entitlements"
+HELPER_ENTITLEMENTS="$BUILD_DIR/nuke-helper.entitlements"
 [[ -n "${MIN_MACOS_VERSION:-}" ]] || cli_die "Set MIN_MACOS_VERSION in .env"
 NUKE_PROTOCOL_VERSION="$(rust_protocol_version)"
 [[ -n "$NUKE_PROTOCOL_VERSION" ]] || cli_die "Could not read PROTOCOL_VERSION from src/lib/rs/core.rs"
@@ -358,6 +389,47 @@ adhoc_sign_bundle() {
   codesign "${args[@]}" "$target_path"
 }
 
+write_entitlements() {
+  local output_path="$1"
+  local include_dotenv_group="$2"
+
+  cat >"$output_path" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <false/>
+PLIST
+  if [[ "$include_dotenv_group" == "true" ]]; then
+    cat >>"$output_path" <<PLIST
+  <key>keychain-access-groups</key>
+  <array>
+    <string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>
+  </array>
+PLIST
+  fi
+  cat >>"$output_path" <<PLIST
+</dict>
+</plist>
+PLIST
+}
+
+verify_keychain_access_group_entitlement() {
+  local target_path="$1"
+  local label="$2"
+  local output
+
+  if ! output="$(codesign -d --entitlements :- "$target_path" 2>/dev/null)"; then
+    cli_die "Failed to read entitlements for $label: $target_path"
+  fi
+  if [[ "$output" != *"<string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>"* ]]; then
+    cli_error "$output"
+    cli_die "$label is missing keychain access group ${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}"
+  fi
+}
+
 build_icon() {
   local source_png="$1"
   local iconset_dir="$2"
@@ -445,6 +517,8 @@ cli_info "Configuration: $CONFIGURATION"
 cli_info "Output: $APP_DIR"
 
 mkdir -p "$BUILD_DIR"
+write_entitlements "$DOTENV_ENTITLEMENTS" true
+write_entitlements "$HELPER_ENTITLEMENTS" false
 cli_step "Building Rust binaries"
 cargo build \
   --release \
@@ -580,6 +654,8 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <string>${NUKE_PROTOCOL_VERSION}</string>
   <key>NukeHelperVersion</key>
   <string>${NUKE_HELPER_VERSION}</string>
+  <key>AVDotenvKeychainAccessGroup</key>
+  <string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>
   <key>LSMinimumSystemVersion</key>
   <string>${MIN_MACOS_VERSION}</string>
   <key>NSAppTransportSecurity</key>
@@ -640,37 +716,44 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
   <string>${APP_BUILD_ID}</string>
   <key>NukeProtocolVersion</key>
   <string>${NUKE_PROTOCOL_VERSION}</string>
+  <key>AVDotenvKeychainAccessGroup</key>
+  <string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>
 </dict>
 </plist>
 PLIST
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   cli_step "Signing bundle with Developer ID"
-  sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av"
-  sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av"
+  sign_binary "$RESOURCES_DIR/av" "${APP_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
+  sign_binary "$MENU_RESOURCES_DIR/av" "${MENU_BUNDLE_ID}.av" "$DOTENV_ENTITLEMENTS"
   sign_binary \
     "$HELPER_EXECUTABLE" \
     "$HELPER_BUNDLE_ID" \
-    "$ROOT_DIR/src/helper/NukeHelper.entitlements"
-  sign_binary "$MENU_EXECUTABLE" "$MENU_BUNDLE_ID"
-  sign_bundle "$MENU_APP_DIR" "$MENU_BUNDLE_ID"
+    "$HELPER_ENTITLEMENTS"
+  sign_binary "$MENU_EXECUTABLE" "$MENU_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
+  sign_bundle "$MENU_APP_DIR" "$MENU_BUNDLE_ID" "$DOTENV_ENTITLEMENTS"
   sign_bundle \
     "$APP_DIR" \
     "$APP_BUNDLE_ID" \
-    "$ROOT_DIR/src/gui/AutomicVault.entitlements"
+    "$DOTENV_ENTITLEMENTS"
 else
   cli_step "Signing bundle ad-hoc"
-  adhoc_sign_binary "$RESOURCES_DIR/av"
-  adhoc_sign_binary "$MENU_RESOURCES_DIR/av"
+  adhoc_sign_binary "$RESOURCES_DIR/av" "$DOTENV_ENTITLEMENTS"
+  adhoc_sign_binary "$MENU_RESOURCES_DIR/av" "$DOTENV_ENTITLEMENTS"
   adhoc_sign_binary \
     "$HELPER_EXECUTABLE" \
-    "$ROOT_DIR/src/helper/NukeHelper.entitlements"
-  adhoc_sign_binary "$MENU_EXECUTABLE"
-  adhoc_sign_bundle "$MENU_APP_DIR"
+    "$HELPER_ENTITLEMENTS"
+  adhoc_sign_binary "$MENU_EXECUTABLE" "$DOTENV_ENTITLEMENTS"
+  adhoc_sign_bundle "$MENU_APP_DIR" "$DOTENV_ENTITLEMENTS"
   adhoc_sign_bundle \
     "$APP_DIR" \
-    "$ROOT_DIR/src/gui/AutomicVault.entitlements"
+    "$DOTENV_ENTITLEMENTS"
 fi
+
+verify_keychain_access_group_entitlement "$RESOURCES_DIR/av" "bundled av"
+verify_keychain_access_group_entitlement "$MENU_RESOURCES_DIR/av" "menu bundled av"
+verify_keychain_access_group_entitlement "$MENU_APP_DIR" "menu helper app"
+verify_keychain_access_group_entitlement "$APP_DIR" "Automic Vault app"
 
 cli_done "App bundle ready"
 echo "$APP_DIR"

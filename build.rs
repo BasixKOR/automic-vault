@@ -1,11 +1,16 @@
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-env-changed=NUKE_BUILD_ID");
+    println!("cargo:rerun-if-env-changed=AV_DOTENV_KEYCHAIN_ACCESS_GROUP");
     let build_id = build_id();
     println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");
     println!(
         "cargo:rustc-env=NUKE_CODESIGN_IDENTITY={}",
         codesign_identity().unwrap_or_default()
+    );
+    println!(
+        "cargo:rustc-env=AV_DOTENV_KEYCHAIN_ACCESS_GROUP={}",
+        dotenv_keychain_access_group()
     );
     generate_isotope_integrations();
 
@@ -19,6 +24,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/helper/launchd.plist");
     println!("cargo:rerun-if-changed=.env");
     println!("cargo:rerun-if-env-changed=APPLE_TEAM_ID");
+    println!("cargo:rerun-if-env-changed=AV_DOTENV_KEYCHAIN_ACCESS_GROUP");
     println!("cargo:rerun-if-env-changed=CODESIGN_IDENTITY");
     println!("cargo:rerun-if-env-changed=TEAM_COMMON_NAME");
     println!("cargo:rerun-if-env-changed=TEAM_IDENTIFIER");
@@ -46,6 +52,34 @@ fn main() {
 
     for framework in ["Foundation", "ServiceManagement", "Security"] {
         println!("cargo:rustc-link-lib=framework={framework}");
+    }
+}
+
+fn dotenv_keychain_access_group() -> String {
+    if let Some(group) = non_empty_build_env_var("AV_DOTENV_KEYCHAIN_ACCESS_GROUP") {
+        return group;
+    }
+    let team_id = non_empty_build_env_var("APPLE_TEAM_ID")
+        .or_else(|| non_empty_build_env_var("TEAM_IDENTIFIER"))
+        .or_else(|| {
+            codesign_identity().and_then(|identity| team_identifier_from_identity(&identity))
+        })
+        .unwrap_or_else(|| "ZU76A67LGU".to_string());
+    format!("{team_id}.com.automicvault.dotenv")
+}
+
+fn team_identifier_from_identity(identity: &str) -> Option<String> {
+    let close = identity.rfind(')')?;
+    let open = identity[..close].rfind('(')?;
+    let candidate = &identity[open + 1..close];
+    if candidate
+        .chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+        && !candidate.is_empty()
+    {
+        Some(candidate.to_string())
+    } else {
+        None
     }
 }
 
