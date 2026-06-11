@@ -7,8 +7,35 @@ macro_rules! radioisotope_source {
     };
 }
 
+macro_rules! assert_missing_launcher_errors {
+    ($wrap:ident, $temp:ident) => {
+        assert!(
+            $wrap(&$temp.join("missing-launcher"))
+                .unwrap_err()
+                .contains("failed to read")
+        );
+    };
+}
+
+macro_rules! assert_missing_launcher_noops {
+    ($wrap:ident, $temp:ident) => {
+        let missing = $temp.join("missing-launcher");
+        let _ = $wrap(&missing).unwrap();
+        assert!(!missing.exists());
+    };
+}
+
 macro_rules! launcher_post_install_extra_tests {
     ($module:ident, $path:literal, $wrap:ident, $script:ident) => {
+        launcher_post_install_extra_tests!(
+            $module,
+            $path,
+            $wrap,
+            $script,
+            assert_missing_launcher_errors
+        );
+    };
+    ($module:ident, $path:literal, $wrap:ident, $script:ident, $missing_launcher_assertion:ident) => {
         mod $module {
             include!(radioisotope_source!($path));
 
@@ -59,6 +86,8 @@ macro_rules! launcher_post_install_extra_tests {
                             || original_contents == "#!/bin/sh\nprintf launcher\n"
                     );
                     assert!(launcher_is_wrapped(&launcher).unwrap());
+                    let _ = $wrap(&launcher).unwrap();
+                    $missing_launcher_assertion!($wrap, temp);
 
                     let invalid = temp.join("invalid");
                     fs::write(&invalid, [0xff, 0xfe]).unwrap();
@@ -77,6 +106,28 @@ macro_rules! launcher_post_install_extra_tests {
                     let script = $script(Path::new("/tmp/it isn't"));
                     assert!(script.contains(r#"'\''"#));
 
+                    fs::remove_dir_all(temp).unwrap();
+                }
+
+                #[cfg(unix)]
+                #[test]
+                fn covers_rename_failure_error_message() {
+                    let temp = temp_dir("rename-failure");
+                    fs::create_dir_all(&temp).unwrap();
+                    let launcher = temp.join("launcher");
+                    write_executable(&launcher, b"#!/bin/sh\nprintf launcher\n");
+
+                    let mut permissions = fs::metadata(&temp).unwrap().permissions();
+                    permissions.set_mode(0o555);
+                    fs::set_permissions(&temp, permissions).unwrap();
+
+                    let result = $wrap(&launcher);
+
+                    let mut permissions = fs::metadata(&temp).unwrap().permissions();
+                    permissions.set_mode(0o755);
+                    fs::set_permissions(&temp, permissions).unwrap();
+
+                    assert!(result.unwrap_err().contains("failed to move"));
                     fs::remove_dir_all(temp).unwrap();
                 }
 
@@ -109,6 +160,15 @@ macro_rules! launcher_post_install_extra_tests {
 
 macro_rules! two_stage_launcher_post_install_extra_tests {
     ($module:ident, $path:literal, $wrap:ident, $script:ident) => {
+        two_stage_launcher_post_install_extra_tests!(
+            $module,
+            $path,
+            $wrap,
+            $script,
+            assert_missing_launcher_errors
+        );
+    };
+    ($module:ident, $path:literal, $wrap:ident, $script:ident, $missing_launcher_assertion:ident) => {
         mod $module {
             include!(radioisotope_source!($path));
 
@@ -159,6 +219,8 @@ macro_rules! two_stage_launcher_post_install_extra_tests {
                             || original_contents == "#!/bin/sh\nprintf launcher\n"
                     );
                     assert!(launcher_is_wrapped(&launcher).unwrap());
+                    let _ = $wrap(&launcher).unwrap();
+                    $missing_launcher_assertion!($wrap, temp);
 
                     let invalid = temp.join("invalid");
                     fs::write(&invalid, [0xff, 0xfe]).unwrap();
@@ -178,6 +240,28 @@ macro_rules! two_stage_launcher_post_install_extra_tests {
                         $script(Path::new("/tmp/it isn't"), Path::new("/tmp/inject isn't"));
                     assert!(script.contains(r#"'\''"#));
 
+                    fs::remove_dir_all(temp).unwrap();
+                }
+
+                #[cfg(unix)]
+                #[test]
+                fn covers_rename_failure_error_message() {
+                    let temp = temp_dir("rename-failure");
+                    fs::create_dir_all(&temp).unwrap();
+                    let launcher = temp.join("launcher");
+                    write_executable(&launcher, b"#!/bin/sh\nprintf launcher\n");
+
+                    let mut permissions = fs::metadata(&temp).unwrap().permissions();
+                    permissions.set_mode(0o555);
+                    fs::set_permissions(&temp, permissions).unwrap();
+
+                    let result = $wrap(&launcher);
+
+                    let mut permissions = fs::metadata(&temp).unwrap().permissions();
+                    permissions.set_mode(0o755);
+                    fs::set_permissions(&temp, permissions).unwrap();
+
+                    assert!(result.unwrap_err().contains("failed to move"));
                     fs::remove_dir_all(temp).unwrap();
                 }
 
@@ -555,31 +639,36 @@ launcher_post_install_extra_tests!(
     mariadb_post_install,
     "/mariadb/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_client_post_install,
     "/mysql-client/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_post_install,
     "/mysql/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_8_0_post_install,
     "/mysql@8.0/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     mysql_8_4_post_install,
     "/mysql@8.4/post-install.rs",
     wrap_mysql_launcher,
-    mysql_wrapper_script
+    mysql_wrapper_script,
+    assert_missing_launcher_noops
 );
 launcher_post_install_extra_tests!(
     bitwarden_cli_post_install,
