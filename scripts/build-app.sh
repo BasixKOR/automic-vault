@@ -439,6 +439,15 @@ verify_keychain_access_group_entitlement() {
   fi
 }
 
+verify_codesign_signature() {
+  local target_path="$1"
+  local label="$2"
+
+  if ! codesign --verify --strict --verbose=4 "$target_path" >&2; then
+    cli_die "$label failed strict codesign verification: $target_path"
+  fi
+}
+
 build_icon() {
   local source_png="$1"
   local iconset_dir="$2"
@@ -759,6 +768,12 @@ else
     "$DOTENV_ENTITLEMENTS"
 fi
 
+verify_codesign_signature "$RESOURCES_DIR/av" "bundled av"
+verify_codesign_signature "$MENU_RESOURCES_DIR/av" "menu bundled av"
+verify_codesign_signature "$HELPER_EXECUTABLE" "privileged helper"
+verify_codesign_signature "$MENU_EXECUTABLE" "menu helper executable"
+verify_codesign_signature "$MENU_APP_DIR" "menu helper app"
+verify_codesign_signature "$APP_DIR" "Automic Vault app"
 verify_keychain_access_group_entitlement "$RESOURCES_DIR/av" "bundled av"
 verify_keychain_access_group_entitlement "$MENU_RESOURCES_DIR/av" "menu bundled av"
 verify_keychain_access_group_entitlement "$MENU_APP_DIR" "menu helper app"
