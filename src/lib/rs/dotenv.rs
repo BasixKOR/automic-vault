@@ -3505,7 +3505,7 @@ fn dotenv_data_protection_keychain_error(
             "; ensure this binary is signed with a keychain-access-groups entitlement containing ",
         );
         error.push_str(access_group);
-        error.push_str("; verify with `codesign -d --entitlements :- <path>`");
+        error.push_str("; verify with `codesign -d --entitlements - <path>`");
     }
     error
 }
@@ -3921,7 +3921,7 @@ mod tests {
         let access_group = dotenv_keychain_access_group();
         let current_exe = std::env::current_exe().expect("current test executable");
         let entitlements = std::process::Command::new("/usr/bin/codesign")
-            .args(["-d", "--entitlements", ":-"])
+            .args(["-d", "--entitlements", "-"])
             .arg(&current_exe)
             .output();
         let Ok(entitlements) = entitlements else {

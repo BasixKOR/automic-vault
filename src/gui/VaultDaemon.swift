@@ -812,7 +812,7 @@ final class VaultDaemon {
         let securityMessage = securityErrorMessage(status)
         var message = "failed to \(action) dotenv private key \(account) in Data Protection keychain access group \(dotenvKeychainAccessGroup): \(securityMessage)"
         if status == -34018 || securityMessage.localizedCaseInsensitiveContains("entitlement") {
-            message += "; ensure this binary is signed with keychain-access-groups containing \(dotenvKeychainAccessGroup); verify with `codesign -d --entitlements :- <path>`"
+            message += "; ensure this binary is signed with keychain-access-groups containing \(dotenvKeychainAccessGroup); verify with `codesign -d --entitlements - <path>`"
         }
         return daemonError(message)
     }

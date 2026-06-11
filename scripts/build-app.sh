@@ -416,8 +416,6 @@ write_entitlements() {
 "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>com.apple.security.app-sandbox</key>
-  <false/>
 PLIST
   if [[ "$include_dotenv_group" == "true" ]]; then
     cat >>"$output_path" <<PLIST
@@ -438,10 +436,10 @@ verify_keychain_access_group_entitlement() {
   local label="$2"
   local output
 
-  if ! output="$(codesign -d --entitlements :- "$target_path" 2>/dev/null)"; then
+  if ! output="$(codesign -d --entitlements - "$target_path" 2>/dev/null)"; then
     cli_die "Failed to read entitlements for $label: $target_path"
   fi
-  if [[ "$output" != *"<string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>"* ]]; then
+  if [[ "$output" != *"${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}"* ]]; then
     cli_error "$output"
     cli_die "$label is missing keychain access group ${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}"
   fi

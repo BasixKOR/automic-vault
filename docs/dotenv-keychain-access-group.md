@@ -30,8 +30,12 @@ login-keychain fallback path.
 Verify signed artifacts with:
 
 ```sh
-codesign -d --entitlements :- <path>
+codesign -d --entitlements - <path>
 ```
+
+On newer macOS releases, `codesign -d --entitlements :-` may inspect the legacy
+XML entitlement slot and warn even when the signed DER entitlement dictionary is
+valid. Use the `-` form above when checking the effective signed entitlements.
 
 During migration, `av dotenv` reads the shared Data Protection Keychain first.
 If that item is not found, it falls back to the legacy login-keychain item. New
