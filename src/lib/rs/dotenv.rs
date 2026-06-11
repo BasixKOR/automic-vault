@@ -3103,9 +3103,13 @@ fn keychain_read_dotenv_private_key_if_present_with_backend(
     account: &str,
     access_group: &str,
 ) -> Result<Option<String>, String> {
-    match backend.read_new_if_present(service, account, access_group)? {
-        Some(value) => Ok(Some(value)),
-        None => backend.read_legacy_if_present(service, account),
+    match backend.read_new_if_present(service, account, access_group) {
+        Ok(Some(value)) => Ok(Some(value)),
+        Ok(None) => backend.read_legacy_if_present(service, account),
+        Err(new_error) => match backend.read_legacy_if_present(service, account) {
+            Ok(Some(value)) => Ok(Some(value)),
+            Ok(None) | Err(_) => Err(new_error),
+        },
     }
 }
 
@@ -3113,25 +3117,30 @@ fn keychain_read_dotenv_private_key_if_present_with_backend(
 impl DotenvKeychainBackend for SystemDotenvKeychainBackend {
     fn read_new_if_present(
         &self,
-        service: &str,
+        _service: &str,
         account: &str,
-        access_group: &str,
+        _access_group: &str,
     ) -> Result<Option<String>, String> {
-        bridge_read_dotenv_private_key_from_new_store_if_present(service, account, access_group)
+        crate::vault::request_dotenv_keychain_load(account)
     }
 
     fn write_new(
         &self,
-        service: &str,
+        _service: &str,
         account: &str,
-        access_group: &str,
+        _access_group: &str,
         value: &str,
     ) -> Result<(), String> {
-        bridge_write_dotenv_private_key_to_new_store(service, account, access_group, value)
+        crate::vault::request_dotenv_keychain_store(account, value)
     }
 
-    fn delete_new(&self, service: &str, account: &str, access_group: &str) -> Result<bool, String> {
-        bridge_delete_dotenv_private_key_from_new_store(service, account, access_group)
+    fn delete_new(
+        &self,
+        _service: &str,
+        account: &str,
+        _access_group: &str,
+    ) -> Result<bool, String> {
+        crate::vault::request_dotenv_keychain_delete(account)
     }
 
     fn read_legacy_if_present(
@@ -3199,6 +3208,7 @@ impl DotenvKeychainBackend for SystemDotenvKeychainBackend {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn bridge_read_dotenv_private_key_from_new_store_if_present(
     service: &str,
     account: &str,
@@ -3327,6 +3337,7 @@ fn keychain_write_dotenv_private_key_with_backend(
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn bridge_write_dotenv_private_key_to_new_store(
     service: &str,
     account: &str,
@@ -3629,6 +3640,7 @@ mod tests {
         legacy_accounts: Mutex<Vec<String>>,
         new_writes: Mutex<Vec<String>>,
         legacy_deletes: Mutex<Vec<String>>,
+        new_read_error: Mutex<Option<String>>,
     }
 
     impl StubDotenvKeychainBackend {
@@ -3658,6 +3670,10 @@ mod tests {
             *self.legacy_accounts.lock().unwrap() =
                 accounts.into_iter().map(str::to_string).collect();
         }
+
+        fn set_new_read_error(&self, message: &str) {
+            *self.new_read_error.lock().unwrap() = Some(message.to_string());
+        }
     }
 
     impl DotenvKeychainBackend for StubDotenvKeychainBackend {
@@ -3667,6 +3683,9 @@ mod tests {
             account: &str,
             _access_group: &str,
         ) -> Result<Option<String>, String> {
+            if let Some(message) = self.new_read_error.lock().unwrap().clone() {
+                return Err(message);
+            }
             Ok(self.new_values.lock().unwrap().get(account).cloned())
         }
 
@@ -3785,6 +3804,39 @@ mod tests {
             )
             .unwrap(),
             Some(new_value)
+        );
+    }
+
+    #[test]
+    fn dotenv_keychain_read_falls_back_to_legacy_when_new_store_errors() {
+        let account =
+            "DOTENV_PRIVATE_KEY:abababababababababababababababababababababababababababababababab";
+        let legacy_value = dotenv_test_private_key(9);
+        let backend = StubDotenvKeychainBackend::with_legacy(account, &legacy_value);
+        backend.set_new_read_error("broker unavailable");
+
+        assert_eq!(
+            keychain_read_dotenv_private_key_if_present_with_backend(
+                &backend,
+                "service",
+                account,
+                "TEAM.group"
+            )
+            .unwrap(),
+            Some(legacy_value)
+        );
+
+        let missing_account =
+            "DOTENV_PRIVATE_KEY:acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac";
+        assert_eq!(
+            keychain_read_dotenv_private_key_if_present_with_backend(
+                &backend,
+                "service",
+                missing_account,
+                "TEAM.group"
+            )
+            .unwrap_err(),
+            "broker unavailable"
         );
     }
 
@@ -3910,7 +3962,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn dotenv_data_protection_keychain_roundtrips_when_opted_in_and_entitled() {
+    fn dotenv_data_protection_keychain_bridge_roundtrips_when_opted_in_and_entitled() {
         if std::env::var_os("AV_TEST_DOTENV_DP_KEYCHAIN").is_none() {
             eprintln!(
                 "skipping dotenv DP keychain integration test; set AV_TEST_DOTENV_DP_KEYCHAIN=1 to run"
@@ -3940,21 +3992,34 @@ mod tests {
 
         let account = format!("DOTENV_PRIVATE_KEY:{:064x}", std::process::id());
         let value = dotenv_test_private_key(8);
-        let backend = SystemDotenvKeychainBackend;
-        let _ = backend.delete_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group);
-        backend
-            .write_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group, &value)
-            .unwrap();
+        let _ = bridge_delete_dotenv_private_key_from_new_store(
+            DOTENV_KEYCHAIN_SERVICE,
+            &account,
+            access_group,
+        );
+        bridge_write_dotenv_private_key_to_new_store(
+            DOTENV_KEYCHAIN_SERVICE,
+            &account,
+            access_group,
+            &value,
+        )
+        .unwrap();
         assert_eq!(
-            backend
-                .read_new_if_present(DOTENV_KEYCHAIN_SERVICE, &account, access_group)
-                .unwrap(),
+            bridge_read_dotenv_private_key_from_new_store_if_present(
+                DOTENV_KEYCHAIN_SERVICE,
+                &account,
+                access_group
+            )
+            .unwrap(),
             Some(value)
         );
         assert!(
-            backend
-                .delete_new(DOTENV_KEYCHAIN_SERVICE, &account, access_group)
-                .unwrap()
+            bridge_delete_dotenv_private_key_from_new_store(
+                DOTENV_KEYCHAIN_SERVICE,
+                &account,
+                access_group
+            )
+            .unwrap()
         );
     }
 
@@ -3962,23 +4027,51 @@ mod tests {
     #[test]
     fn dotenv_keychain_and_notification_bridges_reject_invalid_c_strings_before_ffi() {
         assert_eq!(
-            keychain_read_dotenv_private_key("bad\0service", "account").unwrap_err(),
+            bridge_read_dotenv_private_key_from_new_store_if_present(
+                "bad\0service",
+                "account",
+                "TEAM.group"
+            )
+            .unwrap_err(),
             "invalid keychain service name"
         );
         assert_eq!(
-            keychain_read_dotenv_private_key("service", "bad\0account").unwrap_err(),
+            bridge_read_dotenv_private_key_from_new_store_if_present(
+                "service",
+                "bad\0account",
+                "TEAM.group"
+            )
+            .unwrap_err(),
             "invalid keychain account name"
         );
         assert_eq!(
-            keychain_write_dotenv_private_key("bad\0service", "account", "value").unwrap_err(),
+            bridge_write_dotenv_private_key_to_new_store(
+                "bad\0service",
+                "account",
+                "TEAM.group",
+                "value"
+            )
+            .unwrap_err(),
             "invalid keychain service name"
         );
         assert_eq!(
-            keychain_write_dotenv_private_key("service", "bad\0account", "value").unwrap_err(),
+            bridge_write_dotenv_private_key_to_new_store(
+                "service",
+                "bad\0account",
+                "TEAM.group",
+                "value"
+            )
+            .unwrap_err(),
             "invalid keychain account name"
         );
         assert_eq!(
-            keychain_write_dotenv_private_key("service", "account", "bad\0value").unwrap_err(),
+            bridge_write_dotenv_private_key_to_new_store(
+                "service",
+                "account",
+                "TEAM.group",
+                "bad\0value"
+            )
+            .unwrap_err(),
             "invalid keychain private key"
         );
         assert_eq!(
@@ -5371,15 +5464,31 @@ mod tests {
     #[test]
     fn dotenv_keychain_bridges_reject_invalid_c_strings() {
         assert_eq!(
-            keychain_read_dotenv_private_key("bad\0service", "account").unwrap_err(),
+            bridge_read_dotenv_private_key_from_new_store_if_present(
+                "bad\0service",
+                "account",
+                "TEAM.group"
+            )
+            .unwrap_err(),
             "invalid keychain service name"
         );
         assert_eq!(
-            keychain_read_dotenv_private_key("service", "bad\0account").unwrap_err(),
+            bridge_read_dotenv_private_key_from_new_store_if_present(
+                "service",
+                "bad\0account",
+                "TEAM.group"
+            )
+            .unwrap_err(),
             "invalid keychain account name"
         );
         assert_eq!(
-            keychain_write_dotenv_private_key("service", "account", "bad\0value").unwrap_err(),
+            bridge_write_dotenv_private_key_to_new_store(
+                "service",
+                "account",
+                "TEAM.group",
+                "bad\0value"
+            )
+            .unwrap_err(),
             "invalid keychain private key"
         );
         assert_eq!(

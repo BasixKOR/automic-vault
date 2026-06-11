@@ -277,6 +277,9 @@ if [[ -n "$APPLE_TEAM_ID" ]]; then
 else
   unset APPLE_TEAM_ID
 fi
+DOTENV_KEYCHAIN_BROKER_TEAM_ID="${AV_DOTENV_KEYCHAIN_ACCESS_GROUP%%.*}"
+DOTENV_KEYCHAIN_BROKER_AV_REQUIREMENT="identifier \"${APP_BUNDLE_ID}.av\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"${DOTENV_KEYCHAIN_BROKER_TEAM_ID}\""
+DOTENV_KEYCHAIN_BROKER_MENU_AV_REQUIREMENT="identifier \"${MENU_BUNDLE_ID}.av\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"${DOTENV_KEYCHAIN_BROKER_TEAM_ID}\""
 export NUKE_HELPER_VERSION
 SHARED_SWIFT_SOURCES=(
   "$GUI_DIR/Localization.swift"
@@ -791,6 +794,11 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <string>${NUKE_HELPER_VERSION}</string>
   <key>AVDotenvKeychainAccessGroup</key>
   <string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>
+  <key>AVDotenvKeychainBrokerAuthorizedClients</key>
+  <array>
+    <string>${DOTENV_KEYCHAIN_BROKER_AV_REQUIREMENT}</string>
+    <string>${DOTENV_KEYCHAIN_BROKER_MENU_AV_REQUIREMENT}</string>
+  </array>
   <key>LSMinimumSystemVersion</key>
   <string>${MIN_MACOS_VERSION}</string>
   <key>NSAppTransportSecurity</key>
@@ -853,6 +861,11 @@ cat >"$MENU_APP_DIR/Contents/Info.plist" <<PLIST
   <string>${NUKE_PROTOCOL_VERSION}</string>
   <key>AVDotenvKeychainAccessGroup</key>
   <string>${AV_DOTENV_KEYCHAIN_ACCESS_GROUP}</string>
+  <key>AVDotenvKeychainBrokerAuthorizedClients</key>
+  <array>
+    <string>${DOTENV_KEYCHAIN_BROKER_AV_REQUIREMENT}</string>
+    <string>${DOTENV_KEYCHAIN_BROKER_MENU_AV_REQUIREMENT}</string>
+  </array>
 </dict>
 </plist>
 PLIST

@@ -81,6 +81,8 @@ pub(crate) use stubs::*;
 pub(crate) use trace::*;
 pub use vault::vault_main_entry;
 pub use vault::{
+    DotenvKeychainDeleteRequest, DotenvKeychainDeleteResponse, DotenvKeychainLoadRequest,
+    DotenvKeychainLoadResponse, DotenvKeychainStoreRequest, DotenvKeychainStoreResponse,
     ExecutionIntent, KeyTransferApprovalItem, KeyTransferApprovalRequest,
     KeyTransferApprovalSource, KeyTransferImportItem, KeyTransferImportRequest,
     KeyTransferImportResponse, VaultApprovalRequest, VaultApprovalResponse, VaultClientRequest,

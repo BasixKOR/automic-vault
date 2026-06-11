@@ -21,6 +21,26 @@ executable cannot carry an embedded app-bundle provisioning profile; do not add
 the keychain-sharing entitlement to loose helper binaries unless they are
 packaged with their own eligible profile context.
 
+## Brokered CLI Access
+
+The loose `av` CLI does not read or write the Data Protection Keychain directly.
+It sends dotenv keychain load, store, and delete requests to the per-user
+Automic Vault menu helper over the existing vault daemon socket. The menu
+helper is the entitled, profiled bundle that owns the shared keychain group.
+
+Before serving a dotenv keychain request, the daemon obtains the peer audit
+token from the UNIX-domain socket and validates the live sender with
+Security.framework code-signing requirements. Release builds authorize these
+CLI identifiers under Team ID `ZU76A67LGU`:
+
+- `com.automicvault.av`
+- `com.automicvault.menu-helper.av`
+
+The generated app plists declare the requirement strings in
+`AVDotenvKeychainBrokerAuthorizedClients`; if that key is absent, the daemon
+falls back to the same identifiers using the Team ID prefix from
+`AVDotenvKeychainAccessGroup`.
+
 Every dotenv private-key `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`,
 and `SecItemDelete` query against the shared store must include:
 
@@ -44,6 +64,7 @@ On newer macOS releases, `codesign -d --entitlements :-` may inspect the legacy
 XML entitlement slot and warn even when the signed DER entitlement dictionary is
 valid. Use the `-` form above when checking the effective signed entitlements.
 
-During migration, `av dotenv` reads the shared Data Protection Keychain first.
-If that item is not found, it falls back to the legacy login-keychain item. New
-writes go only to the shared Data Protection Keychain.
+During migration, `av dotenv` asks the broker to read the shared Data Protection
+Keychain first. If the broker is unavailable and the legacy login-keychain item
+exists, the CLI falls back to that legacy item. New writes go only through the
+broker to the shared Data Protection Keychain.
