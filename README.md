@@ -136,11 +136,16 @@ lot, and it is the part we can actually ship.
 ## Security Guarantees
 
 Under the macOS security model, assuming the machine is not root-compromised,
+System Integrity Protection is enabled, the
 macOS Keychain is not compromised, and Automic Vault itself is not exploited,
 secrets remain protected from ordinary apps, shell tools, malware, and agent
 subprocesses. Hardened Runtime blocks normal debugger, injection, and
 memory-scraping paths against our signed app, and Keychain only releases secrets
 through the authorized Automic Vault code path.
+
+> We also assume quantum computers are not generally accessible and that whoever
+> currently has one poweful enough to break encryption does not have beef with
+> you.
 
 &nbsp;
 
