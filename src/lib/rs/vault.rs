@@ -805,6 +805,13 @@ pub(crate) fn request_key_transfer_import(
     }
 }
 
+pub(crate) fn ensure_vaultd_available() -> Result<(), String> {
+    let socket_path = resolve_vault_socket_path()?;
+    UnixStream::connect(&socket_path)
+        .map(|_| ())
+        .map_err(|err| format!("vaultd unavailable at {}: {err}", socket_path.display()))
+}
+
 pub(crate) fn request_dotenv_keychain_load(account: &str) -> Result<Option<String>, String> {
     let request_id = new_vault_request_id()?;
     let request = VaultClientRequest::DotenvKeychainLoadRequest {

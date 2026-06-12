@@ -28,6 +28,7 @@ struct TransferSendOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TransferReceiveOptions {
     stdin: bool,
+    check: bool,
     replace: bool,
 }
 
@@ -132,9 +133,11 @@ pub(crate) fn run_transfer_entry(program_name: &str, args: env::ArgsOs) -> Resul
     };
     match command {
         TransferCommand::Send(options) => run_transfer_send(&options, &KeychainTransferSecretStore),
-        TransferCommand::Receive(options) => run_transfer_receive(&options, |request| {
-            vault::request_key_transfer_import(request)
-        }),
+        TransferCommand::Receive(options) => {
+            run_transfer_receive(&options, vault::ensure_vaultd_available, |request| {
+                vault::request_key_transfer_import(request)
+            })
+        }
     }
 }
 
@@ -252,6 +255,7 @@ fn parse_transfer_receive(
     args: impl Iterator<Item = OsString>,
 ) -> Result<Option<TransferReceiveOptions>, String> {
     let mut stdin = false;
+    let mut check = false;
     let mut replace = false;
     for arg in args {
         if is_help_flag(&arg) {
@@ -266,6 +270,10 @@ fn parse_transfer_receive(
             stdin = true;
             continue;
         }
+        if arg == "--check" {
+            check = true;
+            continue;
+        }
         if arg == "--replace" {
             replace = true;
             continue;
@@ -275,11 +283,22 @@ fn parse_transfer_receive(
             arg.to_string_lossy()
         ));
     }
+    if check {
+        return Ok(Some(TransferReceiveOptions {
+            stdin,
+            check,
+            replace,
+        }));
+    }
     if !stdin {
         print_transfer_receive_usage(program_name);
         return Err("transfer receive requires --stdin".to_string());
     }
-    Ok(Some(TransferReceiveOptions { stdin, replace }))
+    Ok(Some(TransferReceiveOptions {
+        stdin,
+        check,
+        replace,
+    }))
 }
 
 fn next_transfer_value<I>(args: &mut std::iter::Peekable<I>, flag: &str) -> Result<String, String>
@@ -296,6 +315,7 @@ fn run_transfer_send(
     options: &TransferSendOptions,
     store: &dyn TransferSecretStore,
 ) -> Result<(), String> {
+    check_remote_transfer_receiver(options)?;
     let mut bundle = build_transfer_bundle(options, store)?;
     let item_count = bundle.items.len();
     let ssh_args = build_ssh_command_args(options);
@@ -330,6 +350,52 @@ fn run_transfer_send(
         options.ssh_target
     );
     Ok(())
+}
+
+fn check_remote_transfer_receiver(options: &TransferSendOptions) -> Result<(), String> {
+    let output = Command::new("ssh")
+        .args(build_ssh_check_command_args(options))
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|err| format!("failed to start ssh for transfer check: {err}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    transfer_check_failure_result(&options.ssh_target, &output.status.to_string(), &stderr)
+}
+
+fn transfer_check_failure_result(
+    ssh_target: &str,
+    status: &str,
+    stderr: &str,
+) -> Result<(), String> {
+    if stderr.contains("unknown transfer receive argument '--check'") {
+        return Ok(());
+    }
+    let stderr = stderr.trim();
+    if stderr.contains("vaultd unavailable") {
+        let detail = stderr
+            .strip_prefix("av transfer: ")
+            .unwrap_or(stderr)
+            .trim();
+        if detail.is_empty() {
+            return Err(format!(
+                "receiving Automic Vault.app is unavailable on {}; open Automic Vault.app there and try again",
+                ssh_target
+            ));
+        }
+        return Err(format!(
+            "receiving Automic Vault.app is unavailable on {}; open Automic Vault.app there and try again ({detail})",
+            ssh_target
+        ));
+    }
+    if stderr.is_empty() {
+        return Err(format!(
+            "transfer check failed on {ssh_target}: ssh exited with {status}"
+        ));
+    }
+    Err(format!("transfer check failed on {ssh_target}: {stderr}"))
 }
 
 fn build_transfer_bundle(
@@ -390,35 +456,53 @@ fn local_hostname() -> String {
 }
 
 fn build_ssh_command_args(options: &TransferSendOptions) -> Vec<String> {
+    build_ssh_command_args_for(options, false)
+}
+
+fn build_ssh_check_command_args(options: &TransferSendOptions) -> Vec<String> {
+    build_ssh_command_args_for(options, true)
+}
+
+fn build_ssh_command_args_for(options: &TransferSendOptions, check: bool) -> Vec<String> {
     let mut args = options.ssh_options.clone();
     args.push(options.ssh_target.clone());
     args.push(remote_receive_command(
         &options.remote_av,
         options.remote_av_explicit,
         options.replace,
+        check,
     ));
     args
 }
 
-fn remote_receive_command(remote_av: &str, remote_av_explicit: bool, replace: bool) -> String {
+fn remote_receive_command(
+    remote_av: &str,
+    remote_av_explicit: bool,
+    replace: bool,
+    check: bool,
+) -> String {
     if !remote_av_explicit && remote_av == DEFAULT_REMOTE_AV {
         return format!(
             "if command -v {} >/dev/null 2>&1; then exec {}; else exec {}; fi",
             shell_quote(DEFAULT_REMOTE_AV),
-            remote_receive_invocation(DEFAULT_REMOTE_AV, replace),
-            remote_receive_invocation(INSTALLED_REMOTE_AV, replace)
+            remote_receive_invocation(DEFAULT_REMOTE_AV, replace, check),
+            remote_receive_invocation(INSTALLED_REMOTE_AV, replace, check)
         );
     }
-    remote_receive_invocation(remote_av, replace)
+    remote_receive_invocation(remote_av, replace, check)
 }
 
-fn remote_receive_invocation(remote_av: &str, replace: bool) -> String {
+fn remote_receive_invocation(remote_av: &str, replace: bool, check: bool) -> String {
     let mut parts = vec![
         shell_quote(remote_av),
         shell_quote("transfer"),
         shell_quote("receive"),
-        shell_quote("--stdin"),
     ];
+    if check {
+        parts.push(shell_quote("--check"));
+    } else {
+        parts.push(shell_quote("--stdin"));
+    }
     if replace {
         parts.push(shell_quote("--replace"));
     }
@@ -432,10 +516,19 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn run_transfer_receive<I>(options: &TransferReceiveOptions, import: I) -> Result<(), String>
+fn run_transfer_receive<C, I>(
+    options: &TransferReceiveOptions,
+    check_daemon: C,
+    import: I,
+) -> Result<(), String>
 where
+    C: FnOnce() -> Result<(), String>,
     I: FnOnce(KeyTransferImportRequest) -> Result<KeyTransferImportResponse, String>,
 {
+    if options.check {
+        check_daemon()?;
+        return Ok(());
+    }
     if !options.stdin {
         return Err("transfer receive requires --stdin".to_string());
     }
@@ -960,7 +1053,20 @@ mod tests {
             panic!("expected receive command");
         };
         assert!(options.stdin);
+        assert!(!options.check);
         assert!(options.replace);
+
+        let command = parse_transfer_command(
+            "av transfer",
+            [OsString::from("receive"), OsString::from("--check")].into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        let TransferCommand::Receive(options) = command else {
+            panic!("expected receive command");
+        };
+        assert!(!options.stdin);
+        assert!(options.check);
     }
 
     #[test]
@@ -1156,6 +1262,82 @@ mod tests {
         assert_eq!(
             args[1],
             "if command -v 'av' >/dev/null 2>&1; then exec 'av' 'transfer' 'receive' '--stdin'; else exec '/usr/local/bin/av' 'transfer' 'receive' '--stdin'; fi"
+        );
+    }
+
+    #[test]
+    fn transfer_ssh_check_command_uses_receive_check() {
+        let options = TransferSendOptions {
+            ssh_target: "me@mac".to_string(),
+            file: PathBuf::from(".env"),
+            include_dotenv: true,
+            keys: Vec::new(),
+            replace: false,
+            ssh_options: Vec::new(),
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
+        };
+
+        let args = build_ssh_check_command_args(&options);
+
+        assert_eq!(args[0], "me@mac");
+        assert_eq!(
+            args[1],
+            "if command -v 'av' >/dev/null 2>&1; then exec 'av' 'transfer' 'receive' '--check'; else exec '/usr/local/bin/av' 'transfer' 'receive' '--check'; fi"
+        );
+    }
+
+    #[test]
+    fn transfer_receive_check_pings_daemon_without_reading_stdin() {
+        let options = TransferReceiveOptions {
+            stdin: false,
+            check: true,
+            replace: false,
+        };
+        let mut checked = false;
+        let mut imported = false;
+
+        run_transfer_receive(
+            &options,
+            || {
+                checked = true;
+                Ok(())
+            },
+            |_| {
+                imported = true;
+                Err("unexpected import".to_string())
+            },
+        )
+        .unwrap();
+
+        assert!(checked);
+        assert!(!imported);
+    }
+
+    #[test]
+    fn transfer_check_failure_result_handles_expected_remote_errors() {
+        assert!(
+            transfer_check_failure_result(
+                "me@mac",
+                "exit status: 1",
+                "av transfer: unknown transfer receive argument '--check'\n",
+            )
+            .is_ok()
+        );
+
+        assert_eq!(
+            transfer_check_failure_result(
+                "me@mac",
+                "exit status: 1",
+                "av transfer: vaultd unavailable at /tmp/vault.sock: Connection refused\n",
+            )
+            .unwrap_err(),
+            "receiving Automic Vault.app is unavailable on me@mac; open Automic Vault.app there and try again (vaultd unavailable at /tmp/vault.sock: Connection refused)"
+        );
+
+        assert_eq!(
+            transfer_check_failure_result("me@mac", "exit status: 255", "").unwrap_err(),
+            "transfer check failed on me@mac: ssh exited with exit status: 255"
         );
     }
 
