@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sqlite3
+import sys
 import tarfile
 import tempfile
 import urllib.error
@@ -33,11 +34,16 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import av_db_cache_path
+
 
 SCHEMA_VERSION = 1
-GENERATED_DATA_DIR = Path("cache")
-OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-manager-indexes.json.gz"
-CACHE_DIR = Path("cache/pkg-manager-indexes")
+OUTPUT_PATH = av_db_cache_path("pkg-manager-indexes.json.gz")
+CACHE_DIR = av_db_cache_path("pkg-manager-indexes")
 DEFAULT_TIMEOUT = 90
 USER_AGENT = "AutomicVaultPkgManagerIndexes/1.0"
 

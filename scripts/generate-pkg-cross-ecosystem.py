@@ -28,11 +28,17 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import DB_JSON_PATH, av_db_cache_path, av_db_data_path
+
 
 SCHEMA_VERSION = 4
-GENERATED_DATA_DIR = Path("cache")
-OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
-PKG_MANAGER_INDEX_PATH = GENERATED_DATA_DIR / "pkg-manager-indexes.json.gz"
+OUTPUT_PATH = av_db_cache_path("pkg-cross-ecosystem.json")
+PKG_MANAGER_INDEX_PATH = av_db_cache_path("pkg-manager-indexes.json.gz")
+PKG_PAGE_SUPPLEMENTS_ROOT = av_db_data_path("pkg-pages")
 ALLOWED_PLATFORMS = {"macos", "linux", "windows", "portable"}
 SOURCE_BACKED_MANAGER_CONFIDENCE = {
     "macports": 0.94,
@@ -105,15 +111,15 @@ def stable_hash(value: Any) -> str:
 
 def source_files() -> list[Path]:
     files = [
-        GENERATED_DATA_DIR / "pkg-page-enrichment.json",
-        Path("data/db.json"),
-        Path("data/npm.json"),
-        Path("data/pip.json"),
+        av_db_cache_path("pkg-page-enrichment.json"),
+        DB_JSON_PATH,
+        av_db_data_path("npm.json"),
+        av_db_data_path("pip.json"),
         PKG_MANAGER_INDEX_PATH,
         Path("scripts/generate-pkg-cross-ecosystem.py"),
         Path("scripts/generate-pkg-manager-indexes.py"),
     ]
-    for root in (Path("data/pkg-pages"),):
+    for root in (PKG_PAGE_SUPPLEMENTS_ROOT,):
         if root.exists():
             files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
     return sorted(path for path in files if path.exists())

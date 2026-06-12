@@ -267,8 +267,8 @@ class PackagePageEnrichmentTests(unittest.TestCase):
     def test_package_page_sources_include_enrichment_artifact(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_for_enrichment_test")
         source_paths = {path.as_posix() for path in module.source_files()}
-        self.assertIn("cache/pkg-page-enrichment.json", source_paths)
-        self.assertIn("cache/pkg-version-freshness.json", source_paths)
+        self.assertIn(module.PKG_PAGE_ENRICHMENT_PATH.as_posix(), source_paths)
+        self.assertIn(module.PKG_VERSION_FRESHNESS_PATH.as_posix(), source_paths)
         self.assertIn(
             (module.ISOTOPE_DATA_ROOT / "gh-cli/automic-vault.yml").as_posix(),
             source_paths,

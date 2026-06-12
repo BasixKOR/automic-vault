@@ -28,6 +28,12 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import DB_JSON_PATH, av_db_cache_path, av_db_data_path
+
 
 SCHEMA_VERSION = 1
 FORMULA_URL = "https://formulae.brew.sh/api/formula.json"
@@ -35,14 +41,13 @@ CASK_URL = "https://formulae.brew.sh/api/cask.json"
 NPM_PACKAGE_URL = "https://registry.npmjs.org/{name}"
 PYPI_PACKAGE_URL = "https://pypi.org/pypi/{name}/json"
 CACHE_DIR = Path("cache")
-GENERATED_DATA_DIR = Path("cache")
 ECOSYSTEM = "brew.sh"
 META_KEY = "__pkgdb_meta__"
 PAYLOAD_KEY = "__pkgdb_payload__"
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 DEFAULT_TIMEOUT = 60
 USER_AGENT = "nucleus/0.1"
-OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
+OUTPUT_PATH = av_db_cache_path("pkg-page-enrichment.json")
 
 
 class Terminal:
@@ -928,9 +933,9 @@ def expected_enrichment(force_refresh: bool = False) -> dict[str, Any]:
     casks = fetch_json(CASK_URL, force_refresh=force_refresh)
     if not isinstance(casks, list):
         raise ValueError("Homebrew cask API payload must be a list")
-    db = read_json(Path("data/db.json"))
+    db = read_json(DB_JSON_PATH)
     if not isinstance(db, dict):
-        raise ValueError("data/db.json must contain an object")
+        raise ValueError(f"{DB_JSON_PATH} must contain an object")
     npms = db.get("npms") or {}
     npm_payloads: dict[str, Any] = {}
     if isinstance(npms, dict):
@@ -938,7 +943,7 @@ def expected_enrichment(force_refresh: bool = False) -> dict[str, Any]:
             if not isinstance(name, str) or not name:
                 continue
             npm_payloads[name] = fetch_json(npm_package_url(name), ecosystem="registry.npmjs.org", force_refresh=force_refresh)
-    pip_overlays = read_json(Path("data/pip.json"))
+    pip_overlays = read_json(av_db_data_path("pip.json"))
     pypi_payloads: dict[str, Any] = {}
     if isinstance(pip_overlays, dict):
         for name in sorted(pip_overlays):
@@ -964,7 +969,7 @@ def check_current(path: Path, terminal: Terminal) -> int:
     if not current.get("generated_at"):
         failures.append("missing generated_at")
     if current.get("packages") != expected.get("packages"):
-        failures.append("package enrichment does not match current Homebrew formula data and data/db.json")
+        failures.append(f"package enrichment does not match current Homebrew formula data and {DB_JSON_PATH}")
     if failures:
         terminal.error_log("Package-origin enrichment is stale.")
         for failure in failures:

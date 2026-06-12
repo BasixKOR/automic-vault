@@ -30,23 +30,23 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_for_package, taxonomy_terms
+from av_db_paths import DB_JSON_PATH, ISOTOPE_METADATA_PATH, av_db_cache_path, av_db_data_path
 
 
 SCHEMA_VERSION = 1
-GENERATED_DATA_DIR = Path("cache")
-PKG_PAGE_ENRICHMENT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
-PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
-OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
-CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
-CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
+PKG_PAGE_ENRICHMENT_PATH = av_db_cache_path("pkg-page-enrichment.json")
+PKG_VERSION_FRESHNESS_PATH = av_db_cache_path("pkg-version-freshness.json")
+OUTPUT_PATH = av_db_cache_path("pkg-graph.json")
+CURATION_PATH = av_db_cache_path("pkg-graph-curation.json")
+CROSS_ECOSYSTEM_PATH = av_db_cache_path("pkg-cross-ecosystem.json")
 HUB_DEFINITIONS = graph_hub_definitions()
-AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
-ISOTOPE_METADATA_PATH = Path(
-    os.environ.get(
-        "AUTOMIC_VAULT_ISOTOPES_JSON",
-        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
-    )
-).expanduser()
+GEIGER_COUNTER_PATH = av_db_data_path("geiger-counter.json")
+NPM_OVERLAY_PATH = av_db_data_path("npm.json")
+PIP_OVERLAY_PATH = av_db_data_path("pip.json")
+PKG_HUBS_PATH = av_db_data_path("pkg-hubs.json")
+PKG_TAXONOMY_PATH = av_db_data_path("pkg-taxonomy.json")
+APPROVAL_GATES_ROOT = av_db_data_path("approval-gates")
+PKG_PAGE_SUPPLEMENTS_ROOT = av_db_data_path("pkg-pages")
 
 RELATION_DEFINITIONS = {
     "runtime_dependency": "Homebrew declares the target as a runtime dependency.",
@@ -166,20 +166,20 @@ def input_files() -> list[Path]:
     files = [
         PKG_PAGE_ENRICHMENT_PATH,
         CROSS_ECOSYSTEM_PATH,
-        Path("data/pkg-hubs.json"),
-        Path("data/pkg-taxonomy.json"),
-        Path("data/db.json"),
-        Path("data/geiger-counter.json"),
+        PKG_HUBS_PATH,
+        PKG_TAXONOMY_PATH,
+        DB_JSON_PATH,
+        GEIGER_COUNTER_PATH,
         ISOTOPE_METADATA_PATH,
-        Path("data/npm.json"),
-        Path("data/pip.json"),
+        NPM_OVERLAY_PATH,
+        PIP_OVERLAY_PATH,
         Path("scripts/generate-pkg-pages.py"),
         Path("scripts/generate-pkg-graph.py"),
         Path("scripts/pkg_hub_data.py"),
     ]
     if CURATION_PATH.exists():
         files.append(CURATION_PATH)
-    for root in (Path("data/approval-gates"), Path("data/pkg-pages")):
+    for root in (APPROVAL_GATES_ROOT, PKG_PAGE_SUPPLEMENTS_ROOT):
         if root.exists():
             files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
     return sorted(path for path in files if path.exists())
@@ -208,7 +208,7 @@ def provider_packages(db: dict[str, Any], pip: dict[str, Any]) -> dict[str, set[
 
 def approval_gate_packages() -> set[str]:
     result = set()
-    root = Path("data/approval-gates/brew")
+    root = APPROVAL_GATES_ROOT / "brew"
     if root.exists():
         result.update(path.stem for path in root.glob("*.yaml"))
     return result
@@ -619,11 +619,11 @@ def count_hub_memberships(graph_packages: dict[str, Any]) -> dict[str, int]:
 
 def build_graph() -> dict[str, Any]:
     enrichment = read_json(PKG_PAGE_ENRICHMENT_PATH)
-    db = read_json(Path("data/db.json"))
-    geiger_data = read_json(Path("data/geiger-counter.json"), {})
+    db = read_json(DB_JSON_PATH)
+    geiger_data = read_json(GEIGER_COUNTER_PATH, {})
     isotopes = read_json(ISOTOPE_METADATA_PATH, {})
-    npm = read_json(Path("data/npm.json"), {})
-    pip = read_json(Path("data/pip.json"), {})
+    npm = read_json(NPM_OVERLAY_PATH, {})
+    pip = read_json(PIP_OVERLAY_PATH, {})
     freshness = read_json(PKG_VERSION_FRESHNESS_PATH, {})
     curation = read_json(CURATION_PATH, {})
     cross_ecosystem = read_json(CROSS_ECOSYSTEM_PATH, {})
@@ -739,7 +739,7 @@ def build_graph() -> dict[str, Any]:
         for peer, shared, score in taxonomy_peer_candidates(key, taxonomy, taxonomy_by_key, db, taxonomy_candidate_keys):
             append_unique(
                 related,
-                link_target("brew", peer, taxonomy_peer_reason(shared), "domain_peer", min(0.74, 0.58 + (score / 40)), "data/pkg-taxonomy.json"),
+                link_target("brew", peer, taxonomy_peer_reason(shared), "domain_peer", min(0.74, 0.58 + (score / 40)), PKG_TAXONOMY_PATH.as_posix()),
                 related_seen,
             )
 

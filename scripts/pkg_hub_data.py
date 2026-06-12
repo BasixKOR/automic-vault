@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-PKG_HUBS_PATH = Path("data/pkg-hubs.json")
-PKG_TAXONOMY_PATH = Path("data/pkg-taxonomy.json")
+from av_db_paths import av_db_data_path
+
+PKG_HUBS_PATH = av_db_data_path("pkg-hubs.json")
+PKG_TAXONOMY_PATH = av_db_data_path("pkg-taxonomy.json")
 
 
 def read_json(path: Path, default: Any = None) -> Any:

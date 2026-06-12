@@ -25,9 +25,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import av_db_data_path
+
 
 DEFAULT_SOURCE = Path(os.environ.get("AV_DB_DIR") or "/Users/mxcl/src/av.db")
-OUTPUT_PATH = Path("data/pkg-taxonomy.json")
+OUTPUT_PATH = av_db_data_path("pkg-taxonomy.json")
 SCHEMA_VERSION = 1
 
 

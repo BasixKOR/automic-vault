@@ -38,8 +38,8 @@ class PackageVersionFreshnessTests(unittest.TestCase):
 
         site = module.site_data_status(
             {
-                "cache/pkg-page-enrichment.json": "2026-05-18T00:00:00+00:00",
-                "data/db.json": "2026-05-25T00:00:00+00:00",
+                module.PKG_PAGE_ENRICHMENT_PATH.as_posix(): "2026-05-18T00:00:00+00:00",
+                module.DB_JSON_PATH.as_posix(): "2026-05-25T00:00:00+00:00",
             },
             now,
         )

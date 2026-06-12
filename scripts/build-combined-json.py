@@ -20,6 +20,12 @@ import os
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import COMBINED_DB_PATH, DB_JSON_PATH, ISOTOPE_METADATA_PATH, av_db_data_path
+
 
 SOURCE_FILES = (
     "aliases.json",
@@ -30,16 +36,19 @@ SOURCE_FILES = (
     "security-recommendations.json",
     "stub_exclusions.json",
 )
-OUTPUT_PATH = os.path.join("data", "combined.json")
+OUTPUT_PATH = COMBINED_DB_PATH
 SCHEMA_VERSION = 1
-SCRIPT_DIR = Path(__file__).resolve().parent
-AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
-ISOTOPE_METADATA_PATH = Path(
-    os.environ.get(
-        "AUTOMIC_VAULT_ISOTOPES_JSON",
-        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
-    )
-).expanduser()
+
+
+SOURCE_PATHS = {
+    "aliases.json": av_db_data_path("aliases.json"),
+    "db.json": DB_JSON_PATH,
+    "isotopes.json": ISOTOPE_METADATA_PATH,
+    "npm.json": av_db_data_path("npm.json"),
+    "pip.json": av_db_data_path("pip.json"),
+    "security-recommendations.json": av_db_data_path("security-recommendations.json"),
+    "stub_exclusions.json": av_db_data_path("stub_exclusions.json"),
+}
 
 
 def _ensure_cwd():
@@ -80,7 +89,7 @@ def _prune(value):
 def _load_sources():
     sources = {}
     for name in SOURCE_FILES:
-        path = ISOTOPE_METADATA_PATH if name == "isotopes.json" else Path("data") / name
+        path = SOURCE_PATHS[name]
         if not path.exists():
             raise FileNotFoundError(path)
         source = _prune(_read_json(path))
@@ -127,17 +136,17 @@ def _validate_combined(path):
 def _validate_sources(sources):
     db = sources.get("db")
     if not isinstance(db, dict):
-        raise ValueError("data/db.json must contain an object")
+        raise ValueError(f"{DB_JSON_PATH} must contain an object")
     casks = db.get("casks")
     if not isinstance(casks, dict) or not casks:
-        raise ValueError("data/db.json must contain supported cask metadata")
+        raise ValueError(f"{DB_JSON_PATH} must contain supported cask metadata")
     for executable, provider in (db.get("entries") or {}).items():
         if not isinstance(provider, str) or not provider.startswith("cask:"):
             continue
         cask = provider[len("cask:") :]
         if cask not in casks:
             raise ValueError(
-                f"data/db.json entry {executable!r} points at missing cask {cask!r}"
+                f"{DB_JSON_PATH} entry {executable!r} points at missing cask {cask!r}"
             )
 
 

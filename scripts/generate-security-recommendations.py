@@ -20,19 +20,15 @@ import os
 import sys
 from pathlib import Path
 
-
-OUTPUT_PATH = Path("data/security-recommendations.json")
 SCRIPT_DIR = Path(__file__).resolve().parent
-AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
-ISOTOPE_METADATA_PATH = Path(
-    os.environ.get(
-        "AUTOMIC_VAULT_ISOTOPES_JSON",
-        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
-    )
-).expanduser()
-RADIOISOTOPE_DATA_ROOT = Path(
-    os.environ.get("AUTOMIC_VAULT_RADIOISOTOPES_REPO", AV_DB_ROOT / "data/radioisotopes")
-).expanduser()
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import ISOTOPE_METADATA_PATH, RADIOISOTOPE_DATA_ROOT, av_db_data_path
+
+OUTPUT_PATH = av_db_data_path("security-recommendations.json")
+GEIGER_COUNTER_PATH = av_db_data_path("geiger-counter.json")
+APPROVAL_GATES_BREW_ROOT = av_db_data_path("approval-gates", "brew")
 SCHEMA_VERSION = 1
 GEIGER_LEVEL_PRIORITIES = {
     "red": 20,
@@ -239,14 +235,14 @@ def _add_geiger_packages(packages, geiger):
 
 def _expected():
     packages = {}
-    geiger = _read_json("data/geiger-counter.json")
+    geiger = _read_json(GEIGER_COUNTER_PATH)
     _add_isotope_packages(
         packages,
         _read_json(ISOTOPE_METADATA_PATH),
         geiger,
         _versioned_radioisotope_bases(RADIOISOTOPE_DATA_ROOT),
     )
-    _add_approval_gate_packages(packages, Path("data/approval-gates/brew"))
+    _add_approval_gate_packages(packages, APPROVAL_GATES_BREW_ROOT)
     _add_geiger_packages(packages, geiger)
 
     for package in packages.values():

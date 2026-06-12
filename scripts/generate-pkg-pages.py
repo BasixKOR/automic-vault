@@ -34,6 +34,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from av_db_paths import (
+    COMBINED_DB_PATH,
+    DB_JSON_PATH,
+    ISOTOPE_DATA_ROOT,
+    ISOTOPE_METADATA_PATH,
+    RADIOISOTOPE_DATA_ROOT,
+    av_db_cache_path,
+    av_db_data_path,
+)
 from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_brief, taxonomy_for_package, taxonomy_terms
 
 
@@ -42,28 +51,20 @@ SITE_ORIGIN = "https://www.automicvault.com"
 OUTPUT_DIR = Path("cache/pkg-pages-render")
 STATIC_PACKAGE_PAGE_OPT_IN = "AV_ALLOW_STATIC_PKG_PAGES"
 MANIFEST_NAME = ".manifest.json"
-GENERATED_DATA_DIR = Path("cache")
-PKG_PAGE_ENRICHMENT_PATH = GENERATED_DATA_DIR / "pkg-page-enrichment.json"
-PKG_VERSION_FRESHNESS_PATH = GENERATED_DATA_DIR / "pkg-version-freshness.json"
-PKG_GRAPH_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
-PKG_GRAPH_CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
-PKG_CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
-PKG_AGENT_SAFETY_ANSWERS_PATH = Path("data/pkg-agent-safety-answers.json")
-I18N_LOCALES_PATH = Path("data/pkg-i18n/locales.json")
-I18N_PKG_TEMPLATES_PATH = Path("data/pkg-i18n/templates.json")
-AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
-ISOTOPE_METADATA_PATH = Path(
-    os.environ.get(
-        "AUTOMIC_VAULT_ISOTOPES_JSON",
-        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
-    )
-).expanduser()
-ISOTOPE_DATA_ROOT = Path(
-    os.environ.get("AUTOMIC_VAULT_REPO_CACHE", AV_DB_ROOT / "data/isotopes")
-).expanduser()
-RADIOISOTOPE_DATA_ROOT = Path(
-    os.environ.get("AUTOMIC_VAULT_RADIOISOTOPES_REPO", AV_DB_ROOT / "data/radioisotopes")
-).expanduser()
+PKG_PAGE_ENRICHMENT_PATH = av_db_cache_path("pkg-page-enrichment.json")
+PKG_VERSION_FRESHNESS_PATH = av_db_cache_path("pkg-version-freshness.json")
+PKG_GRAPH_PATH = av_db_cache_path("pkg-graph.json")
+PKG_GRAPH_CURATION_PATH = av_db_cache_path("pkg-graph-curation.json")
+PKG_CROSS_ECOSYSTEM_PATH = av_db_cache_path("pkg-cross-ecosystem.json")
+PKG_AGENT_SAFETY_ANSWERS_PATH = av_db_data_path("pkg-agent-safety-answers.json")
+PKG_PAGE_SUPPLEMENTS_ROOT = av_db_data_path("pkg-pages")
+I18N_ROOT = av_db_data_path("pkg-i18n")
+I18N_LOCALES_PATH = I18N_ROOT / "locales.json"
+I18N_PKG_TEMPLATES_PATH = I18N_ROOT / "templates.json"
+GEIGER_COUNTER_PATH = av_db_data_path("geiger-counter.json")
+NPM_OVERLAY_PATH = av_db_data_path("npm.json")
+PIP_OVERLAY_PATH = av_db_data_path("pip.json")
+APPROVAL_GATES_ROOT = av_db_data_path("approval-gates")
 INDEXABLE_MIN_SIGNAL_COUNT = 2
 GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
@@ -665,12 +666,14 @@ def fmt_date(value: str) -> str:
 
 def load_sources() -> dict[str, Any]:
     combined_path = Path("data/combined.json")
+    if not combined_path.exists():
+        combined_path = COMBINED_DB_PATH
     if combined_path.exists():
         combined = read_json(combined_path)
         sources = combined.get("sources") or {}
         if isinstance(sources, dict):
-            if Path("data/geiger-counter.json").exists():
-                sources["geiger"] = read_json(Path("data/geiger-counter.json"), {})
+            if GEIGER_COUNTER_PATH.exists():
+                sources["geiger"] = read_json(GEIGER_COUNTER_PATH, {})
             if PKG_PAGE_ENRICHMENT_PATH.exists():
                 sources["pkg_page_enrichment"] = read_json(PKG_PAGE_ENRICHMENT_PATH, {})
             if PKG_VERSION_FRESHNESS_PATH.exists():
@@ -684,16 +687,16 @@ def load_sources() -> dict[str, Any]:
             return sources
 
     return {
-        "db": read_json(Path("data/db.json"), {}),
-        "geiger": read_json(Path("data/geiger-counter.json"), {}),
+        "db": read_json(DB_JSON_PATH, {}),
+        "geiger": read_json(GEIGER_COUNTER_PATH, {}),
         "isotopes": read_json(ISOTOPE_METADATA_PATH, {}),
-        "npm": read_json(Path("data/npm.json"), {}),
+        "npm": read_json(NPM_OVERLAY_PATH, {}),
         "pkg_graph": read_json(PKG_GRAPH_PATH, {}),
         "pkg_cross_ecosystem": read_json(PKG_CROSS_ECOSYSTEM_PATH, {}),
         "pkg_page_enrichment": read_json(PKG_PAGE_ENRICHMENT_PATH, {}),
         "pkg_version_freshness": read_json(PKG_VERSION_FRESHNESS_PATH, {}),
         "pkg_agent_safety_answers": read_json(PKG_AGENT_SAFETY_ANSWERS_PATH, {}),
-        "pip": read_json(Path("data/pip.json"), {}),
+        "pip": read_json(PIP_OVERLAY_PATH, {}),
     }
 
 
@@ -837,7 +840,7 @@ def apply_agent_safety_answers(pages: dict[str, PackagePage], data: dict[str, An
     if not data:
         return
     if int(data.get("schema") or 0) != 1:
-        raise ValueError("data/pkg-agent-safety-answers.json schema must be 1")
+        raise ValueError(f"{PKG_AGENT_SAFETY_ANSWERS_PATH} schema must be 1")
     priority_keys = data.get("priorityPackageKeys")
     answers = data.get("answers")
     if not isinstance(priority_keys, list) or not all(isinstance(item, str) and item for item in priority_keys):
@@ -988,7 +991,7 @@ def apply_package_version_freshness(pages: dict[str, PackagePage], freshness: di
 
 
 def apply_package_page_supplements(pages: dict[str, PackagePage]) -> None:
-    base = Path("data/pkg-pages")
+    base = PKG_PAGE_SUPPLEMENTS_ROOT
     if not base.exists():
         return
     for path in sorted(base.glob("*/*.json")):
@@ -1365,7 +1368,7 @@ def trim_isotope_fork_readme(text: str) -> str:
 
 def approval_gate_metadata_by_package() -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
-    for path in sorted(Path("data/approval-gates").glob("*/*.yaml")):
+    for path in sorted(APPROVAL_GATES_ROOT.glob("*/*.yaml")):
         text = path.read_text(encoding="utf-8", errors="replace")
         namespace = match_yaml_scalar(text, r"package:\s*(?:\n|\r\n)(?:.*\n)*?\s+namespace:\s*([^\n#]+)")
         name = match_yaml_scalar(text, r"package:\s*(?:\n|\r\n)(?:.*\n)*?\s+name:\s*([^\n#]+)")
@@ -1592,7 +1595,7 @@ def source_files() -> list[Path]:
     for path in data.iterdir() if data.exists() else []:
         if path.is_file() and path.suffix in {".json", ".jsonc", ".md"}:
             files.append(path)
-    for root in (RADIOISOTOPE_DATA_ROOT, Path("data/approval-gates")):
+    for root in (RADIOISOTOPE_DATA_ROOT, APPROVAL_GATES_ROOT):
         if not root.exists():
             continue
         for path in root.rglob("*"):
@@ -1602,10 +1605,10 @@ def source_files() -> list[Path]:
             if ".git" in parts or path.name == ".DS_Store":
                 continue
             files.append(path)
-    supplement_root = Path("data/pkg-pages")
+    supplement_root = PKG_PAGE_SUPPLEMENTS_ROOT
     if supplement_root.exists():
         files.extend(path for path in supplement_root.rglob("*.json") if path.is_file())
-    i18n_root = Path("data/pkg-i18n")
+    i18n_root = I18N_ROOT
     if i18n_root.exists():
         files.extend(path for path in i18n_root.rglob("*.json") if path.is_file())
     isotope_root = ISOTOPE_DATA_ROOT

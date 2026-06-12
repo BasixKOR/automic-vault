@@ -32,19 +32,19 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from pkg_hub_data import graph_hub_definitions, load_pkg_taxonomy_index, taxonomy_for_package, taxonomy_terms
+from av_db_paths import DB_JSON_PATH, ISOTOPE_METADATA_PATH, av_db_cache_path, av_db_data_path
 
 
 SCHEMA_VERSION = 1
-GENERATED_DATA_DIR = Path("cache")
-OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
+OUTPUT_PATH = av_db_cache_path("pkg-graph-curation.json")
 HUB_DEFINITIONS = graph_hub_definitions()
-AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
-ISOTOPE_METADATA_PATH = Path(
-    os.environ.get(
-        "AUTOMIC_VAULT_ISOTOPES_JSON",
-        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
-    )
-).expanduser()
+GEIGER_COUNTER_PATH = av_db_data_path("geiger-counter.json")
+NPM_OVERLAY_PATH = av_db_data_path("npm.json")
+PIP_OVERLAY_PATH = av_db_data_path("pip.json")
+PKG_HUBS_PATH = av_db_data_path("pkg-hubs.json")
+PKG_TAXONOMY_PATH = av_db_data_path("pkg-taxonomy.json")
+APPROVAL_GATES_ROOT = av_db_data_path("approval-gates")
+PKG_PAGE_SUPPLEMENTS_ROOT = av_db_data_path("pkg-pages")
 CONTROLLED_RELS = {
     "alternative",
     "adjacent_workflow",
@@ -141,18 +141,18 @@ def stable_hash(value: Any) -> str:
 
 def source_files() -> list[Path]:
     files = [
-        GENERATED_DATA_DIR / "pkg-page-enrichment.json",
-        Path("data/pkg-hubs.json"),
-        Path("data/pkg-taxonomy.json"),
-        Path("data/db.json"),
-        Path("data/geiger-counter.json"),
+        av_db_cache_path("pkg-page-enrichment.json"),
+        PKG_HUBS_PATH,
+        PKG_TAXONOMY_PATH,
+        DB_JSON_PATH,
+        GEIGER_COUNTER_PATH,
         ISOTOPE_METADATA_PATH,
-        Path("data/npm.json"),
-        Path("data/pip.json"),
+        NPM_OVERLAY_PATH,
+        PIP_OVERLAY_PATH,
         Path("scripts/pkg_hub_data.py"),
         Path("scripts/generate-pkg-graph-curation.py"),
     ]
-    for root in (Path("data/approval-gates"), Path("data/pkg-pages")):
+    for root in (APPROVAL_GATES_ROOT, PKG_PAGE_SUPPLEMENTS_ROOT):
         if root.exists():
             files.extend(path for path in root.rglob("*") if path.is_file() and path.name != ".DS_Store")
     return sorted(path for path in files if path.exists())

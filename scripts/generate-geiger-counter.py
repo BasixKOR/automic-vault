@@ -20,11 +20,18 @@ import os
 import re
 import sys
 import urllib.request
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from av_db_paths import DB_JSON_PATH, av_db_data_path
 
 
 FORMULA_URL = "https://formulae.brew.sh/api/formula.json"
-DB_PATH = os.path.join("data", "db.json")
-OUTPUT_PATH = os.path.join("data", "geiger-counter.json")
+DB_PATH = DB_JSON_PATH
+OUTPUT_PATH = av_db_data_path("geiger-counter.json")
 CACHE_DIR = os.path.join("cache", "brew.sh")
 SCHEMA_VERSION = 1
 USER_AGENT = "automic-vault-geiger-counter/0.1"
@@ -427,7 +434,7 @@ def build_payload():
     db = read_json(DB_PATH)
     formulas = db.get("formulas")
     if not isinstance(formulas, dict) or not formulas:
-        raise ValueError("data/db.json must contain a non-empty formulas object")
+        raise ValueError(f"{DB_PATH} must contain a non-empty formulas object")
 
     formula_names = sorted(formulas.keys())
     api_records = formula_api_by_name()
@@ -449,7 +456,7 @@ def build_payload():
             "ecosystem": "brew",
             "scope": "homebrew/core formulas",
             "package_count": len(packages),
-            "db_path": DB_PATH,
+            "db_path": DB_PATH.as_posix(),
             "policy_path": os.path.join("docs", "geiger-counter.md"),
             "formula_api": FORMULA_URL,
         },
@@ -549,7 +556,7 @@ def check_output(rendered):
 
 
 def write_output(rendered):
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
         handle.write(rendered)
     print(f"Wrote {OUTPUT_PATH}")
