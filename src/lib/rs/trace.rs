@@ -440,6 +440,7 @@ fn invoke_codex_trace(prompt: &str, schema: &str) -> Result<String, String> {
     let mut child = command
         .arg("exec")
         .arg("--ephemeral")
+        .arg("--skip-git-repo-check")
         .arg("--sandbox")
         .arg("read-only")
         .arg("--output-schema")
