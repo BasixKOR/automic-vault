@@ -1,8 +1,0 @@
-#!/bin/sh
-
-cd "$(dirname "$0")/../.."
-
-git push origin main
-git -C ../av.db/data/radioisotopes/ push origin main
-git -C ../av.db/data/isotopes/gh-cli/ push origin trunk
-git -C ../av.db/data/isotopes/supabase-cli/ push origin trunk
