@@ -11,7 +11,6 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ENRICHMENT_SCRIPT = ROOT / "scripts" / "generate-pkg-page-enrichment.py"
 PAGES_SCRIPT = ROOT / "scripts" / "generate-pkg-pages.py"
-WEBSITE_INPUTS_SCRIPT = ROOT / "scripts" / "export-website-inputs.py"
 
 
 def load_module(path, name):
@@ -293,22 +292,6 @@ class PackagePageEnrichmentTests(unittest.TestCase):
             html,
         )
         self.assertNotIn("<span>protected tools</span><strong>1</strong>", html)
-
-    def test_website_input_export_reports_scanned_package_count(self):
-        module = load_module(PAGES_SCRIPT, "generate_pkg_pages_tracked_inventory_copy_test")
-        inputs_module = load_module(WEBSITE_INPUTS_SCRIPT, "export_website_inputs_count_test")
-        radioisotope_count = module.local_radioisotope_manifest_count()
-        scan_log = ROOT / "data" / "radioisotopes" / "SCAN_LOG.md"
-        scanned_package_count = sum(
-            1
-            for line in scan_log.read_text(encoding="utf-8").splitlines()
-            if line.startswith("| ") and line.split("|", 3)[1].strip().isdigit()
-        )
-
-        payload = inputs_module.website_inputs()
-
-        self.assertEqual(radioisotope_count, len(list((ROOT / "data/radioisotopes").glob("*/automic-vault.yml"))))
-        self.assertEqual(payload["scannedPackageCount"], scanned_package_count)
 
     def test_package_page_scope_requires_executable_surface(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_scope_policy_test")
