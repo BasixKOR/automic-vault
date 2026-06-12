@@ -92,6 +92,48 @@ configure_codesign_identity() {
   export CODESIGN_IDENTITY
 }
 
+count_isotope_manifests() {
+  local root="$1"
+
+  if [[ ! -d "${root}" ]]; then
+    printf '0'
+    return
+  fi
+
+  find "${root}" \
+    -mindepth 2 \
+    -maxdepth 2 \
+    -type f \
+    -name automic-vault.yml \
+    -print 2>/dev/null |
+    wc -l |
+    tr -d '[:space:]'
+}
+
+ensure_isotope_sources_present() {
+  local av_db_root
+  local isotope_root
+  local radioisotope_root
+  local isotope_count
+  local radioisotope_count
+
+  av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
+  isotope_root="${AUTOMIC_VAULT_REPO_CACHE:-${av_db_root}/data/isotopes}"
+  radioisotope_root="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${av_db_root}/data/radioisotopes}"
+  isotope_count="$(count_isotope_manifests "${isotope_root}")"
+  radioisotope_count="$(count_isotope_manifests "${radioisotope_root}")"
+
+  if (( isotope_count + radioisotope_count == 0 )); then
+    cli_error "No isotope or radioisotope manifests found"
+    cli_info "Isotope root: ${isotope_root}"
+    cli_info "Radioisotope root: ${radioisotope_root}"
+    cli_info "Run scripts/sync-isotope-checkouts.sh or set AUTOMIC_VAULT_REPO_CACHE/AUTOMIC_VAULT_RADIOISOTOPES_REPO"
+    exit 1
+  fi
+
+  cli_info "Isotope manifests: ${isotope_count}; radioisotope manifests: ${radioisotope_count}"
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
@@ -517,6 +559,7 @@ done
 
 load_build_env
 configure_codesign_identity
+ensure_isotope_sources_present
 
 if [[ "${publish_release}" == "true" && "${notarize}" != "true" ]]; then
   cli_die "--publish requires --notarize"
