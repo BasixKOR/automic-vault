@@ -256,7 +256,7 @@ fn generate_isotope_integrations() {
                 path,
             );
             output.push_str(&format!(
-                "  #[allow(dead_code)] pub(crate) mod detect {{ include!(r#\"{}\"#); }}\n",
+                "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod detect {{ include!(r#\"{}\"#); }}\n",
                 include_path.display()
             ));
         }
@@ -269,7 +269,7 @@ fn generate_isotope_integrations() {
                 path,
             );
             output.push_str(&format!(
-                "  #[allow(dead_code)] pub(crate) mod migrate {{ include!(r#\"{}\"#); }}\n",
+                "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod migrate {{ include!(r#\"{}\"#); }}\n",
                 include_path.display()
             ));
         }
@@ -282,7 +282,7 @@ fn generate_isotope_integrations() {
                 path,
             );
             output.push_str(&format!(
-                "  #[allow(dead_code)] pub(crate) mod post_install {{ include!(r#\"{}\"#); }}\n",
+                "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod post_install {{ include!(r#\"{}\"#); }}\n",
                 include_path.display()
             ));
         }
@@ -295,7 +295,7 @@ fn generate_isotope_integrations() {
                 path,
             );
             output.push_str(&format!(
-                "  #[allow(dead_code)] pub(crate) mod credential_helper {{ include!(r#\"{}\"#); }}\n",
+                "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod credential_helper {{ include!(r#\"{}\"#); }}\n",
                 include_path.display()
             ));
         }

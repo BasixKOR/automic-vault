@@ -1357,18 +1357,15 @@ fn collect_vault_aliases() -> Vec<(String, PathBuf)> {
     if let Some(paths) = env::var_os("PATH") {
         roots.extend(env::split_paths(&paths));
     }
-    roots.extend(
-        [
-            managed_bin_root(),
-            PathBuf::from("/bin"),
-            PathBuf::from("/usr/bin"),
-            PathBuf::from("/sbin"),
-            PathBuf::from("/usr/sbin"),
-            PathBuf::from("/usr/local/bin"),
-            PathBuf::from("/opt/homebrew/bin"),
-        ]
-        .into_iter(),
-    );
+    roots.extend([
+        managed_bin_root(),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/sbin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+    ]);
 
     for root in roots {
         let Ok(entries) = fs::read_dir(&root) else {

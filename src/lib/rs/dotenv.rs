@@ -47,7 +47,7 @@ const ERR_SEC_MISSING_ENTITLEMENT: c_int = -34018;
 thread_local! {
     static TEST_DOTENV_PROCESS_CONTEXT: std::cell::RefCell<
         Option<(DotenvParentProcessSnapshot, Vec<DotenvProcessSnapshot>)>
-    > = std::cell::RefCell::new(None);
+    > = const { std::cell::RefCell::new(None) };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1090,10 +1090,9 @@ fn env_key_is_preexisting(key: &str, previous_av_keys: Option<&[String]>) -> boo
     if env::var_os(key).is_none() {
         return false;
     }
-    previous_av_keys
+    !previous_av_keys
         .map(|keys| keys.iter().any(|previous| previous == key))
         .unwrap_or(false)
-        == false
 }
 
 impl DotenvDocument {
@@ -1299,11 +1298,7 @@ fn parse_dotenv_assignment(raw: &str) -> Option<DotenvAssignment> {
     if key.is_empty() {
         return None;
     }
-    let value_start = if assignment.as_bytes()[sep] == b':' {
-        sep + 1
-    } else {
-        sep + 1
-    };
+    let value_start = sep + 1;
     let value = parse_dotenv_value(&assignment[value_start..]);
     Some(DotenvAssignment {
         key: key.to_string(),
@@ -1549,7 +1544,7 @@ fn dotenv_key_looks_secret(key: &str, value: &str) -> bool {
     {
         return true;
     }
-    if tokens.iter().any(|token| *token == "KEY")
+    if tokens.contains(&"KEY")
         && tokens.iter().any(|token| {
             matches!(
                 *token,
@@ -1751,7 +1746,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
         .strip_prefix("0x")
         .or_else(|| value.strip_prefix("0X"))
         .unwrap_or(value);
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err("hex value must have an even number of characters".to_string());
     }
     let mut bytes = Vec::with_capacity(value.len() / 2);
@@ -2238,7 +2233,7 @@ fn load_dotenv_remembered_approvals_at_path(
     if require_root_controlled && !dotenv_system_file_is_trusted(path)? {
         return Ok(DotenvRememberedApprovalStore::default());
     }
-    let contents = fs::read_to_string(&path)
+    let contents = fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&contents)
         .map_err(|err| format!("failed to decode {}: {err}", path.display()))
