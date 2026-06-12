@@ -844,6 +844,98 @@ mod tests {
     }
 
     #[test]
+    fn transfer_parse_error_edges_cover_remaining_branches() {
+        assert!(
+            parse_transfer_command("av transfer", [OsString::from("--help")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_transfer_command("av transfer", [OsString::from("--version")].into_iter())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_transfer_command(
+                "av transfer",
+                [
+                    OsString::from("--no-dotenv"),
+                    OsString::from("--ssh-option"),
+                    OsString::from("-A"),
+                    OsString::from("host"),
+                ]
+                .into_iter()
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert_eq!(
+            parse_transfer_command(
+                "av transfer",
+                [
+                    OsString::from("--key"),
+                    OsString::from("TOKEN"),
+                    OsString::from("--key"),
+                    OsString::from("TOKEN"),
+                    OsString::from("host"),
+                ]
+                .into_iter()
+            )
+            .unwrap_err(),
+            "duplicate key requested: TOKEN"
+        );
+        assert_eq!(
+            parse_transfer_command(
+                "av transfer",
+                [
+                    OsString::from("--remote-av"),
+                    OsString::from(""),
+                    OsString::from("host"),
+                ]
+                .into_iter()
+            )
+            .unwrap_err(),
+            "--remote-av must not be empty"
+        );
+        assert_eq!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("one"), OsString::from("two")].into_iter()
+            )
+            .unwrap_err(),
+            "transfer supports one ssh target"
+        );
+        assert_eq!(
+            parse_transfer_command("av transfer", [OsString::from(" ")].into_iter()).unwrap_err(),
+            "empty ssh target"
+        );
+        assert!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("receive"), OsString::from("--help")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("receive"), OsString::from("--version")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("receive"), OsString::from("--bogus")].into_iter()
+            )
+            .unwrap_err(),
+            "unknown transfer receive argument '--bogus'"
+        );
+    }
+
+    #[test]
     fn transfer_parse_receive_requires_stdin() {
         assert_eq!(
             parse_transfer_command(
@@ -869,6 +961,47 @@ mod tests {
         };
         assert!(options.stdin);
         assert!(options.replace);
+    }
+
+    #[test]
+    fn transfer_keychain_store_wrappers_reject_invalid_inputs_before_keychain() {
+        let store = KeychainTransferSecretStore;
+        assert!(
+            !store
+                .export_dotenv_private_key(Path::new("/definitely/missing/.env"))
+                .unwrap_err()
+                .is_empty()
+        );
+        assert!(
+            store
+                .load_isotope_secret("BAD-NAME")
+                .unwrap_err()
+                .contains("invalid isotope key name")
+        );
+        assert!(
+            store
+                .load_existing_dotenv_private_key("abc")
+                .unwrap_err()
+                .contains("hex value")
+        );
+        assert!(
+            store
+                .store_dotenv_private_key("abc", "value")
+                .unwrap_err()
+                .contains("hex value")
+        );
+        assert!(
+            store
+                .load_existing_isotope_secret("BAD-NAME")
+                .unwrap_err()
+                .contains("invalid isotope key name")
+        );
+        assert!(
+            store
+                .store_isotope_secret("BAD-NAME", "value")
+                .unwrap_err()
+                .contains("invalid isotope key name")
+        );
     }
 
     #[test]
@@ -927,6 +1060,58 @@ mod tests {
                 .unwrap_err()
                 .contains("nothing to transfer")
         );
+    }
+
+    #[test]
+    fn transfer_run_send_receive_and_zeroize_edges() {
+        let store = StubTransferStore::default();
+        let options = TransferSendOptions {
+            ssh_target: "me@mac".to_string(),
+            file: PathBuf::from(".env"),
+            include_dotenv: false,
+            keys: Vec::new(),
+            replace: false,
+            ssh_options: Vec::new(),
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
+        };
+        assert!(
+            run_transfer_send(&options, &store)
+                .unwrap_err()
+                .contains("nothing to transfer")
+        );
+        assert_eq!(
+            run_transfer_receive(
+                &TransferReceiveOptions {
+                    stdin: false,
+                    replace: false,
+                },
+                |_| unreachable!("stdin=false returns before import")
+            )
+            .unwrap_err(),
+            "transfer receive requires --stdin"
+        );
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(pluralize(1, "key", "keys"), "1 key");
+        assert_eq!(pluralize(2, "key", "keys"), "2 keys");
+
+        let (public_key, private_key) = transfer_keypair();
+        let mut transfer_bundle = bundle(vec![
+            dotenv_item(public_key, private_key),
+            TransferBundleItem::IsotopeSecret {
+                key: "TOKEN".to_string(),
+                value: "secret".to_string(),
+            },
+        ]);
+        zeroize_transfer_bundle(&mut transfer_bundle);
+        assert!(matches!(
+            &transfer_bundle.items[0],
+            TransferBundleItem::DotenvPrivateKey { private_key, .. } if private_key.is_empty()
+        ));
+        assert!(matches!(
+            &transfer_bundle.items[1],
+            TransferBundleItem::IsotopeSecret { value, .. } if value.is_empty()
+        ));
     }
 
     #[test]
@@ -1077,6 +1262,11 @@ mod tests {
     #[test]
     fn transfer_validates_bundle_schema_duplicates_and_fingerprints() {
         let (public_key, private_key) = transfer_keypair();
+        assert_eq!(
+            validate_transfer_bundle(&bundle(Vec::new())).unwrap_err(),
+            "transfer bundle contains no keys"
+        );
+
         let mut wrong_schema = bundle(vec![dotenv_item(public_key.clone(), private_key.clone())]);
         wrong_schema.schema_version = 999;
         assert!(
@@ -1113,6 +1303,14 @@ mod tests {
             ]))
             .unwrap_err()
             .contains("duplicate isotope key")
+        );
+        assert!(
+            validate_transfer_bundle(&bundle(vec![
+                dotenv_item(public_key.clone(), private_key.clone()),
+                dotenv_item(public_key, private_key),
+            ]))
+            .unwrap_err()
+            .contains("duplicate dotenv private key")
         );
     }
 

@@ -3734,6 +3734,75 @@ mod tests {
         }
     }
 
+    struct VerifyFailingDotenvKeychainBackend {
+        account: String,
+        legacy_value: String,
+        new_value_after_write: Option<String>,
+        wrote: Mutex<bool>,
+    }
+
+    impl VerifyFailingDotenvKeychainBackend {
+        fn new(account: &str, legacy_value: &str, new_value_after_write: Option<String>) -> Self {
+            Self {
+                account: account.to_string(),
+                legacy_value: legacy_value.to_string(),
+                new_value_after_write,
+                wrote: Mutex::new(false),
+            }
+        }
+    }
+
+    impl DotenvKeychainBackend for VerifyFailingDotenvKeychainBackend {
+        fn read_new_if_present(
+            &self,
+            _service: &str,
+            _account: &str,
+            _access_group: &str,
+        ) -> Result<Option<String>, String> {
+            if *self.wrote.lock().unwrap() {
+                Ok(self.new_value_after_write.clone())
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn write_new(
+            &self,
+            _service: &str,
+            _account: &str,
+            _access_group: &str,
+            _value: &str,
+        ) -> Result<(), String> {
+            *self.wrote.lock().unwrap() = true;
+            Ok(())
+        }
+
+        fn delete_new(
+            &self,
+            _service: &str,
+            _account: &str,
+            _access_group: &str,
+        ) -> Result<bool, String> {
+            Ok(false)
+        }
+
+        fn read_legacy_if_present(
+            &self,
+            _service: &str,
+            account: &str,
+        ) -> Result<Option<String>, String> {
+            Ok((account == self.account).then(|| self.legacy_value.clone()))
+        }
+
+        fn enumerate_legacy_accounts(&self, _service: &str) -> Result<Vec<String>, String> {
+            Ok(vec![self.account.clone()])
+        }
+
+        fn delete_legacy(&self, _service: &str, _account: &str) -> Result<bool, String> {
+            Ok(false)
+        }
+    }
+
     fn dotenv_test_private_key(byte: u8) -> String {
         format!("{byte:064x}")
     }
@@ -3958,6 +4027,44 @@ mod tests {
         );
         assert!(!backend.legacy_values.lock().unwrap().contains_key(account));
         assert_eq!(backend.legacy_deletes.lock().unwrap().as_slice(), [account]);
+    }
+
+    #[test]
+    fn dotenv_keychain_migration_reports_verify_failures() {
+        assert_eq!(
+            dotenv_keychain_access_group(),
+            DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP
+        );
+        let account =
+            "DOTENV_PRIVATE_KEY:1111111111111111111111111111111111111111111111111111111111111111";
+        let legacy_value = dotenv_test_private_key(10);
+        let mismatch_backend = VerifyFailingDotenvKeychainBackend::new(
+            account,
+            &legacy_value,
+            Some(dotenv_test_private_key(11)),
+        );
+        assert!(
+            migrate_dotenv_keychain(
+                &mismatch_backend,
+                "service",
+                "TEAM.group",
+                &DotenvKeychainMigrateOptions::default(),
+            )
+            .unwrap_err()
+            .contains("new keychain value differed")
+        );
+
+        let missing_backend = VerifyFailingDotenvKeychainBackend::new(account, &legacy_value, None);
+        assert!(
+            migrate_dotenv_keychain(
+                &missing_backend,
+                "service",
+                "TEAM.group",
+                &DotenvKeychainMigrateOptions::default(),
+            )
+            .unwrap_err()
+            .contains("new keychain item was not found")
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -5093,6 +5200,22 @@ mod tests {
                 .unwrap_err(),
             "missing dotenv keychain command"
         );
+        assert!(
+            parse_dotenv_command(
+                "av dotenv",
+                [OsString::from("keychain"), OsString::from("--help")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            parse_dotenv_command(
+                "av dotenv",
+                [OsString::from("keychain"), OsString::from("--version")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
         assert_eq!(
             parse_dotenv_command(
                 "av dotenv",
@@ -5113,6 +5236,32 @@ mod tests {
             )
             .unwrap_err(),
             "unknown dotenv keychain migrate argument '--bogus'"
+        );
+        assert!(
+            parse_dotenv_command(
+                "av dotenv",
+                [
+                    OsString::from("keychain"),
+                    OsString::from("migrate"),
+                    OsString::from("--help"),
+                ]
+                .into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            parse_dotenv_command(
+                "av dotenv",
+                [
+                    OsString::from("keychain"),
+                    OsString::from("migrate"),
+                    OsString::from("--version"),
+                ]
+                .into_iter()
+            )
+            .unwrap()
+            .is_none()
         );
 
         assert!(
@@ -6010,6 +6159,19 @@ mod tests {
             &["BAR", "FOO"],
         ))
         .unwrap();
+        assert!(
+            run_dotenv_run(
+                &DotenvRunOptions {
+                    file: env_path.clone(),
+                    command: OsString::from("/definitely/missing-av-dotenv-command"),
+                    args: Vec::new(),
+                },
+                &store,
+            )
+            .unwrap_err()
+            .contains("failed to execute")
+        );
+
         run_dotenv_run(
             &DotenvRunOptions {
                 file: env_path,
@@ -6197,6 +6359,58 @@ mod tests {
                 &store,
             )
             .unwrap_err(),
+            "hex value must have an even number of characters"
+        );
+    }
+
+    #[test]
+    fn dotenv_transfer_helpers_validate_error_edges() {
+        let temp = TempDir::new().unwrap();
+        let missing_public = temp.path().join("missing-public.env");
+        fs::write(&missing_public, "FOO=bar\n").unwrap();
+        assert!(
+            load_dotenv_private_key_for_transfer(&missing_public)
+                .unwrap_err()
+                .contains("is missing DOTENV_PUBLIC_KEY")
+        );
+
+        let invalid_public = temp.path().join("invalid-public.env");
+        fs::write(&invalid_public, "DOTENV_PUBLIC_KEY=abc\n").unwrap();
+        assert!(
+            load_dotenv_private_key_for_transfer(&invalid_public)
+                .unwrap_err()
+                .contains("hex value")
+        );
+
+        assert_eq!(
+            validate_dotenv_public_key_name_for_transfer("PRIVATE_KEY").unwrap_err(),
+            "invalid dotenv public key name: PRIVATE_KEY"
+        );
+        assert_eq!(
+            validate_dotenv_public_key_for_transfer("aa").unwrap_err(),
+            "dotenv public key must be 33 bytes"
+        );
+        assert_eq!(
+            validate_dotenv_private_key_for_transfer("abc").unwrap_err(),
+            "hex value must have an even number of characters"
+        );
+        let public_key = format!("02{}", "11".repeat(32));
+        assert_eq!(
+            dotenv_public_key_fingerprint_for_transfer(&public_key).len(),
+            64
+        );
+        assert!(
+            load_existing_dotenv_private_key_for_transfer("abc")
+                .unwrap_err()
+                .contains("hex value")
+        );
+        assert!(
+            store_dotenv_private_key_for_transfer("abc", &dotenv_test_private_key(12))
+                .unwrap_err()
+                .contains("hex value")
+        );
+        assert_eq!(
+            store_dotenv_private_key_for_transfer(&public_key, "abc").unwrap_err(),
             "hex value must have an even number of characters"
         );
     }
