@@ -243,19 +243,11 @@ if [[ -n "$MENU_PROVISIONING_PROFILE" ]]; then
 fi
 COMBINED_DB_PATH="${AV_COMBINED_DB_PATH:-${ROOT_DIR}/../av.db/cache/automic-vault/combined.json}"
 
-cli_step "Validating package database"
-if package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"; then
-  cli_info "${package_database_check}"
-elif [[ "$PUBLISH_BUILD" == "true" ]]; then
-  cli_error "${package_database_check}"
-  cli_die "Package database must be current for published builds."
-else
-  cli_warn "${package_database_check}"
-  cli_step "Regenerating package database"
-  "$ROOT_DIR/scripts/build-combined-json.py"
-  package_database_check="$("$ROOT_DIR/scripts/build-combined-json.py" --check 2>&1)"
-  cli_info "${package_database_check}"
+cli_step "Locating package database"
+if [[ ! -f "$COMBINED_DB_PATH" ]]; then
+  cli_die "Missing package database: ${COMBINED_DB_PATH}. Generate it in ../av.db or set AV_COMBINED_DB_PATH."
 fi
+cli_info "${COMBINED_DB_PATH}"
 
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
