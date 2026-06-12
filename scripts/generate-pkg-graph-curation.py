@@ -38,6 +38,13 @@ SCHEMA_VERSION = 1
 GENERATED_DATA_DIR = Path("cache")
 OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 HUB_DEFINITIONS = graph_hub_definitions()
+AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
+ISOTOPE_METADATA_PATH = Path(
+    os.environ.get(
+        "AUTOMIC_VAULT_ISOTOPES_JSON",
+        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
+    )
+).expanduser()
 CONTROLLED_RELS = {
     "alternative",
     "adjacent_workflow",
@@ -139,7 +146,7 @@ def source_files() -> list[Path]:
         Path("data/pkg-taxonomy.json"),
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
-        Path("data/isotopes.json"),
+        ISOTOPE_METADATA_PATH,
         Path("data/npm.json"),
         Path("data/pip.json"),
         Path("scripts/pkg_hub_data.py"),

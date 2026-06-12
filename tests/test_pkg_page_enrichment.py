@@ -269,7 +269,10 @@ class PackagePageEnrichmentTests(unittest.TestCase):
         source_paths = {path.as_posix() for path in module.source_files()}
         self.assertIn("cache/pkg-page-enrichment.json", source_paths)
         self.assertIn("cache/pkg-version-freshness.json", source_paths)
-        self.assertIn("data/isotopes/gh-cli/automic-vault.yml", source_paths)
+        self.assertIn(
+            (module.ISOTOPE_DATA_ROOT / "gh-cli/automic-vault.yml").as_posix(),
+            source_paths,
+        )
 
     def test_package_index_reports_protected_tool_manifest_count(self):
         module = load_module(PAGES_SCRIPT, "generate_pkg_pages_manifest_count_test")
@@ -285,8 +288,14 @@ class PackagePageEnrichmentTests(unittest.TestCase):
 
         html = module.render_index(pages, [], manifest)
 
-        self.assertEqual(radioisotope_count, len(list((ROOT / "data/radioisotopes").glob("*/automic-vault.yml"))))
-        self.assertEqual(full_isotope_count, len(list((ROOT / "data/isotopes").glob("*/automic-vault.yml"))))
+        self.assertEqual(
+            radioisotope_count,
+            len(list(module.RADIOISOTOPE_DATA_ROOT.glob("*/automic-vault.yml"))),
+        )
+        self.assertEqual(
+            full_isotope_count,
+            len(list(module.ISOTOPE_DATA_ROOT.glob("*/automic-vault.yml"))),
+        )
         self.assertIn(
             f"<div class=\"metric\"><span>protected tools</span><strong>{radioisotope_count:,}</strong></div>",
             html,

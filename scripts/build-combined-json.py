@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 
 SOURCE_FILES = (
@@ -31,6 +32,14 @@ SOURCE_FILES = (
 )
 OUTPUT_PATH = os.path.join("data", "combined.json")
 SCHEMA_VERSION = 1
+SCRIPT_DIR = Path(__file__).resolve().parent
+AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
+ISOTOPE_METADATA_PATH = Path(
+    os.environ.get(
+        "AUTOMIC_VAULT_ISOTOPES_JSON",
+        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
+    )
+).expanduser()
 
 
 def _ensure_cwd():
@@ -71,13 +80,13 @@ def _prune(value):
 def _load_sources():
     sources = {}
     for name in SOURCE_FILES:
-        path = os.path.join("data", name)
-        if not os.path.exists(path):
+        path = ISOTOPE_METADATA_PATH if name == "isotopes.json" else Path("data") / name
+        if not path.exists():
             raise FileNotFoundError(path)
         source = _prune(_read_json(path))
         if name == "aliases.json" and source is None:
             source = {}
-        sources[_source_key(path)] = source
+        sources[_source_key(name)] = source
     _validate_sources(sources)
     return sources
 

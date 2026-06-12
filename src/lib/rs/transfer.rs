@@ -315,8 +315,11 @@ fn run_transfer_send(
     options: &TransferSendOptions,
     store: &dyn TransferSecretStore,
 ) -> Result<(), String> {
-    check_remote_transfer_receiver(options)?;
     let mut bundle = build_transfer_bundle(options, store)?;
+    if let Err(err) = check_remote_transfer_receiver(options) {
+        zeroize_transfer_bundle(&mut bundle);
+        return Err(err);
+    }
     let item_count = bundle.items.len();
     let ssh_args = build_ssh_command_args(options);
     let mut payload = serde_json::to_string(&bundle)
@@ -1190,9 +1193,11 @@ mod tests {
             run_transfer_receive(
                 &TransferReceiveOptions {
                     stdin: false,
+                    check: false,
                     replace: false,
                 },
-                |_| unreachable!("stdin=false returns before import")
+                || unreachable!("check=false returns before daemon check"),
+                |_| unreachable!("stdin=false returns before import"),
             )
             .unwrap_err(),
             "transfer receive requires --stdin"

@@ -22,6 +22,17 @@ from pathlib import Path
 
 
 OUTPUT_PATH = Path("data/security-recommendations.json")
+SCRIPT_DIR = Path(__file__).resolve().parent
+AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
+ISOTOPE_METADATA_PATH = Path(
+    os.environ.get(
+        "AUTOMIC_VAULT_ISOTOPES_JSON",
+        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
+    )
+).expanduser()
+RADIOISOTOPE_DATA_ROOT = Path(
+    os.environ.get("AUTOMIC_VAULT_RADIOISOTOPES_REPO", AV_DB_ROOT / "data/radioisotopes")
+).expanduser()
 SCHEMA_VERSION = 1
 GEIGER_LEVEL_PRIORITIES = {
     "red": 20,
@@ -231,9 +242,9 @@ def _expected():
     geiger = _read_json("data/geiger-counter.json")
     _add_isotope_packages(
         packages,
-        _read_json("data/isotopes.json"),
+        _read_json(ISOTOPE_METADATA_PATH),
         geiger,
-        _versioned_radioisotope_bases(Path("data/radioisotopes")),
+        _versioned_radioisotope_bases(RADIOISOTOPE_DATA_ROOT),
     )
     _add_approval_gate_packages(packages, Path("data/approval-gates/brew"))
     _add_geiger_packages(packages, geiger)

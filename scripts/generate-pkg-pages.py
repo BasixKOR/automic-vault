@@ -51,6 +51,19 @@ PKG_CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 PKG_AGENT_SAFETY_ANSWERS_PATH = Path("data/pkg-agent-safety-answers.json")
 I18N_LOCALES_PATH = Path("data/pkg-i18n/locales.json")
 I18N_PKG_TEMPLATES_PATH = Path("data/pkg-i18n/templates.json")
+AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
+ISOTOPE_METADATA_PATH = Path(
+    os.environ.get(
+        "AUTOMIC_VAULT_ISOTOPES_JSON",
+        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
+    )
+).expanduser()
+ISOTOPE_DATA_ROOT = Path(
+    os.environ.get("AUTOMIC_VAULT_REPO_CACHE", AV_DB_ROOT / "data/isotopes")
+).expanduser()
+RADIOISOTOPE_DATA_ROOT = Path(
+    os.environ.get("AUTOMIC_VAULT_RADIOISOTOPES_REPO", AV_DB_ROOT / "data/radioisotopes")
+).expanduser()
 INDEXABLE_MIN_SIGNAL_COUNT = 2
 GOOGLE_TAG = """  <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y78QKG1T9Y"></script>
@@ -673,7 +686,7 @@ def load_sources() -> dict[str, Any]:
     return {
         "db": read_json(Path("data/db.json"), {}),
         "geiger": read_json(Path("data/geiger-counter.json"), {}),
-        "isotopes": read_json(Path("data/isotopes.json"), {}),
+        "isotopes": read_json(ISOTOPE_METADATA_PATH, {}),
         "npm": read_json(Path("data/npm.json"), {}),
         "pkg_graph": read_json(PKG_GRAPH_PATH, {}),
         "pkg_cross_ecosystem": read_json(PKG_CROSS_ECOSYSTEM_PATH, {}),
@@ -1303,7 +1316,7 @@ def isotope_metadata_by_package(isotopes: dict[str, Any]) -> dict[str, dict[str,
 
 def radioisotope_readmes() -> dict[str, ReadmeExcerpt]:
     readmes: dict[str, ReadmeExcerpt] = {}
-    base = Path("data/radioisotopes")
+    base = RADIOISOTOPE_DATA_ROOT
     if not base.exists():
         return readmes
     for path in base.iterdir():
@@ -1322,7 +1335,7 @@ def radioisotope_readmes() -> dict[str, ReadmeExcerpt]:
 
 def isotope_fork_readmes() -> dict[str, ReadmeExcerpt]:
     readmes: dict[str, ReadmeExcerpt] = {}
-    base = Path("data/isotopes")
+    base = ISOTOPE_DATA_ROOT
     if not base.exists():
         return readmes
     for readme in sorted(base.glob("*/README.md")):
@@ -1557,11 +1570,11 @@ def manifest_count(root: Path) -> int:
 
 
 def local_radioisotope_manifest_count() -> int:
-    return manifest_count(Path("data/radioisotopes"))
+    return manifest_count(RADIOISOTOPE_DATA_ROOT)
 
 
 def local_full_isotope_manifest_count() -> int:
-    return manifest_count(Path("data/isotopes"))
+    return manifest_count(ISOTOPE_DATA_ROOT)
 
 
 def source_files() -> list[Path]:
@@ -1579,7 +1592,7 @@ def source_files() -> list[Path]:
     for path in data.iterdir() if data.exists() else []:
         if path.is_file() and path.suffix in {".json", ".jsonc", ".md"}:
             files.append(path)
-    for root in (Path("data/radioisotopes"), Path("data/approval-gates")):
+    for root in (RADIOISOTOPE_DATA_ROOT, Path("data/approval-gates")):
         if not root.exists():
             continue
         for path in root.rglob("*"):
@@ -1595,7 +1608,7 @@ def source_files() -> list[Path]:
     i18n_root = Path("data/pkg-i18n")
     if i18n_root.exists():
         files.extend(path for path in i18n_root.rglob("*.json") if path.is_file())
-    isotope_root = Path("data/isotopes")
+    isotope_root = ISOTOPE_DATA_ROOT
     if isotope_root.exists():
         files.extend(path for path in isotope_root.glob("*/README.md") if path.is_file())
         files.extend(path for path in isotope_root.glob("*/automic-vault.yml") if path.is_file())

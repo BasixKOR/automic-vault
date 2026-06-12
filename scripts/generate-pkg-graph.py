@@ -40,6 +40,13 @@ OUTPUT_PATH = GENERATED_DATA_DIR / "pkg-graph.json"
 CURATION_PATH = GENERATED_DATA_DIR / "pkg-graph-curation.json"
 CROSS_ECOSYSTEM_PATH = GENERATED_DATA_DIR / "pkg-cross-ecosystem.json"
 HUB_DEFINITIONS = graph_hub_definitions()
+AV_DB_ROOT = Path(os.environ.get("AV_DB_ROOT", SCRIPT_DIR.parent.parent / "av.db")).expanduser()
+ISOTOPE_METADATA_PATH = Path(
+    os.environ.get(
+        "AUTOMIC_VAULT_ISOTOPES_JSON",
+        AV_DB_ROOT / "cache/automic-vault/isotopes.json",
+    )
+).expanduser()
 
 RELATION_DEFINITIONS = {
     "runtime_dependency": "Homebrew declares the target as a runtime dependency.",
@@ -163,7 +170,7 @@ def input_files() -> list[Path]:
         Path("data/pkg-taxonomy.json"),
         Path("data/db.json"),
         Path("data/geiger-counter.json"),
-        Path("data/isotopes.json"),
+        ISOTOPE_METADATA_PATH,
         Path("data/npm.json"),
         Path("data/pip.json"),
         Path("scripts/generate-pkg-pages.py"),
@@ -614,7 +621,7 @@ def build_graph() -> dict[str, Any]:
     enrichment = read_json(PKG_PAGE_ENRICHMENT_PATH)
     db = read_json(Path("data/db.json"))
     geiger_data = read_json(Path("data/geiger-counter.json"), {})
-    isotopes = read_json(Path("data/isotopes.json"), {})
+    isotopes = read_json(ISOTOPE_METADATA_PATH, {})
     npm = read_json(Path("data/npm.json"), {})
     pip = read_json(Path("data/pip.json"), {})
     freshness = read_json(PKG_VERSION_FRESHNESS_PATH, {})

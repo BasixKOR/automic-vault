@@ -5,12 +5,13 @@ set -euo pipefail
 org="automic-vault"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
-clone_root="${AUTOMIC_VAULT_REPO_CACHE:-${repo_root}/data/isotopes}"
+av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
+clone_root="${AUTOMIC_VAULT_REPO_CACHE:-${av_db_root}/data/isotopes}"
 radioisotopes_repo="${org}/radioisotopes"
-radioisotopes_dir="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${repo_root}/data/radioisotopes}"
+radioisotopes_dir="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${av_db_root}/data/radioisotopes}"
 dry_run=false
 skip_builds=false
-isotope_versions_path="${repo_root}/data/isotopes.json"
+isotope_versions_path="${av_db_root}/cache/automic-vault/isotopes.json"
 if [[ -n "${AUTOMIC_VAULT_CODEX_PROJECT_ROOT:-}" ]]; then
   codex_project_root="${AUTOMIC_VAULT_CODEX_PROJECT_ROOT}"
 elif [[ -n "${HOME:-}" ]]; then
@@ -33,7 +34,7 @@ to a new release on the automic-vault fork.
 
 Options:
   --clone-root PATH  Directory used for local fork clones.
-                     Defaults to data/isotopes.
+                     Defaults to ../av.db/data/isotopes.
   --dry-run          Print actions without pulling, building, or releasing.
   --repo NAME        Only process one automic-vault repository.
   --skip-builds      Skip build and release work. Still refresh isotopes.json.

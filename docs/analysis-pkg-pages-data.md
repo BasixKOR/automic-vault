@@ -24,8 +24,8 @@ The repository already has enough data to generate a useful first catalog:
   - 20 curated approval-gate manifests
   - package descriptions, entrypoints, risky command rules, severities, and
     coverage review dates
-- `data/radioisotopes/*`
-  - 107 local radioisotope package directories with manifests and README notes
+- `../av.db/data/radioisotopes/*`
+  - radioisotope package directories with manifests and README notes
 - `www/pkg/`
   - already generated static HTML package pages
   - current manifest reports 8,783 pages
@@ -350,4 +350,3 @@ The best first pass does not need a large crawl:
 6. Add npm and PyPI registry snapshots after that.
 7. Build the related/cross-ecosystem graph last; it is important, but low
    quality inferred links would actively weaken the package pages.
-
