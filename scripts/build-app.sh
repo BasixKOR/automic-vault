@@ -199,6 +199,12 @@ ENRICHMENT_MANIFESTS_JSON="$BUILD_DIR/enrichment-manifests.json"
 ICON_NAME="gui-icon"
 ICONSET_DIR="$BUILD_DIR/$ICON_NAME.iconset"
 ICON_ICNS="$BUILD_DIR/$ICON_NAME.icns"
+SERVICE_MANAGEMENT_SHIM_DIR="$GUI_DIR/ServiceManagementShim"
+SERVICE_MANAGEMENT_SHIM_INCLUDE_DIR="$SERVICE_MANAGEMENT_SHIM_DIR/include"
+SERVICE_MANAGEMENT_SHIM_SOURCE="$SERVICE_MANAGEMENT_SHIM_DIR/ServiceManagementShim.m"
+SERVICE_MANAGEMENT_SHIM_HEADER="$SERVICE_MANAGEMENT_SHIM_INCLUDE_DIR/ServiceManagementShim.h"
+SERVICE_MANAGEMENT_SHIM_MODULEMAP="$SERVICE_MANAGEMENT_SHIM_INCLUDE_DIR/module.modulemap"
+SERVICE_MANAGEMENT_SHIM_OBJECT="$BUILD_DIR/ServiceManagementShim.o"
 DOTENV_ENTITLEMENTS="$BUILD_DIR/dotenv-keychain.entitlements"
 HELPER_ENTITLEMENTS="$BUILD_DIR/nuke-helper.entitlements"
 DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED=false
@@ -837,17 +843,26 @@ rm -f \
 
 cp "$SWIFT_PACKAGE_BIN_DIR/AutomicVaultApp" "$EXECUTABLE"
 
-if ! is_current "$MENU_EXECUTABLE" "${SHARED_SWIFT_SOURCES[@]}" "${MENU_SWIFT_SOURCES[@]}"; then
+if ! is_current "$MENU_EXECUTABLE" "${SHARED_SWIFT_SOURCES[@]}" "${MENU_SWIFT_SOURCES[@]}" "$SERVICE_MANAGEMENT_SHIM_SOURCE" "$SERVICE_MANAGEMENT_SHIM_HEADER" "$SERVICE_MANAGEMENT_SHIM_MODULEMAP"; then
   cli_step "Building menu bar helper"
+  if ! is_current "$SERVICE_MANAGEMENT_SHIM_OBJECT" "$SERVICE_MANAGEMENT_SHIM_SOURCE" "$SERVICE_MANAGEMENT_SHIM_HEADER"; then
+    xcrun clang \
+      -target "$(uname -m)-apple-macos${MIN_MACOS_VERSION}" \
+      -I "$SERVICE_MANAGEMENT_SHIM_INCLUDE_DIR" \
+      -c "$SERVICE_MANAGEMENT_SHIM_SOURCE" \
+      -o "$SERVICE_MANAGEMENT_SHIM_OBJECT"
+  fi
   xcrun swiftc \
     "${SWIFT_OPT_FLAGS[@]}" \
     -target "$(uname -m)-apple-macos${MIN_MACOS_VERSION}" \
+    -I "$SERVICE_MANAGEMENT_SHIM_INCLUDE_DIR" \
     -framework AppKit \
     -framework Foundation \
     -framework QuartzCore \
     -framework ServiceManagement \
     -framework UserNotifications \
     -o "$MENU_EXECUTABLE" \
+    "$SERVICE_MANAGEMENT_SHIM_OBJECT" \
     "${SHARED_SWIFT_SOURCES[@]}" \
     "${MENU_SWIFT_SOURCES[@]}"
 fi
