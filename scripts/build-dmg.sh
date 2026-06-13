@@ -118,8 +118,8 @@ ensure_isotope_sources_present() {
   local radioisotope_count
 
   av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
-  isotope_root="${AUTOMIC_VAULT_REPO_CACHE:-${av_db_root}/data/isotopes}"
-  radioisotope_root="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${av_db_root}/data/radioisotopes}"
+  isotope_root="${AUTOMIC_VAULT_REPO_CACHE:-${av_db_root}/../isotopes}"
+  radioisotope_root="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${av_db_root}/../radioisotopes}"
   isotope_count="$(count_isotope_manifests "${isotope_root}")"
   radioisotope_count="$(count_isotope_manifests "${radioisotope_root}")"
 

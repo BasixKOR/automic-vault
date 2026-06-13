@@ -4119,7 +4119,7 @@ fn secret_scan_should_skip_entry(entry: &walkdir::DirEntry) -> bool {
     }
 
     let path = entry.path().to_string_lossy();
-    path.contains("/data/isotopes/") || path.contains("/data/radioisotopes/")
+    path.contains("/isotopes/") || path.contains("/radioisotopes/")
 }
 
 fn default_secret_scan_paths() -> Vec<PathBuf> {
@@ -13135,8 +13135,8 @@ managed_secrets = ["dep:managed-secrets"]"#,
         fs::create_dir_all(root.join(".next")).unwrap();
         fs::create_dir_all(root.join("cache")).unwrap();
         fs::create_dir_all(root.join("Vendor")).unwrap();
-        fs::create_dir_all(root.join("data/isotopes/example")).unwrap();
-        fs::create_dir_all(root.join("data/radioisotopes/example")).unwrap();
+        fs::create_dir_all(root.join("isotopes/example")).unwrap();
+        fs::create_dir_all(root.join("radioisotopes/example")).unwrap();
         fs::write(root.join("artifacts/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join("DerivedData/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join(".codex-worktrees/.env"), "TOKEN=secret_secret\n").unwrap();
@@ -13145,12 +13145,12 @@ managed_secrets = ["dep:managed-secrets"]"#,
         fs::write(root.join("cache/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join("Vendor/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(
-            root.join("data/isotopes/example/.env"),
+            root.join("isotopes/example/.env"),
             "TOKEN=secret_secret\n",
         )
         .unwrap();
         fs::write(
-            root.join("data/radioisotopes/example/.env"),
+            root.join("radioisotopes/example/.env"),
             "TOKEN=secret_secret\n",
         )
         .unwrap();

@@ -204,10 +204,10 @@ fn generate_isotope_integrations() {
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
     let isotope_root =
-        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", av_db_root.join("data/isotopes"));
+        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", av_db_root.join("../isotopes"));
     let radioisotope_root = path_env_or_default(
         "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
-        av_db_root.join("data/radioisotopes"),
+        av_db_root.join("../radioisotopes"),
     );
     println!(
         "cargo:rustc-env=AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO={}",

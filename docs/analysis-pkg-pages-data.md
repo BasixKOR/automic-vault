@@ -24,7 +24,7 @@ The repository already has enough data to generate a useful first catalog:
   - 20 curated approval-gate manifests
   - package descriptions, entrypoints, risky command rules, severities, and
     coverage review dates
-- `../av.db/data/radioisotopes/*`
+- `../radioisotopes/*`
   - radioisotope package directories with manifests and README notes
 - `www/pkg/`
   - already generated static HTML package pages
