@@ -550,8 +550,11 @@ struct EmbeddedCaskMetadata {
     homepage: String,
     #[serde(default)]
     aliases: Vec<String>,
+    #[serde(default)]
     url: String,
+    #[serde(default)]
     sha256: String,
+    #[serde(default)]
     version: String,
     #[serde(default)]
     dependencies: Vec<String>,
@@ -2314,6 +2317,7 @@ fn run_i_cask(
     let progress = InstallProgress::with_callback(&package_name, progress_callback);
     let result = (|| {
         let cask = embedded_cask(&cask_name)?;
+        ensure_cask_install_metadata(&cask_name, &cask)?;
         let dependency_graph = resolve_formula_specs(&cask.dependencies, config, true)?;
         let plan = InstallPlan::for_i(package_name.clone(), cask_name.clone());
         let previous_stubs = load_stub_manifest(&plan.package_manifest_path())?.stubs;
@@ -5952,6 +5956,28 @@ fn install_cask_root(
         permissions.set_mode(0o755);
         fs::set_permissions(&destination, permissions)
             .map_err(|err| format!("failed to chmod {}: {err}", destination.display()))?;
+    }
+    Ok(())
+}
+
+fn ensure_cask_install_metadata(
+    cask_name: &str,
+    cask: &EmbeddedCaskMetadata,
+) -> Result<(), String> {
+    if cask.version.trim().is_empty() {
+        return Err(format!(
+            "cask {cask_name} is missing version metadata in the package database"
+        ));
+    }
+    if cask.url.trim().is_empty() {
+        return Err(format!(
+            "cask {cask_name} is missing archive URL metadata in the package database"
+        ));
+    }
+    if cask.sha256.trim().is_empty() {
+        return Err(format!(
+            "cask {cask_name} is missing sha256 metadata in the package database"
+        ));
     }
     Ok(())
 }
@@ -9810,6 +9836,29 @@ mod tests {
             serde_json::from_str(r#"{"name":"uv","repo":"https://github.com/astral-sh/uv"}"#)
                 .unwrap();
         assert_eq!(entry.repository, "https://github.com/astral-sh/uv");
+    }
+
+    #[test]
+    fn cask_metadata_tolerates_listing_only_rows() {
+        let metadata: EmbeddedCaskMetadata = serde_json::from_str(
+            r#"{
+              "aliases": ["op"],
+              "binaries": [{"source": "op", "target": "op"}],
+              "homepage": "https://developer.1password.com/docs/cli",
+              "summary": "Command-line interface for 1Password"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(metadata.summary, "Command-line interface for 1Password");
+        assert!(metadata.url.is_empty());
+        assert!(metadata.sha256.is_empty());
+        assert!(metadata.version.is_empty());
+        assert!(
+            ensure_cask_install_metadata("1password-cli", &metadata)
+                .unwrap_err()
+                .contains("missing version metadata")
+        );
     }
 
     #[test]
