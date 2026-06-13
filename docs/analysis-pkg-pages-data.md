@@ -31,7 +31,7 @@ The repository already has enough data to generate a useful first catalog:
   - current manifest reports 8,783 pages
   - split today as 8,375 brew, 53 cask, 353 npm, and 2 pip pages
 
-There is also an existing generator: `scripts/generate-pkg-pages.py`.
+The moved generator now lives at `../av.db/scripts/generate-pkg-pages.py`.
 
 ## Can Do With Current Data
 

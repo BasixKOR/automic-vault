@@ -3,7 +3,7 @@
 ## `db.json` Schema Compatibility
 
 - Treat the public `/db.json` contract as additive and backward-compatible.
-- Do not bump `scripts/build-db.py` `SCHEMA_VERSION` or
+- Do not bump `../av.db/scripts/build-db.py` `SCHEMA_VERSION` or
   `src/lib/rs/lib.rs` `DB_SCHEMA_VERSION` for additive fields.
 - Additive database changes must preserve existing field names, field types,
   and field meanings. New fields should be optional or have defaults in
