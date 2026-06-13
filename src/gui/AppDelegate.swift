@@ -143,7 +143,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        guard !flag else { return true }
         showMainWindow()
         return true
     }
@@ -320,16 +319,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showMainWindow() {
+    @discardableResult
+    private func showMainWindow() -> NSWindow {
         let wasVisible = window?.isVisible ?? false
         let window = makeOrRestoreMainWindow()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        bringWindowForward(window)
         #if !DEBUG
         if wasVisible == false {
             postHogTelemetry.captureMainWindowOpened()
         }
         #endif
+        return window
+    }
+
+    private func bringWindowForward(_ window: NSWindow) {
+        NSApp.unhide(nil)
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func installOpenWindowObserverIfNeeded() {
@@ -418,9 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let window = makeOrRestoreMainWindow()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        let window = showMainWindow()
 
         switch deepLink.action {
         case .install(let packageNames):
@@ -431,9 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if DEBUG
     @objc private func runFakeUpdate(_ sender: Any?) {
-        let window = makeOrRestoreMainWindow()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        let window = showMainWindow()
         (window.contentViewController as? MainWindowController)?.runDebugFakeUpdate()
     }
     #endif
@@ -495,8 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let containmentWindow = showContainmentWindow(sessionID: approval.intent.agentID) {
             window = containmentWindow
         } else {
-            showMainWindow()
-            window = makeOrRestoreMainWindow()
+            window = showMainWindow()
         }
         if NSApp.isActive == false || window.isKeyWindow == false {
             _ = NSApp.requestUserAttention(.criticalRequest)
@@ -533,11 +538,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard activeKeyTransferApprovalID != approval.id else { return }
         activeKeyTransferApprovalID = approval.id
 
-        let window = makeOrRestoreMainWindow()
+        let window = showMainWindow()
         if NSApp.isActive == false || window.isKeyWindow == false {
             _ = NSApp.requestUserAttention(.criticalRequest)
         }
-        showMainWindow()
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Key Transfer")
@@ -570,11 +574,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard activeIsotopeApprovalID != approval.id else { return }
         activeIsotopeApprovalID = approval.id
 
-        let window = makeOrRestoreMainWindow()
+        let window = showMainWindow()
         if NSApp.isActive == false || window.isKeyWindow == false {
             _ = NSApp.requestUserAttention(.criticalRequest)
         }
-        showMainWindow()
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Key Injection")
@@ -615,11 +618,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard activeGateApprovalID != approval.id else { return }
         activeGateApprovalID = approval.id
 
-        let window = makeOrRestoreMainWindow()
+        let window = showMainWindow()
         if NSApp.isActive == false || window.isKeyWindow == false {
             _ = NSApp.requestUserAttention(.criticalRequest)
         }
-        showMainWindow()
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Gate")
@@ -661,11 +663,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let window = makeOrRestoreMainWindow()
+        let window = showMainWindow()
         if NSApp.isActive == false || window.isKeyWindow == false {
             _ = NSApp.requestUserAttention(.criticalRequest)
         }
-        showMainWindow()
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Dotenv Keys")
@@ -990,8 +991,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let window = controller.window {
+            bringWindowForward(window)
+        }
         return controller.window
     }
 
