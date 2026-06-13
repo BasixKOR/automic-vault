@@ -90,6 +90,120 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertNil(store.loadDecision(id: "transfer-2"))
     }
 
+    func testVaultApprovalStoreRemembersDeniedGitHubTokenExposureAcrossFreshIDs() throws {
+        let rootURL = temporaryApprovalStoreRoot()
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let store = VaultApprovalStore(rootURL: rootURL)
+        let firstApproval = vaultApproval(
+            id: "gh-token-exposure-111-222",
+            tool: "gh auth token",
+            args: ["--hostname", "github.com"],
+            cwd: "/Users/alice/project-a"
+        )
+
+        try store.savePendingApproval(firstApproval)
+        try store.saveDecision(
+            VaultApprovalDecision(
+                id: firstApproval.id,
+                approved: false,
+                reason: "Denied by operator"
+            )
+        )
+        store.clearPendingApproval(id: firstApproval.id)
+
+        let repeatedApproval = vaultApproval(
+            id: "gh-token-exposure-333-444",
+            tool: "gh auth token",
+            args: ["--hostname", "github.com"],
+            cwd: "/Users/alice/project-b"
+        )
+
+        XCTAssertEqual(
+            store.rememberedDenial(for: repeatedApproval),
+            VaultApprovalDecision(
+                id: repeatedApproval.id,
+                approved: false,
+                reason: "Denied by operator"
+            )
+        )
+    }
+
+    func testVaultApprovalStoreBindsGenericDeniedApprovalToRequesterContext() throws {
+        let rootURL = temporaryApprovalStoreRoot()
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let store = VaultApprovalStore(rootURL: rootURL)
+        let firstApproval = vaultApproval(
+            id: "request-1",
+            tool: "/usr/bin/env",
+            args: ["printenv", "SECRET"],
+            cwd: "/Users/alice/project-a",
+            agentID: "agent-1"
+        )
+
+        try store.savePendingApproval(firstApproval)
+        try store.saveDecision(
+            VaultApprovalDecision(
+                id: firstApproval.id,
+                approved: false,
+                reason: "Denied by operator"
+            )
+        )
+
+        let sameContextApproval = vaultApproval(
+            id: "request-2",
+            tool: "/usr/bin/env",
+            args: ["printenv", "SECRET"],
+            cwd: "/Users/alice/project-a",
+            agentID: "agent-1"
+        )
+        let differentCwdApproval = vaultApproval(
+            id: "request-3",
+            tool: "/usr/bin/env",
+            args: ["printenv", "SECRET"],
+            cwd: "/Users/alice/project-b",
+            agentID: "agent-1"
+        )
+
+        XCTAssertEqual(
+            store.rememberedDenial(for: sameContextApproval),
+            VaultApprovalDecision(
+                id: sameContextApproval.id,
+                approved: false,
+                reason: "Denied by operator"
+            )
+        )
+        XCTAssertNil(store.rememberedDenial(for: differentCwdApproval))
+    }
+
+    func testVaultApprovalStoreDoesNotRememberApprovedApproval() throws {
+        let rootURL = temporaryApprovalStoreRoot()
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let store = VaultApprovalStore(rootURL: rootURL)
+        let approval = vaultApproval(
+            id: "request-1",
+            tool: "/usr/bin/env",
+            args: ["printenv", "SECRET"],
+            cwd: "/Users/alice/project-a"
+        )
+
+        try store.savePendingApproval(approval)
+        try store.saveDecision(
+            VaultApprovalDecision(
+                id: approval.id,
+                approved: true,
+                reason: nil
+            )
+        )
+
+        XCTAssertNil(store.rememberedDenial(for: approval))
+    }
+
     func testDotenvApprovalRequestDefaultsMissingCommandToEmpty() throws {
         let data = Data("""
         {
@@ -327,6 +441,32 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertGreaterThan(wrappedView.intrinsicContentSize.height, compactView.intrinsicContentSize.height)
         XCTAssertGreaterThan(pillRows.count, 1)
         XCTAssertLessThanOrEqual(maxPillX, keyFlow.bounds.width + 0.5)
+    }
+
+    private func temporaryApprovalStoreRoot() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("av-approval-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func vaultApproval(
+        id: String,
+        tool: String,
+        args: [String],
+        cwd: String,
+        agentID: String? = nil,
+        requestingProcess: IsotopeParentProcessSnapshot? = nil
+    ) -> VaultApprovalRequestSnapshot {
+        VaultApprovalRequestSnapshot(
+            id: id,
+            intent: VaultExecutionIntent(
+                tool: tool,
+                args: args,
+                cwd: cwd,
+                env: [:],
+                agentID: agentID,
+                requestingProcess: requestingProcess
+            )
+        )
     }
 
     private func dotenvApproval(

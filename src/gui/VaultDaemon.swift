@@ -529,9 +529,22 @@ final class VaultDaemon {
         defer { endRequest(id: request.id) }
 
         do {
-            try approvalStore.savePendingApproval(
-                VaultApprovalRequestSnapshot(id: request.id, intent: request.intent)
-            )
+            let approval = VaultApprovalRequestSnapshot(id: request.id, intent: request.intent)
+            if let decision = approvalStore.rememberedDenial(for: approval) {
+                appendCommandLog(for: request)
+                appendApprovalLog(for: request, decision: decision)
+                send(
+                    .approvalResponse(
+                        id: decision.id,
+                        approved: decision.approved,
+                        reason: decision.reason
+                    ),
+                    to: clientFD
+                )
+                return
+            }
+
+            try approvalStore.savePendingApproval(approval)
             appendCommandLog(for: request)
             appendApprovalPendingLog(for: request)
             routeApprovalPresentation()
