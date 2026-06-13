@@ -396,15 +396,17 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func terminateIfDuplicateInstanceExists() -> Bool {
         let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
-        let otherInstance = NSRunningApplication.runningApplications(
+        let olderInstance = NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.automicvault.menu-helper"
         ).contains { application in
             application.processIdentifier != currentProcessIdentifier
+                && application.processIdentifier < currentProcessIdentifier
         }
-        if otherInstance {
+        if olderInstance {
+            NSLog("Automic Vault Menu exiting because an older helper instance is already running.")
             NSApp.terminate(nil)
         }
-        return otherInstance
+        return olderInstance
     }
 
     private func openMainApplicationForStartAtLoginToggle() {

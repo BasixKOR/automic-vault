@@ -1173,8 +1173,14 @@ final class VaultDaemon {
     }
 
     private func routeApprovalPresentation() {
-        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.automicvault").isEmpty {
-            notifyUser()
+        DispatchQueue.main.async { [openMainWindow, notifyUser] in
+            let mainAppIsRunning = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.automicvault"
+            ).isEmpty == false
+            openMainWindow()
+            if mainAppIsRunning == false {
+                notifyUser()
+            }
         }
     }
 
