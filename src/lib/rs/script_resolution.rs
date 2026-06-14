@@ -20,6 +20,16 @@ pub(crate) fn script_execution_scope(
     file: &File,
     args: &[OsString],
 ) -> Result<ScriptExecutionScope, String> {
+    if let Some(script) = uv_run_script(resolved_executable_path, args)? {
+        validate_regular_target(resolved_executable_path, file)?;
+        validate_target_root_installation(resolved_executable_path, file)?;
+        return Ok(ScriptExecutionScope {
+            executable_path: executable_path.to_string(),
+            script_path: Some(path_to_display_string(&script.path)?),
+            script_sha256: script.sha256,
+        });
+    }
+
     if let Some(script) = direct_shebang_script(resolved_executable_path, file)? {
         return Ok(ScriptExecutionScope {
             executable_path: script.interpreter_path,
@@ -83,6 +93,9 @@ pub(crate) fn interpreter_script(
     if executable_file_name(executable_path) == Some("env") {
         return Err("env always-allow is not supported".to_string());
     }
+    if executable_file_name(executable_path) == Some("uv") {
+        return uv_run_script(executable_path, args);
+    }
     if !is_script_interpreter(executable_path) {
         return Ok(None);
     }
@@ -128,6 +141,15 @@ pub(crate) fn interpreter_script_path_for_display(
     executable_path: &Path,
     args: &[OsString],
 ) -> Option<PathBuf> {
+    if executable_file_name(executable_path) == Some("uv") {
+        let script_path = uv_run_script_operand(args)?;
+        let path = if script_path.is_absolute() {
+            script_path.to_path_buf()
+        } else {
+            env::current_dir().ok()?.join(script_path)
+        };
+        return Some(fs::canonicalize(&path).unwrap_or(path));
+    }
     if !is_script_interpreter(executable_path)
         || executable_file_name(executable_path) == Some("env")
     {
@@ -203,6 +225,7 @@ pub(crate) fn is_script_interpreter(path: &Path) -> bool {
             | "python3"
             | "ruby"
             | "sh"
+            | "uv"
             | "zsh"
     ) || is_versioned_python_name(file_name)
 }
@@ -221,6 +244,83 @@ pub(crate) fn interpreter_script_operand(args: &[OsString]) -> Option<&Path> {
             index += 2;
         } else {
             index += 1;
+        }
+    }
+    None
+}
+
+fn uv_run_script(
+    executable_path: &Path,
+    args: &[OsString],
+) -> Result<Option<ScriptResolution>, String> {
+    if executable_file_name(executable_path) != Some("uv") {
+        return Ok(None);
+    }
+    let Some(script_operand) = uv_run_script_operand(args) else {
+        return Ok(None);
+    };
+    let script_path = resolve_script_operand(script_operand)?;
+    let file = File::open(&script_path)
+        .map_err(|err| format!("failed to open {}: {err}", script_path.display()))?;
+    validate_regular_target(&script_path, &file)?;
+    if validate_target_root_installation(&script_path, &file).is_ok() {
+        return Ok(Some(ScriptResolution {
+            path: script_path,
+            interpreter_path: path_to_display_string(executable_path)?,
+            sha256: None,
+        }));
+    }
+    let sha256 = sha256_file(&script_path)?;
+    Ok(Some(ScriptResolution {
+        path: script_path,
+        interpreter_path: path_to_display_string(executable_path)?,
+        sha256: Some(sha256),
+    }))
+}
+
+fn uv_run_script_operand(args: &[OsString]) -> Option<&Path> {
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].to_str()?;
+        if arg == "run" {
+            index += 1;
+            break;
+        }
+        if !arg.starts_with('-') {
+            return None;
+        }
+        if arg == "--" {
+            return None;
+        }
+        if uv_global_option_takes_value(arg) {
+            index += 2;
+        } else if uv_global_flag(arg) {
+            index += 1;
+        } else {
+            return None;
+        }
+    }
+    if index >= args.len() {
+        return None;
+    }
+
+    while index < args.len() {
+        let arg = args[index].to_str()?;
+        if arg == "--" {
+            return args.get(index + 1).map(Path::new);
+        }
+        if !arg.starts_with('-') || arg == "-" {
+            return args.get(index).map(Path::new);
+        }
+        if arg == "-m" || arg == "--module" {
+            return None;
+        }
+        if uv_run_option_takes_value(arg) {
+            index += 2;
+        } else if uv_run_flag(arg) {
+            index += 1;
+        } else {
+            return None;
         }
     }
     None
@@ -319,5 +419,106 @@ pub(crate) fn interpreter_option_takes_value(arg: &str) -> bool {
     matches!(
         arg,
         "-c" | "-m" | "-S" | "-e" | "-I" | "-l" | "-x" | "-C" | "-M" | "-d" | "-r"
+    )
+}
+
+fn uv_global_option_takes_value(arg: &str) -> bool {
+    arg.contains('=')
+        || matches!(
+            arg,
+            "--cache-dir" | "--color" | "--config-file" | "--directory" | "--project"
+        )
+}
+
+fn uv_global_flag(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-q" | "--quiet"
+            | "-v"
+            | "--verbose"
+            | "--native-tls"
+            | "--offline"
+            | "--no-cache"
+            | "--no-config"
+            | "--no-progress"
+            | "--version"
+    )
+}
+
+fn uv_run_option_takes_value(arg: &str) -> bool {
+    arg.contains('=')
+        || matches!(
+            arg,
+            "--config-setting"
+                | "--config-settings-package"
+                | "--default-index"
+                | "--directory"
+                | "--env-file"
+                | "--exclude-newer"
+                | "--exclude-newer-package"
+                | "--extra"
+                | "--find-links"
+                | "--from"
+                | "--group"
+                | "--index"
+                | "--index-strategy"
+                | "--keyring-provider"
+                | "--link-mode"
+                | "--no-build-isolation-package"
+                | "--no-binary-package"
+                | "--no-build-package"
+                | "--no-extra"
+                | "--no-group"
+                | "--only-binary-package"
+                | "--only-group"
+                | "--prerelease"
+                | "--project"
+                | "--python"
+                | "--python-platform"
+                | "--refresh-package"
+                | "--resolution"
+                | "--upgrade-package"
+                | "--with"
+                | "--with-editable"
+                | "--with-requirements"
+        )
+}
+
+fn uv_run_flag(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-q" | "--quiet"
+            | "-v"
+            | "--verbose"
+            | "--active"
+            | "--all-groups"
+            | "--all-extras"
+            | "--all-packages"
+            | "--compile-bytecode"
+            | "--dev"
+            | "--exact"
+            | "--frozen"
+            | "--inexact"
+            | "--isolated"
+            | "--locked"
+            | "--managed-python"
+            | "--no-build-isolation"
+            | "--no-cache"
+            | "--no-config"
+            | "--no-dev"
+            | "--no-editable"
+            | "--no-env-file"
+            | "--no-extra"
+            | "--no-group"
+            | "--no-index"
+            | "--no-managed-python"
+            | "--no-progress"
+            | "--no-sources"
+            | "--no-sync"
+            | "--offline"
+            | "--refresh"
+            | "--reinstall"
+            | "--system"
+            | "--upgrade"
     )
 }

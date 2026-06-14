@@ -2608,6 +2608,62 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_detect_uv_run_script_for_interpreter_approvals() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("publish.py");
+        fs::write(&script, b"#!/usr/bin/env python3\nprint('hi')\n").unwrap();
+        let previous_cwd = env::current_dir().unwrap();
+        env::set_current_dir(temp.path()).unwrap();
+
+        let result = interpreter_script_for_always_allow(
+            Path::new("/usr/local/bin/uv"),
+            &[
+                OsString::from("run"),
+                OsString::from("--with"),
+                OsString::from("requests"),
+                OsString::from("publish.py"),
+                OsString::from("next-publish"),
+            ],
+        );
+        let display = interpreter_script_path_for_display(
+            Path::new("/usr/local/bin/uv"),
+            &[
+                OsString::from("run"),
+                OsString::from("publish.py"),
+                OsString::from("next-publish"),
+            ],
+        );
+        let non_run = interpreter_script_for_always_allow(
+            Path::new("/usr/local/bin/uv"),
+            &[OsString::from("pip"), OsString::from("install")],
+        )
+        .unwrap();
+        let module = interpreter_script_for_always_allow(
+            Path::new("/usr/local/bin/uv"),
+            &[
+                OsString::from("run"),
+                OsString::from("-m"),
+                OsString::from("http.server"),
+            ],
+        )
+        .unwrap();
+        env::set_current_dir(previous_cwd).unwrap();
+
+        let detected = result.unwrap().unwrap();
+        let expected = fs::canonicalize(&script).unwrap();
+        assert_eq!(detected.path, expected);
+        assert_eq!(detected.sha256, Some(sha256_file(&script).unwrap()));
+        assert_eq!(display, Some(expected));
+        assert_eq!(non_run, None);
+        assert_eq!(module, None);
+    }
+
+    #[test]
     fn isotopes_always_allow_rejects_env_launchers() {
         let err = interpreter_script_for_always_allow(
             Path::new("/usr/bin/env"),
@@ -2623,6 +2679,7 @@ mod tests {
             "/opt/awscli/bin/python3.14"
         )));
         assert!(is_script_interpreter(Path::new("/bin/python3")));
+        assert!(is_script_interpreter(Path::new("/usr/local/bin/uv")));
         assert!(!is_script_interpreter(Path::new("/bin/python-config")));
     }
 
