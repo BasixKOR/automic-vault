@@ -5,6 +5,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use std::collections::BTreeMap;
 use std::io::{self, IsTerminal, Read};
+use std::os::unix::process::CommandExt;
 
 #[cfg(target_os = "macos")]
 use std::ffi::{CString, c_char, c_int};
@@ -1104,27 +1105,42 @@ fn dotenv_git_provenance_for_script(script_path: &Path) -> Result<DotenvGitProve
     let script_dir = script_path
         .parent()
         .ok_or_else(|| format!("invalid dotenv run script path {}", script_path.display()))?;
-    let git_root = run_dotenv_git_with_safe_directory(
+    let git_root = run_dotenv_git(
         script_dir,
-        Some("*"),
+        DotenvGitExecutionUser::Current,
         &["rev-parse", "--show-toplevel"],
     )?;
     let git_root_path = fs::canonicalize(git_root.trim())
         .map_err(|err| format!("failed to resolve git root for dotenv run script: {err}"))?;
+    dotenv_git_provenance_for_root(script_path, &git_root_path, DotenvGitExecutionUser::Current)
+}
+
+fn dotenv_git_provenance_for_script_and_root(
+    script_path: &Path,
+    git_root_path: &Path,
+) -> Result<DotenvGitProvenance, String> {
+    dotenv_git_provenance_for_root(
+        script_path,
+        git_root_path,
+        DotenvGitExecutionUser::WorktreeOwner,
+    )
+}
+
+fn dotenv_git_provenance_for_root(
+    script_path: &Path,
+    git_root_path: &Path,
+    user: DotenvGitExecutionUser,
+) -> Result<DotenvGitProvenance, String> {
     if !script_path.starts_with(&git_root_path) {
         return Err("dotenv run script is not inside its git worktree".to_string());
     }
     let git_root = script_resolution::path_to_display_string(&git_root_path)?;
-    let git_head = run_dotenv_git_with_safe_directory(
-        &git_root_path,
-        Some(&git_root),
-        &["rev-parse", "HEAD"],
-    )?;
+    let git_head = run_dotenv_git(git_root_path, user, &["rev-parse", "HEAD"])?;
     let git_head = git_head.trim().to_string();
     validate_dotenv_git_head(&git_head)?;
-    let status = run_dotenv_git_with_safe_directory(
-        &git_root_path,
-        Some(&git_root),
+    let status = run_dotenv_git(
+        git_root_path,
+        user,
         &["status", "--porcelain", "--untracked-files=normal"],
     )?;
     if !status.trim().is_empty() {
@@ -1133,16 +1149,32 @@ fn dotenv_git_provenance_for_script(script_path: &Path) -> Result<DotenvGitProve
     Ok(DotenvGitProvenance { git_root, git_head })
 }
 
-fn run_dotenv_git_with_safe_directory(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DotenvGitExecutionUser {
+    Current,
+    WorktreeOwner,
+}
+
+#[derive(Debug)]
+struct DotenvGitOwner {
+    uid: u32,
+    gid: u32,
+    home: Option<String>,
+    name: Option<String>,
+}
+
+fn run_dotenv_git(
     cwd: &Path,
-    safe_directory: Option<&str>,
+    user: DotenvGitExecutionUser,
     args: &[&str],
 ) -> Result<String, String> {
     let mut command = Command::new("git");
-    if let Some(safe_directory) = safe_directory {
-        command
-            .arg("-c")
-            .arg(format!("safe.directory={safe_directory}"));
+    let owner = match user {
+        DotenvGitExecutionUser::Current => None,
+        DotenvGitExecutionUser::WorktreeOwner => Some(dotenv_git_owner_for_worktree(cwd)?),
+    };
+    if let Some(owner) = &owner {
+        configure_dotenv_git_owner_command(&mut command, owner);
     }
     let output = command
         .args(args)
@@ -1159,6 +1191,55 @@ fn run_dotenv_git_with_safe_directory(
     }
     String::from_utf8(output.stdout)
         .map_err(|err| format!("git output for dotenv run provenance was not UTF-8: {err}"))
+}
+
+fn dotenv_git_owner_for_worktree(git_root: &Path) -> Result<DotenvGitOwner, String> {
+    let metadata = fs::metadata(git_root)
+        .map_err(|err| format!("failed to stat git root for dotenv run provenance: {err}"))?;
+    let uid = metadata.uid();
+    let gid = metadata.gid();
+    let (home, name) = passwd_entry_for_uid(uid);
+    Ok(DotenvGitOwner {
+        uid,
+        gid,
+        home,
+        name,
+    })
+}
+
+fn configure_dotenv_git_owner_command(command: &mut Command, owner: &DotenvGitOwner) {
+    command.env_clear();
+    command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+    if let Some(home) = &owner.home {
+        command.env("HOME", home);
+    }
+    if let Some(name) = &owner.name {
+        command.env("USER", name);
+        command.env("LOGNAME", name);
+    }
+    command.gid(owner.gid);
+    command.uid(owner.uid);
+}
+
+fn passwd_entry_for_uid(uid: u32) -> (Option<String>, Option<String>) {
+    unsafe {
+        let pwd = libc::getpwuid(uid);
+        if pwd.is_null() {
+            return (None, None);
+        }
+        let entry = *pwd;
+        let home = (!entry.pw_dir.is_null()).then(|| {
+            std::ffi::CStr::from_ptr(entry.pw_dir)
+                .to_string_lossy()
+                .into_owned()
+        });
+        let name = (!entry.pw_name.is_null()).then(|| {
+            std::ffi::CStr::from_ptr(entry.pw_name)
+                .to_string_lossy()
+                .into_owned()
+        });
+        (home, name)
+    }
 }
 
 fn validate_dotenv_git_head(value: &str) -> Result<(), String> {
@@ -2658,7 +2739,13 @@ fn validate_dotenv_run_provenance(
             provenance.executable_path
         )
     })?;
-    let git = dotenv_git_provenance_for_script(&script_path)?;
+    let git_root_path = fs::canonicalize(&provenance.git_root).map_err(|err| {
+        format!(
+            "failed to resolve dotenv run provenance git root {}: {err}",
+            provenance.git_root
+        )
+    })?;
+    let git = dotenv_git_provenance_for_script_and_root(&script_path, &git_root_path)?;
     if git.git_root != provenance.git_root || git.git_head != provenance.git_head {
         return Err(
             "dotenv run git provenance changed before approval could be remembered".to_string(),
@@ -6584,7 +6671,6 @@ mod tests {
         let script = project.join("script.sh");
         write_executable_test_script(&script, "#!/bin/sh\nprintf '%s\\n' \"$FOO\"\n");
         commit_test_git_repo(&project, "initial");
-        let different_owner = DotenvEnvGuard::set(&[("GIT_TEST_ASSUME_DIFFERENT_OWNER", "true")]);
 
         let options = DotenvRunOptions {
             file: env_path.clone(),
@@ -6600,16 +6686,20 @@ mod tests {
             provenance.git_root,
             fs::canonicalize(&project).unwrap().to_string_lossy()
         );
-        remember_dotenv_approval_from_helper(
-            DotenvApprovalMode::Run,
-            env_path.to_str().unwrap(),
-            project.to_str().unwrap(),
-            &sha256_file_hex(&env_path).unwrap(),
-            &public_key_fingerprint(&keypair.public_key),
-            vec!["FOO".to_string()],
-            Some(provenance.clone()),
-        )
-        .unwrap();
+        {
+            let _different_owner =
+                DotenvEnvGuard::set(&[("GIT_TEST_ASSUME_DIFFERENT_OWNER", "true")]);
+            remember_dotenv_approval_from_helper(
+                DotenvApprovalMode::Run,
+                env_path.to_str().unwrap(),
+                project.to_str().unwrap(),
+                &sha256_file_hex(&env_path).unwrap(),
+                &public_key_fingerprint(&keypair.public_key),
+                vec!["FOO".to_string()],
+                Some(provenance.clone()),
+            )
+            .unwrap();
+        }
         let stored = load_dotenv_remembered_approvals().unwrap();
         assert_eq!(stored.entries.len(), 1);
         assert_eq!(stored.entries[0].run_provenance.as_ref(), Some(&provenance));
@@ -6662,11 +6752,8 @@ mod tests {
                 .contains("clean git worktree")
         );
         fs::remove_file(project.join("untracked.txt")).unwrap();
-        drop(different_owner);
-
         write_executable_test_script(&script, "#!/bin/sh\nprintf changed\\n\n");
         commit_test_git_repo(&project, "change script");
-        let _different_owner = DotenvEnvGuard::set(&[("GIT_TEST_ASSUME_DIFFERENT_OWNER", "true")]);
         let changed = dotenv_run_provenance(&options).unwrap();
         assert_ne!(changed.git_head, provenance.git_head);
         let mut changed_entry = remembered_entry_for(
