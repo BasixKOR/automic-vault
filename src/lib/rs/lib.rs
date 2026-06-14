@@ -13144,11 +13144,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
         fs::write(root.join(".next/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join("cache/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(root.join("Vendor/.env"), "TOKEN=secret_secret\n").unwrap();
-        fs::write(
-            root.join("isotopes/example/.env"),
-            "TOKEN=secret_secret\n",
-        )
-        .unwrap();
+        fs::write(root.join("isotopes/example/.env"), "TOKEN=secret_secret\n").unwrap();
         fs::write(
             root.join("radioisotopes/example/.env"),
             "TOKEN=secret_secret\n",
