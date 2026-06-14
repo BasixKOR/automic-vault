@@ -156,8 +156,9 @@ Options:
                       Also uploads /scanner.gz and /scanner.sh to S3.
                       Requires --notarize.
   --clobber           Replace the GitHub release assets for the current
-                      Cargo.toml version without asking Codex for a new
-                      version or creating a release commit. Requires --publish.
+                      Cargo.toml version, force-moving only that tag to HEAD,
+                      without asking Codex for a new version or creating a
+                      release commit. Requires --publish.
   --help              Show this help.
 EOF
 }
@@ -177,8 +178,8 @@ publish_github_release() {
   scanner_gz_path="$(build_public_scanner_artifact)"
 
   if [[ "${clobber_release}" == "true" ]]; then
-    ensure_git_tag_available "${tag}"
-    target_ref="$(git -C "${repo_root}" rev-parse "${tag}^{commit}")"
+    force_update_release_tag "${tag}"
+    target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
     clobber_github_release "${tag}"
   else
     target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
@@ -240,9 +241,24 @@ clobber_github_release() {
   rm -f "${view_error}"
 
   cli_step "Clobbering existing GitHub release ${tag}"
-  if ! gh release delete "${tag}" --yes --cleanup-tag >&2; then
+  if ! gh release delete "${tag}" --yes >&2; then
     cli_die "Unable to clobber existing GitHub release ${tag}"
   fi
+}
+
+force_update_release_tag() {
+  local tag="$1"
+  local remote
+
+  remote="$(git -C "${repo_root}" remote get-url origin 2>/dev/null || true)"
+  [[ -n "${remote}" ]] ||
+    cli_die "--publish --clobber requires a git origin remote so ${tag} can be force-pushed"
+
+  cli_step "Force-moving ${tag} to HEAD"
+  git -C "${repo_root}" tag -f "${tag}" HEAD >&2
+
+  cli_step "Force-pushing tag ${tag}"
+  git -C "${repo_root}" push --force origin "refs/tags/${tag}:refs/tags/${tag}" >&2
 }
 
 existing_release_notes() {
