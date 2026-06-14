@@ -301,8 +301,8 @@ version_gt() {
 ensure_release_worktree_state() {
   git -C "${repo_root}" diff --cached --quiet ||
     cli_die "Index has staged changes; commit or stash them before publishing"
-  git -C "${repo_root}" diff --quiet -- Cargo.toml Cargo.lock ||
-    cli_die "Cargo.toml or Cargo.lock has unstaged changes; commit or stash them before publishing"
+  git -C "${repo_root}" diff --quiet -- Cargo.toml Cargo.lock .env src/lib/rs/core.rs ||
+    cli_die "Cargo.toml, Cargo.lock, .env, or src/lib/rs/core.rs has unstaged changes; commit or stash them before publishing"
 }
 
 generate_release_plan() {
@@ -425,14 +425,86 @@ bump_cargo_version() {
     >/dev/null
 }
 
+review_release_component_versions() {
+  local planned_version="$1"
+  local current_version="$2"
+  local review_path
+  local previous_tag
+  local target_ref
+  local compare_context
+  local prompt
+
+  cli_require_tool codex
+
+  review_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-version-review.XXXXXX")"
+  target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
+
+  if previous_tag="$(latest_release_tag)"; then
+    ensure_git_tag_available "${previous_tag}"
+    compare_context="Previous release tag: ${previous_tag}
+Compare range: ${previous_tag}..${target_ref}"
+  else
+    compare_context="No previous release tag was found.
+Target ref: ${target_ref}"
+  fi
+
+  prompt="Review Automic Vault component version bumps before publishing.
+
+Repository: ${repo_root}
+Current Cargo package version before this publish run: ${current_version}
+Planned Cargo package version: ${planned_version}
+${compare_context}
+
+The publish script has already updated Cargo.toml and Cargo.lock in the working tree, but has not committed yet.
+
+Important: .env is safe to read. It contains no plaintext sensitive keys; sensitive values are encrypted.
+
+Read src/AGENTS.md component versioning instructions, then inspect the release changes and current working tree.
+Decide whether these component versions needed to be bumped:
+- .env NUKE_HELPER_VERSION, whenever privileged helper behavior changes, including XPC/helper interface changes.
+- .env NUKE_PROTOCOL_VERSION plus src/lib/rs/core.rs PROTOCOL_VERSION, whenever the av serve protocol contract changes.
+
+If a required bump was not done, edit the file(s) now and bump by the smallest appropriate amount.
+If a required bump was already done, leave it unchanged.
+If no bump is required, leave files unchanged.
+Do not edit Cargo.toml, Cargo.lock, release notes, or any file other than .env and src/lib/rs/core.rs.
+Do not create commits.
+
+Output exactly this format, with no code fence and no preamble:
+1. Component Version Review
+<brief decision summary>
+2. Files Edited
+<none or newline-separated file paths>"
+
+  cli_step "Reviewing helper/protocol version bumps with Codex"
+  if ! codex exec \
+    --cd "${repo_root}" \
+    --sandbox workspace-write \
+    --config approval_policy=\"never\" \
+    --color never \
+    --ephemeral \
+    --output-last-message "${review_path}" \
+    "${prompt}" \
+    >&2; then
+    cli_die "Codex component version review failed"
+  fi
+
+  if [[ ! -s "${review_path}" ]]; then
+    cli_die "Codex component version review produced no output"
+  fi
+
+  cli_info "Component version review"
+  sed 's/^/  /' "${review_path}" >&2
+}
+
 commit_release_version() {
   local version="$1"
   local tag="v${version}"
 
-  git -C "${repo_root}" add Cargo.toml Cargo.lock
+  git -C "${repo_root}" add Cargo.toml Cargo.lock .env src/lib/rs/core.rs
 
   if git -C "${repo_root}" diff --cached --quiet; then
-    cli_die "Cargo.toml and Cargo.lock were unchanged after version bump"
+    cli_die "Release version files were unchanged after version bump"
   fi
 
   cli_step "Committing ${tag}"
@@ -598,6 +670,7 @@ if [[ "${publish_release}" == "true" ]]; then
   fi
 
   bump_cargo_version "${planned_version}"
+  review_release_component_versions "${planned_version}" "${current_version}"
   commit_release_version "${planned_version}"
   push_current_branch
 fi
