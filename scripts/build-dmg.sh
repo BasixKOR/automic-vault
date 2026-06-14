@@ -155,8 +155,9 @@ Options:
                       with the DMG.
                       Also uploads /scanner.gz and /scanner.sh to S3.
                       Requires --notarize.
-  --clobber           Delete any existing GitHub release for vX.Y.Z before
-                      publishing. Requires --publish.
+  --clobber           Replace the GitHub release assets for the current
+                      Cargo.toml version without asking Codex for a new
+                      version or creating a release commit. Requires --publish.
   --help              Show this help.
 EOF
 }
@@ -172,12 +173,15 @@ publish_github_release() {
   local -a release_args
 
   asset_label="$(basename "${dmg_path}")"
-  target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
 
   scanner_gz_path="$(build_public_scanner_artifact)"
 
   if [[ "${clobber_release}" == "true" ]]; then
+    ensure_git_tag_available "${tag}"
+    target_ref="$(git -C "${repo_root}" rev-parse "${tag}^{commit}")"
     clobber_github_release "${tag}"
+  else
+    target_ref="$(git -C "${repo_root}" rev-parse HEAD)"
   fi
 
   release_args=(
@@ -239,6 +243,29 @@ clobber_github_release() {
   if ! gh release delete "${tag}" --yes --cleanup-tag >&2; then
     cli_die "Unable to clobber existing GitHub release ${tag}"
   fi
+}
+
+existing_release_notes() {
+  local tag="$1"
+  local notes_path
+  local view_error
+
+  cli_require_tool gh
+  notes_path="$(mktemp "${TMPDIR:-/tmp}/automic-vault-existing-release-notes.XXXXXX")"
+  view_error="$(mktemp "${TMPDIR:-/tmp}/automic-vault-release-view.XXXXXX")"
+
+  if ! gh release view "${tag}" \
+      --json body \
+      --jq '.body // ""' \
+      >"${notes_path}" \
+      2>"${view_error}"; then
+    cat "${view_error}" >&2
+    rm -f "${notes_path}" "${view_error}"
+    cli_die "Unable to read existing GitHub release notes for ${tag}"
+  fi
+
+  rm -f "${view_error}"
+  printf '%s\n' "${notes_path}"
 }
 
 latest_release_tag() {
@@ -655,24 +682,29 @@ if [[ "${publish_release}" == "true" ]]; then
   ensure_release_worktree_state
 
   current_version="$(package_version)"
-  release_plan="$(generate_release_plan "${current_version}")"
-  release_notes_path="$(printf '%s\n' "${release_plan}" | sed -n '1p')"
-  version_path="$(printf '%s\n' "${release_plan}" | sed -n '2p')"
-  planned_version="$(<"${version_path}")"
+  if [[ "${clobber_release}" == "true" ]]; then
+    planned_version="${current_version}"
+    ensure_git_tag_available "v${planned_version}"
+    release_notes_path="$(existing_release_notes "v${planned_version}")"
+  else
+    release_plan="$(generate_release_plan "${current_version}")"
+    release_notes_path="$(printf '%s\n' "${release_plan}" | sed -n '1p')"
+    version_path="$(printf '%s\n' "${release_plan}" | sed -n '2p')"
+    planned_version="$(<"${version_path}")"
 
-  if ! version_gt "${planned_version}" "${current_version}"; then
-    cli_die "Codex proposed ${planned_version}, which is not newer than current Cargo version ${current_version}"
+    if ! version_gt "${planned_version}" "${current_version}"; then
+      cli_die "Codex proposed ${planned_version}, which is not newer than current Cargo version ${current_version}"
+    fi
+
+    if git -C "${repo_root}" rev-parse --verify --quiet "v${planned_version}^{commit}" >/dev/null; then
+      cli_die "Tag v${planned_version} already exists"
+    fi
+
+    bump_cargo_version "${planned_version}"
+    review_release_component_versions "${planned_version}" "${current_version}"
+    commit_release_version "${planned_version}"
+    push_current_branch
   fi
-
-  if [[ "${clobber_release}" != "true" ]] &&
-      git -C "${repo_root}" rev-parse --verify --quiet "v${planned_version}^{commit}" >/dev/null; then
-    cli_die "Tag v${planned_version} already exists"
-  fi
-
-  bump_cargo_version "${planned_version}"
-  review_release_component_versions "${planned_version}" "${current_version}"
-  commit_release_version "${planned_version}"
-  push_current_branch
 fi
 
 if [[ -z "${background_path}" && -f "${default_background}" ]]; then
