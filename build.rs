@@ -470,8 +470,16 @@ fn coverage_path_alias(
 }
 
 fn ensure_coverage_include_alias(source_root: &std::path::Path, include_root: &std::path::Path) {
-    if std::fs::symlink_metadata(include_root).is_ok() {
-        return;
+    match std::fs::symlink_metadata(include_root) {
+        Ok(metadata) => {
+            validate_coverage_include_alias(source_root, include_root, &metadata);
+            return;
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => panic!(
+            "failed to inspect coverage include path {}: {err}",
+            include_root.display()
+        ),
     }
     let Some(parent) = include_root.parent() else {
         return;
@@ -492,6 +500,40 @@ fn ensure_coverage_include_alias(source_root: &std::path::Path, include_root: &s
         include_root.display(),
         source_root.display()
     );
+}
+
+fn validate_coverage_include_alias(
+    source_root: &std::path::Path,
+    include_root: &std::path::Path,
+    metadata: &std::fs::Metadata,
+) {
+    if !metadata.file_type().is_symlink() {
+        panic!(
+            "coverage include path {} already exists but is not a symlink to {}",
+            include_root.display(),
+            source_root.display()
+        );
+    }
+
+    let expected = canonical_coverage_alias_path(source_root, "coverage source root");
+    let actual = canonical_coverage_alias_path(include_root, "coverage include path");
+    if actual != expected {
+        let target = std::fs::read_link(include_root)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|err| format!("<unreadable: {err}>"));
+        panic!(
+            "coverage include path {} points to {} (resolved to {}) but expected {}",
+            include_root.display(),
+            target,
+            actual.display(),
+            expected.display()
+        );
+    }
+}
+
+fn canonical_coverage_alias_path(path: &std::path::Path, description: &str) -> std::path::PathBuf {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|err| panic!("failed to resolve {description} {}: {err}", path.display()))
 }
 
 fn coverage_include_path(
