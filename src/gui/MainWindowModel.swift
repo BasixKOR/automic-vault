@@ -423,6 +423,7 @@ final class MainWindowModel: ObservableObject {
     private var loadingSectionKinds = Set<SectionPageKind>()
     private var staleSectionKinds = Set<SectionPageKind>()
     private var pendingHardeningSelection: PackageHardeningContext?
+    private var shouldFocusSecurityAlertsOnStartup = true
     private let cliToolsRecommendationProvider: () -> PackageRecommendation?
     private let installedPackagesFetcher: () throws -> [PackageRecord]
     private let outdatedPackagesFetcher: () throws -> [OutdatedPackageRecord]
@@ -737,6 +738,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     func selectSection(_ section: MainWindowSection) {
+        shouldFocusSecurityAlertsOnStartup = false
         if section == .newUpdated {
             newUpdatedSelectionDisplayCount = positiveSidebarCount(
                 selectedSection == .newUpdated
@@ -1913,6 +1915,7 @@ final class MainWindowModel: ObservableObject {
                 presentationID: package.presentationID
             )
         }
+        focusSecurityAlertsOnStartupIfNeeded()
     }
 
     private func finishInstalledReload(
@@ -1961,6 +1964,7 @@ final class MainWindowModel: ObservableObject {
                 }
             }
             statusMessage = nil
+            focusSecurityAlertsOnStartupIfNeeded()
             ensureSelectedSectionLoaded()
             preloadSidebarCountData()
         case .failure(let error):
@@ -2482,9 +2486,32 @@ final class MainWindowModel: ObservableObject {
                       page.nextOffset != nil {
                 loadNextSectionPageIfNeeded(kind: kind)
             }
+            if kind == .geiger, offset == 0 {
+                focusSecurityAlertsOnStartupIfNeeded()
+                shouldFocusSecurityAlertsOnStartup = false
+            }
         case .failure(let error):
             lastErrorMessage = error.localizedDescription
+            if kind == .geiger, offset == 0 {
+                shouldFocusSecurityAlertsOnStartup = false
+            }
         }
+    }
+
+    private func focusSecurityAlertsOnStartupIfNeeded() {
+        guard shouldFocusSecurityAlertsOnStartup else {
+            return
+        }
+        guard selectedSection == .installed, !isSearchActive else {
+            shouldFocusSecurityAlertsOnStartup = false
+            return
+        }
+        guard snapshot.hazardousPackageCount > 0 || geigerActionPackages.isEmpty == false else {
+            return
+        }
+
+        shouldFocusSecurityAlertsOnStartup = false
+        selectedSection = .geigerCounter
     }
 
     private func updateSelectedSectionLoadingState() {

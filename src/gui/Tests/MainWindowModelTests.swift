@@ -254,6 +254,106 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testStartFocusesSecurityAlertsWhenInstalledHazardsExist() async {
+        let state = securityState(
+            isotopeName: "gh",
+            reason: "GitHub token is stored in plaintext"
+        )
+        let record = PackageRecord(
+            name: "brew:gh",
+            source: .formula(rootFormula: "gh"),
+            version: "2.49.0",
+            description: "GitHub command line tool",
+            securityState: state
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: { [record] },
+            outdatedPackagesFetcher: { [] },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        await waitUntil(model.selectedSection == .geigerCounter)
+
+        XCTAssertEqual(model.activeSidebarSection, .geigerCounter)
+        XCTAssertEqual(model.count(for: .geigerCounter), 1)
+        XCTAssertEqual(model.displayedPackages.map(\.selectionID), ["brew:gh"])
+    }
+
+    @MainActor
+    func testStartFocusesSecurityAlertsWhenDetectorHazardsExist() async {
+        let detectorResult = PackageSearchResult(
+            name: "supabase-cli",
+            source: .formula(rootFormula: "supabase-cli"),
+            version: nil,
+            description: "Detector flagged local plaintext credential exposure",
+            homepage: nil,
+            dependencies: [],
+            securityState: securityState(
+                isotopeName: "supabase-cli",
+                reason: "Supabase access token is readable by /usr/bin/security"
+            ),
+            pulseKind: nil
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: { [] },
+            outdatedPackagesFetcher: { [] },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [detectorResult], totalCount: 1, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        await waitUntil(
+            model.selectedSection == .geigerCounter
+                && model.displayedPackages.map(\.selectionID) == ["gone:supabase-cli"]
+        )
+
+        XCTAssertEqual(model.activeSidebarSection, .geigerCounter)
+        XCTAssertEqual(model.count(for: .geigerCounter), 1)
+    }
+
+    @MainActor
+    func testStartupSecurityAlertFocusDoesNotOverrideUserSidebarSelection() async {
+        let state = securityState(
+            isotopeName: "gh",
+            reason: "GitHub token is stored in plaintext"
+        )
+        let record = PackageRecord(
+            name: "brew:gh",
+            source: .formula(rootFormula: "gh"),
+            version: "2.49.0",
+            description: "GitHub command line tool",
+            securityState: state
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: {
+                Thread.sleep(forTimeInterval: 0.05)
+                return [record]
+            },
+            outdatedPackagesFetcher: { [] },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        model.selectSection(.outdated)
+        await waitUntil(model.count(for: .geigerCounter) == 1)
+
+        XCTAssertEqual(model.selectedSection, .outdated)
+        XCTAssertEqual(model.activeSidebarSection, .outdated)
+    }
+
+    @MainActor
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(
