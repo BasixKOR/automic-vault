@@ -203,21 +203,36 @@ fn generate_isotope_integrations() {
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
+    let default_isotope_root = absolute_path(av_db_root.join("../isotopes"));
+    let default_radioisotope_root = absolute_path(av_db_root.join("../radioisotopes"));
     let isotope_root =
-        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", av_db_root.join("../isotopes"));
+        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", default_isotope_root.clone());
     let radioisotope_root = path_env_or_default(
         "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
-        av_db_root.join("../radioisotopes"),
+        default_radioisotope_root.clone(),
     );
-    println!(
-        "cargo:rustc-env=AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO={}",
-        radioisotope_root.display()
-    );
-    let isotope_roots = [isotope_root, radioisotope_root];
+    let isotope_roots = [isotope_root.clone(), radioisotope_root.clone()];
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let generated_sources_dir = std::path::Path::new(&out_dir).join("isotope-generated");
     let output_path = std::path::Path::new(&out_dir).join("isotope_integrations.rs");
     let include_isotope_tests = include_isotope_tests_for_coverage();
+    let coverage_path_aliases = if include_isotope_tests {
+        coverage_path_aliases(
+            repo_root,
+            &isotope_root,
+            &default_isotope_root,
+            &radioisotope_root,
+            &default_radioisotope_root,
+        )
+    } else {
+        Vec::new()
+    };
+    let generated_radioisotope_root =
+        coverage_include_root(&radioisotope_root, &coverage_path_aliases);
+    println!(
+        "cargo:rustc-env=AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO={}",
+        generated_radioisotope_root.display()
+    );
 
     let mut entries = Vec::new();
     for root in isotope_roots {
@@ -254,6 +269,7 @@ fn generate_isotope_integrations() {
                 &entry.module_name,
                 "detect",
                 path,
+                &coverage_path_aliases,
             );
             output.push_str(&format!(
                 "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod detect {{ include!(r#\"{}\"#); }}\n",
@@ -267,6 +283,7 @@ fn generate_isotope_integrations() {
                 &entry.module_name,
                 "migrate",
                 path,
+                &coverage_path_aliases,
             );
             output.push_str(&format!(
                 "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod migrate {{ include!(r#\"{}\"#); }}\n",
@@ -280,6 +297,7 @@ fn generate_isotope_integrations() {
                 &entry.module_name,
                 "post_install",
                 path,
+                &coverage_path_aliases,
             );
             output.push_str(&format!(
                 "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod post_install {{ include!(r#\"{}\"#); }}\n",
@@ -293,6 +311,7 @@ fn generate_isotope_integrations() {
                 &entry.module_name,
                 "credential_helper",
                 path,
+                &coverage_path_aliases,
             );
             output.push_str(&format!(
                 "  #[allow(clippy::all, dead_code, unused_parens, unused_variables)] pub(crate) mod credential_helper {{ include!(r#\"{}\"#); }}\n",
@@ -406,15 +425,109 @@ fn env_flag(key: &str) -> bool {
     })
 }
 
+struct CoveragePathAlias {
+    source_root: std::path::PathBuf,
+    include_root: std::path::PathBuf,
+}
+
+fn coverage_path_aliases(
+    repo_root: &std::path::Path,
+    isotope_root: &std::path::Path,
+    default_isotope_root: &std::path::Path,
+    radioisotope_root: &std::path::Path,
+    default_radioisotope_root: &std::path::Path,
+) -> Vec<CoveragePathAlias> {
+    [
+        coverage_path_alias(
+            isotope_root,
+            default_isotope_root,
+            repo_root.join("data/isotopes"),
+        ),
+        coverage_path_alias(
+            radioisotope_root,
+            default_radioisotope_root,
+            repo_root.join("data/radioisotopes/checkout"),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn coverage_path_alias(
+    source_root: &std::path::Path,
+    default_root: &std::path::Path,
+    include_root: std::path::PathBuf,
+) -> Option<CoveragePathAlias> {
+    if source_root != default_root {
+        return None;
+    }
+    ensure_coverage_include_alias(source_root, &include_root);
+    Some(CoveragePathAlias {
+        source_root: source_root.to_path_buf(),
+        include_root,
+    })
+}
+
+fn ensure_coverage_include_alias(source_root: &std::path::Path, include_root: &std::path::Path) {
+    if std::fs::symlink_metadata(include_root).is_ok() {
+        return;
+    }
+    let Some(parent) = include_root.parent() else {
+        return;
+    };
+    std::fs::create_dir_all(parent)
+        .unwrap_or_else(|err| panic!("failed to create {}: {err}", parent.display()));
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(source_root, include_root).unwrap_or_else(|err| {
+        panic!(
+            "failed to link coverage include path {} to {}: {err}",
+            include_root.display(),
+            source_root.display()
+        )
+    });
+    #[cfg(not(unix))]
+    panic!(
+        "coverage include path aliasing requires Unix symlinks: {} -> {}",
+        include_root.display(),
+        source_root.display()
+    );
+}
+
+fn coverage_include_path(
+    source_path: &std::path::Path,
+    aliases: &[CoveragePathAlias],
+) -> Option<std::path::PathBuf> {
+    aliases.iter().find_map(|alias| {
+        source_path
+            .strip_prefix(&alias.source_root)
+            .ok()
+            .map(|relative| alias.include_root.join(relative))
+    })
+}
+
+fn coverage_include_root<'a>(
+    source_root: &'a std::path::Path,
+    aliases: &'a [CoveragePathAlias],
+) -> &'a std::path::Path {
+    aliases
+        .iter()
+        .find(|alias| alias.source_root == source_root)
+        .map(|alias| alias.include_root.as_path())
+        .unwrap_or(source_root)
+}
+
 fn isotope_include_path(
     include_isotope_tests: bool,
     generated_sources_dir: &std::path::Path,
     module_name: &str,
     suffix: &str,
     source_path: &std::path::Path,
+    coverage_path_aliases: &[CoveragePathAlias],
 ) -> std::path::PathBuf {
     if include_isotope_tests {
-        return source_path.to_path_buf();
+        return coverage_include_path(source_path, coverage_path_aliases)
+            .unwrap_or_else(|| source_path.to_path_buf());
     }
 
     sanitized_isotope_source(generated_sources_dir, module_name, suffix, source_path)
