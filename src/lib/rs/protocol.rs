@@ -16,8 +16,7 @@ pub(crate) fn run_server() -> Result<(), String> {
     let paths = ProtocolPaths::resolve()?;
     fs::create_dir_all(&paths.socket_dir)
         .map_err(|err| format!("failed to create {}: {err}", paths.socket_dir.display()))?;
-    fs::create_dir_all(&paths.log_dir)
-        .map_err(|err| format!("failed to create {}: {err}", paths.log_dir.display()))?;
+    let _ = fs::create_dir_all(&paths.log_dir);
 
     if paths.socket_path.exists() {
         match UnixStream::connect(&paths.socket_path) {
@@ -38,7 +37,7 @@ pub(crate) fn run_server() -> Result<(), String> {
         }
     }
 
-    let logger = Logger::new(&paths.log_path)?;
+    let logger = Logger::new(&paths.log_path);
     install_signal_handlers();
 
     let listener = UnixListener::bind(&paths.socket_path)
@@ -250,7 +249,10 @@ fn install_signal_handlers() {
 }
 
 fn log_message(logger: &Logger, message: &str) {
-    let mut file = match logger.file.lock() {
+    let Some(file) = &logger.file else {
+        return;
+    };
+    let mut file = match file.lock() {
         Ok(file) => file,
         Err(_) => return,
     };
@@ -286,19 +288,18 @@ impl ProtocolPaths {
 
 #[derive(Clone)]
 struct Logger {
-    file: Arc<Mutex<File>>,
+    file: Option<Arc<Mutex<File>>>,
 }
 
 impl Logger {
-    fn new(path: &Path) -> Result<Self, String> {
+    fn new(path: &Path) -> Self {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-            .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
-        Ok(Self {
-            file: Arc::new(Mutex::new(file)),
-        })
+            .ok()
+            .map(|file| Arc::new(Mutex::new(file)));
+        Self { file }
     }
 }
 
@@ -446,7 +447,7 @@ mod tests {
     #[test]
     fn dispatch_line_ignores_invalid_json_and_serializes_errors() {
         let temp = TempDir::new().unwrap();
-        let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
+        let logger = Logger::new(&temp.path().join("nucleus.log"));
 
         assert_eq!(dispatch_line("{not json", &logger), None);
         let error =
@@ -472,7 +473,7 @@ mod tests {
     #[test]
     fn dispatch_line_serializes_success_response() {
         let temp = TempDir::new().unwrap();
-        let logger = Logger::new(&temp.path().join("nucleus.log")).unwrap();
+        let logger = Logger::new(&temp.path().join("nucleus.log"));
         let response =
             dispatch_line(r#"{"id":5,"method":"system.info","params":{}}"#, &logger).unwrap();
 
@@ -551,7 +552,7 @@ mod tests {
         assert_eq!(paths.log_path, temp.path().join("Library/Logs/nucleus.log"));
 
         fs::create_dir_all(&paths.log_dir).unwrap();
-        let logger = Logger::new(&paths.log_path).unwrap();
+        let logger = Logger::new(&paths.log_path);
         log_message(&logger, "hello protocol");
         assert_eq!(
             fs::read_to_string(&paths.log_path).unwrap(),
@@ -565,6 +566,17 @@ mod tests {
             assert!(paths.socket_path.exists());
         }
         assert!(!paths.socket_path.exists());
+    }
+
+    #[test]
+    fn logger_is_best_effort_when_log_file_cannot_be_opened() {
+        let temp = TempDir::new().unwrap();
+        let missing_parent_log = temp.path().join("missing").join("nucleus.log");
+        let logger = Logger::new(&missing_parent_log);
+
+        log_message(&logger, "daemon should keep running");
+
+        assert!(!missing_parent_log.exists());
     }
 
     #[test]
