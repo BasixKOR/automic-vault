@@ -674,9 +674,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Allow"))
         alert.addButton(withTitle: L10n.string("Deny"))
+        if approval.canAlwaysApprove {
+            alert.addButton(withTitle: L10n.string("Always Approve"))
+        }
         alert.accessoryView = dotenvApprovalAccessoryView(for: approval)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
+            if response == .alertThirdButtonReturn, approval.canAlwaysApprove {
+                self.rememberDotenvAlwaysApprove(approval)
+                return
+            }
             let approved = response == .alertFirstButtonReturn
             self.completeDotenvApproval(approval, approved: approved)
         }
@@ -697,6 +704,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             self.helperBridge.rememberDotenvApproval(approval) { _ in
+            }
+        }
+    }
+
+    private func rememberDotenvAlwaysApprove(_ approval: DotenvApprovalRequestSnapshot) {
+        helperBridge.rememberDotenvApproval(approval) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.saveDotenvDecision(approval, approved: true)
+            case .failure(let error):
+                self.presentDotenvAlwaysApproveError(error)
+                self.activeDotenvApprovalID = nil
+                DispatchQueue.main.async {
+                    self.presentPendingDotenvApprovalIfNeeded()
+                }
             }
         }
     }
@@ -775,6 +798,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentIsotopeAlwaysAllowError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = L10n.string("Could Not Remember Approval")
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
+    private func presentDotenvAlwaysApproveError(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = L10n.string("Could Not Remember Approval")
         alert.informativeText = error.localizedDescription

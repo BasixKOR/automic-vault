@@ -2543,9 +2543,6 @@ pub(crate) fn remember_dotenv_approval_from_helper(
     if run_provenance.is_none() {
         return Ok(());
     }
-    if load_dotenv_approval_policy()? != DotenvApprovalPolicy::RememberApproved {
-        return Ok(());
-    }
     validate_dotenv_approval_entry(
         mode,
         env_file_path,
@@ -6547,6 +6544,17 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let project = temp.path().join("project");
         fs::create_dir_all(&project).unwrap();
+        let policy_path = temp.path().join("policy.json");
+        let remembered_path = temp.path().join("remembered-approvals.json");
+        let policy_path_str = policy_path.to_str().unwrap();
+        let remembered_path_str = remembered_path.to_str().unwrap();
+        let _env = DotenvEnvGuard::set(&[
+            (AV_TEST_DOTENV_POLICY_PATH_ENV, policy_path_str),
+            (
+                AV_TEST_DOTENV_REMEMBERED_APPROVALS_PATH_ENV,
+                remembered_path_str,
+            ),
+        ]);
         init_test_git_repo(&project);
 
         let env_path = project.join(".env");
@@ -6574,6 +6582,19 @@ mod tests {
             provenance.git_root,
             fs::canonicalize(&project).unwrap().to_string_lossy()
         );
+        remember_dotenv_approval_from_helper(
+            DotenvApprovalMode::Run,
+            env_path.to_str().unwrap(),
+            project.to_str().unwrap(),
+            &sha256_file_hex(&env_path).unwrap(),
+            &public_key_fingerprint(&keypair.public_key),
+            vec!["FOO".to_string()],
+            Some(provenance.clone()),
+        )
+        .unwrap();
+        let stored = load_dotenv_remembered_approvals().unwrap();
+        assert_eq!(stored.entries.len(), 1);
+        assert_eq!(stored.entries[0].run_provenance.as_ref(), Some(&provenance));
 
         let mut remembered = remembered_entry_for(
             &env_path,

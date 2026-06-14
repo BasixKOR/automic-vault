@@ -35,6 +35,7 @@
 "Allow" = "許可";
 "Always allow" = "常に許可";
 "Always Allow" = "常に許可";
+"Always Approve" = "常に承認";
 "Always Allow for Script SHA" = "このスクリプトSHAを常に許可";
 "app update available" = "アプリのアップデートあり";
 "approval" = "承認";

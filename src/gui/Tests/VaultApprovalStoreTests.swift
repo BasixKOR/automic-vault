@@ -230,6 +230,7 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertEqual(approval.mode, .export)
         XCTAssertEqual(approval.processAncestry, [])
         XCTAssertEqual(approval.command, [])
+        XCTAssertFalse(approval.canAlwaysApprove)
     }
 
     func testDotenvApprovalRequestDecodesCommandWhenPresent() throws {
@@ -295,6 +296,7 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertEqual(approval.runProvenance?.scriptPath, "/tmp/project/script.sh")
         XCTAssertEqual(approval.runProvenance?.executablePath, "/bin/sh")
         XCTAssertEqual(approval.runProvenance?.command, ["/bin/sh", "/tmp/project/script.sh"])
+        XCTAssertTrue(approval.canAlwaysApprove)
     }
 
     func testDotenvApprovalRequestDecodesProcessAncestryWhenPresent() throws {

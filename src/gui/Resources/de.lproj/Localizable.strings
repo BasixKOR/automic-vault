@@ -35,6 +35,7 @@
 "Allow" = "Erlauben";
 "Always allow" = "Immer erlauben";
 "Always Allow" = "Immer erlauben";
+"Always Approve" = "Immer genehmigen";
 "Always Allow for Script SHA" = "Fuer Script-SHA immer erlauben";
 "app update available" = "App-Update verfuegbar";
 "approval" = "Genehmigung";

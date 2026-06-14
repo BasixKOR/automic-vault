@@ -35,6 +35,7 @@
 "Allow" = "Autoriser";
 "Always allow" = "Toujours autoriser";
 "Always Allow" = "Toujours autoriser";
+"Always Approve" = "Toujours approuver";
 "Always Allow for Script SHA" = "Toujours autoriser pour ce SHA de script";
 "app update available" = "mise a jour de l app disponible";
 "approval" = "approbation";

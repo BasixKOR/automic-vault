@@ -35,6 +35,7 @@
 "Allow" = "Allow";
 "Always allow" = "Always allow";
 "Always Allow" = "Always Allow";
+"Always Approve" = "Always Approve";
 "Always Allow for Script SHA" = "Always Allow for Script SHA";
 "app update available" = "app update available";
 "approval" = "approval";

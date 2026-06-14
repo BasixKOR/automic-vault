@@ -328,6 +328,10 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
             forKey: .runProvenance
         )
     }
+
+    var canAlwaysApprove: Bool {
+        mode == .run && runProvenance != nil
+    }
 }
 
 struct DotenvApprovalDecision: Codable, Equatable {
