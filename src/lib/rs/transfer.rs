@@ -800,6 +800,8 @@ fn print_transfer_receive_usage(program_name: &str) {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::PermissionsExt;
 
     #[derive(Default)]
     struct StubTransferStore {
@@ -859,6 +861,41 @@ mod tests {
                 .insert(key.to_string(), value.to_string());
             Ok(())
         }
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+            let previous = env::var_os(key);
+            unsafe {
+                env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe {
+                    env::set_var(self.key, value);
+                },
+                None => unsafe {
+                    env::remove_var(self.key);
+                },
+            }
+        }
+    }
+
+    fn write_executable_script(path: &Path, body: &str) {
+        fs::write(path, body).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
     }
 
     fn transfer_keypair() -> (String, String) {
@@ -950,6 +987,37 @@ mod tests {
             parse_transfer_command("av transfer", [OsString::from("--version")].into_iter())
                 .unwrap()
                 .is_none()
+        );
+        assert!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("host"), OsString::from("--help")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            parse_transfer_command(
+                "av transfer",
+                [OsString::from("host"), OsString::from("--version")].into_iter()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            parse_transfer_command("av transfer", [OsString::from("--file")].into_iter())
+                .unwrap_err(),
+            "missing value for --file"
+        );
+        assert_eq!(
+            parse_transfer_command("av transfer", [OsString::from("--no-dotenv")].into_iter())
+                .unwrap_err(),
+            "missing ssh target"
+        );
+        assert_eq!(
+            parse_transfer_command("av transfer", [OsString::from_vec(vec![0xff])].into_iter())
+                .unwrap_err(),
+            "ssh target must be valid UTF-8"
         );
         assert!(
             parse_transfer_command(
@@ -1226,6 +1294,64 @@ mod tests {
     }
 
     #[test]
+    fn transfer_send_checks_remote_and_streams_bundle_to_ssh() {
+        let _lock = crate::global_test_env_lock().lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("bin");
+        fs::create_dir(&bin).unwrap();
+        let payload_path = temp.path().join("payload.json");
+        let log_path = temp.path().join("ssh.log");
+        write_executable_script(
+            &bin.join("ssh"),
+            &format!(
+                "\
+#!/bin/sh
+printf '%s\\n' \"$*\" >> '{}'
+case \"$*\" in
+  *--check*) exit 0 ;;
+esac
+/bin/cat > '{}'
+",
+                log_path.display(),
+                payload_path.display()
+            ),
+        );
+        let prior_path = env::var_os("PATH").unwrap_or_default();
+        let test_path = format!("{}:{}", bin.display(), prior_path.to_string_lossy());
+        let _path = EnvVarGuard::set("PATH", OsStr::new(&test_path));
+        let store = StubTransferStore::default();
+        store
+            .isotope_exports
+            .borrow_mut()
+            .insert("TOKEN".to_string(), "secret".to_string());
+        let options = TransferSendOptions {
+            ssh_target: "me@mac".to_string(),
+            file: PathBuf::from(".env"),
+            include_dotenv: false,
+            keys: vec!["TOKEN".to_string()],
+            replace: true,
+            ssh_options: vec!["-p 2222".to_string()],
+            remote_av: DEFAULT_REMOTE_AV.to_string(),
+            remote_av_explicit: false,
+        };
+
+        run_transfer_send(&options, &store).unwrap();
+
+        let ssh_log = fs::read_to_string(log_path).unwrap();
+        assert!(ssh_log.contains("--check"));
+        assert!(ssh_log.contains("--stdin"));
+        assert!(ssh_log.contains("--replace"));
+        let payload = fs::read_to_string(payload_path).unwrap();
+        let bundle: TransferBundle = serde_json::from_str(&payload).unwrap();
+        assert_eq!(bundle.items.len(), 1);
+        assert!(matches!(
+            &bundle.items[0],
+            TransferBundleItem::IsotopeSecret { key, value }
+                if key == "TOKEN" && value == "secret"
+        ));
+    }
+
+    #[test]
     fn transfer_ssh_command_shell_quotes_remote_command() {
         let options = TransferSendOptions {
             ssh_target: "me@mac".to_string(),
@@ -1341,8 +1467,24 @@ mod tests {
         );
 
         assert_eq!(
+            transfer_check_failure_result(
+                "me@mac",
+                "exit status: 1",
+                "av transfer: vaultd unavailable\n",
+            )
+            .unwrap_err(),
+            "receiving Automic Vault.app is unavailable on me@mac; open Automic Vault.app there and try again (vaultd unavailable)"
+        );
+
+        assert_eq!(
             transfer_check_failure_result("me@mac", "exit status: 255", "").unwrap_err(),
             "transfer check failed on me@mac: ssh exited with exit status: 255"
+        );
+
+        assert_eq!(
+            transfer_check_failure_result("me@mac", "exit status: 1", "remote exploded\n")
+                .unwrap_err(),
+            "transfer check failed on me@mac: remote exploded"
         );
     }
 
