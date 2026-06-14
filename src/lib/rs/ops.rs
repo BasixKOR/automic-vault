@@ -58,6 +58,7 @@ pub enum HelperCommand {
         env_sha256: String,
         public_key_fingerprint: String,
         keys: Vec<String>,
+        run_provenance: Option<dotenv::DotenvRunProvenance>,
     },
 }
 
@@ -155,6 +156,7 @@ where
             env_sha256,
             public_key_fingerprint,
             keys,
+            run_provenance,
         } => remember_dotenv_approval_with_helper(
             mode,
             &env_file_path,
@@ -162,6 +164,7 @@ where
             &env_sha256,
             &public_key_fingerprint,
             keys,
+            run_provenance,
         ),
     };
     if let Err(err) = &result
@@ -1151,6 +1154,7 @@ fn remember_dotenv_approval_with_helper(
     env_sha256: &str,
     public_key_fingerprint: &str,
     keys: Vec<String>,
+    run_provenance: Option<dotenv::DotenvRunProvenance>,
 ) -> HelperCommandResult {
     require_root()?;
     dotenv::remember_dotenv_approval_from_helper(
@@ -1160,6 +1164,7 @@ fn remember_dotenv_approval_with_helper(
         env_sha256,
         public_key_fingerprint,
         keys,
+        run_provenance,
     )?;
     Ok(HelperCommandSuccess {
         message: "Dotenv approval remembered".to_string(),
@@ -2213,12 +2218,11 @@ mod tests {
                 "f15d64528dce9aa1e20497a5d9ef60783080fe5e3d5051de19c8fae7c78c4607",
                 "43a46f1d081d270130e2210a1de59f9715de033307d068edc65a335b27e95d3d",
                 vec!["API_TOKEN".to_string(), "API_TOKEN".to_string()],
+                None,
             )
             .is_ok()
         );
-        let remembered: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&approvals_path).unwrap()).unwrap();
-        assert_eq!(remembered["entries"].as_array().unwrap().len(), 1);
+        assert!(!approvals_path.exists());
         assert_eq!(
             set_dotenv_approval_policy(dotenv::DotenvApprovalPolicy::ApproveEveryTime)
                 .unwrap()
@@ -2573,6 +2577,7 @@ mod tests {
                 env_sha256: "0".repeat(64),
                 public_key_fingerprint: "f".repeat(64),
                 keys: vec!["API_TOKEN".to_string()],
+                run_provenance: None,
             },
         ];
 

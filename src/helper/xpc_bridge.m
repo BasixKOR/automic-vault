@@ -45,6 +45,7 @@
                       envSha256:(NSString *)envSha256
            publicKeyFingerprint:(NSString *)publicKeyFingerprint
                            keys:(NSArray<NSString *> *)keys
+                  runProvenance:(NSString *_Nullable)runProvenance
                           reply:(void (^)(NSDictionary *result))reply;
 - (void)refreshRemoteDatabase:(void (^)(BOOL updated))reply;
 - (void)checkForUpdates:(void (^)(BOOL hasUpdates))reply;
@@ -107,6 +108,7 @@ extern char *nuke_helper_remember_dotenv_approval(
     const char *env_sha256,
     const char *public_key_fingerprint,
     const char *keys_json,
+    const char *run_provenance_json,
     void *context,
     void (*progress_callback)(void *context, const char *event_json));
 extern bool nuke_helper_check_for_updates(void);
@@ -448,36 +450,41 @@ static BOOL nuke_helper_connection_is_authorized_client(
            argumentIndex:0
                  ofReply:YES];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:0
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:1
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:2
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:3
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:4
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSArray class],
                                                 [NSString class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:5
+                 ofReply:NO];
+    [exported setClasses:[NSSet setWithObjects:[NSString class],
+                                                [NSNull class], nil]
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
+           argumentIndex:6
                  ofReply:NO];
     [exported setClasses:[NSSet setWithObjects:[NSDictionary class],
                                                 [NSArray class],
                                                 [NSString class],
                                                 [NSNumber class],
                                                 [NSNull class], nil]
-             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)
+             forSelector:@selector(rememberDotenvApproval:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)
            argumentIndex:0
                  ofReply:YES];
 
@@ -672,6 +679,7 @@ static BOOL nuke_helper_connection_is_authorized_client(
                       envSha256:(NSString *)envSha256
            publicKeyFingerprint:(NSString *)publicKeyFingerprint
                            keys:(NSArray<NSString *> *)keys
+                  runProvenance:(NSString *_Nullable)runProvenance
                           reply:(void (^)(NSDictionary *result))reply {
     NSXPCConnection *connection = NSXPCConnection.currentConnection;
     if (![self requireAuthorizedClientForConnection:connection reply:reply]) {
@@ -688,6 +696,7 @@ static BOOL nuke_helper_connection_is_authorized_client(
             envSha256.UTF8String,
             publicKeyFingerprint.UTF8String,
             [[self serializeStringArray:keys] UTF8String],
+            runProvenance.UTF8String,
             context,
             progress_callback);
     }];

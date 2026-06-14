@@ -336,6 +336,7 @@
 "export" = "export";
 "File" = "File";
 "Project" = "Project";
+"Script" = "Script";
 "run" = "run";
 "Run one command with encrypted dotenv keys." = "Run one command with encrypted dotenv keys.";
 "These keys will be exported into this shell" = "These keys will be exported into this shell";

@@ -222,6 +222,7 @@ pub extern "C" fn nuke_helper_remember_dotenv_approval(
     env_sha256: *const c_char,
     public_key_fingerprint: *const c_char,
     keys_json: *const c_char,
+    run_provenance_json: *const c_char,
     context: *mut c_void,
     progress_callback: Option<ProgressCallback>,
 ) -> *mut c_char {
@@ -232,6 +233,7 @@ pub extern "C" fn nuke_helper_remember_dotenv_approval(
         Some(mode) => mode,
         None => return encode_error("invalid dotenv approval mode".to_string()),
     };
+    let run_provenance = parse_optional_dotenv_run_provenance(run_provenance_json);
     execute_command(
         HelperCommand::RememberDotenvApproval {
             mode,
@@ -240,6 +242,7 @@ pub extern "C" fn nuke_helper_remember_dotenv_approval(
             env_sha256: c_string(env_sha256).unwrap_or_default(),
             public_key_fingerprint: c_string(public_key_fingerprint).unwrap_or_default(),
             keys: parse_string_array(keys_json),
+            run_provenance,
         },
         context,
         progress_callback,
@@ -329,6 +332,18 @@ fn parse_string_array(values_json: *const c_char) -> Vec<String> {
         return Vec::new();
     };
     serde_json::from_str(&values_json).unwrap_or_default()
+}
+
+fn parse_optional_dotenv_run_provenance(
+    value_json: *const c_char,
+) -> Option<nucleus::DotenvRunProvenance> {
+    let Ok(value_json) = c_string(value_json) else {
+        return None;
+    };
+    if value_json.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(&value_json).ok()
 }
 
 fn c_string(value: *const c_char) -> Result<String, std::str::Utf8Error> {
@@ -655,6 +670,7 @@ mod tests {
             digest.as_ptr(),
             fingerprint.as_ptr(),
             keys.as_ptr(),
+            ptr::null(),
             ptr::null_mut(),
             None,
         ));
@@ -671,6 +687,7 @@ mod tests {
             digest.as_ptr(),
             fingerprint.as_ptr(),
             keys.as_ptr(),
+            ptr::null(),
             ptr::null_mut(),
             Some(capture_progress),
         ));

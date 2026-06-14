@@ -172,6 +172,22 @@ struct DotenvProcessSnapshot: Codable, Equatable {
     }
 }
 
+struct DotenvRunProvenance: Codable, Equatable {
+    let gitRoot: String
+    let gitHead: String
+    let scriptPath: String
+    let executablePath: String
+    let command: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case gitRoot = "git_root"
+        case gitHead = "git_head"
+        case scriptPath = "script_path"
+        case executablePath = "executable_path"
+        case command
+    }
+}
+
 struct IsotopeApprovalDecision: Codable, Equatable {
     let id: String
     let approved: Bool
@@ -239,6 +255,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
     let parentProcess: IsotopeParentProcessSnapshot
     let processAncestry: [DotenvProcessSnapshot]
     let command: [String]
+    let runProvenance: DotenvRunProvenance?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -253,6 +270,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         case parentProcess = "parent_process"
         case processAncestry = "process_ancestry"
         case command
+        case runProvenance = "run_provenance"
     }
 
     init(
@@ -267,7 +285,8 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         cwd: String,
         parentProcess: IsotopeParentProcessSnapshot,
         processAncestry: [DotenvProcessSnapshot] = [],
-        command: [String] = []
+        command: [String] = [],
+        runProvenance: DotenvRunProvenance? = nil
     ) {
         self.id = id
         self.approvalToken = approvalToken
@@ -281,6 +300,7 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
         self.parentProcess = parentProcess
         self.processAncestry = processAncestry
         self.command = command
+        self.runProvenance = runProvenance
     }
 
     init(from decoder: Decoder) throws {
@@ -303,6 +323,10 @@ struct DotenvApprovalRequestSnapshot: Codable, Equatable {
             forKey: .processAncestry
         ) ?? []
         command = try container.decodeIfPresent([String].self, forKey: .command) ?? []
+        runProvenance = try container.decodeIfPresent(
+            DotenvRunProvenance.self,
+            forKey: .runProvenance
+        )
     }
 }
 

@@ -1,3 +1,4 @@
+use super::script_resolution;
 use super::*;
 
 use base64::Engine as _;
@@ -21,6 +22,7 @@ const DOTENV_SYSTEM_POLICY_PATH: &str =
     "/Library/Application Support/Automic Vault/dotenv/policy.json";
 const DOTENV_SYSTEM_REMEMBERED_APPROVALS_PATH: &str =
     "/Library/Application Support/Automic Vault/dotenv/remembered-approvals.json";
+const DOTENV_SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 #[cfg(test)]
 const AV_TEST_DOTENV_POLICY_PATH_ENV: &str = "AV_TEST_DOTENV_POLICY_PATH";
 #[cfg(test)]
@@ -158,6 +160,8 @@ struct DotenvApprovalRequestSnapshot {
     process_ancestry: Vec<DotenvProcessSnapshot>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     command: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    run_provenance: Option<DotenvRunProvenance>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -192,6 +196,17 @@ struct DotenvRememberedApprovalEntry {
     env_sha256: String,
     public_key_fingerprint: String,
     keys: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    run_provenance: Option<DotenvRunProvenance>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DotenvRunProvenance {
+    pub git_root: String,
+    pub git_head: String,
+    pub script_path: String,
+    pub executable_path: String,
+    pub command: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -249,6 +264,12 @@ trait DotenvPrivateKeyStore {
 
 struct KeychainDotenvPrivateKeyStore;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DotenvApprovalOutcome {
+    Prompted,
+    Remembered,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DotenvPrivateKeyTransferMaterial {
     pub(crate) env_file_path: PathBuf,
@@ -291,6 +312,8 @@ struct DotenvLoadedSecrets {
     env_sha256: String,
     public_key_fingerprint: String,
     values: BTreeMap<String, String>,
+    approval_outcome: DotenvApprovalOutcome,
+    run_provenance: Option<DotenvRunProvenance>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -872,6 +895,7 @@ fn run_dotenv_export(
         &env_path,
         DotenvApprovalMode::Export,
         &[],
+        None,
         store,
         Some(&previous.keys),
     )?;
@@ -888,16 +912,17 @@ fn run_dotenv_run(
         .chain(options.args.clone())
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
+    let run_provenance = dotenv_run_provenance(options).ok();
     let loaded = load_dotenv_secrets(
         &options.file,
         DotenvApprovalMode::Run,
         &command_line,
+        run_provenance,
         store,
         None,
     )?;
 
-    let mut command = Command::new(&options.command);
-    command.args(&options.args);
+    let mut command = dotenv_run_command(options, &loaded)?;
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     for (key, value) in &loaded.values {
@@ -949,6 +974,211 @@ fn run_dotenv_run(
     } else {
         Err("dotenv command terminated by signal".to_string())
     }
+}
+
+fn dotenv_run_command(
+    options: &DotenvRunOptions,
+    loaded: &DotenvLoadedSecrets,
+) -> Result<Command, String> {
+    if loaded.approval_outcome == DotenvApprovalOutcome::Remembered {
+        if let Some(provenance) = &loaded.run_provenance {
+            return sandboxed_dotenv_run_command(provenance);
+        }
+    }
+    let mut command = Command::new(&options.command);
+    command.args(&options.args);
+    Ok(command)
+}
+
+fn sandboxed_dotenv_run_command(provenance: &DotenvRunProvenance) -> Result<Command, String> {
+    if !Path::new(DOTENV_SANDBOX_EXEC_PATH).is_file() {
+        return Err("sandbox-exec is required for remembered dotenv script approvals".to_string());
+    }
+    let temp_dir =
+        TempDir::new().map_err(|err| format!("failed to create dotenv sandbox runtime: {err}"))?;
+    let profile_path = temp_dir.keep().join("dotenv-run.sb");
+    fs::write(&profile_path, dotenv_run_sandbox_profile(provenance))
+        .map_err(|err| format!("failed to write dotenv sandbox profile: {err}"))?;
+
+    let mut command = Command::new(DOTENV_SANDBOX_EXEC_PATH);
+    command.arg("-f").arg(profile_path);
+    command.arg(&provenance.executable_path);
+    command.args(provenance.command.iter().skip(1));
+    Ok(command)
+}
+
+fn dotenv_run_sandbox_profile(provenance: &DotenvRunProvenance) -> String {
+    let mut profile = "(version 1)\n(allow default)".to_string();
+    for path in dotenv_sandbox_path_variants(Path::new(&provenance.executable_path)) {
+        profile.push_str(&format!(
+            "\n(allow process-exec (literal \"{}\"))",
+            escape_dotenv_sandbox_path(&path)
+        ));
+    }
+    profile.push_str("\n(deny process-exec)\n");
+    profile
+}
+
+fn dotenv_sandbox_path_variants(path: &Path) -> Vec<PathBuf> {
+    let mut variants = vec![path.to_path_buf()];
+    let display = path.to_string_lossy();
+    if let Some(rest) = display.strip_prefix("/private/") {
+        variants.push(PathBuf::from(format!("/{rest}")));
+    } else if display.starts_with("/tmp/") || display.starts_with("/var/") {
+        variants.push(PathBuf::from(format!("/private{display}")));
+    }
+    variants.sort();
+    variants.dedup();
+    variants
+}
+
+fn escape_dotenv_sandbox_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+}
+
+fn dotenv_run_provenance(options: &DotenvRunOptions) -> Result<DotenvRunProvenance, String> {
+    let resolved_executable = resolve_dotenv_run_executable(&options.command)?;
+    let file = File::open(&resolved_executable).map_err(|err| {
+        format!(
+            "failed to open {} for dotenv run provenance: {err}",
+            resolved_executable.display()
+        )
+    })?;
+    script_resolution::validate_regular_target(&resolved_executable, &file)?;
+    let executable_string = script_resolution::path_to_display_string(&resolved_executable)?;
+    let scope = script_resolution::script_execution_scope(
+        &executable_string,
+        &resolved_executable,
+        &file,
+        &options.args,
+    )?;
+    let Some(script_path) = scope.script_path else {
+        return Err("dotenv run remembered approval requires a script".to_string());
+    };
+    let script_path = fs::canonicalize(&script_path)
+        .map_err(|err| format!("failed to resolve dotenv run script {script_path}: {err}"))?;
+    let executable_path = fs::canonicalize(&scope.executable_path).map_err(|err| {
+        format!(
+            "failed to resolve dotenv run executable {}: {err}",
+            scope.executable_path
+        )
+    })?;
+    let git = dotenv_git_provenance_for_script(&script_path)?;
+    let script_path = script_resolution::path_to_display_string(&script_path)?;
+    let executable_path = script_resolution::path_to_display_string(&executable_path)?;
+    let mut command = vec![executable_path.clone()];
+    if script_path == executable_string {
+        command.push(script_path.clone());
+        command.extend(
+            options
+                .args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned()),
+        );
+    } else {
+        command.extend(
+            options
+                .args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned()),
+        );
+    }
+    Ok(DotenvRunProvenance {
+        git_root: git.git_root,
+        git_head: git.git_head,
+        script_path,
+        executable_path,
+        command,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DotenvGitProvenance {
+    git_root: String,
+    git_head: String,
+}
+
+fn dotenv_git_provenance_for_script(script_path: &Path) -> Result<DotenvGitProvenance, String> {
+    let script_dir = script_path
+        .parent()
+        .ok_or_else(|| format!("invalid dotenv run script path {}", script_path.display()))?;
+    let git_root = run_dotenv_git(script_dir, &["rev-parse", "--show-toplevel"])?;
+    let git_root_path = fs::canonicalize(git_root.trim())
+        .map_err(|err| format!("failed to resolve git root for dotenv run script: {err}"))?;
+    if !script_path.starts_with(&git_root_path) {
+        return Err("dotenv run script is not inside its git worktree".to_string());
+    }
+    let git_head = run_dotenv_git(&git_root_path, &["rev-parse", "HEAD"])?;
+    let git_head = git_head.trim().to_string();
+    validate_dotenv_git_head(&git_head)?;
+    let status = run_dotenv_git(
+        &git_root_path,
+        &["status", "--porcelain", "--untracked-files=normal"],
+    )?;
+    if !status.trim().is_empty() {
+        return Err("dotenv run remembered approval requires a clean git worktree".to_string());
+    }
+    Ok(DotenvGitProvenance {
+        git_root: script_resolution::path_to_display_string(&git_root_path)?,
+        git_head,
+    })
+}
+
+fn run_dotenv_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .map_err(|err| format!("failed to run git for dotenv provenance: {err}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "git failed while resolving dotenv run provenance".to_string()
+        } else {
+            format!("git failed while resolving dotenv run provenance: {stderr}")
+        });
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|err| format!("git output for dotenv run provenance was not UTF-8: {err}"))
+}
+
+fn validate_dotenv_git_head(value: &str) -> Result<(), String> {
+    if value.len() < 40 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("dotenv git HEAD must be a hex object id".to_string());
+    }
+    Ok(())
+}
+
+fn resolve_dotenv_run_executable(command: &OsStr) -> Result<PathBuf, String> {
+    let path = Path::new(command);
+    if path.components().count() > 1 {
+        return fs::canonicalize(path)
+            .map_err(|err| format!("failed to resolve dotenv command {}: {err}", path.display()));
+    }
+    let paths = env::var_os("PATH").ok_or_else(|| "PATH is not set".to_string())?;
+    for entry in env::split_paths(&paths) {
+        let candidate = entry.join(path);
+        if dotenv_path_is_executable_file(&candidate) {
+            return fs::canonicalize(&candidate).map_err(|err| {
+                format!(
+                    "failed to resolve dotenv command {}: {err}",
+                    candidate.display()
+                )
+            });
+        }
+    }
+    Err(format!(
+        "dotenv command not found on PATH: {}",
+        command.to_string_lossy()
+    ))
+}
+
+fn dotenv_path_is_executable_file(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 pub(crate) fn load_dotenv_private_key_for_transfer(
@@ -1031,6 +1261,7 @@ fn load_dotenv_secrets(
     file: &Path,
     mode: DotenvApprovalMode,
     command: &[String],
+    run_provenance: Option<DotenvRunProvenance>,
     store: &dyn DotenvPrivateKeyStore,
     previous_av_keys: Option<&[String]>,
 ) -> Result<DotenvLoadedSecrets, String> {
@@ -1059,7 +1290,7 @@ fn load_dotenv_secrets(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    request_dotenv_approval_if_needed(
+    let approval_outcome = request_dotenv_approval_if_needed(
         mode,
         &document.path,
         &project_root,
@@ -1067,6 +1298,7 @@ fn load_dotenv_secrets(
         &public_key_fingerprint,
         &keys,
         command,
+        run_provenance.clone(),
     )?;
     let private_key = store.load_private_key(&public_key)?;
     validate_private_key_list(&private_key)?;
@@ -1083,6 +1315,8 @@ fn load_dotenv_secrets(
         env_sha256,
         public_key_fingerprint,
         values,
+        approval_outcome,
+        run_provenance,
     })
 }
 
@@ -1944,7 +2178,8 @@ fn request_dotenv_approval_if_needed(
     public_key_fingerprint: &str,
     keys: &[String],
     command: &[String],
-) -> Result<(), String> {
+    run_provenance: Option<DotenvRunProvenance>,
+) -> Result<DotenvApprovalOutcome, String> {
     let entry = DotenvRememberedApprovalEntry {
         mode,
         env_file_path: env_path.to_string_lossy().into_owned(),
@@ -1952,6 +2187,7 @@ fn request_dotenv_approval_if_needed(
         env_sha256: env_sha256.to_string(),
         public_key_fingerprint: public_key_fingerprint.to_string(),
         keys: keys.to_vec(),
+        run_provenance,
     };
     let (parent_process, process_ancestry) = dotenv_approval_process_context();
     if let Some(source) = dotenv_agent_export_rejection_source(mode)
@@ -1968,13 +2204,14 @@ fn request_dotenv_approval_if_needed(
     }
     let policy = load_dotenv_approval_policy().unwrap_or_default();
     if dotenv_remembered_approval_applies_to_mode(mode)
+        && entry.run_provenance.is_some()
         && policy == DotenvApprovalPolicy::RememberApproved
         && load_dotenv_remembered_approvals()?.contains(&entry)
     {
-        return Ok(());
+        return Ok(DotenvApprovalOutcome::Remembered);
     }
     request_dotenv_approval(&entry, command, parent_process, process_ancestry)?;
-    Ok(())
+    Ok(DotenvApprovalOutcome::Prompted)
 }
 
 fn dotenv_remembered_approval_applies_to_mode(mode: DotenvApprovalMode) -> bool {
@@ -2022,6 +2259,7 @@ fn request_dotenv_approval(
         process_ancestry,
         parent_process,
         command: command.to_vec(),
+        run_provenance: entry.run_provenance.clone(),
     };
     let pending_url = prepare_dotenv_approval_request_files(&request_id)?;
     write_dotenv_json(&pending_url, &request)?;
@@ -2297,8 +2535,12 @@ pub(crate) fn remember_dotenv_approval_from_helper(
     env_sha256: &str,
     public_key_fingerprint: &str,
     mut keys: Vec<String>,
+    run_provenance: Option<DotenvRunProvenance>,
 ) -> Result<(), String> {
     if !dotenv_remembered_approval_applies_to_mode(mode) {
+        return Ok(());
+    }
+    if run_provenance.is_none() {
         return Ok(());
     }
     if load_dotenv_approval_policy()? != DotenvApprovalPolicy::RememberApproved {
@@ -2311,6 +2553,7 @@ pub(crate) fn remember_dotenv_approval_from_helper(
         env_sha256,
         public_key_fingerprint,
         &mut keys,
+        run_provenance,
     )
     .and_then(remember_dotenv_approval)
 }
@@ -2322,6 +2565,7 @@ fn validate_dotenv_approval_entry(
     env_sha256: &str,
     public_key_fingerprint: &str,
     keys: &mut Vec<String>,
+    run_provenance: Option<DotenvRunProvenance>,
 ) -> Result<DotenvRememberedApprovalEntry, String> {
     validate_sha256_hex(env_sha256)?;
     if public_key_fingerprint.is_empty() {
@@ -2366,6 +2610,10 @@ fn validate_dotenv_approval_entry(
         return Err("dotenv approval includes keys that are not in the env file".to_string());
     }
 
+    let run_provenance = run_provenance
+        .map(validate_dotenv_run_provenance)
+        .transpose()?;
+
     Ok(DotenvRememberedApprovalEntry {
         mode,
         env_file_path: env_path.to_string_lossy().into_owned(),
@@ -2373,6 +2621,46 @@ fn validate_dotenv_approval_entry(
         env_sha256: actual_sha256,
         public_key_fingerprint: public_key_fingerprint.to_string(),
         keys: keys.clone(),
+        run_provenance,
+    })
+}
+
+fn validate_dotenv_run_provenance(
+    provenance: DotenvRunProvenance,
+) -> Result<DotenvRunProvenance, String> {
+    validate_dotenv_git_head(&provenance.git_head)?;
+    if provenance.command.is_empty() {
+        return Err("dotenv run provenance command is empty".to_string());
+    }
+    let script_path = fs::canonicalize(&provenance.script_path).map_err(|err| {
+        format!(
+            "failed to resolve dotenv run provenance script {}: {err}",
+            provenance.script_path
+        )
+    })?;
+    let executable_path = fs::canonicalize(&provenance.executable_path).map_err(|err| {
+        format!(
+            "failed to resolve dotenv run provenance executable {}: {err}",
+            provenance.executable_path
+        )
+    })?;
+    let git = dotenv_git_provenance_for_script(&script_path)?;
+    if git.git_root != provenance.git_root || git.git_head != provenance.git_head {
+        return Err(
+            "dotenv run git provenance changed before approval could be remembered".to_string(),
+        );
+    }
+    let script_path = script_resolution::path_to_display_string(&script_path)?;
+    let executable_path = script_resolution::path_to_display_string(&executable_path)?;
+    if provenance.command.first() != Some(&executable_path) {
+        return Err("dotenv run provenance command does not match executable".to_string());
+    }
+    Ok(DotenvRunProvenance {
+        git_root: git.git_root,
+        git_head: git.git_head,
+        script_path,
+        executable_path,
+        command: provenance.command,
     })
 }
 
@@ -4314,7 +4602,50 @@ mod tests {
             env_sha256: sha256_file_hex(&env_path).unwrap(),
             public_key_fingerprint: public_key_fingerprint(public_key),
             keys: keys.iter().map(|key| (*key).to_string()).collect(),
+            run_provenance: None,
         }
+    }
+
+    fn fake_dotenv_run_provenance() -> DotenvRunProvenance {
+        DotenvRunProvenance {
+            git_root: "/tmp/project".to_string(),
+            git_head: "0123456789012345678901234567890123456789".to_string(),
+            script_path: "/tmp/project/script.sh".to_string(),
+            executable_path: "/bin/sh".to_string(),
+            command: vec!["/bin/sh".to_string(), "/tmp/project/script.sh".to_string()],
+        }
+    }
+
+    fn run_test_git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn init_test_git_repo(project: &Path) {
+        run_test_git(project, &["init"]);
+        run_test_git(project, &["config", "user.email", "test@example.test"]);
+        run_test_git(project, &["config", "user.name", "Automic Vault Test"]);
+    }
+
+    fn commit_test_git_repo(project: &Path, message: &str) {
+        run_test_git(project, &["add", "."]);
+        run_test_git(project, &["commit", "-m", message]);
+    }
+
+    fn write_executable_test_script(path: &Path, body: &str) {
+        fs::write(path, body).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
     }
 
     fn dotenv_agent_export_env_marker_names() -> Vec<&'static str> {
@@ -4393,6 +4724,8 @@ mod tests {
             env_sha256: "abc".to_string(),
             public_key_fingerprint: "def".to_string(),
             values: BTreeMap::from([("FOO".to_string(), "bar baz".to_string())]),
+            approval_outcome: DotenvApprovalOutcome::Prompted,
+            run_provenance: None,
         };
         assert_eq!(shell_quote("bar baz"), "'bar baz'");
         assert_eq!(loaded.values["FOO"], "bar baz");
@@ -4773,6 +5106,7 @@ mod tests {
             env_sha256: "sha".to_string(),
             public_key_fingerprint: "fingerprint".to_string(),
             keys: vec!["FOO".to_string()],
+            run_provenance: None,
         };
         remember_dotenv_approval(entry.clone()).unwrap();
 
@@ -4784,6 +5118,7 @@ mod tests {
             &entry.public_key_fingerprint,
             &entry.keys,
             &[],
+            None,
         )
         .unwrap_err();
 
@@ -4817,6 +5152,7 @@ mod tests {
             env_sha256: "sha".to_string(),
             public_key_fingerprint: "fingerprint".to_string(),
             keys: vec!["FOO".to_string()],
+            run_provenance: None,
         };
         remember_dotenv_approval(entry.clone()).unwrap();
 
@@ -4828,6 +5164,7 @@ mod tests {
             &entry.public_key_fingerprint,
             &entry.keys,
             &[],
+            None,
         )
         .unwrap_err();
 
@@ -4851,8 +5188,15 @@ mod tests {
         let _env = DotenvEnvGuard::set(&[("CODEX_SHELL", "1")]);
         let store = StubDotenvPrivateKeyStore::default();
 
-        let error = load_dotenv_secrets(&env_path, DotenvApprovalMode::Export, &[], &store, None)
-            .unwrap_err();
+        let error = load_dotenv_secrets(
+            &env_path,
+            DotenvApprovalMode::Export,
+            &[],
+            None,
+            &store,
+            None,
+        )
+        .unwrap_err();
 
         assert!(error.contains("auto-rejected"), "{error}");
         assert!(!error.contains("stub private key"), "{error}");
@@ -5065,6 +5409,7 @@ mod tests {
             &digest,
             &fingerprint,
             &mut keys,
+            None,
         )
         .unwrap();
         assert_eq!(entry.keys, vec!["FOO".to_string()]);
@@ -5078,6 +5423,7 @@ mod tests {
                 &digest,
                 &fingerprint,
                 &mut bad_keys,
+                None,
             )
             .unwrap_err()
             .contains("invalid dotenv key name")
@@ -5091,6 +5437,7 @@ mod tests {
                 &digest,
                 "",
                 &mut good_keys,
+                None,
             )
             .unwrap_err(),
             "dotenv public key fingerprint is empty"
@@ -5104,11 +5451,15 @@ mod tests {
                 &digest,
                 &"f".repeat(64),
                 &mut good_keys,
+                None,
             )
             .unwrap_err(),
             "dotenv public key fingerprint mismatch"
         );
 
+        let mut entry = entry;
+        let provenance = fake_dotenv_run_provenance();
+        entry.run_provenance = Some(provenance.clone());
         remember_dotenv_approval(entry.clone()).unwrap();
         request_dotenv_approval_if_needed(
             entry.mode,
@@ -5118,6 +5469,7 @@ mod tests {
             &entry.public_key_fingerprint,
             &entry.keys,
             &["/bin/echo".to_string()],
+            Some(provenance),
         )
         .unwrap();
     }
@@ -5709,6 +6061,7 @@ mod tests {
             env_sha256: "sha".to_string(),
             public_key_fingerprint: "fingerprint".to_string(),
             keys: vec!["FOO".to_string()],
+            run_provenance: None,
         };
         remember_dotenv_approval(entry.clone()).unwrap();
         remember_dotenv_approval(entry.clone()).unwrap();
@@ -5964,6 +6317,7 @@ mod tests {
             &digest,
             &fingerprint,
             vec!["FOO".to_string()],
+            None,
         )
         .unwrap();
         assert!(
@@ -5981,6 +6335,7 @@ mod tests {
             &digest,
             &fingerprint,
             vec!["FOO".to_string()],
+            None,
         )
         .unwrap();
         assert!(
@@ -5997,6 +6352,7 @@ mod tests {
                 &digest,
                 &fingerprint,
                 vec!["FOO".to_string()],
+                Some(fake_dotenv_run_provenance()),
             )
             .unwrap_err(),
             "dotenv approval project root does not match env file"
@@ -6009,6 +6365,7 @@ mod tests {
                 &"0".repeat(64),
                 &fingerprint,
                 vec!["FOO".to_string()],
+                Some(fake_dotenv_run_provenance()),
             )
             .unwrap_err(),
             "dotenv file changed before approval could be remembered"
@@ -6021,6 +6378,7 @@ mod tests {
                 &digest,
                 &fingerprint,
                 vec!["MISSING".to_string()],
+                Some(fake_dotenv_run_provenance()),
             )
             .unwrap_err(),
             "dotenv approval includes keys that are not in the env file"
@@ -6033,14 +6391,11 @@ mod tests {
             &digest,
             &fingerprint,
             vec!["FOO".to_string(), "BAR".to_string(), "FOO".to_string()],
+            None,
         )
         .unwrap();
         let store = load_dotenv_remembered_approvals().unwrap();
-        assert_eq!(store.entries.len(), 1);
-        assert_eq!(
-            store.entries[0].keys,
-            vec!["BAR".to_string(), "FOO".to_string()]
-        );
+        assert!(store.entries.is_empty());
     }
 
     #[cfg(unix)]
@@ -6088,19 +6443,22 @@ mod tests {
             .store_private_key(&keypair.public_key, &keypair.private_key)
             .unwrap();
 
-        remember_dotenv_approval(remembered_entry_for(
+        let provenance = fake_dotenv_run_provenance();
+        let mut remembered = remembered_entry_for(
             &env_path,
             DotenvApprovalMode::Run,
             &keypair.public_key,
             &["BAR", "FOO"],
-        ))
-        .unwrap();
+        );
+        remembered.run_provenance = Some(provenance.clone());
+        remember_dotenv_approval(remembered).unwrap();
         let loaded = load_dotenv_secrets(
             &env_path,
             DotenvApprovalMode::Run,
             &["/bin/echo".to_string()],
+            Some(provenance),
             &store,
-            Some(&["FOO".to_string()]),
+            Some(&["FOO".to_string()][..]),
         )
         .unwrap();
         assert_eq!(loaded.values["FOO"], "plain secret");
@@ -6147,38 +6505,28 @@ mod tests {
         .unwrap();
         drop(_current);
 
-        remember_dotenv_approval(remembered_entry_for(
-            &env_path,
-            DotenvApprovalMode::Run,
-            &keypair.public_key,
-            &["BAR", "FOO"],
-        ))
-        .unwrap();
         assert!(
-            run_dotenv_run(
-                &DotenvRunOptions {
-                    file: env_path.clone(),
-                    command: OsString::from("/definitely/missing-av-dotenv-command"),
-                    args: Vec::new(),
-                },
-                &store,
-            )
+            dotenv_run_provenance(&DotenvRunOptions {
+                file: env_path.clone(),
+                command: OsString::from("/definitely/missing-av-dotenv-command"),
+                args: Vec::new(),
+            })
             .unwrap_err()
-            .contains("failed to execute")
+            .contains("failed to resolve dotenv command")
         );
 
-        run_dotenv_run(
-            &DotenvRunOptions {
+        assert!(
+            dotenv_run_provenance(&DotenvRunOptions {
                 file: env_path,
                 command: OsString::from("/bin/sh"),
                 args: vec![
                     OsString::from("-c"),
                     OsString::from("printf '%s\\n' \"$FOO:$BAR\""),
                 ],
-            },
-            &store,
-        )
-        .unwrap();
+            })
+            .unwrap_err()
+            .contains("requires a root-owned script file")
+        );
 
         unsafe {
             env::set_var("EXTERNAL", "already set");
@@ -6190,6 +6538,148 @@ mod tests {
         ));
         assert!(!env_key_is_preexisting("MISSING", None));
         assert_eq!(previous_dotenv_keys(), vec!["FOO".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dotenv_run_provenance_requires_same_clean_git_head_and_script() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        init_test_git_repo(&project);
+
+        let env_path = project.join(".env");
+        let keypair = generate_dotenv_keypair(&env_path);
+        fs::write(
+            &env_path,
+            format!("DOTENV_PUBLIC_KEY={}\nFOO=plain\n", keypair.public_key),
+        )
+        .unwrap();
+        let script = project.join("script.sh");
+        write_executable_test_script(&script, "#!/bin/sh\nprintf '%s\\n' \"$FOO\"\n");
+        commit_test_git_repo(&project, "initial");
+
+        let options = DotenvRunOptions {
+            file: env_path.clone(),
+            command: OsString::from(script.to_str().unwrap()),
+            args: Vec::new(),
+        };
+        let provenance = dotenv_run_provenance(&options).unwrap();
+        assert_eq!(
+            provenance.script_path,
+            fs::canonicalize(&script).unwrap().to_string_lossy()
+        );
+        assert_eq!(
+            provenance.git_root,
+            fs::canonicalize(&project).unwrap().to_string_lossy()
+        );
+
+        let mut remembered = remembered_entry_for(
+            &env_path,
+            DotenvApprovalMode::Run,
+            &keypair.public_key,
+            &["FOO"],
+        );
+        remembered.run_provenance = Some(provenance.clone());
+        let matching = DotenvRememberedApprovalStore {
+            entries: vec![remembered],
+        };
+        let mut current = remembered_entry_for(
+            &env_path,
+            DotenvApprovalMode::Run,
+            &keypair.public_key,
+            &["FOO"],
+        );
+        current.run_provenance = Some(provenance.clone());
+        assert!(matching.contains(&current));
+
+        let mut changed_script = current.clone();
+        changed_script.run_provenance.as_mut().unwrap().script_path =
+            project.join("other.sh").to_string_lossy().into_owned();
+        assert!(!matching.contains(&changed_script));
+
+        let mut changed_executable = current.clone();
+        changed_executable
+            .run_provenance
+            .as_mut()
+            .unwrap()
+            .executable_path = "/bin/bash".to_string();
+        assert!(!matching.contains(&changed_executable));
+
+        let mut changed_argv = current.clone();
+        changed_argv
+            .run_provenance
+            .as_mut()
+            .unwrap()
+            .command
+            .push("--verbose".to_string());
+        assert!(!matching.contains(&changed_argv));
+
+        fs::write(project.join("untracked.txt"), "dirty").unwrap();
+        assert!(
+            dotenv_run_provenance(&options)
+                .unwrap_err()
+                .contains("clean git worktree")
+        );
+        fs::remove_file(project.join("untracked.txt")).unwrap();
+
+        write_executable_test_script(&script, "#!/bin/sh\nprintf changed\\n\n");
+        commit_test_git_repo(&project, "change script");
+        let changed = dotenv_run_provenance(&options).unwrap();
+        assert_ne!(changed.git_head, provenance.git_head);
+        let mut changed_entry = remembered_entry_for(
+            &env_path,
+            DotenvApprovalMode::Run,
+            &keypair.public_key,
+            &["FOO"],
+        );
+        changed_entry.run_provenance = Some(changed);
+        assert!(!matching.contains(&changed_entry));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dotenv_run_provenance_rejects_env_shebang_scripts() {
+        let _lock = global_test_env_lock().lock().unwrap();
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        init_test_git_repo(&project);
+
+        let env_path = project.join(".env");
+        let keypair = generate_dotenv_keypair(&env_path);
+        fs::write(
+            &env_path,
+            format!("DOTENV_PUBLIC_KEY={}\nFOO=plain\n", keypair.public_key),
+        )
+        .unwrap();
+        let script = project.join("script.sh");
+        write_executable_test_script(&script, "#!/usr/bin/env sh\nprintf '%s\\n' \"$FOO\"\n");
+        commit_test_git_repo(&project, "initial");
+
+        let error = dotenv_run_provenance(&DotenvRunOptions {
+            file: env_path,
+            command: OsString::from(script.to_str().unwrap()),
+            args: Vec::new(),
+        })
+        .unwrap_err();
+        assert!(error.contains("env shebang"), "{error}");
+    }
+
+    #[test]
+    fn dotenv_run_sandbox_profile_allows_only_approved_executable_variants() {
+        let mut provenance = fake_dotenv_run_provenance();
+        provenance.executable_path = "/tmp/interpreter\"name".to_string();
+        let profile = dotenv_run_sandbox_profile(&provenance);
+
+        assert!(profile.contains("(allow default)"));
+        assert!(
+            profile.contains("(allow process-exec (literal \"/private/tmp/interpreter\\\"name\"))")
+        );
+        assert!(profile.contains("(allow process-exec (literal \"/tmp/interpreter\\\"name\"))"));
+        assert!(profile.ends_with("(deny process-exec)\n"));
+        assert_eq!(profile.matches("(deny process-exec)").count(), 1);
     }
 
     #[test]

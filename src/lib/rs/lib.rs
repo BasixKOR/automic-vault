@@ -42,6 +42,7 @@ mod npm;
 mod ops;
 mod pip;
 mod protocol;
+mod script_resolution;
 mod state;
 mod transfer;
 #[path = "../../../manifests/packages.rs"]
@@ -70,7 +71,7 @@ pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
 pub(crate) use cli::*;
 pub use cli::{main_entry, scanner_main_entry};
 pub(crate) use cli_help::*;
-pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy};
+pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy, DotenvRunProvenance};
 pub(crate) use info::*;
 pub(crate) use install::*;
 pub use isotope::isotope_main_entry;

@@ -260,6 +260,43 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertEqual(approval.command, ["/usr/bin/env"])
     }
 
+    func testDotenvApprovalRequestDecodesRunProvenanceWhenPresent() throws {
+        let data = Data("""
+        {
+          "id": "request-4",
+          "approval_token": "token-123",
+          "mode": "run",
+          "env_file_path": "/tmp/project/.env",
+          "project_root": "/tmp/project",
+          "env_sha256": "abc",
+          "public_key_fingerprint": "def",
+          "keys": ["FOO"],
+          "cwd": "/tmp/project",
+          "parent_process": {
+            "pid": 123,
+            "executable_path": "/bin/zsh",
+            "display_name": "zsh"
+          },
+          "command": ["/tmp/project/script.sh"],
+          "run_provenance": {
+            "git_root": "/tmp/project",
+            "git_head": "0123456789012345678901234567890123456789",
+            "script_path": "/tmp/project/script.sh",
+            "executable_path": "/bin/sh",
+            "command": ["/bin/sh", "/tmp/project/script.sh"]
+          }
+        }
+        """.utf8)
+
+        let approval = try JSONDecoder().decode(DotenvApprovalRequestSnapshot.self, from: data)
+
+        XCTAssertEqual(approval.runProvenance?.gitRoot, "/tmp/project")
+        XCTAssertEqual(approval.runProvenance?.gitHead, "0123456789012345678901234567890123456789")
+        XCTAssertEqual(approval.runProvenance?.scriptPath, "/tmp/project/script.sh")
+        XCTAssertEqual(approval.runProvenance?.executablePath, "/bin/sh")
+        XCTAssertEqual(approval.runProvenance?.command, ["/bin/sh", "/tmp/project/script.sh"])
+    }
+
     func testDotenvApprovalRequestDecodesProcessAncestryWhenPresent() throws {
         let data = Data("""
         {
@@ -443,6 +480,26 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxPillX, keyFlow.bounds.width + 0.5)
     }
 
+    func testDotenvApprovalViewShowsRunProvenance() throws {
+        let approval = dotenvApproval(
+            mode: .run,
+            keys: ["FOO"],
+            runProvenance: DotenvRunProvenance(
+                gitRoot: "/tmp/project",
+                gitHead: "0123456789012345678901234567890123456789",
+                scriptPath: "/tmp/project/script.sh",
+                executablePath: "/bin/sh",
+                command: ["/bin/sh", "/tmp/project/script.sh"]
+            )
+        )
+
+        let view = DotenvApprovalView(approval: approval)
+        let text = textFields(in: view).joined(separator: "\n")
+
+        XCTAssertTrue(text.contains("/tmp/project/script.sh"), text)
+        XCTAssertTrue(text.contains("012345678901"), text)
+    }
+
     private func temporaryApprovalStoreRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("av-approval-\(UUID().uuidString)", isDirectory: true)
@@ -477,7 +534,8 @@ final class VaultApprovalStoreTests: XCTestCase {
             executablePath: "/bin/zsh",
             displayName: "zsh"
         ),
-        processAncestry: [DotenvProcessSnapshot] = []
+        processAncestry: [DotenvProcessSnapshot] = [],
+        runProvenance: DotenvRunProvenance? = nil
     ) -> DotenvApprovalRequestSnapshot {
         DotenvApprovalRequestSnapshot(
             id: "request-1",
@@ -489,7 +547,8 @@ final class VaultApprovalStoreTests: XCTestCase {
             keys: keys,
             cwd: "/tmp/project",
             parentProcess: parentProcess,
-            processAncestry: processAncestry
+            processAncestry: processAncestry,
+            runProvenance: runProvenance
         )
     }
 

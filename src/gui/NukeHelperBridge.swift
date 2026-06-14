@@ -122,6 +122,7 @@ final class AVPackageSpec: NSObject, NSSecureCoding {
         envSha256: String,
         publicKeyFingerprint: String,
         keys: [String],
+        runProvenance: String?,
         reply: @escaping ([String: Any]) -> Void
     )
     func refreshRemoteDatabase(_ reply: @escaping (Bool) -> Void)
@@ -752,7 +753,8 @@ final class NukeHelperBridge {
                     projectRoot: approval.projectRoot,
                     envSha256: approval.envSha256,
                     publicKeyFingerprint: approval.publicKeyFingerprint,
-                    keys: approval.keys
+                    keys: approval.keys,
+                    runProvenance: self.dotenvRunProvenanceJSON(approval.runProvenance)
                 ) { result in
                     self.complete(result, completion: completion)
                 }
@@ -883,6 +885,14 @@ final class NukeHelperBridge {
             processedPackages: processedPackages,
             value: value
         ))
+    }
+
+    private func dotenvRunProvenanceJSON(_ provenance: DotenvRunProvenance?) -> String? {
+        guard let provenance,
+              let data = try? JSONEncoder().encode(provenance) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     private func privilegedRemoteProxy(
@@ -1216,43 +1226,49 @@ final class NukeHelperBridge {
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 0,
             ofReply: false
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 1,
             ofReply: false
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 2,
             ofReply: false
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 3,
             ofReply: false
         )
         interface.setClasses(
             stringClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 4,
             ofReply: false
         )
         interface.setClasses(
             stringArrayClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 5,
             ofReply: false
         )
         interface.setClasses(
+            stringClasses,
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
+            argumentIndex: 6,
+            ofReply: false
+        )
+        interface.setClasses(
             resultClasses,
-            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:reply:)),
+            for: #selector(NukeHelperProtocol.rememberDotenvApproval(_:envFilePath:projectRoot:envSha256:publicKeyFingerprint:keys:runProvenance:reply:)),
             argumentIndex: 0,
             ofReply: true
         )

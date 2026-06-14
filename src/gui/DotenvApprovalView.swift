@@ -33,6 +33,7 @@ final class DotenvApprovalView: NSView {
 
     private let approval: DotenvApprovalRequestSnapshot
     private let secretsPanelHeight: CGFloat
+    private let projectPanelHeight: CGFloat
     private let contentHeight: CGFloat
 
     override var intrinsicContentSize: NSSize {
@@ -41,10 +42,13 @@ final class DotenvApprovalView: NSView {
 
     init(approval: DotenvApprovalRequestSnapshot) {
         let computedSecretsPanelHeight = Self.secretsPanelHeight(for: approval.keys)
+        let computedProjectPanelHeight: CGFloat = approval.runProvenance == nil ? 96 : 142
         let computedContentHeight = Metrics.height
             + max(0, computedSecretsPanelHeight - Metrics.secretsPanelMinHeight)
+            + max(0, computedProjectPanelHeight - 96)
         self.approval = approval
         self.secretsPanelHeight = computedSecretsPanelHeight
+        self.projectPanelHeight = computedProjectPanelHeight
         self.contentHeight = computedContentHeight
         super.init(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: computedContentHeight))
         translatesAutoresizingMaskIntoConstraints = false
@@ -75,7 +79,7 @@ final class DotenvApprovalView: NSView {
             project.leadingAnchor.constraint(equalTo: leadingAnchor),
             project.trailingAnchor.constraint(equalTo: trailingAnchor),
             project.topAnchor.constraint(equalTo: secrets.bottomAnchor, constant: 9),
-            project.heightAnchor.constraint(equalToConstant: 96),
+            project.heightAnchor.constraint(equalToConstant: projectPanelHeight),
 
             requester.leadingAnchor.constraint(equalTo: leadingAnchor),
             requester.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -122,13 +126,18 @@ final class DotenvApprovalView: NSView {
     }
 
     private func projectPanel() -> NSView {
-        sectionPanel(
+        var rows = [
+            InfoRow(L10n.string("Project"), abbreviatedPath(approval.projectRoot), nil),
+            InfoRow(L10n.string("File"), abbreviatedPath(approval.envFilePath), nil),
+            InfoRow(L10n.string("Digest"), shortDigest, Status(title: modeTitle, color: Palette.amber))
+        ]
+        if let provenance = approval.runProvenance {
+            rows.append(InfoRow(L10n.string("Script"), abbreviatedPath(provenance.scriptPath), nil))
+            rows.append(InfoRow("Git HEAD", shortGitHead(provenance.gitHead), nil))
+        }
+        return sectionPanel(
             title: L10n.string("Dotenv file"),
-            rows: [
-                InfoRow(L10n.string("Project"), abbreviatedPath(approval.projectRoot), nil),
-                InfoRow(L10n.string("File"), abbreviatedPath(approval.envFilePath), nil),
-                InfoRow(L10n.string("Digest"), shortDigest, Status(title: modeTitle, color: Palette.amber))
-            ]
+            rows: rows
         )
     }
 
@@ -505,6 +514,10 @@ final class DotenvApprovalView: NSView {
 
     private var shortDigest: String {
         String(approval.envSha256.prefix(16))
+    }
+
+    private func shortGitHead(_ value: String) -> String {
+        String(value.prefix(12))
     }
 
     private var modeTitle: String {

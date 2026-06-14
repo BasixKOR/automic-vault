@@ -325,6 +325,7 @@
 "export" = "export";
 "File" = "文件";
 "Project" = "项目";
+"Script" = "脚本";
 "run" = "run";
 "Run one command with encrypted dotenv keys." = "使用加密的 dotenv 密钥运行一个命令。";
 "These keys will be exported into this shell" = "这些密钥将导出到此 Shell";
