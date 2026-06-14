@@ -1104,30 +1104,47 @@ fn dotenv_git_provenance_for_script(script_path: &Path) -> Result<DotenvGitProve
     let script_dir = script_path
         .parent()
         .ok_or_else(|| format!("invalid dotenv run script path {}", script_path.display()))?;
-    let git_root = run_dotenv_git(script_dir, &["rev-parse", "--show-toplevel"])?;
+    let git_root = run_dotenv_git_with_safe_directory(
+        script_dir,
+        Some("*"),
+        &["rev-parse", "--show-toplevel"],
+    )?;
     let git_root_path = fs::canonicalize(git_root.trim())
         .map_err(|err| format!("failed to resolve git root for dotenv run script: {err}"))?;
     if !script_path.starts_with(&git_root_path) {
         return Err("dotenv run script is not inside its git worktree".to_string());
     }
-    let git_head = run_dotenv_git(&git_root_path, &["rev-parse", "HEAD"])?;
+    let git_root = script_resolution::path_to_display_string(&git_root_path)?;
+    let git_head = run_dotenv_git_with_safe_directory(
+        &git_root_path,
+        Some(&git_root),
+        &["rev-parse", "HEAD"],
+    )?;
     let git_head = git_head.trim().to_string();
     validate_dotenv_git_head(&git_head)?;
-    let status = run_dotenv_git(
+    let status = run_dotenv_git_with_safe_directory(
         &git_root_path,
+        Some(&git_root),
         &["status", "--porcelain", "--untracked-files=normal"],
     )?;
     if !status.trim().is_empty() {
         return Err("dotenv run remembered approval requires a clean git worktree".to_string());
     }
-    Ok(DotenvGitProvenance {
-        git_root: script_resolution::path_to_display_string(&git_root_path)?,
-        git_head,
-    })
+    Ok(DotenvGitProvenance { git_root, git_head })
 }
 
-fn run_dotenv_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
+fn run_dotenv_git_with_safe_directory(
+    cwd: &Path,
+    safe_directory: Option<&str>,
+    args: &[&str],
+) -> Result<String, String> {
+    let mut command = Command::new("git");
+    if let Some(safe_directory) = safe_directory {
+        command
+            .arg("-c")
+            .arg(format!("safe.directory={safe_directory}"));
+    }
+    let output = command
         .args(args)
         .current_dir(cwd)
         .output()
@@ -6567,6 +6584,7 @@ mod tests {
         let script = project.join("script.sh");
         write_executable_test_script(&script, "#!/bin/sh\nprintf '%s\\n' \"$FOO\"\n");
         commit_test_git_repo(&project, "initial");
+        let different_owner = DotenvEnvGuard::set(&[("GIT_TEST_ASSUME_DIFFERENT_OWNER", "true")]);
 
         let options = DotenvRunOptions {
             file: env_path.clone(),
@@ -6644,9 +6662,11 @@ mod tests {
                 .contains("clean git worktree")
         );
         fs::remove_file(project.join("untracked.txt")).unwrap();
+        drop(different_owner);
 
         write_executable_test_script(&script, "#!/bin/sh\nprintf changed\\n\n");
         commit_test_git_repo(&project, "change script");
+        let _different_owner = DotenvEnvGuard::set(&[("GIT_TEST_ASSUME_DIFFERENT_OWNER", "true")]);
         let changed = dotenv_run_provenance(&options).unwrap();
         assert_ne!(changed.git_head, provenance.git_head);
         let mut changed_entry = remembered_entry_for(
