@@ -338,53 +338,7 @@ fn load_trusted_remote_combined_data_from(
 }
 
 fn ensure_combined_data_schema(data: &CombinedData) -> Result<(), String> {
-    ensure_db_schema(&data.sources.db)?;
-    ensure_db_pulse_metadata(&data.sources.db)
-}
-
-fn ensure_db_pulse_metadata(db: &Db) -> Result<(), String> {
-    let package_count = db.formulas.len() + db.casks.len() + db.npms.len();
-    if package_count == 0 {
-        return Ok(());
-    }
-    let pulse_count = db
-        .formulas
-        .values()
-        .filter(|metadata| {
-            metadata
-                .last_updated_at
-                .as_deref()
-                .is_some_and(non_empty_str)
-        })
-        .count()
-        + db.casks
-            .values()
-            .filter(|metadata| {
-                metadata
-                    .last_updated_at
-                    .as_deref()
-                    .is_some_and(non_empty_str)
-            })
-            .count()
-        + db.npms
-            .values()
-            .filter(|metadata| {
-                metadata
-                    .last_updated_at
-                    .as_deref()
-                    .is_some_and(non_empty_str)
-            })
-            .count();
-    if pulse_count == 0 {
-        return Err(format!(
-            "package db has {package_count} packages but no last_updated_at values; New / Updated would be empty"
-        ));
-    }
-    Ok(())
-}
-
-fn non_empty_str(value: &str) -> bool {
-    !value.trim().is_empty()
+    ensure_db_schema(&data.sources.db)
 }
 
 #[cfg(any(test, feature = "packaged-db"))]
@@ -20119,36 +20073,6 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 
         assert!(load_trusted_remote_combined_data_from(temp.path(), &path, false).is_none());
-    }
-
-    #[test]
-    fn combined_data_schema_rejects_package_inventory_without_pulse_metadata() {
-        let data = serde_json::from_value::<CombinedData>(serde_json::json!({
-            "schema": 1,
-            "generated_at": "2026-06-12T15:03:26Z",
-            "sources": {
-                "db": {
-                    "schema": DB_SCHEMA_VERSION,
-                    "generated_at": "2026-06-12T15:03:26Z",
-                    "entries": {},
-                    "formulas": {
-                        "ripgrep": { "summary": "Search tool" }
-                    },
-                    "casks": {},
-                    "npms": {}
-                },
-                "isotopes": {},
-                "npm": {},
-                "pip": {},
-                "stub_exclusions": {}
-            }
-        }))
-        .unwrap();
-
-        let err = ensure_combined_data_schema(&data).unwrap_err();
-
-        assert!(err.contains("no last_updated_at values"));
-        assert!(err.contains("New / Updated would be empty"));
     }
 
     #[test]

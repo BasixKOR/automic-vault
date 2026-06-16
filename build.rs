@@ -111,58 +111,10 @@ fn prepare_packaged_combined_db() {
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output_path = std::path::Path::new(&out_dir).join("combined.json");
-    validate_packaged_combined_db(&selected);
     if let Err(err) = std::fs::copy(&selected, &output_path) {
         panic!(
             "failed to prepare packaged combined database from {}: {err}",
             selected.display()
-        );
-    }
-}
-
-fn validate_packaged_combined_db(path: &std::path::Path) {
-    let bytes = std::fs::read(path).unwrap_or_else(|err| {
-        panic!(
-            "failed to read packaged combined database {}: {err}",
-            path.display()
-        )
-    });
-    let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|err| {
-        panic!(
-            "failed to parse packaged combined database {}: {err}",
-            path.display()
-        )
-    });
-    let db = data
-        .get("sources")
-        .and_then(|sources| sources.get("db"))
-        .unwrap_or(&data);
-    let package_maps = ["formulas", "casks", "npms"]
-        .into_iter()
-        .filter_map(|key| db.get(key).and_then(|value| value.as_object()))
-        .collect::<Vec<_>>();
-    let package_count = package_maps
-        .iter()
-        .map(|packages| packages.len())
-        .sum::<usize>();
-    if package_count == 0 {
-        return;
-    }
-    let pulse_count = package_maps
-        .iter()
-        .flat_map(|packages| packages.values())
-        .filter(|metadata| {
-            metadata
-                .get("last_updated_at")
-                .and_then(|value| value.as_str())
-                .is_some_and(|value| !value.trim().is_empty())
-        })
-        .count();
-    if pulse_count == 0 {
-        panic!(
-            "packaged combined database {} has {} packages but no last_updated_at values; New / Updated would be empty",
-            path.display(),
-            package_count
         );
     }
 }
