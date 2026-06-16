@@ -13,7 +13,7 @@ pub(crate) fn load_config() -> Result<Config, String> {
 
 impl PackageStatus {
     pub(crate) fn is_outdated(&self) -> bool {
-        self.installed_version != self.latest_version
+        !self.latest_version.trim().is_empty() && self.installed_version != self.latest_version
     }
 }
 
@@ -3420,6 +3420,14 @@ mod tests {
                 },
                 installed_version: "1.0.0".to_string(),
                 latest_version: "1.0.0".to_string(),
+            },
+            PackageStatus {
+                package_name: "claude-code".to_string(),
+                source: PackageReceiptSource::Npm {
+                    package_name: "claude-code".to_string(),
+                },
+                installed_version: "2.1.153".to_string(),
+                latest_version: String::new(),
             },
         ]);
         assert_eq!(outdated.len(), 1);

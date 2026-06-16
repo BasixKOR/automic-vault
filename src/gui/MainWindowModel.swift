@@ -595,7 +595,7 @@ final class MainWindowModel: ObservableObject {
             names.append(normalized)
         }
 
-        snapshot.outdatedPackages.forEach { append($0.name) }
+        snapshot.flaggedOutdatedPackages.forEach { append($0.name) }
         packages
             .filter(isOutdated)
             .compactMap(\.packageName)
@@ -1387,7 +1387,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     var outdatedPackageNames: Set<String> {
-        Set(snapshot.outdatedPackages.map(\.name))
+        Set(snapshot.flaggedOutdatedPackages.map(\.name))
     }
 
     private var allKnownPackages: [PackagePresentation] {

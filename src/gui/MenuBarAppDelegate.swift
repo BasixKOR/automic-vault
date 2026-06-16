@@ -506,7 +506,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             ]
         }
 
-        return snapshot.outdatedPackages.map { package in
+        return snapshot.flaggedOutdatedPackages.map { package in
             packageStatusItem(
                 name: package.name,
                 detail: "\(package.currentVersion) → \(package.latestVersion)"

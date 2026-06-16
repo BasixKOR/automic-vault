@@ -27,12 +27,16 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         remoteDatabaseRefreshState: .normal
     )
 
+    var flaggedOutdatedPackages: [OutdatedPackageRecord] {
+        outdatedPackages.filter(\.hasDisplayableUpdate)
+    }
+
     var outdatedPackagesByName: [String: OutdatedPackageRecord] {
-        Dictionary(uniqueKeysWithValues: outdatedPackages.map { ($0.name, $0) })
+        Dictionary(uniqueKeysWithValues: flaggedOutdatedPackages.map { ($0.name, $0) })
     }
 
     var flaggedOutdatedPackageCount: Int {
-        outdatedPackages.count
+        flaggedOutdatedPackages.count
     }
 
     var appBadgeCount: Int {

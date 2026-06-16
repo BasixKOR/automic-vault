@@ -372,6 +372,11 @@ struct OutdatedPackageRecord: Codable, Equatable {
     let name: String
     let currentVersion: String
     let latestVersion: String
+
+    var hasDisplayableUpdate: Bool {
+        !latestVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && currentVersion != latestVersion
+    }
 }
 
 struct PackageDetail: Decodable, Equatable {

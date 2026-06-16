@@ -1165,6 +1165,32 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(snapshot.appBadgeCount, 3)
     }
 
+    func testBlankLatestVersionsAreNotFlaggedAsOutdated() {
+        let snapshot = NucleusStatusSnapshot(
+            installedCount: 10,
+            hazardousPackageCount: 1,
+            outdatedPackages: [
+                OutdatedPackageRecord(
+                    name: "codex",
+                    currentVersion: "0.139.0",
+                    latestVersion: ""
+                ),
+                OutdatedPackageRecord(
+                    name: "isotope:uv",
+                    currentVersion: "0.11.19",
+                    latestVersion: "0.11.21"
+                ),
+            ],
+            refreshedAt: Date(),
+            lastError: nil
+        )
+
+        XCTAssertEqual(snapshot.flaggedOutdatedPackageCount, 1)
+        XCTAssertEqual(snapshot.appBadgeCount, 2)
+        XCTAssertEqual(snapshot.flaggedOutdatedPackages.map(\.name), ["isotope:uv"])
+        XCTAssertNil(snapshot.outdatedPackagesByName["codex"])
+    }
+
     @MainActor
     func testSearchDeselectsAndRestoresSidebarSection() {
         let model = MainWindowModel()
