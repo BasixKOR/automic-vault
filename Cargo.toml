@@ -48,3 +48,4 @@ walkdir = "2"
 
 [build-dependencies]
 cc = "1"
+serde_json = "1"
