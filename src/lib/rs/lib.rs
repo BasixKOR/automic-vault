@@ -14135,28 +14135,36 @@ managed_secrets = ["dep:managed-secrets"]"#,
 
         let terraform_launcher = Path::new("/opt/terraform/bin/terraform");
         if !terraform_launcher.exists() {
-            let terraform_plan = InstallPlan::for_i_radioisotope(
-                "isotope:terraform".to_string(),
-                "terraform".to_string(),
-            );
-            fs::create_dir_all(&terraform_plan.install_root).unwrap();
-            write_package_receipt(
-                &terraform_plan.root_receipt_path(),
-                &PackageReceipt {
-                    package_name: "terraform".to_string(),
-                    version: "1.2.3".to_string(),
-                    source: PackageReceiptSource::Vendor {
-                        vendor_name: "terraform".to_string(),
+            let terraform_record = isotope_package_data("terraform").unwrap();
+            let terraform_package = isotope_modified_package_name(terraform_record)
+                .unwrap()
+                .unwrap();
+            let seed_terraform_install = || {
+                let terraform_plan = InstallPlan::for_i_radioisotope(
+                    "isotope:terraform".to_string(),
+                    terraform_package.clone(),
+                );
+                fs::create_dir_all(&terraform_plan.install_root).unwrap();
+                write_root_ownership_manifest(&terraform_plan, Vec::new()).unwrap();
+                write_package_receipt(
+                    &terraform_plan.root_receipt_path(),
+                    &PackageReceipt {
+                        package_name: terraform_package.clone(),
+                        version: "1.2.3".to_string(),
+                        source: PackageReceiptSource::Vendor {
+                            vendor_name: terraform_package.clone(),
+                        },
+                        metadata: PackageMetadata::default(),
                     },
-                    metadata: PackageMetadata::default(),
-                },
-            )
-            .unwrap();
+                )
+                .unwrap();
+            };
 
             for requested in [
                 RequestedPackage::Auto("terraform".to_string()),
                 RequestedPackage::Isotope("terraform".to_string()),
             ] {
+                seed_terraform_install();
                 let err = run_i_package(
                     &config,
                     requested,
