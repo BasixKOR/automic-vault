@@ -22,6 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var userNotificationDelegate = AppUserNotificationDelegate { [weak self] in
         self?.showMainWindow()
     }
+    private lazy var approvalTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.timeZone = TimeZone.current
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     #endif
@@ -509,7 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Command Execution")
-        alert.informativeText = ""
+        alert.informativeText = approvalInformativeText()
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Approve"))
         alert.addButton(withTitle: L10n.string("Deny"))
@@ -545,7 +553,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Key Transfer")
-        alert.informativeText = keyTransferApprovalSummary(for: approval)
+        alert.informativeText = approvalInformativeText(
+            keyTransferApprovalSummary(for: approval)
+        )
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Allow"))
         alert.addButton(withTitle: L10n.string("Deny"))
@@ -581,7 +591,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Key Injection")
-        alert.informativeText = isotopeApprovalSummary(for: approval)
+        alert.informativeText = approvalInformativeText(
+            isotopeApprovalSummary(for: approval)
+        )
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Allow"))
         alert.addButton(withTitle: L10n.string("Deny"))
@@ -625,7 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Gate")
-        alert.informativeText = approval.message
+        alert.informativeText = approvalInformativeText(approval.message)
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Approve"))
         alert.addButton(withTitle: L10n.string("Deny"))
@@ -670,7 +682,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = L10n.string("Approve Dotenv Keys")
-        alert.informativeText = dotenvApprovalSummary(for: approval)
+        alert.informativeText = approvalInformativeText(
+            dotenvApprovalSummary(for: approval)
+        )
         alert.alertStyle = .warning
         alert.addButton(withTitle: L10n.string("Allow"))
         alert.addButton(withTitle: L10n.string("Deny"))
@@ -811,6 +825,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.runModal()
+    }
+
+    private func approvalInformativeText(
+        _ summary: String = "",
+        date: Date = Date()
+    ) -> String {
+        let timestamp = L10n.format(
+            "Timestamp: %@",
+            approvalTimestampFormatter.string(from: date)
+        )
+        guard summary.isEmpty == false else {
+            return timestamp
+        }
+        return "\(summary)\n\n\(timestamp)"
     }
 
     private func isotopeApprovalSummary(for approval: IsotopeApprovalRequestSnapshot) -> String {

@@ -276,6 +276,7 @@
 "This package is hardened. Binary execution is sandboxed and secret access is restricted." = "此软件包已加固。二进制执行已沙盒化，密钥访问受到限制。";
 "This package stores its secrets in plain text. Automic Vault isotopes are aftermarket open source packages modded by packaging experts to incorporate Automic Vault’s security bolstering technologies." = "此软件包以明文存储密钥。Automic Vault isotopes是由打包专家改造的后装开源软件包，用于整合Automic Vault的安全增强技术。";
 "timer" = "计时器";
+"Timestamp: %@" = "时间戳：%@";
 "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools." = "代理所需工具，包括图像处理、媒体处理、语言运行时、搜索、Shell、构建、OCR和文档转换工具。";
 "Touch ID and password authentication are unavailable." = "Touch ID和密码认证不可用。";
 "Toys" = "玩具";

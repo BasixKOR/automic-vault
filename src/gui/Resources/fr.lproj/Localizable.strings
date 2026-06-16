@@ -276,6 +276,7 @@
 "This package is hardened. Binary execution is sandboxed and secret access is restricted." = "Ce paquet est durci. L execution binaire est sandboxee et l acces aux secrets est restreint.";
 "This package stores its secrets in plain text. Automic Vault isotopes are aftermarket open source packages modded by packaging experts to incorporate Automic Vault’s security bolstering technologies." = "Ce paquet stocke ses secrets en clair. Les isotopes Automic Vault sont des paquets open source ajustes apres coup par des experts packaging pour integrer les technologies de renforcement de securite d Automic Vault.";
 "timer" = "minuteur";
+"Timestamp: %@" = "Horodatage : %@";
 "Tools agents need. Image manipulation, media processing, language runtimes, search, shell, build, OCR and document conversion tools." = "Outils necessaires aux agents : manipulation d images, traitement media, runtimes de langages, recherche, shell, build, OCR et conversion de documents.";
 "Touch ID and password authentication are unavailable." = "Touch ID et l authentification par mot de passe sont indisponibles.";
 "Toys" = "Jouets";
