@@ -11,6 +11,16 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             ? .white
             : .black
     }
+    private static let databaseGeneratedAtFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let databaseGeneratedAtFallbackFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
     private enum MenuBarIndicatorMetrics {
         static let diameter: CGFloat = 7
         static let imageOverlap: CGFloat = 1.5
@@ -492,7 +502,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         refreshedItem.title = L10n.format("Last Refresh: %@", refreshStatusText(for: snapshot))
         databaseFreshnessItem.title = L10n.format(
             "DB Freshness: %@",
-            snapshot.databaseGeneratedAt ?? "--"
+            databaseFreshnessText(for: snapshot)
         )
         if let error = snapshot.lastError {
             errorItem.isHidden = false
@@ -681,6 +691,17 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         case .pendingHelperInstallation:
             return L10n.string("pending helper installation")
         }
+    }
+
+    private func databaseFreshnessText(for snapshot: NucleusStatusSnapshot) -> String {
+        guard let generatedAt = snapshot.databaseGeneratedAt else {
+            return "--"
+        }
+        guard let date = Self.databaseGeneratedAtFormatter.date(from: generatedAt)
+            ?? Self.databaseGeneratedAtFallbackFormatter.date(from: generatedAt) else {
+            return generatedAt
+        }
+        return formattedRefresh(date)
     }
 
     private func adjustedIcon(
