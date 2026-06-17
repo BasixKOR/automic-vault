@@ -598,8 +598,16 @@ final class MainWindowModel: ObservableObject {
         snapshot.flaggedOutdatedPackages.forEach { append($0.name) }
         packages
             .filter(isOutdated)
-            .compactMap(\.packageName)
-            .forEach(append)
+            .forEach { package in
+                if case .installed(let record) = package.item,
+                   let outdated = outdatedRecord(for: record) {
+                    append(outdated.name)
+                    return
+                }
+                if let packageName = package.packageName {
+                    append(packageName)
+                }
+            }
         if shouldUpdateAutomicVaultCLTWithUpdateAll {
             append("av")
         }
@@ -1847,6 +1855,10 @@ final class MainWindowModel: ObservableObject {
         if case .recommendation(let recommendation) = package.item {
             return recommendation.isOutdated
         }
+        if case .installed(let record) = package.item,
+           record.isOutdated {
+            return true
+        }
         if let detail = detailsByPackageName[package.selectionID] ?? package.detail {
             return detail.isOutdated
         }
@@ -2106,7 +2118,7 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func normalizedDetail(_ detail: PackageDetail) -> PackageDetail {
-        if let outdated = snapshot.outdatedPackagesByName[detail.packageName] {
+        if let outdated = outdatedRecord(for: detail) {
             return detail.applying(outdated: outdated)
         }
         return detail
@@ -2583,10 +2595,49 @@ final class MainWindowModel: ObservableObject {
     }
 
     private func mergeOutdatedState(into record: PackageRecord) -> PackageRecord {
-        if let outdated = snapshot.outdatedPackagesByName[record.name] {
+        if let outdated = outdatedRecord(for: record) {
             return record.applying(outdated: outdated)
         }
         return record
+    }
+
+    private func outdatedRecord(for record: PackageRecord) -> OutdatedPackageRecord? {
+        let candidates = outdatedLookupNames(
+            packageName: record.name,
+            qualifiedName: Self.sourceQualifiedName(for: record.source),
+            installPackageNames: record.installPackageNames ?? []
+        )
+        return snapshot.flaggedOutdatedPackages.first { outdated in
+            candidates.contains(outdated.name)
+                || candidates.contains(strippedPackagePrefix(outdated.name))
+        }
+    }
+
+    private func outdatedRecord(for detail: PackageDetail) -> OutdatedPackageRecord? {
+        let candidates = outdatedLookupNames(
+            packageName: detail.packageName,
+            qualifiedName: detail.qualifiedName,
+            installPackageNames: detail.helperPackageNames
+        )
+        return snapshot.flaggedOutdatedPackages.first { outdated in
+            candidates.contains(outdated.name)
+                || candidates.contains(strippedPackagePrefix(outdated.name))
+        }
+    }
+
+    private func outdatedLookupNames(
+        packageName: String,
+        qualifiedName: String?,
+        installPackageNames: [String]
+    ) -> Set<String> {
+        var names = Set<String>()
+        for rawName in [packageName, qualifiedName].compactMap({ $0 }) + installPackageNames {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            names.insert(name)
+            names.insert(strippedPackagePrefix(name))
+        }
+        return names
     }
 
     private func installedDetail(

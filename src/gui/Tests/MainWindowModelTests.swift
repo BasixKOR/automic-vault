@@ -354,6 +354,42 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testOutdatedSectionMatchesSourceQualifiedSnapshotNames() async {
+        let record = PackageRecord(
+            name: "aws-cli",
+            source: .isotope(isotopeName: "aws-cli"),
+            version: "2.35.1",
+            description: "AWS command line interface",
+            latestVersion: nil,
+            securityState: nil
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: { [record] },
+            outdatedPackagesFetcher: {
+                [
+                    OutdatedPackageRecord(
+                        name: "isotope:aws-cli",
+                        currentVersion: "2.35.1",
+                        latestVersion: "2.35.6"
+                    )
+                ]
+            },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        model.selectSection(.outdated)
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["aws-cli"])
+
+        XCTAssertEqual(model.count(for: .outdated), 1)
+        XCTAssertEqual(model.versionText(for: model.displayedPackages[0]), "2.35.1 → 2.35.6")
+    }
+
+    @MainActor
     func testAllPackagesLoadsNextPageWhenScrolledNearEnd() async throws {
         let requests = PageRequestRecorder()
         let model = MainWindowModel(
