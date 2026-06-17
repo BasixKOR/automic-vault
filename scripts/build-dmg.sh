@@ -880,8 +880,14 @@ if [[ "${install_app}" == "true" ]]; then
   install_path="/Applications/${app_name}"
   rm -rf "${install_path}"
   ditto "${mounted_app_path}" "${install_path}"
-  sudo cp -f "${mounted_app_path}/Contents/Resources/av" /usr/local/bin/av
-  sudo chmod 755 /usr/local/bin/av
+  cli_install_target="/usr/local/bin/av"
+  cli_install_temp="$(sudo mktemp "$(dirname "${cli_install_target}")/.av.XXXXXX")"
+  if ! sudo cp "${mounted_app_path}/Contents/Resources/av" "${cli_install_temp}" \
+    || ! sudo chmod 755 "${cli_install_temp}" \
+    || ! sudo mv -f "${cli_install_temp}" "${cli_install_target}"; then
+    sudo rm -f "${cli_install_temp}"
+    exit 1
+  fi
 fi
 
 if [[ "${publish_release}" == "true" ]]; then

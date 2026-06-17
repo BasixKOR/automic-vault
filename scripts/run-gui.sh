@@ -45,6 +45,7 @@ refresh_local_cli() {
   local bundled_av="${app_path}/Contents/Resources/av"
   local target="/usr/local/bin/av"
   local target_dir
+  local temp_target
 
   [[ -x "${bundled_av}" ]] || return
 
@@ -66,8 +67,14 @@ refresh_local_cli() {
   fi
 
   cli_step "Refreshing local av CLI"
-  cp -f "${bundled_av}" "${target}"
-  chmod 755 "${target}"
+  target_dir="$(dirname "${target}")"
+  temp_target="$(mktemp "${target_dir}/.av.XXXXXX")"
+  if ! cp "${bundled_av}" "${temp_target}" \
+    || ! chmod 755 "${temp_target}" \
+    || ! mv -f "${temp_target}" "${target}"; then
+    rm -f "${temp_target}"
+    return 1
+  fi
   cli_info "Updated ${target}"
 }
 
