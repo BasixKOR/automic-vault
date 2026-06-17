@@ -248,12 +248,25 @@ if [[ -n "$MENU_PROVISIONING_PROFILE" ]]; then
   MENU_PROVISIONING_PROFILE="$(normalize_profile_path "$MENU_PROVISIONING_PROFILE")"
 fi
 COMBINED_DB_PATH="${AV_COMBINED_DB_PATH:-${ROOT_DIR}/../av.db/cache/automic-vault/combined.json}"
+EMBED_COMBINED_DB=false
 
-cli_step "Locating package database"
-if [[ ! -f "$COMBINED_DB_PATH" ]]; then
-  cli_die "Missing package database: ${COMBINED_DB_PATH}. Generate it in ../av.db or set AV_COMBINED_DB_PATH."
+if [[ "$CONFIGURATION" == "release" || "$PUBLISH_BUILD" == "true" ]]; then
+  EMBED_COMBINED_DB=true
+  RUST_BIN_DIR="$ROOT_DIR/target/release"
+else
+  RUST_BIN_DIR="$ROOT_DIR/target/debug"
 fi
-cli_info "${COMBINED_DB_PATH}"
+
+if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
+  cli_step "Locating package database"
+  if [[ ! -f "$COMBINED_DB_PATH" ]]; then
+    cli_die "Release builds require a package database to embed: ${COMBINED_DB_PATH}. Generate it in ../av.db or set AV_COMBINED_DB_PATH."
+  fi
+  export AV_COMBINED_DB_PATH="$COMBINED_DB_PATH"
+  cli_info "${COMBINED_DB_PATH}"
+else
+  cli_info "Package database: remote-only debug build"
+fi
 
 if [[ -z "$APPLE_TEAM_ID" && -n "${CODESIGN_IDENTITY:-}" ]]; then
   if [[ "${CODESIGN_IDENTITY}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
@@ -314,7 +327,6 @@ else
   SWIFT_OPT_FLAGS=(-Onone -g -D DEBUG)
 fi
 
-RUST_BIN_DIR="$ROOT_DIR/target/release"
 SWIFT_PACKAGE_BIN_DIR=""
 
 is_current() {
@@ -799,12 +811,19 @@ require_dotenv_provisioning_profiles
 write_entitlements "$DOTENV_ENTITLEMENTS" "$DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED"
 write_entitlements "$HELPER_ENTITLEMENTS" false
 cli_step "Building Rust binaries"
-cargo build \
-  --release \
-  --features packaged-db \
-  --bin av \
-  --bin nuke-helper \
-  --manifest-path "$ROOT_DIR/Cargo.toml"
+if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
+  cargo build \
+    --release \
+    --features packaged-db \
+    --bin av \
+    --bin nuke-helper \
+    --manifest-path "$ROOT_DIR/Cargo.toml"
+else
+  cargo build \
+    --bin av \
+    --bin nuke-helper \
+    --manifest-path "$ROOT_DIR/Cargo.toml"
+fi
 cli_step "Building Cocoa app"
 xcrun swift build \
   --package-path "$GUI_DIR" \
@@ -869,7 +888,11 @@ fi
 
 cli_step "Assembling app bundle"
 cp "$RUST_BIN_DIR/av" "$RESOURCES_DIR/av"
-cp "$COMBINED_DB_PATH" "$RESOURCES_DIR/combined.json"
+if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
+  cp "$COMBINED_DB_PATH" "$RESOURCES_DIR/combined.json"
+else
+  rm -f "$RESOURCES_DIR/combined.json"
+fi
 rm -f "$RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$RESOURCES_DIR/enrichment-manifests.json"
 cp "$RUST_BIN_DIR/nuke-helper" "$HELPER_EXECUTABLE"
@@ -878,7 +901,11 @@ copy_localizations "$RESOURCES_DIR"
 copy_pack_images "$RESOURCES_DIR"
 cp "$ICON_ICNS" "$MENU_RESOURCES_DIR/$MENU_APP_ICON_NAME.icns"
 cp "$RUST_BIN_DIR/av" "$MENU_RESOURCES_DIR/av"
-cp "$COMBINED_DB_PATH" "$MENU_RESOURCES_DIR/combined.json"
+if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
+  cp "$COMBINED_DB_PATH" "$MENU_RESOURCES_DIR/combined.json"
+else
+  rm -f "$MENU_RESOURCES_DIR/combined.json"
+fi
 rm -f "$MENU_RESOURCES_DIR/isotopes.json"
 cp "$ENRICHMENT_MANIFESTS_JSON" "$MENU_RESOURCES_DIR/enrichment-manifests.json"
 copy_localizations "$MENU_RESOURCES_DIR"

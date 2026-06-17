@@ -135,7 +135,7 @@ mod post_install_hooks {
 const DB_SCHEMA_VERSION: u32 = 7;
 #[cfg(all(not(test), feature = "packaged-db"))]
 const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/combined.json"));
-#[cfg(any(test, not(feature = "packaged-db")))]
+#[cfg(test)]
 const EMBEDDED_COMBINED_DATA: &[u8] = include_bytes!("fixtures/coverage-combined.json");
 const EMBEDDED_POST_INSTALL_CHECK_SKIP: &str =
     include_str!("../../../data/post_install_check_skip.jsonc");
@@ -294,10 +294,18 @@ fn embedded_combined_data() -> &'static CombinedData {
                 _ => embedded,
             }
         }
-        #[cfg(any(test, not(feature = "packaged-db")))]
+        #[cfg(test)]
         {
             serde_json::from_slice(EMBEDDED_COMBINED_DATA)
                 .expect("failed to parse embedded combined package data JSON")
+        }
+        #[cfg(all(not(test), not(feature = "packaged-db")))]
+        {
+            load_trusted_remote_combined_data().unwrap_or_else(|| {
+                panic!(
+                    "non-packaged debug build requires a fetched trusted package database at {REMOTE_COMBINED_DATA_PATH}"
+                )
+            })
         }
     })
 }
@@ -313,16 +321,15 @@ fn combined_data_is_at_least_as_new(candidate: &CombinedData, baseline: &Combine
     candidate_time >= baseline_time
 }
 
-#[cfg(all(not(test), feature = "packaged-db"))]
+#[cfg(not(test))]
 fn load_trusted_remote_combined_data() -> Option<CombinedData> {
     load_trusted_remote_combined_data_from(
         Path::new(REMOTE_COMBINED_DATA_DIR),
         Path::new(REMOTE_COMBINED_DATA_PATH),
-        true,
+        !cfg!(debug_assertions),
     )
 }
 
-#[cfg(any(test, feature = "packaged-db"))]
 fn load_trusted_remote_combined_data_from(
     dir: &Path,
     path: &Path,
@@ -341,7 +348,6 @@ fn ensure_combined_data_schema(data: &CombinedData) -> Result<(), String> {
     ensure_db_schema(&data.sources.db)
 }
 
-#[cfg(any(test, feature = "packaged-db"))]
 fn trusted_remote_data_path(dir: &Path, path: &Path, require_root_owner: bool) -> bool {
     let Ok(dir_metadata) = fs::metadata(dir) else {
         return false;
@@ -355,7 +361,6 @@ fn trusted_remote_data_path(dir: &Path, path: &Path, require_root_owner: bool) -
     file_metadata.is_file() && trusted_remote_data_metadata(&file_metadata, require_root_owner)
 }
 
-#[cfg(any(test, feature = "packaged-db"))]
 fn trusted_remote_data_metadata(metadata: &fs::Metadata, require_root_owner: bool) -> bool {
     if require_root_owner && metadata.uid() != 0 {
         return false;

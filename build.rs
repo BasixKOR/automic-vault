@@ -2,7 +2,9 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-env-changed=NUKE_BUILD_ID");
     println!("cargo:rerun-if-env-changed=AV_DOTENV_KEYCHAIN_ACCESS_GROUP");
-    prepare_packaged_combined_db();
+    if packaged_combined_db_enabled() {
+        prepare_packaged_combined_db();
+    }
     let build_id = build_id();
     println!("cargo:rustc-env=NUKE_BUILD_ID={build_id}");
     println!(
@@ -56,6 +58,10 @@ fn main() {
     }
 }
 
+fn packaged_combined_db_enabled() -> bool {
+    std::env::var_os("CARGO_FEATURE_PACKAGED_DB").is_some()
+}
+
 fn dotenv_keychain_access_group() -> String {
     if let Some(group) = non_empty_build_env_var("AV_DOTENV_KEYCHAIN_ACCESS_GROUP") {
         return group;
@@ -105,16 +111,21 @@ fn prepare_packaged_combined_db() {
         "AV_COMBINED_DB_PATH",
         repo_root.join("../av.db/cache/automic-vault/combined.json"),
     );
-    let fallback = repo_root.join("data/combined.json");
-    let selected = if source.exists() { source } else { fallback };
-    println!("cargo:rerun-if-changed={}", selected.display());
+    println!("cargo:rerun-if-changed={}", source.display());
+
+    if !source.is_file() {
+        panic!(
+            "packaged release builds require a combined package database at {}. Generate it in ../av.db or set AV_COMBINED_DB_PATH.",
+            source.display()
+        );
+    }
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output_path = std::path::Path::new(&out_dir).join("combined.json");
-    if let Err(err) = std::fs::copy(&selected, &output_path) {
+    if let Err(err) = std::fs::copy(&source, &output_path) {
         panic!(
             "failed to prepare packaged combined database from {}: {err}",
-            selected.display()
+            source.display()
         );
     }
 }
