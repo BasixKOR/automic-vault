@@ -425,7 +425,8 @@ mod tests {
                 "result": {
                     "version": env!("CARGO_PKG_VERSION"),
                     "protocolVersion": core::PROTOCOL_VERSION,
-                    "buildId": env!("NUKE_BUILD_ID")
+                    "buildId": env!("NUKE_BUILD_ID"),
+                    "databaseGeneratedAt": embedded_combined_data().generated_at.as_str()
                 }
             })
         );
@@ -484,7 +485,8 @@ mod tests {
                 "result": {
                     "version": env!("CARGO_PKG_VERSION"),
                     "protocolVersion": core::PROTOCOL_VERSION,
-                    "buildId": env!("NUKE_BUILD_ID")
+                    "buildId": env!("NUKE_BUILD_ID"),
+                    "databaseGeneratedAt": embedded_combined_data().generated_at.as_str()
                 }
             })
         );

@@ -157,6 +157,8 @@
 "Invocation type" = "Aufruftyp";
 "Invoked By" = "Aufgerufen von";
 "just now" = "gerade eben";
+"DB Freshness: %@" = "DB-Aktualitaet: %@";
+"DB Freshness: --" = "DB-Aktualitaet: --";
 "Last Refresh: %@" = "Letzte Aktualisierung: %@";
 "Last Refresh: --" = "Letzte Aktualisierung: --";
 "LAST UPDATED" = "ZULETZT AKTUALISIERT";

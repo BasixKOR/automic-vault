@@ -1900,7 +1900,10 @@ final class MainWindowModel: ObservableObject {
             && snapshot.outdatedPackages.isEmpty
             && packages.isEmpty == false
         self.snapshot = shouldKeepDaemonSnapshot
-            ? self.snapshot.withRemoteDatabaseRefreshState(snapshot.remoteDatabaseRefreshState)
+            ? self.snapshot.withRemoteDatabaseRefreshState(
+                snapshot.remoteDatabaseRefreshState,
+                databaseGeneratedAt: snapshot.databaseGeneratedAt
+            )
             : snapshot
         packages = packages.map { package in
             guard case .installed(let record) = package.item else {
@@ -1937,7 +1940,8 @@ final class MainWindowModel: ObservableObject {
                 outdatedPackages: snapshot.outdatedPackages,
                 refreshedAt: Date(),
                 lastError: nil,
-                remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+                remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState,
+                databaseGeneratedAt: snapshot.databaseGeneratedAt
             )
 
             packages = installed.map { record in
@@ -1996,7 +2000,8 @@ final class MainWindowModel: ObservableObject {
             outdatedPackages: outdated,
             refreshedAt: snapshot.refreshedAt,
             lastError: snapshot.lastError,
-            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState,
+            databaseGeneratedAt: snapshot.databaseGeneratedAt
         )
         packages = packages.map { package in
             guard case .installed(let record) = package.item else {
@@ -2679,7 +2684,8 @@ final class MainWindowModel: ObservableObject {
             outdatedPackages: snapshot.outdatedPackages,
             refreshedAt: snapshot.refreshedAt,
             lastError: snapshot.lastError,
-            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState
+            remoteDatabaseRefreshState: snapshot.remoteDatabaseRefreshState,
+            databaseGeneratedAt: snapshot.databaseGeneratedAt
         )
     }
 

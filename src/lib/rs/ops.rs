@@ -605,6 +605,7 @@ pub(crate) fn system_info() -> core::SystemInfoResponse {
         version: env!("CARGO_PKG_VERSION"),
         protocol_version: core::PROTOCOL_VERSION,
         build_id: env!("NUKE_BUILD_ID"),
+        database_generated_at: embedded_combined_data().generated_at.clone(),
     }
 }
 

@@ -157,6 +157,8 @@
 "Invocation type" = "调用类型";
 "Invoked By" = "调用方";
 "just now" = "刚刚";
+"DB Freshness: %@" = "数据库新鲜度：%@";
+"DB Freshness: --" = "数据库新鲜度：--";
 "Last Refresh: %@" = "上次刷新：%@";
 "Last Refresh: --" = "上次刷新：--";
 "LAST UPDATED" = "上次更新";

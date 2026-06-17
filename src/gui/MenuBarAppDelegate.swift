@@ -41,6 +41,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         action: nil,
         keyEquivalent: ""
     )
+    private let databaseFreshnessItem = NSMenuItem(
+        title: L10n.string("DB Freshness: --"),
+        action: nil,
+        keyEquivalent: ""
+    )
     private let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let startAtLoginItem = NSMenuItem(
         title: L10n.string("Start at Login"),
@@ -194,6 +199,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     private func configureMenu() {
         refreshedItem.isEnabled = false
+        databaseFreshnessItem.isEnabled = false
         errorItem.isEnabled = false
 
         menu.delegate = self
@@ -218,6 +224,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             keyEquivalent: "r"
         ).target = self
         menu.addItem(refreshedItem)
+        menu.addItem(databaseFreshnessItem)
         menu.addItem(.separator())
 
         menu.addItem(errorItem)
@@ -439,6 +446,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 let installedPackages = try self.bridge.fetchPackages()
                 let outdatedPackages = try self.bridge.fetchOutdatedPackages()
                     .sorted(by: { $0.name < $1.name })
+                let databaseGeneratedAt = (try? self.bridge.fetchDatabaseGeneratedAt())
+                    ?? previous.databaseGeneratedAt
                 nextSnapshot = NucleusStatusSnapshot(
                     installedCount: installedPackages.count,
                     hazardousPackageCount: Self.securityAlertCount(
@@ -448,7 +457,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     outdatedPackages: outdatedPackages,
                     refreshedAt: Date(),
                     lastError: nil,
-                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
+                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState,
+                    databaseGeneratedAt: databaseGeneratedAt
                 )
             } catch {
                 nextSnapshot = NucleusStatusSnapshot(
@@ -464,7 +474,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                         ),
                         refreshedAt: Date()
                     ),
-                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState
+                    remoteDatabaseRefreshState: previous.remoteDatabaseRefreshState,
+                    databaseGeneratedAt: previous.databaseGeneratedAt
                 )
             }
 
@@ -479,6 +490,10 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func apply(snapshot: NucleusStatusSnapshot) {
         self.snapshot = snapshot
         refreshedItem.title = L10n.format("Last Refresh: %@", refreshStatusText(for: snapshot))
+        databaseFreshnessItem.title = L10n.format(
+            "DB Freshness: %@",
+            snapshot.databaseGeneratedAt ?? "--"
+        )
         if let error = snapshot.lastError {
             errorItem.isHidden = false
             errorItem.title = error.message

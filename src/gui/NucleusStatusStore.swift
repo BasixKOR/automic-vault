@@ -17,6 +17,7 @@ struct NucleusStatusSnapshot: Codable, Equatable {
     let refreshedAt: Date
     let lastError: ErrorSnapshot?
     let remoteDatabaseRefreshState: RemoteDatabaseRefreshState
+    let databaseGeneratedAt: String?
 
     static let empty = NucleusStatusSnapshot(
         installedCount: 0,
@@ -24,7 +25,8 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         outdatedPackages: [],
         refreshedAt: .distantPast,
         lastError: nil,
-        remoteDatabaseRefreshState: .normal
+        remoteDatabaseRefreshState: .normal,
+        databaseGeneratedAt: nil
     )
 
     var flaggedOutdatedPackages: [OutdatedPackageRecord] {
@@ -50,6 +52,7 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         case refreshedAt
         case lastError
         case remoteDatabaseRefreshState
+        case databaseGeneratedAt
     }
 
     init(
@@ -58,7 +61,8 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         outdatedPackages: [OutdatedPackageRecord],
         refreshedAt: Date,
         lastError: ErrorSnapshot?,
-        remoteDatabaseRefreshState: RemoteDatabaseRefreshState = .normal
+        remoteDatabaseRefreshState: RemoteDatabaseRefreshState = .normal,
+        databaseGeneratedAt: String? = nil
     ) {
         self.installedCount = installedCount
         self.hazardousPackageCount = hazardousPackageCount
@@ -66,6 +70,7 @@ struct NucleusStatusSnapshot: Codable, Equatable {
         self.refreshedAt = refreshedAt
         self.lastError = lastError
         self.remoteDatabaseRefreshState = remoteDatabaseRefreshState
+        self.databaseGeneratedAt = databaseGeneratedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -88,10 +93,15 @@ struct NucleusStatusSnapshot: Codable, Equatable {
             RemoteDatabaseRefreshState.self,
             forKey: .remoteDatabaseRefreshState
         ) ?? .normal
+        databaseGeneratedAt = try container.decodeIfPresent(
+            String.self,
+            forKey: .databaseGeneratedAt
+        )
     }
 
     func withRemoteDatabaseRefreshState(
-        _ state: RemoteDatabaseRefreshState
+        _ state: RemoteDatabaseRefreshState,
+        databaseGeneratedAt: String? = nil
     ) -> NucleusStatusSnapshot {
         NucleusStatusSnapshot(
             installedCount: installedCount,
@@ -99,7 +109,8 @@ struct NucleusStatusSnapshot: Codable, Equatable {
             outdatedPackages: outdatedPackages,
             refreshedAt: refreshedAt,
             lastError: lastError,
-            remoteDatabaseRefreshState: state
+            remoteDatabaseRefreshState: state,
+            databaseGeneratedAt: databaseGeneratedAt ?? self.databaseGeneratedAt
         )
     }
 }

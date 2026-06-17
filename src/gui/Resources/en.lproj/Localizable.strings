@@ -157,6 +157,8 @@
 "Invocation type" = "Invocation type";
 "Invoked By" = "Invoked By";
 "just now" = "just now";
+"DB Freshness: %@" = "DB Freshness: %@";
+"DB Freshness: --" = "DB Freshness: --";
 "Last Refresh: %@" = "Last Refresh: %@";
 "Last Refresh: --" = "Last Refresh: --";
 "LAST UPDATED" = "LAST UPDATED";

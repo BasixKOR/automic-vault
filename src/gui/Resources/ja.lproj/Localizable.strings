@@ -157,6 +157,8 @@
 "Invocation type" = "呼び出し種別";
 "Invoked By" = "呼び出し元";
 "just now" = "たった今";
+"DB Freshness: %@" = "DB鮮度: %@";
+"DB Freshness: --" = "DB鮮度: --";
 "Last Refresh: %@" = "最終更新: %@";
 "Last Refresh: --" = "最終更新: --";
 "LAST UPDATED" = "最終更新";

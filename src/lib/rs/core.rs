@@ -162,6 +162,8 @@ pub(crate) struct SystemInfoResponse {
     pub(crate) version: &'static str,
     #[serde(rename = "buildId")]
     pub(crate) build_id: &'static str,
+    #[serde(rename = "databaseGeneratedAt")]
+    pub(crate) database_generated_at: String,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

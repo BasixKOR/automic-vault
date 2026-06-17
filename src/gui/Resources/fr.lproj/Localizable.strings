@@ -157,6 +157,8 @@
 "Invocation type" = "Type d invocation";
 "Invoked By" = "Invoque par";
 "just now" = "a l instant";
+"DB Freshness: %@" = "Fraicheur DB : %@";
+"DB Freshness: --" = "Fraicheur DB : --";
 "Last Refresh: %@" = "Derniere actualisation : %@";
 "Last Refresh: --" = "Derniere actualisation : --";
 "LAST UPDATED" = "DERNIERE MISE A JOUR";

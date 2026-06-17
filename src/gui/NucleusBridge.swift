@@ -93,6 +93,7 @@ final class NucleusBridge {
         let protocolVersion: String
         let version: String
         let buildId: String
+        let databaseGeneratedAt: String?
     }
 
     struct IsotopeMigrationPlan: Decodable {
@@ -257,6 +258,14 @@ final class NucleusBridge {
             params: EmptyParams(),
             as: ListOutdatedResponse.self
         ).packages
+    }
+
+    func fetchDatabaseGeneratedAt() throws -> String? {
+        try performProtocolRequest(
+            method: "system.info",
+            params: EmptyParams(),
+            as: SystemInfoResponse.self
+        ).databaseGeneratedAt
     }
 
     func fetchSearchResults(
