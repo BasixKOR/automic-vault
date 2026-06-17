@@ -252,9 +252,6 @@ EMBED_COMBINED_DB=false
 
 if [[ "$CONFIGURATION" == "release" || "$PUBLISH_BUILD" == "true" ]]; then
   EMBED_COMBINED_DB=true
-  RUST_BIN_DIR="$ROOT_DIR/target/release"
-else
-  RUST_BIN_DIR="$ROOT_DIR/target/debug"
 fi
 
 if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
@@ -327,6 +324,7 @@ else
   SWIFT_OPT_FLAGS=(-Onone -g -D DEBUG)
 fi
 
+RUST_BIN_DIR="$ROOT_DIR/target/release"
 SWIFT_PACKAGE_BIN_DIR=""
 
 is_current() {
@@ -820,6 +818,7 @@ if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
     --manifest-path "$ROOT_DIR/Cargo.toml"
 else
   cargo build \
+    --release \
     --bin av \
     --bin nuke-helper \
     --manifest-path "$ROOT_DIR/Cargo.toml"
