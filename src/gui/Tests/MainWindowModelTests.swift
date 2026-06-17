@@ -1120,33 +1120,6 @@ final class MainWindowModelTests: XCTestCase {
         XCTAssertEqual(record.fallbackDetail.helperPackageNames, ["node@24"])
     }
 
-    func testPackagePackInstallTargetsUseSourceQualifiedNames() {
-        XCTAssertEqual(
-            PackagePack.agent.installPackageNames.prefix(2),
-            ["cask:codex", "brew:claude-code"]
-        )
-        XCTAssertEqual(
-            PackagePack.agenticToolkit.installPackageNames.first,
-            "brew:ffmpeg-full"
-        )
-        XCTAssertEqual(
-            PackagePack.unixPlusPlus.installPackageNames.first,
-            "brew:bat"
-        )
-        XCTAssertEqual(
-            PackagePack.agent.installPackageNames.count,
-            PackagePack.agent.packageNames.count
-        )
-        XCTAssertEqual(
-            PackagePack.agenticToolkit.installPackageNames.count,
-            PackagePack.agenticToolkit.packageNames.count
-        )
-        XCTAssertEqual(
-            PackagePack.unixPlusPlus.installPackageNames.count,
-            PackagePack.unixPlusPlus.packageNames.count
-        )
-    }
-
     func testAppBadgeCountCombinesNucleusOutdatedPackagesAndSecurityAlerts() {
         let snapshot = NucleusStatusSnapshot(
             installedCount: 10,

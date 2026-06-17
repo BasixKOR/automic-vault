@@ -45,8 +45,6 @@ let package = Package(
                 "DeepLink.swift",
                 "AppMain.swift",
                 "AppDelegate.swift",
-                "PackagePacks.swift",
-                "PackWindowController.swift",
                 "MainWindowController.swift",
                 "MainWindowModel.swift",
                 "MainWindowView.swift",
