@@ -2725,6 +2725,52 @@ mod tests {
     }
 
     #[test]
+    fn isotopes_interpreter_helpers_cover_more_parser_edges() {
+        let args = vec![OsString::from("-S")];
+        assert_eq!(interpreter_script_operand(&args), None);
+
+        let args = vec![OsString::from("--"), OsString::from("script.sh")];
+        assert_eq!(
+            interpreter_script_operand(&args),
+            Some(Path::new("script.sh"))
+        );
+
+        let args = vec![OsString::from("-"), OsString::from("stdin-script")];
+        assert_eq!(interpreter_script_operand(&args), Some(Path::new("-")));
+
+        let args = vec![OsString::from_vec(b"bad-\xff".to_vec())];
+        assert_eq!(interpreter_script_operand(&args), None);
+
+        assert_eq!(
+            interpreter_script_for_always_allow(Path::new("/usr/local/bin/not-a-script"), &[])
+                .unwrap(),
+            None
+        );
+
+        let empty =
+            interpreter_script_for_always_allow(Path::new("/usr/local/bin/uv"), &[]).unwrap();
+        assert_eq!(empty, None);
+
+        let unknown_global = interpreter_script_for_always_allow(
+            Path::new("/usr/local/bin/uv"),
+            &[OsString::from("--unknown"), OsString::from("run")],
+        )
+        .unwrap();
+        assert_eq!(unknown_global, None);
+
+        let unknown_run = interpreter_script_for_always_allow(
+            Path::new("/usr/local/bin/uv"),
+            &[
+                OsString::from("run"),
+                OsString::from("--unknown"),
+                OsString::from("tool.py"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(unknown_run, None);
+    }
+
+    #[test]
     fn isotopes_always_allow_scope_and_path_helpers_cover_expected_paths() {
         let executable = Path::new("/bin/sh");
         let file = File::open(executable).unwrap();
