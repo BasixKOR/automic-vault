@@ -29,6 +29,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=APPLE_TEAM_ID");
     println!("cargo:rerun-if-env-changed=AV_DOTENV_KEYCHAIN_ACCESS_GROUP");
     println!("cargo:rerun-if-env-changed=CODESIGN_IDENTITY");
+    println!("cargo:rerun-if-env-changed=MIN_MACOS_VERSION");
+    println!("cargo:rerun-if-env-changed=NUKE_PROTOCOL_VERSION");
     println!("cargo:rerun-if-env-changed=TEAM_COMMON_NAME");
     println!("cargo:rerun-if-env-changed=TEAM_IDENTIFIER");
     println!("cargo:rerun-if-env-changed=NUKE_HELPER_VERSION");
@@ -72,7 +74,12 @@ fn dotenv_keychain_access_group() -> String {
         .or_else(|| {
             codesign_identity().and_then(|identity| team_identifier_from_identity(&identity))
         })
-        .unwrap_or_else(|| "ZU76A67LGU".to_string());
+        .or_else(default_team_identifier_from_keychain)
+        .unwrap_or_else(|| {
+            panic!(
+                "Unable to determine Apple team identifier for AV_DOTENV_KEYCHAIN_ACCESS_GROUP; set AV_DOTENV_KEYCHAIN_ACCESS_GROUP, APPLE_TEAM_ID, TEAM_IDENTIFIER, or configure a signing identity"
+            )
+        });
     format!("{team_id}.com.automicvault.dotenv")
 }
 
@@ -101,6 +108,20 @@ fn team_identifier_from_identity(identity: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn default_team_identifier_from_keychain() -> Option<String> {
+    let output = std::process::Command::new("security")
+        .args(["find-identity", "-v", "-p", "codesigning"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find(|line| line.contains("\"Developer ID Application:"))
+        .and_then(team_identifier_from_identity)
 }
 
 fn prepare_packaged_combined_db() {
@@ -160,30 +181,6 @@ fn non_empty_build_env_var(key: &str) -> Option<String> {
     build_env_var(key).filter(|value| !value.is_empty())
 }
 
-fn env_file_value(wanted_key: &str) -> Option<String> {
-    let Ok(contents) = std::fs::read_to_string(".env") else {
-        return None;
-    };
-
-    for line in contents.lines() {
-        let line = line.trim_end_matches('\r');
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if key != wanted_key || !is_env_key(key) {
-            continue;
-        }
-
-        return Some(value.to_string());
-    }
-
-    None
-}
-
 fn unquote_env_value(value: String) -> String {
     let bytes = value.as_bytes();
     if bytes.len() >= 2
@@ -196,26 +193,40 @@ fn unquote_env_value(value: String) -> String {
     }
 }
 
-fn is_env_key(key: &str) -> bool {
-    let mut chars = key.chars();
-    match chars.next() {
-        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
-        _ => return false,
+fn env_file_value(wanted_key: &str) -> Option<String> {
+    if !matches!(
+        wanted_key,
+        "MIN_MACOS_VERSION" | "NUKE_PROTOCOL_VERSION" | "NUKE_HELPER_VERSION"
+    ) {
+        return None;
     }
 
-    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return None;
+    };
+
+    for line in contents.lines() {
+        let line = line.trim_end_matches('\r');
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key == wanted_key {
+            return Some(value.to_string());
+        }
+    }
+
+    None
 }
 
 fn generate_isotope_integrations() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let repo_root = std::path::Path::new(&manifest_dir);
-    let av_db_root = repo_root.join("../av.db");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_REPO_CACHE");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_RADIOISOTOPES_REPO");
     println!("cargo:rerun-if-env-changed=AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
-    let default_isotope_root = absolute_path(av_db_root.join("../isotopes"));
-    let default_radioisotope_root = absolute_path(av_db_root.join("../radioisotopes"));
+    let default_isotope_root = absolute_path(repo_root.join("../isotopes"));
+    let default_radioisotope_root = absolute_path(repo_root.join("../radioisotopes"));
     let isotope_root =
         path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", default_isotope_root.clone());
     let radioisotope_root = path_env_or_default(
@@ -812,8 +823,7 @@ fn helper_info_plist(manifest_dir: &str) -> String {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let output_path = format!("{out_dir}/nuke-helper-Info.plist");
     let authorized_client_requirement = authorized_client_requirement();
-    let helper_version =
-        build_env_var("NUKE_HELPER_VERSION").expect("NUKE_HELPER_VERSION not set; add it to .env");
+    let helper_version = build_env_var("NUKE_HELPER_VERSION").expect("NUKE_HELPER_VERSION not set");
 
     let rendered = template
         .replace("@AUTHORIZED_CLIENT@", &authorized_client_requirement)

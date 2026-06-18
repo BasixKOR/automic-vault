@@ -153,12 +153,12 @@ Button("To Top", systemImage: "chevron.up") { scrollToTop() }
 ### Button & Control Changes
 
 - Capsule shape default for bordered buttons (override with `.buttonBorderShape(.roundedRectangle)`)
-- `.controlSize(.extraLarge)` — New extra-large button size
+- `.controlSize(.extraLarge)` — extra-large control size (available since iOS 17)
 - `.controlSize(.small)` on containers — Preserve pre-iOS 26 density
-- `GlassButtonStyle(.clear/.glass/.tint)` — Glass button variants (iOS 26.1+)
-- `.buttonSizing(.fit/.stretch/.flexible)` — Control button layout behavior
+- `.buttonStyle(.glass)` / `.glassProminent` / `.glass(.regular.tint(.blue))` — Glass button styles (the `GlassButtonStyle(_:)` initializer is iOS 26.1+)
+- `.buttonSizing(.automatic/.flexible/.fitted)` — Control button layout behavior
 - `Button(role: .close)` / `Button(role: .confirm)` — System-styled close/confirm
-- `.clipShape(.rect(cornerRadius: 12, style: .containerConcentric))` — Corner concentricity
+- `ConcentricRectangle()` (or `.rect(cornerRadius:style:)` with `.circular`/`.continuous`) — Corner concentricity (there is no `.containerConcentric` corner style)
 - Menus: icons on leading edge, consistent iOS/macOS
 
 ---
@@ -362,7 +362,7 @@ s.lineHeight = .loose
 ```swift
 // MIGRATION REQUIRED:
 // Remove deprecated property list key in iPadOS 26:
-// UIRequiresFullscreen (entire key deprecated, all values)
+// UIRequiresFullScreen (entire key deprecated, all values)
 
 // For split view navigation, system automatically shows/hides columns
 // based on available space during resize
@@ -641,8 +641,8 @@ struct MyApp: App {
             ContentView()
         }
 
-        AssistiveAccessScene {
-            SimplifiedUI() // UI shown when iPhone is in AssistiveAccess mode
+        AssistiveAccess {
+            SimplifiedUI() // UI shown when iPhone is in Assistive Access mode
         }
     }
 }
@@ -762,7 +762,7 @@ struct InAppBrowser: View {
 
     var body: some View {
         VStack {
-            Text(page.title ?? "Loading...")
+            Text(page.title.isEmpty ? "Loading…" : page.title)
 
             WebView(page)
                 .ignoresSafeArea()
@@ -771,10 +771,14 @@ struct InAppBrowser: View {
                 }
 
             HStack {
-                Button("Back") { page.goBack() }
-                    .disabled(!page.canGoBack)
-                Button("Forward") { page.goForward() }
-                    .disabled(!page.canGoForward)
+                Button("Back") {
+                    if let item = page.backForwardList.backList.last { page.load(item) }
+                }
+                .disabled(page.backForwardList.backList.isEmpty)
+                Button("Forward") {
+                    if let item = page.backForwardList.forwardList.first { page.load(item) }
+                }
+                .disabled(page.backForwardList.forwardList.isEmpty)
             }
         }
     }
@@ -782,9 +786,13 @@ struct InAppBrowser: View {
 ```
 
 #### WebPage features
-- Programmatic navigation (`goBack()`, `goForward()`)
-- Access page properties (`title`, `url`, `canGoBack`, `canGoForward`)
+- History navigation via `backForwardList` (`backList` / `forwardList` / `currentItem`) + `load(_ item:)` — there are no `goBack()`/`goForward()`/`canGoBack`/`canGoForward` members
+- Access page properties (`title` is a non-optional `String`, `url` is `URL?`, `estimatedProgress`)
 - Observable — SwiftUI views update automatically
+
+#### Form-submission hook iOS27
+
+`WebPage.NavigationDeciding` gains `willSubmit(formInfo:) async` (default no-op), observing form submissions: `WebPage.FormInfo` carries `targetFrame` / `sourceFrame` (`FrameInfo`), `submissionURL`, `httpMethod`, and `formValues: [String: String]`. `WebPage.NavigationPreferences` adds `alternateRequest: URLRequest?` and `overrideReferrer: String?`. In the 27 beta 1 SDK these are iOS-only — the macOS/visionOS annotations are placeholder (`9999`) — re-check later betas before claiming them cross-platform.
 
 **tvOS**: WebView and WebPage are **not available on tvOS**. tvOS has no WKWebView at all. For web content parsing on tvOS, use JavaScriptCore. See `axiom-swift (skills/tvos.md)` for alternatives.
 
@@ -859,16 +867,18 @@ struct PhotoGrid: View {
                 }
             }
         }
-        .dragContainer(for: Photo.self, selection: selectedPhotos) { draggedIDs in
+        .dragContainer(for: Photo.self) { draggedIDs in
             photos(ids: draggedIDs)
         }
+        .dragContainerSelection(selectedPhotos)
     }
 }
 ```
 
 **Key APIs**:
 - `.draggable(containerItemID:containerNamespace:)` marks each item as part of a drag container (namespace defaults to `nil`)
-- `.dragContainer(for:selection:)` provides the typed items lazily when a drop occurs
+- `.dragContainer(for:in:)` provides the typed items lazily when a drop occurs; the payload closure receives the dragged item IDs
+- `.dragContainerSelection(_:containerNamespace:)` supplies the current selection — it is a separate modifier, not a `dragContainer` argument
 
 ### DragConfiguration
 
@@ -895,10 +905,8 @@ struct PhotoGrid: View {
 ```swift
 .dragPreviewsFormation(.stack) // Items stack nicely on top of one another
 
-// Other formations:
-// - .default
-// - .grid
-// - .stack
+// Other formations: .default, .pile, .list, .none
+// (there is no .grid formation)
 ```
 
 Combine all modifiers (`.dragContainer`, `.dragConfiguration`, `.dragPreviewsFormation`, `.onDragSessionUpdated`) on the same scroll view for a complete multi-item drag experience.
@@ -910,6 +918,22 @@ Combine all modifiers (`.dragContainer`, `.dragConfiguration`, `.dragPreviewsFor
 ### Overview
 
 Swift Charts supports three-dimensional plotting with `Chart3D`. Key components: `Chart3D` (container), `SurfacePlot` (continuous surfaces), `Chart3DPose` (camera control), `Chart3DSurfaceStyle` (surface appearance).
+
+#### Gotcha: conditional `ChartContent` crashes below a 27.0 deployment target
+
+This applies to **all** Swift Charts, not just `Chart3D`. With a minimum deployment target below 27.0, an `if`/`else` inside a `Chart { … }` closure triggers the warning "Conformance of `_ConditionalContent<TrueContent, FalseContent>` to `ChartContent` is only available in 27.0 or newer," and the app **can crash at runtime** when that content loads. Extract the conditional into a function or computed property annotated with `@ChartContentBuilder`:
+
+```swift
+@ChartContentBuilder
+func marks(for dp: DataPoint) -> some ChartContent {
+    if selectedMetric == "Rate" {
+        LineMark(x: .value("X", dp.index), y: .value("Y", dp.rate)).foregroundStyle(.blue)
+    } else {
+        LineMark(x: .value("X", dp.index), y: .value("Y", dp.signal))
+    }
+}
+// Chart(dataPoints, id: \.index) { marks(for: $0) }
+```
 
 ### Chart3D Container
 
@@ -1089,7 +1113,7 @@ Live Activities now appear on CarPlay displays for glanceable information while 
 
 #### ❌ Remove in iPadOS 26
 ```xml
-<key>UIRequiresFullscreen</key>
+<key>UIRequiresFullScreen</key>
 <!-- Entire property list key is deprecated (all values) -->
 ```
 
@@ -1124,11 +1148,11 @@ Apps must support resizable windows on iPad.
 🔧 `glassEffectID` for morphing transitions between glass elements
 🔧 `GlassEffectContainer` for multiple nearby glass elements
 🔧 `sharedBackgroundVisibility(.hidden)` to remove toolbar item from group background
-🔧 Sheet morphing from buttons (`navigationZoomTransition`)
+🔧 Sheet morphing from buttons (`.navigationTransition(.zoom(sourceID:in:))`)
 🔧 Search tab role (`Tab(role: .search)`)
 🔧 Compact search toolbar (`.searchToolbarBehavior(.minimize)`)
-🔧 Extra large buttons (`.controlSize(.extraLarge)`)
-🔧 Concentric rectangle shape (`.containerConcentric`)
+🔧 Extra large control size (`.controlSize(.extraLarge)`, available since iOS 17)
+🔧 Concentric rectangle shape (`ConcentricRectangle`)
 🔧 iPad menu bar (`.commands`)
 🔧 Window resize anchor (`.windowResizeAnchor()`)
 🔧 @Animatable macro for custom shapes/modifiers
@@ -1140,7 +1164,7 @@ Apps must support resizable windows on iPad.
 🔧 Safe area bars with blur (`.safeAreaBar()` + `.scrollEdgeEffectStyle()`)
 🔧 In-app URL opening (`openURL(url, prefersInApp: true)`)
 🔧 Close and confirm button roles (`Button(role: .close)`)
-🔧 Glass button styles (`GlassButtonStyle` — iOS 26.1+)
+🔧 Glass button styles (`.glass`/`.glassProminent`; the `GlassButtonStyle(_:)` init is iOS 26.1+)
 🔧 Button sizing control (`.buttonSizing()`)
 🔧 Toolbar morphing transitions (per-view `.toolbar {}` inside NavigationStack)
 🔧 DefaultToolbarItem for system components in toolbars
@@ -1173,6 +1197,7 @@ Apps must support resizable windows on iPad.
 | Drag delete not working | Enable `.dragConfiguration(allowDelete: true)` AND observe `.onDragSessionUpdated` |
 | SliderTickContentForEach won't compile | Iterate over numeric values (`chapters.map(\.time)`), not custom structs — see Slider section |
 | Toolbar not morphing during navigation | Move `.toolbar {}` from NavigationStack to each view inside it — see Liquid Glass section |
+| `.toolbarBackground` on TabView ignored | Known buggy/no-op at the TabView level on iOS 26. Apply `toolbarBackground`/`toolbarBackgroundVisibility`/`toolbarColorScheme` for `.tabBar` on each Tab's content instead. (Separate from the wrong-glass-variant cold-start bug, which no modifier fixes — see `axiom-design (skills/liquid-glass.md)` Known iOS 26 Limitations.) |
 
 ---
 

@@ -11,7 +11,6 @@ use std::os::unix::process::CommandExt;
 use std::ffi::{CString, c_char, c_int};
 
 const DOTENV_KEYCHAIN_SERVICE: &str = "com.automicvault.dotenv";
-const DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP: &str = "ZU76A67LGU.com.automicvault.dotenv";
 const ENCRYPTED_PREFIX: &str = "encrypted:";
 const DOTENV_PUBLIC_KEY_PREFIX: &str = "DOTENV_PUBLIC_KEY";
 const DOTENV_PRIVATE_KEY_PREFIX: &str = "DOTENV_PRIVATE_KEY";
@@ -3381,9 +3380,7 @@ trait DotenvKeychainBackend {
 struct SystemDotenvKeychainBackend;
 
 fn dotenv_keychain_access_group() -> &'static str {
-    option_env!("AV_DOTENV_KEYCHAIN_ACCESS_GROUP")
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP)
+    env!("AV_DOTENV_KEYCHAIN_ACCESS_GROUP")
 }
 
 fn run_dotenv_keychain_migrate(options: &DotenvKeychainMigrateOptions) -> Result<(), String> {
@@ -4415,10 +4412,7 @@ mod tests {
 
     #[test]
     fn dotenv_keychain_migration_reports_verify_failures() {
-        assert_eq!(
-            dotenv_keychain_access_group(),
-            DOTENV_DEFAULT_KEYCHAIN_ACCESS_GROUP
-        );
+        assert!(!dotenv_keychain_access_group().is_empty());
         let account =
             "DOTENV_PRIVATE_KEY:1111111111111111111111111111111111111111111111111111111111111111";
         let legacy_value = dotenv_test_private_key(10);
@@ -5307,7 +5301,7 @@ mod tests {
     fn dotenv_encryptable_keys_auto_select_secret_shaped_plaintext() {
         let ordinary = DotenvDocument::parse(
             PathBuf::from(".env"),
-            "DOTENV_PUBLIC_KEY=abc\nMIN_MACOS_VERSION=26.0\nNUKE_HELPER_VERSION=12\nTEAM_COMMON_NAME=\"Developer ID Application: Example\"\nTEAM_IDENTIFIER=ZU76A67LGU\nAWS_ACCOUNT_ID=123456789012\nAPI_BASE_URL=https://api.example.test\nAUTH_TOKEN_URL=https://auth.example.test/oauth/token\nNEXT_PUBLIC_TOKEN=visible\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghijklmnopqrstuvwxyz\nVITE_API_KEY=public-browser-config\nALREADY_SECRET=encrypted:abc\n",
+            "DOTENV_PUBLIC_KEY=abc\nMIN_MACOS_VERSION=26.0\nNUKE_HELPER_VERSION=12\nTEAM_COMMON_NAME=\"Developer ID Application: Example\"\nTEAM_IDENTIFIER=TEAM123456\nAWS_ACCOUNT_ID=123456789012\nAPI_BASE_URL=https://api.example.test\nAUTH_TOKEN_URL=https://auth.example.test/oauth/token\nNEXT_PUBLIC_TOKEN=visible\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghijklmnopqrstuvwxyz\nVITE_API_KEY=public-browser-config\nALREADY_SECRET=encrypted:abc\n",
         );
         assert!(ordinary.encryptable_keys(&[], &[]).is_empty());
         assert_eq!(

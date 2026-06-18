@@ -6,13 +6,13 @@ The public keychain item contract is:
 - class: generic password
 - service: `com.automicvault.dotenv`
 - account: `DOTENV_PRIVATE_KEY:<public-key-fingerprint>`
-- access group: `ZU76A67LGU.com.automicvault.dotenv`
+- access group: `<developer-team-id>.com.automicvault.dotenv`
 
 Companion apps that need dotenv private-key access must be signed by Team ID
-`ZU76A67LGU` and must include a `keychain-access-groups` entitlement containing
-`ZU76A67LGU.com.automicvault.dotenv`. Notarization and the same Developer ID
-team are not enough by themselves; macOS grants access only to signed binaries
-with the shared keychain access-group entitlement.
+`<developer-team-id>` and must include a `keychain-access-groups` entitlement
+containing `<developer-team-id>.com.automicvault.dotenv`. Notarization and the
+same Developer ID team are not enough by themselves; macOS grants access only to
+signed binaries with the shared keychain access-group entitlement.
 
 Developer ID macOS builds that carry this restricted entitlement must also
 include an eligible provisioning profile. Embed it in each entitled app bundle
@@ -31,7 +31,7 @@ helper is the entitled, profiled bundle that owns the shared keychain group.
 Before serving a dotenv keychain request, the daemon obtains the peer audit
 token from the UNIX-domain socket and validates the live sender with
 Security.framework code-signing requirements. Release builds authorize these
-CLI identifiers under Team ID `ZU76A67LGU`:
+CLI identifiers under the developer team ID:
 
 - `com.automicvault.av`
 - `com.automicvault.menu-helper.av`
@@ -46,7 +46,7 @@ and `SecItemDelete` query against the shared store must include:
 
 ```swift
 kSecUseDataProtectionKeychain: true
-kSecAttrAccessGroup: "ZU76A67LGU.com.automicvault.dotenv"
+kSecAttrAccessGroup: "<developer-team-id>.com.automicvault.dotenv"
 ```
 
 Queries must also include the stable class, service, and account fields above.

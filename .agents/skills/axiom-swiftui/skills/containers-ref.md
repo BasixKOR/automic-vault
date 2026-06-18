@@ -245,6 +245,21 @@ ScrollView {
 }
 ```
 
+#### AsyncImage with a custom URLSession (OS27)
+
+`.asyncImageURLSession(_:)` sets the `URLSession` every `AsyncImage` in the subtree uses to fetch image data — for shared caching, auth headers, or custom timeouts. Before OS27 there was no built-in hook to swap AsyncImage's session; you had to drop down to a manual loader.
+
+```swift
+ScrollView {
+    LazyVGrid(columns: columns, spacing: 2) {
+        ForEach(photos) { photo in
+            AsyncImage(url: photo.thumbnailURL) { $0.resizable() } placeholder: { Color.gray }
+        }
+    }
+}
+.asyncImageURLSession(imageSession)   // all platforms; @available(anyAppleOS 27.0)
+```
+
 ### Horizontal Carousel
 
 ```swift
@@ -581,6 +596,72 @@ Container values differ from environment values and preferences in scope:
 
 That bounded scope is the whole point — it's why `.listRowSeparator(.hidden)` doesn't accidentally affect a `LazyVStack` higher in the tree.
 
+### swipeActionsContainer() — Coordinate Swipe Actions in Custom Containers (OS27)
+
+`List` coordinates swipe actions automatically — opening a row's actions while another row's are open, or scrolling, dismisses the first. Custom row layouts (`ScrollView` + `LazyVStack`, custom `Layout`, etc.) didn't get that for free. `.swipeActionsContainer()` adds it:
+
+```swift
+ScrollView {
+    LazyVStack {
+        ForEach(messages) { message in
+            MessageRow(message)
+                .swipeActions { Button("Archive") { archive(message) } }
+        }
+    }
+}
+.swipeActionsContainer()   // coordinates dismissal + mutual exclusion across rows
+```
+
+It "coordinates swipe action dismissal and mutual exclusion across rows in a container" — only one row's actions open at a time, scrolling dismisses them, and tapping outside closes them. Don't add it to a `List` — that already coordinates, so the modifier is redundant there.
+
+#### React to reveal or hide
+
+The `swipeActions(…:onPresentationChanged:)` overload adds a `(Bool) -> Void` callback that fires when a row's actions are shown or hidden — drive haptics, log analytics, or sync an "open row" binding. `content` is the first trailing closure, `onPresentationChanged:` the second:
+
+```swift
+MessageRow(message)
+    .swipeActions {
+        Button("Archive") { archive(message) }
+    } onPresentationChanged: { isRevealed in
+        // isRevealed == true when this row's actions open, false when they close
+    }
+```
+
+#### Availability and fallback
+
+Both `swipeActionsContainer()` and the `onPresentationChanged:` overload are `@available(iOS 27, macOS 27, watchOS 27, visionOS 27, *)`, tvOS unavailable. Swipe actions outside `List` are new in 27, so gate and fall back to `List` (which coordinates on its own) or a custom drag (see `gestures.md`):
+
+```swift
+if #available(iOS 27, *) {
+    ScrollView { LazyVStack { rows } }
+        .swipeActionsContainer()
+} else {
+    List { rows }   // pre-27: List is the only built-in swipe-actions path
+}
+```
+
+### reorderable() — Drag-to-Reorder in Any Container (OS27)
+
+Before OS27, drag-to-reorder meant `List` + `.onMove`. The 27 cycle adds `.reorderable()` on a `ForEach` (any `DynamicViewContent`) plus `.reorderContainer(for:move:)` on the enclosing container, so reordering works in a `VStack`, grid, or custom layout — not just `List`:
+
+```swift
+@State private var photos: [Photo] = loadPhotos()
+
+var body: some View {
+    VStack {
+        ForEach(photos) { photo in
+            PhotoView(photo: photo)
+        }
+        .reorderable()                       // makes the ForEach draggable
+    }
+    .reorderContainer(for: Photo.self) { difference in
+        move(difference: difference)         // apply the ReorderDifference to `photos`
+    }
+}
+```
+
+`.reorderable()` marks the items draggable; `.reorderContainer(for:move:)` receives a `ReorderDifference` (the item IDs + destination positions) you apply to your data. The system animates the placeholder. Use `.reorderable(collectionID:)` + the `in collectionID:` overload of `reorderContainer` to move items *between* collections. (Not tvOS.)
+
 ### Anti-Patterns
 
 | Mistake | Fix |
@@ -599,8 +680,8 @@ That bounded scope is the whole point — it's why `.listRowSeparator(.hidden)` 
 
 ## Resources
 
-**WWDC**: 2020-10031, 2022-10056, 2023-10148, 2024-10144, 2024-10146, 2025-256
+**WWDC**: 2020-10031, 2022-10056, 2023-10148, 2024-10144, 2024-10146, 2025-256, 2026-321
 
-**Docs**: /swiftui/lazyvstack, /swiftui/lazyvgrid, /swiftui/lazyhgrid, /swiftui/grid, /swiftui/outlinegroup, /swiftui/disclosuregroup, /swiftui/group/init(subviews:transform:), /swiftui/group/init(sections:transform:), /swiftui/foreach/init(subviews:content:), /swiftui/foreach/init(sections:content:), /swiftui/subview, /swiftui/sectionconfiguration, /swiftui/containervalues, /swiftui/creating-custom-container-views
+**Docs**: /swiftui/lazyvstack, /swiftui/lazyvgrid, /swiftui/lazyhgrid, /swiftui/grid, /swiftui/outlinegroup, /swiftui/disclosuregroup, /swiftui/group/init(subviews:transform:), /swiftui/group/init(sections:transform:), /swiftui/foreach/init(subviews:content:), /swiftui/foreach/init(sections:content:), /swiftui/subview, /swiftui/sectionconfiguration, /swiftui/containervalues, /swiftui/creating-custom-container-views, /swiftui/view/swipeactionscontainer(), /swiftui/view/asyncimageurlsession(_:), /swiftui/dynamicviewcontent/reorderable(), /swiftui/view/reordercontainer(for:move:), /swiftui/reordering-items-in-lists-stacks-grids-and-custom-layouts
 
 **Skills**: skills/layout.md, skills/layout-ref.md, skills/nav.md, skills/26-ref.md

@@ -1,9 +1,0 @@
-node_modules
-dist
-.DS_Store
-.env
-
-# Generated QA/render artifacts; keep local unless explicitly published.
-renders
-snapshots
-.hyperframes/anim-map

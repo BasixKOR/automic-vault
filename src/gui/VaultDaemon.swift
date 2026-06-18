@@ -328,7 +328,6 @@ private enum VaultDaemonEvent: Encodable {
 
 final class VaultDaemon {
     private static let dotenvKeychainService = "com.automicvault.dotenv"
-    private static let defaultDotenvKeychainAccessGroup = "ZU76A67LGU.com.automicvault.dotenv"
     private static let dotenvPrivateKeyAccountPrefix = "DOTENV_PRIVATE_KEY:"
     private static let dotenvBrokerAuthorizedClientsInfoKey = "AVDotenvKeychainBrokerAuthorizedClients"
     private static let defaultDotenvBrokerAuthorizedClientIdentifiers = [
@@ -365,9 +364,18 @@ final class VaultDaemon {
         self.configuration = configuration
         self.openMainWindow = openMainWindow
         self.notifyUser = notifyUser
-        self.dotenvKeychainAccessGroup =
-            Bundle.main.object(forInfoDictionaryKey: "AVDotenvKeychainAccessGroup") as? String
-            ?? Self.defaultDotenvKeychainAccessGroup
+        self.dotenvKeychainAccessGroup = Self.configuredDotenvKeychainAccessGroup()
+    }
+
+    private static func configuredDotenvKeychainAccessGroup() -> String {
+        guard let accessGroup = Bundle.main.object(
+            forInfoDictionaryKey: "AVDotenvKeychainAccessGroup"
+        ) as? String,
+              accessGroup.isEmpty == false
+        else {
+            preconditionFailure("AVDotenvKeychainAccessGroup must be set at build time")
+        }
+        return accessGroup
     }
 
     func start() {
@@ -1115,12 +1123,9 @@ final class VaultDaemon {
             }
         }
 
-        let configuredTeamIdentifier = dotenvKeychainAccessGroup
+        let teamIdentifier = dotenvKeychainAccessGroup
             .components(separatedBy: ".")
             .first ?? ""
-        let teamIdentifier = configuredTeamIdentifier.isEmpty
-            ? "ZU76A67LGU"
-            : configuredTeamIdentifier
         return Self.defaultDotenvBrokerAuthorizedClientIdentifiers.map { identifier in
             "identifier \"\(identifier)\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
         }

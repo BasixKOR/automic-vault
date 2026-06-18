@@ -1,7 +1,0 @@
-interface:
-  display_name: "GitHub Isotope"
-  short_description: "Create Automic Vault isotope forks"
-  default_prompt: "Use $github-isotope to create an Automic Vault isotope from a GitHub repository."
-
-policy:
-  allow_implicit_invocation: true

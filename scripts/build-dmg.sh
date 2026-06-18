@@ -9,9 +9,9 @@ cli_style_init "Automic Vault"
 build_dir="${repo_root}/target/gui"
 target_dir="${repo_root}/target"
 default_background="${repo_root}/assets/dmg-bg@2x.png"
-release_s3_uri="s3://automicvault.com/Automic Vault.dmg"
-scanner_s3_uri="s3://automicvault.com/scanner.gz"
-scanner_script_s3_uri="s3://automicvault.com/scanner.sh"
+release_s3_uri="s3://${AWS_S3_BUCKET}/Automic Vault.dmg"
+scanner_s3_uri="s3://${AWS_S3_BUCKET}/scanner.gz"
+scanner_script_s3_uri="s3://${AWS_S3_BUCKET}/scanner.sh"
 scanner_script_source="${repo_root}/scripts/scanner.sh"
 release_cloudfront_alias="${AUTOMIC_VAULT_RELEASE_DOMAIN:-automicvault.com}"
 release_cloudfront_path="/Automic%20Vault.dmg"
@@ -30,23 +30,6 @@ notarize=false
 install_app=false
 publish_release=false
 clobber_release=false
-
-load_build_env() {
-  local env_file="${repo_root}/.env"
-  [[ -f "${env_file}" ]] || return
-
-  local line key value
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    line="${line%$'\r'}"
-    [[ -n "${line}" && "${line}" != \#* && "${line}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
-
-    key="${line%%=*}"
-    value="${line#*=}"
-    if [[ -z "${!key+x}" ]]; then
-      export "${key}=${value}"
-    fi
-  done <"${env_file}"
-}
 
 unquote_build_env_value() {
   local value="$1"
@@ -70,6 +53,58 @@ normalize_codesign_identity() {
   else
     printf 'Developer ID Application: %s' "${identity}"
   fi
+}
+
+team_identifier_from_identity() {
+  local identity="${1}"
+  if [[ "${identity}" =~ \(([A-Z0-9]+)\)[[:space:]]*$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+valid_team_identifier() {
+  local team_identifier="${1}"
+  if [[ "${team_identifier}" =~ ^[A-Z0-9]+$ ]]; then
+    printf '%s' "${team_identifier}"
+  fi
+}
+
+default_team_identifier() {
+  local team_identifier
+  if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "${APPLE_TEAM_ID}")")"
+    if [[ -n "${team_identifier}" ]]; then
+      printf '%s' "${team_identifier}"
+      return
+    fi
+  fi
+  if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    team_identifier="$(team_identifier_from_identity "${CODESIGN_IDENTITY}")"
+    if [[ -n "${team_identifier}" ]]; then
+      printf '%s' "${team_identifier}"
+      return
+    fi
+  fi
+  security find-identity -v -p codesigning 2>/dev/null |
+    sed -n 's/.*"Developer ID Application: .* (\([A-Z0-9][A-Z0-9]*\))".*/\1/p' |
+    head -n 1
+}
+
+configure_team_identifier() {
+  local team_identifier
+  if [[ -n "${TEAM_IDENTIFIER:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "${TEAM_IDENTIFIER}")")"
+    if [[ -n "${team_identifier}" ]]; then
+      TEAM_IDENTIFIER="${team_identifier}"
+      export TEAM_IDENTIFIER
+      return
+    fi
+  fi
+
+  team_identifier="$(default_team_identifier)"
+  [[ -n "${team_identifier}" ]] || return
+  TEAM_IDENTIFIER="${team_identifier}"
+  export TEAM_IDENTIFIER
 }
 
 configure_codesign_identity() {
@@ -344,8 +379,8 @@ version_gt() {
 ensure_release_worktree_state() {
   git -C "${repo_root}" diff --cached --quiet ||
     cli_die "Index has staged changes; commit or stash them before publishing"
-  git -C "${repo_root}" diff --quiet -- Cargo.toml Cargo.lock .env src/lib/rs/core.rs ||
-    cli_die "Cargo.toml, Cargo.lock, .env, or src/lib/rs/core.rs has unstaged changes; commit or stash them before publishing"
+  git -C "${repo_root}" diff --quiet -- Cargo.toml Cargo.lock src/lib/rs/core.rs ||
+    cli_die "Cargo.toml, Cargo.lock, or src/lib/rs/core.rs has unstaged changes; commit or stash them before publishing"
 }
 
 generate_release_plan() {
@@ -500,17 +535,15 @@ ${compare_context}
 
 The publish script has already updated Cargo.toml and Cargo.lock in the working tree, but has not committed yet.
 
-Important: .env is safe to read. It contains no plaintext sensitive keys; sensitive values are encrypted.
-
 Read src/AGENTS.md component versioning instructions, then inspect the release changes and current working tree.
 Decide whether these component versions needed to be bumped:
-- .env NUKE_HELPER_VERSION, whenever privileged helper behavior changes, including XPC/helper interface changes.
-- .env NUKE_PROTOCOL_VERSION plus src/lib/rs/core.rs PROTOCOL_VERSION, whenever the av serve protocol contract changes.
+- NUKE_HELPER_VERSION, whenever privileged helper behavior changes, including XPC/helper interface changes.
+- NUKE_PROTOCOL_VERSION plus src/lib/rs/core.rs PROTOCOL_VERSION, whenever the av serve protocol contract changes.
 
-If a required bump was not done, edit the file(s) now and bump by the smallest appropriate amount.
+If a required src/lib/rs/core.rs bump was not done, edit it now and bump by the smallest appropriate amount.
 If a required bump was already done, leave it unchanged.
 If no bump is required, leave files unchanged.
-Do not edit Cargo.toml, Cargo.lock, release notes, or any file other than .env and src/lib/rs/core.rs.
+Do not read or edit .env. Do not edit Cargo.toml, Cargo.lock, release notes, or any file other than src/lib/rs/core.rs.
 Do not create commits.
 
 Output exactly this format, with no code fence and no preamble:
@@ -544,7 +577,7 @@ commit_release_version() {
   local version="$1"
   local tag="v${version}"
 
-  git -C "${repo_root}" add Cargo.toml Cargo.lock .env src/lib/rs/core.rs
+  git -C "${repo_root}" add Cargo.toml Cargo.lock src/lib/rs/core.rs
 
   if git -C "${repo_root}" diff --cached --quiet; then
     cli_die "Release version files were unchanged after version bump"
@@ -672,7 +705,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-load_build_env
+configure_codesign_identity
+configure_team_identifier
 configure_codesign_identity
 ensure_isotope_sources_present
 

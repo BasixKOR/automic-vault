@@ -9,23 +9,6 @@ PUBLISH_BUILD=false
 source "$ROOT_DIR/scripts/cli-style.sh"
 cli_style_init "Automic Vault"
 
-load_build_env() {
-  local env_file="$ROOT_DIR/.env"
-  [[ -f "$env_file" ]] || return
-
-  local line key value
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -n "$line" && "$line" != \#* && "$line" =~ '^[A-Za-z_][A-Za-z0-9_]*=' ]] || continue
-
-    key="${line%%=*}"
-    value="${line#*=}"
-    if (( ! ${+parameters[$key]} )); then
-      export "$key=$value"
-    fi
-  done <"$env_file"
-}
-
 unquote_build_env_value() {
   local value="$1"
   case "$value" in
@@ -39,6 +22,25 @@ unquote_build_env_value() {
       ;;
   esac
   printf '%s' "$value"
+}
+
+load_build_env_defaults() {
+  local env_file="$ROOT_DIR/.env"
+  [[ -f "$env_file" ]] || return
+
+  local line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      MIN_MACOS_VERSION|NUKE_PROTOCOL_VERSION|NUKE_HELPER_VERSION)
+        if (( ! ${+parameters[$key]} )); then
+          export "$key=$(unquote_build_env_value "$value")"
+        fi
+        ;;
+    esac
+  done <"$env_file"
 }
 
 normalize_codesign_identity() {
@@ -77,11 +79,49 @@ team_identifier_from_identity() {
   fi
 }
 
+default_team_identifier() {
+  local team_identifier
+  if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$APPLE_TEAM_ID")")"
+    if [[ -n "$team_identifier" ]]; then
+      printf '%s' "$team_identifier"
+      return
+    fi
+  fi
+  if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    team_identifier="$(team_identifier_from_identity "$CODESIGN_IDENTITY")"
+    if [[ -n "$team_identifier" ]]; then
+      printf '%s' "$team_identifier"
+      return
+    fi
+  fi
+  security find-identity -v -p codesigning 2>/dev/null |
+    sed -n 's/.*"Developer ID Application: .* (\([A-Z0-9][A-Z0-9]*\))".*/\1/p' |
+    head -n 1
+}
+
 valid_team_identifier() {
   local team_identifier="$1"
   if [[ "$team_identifier" =~ '^[A-Z0-9]+$' ]]; then
     printf '%s' "$team_identifier"
   fi
+}
+
+configure_team_identifier() {
+  local team_identifier
+  if [[ -n "${TEAM_IDENTIFIER:-}" ]]; then
+    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$TEAM_IDENTIFIER")")"
+    if [[ -n "$team_identifier" ]]; then
+      TEAM_IDENTIFIER="$team_identifier"
+      export TEAM_IDENTIFIER
+      return
+    fi
+  fi
+
+  team_identifier="$(default_team_identifier)"
+  [[ -n "$team_identifier" ]] || return
+  TEAM_IDENTIFIER="$team_identifier"
+  export TEAM_IDENTIFIER
 }
 
 configure_dotenv_keychain_access_group() {
@@ -91,19 +131,8 @@ configure_dotenv_keychain_access_group() {
     return
   fi
 
-  local team_identifier=""
-  if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
-    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$APPLE_TEAM_ID")")"
-  fi
-  if [[ -z "$team_identifier" && -n "${TEAM_IDENTIFIER:-}" ]]; then
-    team_identifier="$(valid_team_identifier "$(unquote_build_env_value "$TEAM_IDENTIFIER")")"
-  fi
-  if [[ -z "$team_identifier" && -n "${CODESIGN_IDENTITY:-}" ]]; then
-    team_identifier="$(team_identifier_from_identity "$CODESIGN_IDENTITY")"
-  fi
-  [[ -n "$team_identifier" ]] || team_identifier="ZU76A67LGU"
-
-  AV_DOTENV_KEYCHAIN_ACCESS_GROUP="${team_identifier}.com.automicvault.dotenv"
+  [[ -n "${TEAM_IDENTIFIER:-}" ]] || cli_die "Set TEAM_IDENTIFIER or configure an Apple code-signing identity"
+  AV_DOTENV_KEYCHAIN_ACCESS_GROUP="${TEAM_IDENTIFIER}.com.automicvault.dotenv"
   export AV_DOTENV_KEYCHAIN_ACCESS_GROUP
 }
 
@@ -164,7 +193,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-load_build_env
+load_build_env_defaults
+configure_codesign_identity
+configure_team_identifier
 configure_codesign_identity
 configure_dotenv_keychain_access_group
 
@@ -211,10 +242,10 @@ DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED=false
 if uses_real_codesign_identity; then
   DOTENV_KEYCHAIN_ENTITLEMENT_ENABLED=true
 fi
-[[ -n "${MIN_MACOS_VERSION:-}" ]] || cli_die "Set MIN_MACOS_VERSION in .env"
+[[ -n "${MIN_MACOS_VERSION:-}" ]] || cli_die "Set MIN_MACOS_VERSION in the environment"
 NUKE_PROTOCOL_VERSION="$(rust_protocol_version)"
 [[ -n "$NUKE_PROTOCOL_VERSION" ]] || cli_die "Could not read PROTOCOL_VERSION from src/lib/rs/core.rs"
-[[ -n "${NUKE_HELPER_VERSION:-}" ]] || cli_die "Set NUKE_HELPER_VERSION in .env"
+[[ -n "${NUKE_HELPER_VERSION:-}" ]] || cli_die "Set NUKE_HELPER_VERSION in the environment"
 APP_VERSION="$(awk -F'\"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 

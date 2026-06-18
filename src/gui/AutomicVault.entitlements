@@ -5,7 +5,7 @@
 <dict>
   <key>keychain-access-groups</key>
   <array>
-    <string>ZU76A67LGU.com.automicvault.dotenv</string>
+    <string>$(AppIdentifierPrefix)com.automicvault.dotenv</string>
   </array>
 </dict>
 </plist>
