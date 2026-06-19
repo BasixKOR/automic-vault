@@ -10,6 +10,9 @@ permissions:
   contents: read
   statuses: write
 
+env:
+  TEAM_IDENTIFIER: AB12A12ABC  # stops tests failing
+
 jobs:
   coveralls:
     name: Coveralls
@@ -39,6 +42,11 @@ jobs:
           git diff --exit-code -- \
             data/combined.json \
             src/lib/rs/fixtures/coverage-combined.json
+
+      - name: Install debug package database
+        run: |
+          sudo mkdir -p /var/db/automic-vault
+          sudo cp data/combined.json /var/db/automic-vault/db.json
 
       - name: Generate Rust coverage
         env:
