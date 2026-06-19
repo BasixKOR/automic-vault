@@ -274,3 +274,159 @@ pub(crate) enum InstallIntent {
 pub(crate) struct PackageMutationLock {
     pub(crate) file: File,
 }
+
+impl InstallPlan {
+    pub(crate) fn for_i(package_name: String, root_formula: String) -> Self {
+        let opt_root = opt_pkg_root();
+        let stable_root = opt_root.join(&package_name);
+        let install_root = opt_root.join(&package_name);
+        Self {
+            mode: Mode::I,
+            package_name,
+            root_formula,
+            stable_root,
+            install_root,
+            tmp_root: temp_root_for_target_root(
+                &opt_root,
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            ),
+        }
+    }
+
+    pub(crate) fn for_i_npm(package_name: String, root_formula: String, npm_package: &str) -> Self {
+        let npm_root = opt_npm_root();
+        let stable_root = npm_root.join(npm_package_install_relative_path(npm_package));
+        let install_root = stable_root.clone();
+        Self {
+            mode: Mode::I,
+            package_name,
+            root_formula,
+            stable_root,
+            install_root,
+            tmp_root: temp_root_for_target_root(
+                &npm_root,
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            ),
+        }
+    }
+
+    pub(crate) fn for_i_pip(package_name: String, root_formula: String, pip_package: &str) -> Self {
+        let pip_root = opt_pip_root();
+        let stable_root = pip_root.join(pip_package_install_leaf_name(pip_package));
+        let install_root = stable_root.clone();
+        Self {
+            mode: Mode::I,
+            package_name,
+            root_formula,
+            stable_root,
+            install_root,
+            tmp_root: temp_root_for_target_root(
+                &pip_root,
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            ),
+        }
+    }
+
+    pub(crate) fn for_i_isotope(package_name: String, isotope_name: &str) -> Self {
+        let isotope_root = opt_pkg_root().join(ISOTOPE_INSTALL_ROOT_DIR);
+        let stable_root = isotope_root.join(isotope_name);
+        let install_root = stable_root.clone();
+        Self {
+            mode: Mode::I,
+            package_name: package_name.clone(),
+            root_formula: package_name,
+            stable_root,
+            install_root,
+            tmp_root: temp_root_for_target_root(
+                &isotope_root,
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            ),
+        }
+    }
+
+    pub(crate) fn for_i_radioisotope(package_name: String, root_formula: String) -> Self {
+        let opt_root = opt_pkg_root();
+        let stable_root = opt_root.join(&root_formula);
+        let install_root = stable_root.clone();
+        Self {
+            mode: Mode::I,
+            package_name,
+            root_formula,
+            stable_root,
+            install_root,
+            tmp_root: temp_root_for_target_root(
+                &opt_root,
+                Path::new(SYSTEM_TMP_ROOT),
+                Path::new(TMP_TOOL_ROOT),
+            ),
+        }
+    }
+
+    pub(crate) fn actual_target_dir(&self, _formula: &str) -> PathBuf {
+        self.install_root.clone()
+    }
+
+    pub(crate) fn stable_target_dir(&self, _formula: &str) -> PathBuf {
+        self.stable_root.clone()
+    }
+
+    pub(crate) fn receipt_path(&self, formula: &str) -> PathBuf {
+        self.install_root
+            .join(RECEIPTS_DIR)
+            .join(format!("{formula}.json"))
+    }
+
+    pub(crate) fn package_manifest_path(&self) -> PathBuf {
+        self.install_root.join(STUB_MANIFEST)
+    }
+
+    pub(crate) fn root_receipt_path(&self) -> PathBuf {
+        self.install_root.join(ROOT_RECEIPT)
+    }
+
+    pub(crate) fn root_executables_manifest_path(&self) -> PathBuf {
+        self.install_root.join(ROOT_EXECUTABLES_MANIFEST)
+    }
+
+    pub(crate) fn root_ownership_manifest_path(&self) -> PathBuf {
+        self.install_root.join(ROOT_OWNERSHIP_MANIFEST)
+    }
+}
+
+pub(crate) fn acquire_package_mutation_lock() -> Result<PackageMutationLock, String> {
+    acquire_package_mutation_lock_at(&opt_pkg_root())
+}
+
+pub(crate) fn acquire_package_mutation_lock_at(root: &Path) -> Result<PackageMutationLock, String> {
+    fs::create_dir_all(root)
+        .map_err(|err| format!("failed to create {}: {err}", root.display()))?;
+    let path = root.join(PKG_STATE_LOCK);
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+    if result != 0 {
+        return Err(format!(
+            "failed to lock {}: {}",
+            path.display(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(PackageMutationLock { file })
+}
+
+impl Drop for PackageMutationLock {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
