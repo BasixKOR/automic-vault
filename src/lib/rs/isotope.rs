@@ -228,6 +228,96 @@ pub(crate) fn detect_isotope_install_reasons(name: &str) -> Option<Result<Vec<St
     }))
 }
 
+pub(crate) fn isotope_replaced_package_name(
+    record: &IsotopePackageData,
+) -> Result<Option<String>, String> {
+    if isotope_has_post_install(&record.name) {
+        return Ok(None);
+    }
+    let Some(replaces) = record.replaces.as_ref() else {
+        return Ok(None);
+    };
+    crate::cli::parse_uninstall_package_name(&OsString::from(replaces))
+        .map(Some)
+        .map_err(|err| format!("invalid isotope replacement {}: {err}", replaces))
+}
+
+pub(crate) fn isotope_replaced_package_target(
+    record: &IsotopePackageData,
+) -> Result<Option<PackageAliasTarget>, String> {
+    if isotope_has_post_install(&record.name) {
+        return Ok(None);
+    }
+    let Some(replaces) = record.replaces.as_ref() else {
+        return Ok(None);
+    };
+    match parse_package_alias_target(replaces)
+        .map_err(|err| format!("invalid isotope replacement {}: {err}", replaces))?
+    {
+        target
+        @ (PackageAliasTarget::HomebrewFormula(_) | PackageAliasTarget::VendorPackage(_)) => {
+            Ok(Some(target))
+        }
+        _ => Ok(None),
+    }
+}
+
+pub(crate) fn isotope_modified_package_target(
+    record: &IsotopePackageData,
+) -> Result<Option<PackageAliasTarget>, String> {
+    let modifies = record.modifies.as_ref().or_else(|| {
+        isotope_has_post_install(&record.name)
+            .then_some(record.replaces.as_ref())
+            .flatten()
+    });
+    let Some(modifies) = modifies else {
+        return Ok(None);
+    };
+    match parse_package_alias_target(modifies)
+        .map_err(|err| format!("invalid isotope modification {}: {err}", modifies))?
+    {
+        target
+        @ (PackageAliasTarget::HomebrewFormula(_) | PackageAliasTarget::VendorPackage(_)) => {
+            Ok(Some(target))
+        }
+        _ => Err(format!(
+            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae or vendor packages",
+            modifies
+        )),
+    }
+}
+
+pub(crate) fn isotope_modified_package_name(
+    record: &IsotopePackageData,
+) -> Result<Option<String>, String> {
+    isotope_modified_package_target(record)?
+        .as_ref()
+        .map(radioisotope_modified_install_name)
+        .transpose()
+}
+
+pub(crate) fn radioisotope_modified_install_name(
+    target: &PackageAliasTarget,
+) -> Result<String, String> {
+    match target {
+        PackageAliasTarget::HomebrewFormula(formula)
+        | PackageAliasTarget::VendorPackage(formula) => Ok(formula.clone()),
+        _ => Err(format!(
+            "invalid isotope modification {}: radioisotopes may only modify Homebrew formulae or vendor packages",
+            target.display_name()
+        )),
+    }
+}
+
+pub(crate) fn isotope_modified_or_replaced_package_name(
+    record: &IsotopePackageData,
+) -> Result<Option<String>, String> {
+    match isotope_modified_package_name(record)? {
+        Some(package) => Ok(Some(package)),
+        None => isotope_replaced_package_name(record),
+    }
+}
+
 pub(crate) fn package_security_state(info: &PackageInfo) -> Option<PackageSecurityState> {
     let mut identifiers = vec![info.package_name.clone(), info.qualified_name.clone()];
     if let Some(source) = info.source.as_ref() {
