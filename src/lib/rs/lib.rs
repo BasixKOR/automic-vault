@@ -357,50 +357,6 @@ struct SecretScannerRequest {
     isotopes_only: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct TraceRequest {
-    command: String,
-    agent: TraceAgent,
-    output: OutputMode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TraceAgent {
-    Auto,
-    Codex,
-    Claude,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-struct TraceReport {
-    command: String,
-    agent: String,
-    #[serde(rename = "safetyRating")]
-    safety_rating: TraceSafetyRating,
-    steps: Vec<TraceStep>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct TraceSafetyRating {
-    level: String,
-    reasons: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-struct TraceStep {
-    description: String,
-    operation: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    network: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TraceAgentOutput {
-    steps: Vec<TraceStep>,
-}
-
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct SecretScannerReport {
     scope: SecretScannerScope,

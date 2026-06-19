@@ -1,5 +1,49 @@
 use super::*;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TraceRequest {
+    pub(crate) command: String,
+    pub(crate) agent: TraceAgent,
+    pub(crate) output: OutputMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TraceAgent {
+    Auto,
+    Codex,
+    Claude,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct TraceReport {
+    pub(crate) command: String,
+    pub(crate) agent: String,
+    #[serde(rename = "safetyRating")]
+    pub(crate) safety_rating: TraceSafetyRating,
+    pub(crate) steps: Vec<TraceStep>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct TraceSafetyRating {
+    pub(crate) level: String,
+    pub(crate) reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub(crate) struct TraceStep {
+    pub(crate) description: String,
+    pub(crate) operation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) network: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct TraceAgentOutput {
+    pub(crate) steps: Vec<TraceStep>,
+}
+
 const TRACE_SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 const MAX_TRACE_SCRIPT_BYTES: u64 = 256 * 1024;
 
