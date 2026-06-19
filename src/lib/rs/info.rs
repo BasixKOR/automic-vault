@@ -2638,35 +2638,6 @@ pub(crate) fn installed_pip_package_refs(
     Ok(packages)
 }
 
-pub(crate) fn load_or_resolve_package_receipt(
-    package_name: &str,
-    install_root: &Path,
-) -> Result<PackageReceipt, String> {
-    load_package_receipt(&install_root.join(ROOT_RECEIPT))?
-        .ok_or_else(|| format!("package {package_name} is installed but missing package metadata"))
-}
-
-pub(crate) fn load_package_receipt(path: &Path) -> Result<Option<PackageReceipt>, String> {
-    let data = match fs::read(path) {
-        Ok(data) => data,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
-    };
-    let receipt = serde_json::from_slice(&data)
-        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
-    Ok(Some(receipt))
-}
-
-pub(crate) fn write_package_receipt(path: &Path, receipt: &PackageReceipt) -> Result<(), String> {
-    let data = serde_json::to_vec_pretty(receipt)
-        .map_err(|err| format!("failed to serialize package receipt: {err}"))?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
-    }
-    fs::write(path, data).map_err(|err| format!("failed to write {}: {err}", path.display()))
-}
-
 pub(crate) fn resolve_formula_latest_version(
     config: &Config,
     formula: &str,
