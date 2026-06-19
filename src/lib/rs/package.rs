@@ -1,5 +1,7 @@
 use super::*;
 
+pub(crate) const SYSTEM_TMP_ROOT: &str = "/tmp";
+
 pub(crate) const BREW_PACKAGE_PREFIX: &str = "brew:";
 
 pub(crate) const CASK_PACKAGE_PREFIX: &str = "cask:";

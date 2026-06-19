@@ -1,5 +1,83 @@
 use super::*;
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct FormulaInfo {
+    #[serde(default)]
+    pub(crate) desc: String,
+    #[serde(default)]
+    pub(crate) homepage: String,
+    #[serde(default)]
+    pub(crate) license: Option<String>,
+    #[serde(default)]
+    pub(crate) versions: FormulaVersions,
+    #[serde(default)]
+    pub(crate) revision: u32,
+    #[serde(default)]
+    pub(crate) dependencies: Vec<String>,
+    pub(crate) bottle: Bottle,
+    pub(crate) disabled: bool,
+    #[serde(default)]
+    pub(crate) post_install_defined: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PypiPackageInfoResponse {
+    pub(crate) info: PypiPackageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PypiPackageInfo {
+    pub(crate) version: String,
+    #[serde(default)]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) home_page: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct NpmPackageMetadata {
+    pub(crate) description: Option<String>,
+    pub(crate) homepage: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(crate) struct FormulaVersions {
+    #[serde(default)]
+    pub(crate) stable: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GitHubCommitListEntry {
+    pub(crate) commit: GitHubCommit,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GitHubCommit {
+    pub(crate) committer: Option<GitHubCommitIdentity>,
+    pub(crate) author: Option<GitHubCommitIdentity>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GitHubCommitIdentity {
+    pub(crate) date: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Bottle {
+    pub(crate) stable: Option<BottleStable>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct BottleStable {
+    pub(crate) files: HashMap<String, BottleFile>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct BottleFile {
+    pub(crate) sha256: String,
+    pub(crate) url: String,
+}
+
 pub(crate) const INFO_WIDTH: usize = 64;
 pub(crate) const INFO_INNER_WIDTH: usize = INFO_WIDTH - 2;
 pub(crate) const INFO_LABEL_WIDTH: usize = 14;

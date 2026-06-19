@@ -1,5 +1,7 @@
 use super::*;
 
+pub(crate) const SCANNER_WRAPPER_UI_ENV: &str = "AUTOMIC_VAULT_SCANNER_WRAPPER_UI";
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SecretScannerRequest {
     pub(crate) path: Option<PathBuf>,

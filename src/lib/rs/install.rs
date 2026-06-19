@@ -1,3 +1,106 @@
+pub(crate) const RELOCATABLE_HOMEBREW_PREFIX: &str = "/opt/homebrew";
+pub(crate) const HOMEBREW_PREFIX_PLACEHOLDER: &str = "@@HOMEBREW_PREFIX@@";
+pub(crate) const HOMEBREW_CELLAR_PLACEHOLDER: &str = "@@HOMEBREW_CELLAR@@";
+pub(crate) const HOMEBREW_REPOSITORY_PLACEHOLDER: &str = "@@HOMEBREW_REPOSITORY@@";
+pub(crate) const HOMEBREW_LIBRARY_PLACEHOLDER: &str = "@@HOMEBREW_LIBRARY@@";
+pub(crate) const HOMEBREW_PERL_PLACEHOLDER: &str = "@@HOMEBREW_PERL@@";
+pub(crate) const HOMEBREW_JAVA_PLACEHOLDER: &str = "@@HOMEBREW_JAVA@@";
+pub(crate) const OPENSSL_CA_CERTIFICATES_DIR: &str = "share/ca-certificates";
+pub(crate) const OPENSSL_CA_CERTIFICATES_CERT: &str = "share/ca-certificates/cacert.pem";
+pub(crate) const OPENSSL_CERT_PEM_PATH: &str = "/etc/openssl@3/cert.pem";
+pub(crate) const OPENSSL_CERT_PEM_DESTINATION_DIR: &str = "ssl";
+pub(crate) const OPENSSL_CERT_PEM_DESTINATION: &str = "ssl/cert.pem";
+pub(crate) const TMP_TOOL_ROOT: &str = "/tmp/nucleus";
+#[cfg(feature = "gold-release")]
+pub(crate) const SELF_UPDATE_TARGET: &str = "/usr/local/bin/av";
+#[cfg(feature = "gold-release")]
+pub(crate) const SELF_UPDATE_REPO: &str = "mxcl/nucleus";
+pub(crate) const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
+pub(crate) const SAFE_BINARY_PATH_BYTES: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+-/@";
+pub(crate) const HOMEBREW_NEEDLES: [&[u8]; 6] = [
+    b"@@HOMEBREW_PREFIX@@",
+    b"@@HOMEBREW_CELLAR@@",
+    b"@@HOMEBREW_REPOSITORY@@",
+    b"@@HOMEBREW_LIBRARY@@",
+    b"@@HOMEBREW_PERL@@",
+    b"@@HOMEBREW_JAVA@@",
+];
+pub(crate) static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
+
+pub(crate) fn configure_debug_install_environment() {
+    if !homebrew_debug_allowance_enabled() {
+        return;
+    }
+
+    let mut flags = env::var("PKG_ALLOW").unwrap_or_default();
+    for flag in ["unsupported-formulas", "relocation-failures"] {
+        if pkg_allow_value_contains(&flags, flag) {
+            continue;
+        }
+        if !flags.is_empty() {
+            flags.push(':');
+        }
+        flags.push_str(flag);
+    }
+    // SAFETY: This runs during process startup before any worker threads are
+    // spawned, so mutating the process environment here is well-defined.
+    unsafe { env::set_var("PKG_ALLOW", flags) };
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FormulaSpec {
+    pub(crate) name: String,
+    pub(crate) bottle_sha256: String,
+    pub(crate) bottle_url: String,
+}
+
+#[derive(Debug)]
+pub(crate) struct DownloadedBottle {
+    pub(crate) path: PathBuf,
+    pub(crate) _tmp_dir: TempDir,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GhcrTokenResponse {
+    pub(crate) token: String,
+}
+
+#[cfg(feature = "gold-release")]
+#[derive(Debug, Deserialize)]
+pub(crate) struct GithubRelease {
+    pub(crate) tag_name: String,
+    pub(crate) assets: Vec<GithubReleaseAsset>,
+}
+
+#[cfg(feature = "gold-release")]
+#[derive(Debug, Deserialize)]
+pub(crate) struct GithubReleaseAsset {
+    pub(crate) name: String,
+    pub(crate) browser_download_url: String,
+}
+
+#[cfg(feature = "gold-release")]
+#[derive(Debug)]
+pub(crate) struct SelfUpdateRelease {
+    pub(crate) version: semver::Version,
+    pub(crate) asset_name: String,
+    pub(crate) download_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InstalledFormula {
+    pub(crate) spec: FormulaSpec,
+    pub(crate) keg_dir_name: String,
+    pub(crate) archive_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RewriteRule {
+    pub(crate) source: String,
+    pub(crate) destination: String,
+}
+
 use super::*;
 
 pub(crate) struct VendorInstall {
