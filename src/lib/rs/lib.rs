@@ -33,6 +33,7 @@ use walkdir::WalkDir;
 
 mod brew;
 mod cask;
+mod catalog;
 mod cli_help;
 mod config;
 mod core;
@@ -40,6 +41,7 @@ mod dotenv;
 mod gate;
 mod npm;
 mod ops;
+mod package;
 mod pip;
 mod protocol;
 mod script_resolution;
