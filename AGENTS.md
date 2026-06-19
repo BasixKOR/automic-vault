@@ -15,8 +15,13 @@ Commit as Codex after each completed job.
 
 - `src/nucleus/` is the Nucleus CLI runtime.
 - `src/lib/rs/` is shared Rust code used by multiple source modules.
+- `src/lib/rs/DOMAIN_MAP.md` records the current Rust domain split. Read it
+  before moving shared Rust code; update it when ownership changes.
 - `src/gui/` is the macOS Cocoa/AppKit application.
 - `src/helper/` is privileged/helper code and its launch/XPC support.
+
+`src/lib/rs/lib.rs` is being reduced to module wiring. Keep moves boring:
+preserve names, serde fields, file formats, and protocol payloads.
 
 ## `.env`
 
@@ -42,3 +47,9 @@ script.
 
 The app is localized, user-visible strings should be added to
 `src/gui/Resources/`.
+
+## Checks
+
+For Rust workspace tests, use
+`AV_DOTENV_KEYCHAIN_ACCESS_GROUP=TESTTEAM.com.automicvault.dotenv` unless a task
+needs the real keychain access group.
