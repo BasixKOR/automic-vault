@@ -20,8 +20,8 @@ Commit as Codex after each completed job.
 - `src/gui/` is the macOS Cocoa/AppKit application.
 - `src/helper/` is privileged/helper code and its launch/XPC support.
 
-`src/lib/rs/lib.rs` is being reduced to module wiring. Keep moves boring:
-preserve names, serde fields, file formats, and protocol payloads.
+`src/lib/rs/lib.rs` is module wiring plus the legacy root test module. Keep
+moves boring: preserve names, serde fields, file formats, and protocol payloads.
 
 ## `.env`
 

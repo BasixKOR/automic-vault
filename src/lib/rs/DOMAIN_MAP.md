@@ -1,7 +1,7 @@
 # `lib.rs` Domain Map
 
-`src/lib/rs/lib.rs` is being reduced to module wiring. Keep moves boring:
-preserve names, serde fields, file formats, and protocol payloads.
+`src/lib/rs/lib.rs` is module wiring plus the legacy root test module. Keep
+moves boring: preserve names, serde fields, file formats, and protocol payloads.
 
 ## Catalog
 
@@ -48,7 +48,7 @@ Owns package runtime DTOs and package state persistence:
 
 ## Install Execution
 
-Stays in `lib.rs` for this phase:
+Owns package installation execution:
 
 - bottle download/staging/install execution
 - Homebrew relocation and binary rewriting
@@ -56,33 +56,39 @@ Stays in `lib.rs` for this phase:
 - cask/vendor/isotope root installation
 - generated isotope migration/post-install flows
 - self-update
+- post-install hook wiring
 
 ## Secret Scanner
 
-Stays in `lib.rs` for this phase:
+Owns scanner CLI execution and shell/file probes:
 
 - `SecretScanner*`
 - shell-secret probes
 - file scanning heuristics and stream output
 
+## Isotope
+
+Owns isotope runtime helpers:
+
+- isotope package lookup and virtual versioned isotope records
+- isotope target/modification/replacement resolution
+- generated isotope integration dispatch
+- isotope security state helpers
+
 ## Runtime Boundary
 
-Already lives mostly outside `lib.rs`:
+Lives outside `lib.rs`:
 
 - `vault.rs`
 - `gate.rs`
 - `protocol.rs`
 - `core.rs`
 
-Do not move protocol/version behavior during Phase 1.
-
 ## Shared Infrastructure
 
-Stays until a later focused pass:
+Lives in focused modules:
 
-- process/file helpers used by install execution
-- progress rendering helpers
-- `GLOBAL_TEST_ENV_LOCK`
-- `Config`
-- `Invocation`
-- `Mode`
+- process/file helpers used by install execution: `install.rs`
+- progress rendering helpers: `install.rs`
+- `GLOBAL_TEST_ENV_LOCK`: `core.rs`
+- `Config`, `Invocation`, `Mode`, `ProgressCallback`: `core.rs`
