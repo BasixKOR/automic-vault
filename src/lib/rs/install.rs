@@ -103,6 +103,46 @@ pub(crate) struct RewriteRule {
 
 use super::*;
 
+pub(crate) mod post_install_hooks {
+    use super::*;
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    pub(crate) struct PostInstallOutcome {
+        pub(crate) managed_stubs: Vec<String>,
+    }
+
+    mod python {
+        include!("../post-install/python.rs");
+    }
+
+    mod openssl {
+        include!("../post-install/openssl.rs");
+    }
+
+    pub(crate) fn supports(formula: &str) -> bool {
+        python::supports(formula) || openssl::supports(formula)
+    }
+
+    pub(crate) fn supports_dependency(formula: &str) -> bool {
+        openssl::supports(formula)
+    }
+
+    pub(crate) fn run(
+        formula: &str,
+        prefix: &Path,
+        bin_dir: &Path,
+    ) -> Result<PostInstallOutcome, String> {
+        if python::supports(formula) {
+            return python::post_install(prefix, bin_dir);
+        }
+        if openssl::supports(formula) {
+            openssl::post_install(prefix)?;
+            return Ok(PostInstallOutcome::default());
+        }
+        Ok(PostInstallOutcome::default())
+    }
+}
+
 pub(crate) struct VendorInstall {
     pub(crate) package: vendor::VendorPackage,
     pub(crate) version: semver::Version,
