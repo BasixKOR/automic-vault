@@ -84,6 +84,7 @@ pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy, DotenvRunProvenance};
 pub(crate) use info::*;
 pub(crate) use install::*;
 pub use isotope::isotope_main_entry;
+pub(crate) use isotope::*;
 pub use ops::{
     HelperCommand, HelperCommandResult, HelperCommandSuccess, PackageSpec, ProgressEvent,
     check_for_updates, execute_helper_command, verify_helper_codesign_identity,

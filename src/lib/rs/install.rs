@@ -585,6 +585,28 @@ pub(crate) fn format_installed_paths(paths: &[String]) -> String {
     }
 }
 
+pub(crate) fn npm_package_homebrew_dependencies(package: &str) -> Vec<String> {
+    let data = embedded_npm_package_data();
+    if let Some(entry) = data.get(package) {
+        return entry.homebrew_dependencies.clone();
+    }
+    if let Some((_, leaf_name)) = package.rsplit_once('/')
+        && let Some(entry) = data.get(leaf_name)
+    {
+        return entry.homebrew_dependencies.clone();
+    }
+    Vec::new()
+}
+
+pub(crate) fn append_npm_package_homebrew_dependencies(
+    formula_names: &mut Vec<String>,
+    package: &str,
+) {
+    for dependency in npm_package_homebrew_dependencies(package) {
+        push_unique_string(formula_names, dependency);
+    }
+}
+
 pub(crate) fn run_i(invocation: &Invocation, mut args: env::ArgsOs) -> Result<(), String> {
     let request = match parse_i_request(invocation, &mut args)? {
         Some(request) => request,

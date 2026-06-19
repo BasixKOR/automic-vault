@@ -11,6 +11,335 @@ use super::script_resolution::{
 };
 use super::*;
 
+pub(crate) fn isotope_package_data(name: &str) -> Result<&'static IsotopePackageData, String> {
+    let name = isotope_unqualified_name(name);
+    if let Some(record) = embedded_isotope_data().get(&isotope_qualified_name(name)) {
+        return Ok(record);
+    }
+    if let Some(record) = virtual_versioned_isotope_package_data(name) {
+        return Ok(record);
+    }
+    Err(format!("unknown isotope {ISOTOPE_PACKAGE_PREFIX}{name}"))
+}
+
+pub(crate) fn virtual_versioned_isotope_package_data(
+    name: &str,
+) -> Option<&'static IsotopePackageData> {
+    let base = versioned_isotope_base(name)?;
+    let cache = VIRTUAL_ISOTOPE_DATA.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(record) = cache.lock().unwrap().get(name).copied() {
+        return Some(record);
+    }
+
+    let base_record = embedded_isotope_data()
+        .get(&isotope_qualified_name(base))?
+        .clone();
+    let mut record = base_record;
+    record.name = isotope_qualified_name(name);
+    record.modifies = Some(format!("brew:{name}"));
+    record.replaces = None;
+    record.release_url = Some(format!("https://formulae.brew.sh/formula/{name}"));
+    record.applies_to_versioned_formulae = false;
+
+    let record: &'static IsotopePackageData = Box::leak(Box::new(record));
+    let mut cache = cache.lock().unwrap();
+    Some(*cache.entry(name.to_string()).or_insert(record))
+}
+
+pub(crate) fn versioned_isotope_base(name: &str) -> Option<&str> {
+    let name = isotope_unqualified_name(name);
+    let base = formula_versioned_base(name)?;
+    let version = name.rsplit_once('@')?.1;
+    if version.is_empty() || !version.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+
+    let record = embedded_isotope_data().get(&isotope_qualified_name(base))?;
+    if !record.applies_to_versioned_formulae {
+        return None;
+    }
+    let modified_formula = record.modifies.as_deref()?.strip_prefix("brew:")?;
+    (modified_formula == base).then_some(base)
+}
+
+pub(crate) fn preferred_auto_isotope_name(package_name: &str) -> Result<Option<String>, String> {
+    let target = if vendor::get(package_name).is_some() {
+        Some(PackageAliasTarget::VendorPackage(package_name.to_string()))
+    } else {
+        preferred_auto_homebrew_formula_target(package_name)?
+    };
+
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    installable_isotope_name_for_target(&target)
+}
+
+pub(crate) fn radioisotope_name_for_homebrew_formula_install(
+    formula: &str,
+) -> Result<Option<String>, String> {
+    let formula = formula_install_package_name(formula)?;
+    let target = PackageAliasTarget::HomebrewFormula(formula);
+    Ok(installable_isotope_name_for_target(&target)?
+        .filter(|isotope_name| isotope_has_post_install(&isotope_qualified_name(isotope_name))))
+}
+
+pub(crate) fn preferred_auto_homebrew_formula_target(
+    package_name: &str,
+) -> Result<Option<PackageAliasTarget>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    if let Some(provider) = db.entries.get(package_name) {
+        return Ok(match crate::cli::parse_embedded_provider(provider)? {
+            Some(EmbeddedPackage::Formula(formula)) => Some(PackageAliasTarget::HomebrewFormula(
+                formula_install_package_name(&formula)?,
+            )),
+            Some(EmbeddedPackage::Cask(_) | EmbeddedPackage::NpmPackage(_)) => None,
+            None => Some(PackageAliasTarget::HomebrewFormula(
+                formula_install_package_name(package_name)?,
+            )),
+        });
+    }
+
+    Ok(Some(PackageAliasTarget::HomebrewFormula(
+        formula_install_package_name(package_name)?,
+    )))
+}
+
+pub(crate) fn installable_isotope_name_for_target(
+    target: &PackageAliasTarget,
+) -> Result<Option<String>, String> {
+    let mut isotopes = embedded_isotope_data().values().collect::<Vec<_>>();
+    isotopes.sort_by(|left, right| left.name.cmp(&right.name));
+
+    for isotope in isotopes {
+        if !isotope_is_installable(isotope) {
+            continue;
+        }
+        if let Ok(true) = isotope_targets_package(isotope, target) {
+            return Ok(Some(isotope_unqualified_name(&isotope.name).to_string()));
+        }
+    }
+
+    if let PackageAliasTarget::HomebrewFormula(formula) = target
+        && versioned_isotope_base(formula).is_some()
+        && let Ok(record) = isotope_package_data(formula)
+        && isotope_is_installable(record)
+    {
+        return Ok(Some(formula.clone()));
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn isotope_is_installable(record: &IsotopePackageData) -> bool {
+    record
+        .archive_url
+        .as_deref()
+        .is_some_and(|url| !url.trim().is_empty())
+        || isotope_has_post_install(&record.name)
+}
+
+pub(crate) fn isotope_targets_package(
+    record: &IsotopePackageData,
+    target: &PackageAliasTarget,
+) -> Result<bool, String> {
+    if isotope_replaced_package_target(record)?.as_ref() == Some(target) {
+        return Ok(true);
+    }
+    if isotope_modified_package_target(record)?.as_ref() == Some(target) {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+pub(crate) fn isotope_qualified_name(name: &str) -> String {
+    format!("{ISOTOPE_PACKAGE_PREFIX}{name}")
+}
+
+pub(crate) fn isotope_unqualified_name(name: &str) -> &str {
+    name.strip_prefix(ISOTOPE_PACKAGE_PREFIX).unwrap_or(name)
+}
+
+pub(crate) fn exact_isotope_integration(
+    name: &str,
+) -> Option<&'static isotope_integrations::IsotopeIntegration> {
+    let name = isotope_unqualified_name(name);
+    isotope_integrations::INTEGRATIONS
+        .iter()
+        .find(|integration| integration.name == name)
+}
+
+pub(crate) fn isotope_integration(
+    name: &str,
+) -> Option<&'static isotope_integrations::IsotopeIntegration> {
+    exact_isotope_integration(name)
+        .or_else(|| versioned_isotope_base(name).and_then(exact_isotope_integration))
+}
+
+pub(crate) fn isotope_has_migration(name: &str) -> bool {
+    isotope_integration(name).is_some_and(|integration| integration.has_migration)
+}
+
+pub(crate) fn isotope_has_post_install(name: &str) -> bool {
+    isotope_integration(name).is_some_and(|integration| integration.has_install_remediation)
+}
+
+pub(crate) fn isotope_has_remediation(name: &str) -> bool {
+    isotope_package_data(isotope_unqualified_name(name))
+        .is_ok_and(|record| record.migrate.is_some())
+        || isotope_integration(name).is_some_and(|integration| {
+            integration.has_migration || integration.has_install_remediation
+        })
+}
+
+pub(crate) fn run_generated_isotope_migration(name: &str) -> Option<Result<(), String>> {
+    let migrate = isotope_integration(name)?.migrate?;
+    Some(migrate())
+}
+
+pub(crate) fn run_generated_isotope_post_install(name: &str) -> Option<Result<(), String>> {
+    if let Some(integration) = exact_isotope_integration(name)
+        && let Some(post_install) = integration.post_install
+    {
+        return Some(post_install());
+    }
+    let formula = isotope_unqualified_name(name);
+    let base = versioned_isotope_base(formula)?;
+    let post_install = exact_isotope_integration(base)?.post_install_for_formula?;
+    Some(post_install(formula))
+}
+
+pub(crate) fn detect_isotope_install_reasons(name: &str) -> Option<Result<Vec<String>, String>> {
+    let integration = isotope_integration(name)?;
+    if !integration.has_detect {
+        return None;
+    }
+    if let Some(detect_reasons) = integration.detect_reasons {
+        return Some(detect_reasons());
+    }
+    let detect = integration.detect?;
+    Some(detect().map(|install_is_insecure| {
+        if install_is_insecure {
+            vec![format!("isotope:{name} detector triggered")]
+        } else {
+            Vec::new()
+        }
+    }))
+}
+
+pub(crate) fn package_security_state(info: &PackageInfo) -> Option<PackageSecurityState> {
+    let mut identifiers = vec![info.package_name.clone(), info.qualified_name.clone()];
+    if let Some(source) = info.source.as_ref() {
+        identifiers.push(package_source_qualified_name(source));
+    }
+    identifiers.extend(info.aliases.iter().cloned());
+    package_security_state_for_identifiers(identifiers)
+}
+
+pub(crate) fn package_security_state_for_identifiers<I>(
+    identifiers: I,
+) -> Option<PackageSecurityState>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut identifiers = identifiers
+        .into_iter()
+        .map(|identifier| identifier.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    identifiers.extend(
+        identifiers
+            .iter()
+            .filter_map(|identifier| {
+                identifier
+                    .split_once(':')
+                    .map(|(_, suffix)| suffix)
+                    .filter(|suffix| !suffix.is_empty())
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>(),
+    );
+    let versioned_identifiers = identifiers
+        .iter()
+        .filter(|identifier| formula_versioned_base(identifier).is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    for identifier in &versioned_identifiers {
+        if embedded_isotope_data().contains_key(&isotope_qualified_name(identifier))
+            && let Some(state) = package_security_state_for_isotope(identifier)
+        {
+            return Some(state);
+        }
+    }
+    for identifier in &versioned_identifiers {
+        if versioned_isotope_base(identifier).is_some()
+            && let Some(state) = package_security_state_for_isotope(identifier)
+        {
+            return Some(state);
+        }
+    }
+
+    let mut isotopes = embedded_isotope_data().values().collect::<Vec<_>>();
+    isotopes.sort_by(|left, right| left.name.cmp(&right.name));
+
+    for isotope in isotopes {
+        let isotope_name = isotope_unqualified_name(&isotope.name).to_string();
+        if identifiers.contains(&isotope.name.to_ascii_lowercase())
+            || identifiers.contains(&isotope_name.to_ascii_lowercase())
+        {
+            return package_security_state_for_isotope(&isotope_name);
+        }
+
+        let Ok(Some(replaces)) = isotope_modified_or_replaced_package_name(isotope) else {
+            continue;
+        };
+        if !identifiers.contains(&replaces.to_ascii_lowercase()) {
+            continue;
+        }
+
+        return package_security_state_for_isotope(&isotope_name);
+    }
+
+    let mut integrations = isotope_integrations::INTEGRATIONS
+        .iter()
+        .collect::<Vec<_>>();
+    integrations.sort_by(|left, right| left.name.cmp(right.name));
+    for integration in integrations {
+        let isotope_name = integration.name.to_ascii_lowercase();
+        if identifiers.contains(&isotope_name)
+            || identifiers.contains(&format!("{ISOTOPE_PACKAGE_PREFIX}{isotope_name}"))
+            || identifiers.contains(&format!("{BREW_PACKAGE_PREFIX}{isotope_name}"))
+        {
+            return package_security_state_for_isotope(integration.name);
+        }
+    }
+
+    None
+}
+
+pub(crate) fn package_security_state_for_isotope(
+    isotope_name: &str,
+) -> Option<PackageSecurityState> {
+    let result = detect_isotope_install_reasons(isotope_name)?;
+    let remediation_available = isotope_has_remediation(isotope_name);
+    Some(match result {
+        Ok(reasons) => PackageSecurityState {
+            isotope_name: isotope_name.to_string(),
+            install_is_insecure: !reasons.is_empty(),
+            remediation_available,
+            reasons,
+            error: None,
+        },
+        Err(err) => PackageSecurityState {
+            isotope_name: isotope_name.to_string(),
+            install_is_insecure: false,
+            remediation_available,
+            reasons: Vec::new(),
+            error: Some(err),
+        },
+    })
+}
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CString;
 #[cfg(target_os = "macos")]
