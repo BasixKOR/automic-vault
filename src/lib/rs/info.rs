@@ -2162,13 +2162,6 @@ pub(crate) fn string_or_none(value: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn formula_index_entries() -> Result<&'static Vec<FormulaIndexEntry>, String> {
-    FORMULA_INDEX
-        .get_or_init(build_formula_index)
-        .as_ref()
-        .map_err(|err| err.clone())
-}
-
 pub(crate) fn format_package_info(info: &PackageInfo) -> String {
     let installed_value = if info.installed {
         info.install_root.display().to_string()

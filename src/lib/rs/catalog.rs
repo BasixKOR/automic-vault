@@ -278,3 +278,376 @@ pub(crate) fn current_unix_timestamp() -> Result<u64, String> {
         .map(|duration| duration.as_secs())
         .map_err(|err| format!("system clock is before unix epoch: {err}"))
 }
+
+pub(crate) static NPM_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
+
+pub(crate) static PIP_PACKAGE_DATA: OnceLock<HashMap<String, PackageInstallData>> = OnceLock::new();
+
+pub(crate) static ISOTOPE_DATA: OnceLock<HashMap<String, IsotopePackageData>> = OnceLock::new();
+
+pub(crate) static VIRTUAL_ISOTOPE_DATA: OnceLock<
+    Mutex<HashMap<String, &'static IsotopePackageData>>,
+> = OnceLock::new();
+
+pub(crate) static SECURITY_RECOMMENDATIONS: OnceLock<SecurityRecommendationsData> = OnceLock::new();
+
+pub(crate) static FORMULA_INDEX: OnceLock<Result<Vec<FormulaIndexEntry>, String>> = OnceLock::new();
+
+pub(crate) static FORMULA_ALIAS_INDEX: OnceLock<Result<HashMap<String, String>, String>> =
+    OnceLock::new();
+
+pub(crate) static CASK_ALIAS_INDEX: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+pub(crate) static STUB_EXCLUSIONS: OnceLock<HashMap<String, HashSet<String>>> = OnceLock::new();
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Db {
+    pub(crate) schema: u32,
+    #[allow(dead_code)]
+    pub(crate) generated_at: String,
+    pub(crate) entries: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) formulas: HashMap<String, EmbeddedFormulaMetadata>,
+    #[serde(default)]
+    pub(crate) casks: HashMap<String, EmbeddedCaskMetadata>,
+    #[serde(default)]
+    pub(crate) npms: HashMap<String, EmbeddedNpmMetadata>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct EmbeddedFormulaMetadata {
+    #[serde(default)]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) aliases: Vec<String>,
+    #[serde(default)]
+    pub(crate) oldnames: Vec<String>,
+    #[serde(default)]
+    pub(crate) category: String,
+    #[serde(default)]
+    pub(crate) homepage: String,
+    #[serde(default, alias = "repo")]
+    pub(crate) repository: String,
+    #[serde(default, rename = "upstreamDocs")]
+    pub(crate) upstream_docs: String,
+    #[serde(default)]
+    pub(crate) docs: Vec<String>,
+    pub(crate) popularity: Option<EmbeddedPackagePopularity>,
+    pub(crate) last_updated_at: Option<String>,
+    pub(crate) pulse_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct EmbeddedCaskMetadata {
+    #[serde(default)]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) homepage: String,
+    #[serde(default)]
+    pub(crate) aliases: Vec<String>,
+    #[serde(default)]
+    pub(crate) url: String,
+    #[serde(default)]
+    pub(crate) sha256: String,
+    #[serde(default)]
+    pub(crate) version: String,
+    #[serde(default)]
+    pub(crate) dependencies: Vec<String>,
+    #[serde(default)]
+    pub(crate) binaries: Vec<EmbeddedCaskBinary>,
+    pub(crate) popularity: Option<EmbeddedPackagePopularity>,
+    pub(crate) last_updated_at: Option<String>,
+    pub(crate) pulse_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct EmbeddedCaskBinary {
+    pub(crate) source: String,
+    pub(crate) target: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, Serialize, PartialEq, Eq)]
+pub(crate) struct EmbeddedPackagePopularity {
+    pub(crate) installs_per_365_days: u64,
+    pub(crate) rank: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct EmbeddedNpmMetadata {
+    #[serde(default)]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) homepage: String,
+    pub(crate) version: String,
+    pub(crate) executable: String,
+    pub(crate) popularity: Option<EmbeddedNpmPopularity>,
+    pub(crate) last_updated_at: Option<String>,
+    pub(crate) pulse_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct EmbeddedNpmPopularity {
+    #[allow(dead_code)]
+    pub(crate) downloads_per_30_days: u64,
+    pub(crate) rank: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct PackageInstallData {
+    #[serde(default, rename = "homebrewDeps")]
+    pub(crate) homebrew_dependencies: Vec<String>,
+    #[serde(default, rename = "pythonFormula")]
+    pub(crate) python_formula: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct SecurityRecommendationsData {
+    #[serde(default)]
+    pub(crate) packages: HashMap<String, SecurityRecommendationPackage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct SecurityRecommendationPackage {
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default, rename = "installPackageName")]
+    pub(crate) install_package_name: String,
+    #[serde(default)]
+    pub(crate) priority: u32,
+    #[serde(default)]
+    pub(crate) signals: Vec<String>,
+    #[serde(default)]
+    pub(crate) reasons: Vec<String>,
+    #[serde(default)]
+    pub(crate) isotope: Option<String>,
+    #[serde(default, rename = "isotopePackage")]
+    pub(crate) isotope_package: Option<String>,
+    #[serde(default, rename = "approvalGate")]
+    pub(crate) approval_gate: bool,
+    #[serde(default, rename = "geigerLevel")]
+    pub(crate) geiger_level: Option<String>,
+    #[serde(default, rename = "geigerConfidence")]
+    pub(crate) geiger_confidence: Option<String>,
+    #[serde(default, rename = "geigerCategory")]
+    pub(crate) geiger_category: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct IsotopePackageData {
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) replaces: Option<String>,
+    #[serde(default)]
+    pub(crate) modifies: Option<String>,
+    #[serde(default)]
+    pub(crate) migrate: Option<String>,
+    #[serde(default)]
+    pub(crate) _repository: Option<String>,
+    #[serde(default, rename = "upstreamRepository")]
+    pub(crate) _upstream_repository: Option<String>,
+    pub(crate) version: String,
+    #[serde(default, rename = "releaseUrl")]
+    pub(crate) release_url: Option<String>,
+    #[serde(default, rename = "archiveUrl")]
+    pub(crate) archive_url: Option<String>,
+    #[serde(default, rename = "publishedAt")]
+    pub(crate) published_at: Option<String>,
+    #[serde(default, rename = "appliesToVersionedFormulae")]
+    pub(crate) applies_to_versioned_formulae: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct PackageSecurityState {
+    #[serde(rename = "isotopeName")]
+    pub(crate) isotope_name: String,
+    #[serde(rename = "installIsInsecure")]
+    pub(crate) install_is_insecure: bool,
+    #[serde(rename = "remediationAvailable")]
+    pub(crate) remediation_available: bool,
+    pub(crate) reasons: Vec<String>,
+    pub(crate) error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FormulaIndexEntry {
+    pub(crate) name: String,
+    #[serde(default, alias = "desc")]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) aliases: Vec<String>,
+    #[serde(default)]
+    pub(crate) oldnames: Vec<String>,
+    #[serde(default)]
+    pub(crate) category: String,
+    #[serde(default)]
+    pub(crate) homepage: String,
+    #[serde(default, alias = "repo")]
+    pub(crate) repository: String,
+    #[serde(default, rename = "upstreamDocs")]
+    pub(crate) upstream_docs: String,
+    #[serde(default)]
+    pub(crate) docs: Vec<String>,
+    pub(crate) popularity: Option<EmbeddedPackagePopularity>,
+    pub(crate) last_updated_at: Option<String>,
+    pub(crate) pulse_kind: Option<String>,
+}
+
+pub(crate) fn embedded_npm_package_data() -> &'static HashMap<String, PackageInstallData> {
+    NPM_PACKAGE_DATA.get_or_init(|| embedded_combined_data().sources.npm.clone())
+}
+
+pub(crate) fn embedded_pip_package_data() -> &'static HashMap<String, PackageInstallData> {
+    PIP_PACKAGE_DATA.get_or_init(|| embedded_combined_data().sources.pip.clone())
+}
+
+pub(crate) fn embedded_isotope_data() -> &'static HashMap<String, IsotopePackageData> {
+    ISOTOPE_DATA.get_or_init(|| {
+        embedded_combined_data()
+            .sources
+            .isotopes
+            .clone()
+            .into_values()
+            .map(|record| (record.name.clone(), record))
+            .collect()
+    })
+}
+
+pub(crate) fn embedded_security_recommendations() -> &'static SecurityRecommendationsData {
+    SECURITY_RECOMMENDATIONS.get_or_init(|| {
+        embedded_combined_data()
+            .sources
+            .security_recommendations
+            .clone()
+    })
+}
+
+pub(crate) fn embedded_cask(cask: &str) -> Result<EmbeddedCaskMetadata, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    let canonical = canonical_cask_name(cask, &db);
+    db.casks
+        .get(&canonical)
+        .cloned()
+        .ok_or_else(|| format!("no embedded cask metadata found for {cask}"))
+}
+
+pub(crate) fn canonical_cask_name(cask: &str, db: &Db) -> String {
+    cask_alias_index(db)
+        .get(cask)
+        .cloned()
+        .unwrap_or_else(|| cask.to_string())
+}
+
+pub(crate) fn cask_alias_index(db: &Db) -> &'static HashMap<String, String> {
+    CASK_ALIAS_INDEX.get_or_init(|| {
+        let mut aliases = HashMap::new();
+        for (name, metadata) in &db.casks {
+            for alias in &metadata.aliases {
+                aliases.entry(alias.clone()).or_insert_with(|| name.clone());
+            }
+        }
+        aliases
+    })
+}
+
+pub(crate) fn canonical_formula_name(formula: &str) -> Result<String, String> {
+    Ok(formula_install_package_name_with_aliases(
+        formula,
+        formula_alias_index()?,
+    ))
+}
+
+pub(crate) fn formula_install_package_name(formula: &str) -> Result<String, String> {
+    Ok(canonical_formula_name_with_aliases(
+        formula,
+        formula_alias_index()?,
+    ))
+}
+
+pub(crate) fn embedded_provider_install_package_name(
+    package_name: &str,
+) -> Result<Option<String>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    let Some(provider) = db.entries.get(package_name) else {
+        return Ok(None);
+    };
+    let Some(resolved) = crate::cli::parse_embedded_provider(provider)? else {
+        return Ok(None);
+    };
+    Ok(Some(match resolved {
+        EmbeddedPackage::Formula(formula) => formula_install_package_name(&formula)?,
+        EmbeddedPackage::Cask(cask) => cask,
+        EmbeddedPackage::NpmPackage(package) => npm_package_display_name(&package),
+    }))
+}
+
+pub(crate) fn formula_install_package_name_with_aliases(
+    formula: &str,
+    aliases: &HashMap<String, String>,
+) -> String {
+    canonical_formula_name_with_aliases(formula, aliases)
+}
+
+pub(crate) fn canonical_formula_name_with_aliases(
+    formula: &str,
+    aliases: &HashMap<String, String>,
+) -> String {
+    aliases
+        .get(formula)
+        .cloned()
+        .unwrap_or_else(|| formula.to_string())
+}
+
+pub(crate) fn formula_alias_index() -> Result<&'static HashMap<String, String>, String> {
+    FORMULA_ALIAS_INDEX
+        .get_or_init(build_formula_alias_index)
+        .as_ref()
+        .map_err(|err| err.clone())
+}
+
+pub(crate) fn build_formula_alias_index() -> Result<HashMap<String, String>, String> {
+    Ok(collect_formula_aliases(formula_index_entries()?.clone()))
+}
+
+pub(crate) fn build_formula_index() -> Result<Vec<FormulaIndexEntry>, String> {
+    let db = crate::cli::load_db()?;
+    crate::cli::ensure_db_schema(&db)?;
+    let mut entries = db
+        .formulas
+        .into_iter()
+        .map(|(name, metadata)| FormulaIndexEntry {
+            name,
+            summary: metadata.summary,
+            aliases: metadata.aliases,
+            oldnames: metadata.oldnames,
+            category: metadata.category,
+            homepage: metadata.homepage,
+            repository: metadata.repository,
+            upstream_docs: metadata.upstream_docs,
+            docs: metadata.docs,
+            popularity: metadata.popularity,
+            last_updated_at: metadata.last_updated_at,
+            pulse_kind: metadata.pulse_kind,
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(entries)
+}
+
+pub(crate) fn collect_formula_aliases(entries: Vec<FormulaIndexEntry>) -> HashMap<String, String> {
+    let mut aliases = HashMap::new();
+    for entry in entries {
+        for alias in entry.aliases.into_iter().chain(entry.oldnames) {
+            aliases.entry(alias).or_insert_with(|| entry.name.clone());
+        }
+    }
+    aliases
+}
+
+pub(crate) fn formula_index_entries() -> Result<&'static Vec<FormulaIndexEntry>, String> {
+    FORMULA_INDEX
+        .get_or_init(build_formula_index)
+        .as_ref()
+        .map_err(|err| err.clone())
+}
