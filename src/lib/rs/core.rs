@@ -1,6 +1,14 @@
 use super::*;
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+static GLOBAL_TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
+    GLOBAL_TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub(crate) const PROTOCOL_VERSION: &str = "1.18";
 
 pub(crate) const PKG_DISPLAY_NAME: &str = "av";

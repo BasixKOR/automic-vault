@@ -63,14 +63,6 @@ mod isotope_integrations {
 mod stubs;
 mod vault;
 
-#[cfg(test)]
-static GLOBAL_TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-#[cfg(test)]
-pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
-    GLOBAL_TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
-}
-
 pub use catalog::refresh_remote_combined_data;
 pub(crate) use catalog::*;
 pub(crate) use cli::*;
