@@ -3,6 +3,32 @@ use std::collections::BTreeMap;
 
 pub(crate) const PROTOCOL_VERSION: &str = "1.18";
 
+pub(crate) const PKG_DISPLAY_NAME: &str = "av";
+pub(crate) const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+pub(crate) const SELF_UPDATE_DISABLE_FLAG: &str = "--no-self-update";
+pub(crate) const RENDERED_ERROR_PREFIX: &str = "__SUBS_RENDERED_ERROR__\n";
+pub(crate) const GUI_APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
+pub(crate) const GUI_APP_BUNDLE_NAME: &str = "Automic Vault.app";
+
+#[derive(Debug)]
+pub(crate) struct Config {
+    pub(crate) bottle_tag: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    I,
+}
+
+#[derive(Debug)]
+pub(crate) struct Invocation {
+    pub(crate) binary_name: String,
+    pub(crate) name: String,
+    pub(crate) mode: Option<Mode>,
+}
+
+pub(crate) type ProgressCallback = dyn FnMut(ProgressEvent) + Send;
+
 fn is_false(value: &bool) -> bool {
     !*value
 }

@@ -80,6 +80,7 @@ pub(crate) use config::{
     formula_api_root, homebrew_debug_allowance_enabled, install_requires_root, managed_bin_root,
     opt_npm_root, opt_pip_root, opt_pkg_root, pypi_root,
 };
+pub(crate) use core::*;
 pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy, DotenvRunProvenance};
 pub(crate) use info::*;
 pub(crate) use install::*;
@@ -144,8 +145,6 @@ mod post_install_hooks {
     }
 }
 
-const PKG_DISPLAY_NAME: &str = "av";
-const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const RELOCATABLE_HOMEBREW_PREFIX: &str = "/opt/homebrew";
 const HOMEBREW_PREFIX_PLACEHOLDER: &str = "@@HOMEBREW_PREFIX@@";
 const HOMEBREW_CELLAR_PLACEHOLDER: &str = "@@HOMEBREW_CELLAR@@";
@@ -170,14 +169,10 @@ const HOMEBREW_NEEDLES: [&[u8]; 6] = [
 const TMP_TOOL_ROOT: &str = "/tmp/nucleus";
 #[cfg(feature = "gold-release")]
 const SELF_UPDATE_TARGET: &str = "/usr/local/bin/av";
-const SELF_UPDATE_DISABLE_FLAG: &str = "--no-self-update";
 #[cfg(feature = "gold-release")]
 const SELF_UPDATE_REPO: &str = "mxcl/nucleus";
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 const SCANNER_WRAPPER_UI_ENV: &str = "AUTOMIC_VAULT_SCANNER_WRAPPER_UI";
-const RENDERED_ERROR_PREFIX: &str = "__SUBS_RENDERED_ERROR__\n";
-const GUI_APP_BUNDLE_IDENTIFIER: &str = "com.automicvault";
-const GUI_APP_BUNDLE_NAME: &str = "Automic Vault.app";
 const SAFE_BINARY_PATH_BYTES: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+-/@";
 static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
@@ -332,25 +327,6 @@ struct RewriteRule {
     source: String,
     destination: String,
 }
-
-#[derive(Debug)]
-struct Config {
-    bottle_tag: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    I,
-}
-
-#[derive(Debug)]
-struct Invocation {
-    binary_name: String,
-    name: String,
-    mode: Option<Mode>,
-}
-
-type ProgressCallback = dyn FnMut(ProgressEvent) + Send;
 
 #[cfg(test)]
 mod tests {
