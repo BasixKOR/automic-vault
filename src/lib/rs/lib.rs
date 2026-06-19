@@ -75,6 +75,10 @@ pub(crate) use catalog::*;
 pub(crate) use cli::*;
 pub use cli::{main_entry, scanner_main_entry};
 pub(crate) use cli_help::*;
+pub(crate) use config::{
+    formula_api_root, homebrew_debug_allowance_enabled, install_requires_root, managed_bin_root,
+    opt_npm_root, opt_pip_root, opt_pkg_root, pypi_root,
+};
 pub use dotenv::{DotenvApprovalMode, DotenvApprovalPolicy, DotenvRunProvenance};
 pub(crate) use info::*;
 pub(crate) use install::*;
@@ -174,38 +178,6 @@ const GUI_APP_BUNDLE_NAME: &str = "Automic Vault.app";
 const SAFE_BINARY_PATH_BYTES: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+-/@";
 static POST_INSTALL_CHECK_SKIP: OnceLock<HashSet<String>> = OnceLock::new();
-
-fn formula_api_root() -> String {
-    config::formula_api_root()
-}
-
-fn pypi_root() -> String {
-    config::pypi_root()
-}
-
-pub(crate) fn opt_pkg_root() -> PathBuf {
-    config::opt_pkg_root()
-}
-
-pub(crate) fn opt_npm_root() -> PathBuf {
-    config::opt_npm_root()
-}
-
-pub(crate) fn opt_pip_root() -> PathBuf {
-    config::opt_pip_root()
-}
-
-pub(crate) fn managed_bin_root() -> PathBuf {
-    config::managed_bin_root()
-}
-
-pub(crate) fn install_requires_root() -> bool {
-    config::install_requires_root()
-}
-
-fn homebrew_debug_allowance_enabled() -> bool {
-    config::homebrew_debug_allowance_enabled()
-}
 
 pub(crate) fn configure_debug_install_environment() {
     if !homebrew_debug_allowance_enabled() {
