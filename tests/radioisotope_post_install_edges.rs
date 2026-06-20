@@ -70,6 +70,18 @@ macro_rules! launcher_post_install_extra_tests {
                 }
 
                 #[test]
+                fn covers_top_level_post_install_missing_launcher_error() {
+                    if let Err(error) = post_install() {
+                        assert!(
+                            error.contains("failed to read")
+                                || error.contains("failed to stat")
+                                || error.contains("failed to write"),
+                            "unexpected post_install error: {error}"
+                        );
+                    }
+                }
+
+                #[test]
                 fn covers_existing_original_invalid_data_and_quoting_edges() {
                     let temp = temp_dir("existing-original");
                     fs::create_dir_all(&temp).unwrap();
@@ -218,6 +230,18 @@ macro_rules! two_stage_launcher_post_install_extra_tests {
                     let mut permissions = fs::metadata(path).unwrap().permissions();
                     permissions.set_mode(0o755);
                     fs::set_permissions(path, permissions).unwrap();
+                }
+
+                #[test]
+                fn covers_top_level_post_install_missing_launcher_error() {
+                    if let Err(error) = post_install() {
+                        assert!(
+                            error.contains("failed to read")
+                                || error.contains("failed to stat")
+                                || error.contains("failed to write"),
+                            "unexpected post_install error: {error}"
+                        );
+                    }
                 }
 
                 #[test]
