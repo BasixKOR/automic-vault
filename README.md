@@ -158,15 +158,20 @@ macOS: first. Linux & Windows: soon.
 > - 20k stars: we ship Linux
 > - 50k stars: we ship Windows
 
-## Hacking
+## Contributing
 
 ```sh
+$ ./scripts/sync-isotope-checkouts.sh
 $ cargo test
 $ ./scripts/run-gui.sh
 ```
 
 The native app lives in `src/gui`. The CLI and package/security core live in
 `src/lib/rs` and `src/nucleus`.
+
+`sync-isotope-checkouts.sh` clones or updates the isotope forks in `../isotopes`
+and the radioisotopes checkout in `../radioisotopes`. Override those paths with
+`AUTOMIC_VAULT_REPO_CACHE` and `AUTOMIC_VAULT_RADIOISOTOPES_REPO` when needed.
 
 
 [releases]: https://github.com/automic-vault/automic-vault/releases/latest
