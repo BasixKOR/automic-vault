@@ -7,7 +7,7 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 source "${repo_root}/scripts/cli-style.sh"
 cli_style_init "Automic Vault"
 
-output_path="${repo_root}/target/scanner.gz"
+output_path="${repo_root}/cache/rust/scanner.gz"
 
 usage() {
   cat <<'EOF'
@@ -42,7 +42,7 @@ done
 mkdir -p "$(dirname "${output_path}")"
 output_dir="$(cd "$(dirname "${output_path}")" && pwd)"
 output_path="${output_dir}/$(basename "${output_path}")"
-scanner_path="${repo_root}/target/release/scanner"
+scanner_path="${repo_root}/cache/rust/release/scanner"
 
 cli_title "Build Automic Vault scanner"
 cli_step "Building size-optimized scanner"

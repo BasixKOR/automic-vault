@@ -209,7 +209,8 @@ case "$CONFIGURATION" in
     ;;
 esac
 
-BUILD_DIR="$ROOT_DIR/target/gui/$CONFIGURATION"
+BUILD_DIR="$ROOT_DIR/cache/swift/gui/$CONFIGURATION"
+SWIFT_SCRATCH_DIR="$ROOT_DIR/cache/swift/swiftpm"
 APP_DIR="$BUILD_DIR/Automic Vault.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
@@ -261,7 +262,7 @@ elif [[ -n "${NUKE_BUILD_ID:-}" ]]; then
   APP_BUILD_ID="$NUKE_BUILD_ID"
   export NUKE_BUILD_ID
 else
-  # Local target/gui apps force a fresh daemon at launch, so a stable ID avoids
+  # Local cache/swift/gui apps force a fresh daemon at launch, so a stable ID avoids
   # recompiling Rust for Swift-only commits while keeping app and daemon aligned.
   APP_BUILD_ID="local-${APP_VERSION}"
   export NUKE_BUILD_ID="$APP_BUILD_ID"
@@ -355,7 +356,7 @@ else
   SWIFT_OPT_FLAGS=(-Onone -g -D DEBUG)
 fi
 
-RUST_BIN_DIR="$ROOT_DIR/target/release"
+RUST_BIN_DIR="$ROOT_DIR/cache/rust/release"
 SWIFT_PACKAGE_BIN_DIR=""
 
 is_current() {
@@ -857,12 +858,14 @@ fi
 cli_step "Building Cocoa app"
 xcrun swift build \
   --package-path "$GUI_DIR" \
+  --scratch-path "$SWIFT_SCRATCH_DIR" \
   --configuration "$CONFIGURATION" \
   --product AutomicVaultApp \
   >&2
 SWIFT_PACKAGE_BIN_DIR="$(
   xcrun swift build \
     --package-path "$GUI_DIR" \
+    --scratch-path "$SWIFT_SCRATCH_DIR" \
     --configuration "$CONFIGURATION" \
     --show-bin-path |
     tail -n 1

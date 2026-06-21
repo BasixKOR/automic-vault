@@ -269,12 +269,12 @@ final class DotenvFileWatcher {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
 
-        let release = repositoryRoot.appendingPathComponent("target/release/\(binaryName)")
+        let release = repositoryRoot.appendingPathComponent("cache/rust/release/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: release.path) {
             return release
         }
 
-        let debug = repositoryRoot.appendingPathComponent("target/debug/\(binaryName)")
+        let debug = repositoryRoot.appendingPathComponent("cache/rust/debug/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: debug.path) {
             return debug
         }

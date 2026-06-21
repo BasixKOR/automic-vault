@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 source "${repo_root}/scripts/cli-style.sh"
 cli_style_init "Automic Vault"
-build_dir="${repo_root}/target/gui"
-target_dir="${repo_root}/target"
+build_dir="${repo_root}/cache/swift/gui"
+target_dir="${repo_root}/cache/swift"
 default_background="${repo_root}/assets/dmg-bg@2x.png"
 release_s3_uri="s3://${AWS_S3_BUCKET}/Automic Vault.dmg"
 scanner_s3_uri="s3://${AWS_S3_BUCKET}/scanner.gz"
@@ -175,7 +175,7 @@ Usage: scripts/build-dmg.sh [--output PATH] [--background PATH]
                             [--volume-name NAME] [--notarize] [--install]
                             [--publish] [--clobber]
 
-Build the release app bundle and package it into a DMG in target/.
+Build the release app bundle and package it into a DMG in cache/swift/.
 
 Options:
   --output PATH       Write the final DMG to PATH.

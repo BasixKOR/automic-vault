@@ -718,7 +718,7 @@ final class NucleusBridge {
 
     private var shouldForceFreshDaemonOnLaunch: Bool {
         daemonOwnership == .owner
-            && Bundle.main.bundleURL.path.contains("/target/gui/")
+            && Bundle.main.bundleURL.path.contains("/cache/swift/gui/")
     }
 
     private func withProtocolStartupLock<Result>(
@@ -801,7 +801,7 @@ final class NucleusBridge {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("target/release/\(binaryName)")
+            .appendingPathComponent("cache/rust/release/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: development.path) {
             return development
         }
@@ -810,7 +810,7 @@ final class NucleusBridge {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("target/debug/\(binaryName)")
+            .appendingPathComponent("cache/rust/debug/\(binaryName)")
         if FileManager.default.isExecutableFile(atPath: debug.path) {
             return debug
         }
