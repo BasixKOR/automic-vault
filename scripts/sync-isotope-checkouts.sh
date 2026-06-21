@@ -6,8 +6,9 @@ org="automic-vault"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 av_db_root="${AV_DB_ROOT:-${repo_root}/../av.db}"
-clone_root="${AUTOMIC_VAULT_REPO_CACHE:-${av_db_root}/../isotopes}"
-radioisotopes_dir="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${av_db_root}/../radioisotopes}"
+repo_cache_parent="$(dirname "${av_db_root}")"
+clone_root="${AUTOMIC_VAULT_REPO_CACHE:-${repo_cache_parent}/isotopes}"
+radioisotopes_dir="${AUTOMIC_VAULT_RADIOISOTOPES_REPO:-${repo_cache_parent}/radioisotopes}"
 depth=1
 
 usage() {
