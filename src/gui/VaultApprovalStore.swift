@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 struct VaultExecutionIntent: Codable, Equatable {
@@ -30,32 +29,40 @@ struct VaultApprovalDecision: Codable, Equatable {
     let reason: String?
 }
 
-private struct VaultApprovalDenialFingerprintPayload: Codable {
-    let tool: String
-    let args: [String]
-    let cwd: String?
-    let agentID: String?
-    let requestingProcess: VaultApprovalDenialProcessPayload?
-}
-
-private struct VaultApprovalDenialProcessPayload: Codable {
-    let executablePath: String?
-    let displayName: String?
-}
-
-private struct RememberedVaultApprovalDenial: Codable, Equatable {
-    let fingerprint: String
-    let tool: String
-    let args: [String]
-    let cwd: String
-    let reason: String?
-    let createdAt: Date
-}
-
 enum VaultNotification {
     static let pendingApprovalChanged = Notification.Name(
         "com.automicvault.vault-approval.pending-changed"
     )
+}
+
+private final class DistributedNotificationBlockObserver: NSObject {
+    private let center: DistributedNotificationCenter
+    private let block: (Notification) -> Void
+
+    init(
+        center: DistributedNotificationCenter = .default(),
+        name: Notification.Name,
+        block: @escaping (Notification) -> Void
+    ) {
+        self.center = center
+        self.block = block
+        super.init()
+        center.addObserver(
+            self,
+            selector: #selector(handle(_:)),
+            name: name,
+            object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+    }
+
+    deinit {
+        center.removeObserver(self)
+    }
+
+    @objc private func handle(_ notification: Notification) {
+        block(notification)
+    }
 }
 
 struct KeyTransferApprovalSource: Codable, Equatable {
@@ -445,15 +452,7 @@ final class VaultApprovalStore {
     }
 
     func saveDecision(_ decision: VaultApprovalDecision) throws {
-        let pendingApproval = load(VaultApprovalRequestSnapshot.self, from: pendingApprovalURL())
         try write(decision, to: decisionURL(for: decision.id))
-        if let pendingApproval, pendingApproval.id == decision.id {
-            if decision.approved {
-                clearRememberedDenial(for: pendingApproval)
-            } else {
-                try? rememberDeniedApproval(pendingApproval, reason: decision.reason)
-            }
-        }
         removePendingApproval(id: decision.id)
         postPendingApprovalChanged()
     }
@@ -470,30 +469,17 @@ final class VaultApprovalStore {
         load(VaultApprovalDecision.self, from: decisionURL(for: id))
     }
 
-    func rememberedDenial(for approval: VaultApprovalRequestSnapshot) -> VaultApprovalDecision? {
-        let fingerprint = denialFingerprint(for: approval)
-        guard let remembered = load(
-            RememberedVaultApprovalDenial.self,
-            from: rememberedDenialURL(forFingerprint: fingerprint)
-        ), remembered.fingerprint == fingerprint else {
-            return nil
-        }
-        return VaultApprovalDecision(
-            id: approval.id,
-            approved: false,
-            reason: remembered.reason ?? "Denied by operator"
-        )
-    }
-
     func observePendingApprovalChanges(
         using block: @escaping (Notification) -> Void
     ) -> NSObjectProtocol {
-        distributedCenter.addObserver(
-            forName: VaultNotification.pendingApprovalChanged,
-            object: nil,
-            queue: .main,
-            using: block
-        )
+        DistributedNotificationBlockObserver(
+            center: distributedCenter,
+            name: VaultNotification.pendingApprovalChanged
+        ) { notification in
+            DispatchQueue.main.async {
+                block(notification)
+            }
+        }
     }
 
     func postPendingApprovalChanged() {
@@ -522,59 +508,6 @@ final class VaultApprovalStore {
         return try? decoder.decode(type, from: data)
     }
 
-    private func rememberDeniedApproval(
-        _ approval: VaultApprovalRequestSnapshot,
-        reason: String?
-    ) throws {
-        let fingerprint = denialFingerprint(for: approval)
-        try write(
-            RememberedVaultApprovalDenial(
-                fingerprint: fingerprint,
-                tool: approval.intent.tool,
-                args: approval.intent.args,
-                cwd: approval.intent.cwd,
-                reason: reason,
-                createdAt: Date()
-            ),
-            to: rememberedDenialURL(forFingerprint: fingerprint)
-        )
-    }
-
-    private func clearRememberedDenial(for approval: VaultApprovalRequestSnapshot) {
-        try? fileManager.removeItem(
-            at: rememberedDenialURL(forFingerprint: denialFingerprint(for: approval))
-        )
-    }
-
-    private func denialFingerprint(for approval: VaultApprovalRequestSnapshot) -> String {
-        let payload = denialFingerprintPayload(for: approval)
-        let data = (try? encoder.encode(payload)) ?? Data()
-        return SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
-    private func denialFingerprintPayload(
-        for approval: VaultApprovalRequestSnapshot
-    ) -> VaultApprovalDenialFingerprintPayload {
-        let intent = approval.intent
-        let isGitHubTokenExposure = approval.id.hasPrefix("gh-token-exposure-")
-        return VaultApprovalDenialFingerprintPayload(
-            tool: intent.tool,
-            args: intent.args,
-            cwd: isGitHubTokenExposure ? nil : intent.cwd,
-            agentID: isGitHubTokenExposure ? nil : intent.agentID,
-            requestingProcess: isGitHubTokenExposure
-                ? nil
-                : intent.requestingProcess.map {
-                    VaultApprovalDenialProcessPayload(
-                        executablePath: $0.executablePath,
-                        displayName: $0.displayName
-                    )
-                }
-        )
-    }
-
     private func rootURL() -> URL {
         if let rootOverrideURL {
             return rootOverrideURL
@@ -594,12 +527,6 @@ final class VaultApprovalStore {
         rootURL()
             .appendingPathComponent("vault/decisions", isDirectory: true)
             .appendingPathComponent("\(id).json", isDirectory: false)
-    }
-
-    private func rememberedDenialURL(forFingerprint fingerprint: String) -> URL {
-        rootURL()
-            .appendingPathComponent("vault/remembered-denials", isDirectory: true)
-            .appendingPathComponent("\(fingerprint).json", isDirectory: false)
     }
 }
 

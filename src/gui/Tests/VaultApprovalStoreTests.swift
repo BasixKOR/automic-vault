@@ -90,7 +90,7 @@ final class VaultApprovalStoreTests: XCTestCase {
         XCTAssertNil(store.loadDecision(id: "transfer-2"))
     }
 
-    func testVaultApprovalStoreRemembersDeniedGitHubTokenExposureAcrossFreshIDs() throws {
+    func testVaultApprovalStoreDoesNotRememberDeniedApprovals() throws {
         let rootURL = temporaryApprovalStoreRoot()
         defer {
             try? FileManager.default.removeItem(at: rootURL)
@@ -120,88 +120,8 @@ final class VaultApprovalStoreTests: XCTestCase {
             cwd: "/Users/alice/project-b"
         )
 
-        XCTAssertEqual(
-            store.rememberedDenial(for: repeatedApproval),
-            VaultApprovalDecision(
-                id: repeatedApproval.id,
-                approved: false,
-                reason: "Denied by operator"
-            )
-        )
-    }
-
-    func testVaultApprovalStoreBindsGenericDeniedApprovalToRequesterContext() throws {
-        let rootURL = temporaryApprovalStoreRoot()
-        defer {
-            try? FileManager.default.removeItem(at: rootURL)
-        }
-        let store = VaultApprovalStore(rootURL: rootURL)
-        let firstApproval = vaultApproval(
-            id: "request-1",
-            tool: "/usr/bin/env",
-            args: ["printenv", "SECRET"],
-            cwd: "/Users/alice/project-a",
-            agentID: "agent-1"
-        )
-
-        try store.savePendingApproval(firstApproval)
-        try store.saveDecision(
-            VaultApprovalDecision(
-                id: firstApproval.id,
-                approved: false,
-                reason: "Denied by operator"
-            )
-        )
-
-        let sameContextApproval = vaultApproval(
-            id: "request-2",
-            tool: "/usr/bin/env",
-            args: ["printenv", "SECRET"],
-            cwd: "/Users/alice/project-a",
-            agentID: "agent-1"
-        )
-        let differentCwdApproval = vaultApproval(
-            id: "request-3",
-            tool: "/usr/bin/env",
-            args: ["printenv", "SECRET"],
-            cwd: "/Users/alice/project-b",
-            agentID: "agent-1"
-        )
-
-        XCTAssertEqual(
-            store.rememberedDenial(for: sameContextApproval),
-            VaultApprovalDecision(
-                id: sameContextApproval.id,
-                approved: false,
-                reason: "Denied by operator"
-            )
-        )
-        XCTAssertNil(store.rememberedDenial(for: differentCwdApproval))
-    }
-
-    func testVaultApprovalStoreDoesNotRememberApprovedApproval() throws {
-        let rootURL = temporaryApprovalStoreRoot()
-        defer {
-            try? FileManager.default.removeItem(at: rootURL)
-        }
-        let store = VaultApprovalStore(rootURL: rootURL)
-        let approval = vaultApproval(
-            id: "request-1",
-            tool: "/usr/bin/env",
-            args: ["printenv", "SECRET"],
-            cwd: "/Users/alice/project-a"
-        )
-
-        try store.savePendingApproval(approval)
-        try store.saveDecision(
-            VaultApprovalDecision(
-                id: approval.id,
-                approved: true,
-                reason: nil
-            )
-        )
-
-        XCTAssertNil(store.rememberedDenial(for: approval))
+        try store.savePendingApproval(repeatedApproval)
+        XCTAssertEqual(store.loadPendingApproval(), repeatedApproval)
     }
 
     func testDotenvApprovalRequestDefaultsMissingCommandToEmpty() throws {
