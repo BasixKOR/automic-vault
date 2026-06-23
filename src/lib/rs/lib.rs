@@ -4540,18 +4540,22 @@ managed_secrets = ["dep:managed-secrets"]"#,
                 RequestedPackage::Isotope("terraform".to_string()),
             ] {
                 seed_terraform_install();
-                let err = run_i_package(
+                let result = run_i_package(
                     &config,
                     requested,
                     InstallOptions {
                         intent: InstallIntent::Install,
                     },
-                )
-                .unwrap_err();
-                assert!(
-                    err.contains("terraform"),
-                    "expected terraform install error, got: {err}"
                 );
+                if using_radioisotope_fixture_integrations() {
+                    result.unwrap();
+                } else {
+                    let err = result.unwrap_err();
+                    assert!(
+                        err.contains("terraform"),
+                        "expected terraform install error, got: {err}"
+                    );
+                }
             }
         }
 
@@ -5374,12 +5378,25 @@ managed_secrets = ["dep:managed-secrets"]"#,
         );
     }
 
+    fn using_radioisotope_fixture_integrations() -> bool {
+        Path::new(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"))
+            == Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib/rs/fixtures/radioisotopes")
+    }
+
     #[test]
     fn generated_isotope_integrations_tolerate_empty_home() {
         let _lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
+        let cwd = temp.path().join("cwd");
         fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::write(
+            cwd.join("hosts.yml"),
+            "github.com:\n  oauth_token: cwd-token\n",
+        )
+        .unwrap();
+        let _cwd = CurrentDirGuard::set(&cwd);
         let missing_path = temp.path().join("missing");
         let missing = missing_path.to_str().unwrap();
         let _env = TestEnvGuard::set(&[
@@ -5396,7 +5413,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
             ("DCOS_DIR", missing),
             ("DIGITALOCEAN_CONFIG", missing),
             ("DOCKER_CONFIG", missing),
-            ("GH_CONFIG_DIR", missing),
+            ("GH_CONFIG_DIR", ""),
             ("GLAB_CONFIG_DIR", missing),
             ("HCLOUD_CONFIG", missing),
             ("HELM_CONFIG_HOME", missing),
@@ -5763,42 +5780,53 @@ machine example.com login user password netrc-token
             }
         }
 
-        for expected in [
-            "acli",
-            "akamai",
-            "algolia",
-            "argocd",
-            "atuin",
-            "bash",
-            "bitwarden-cli",
-            "certbot",
-            "cloudflare-wrangler",
-            "cloudflared",
-            "docker",
-            "docker-machine",
-            "fastlane",
-            "gh",
-            "kubernetes-cli",
-            "openvpn",
-            "supabase",
-            "terraform",
-            "vercel-cli",
-            "zsh",
-        ] {
+        let expected: &[&str] = if using_radioisotope_fixture_integrations() {
+            &["gh", "huggingface-cli", "node@24", "terraform"]
+        } else {
+            &[
+                "acli",
+                "akamai",
+                "algolia",
+                "argocd",
+                "atuin",
+                "bash",
+                "bitwarden-cli",
+                "certbot",
+                "cloudflare-wrangler",
+                "cloudflared",
+                "docker",
+                "docker-machine",
+                "fastlane",
+                "gh",
+                "kubernetes-cli",
+                "openvpn",
+                "supabase",
+                "terraform",
+                "vercel-cli",
+                "zsh",
+            ]
+        };
+
+        for expected in expected {
             assert!(
-                triggered.contains(&expected),
+                triggered.contains(expected),
                 "expected {expected} to report seeded secrets, got {triggered:?}"
             );
         }
-        assert!(
-            triggered.len() >= 30,
-            "expected broad generated detector coverage, got {triggered:?}"
-        );
+        if !using_radioisotope_fixture_integrations() {
+            assert!(
+                triggered.len() >= 30,
+                "expected broad generated detector coverage, got {triggered:?}"
+            );
+        }
     }
 
     #[test]
     fn generated_isotope_migrations_scrub_seeded_secret_files() {
         let _lock = test_env_lock().lock().unwrap();
+        if using_radioisotope_fixture_integrations() {
+            return;
+        }
         if isotope_integrations::INTEGRATIONS
             .iter()
             .all(|integration| integration.migrate.is_none())
@@ -6179,6 +6207,9 @@ machine example.com login user password netrc-token
     #[test]
     fn generated_radioisotope_migrations_cover_additional_default_paths() {
         let _lock = test_env_lock().lock().unwrap();
+        if using_radioisotope_fixture_integrations() {
+            return;
+        }
         if isotope_integrations::INTEGRATIONS
             .iter()
             .all(|integration| integration.migrate.is_none())
@@ -6546,7 +6577,14 @@ machine example.com login user password netrc-token
                 "expected wrong parent error for {name}, got {wrong_parent}"
             );
         }
-        assert_eq!(helpers.len(), 9);
+        assert_eq!(
+            helpers.len(),
+            if using_radioisotope_fixture_integrations() {
+                1
+            } else {
+                9
+            }
+        );
     }
 
     #[test]
@@ -13814,6 +13852,22 @@ EOF
                     },
                 }
             }
+        }
+    }
+
+    struct CurrentDirGuard(PathBuf);
+
+    impl CurrentDirGuard {
+        fn set(path: &Path) -> Self {
+            let previous = env::current_dir().unwrap();
+            env::set_current_dir(path).unwrap();
+            Self(previous)
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            env::set_current_dir(&self.0).unwrap();
         }
     }
 
