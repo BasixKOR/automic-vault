@@ -279,8 +279,29 @@ fi
 if [[ -n "$MENU_PROVISIONING_PROFILE" ]]; then
   MENU_PROVISIONING_PROFILE="$(normalize_profile_path "$MENU_PROVISIONING_PROFILE")"
 fi
-COMBINED_DB_PATH="${AV_COMBINED_DB_PATH:-${ROOT_DIR}/../av.db/cache/automic-vault/combined.json}"
+DEFAULT_COMBINED_DB_PATH="${ROOT_DIR}/../av.db/cache/automic-vault/combined.json"
+REMOTE_COMBINED_DB_PATH="/var/db/automic-vault/db.json"
+REMOTE_COMBINED_DB_MAX_AGE_SECONDS=$((24 * 60 * 60))
+COMBINED_DB_PATH="${AV_COMBINED_DB_PATH:-$DEFAULT_COMBINED_DB_PATH}"
 EMBED_COMBINED_DB=false
+
+remote_combined_db_is_recent() {
+  local now mtime
+  [[ -f "$REMOTE_COMBINED_DB_PATH" ]] || return 1
+  now="$(date +%s)" || return 1
+  mtime="$(stat -f %m "$REMOTE_COMBINED_DB_PATH" 2>/dev/null)" || return 1
+  (( now - mtime <= REMOTE_COMBINED_DB_MAX_AGE_SECONDS ))
+}
+
+select_combined_db_path() {
+  if [[ -n "${AV_COMBINED_DB_PATH:-}" || -f "$DEFAULT_COMBINED_DB_PATH" ]]; then
+    printf '%s' "$COMBINED_DB_PATH"
+  elif remote_combined_db_is_recent; then
+    printf '%s' "$REMOTE_COMBINED_DB_PATH"
+  else
+    printf '%s' "$DEFAULT_COMBINED_DB_PATH"
+  fi
+}
 
 if [[ "$CONFIGURATION" == "release" || "$PUBLISH_BUILD" == "true" ]]; then
   EMBED_COMBINED_DB=true
@@ -288,8 +309,9 @@ fi
 
 if [[ "$EMBED_COMBINED_DB" == "true" ]]; then
   cli_step "Locating package database"
+  COMBINED_DB_PATH="$(select_combined_db_path)"
   if [[ ! -f "$COMBINED_DB_PATH" ]]; then
-    cli_die "Release builds require a package database to embed: ${COMBINED_DB_PATH}. Generate it in ../av.db or set AV_COMBINED_DB_PATH."
+    cli_die "Release builds require a package database to embed: ${DEFAULT_COMBINED_DB_PATH}. Generate it in ../av.db, set AV_COMBINED_DB_PATH, or refresh ${REMOTE_COMBINED_DB_PATH}."
   fi
   export AV_COMBINED_DB_PATH="$COMBINED_DB_PATH"
   cli_info "${COMBINED_DB_PATH}"
