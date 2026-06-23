@@ -456,9 +456,11 @@ mod aws_cli_detect {
 
             let previous_home = std::env::var_os("HOME");
             let previous_credentials = std::env::var_os("AWS_SHARED_CREDENTIALS_FILE");
+            let previous_config = std::env::var_os("AWS_CONFIG_FILE");
             unsafe {
                 std::env::remove_var("HOME");
                 std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
+                std::env::remove_var("AWS_CONFIG_FILE");
             }
             assert!(install_insecurity_reasons().unwrap_err().contains("HOME"));
             unsafe {
@@ -476,6 +478,10 @@ mod aws_cli_detect {
                 match previous_credentials {
                     Some(value) => std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", value),
                     None => std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE"),
+                }
+                match previous_config {
+                    Some(value) => std::env::set_var("AWS_CONFIG_FILE", value),
+                    None => std::env::remove_var("AWS_CONFIG_FILE"),
                 }
             }
             fs::remove_dir_all(root).unwrap();

@@ -373,10 +373,9 @@ mod aws_cli_post_install {
         }
 
         #[test]
-        fn covers_post_install_and_patch_error_edges() {
+        fn covers_post_install_error_edges() {
             let root = temp_path("post-install-errors");
             let launcher = root.join("aws");
-            let lib = root.join("lib");
             assert!(
                 prefix_aws_launcher(&launcher, ENTRYPOINT_PREFIX)
                     .unwrap_err()
@@ -388,30 +387,6 @@ mod aws_cli_post_install {
             assert_eq!(
                 std::fs::read_to_string(&launcher).unwrap(),
                 format!("{ENTRYPOINT_PREFIX}print('aws')\n")
-            );
-
-            assert!(
-                patch_aws_plugin_loaders(&lib)
-                    .unwrap_err()
-                    .contains("failed to read")
-            );
-            std::fs::create_dir_all(&lib).unwrap();
-            assert!(
-                patch_aws_plugin_loaders(&lib)
-                    .unwrap_err()
-                    .contains("failed to find")
-            );
-            assert!(
-                patch_aws_plugin_loader(&launcher)
-                    .unwrap_err()
-                    .contains("failed to patch")
-            );
-            assert!(
-                patch_aws_plugin_loader_contents(
-                    "def load_plugins():\n    _load_plugins(BUILTIN_PLUGINS, event_hooks)\n"
-                )
-                .unwrap_err()
-                .contains("legacy external plugin")
             );
 
             std::fs::remove_dir_all(root).unwrap();

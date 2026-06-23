@@ -227,11 +227,15 @@ fn generate_isotope_integrations() {
     println!("cargo:rerun-if-env-changed=CARGO_CFG_COVERAGE");
     let default_isotope_root = absolute_path(repo_root.join("../isotopes"));
     let default_radioisotope_root = absolute_path(repo_root.join("../radioisotopes"));
-    let isotope_root =
-        path_env_or_default("AUTOMIC_VAULT_REPO_CACHE", default_isotope_root.clone());
-    let radioisotope_root = path_env_or_default(
+    let isotope_root = path_env_or_fixture(
+        "AUTOMIC_VAULT_REPO_CACHE",
+        default_isotope_root.clone(),
+        repo_root.join("src/lib/rs/fixtures/isotopes"),
+    );
+    let radioisotope_root = path_env_or_fixture(
         "AUTOMIC_VAULT_RADIOISOTOPES_REPO",
         default_radioisotope_root.clone(),
+        repo_root.join("src/lib/rs/fixtures/radioisotopes"),
     );
     let isotope_roots = [isotope_root.clone(), radioisotope_root.clone()];
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
@@ -421,6 +425,21 @@ fn path_env_or_default(key: &str, default: std::path::PathBuf) -> std::path::Pat
         .map(std::path::PathBuf::from)
         .unwrap_or(default);
     absolute_path(path)
+}
+
+fn path_env_or_fixture(
+    key: &str,
+    default: std::path::PathBuf,
+    fixture: std::path::PathBuf,
+) -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os(key).filter(|value| !value.is_empty()) {
+        return absolute_path(std::path::PathBuf::from(path));
+    }
+    let default = absolute_path(default);
+    if default.exists() {
+        return default;
+    }
+    absolute_path(fixture)
 }
 
 fn absolute_path(path: std::path::PathBuf) -> std::path::PathBuf {

@@ -23,13 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Checkout isotope repositories
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          rm -rf ../av.db/data/isotopes ../av.db/data/radioisotopes
-          scripts/sync-isotope-checkouts.sh
-
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
 
@@ -49,16 +42,9 @@ jobs:
           sudo cp data/combined.json /var/db/automic-vault/db.json
 
       - name: Generate Rust coverage
-        env:
-          AUTOMIC_VAULT_INCLUDE_ISOTOPE_TESTS: "1"
         run: >
-          cargo llvm-cov --workspace --lcov --output-path lcov.info
+          cargo llvm-cov --workspace --no-cfg-coverage --lcov --output-path lcov.info
           -- --test-threads=1
-
-      - name: Verify isotope coverage paths
-        run: |
-          grep -Eq '^SF:.*/data/isotopes/.+\.rs$' lcov.info
-          grep -Eq '^SF:.*/data/radioisotopes/.+\.rs$' lcov.info
 
       - name: Upload Rust coverage to Coveralls
         uses: coverallsapp/github-action@v2

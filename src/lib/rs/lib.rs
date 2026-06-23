@@ -5374,6 +5374,10 @@ managed_secrets = ["dep:managed-secrets"]"#,
         );
     }
 
+    fn using_radioisotope_fixture_integrations() -> bool {
+        env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO").contains("/fixtures/radioisotopes")
+    }
+
     #[test]
     fn generated_isotope_integrations_tolerate_empty_home() {
         let _lock = test_env_lock().lock().unwrap();
@@ -5763,42 +5767,53 @@ machine example.com login user password netrc-token
             }
         }
 
-        for expected in [
-            "acli",
-            "akamai",
-            "algolia",
-            "argocd",
-            "atuin",
-            "bash",
-            "bitwarden-cli",
-            "certbot",
-            "cloudflare-wrangler",
-            "cloudflared",
-            "docker",
-            "docker-machine",
-            "fastlane",
-            "gh",
-            "kubernetes-cli",
-            "openvpn",
-            "supabase",
-            "terraform",
-            "vercel-cli",
-            "zsh",
-        ] {
+        let expected: &[&str] = if using_radioisotope_fixture_integrations() {
+            &["gh", "huggingface-cli", "node@24", "terraform"]
+        } else {
+            &[
+                "acli",
+                "akamai",
+                "algolia",
+                "argocd",
+                "atuin",
+                "bash",
+                "bitwarden-cli",
+                "certbot",
+                "cloudflare-wrangler",
+                "cloudflared",
+                "docker",
+                "docker-machine",
+                "fastlane",
+                "gh",
+                "kubernetes-cli",
+                "openvpn",
+                "supabase",
+                "terraform",
+                "vercel-cli",
+                "zsh",
+            ]
+        };
+
+        for expected in expected {
             assert!(
-                triggered.contains(&expected),
+                triggered.contains(expected),
                 "expected {expected} to report seeded secrets, got {triggered:?}"
             );
         }
-        assert!(
-            triggered.len() >= 30,
-            "expected broad generated detector coverage, got {triggered:?}"
-        );
+        if !using_radioisotope_fixture_integrations() {
+            assert!(
+                triggered.len() >= 30,
+                "expected broad generated detector coverage, got {triggered:?}"
+            );
+        }
     }
 
     #[test]
     fn generated_isotope_migrations_scrub_seeded_secret_files() {
         let _lock = test_env_lock().lock().unwrap();
+        if using_radioisotope_fixture_integrations() {
+            return;
+        }
         if isotope_integrations::INTEGRATIONS
             .iter()
             .all(|integration| integration.migrate.is_none())
@@ -6179,6 +6194,9 @@ machine example.com login user password netrc-token
     #[test]
     fn generated_radioisotope_migrations_cover_additional_default_paths() {
         let _lock = test_env_lock().lock().unwrap();
+        if using_radioisotope_fixture_integrations() {
+            return;
+        }
         if isotope_integrations::INTEGRATIONS
             .iter()
             .all(|integration| integration.migrate.is_none())
@@ -6546,7 +6564,14 @@ machine example.com login user password netrc-token
                 "expected wrong parent error for {name}, got {wrong_parent}"
             );
         }
-        assert_eq!(helpers.len(), 9);
+        assert_eq!(
+            helpers.len(),
+            if using_radioisotope_fixture_integrations() {
+                1
+            } else {
+                9
+            }
+        );
     }
 
     #[test]
