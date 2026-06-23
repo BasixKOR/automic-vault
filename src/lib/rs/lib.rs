@@ -5375,7 +5375,8 @@ managed_secrets = ["dep:managed-secrets"]"#,
     }
 
     fn using_radioisotope_fixture_integrations() -> bool {
-        env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO").contains("/fixtures/radioisotopes")
+        Path::new(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO"))
+            == Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib/rs/fixtures/radioisotopes")
     }
 
     #[test]

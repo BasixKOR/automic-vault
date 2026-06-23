@@ -22,7 +22,7 @@ fn radioisotope_av_inject_shell_wrappers_run_with_missing_optional_credentials()
     }
 
     let root = radioisotope_root();
-    if root.to_string_lossy().contains("/fixtures/radioisotopes") {
+    if root == radioisotope_fixture_root() {
         return;
     }
     let templates = collect_av_inject_shell_wrappers(&root);
@@ -100,6 +100,10 @@ fn radioisotope_root() -> PathBuf {
         .map(PathBuf::from)
         .map(absolute_radioisotope_path)
         .unwrap_or_else(|| PathBuf::from(env!("AUTOMIC_VAULT_GENERATED_RADIOISOTOPES_REPO")))
+}
+
+fn radioisotope_fixture_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib/rs/fixtures/radioisotopes")
 }
 
 fn absolute_radioisotope_path(path: PathBuf) -> PathBuf {
