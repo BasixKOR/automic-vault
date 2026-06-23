@@ -4540,18 +4540,22 @@ managed_secrets = ["dep:managed-secrets"]"#,
                 RequestedPackage::Isotope("terraform".to_string()),
             ] {
                 seed_terraform_install();
-                let err = run_i_package(
+                let result = run_i_package(
                     &config,
                     requested,
                     InstallOptions {
                         intent: InstallIntent::Install,
                     },
-                )
-                .unwrap_err();
-                assert!(
-                    err.contains("terraform"),
-                    "expected terraform install error, got: {err}"
                 );
+                if using_radioisotope_fixture_integrations() {
+                    result.unwrap();
+                } else {
+                    let err = result.unwrap_err();
+                    assert!(
+                        err.contains("terraform"),
+                        "expected terraform install error, got: {err}"
+                    );
+                }
             }
         }
 
@@ -5384,7 +5388,15 @@ managed_secrets = ["dep:managed-secrets"]"#,
         let _lock = test_env_lock().lock().unwrap();
         let temp = TempDir::new().unwrap();
         let home = temp.path().join("home");
+        let cwd = temp.path().join("cwd");
         fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::write(
+            cwd.join("hosts.yml"),
+            "github.com:\n  oauth_token: cwd-token\n",
+        )
+        .unwrap();
+        let _cwd = CurrentDirGuard::set(&cwd);
         let missing_path = temp.path().join("missing");
         let missing = missing_path.to_str().unwrap();
         let _env = TestEnvGuard::set(&[
@@ -5401,7 +5413,7 @@ managed_secrets = ["dep:managed-secrets"]"#,
             ("DCOS_DIR", missing),
             ("DIGITALOCEAN_CONFIG", missing),
             ("DOCKER_CONFIG", missing),
-            ("GH_CONFIG_DIR", missing),
+            ("GH_CONFIG_DIR", ""),
             ("GLAB_CONFIG_DIR", missing),
             ("HCLOUD_CONFIG", missing),
             ("HELM_CONFIG_HOME", missing),
@@ -13840,6 +13852,22 @@ EOF
                     },
                 }
             }
+        }
+    }
+
+    struct CurrentDirGuard(PathBuf);
+
+    impl CurrentDirGuard {
+        fn set(path: &Path) -> Self {
+            let previous = env::current_dir().unwrap();
+            env::set_current_dir(path).unwrap();
+            Self(previous)
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            env::set_current_dir(&self.0).unwrap();
         }
     }
 
