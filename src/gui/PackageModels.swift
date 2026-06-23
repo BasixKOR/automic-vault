@@ -1642,6 +1642,13 @@ struct PackagePresentation: Equatable {
         }
     }
 
+    var installsHardened: Bool {
+        if case .available(let result) = item {
+            return result.installsHardened
+        }
+        return false
+    }
+
     var hasPlainTextSecretAlert: Bool {
         plainTextSecretAlertSource != nil
     }

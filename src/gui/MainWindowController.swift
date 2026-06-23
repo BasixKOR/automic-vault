@@ -670,25 +670,85 @@ final class MainWindowController: NSHostingController<MainWindowView> {
         }
 
         let packageSpecs = request.packageNames.map { AVPackageSpec(name: $0) }
-        switch request.kind {
-        case .install, .harden:
-            helperBridge.install(
-                packages: packageSpecs,
-                progress: handleProgress,
-                completion: handleCompletion
-            )
-        case .update:
-            helperBridge.update(
-                packages: packageSpecs,
-                progress: handleProgress,
-                completion: handleCompletion
-            )
-        case .uninstall:
-            helperBridge.uninstall(
-                packages: packageSpecs,
-                progress: handleProgress,
-                completion: handleCompletion
-            )
+        let startPackageHelperOperation = { [helperBridge] (
+            completion: @escaping (Result<NukeHelperResult, Error>) -> Void
+        ) in
+            switch request.kind {
+            case .install, .harden:
+                helperBridge.install(
+                    packages: packageSpecs,
+                    progress: handleProgress,
+                    completion: completion
+                )
+            case .update:
+                helperBridge.update(
+                    packages: packageSpecs,
+                    progress: handleProgress,
+                    completion: completion
+                )
+            case .uninstall:
+                helperBridge.uninstall(
+                    packages: packageSpecs,
+                    progress: handleProgress,
+                    completion: completion
+                )
+            }
+        }
+
+        if shouldInstallAvBeforeRadioisotopeOperation(request) {
+            do {
+                stagedCLTDirectory = try NucleusBridge().exportBundledCLTForHelperInstall()
+            } catch {
+                handleCompletion(.failure(error))
+                return
+            }
+            helperBridge.installAv(
+                sourcePath: stagedCLTDirectory?.path ?? "",
+                progress: handleProgress
+            ) { avResult in
+                switch avResult {
+                case .failure:
+                    handleCompletion(avResult)
+                case .success(let avSuccess):
+                    startPackageHelperOperation { packageResult in
+                        switch packageResult {
+                        case .failure:
+                            handleCompletion(packageResult)
+                        case .success(let packageSuccess):
+                            handleCompletion(.success(NukeHelperResult(
+                                message: packageSuccess.message,
+                                processedPackages: Self.mergedProcessedPackages(
+                                    avSuccess.processedPackages,
+                                    packageSuccess.processedPackages
+                                ),
+                                value: packageSuccess.value
+                            )))
+                        }
+                    }
+                }
+            }
+            return
+        }
+
+        startPackageHelperOperation(handleCompletion)
+    }
+
+    private func shouldInstallAvBeforeRadioisotopeOperation(
+        _ request: PackageOperationRequest
+    ) -> Bool {
+        guard request.kind == .install || request.kind == .harden,
+              NucleusBridge().isAvInstalledAtSystemPath() == false else {
+            return false
+        }
+        if request.migrationIsotopeName?.isEmpty == false {
+            return true
+        }
+        if request.installsHardened {
+            return true
+        }
+        return request.packageNames.contains { packageName in
+            packageName.trimmingCharacters(in: .whitespacesAndNewlines)
+                .hasPrefix("isotope:")
         }
     }
 

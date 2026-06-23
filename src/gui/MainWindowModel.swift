@@ -316,6 +316,7 @@ struct PackageOperationRequest: Equatable {
     let displayName: String
     let isAutomicVaultCLT: Bool
     let isXcodeCLT: Bool
+    let installsHardened: Bool
     let migrationIsotopeName: String?
 }
 
@@ -848,6 +849,7 @@ final class MainWindowModel: ObservableObject {
             displayName: "av",
             isAutomicVaultCLT: true,
             isXcodeCLT: false,
+            installsHardened: false,
             migrationIsotopeName: nil
         )
     }
@@ -871,6 +873,7 @@ final class MainWindowModel: ObservableObject {
             displayName: Self.packageInstallDisplayName(packageNames),
             isAutomicVaultCLT: false,
             isXcodeCLT: false,
+            installsHardened: false,
             migrationIsotopeName: nil
         )
     }
@@ -958,6 +961,7 @@ final class MainWindowModel: ObservableObject {
             displayName: displayName(for: package),
             isAutomicVaultCLT: detail.isAutomicVaultCLT,
             isXcodeCLT: detail.isXcodeCLT,
+            installsHardened: package.installsHardened,
             migrationIsotopeName: action == .harden
                 ? detail.securityState?.isotopeName.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil

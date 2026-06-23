@@ -1505,6 +1505,28 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDossierInstallRequestKeepsHardenedInstallFlag() throws {
+        let model = MainWindowModel()
+        defer { model.stop() }
+        let result = Self.packageSearchResult(
+            name: "node@24",
+            installsHardened: true
+        )
+        let package = PackagePresentation(
+            item: .available(result),
+            detail: result.fallbackDetail,
+            freshness: 0
+        )
+        let detail = try XCTUnwrap(package.detail)
+
+        model.requestDossierPackageAction(.install, detail: detail, package: package)
+
+        let request = try XCTUnwrap(model.packageOperationRequest)
+        XCTAssertEqual(request.kind, .install)
+        XCTAssertTrue(request.installsHardened)
+    }
+
+    @MainActor
     func testDossierPrimaryActionFollowsInstallState() {
         let model = MainWindowModel()
         defer { model.stop() }
