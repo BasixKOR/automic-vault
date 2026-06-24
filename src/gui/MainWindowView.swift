@@ -363,13 +363,20 @@ struct MainWindowView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(packages, id: \.selectionID) { package in
-                        DashboardPackageRow(
-                            title: model.displayName(for: package),
-                            subtitle: model.packageDescription(for: package),
-                            trailing: showsOutdatedVersionRange
-                                ? model.outdatedVersionText(for: package)
-                                : model.versionText(for: package)
-                        )
+                        Button {
+                            model.select(package)
+                        } label: {
+                            DashboardPackageRow(
+                                title: model.displayName(for: package),
+                                subtitle: model.packageDescription(for: package),
+                                trailing: showsOutdatedVersionRange
+                                    ? model.outdatedVersionText(for: package)
+                                    : model.versionText(for: package)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         if package.selectionID != packages.last?.selectionID {
                             hairline
                         }
@@ -883,7 +890,7 @@ private struct DashboardSourceBreakdown: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
-            Text(L10n.string("Package Managers").uppercased())
+            Text(L10n.string("Source").uppercased())
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(AVGlassPalette.quietText)
                 .tracking(0.7)
@@ -1073,6 +1080,7 @@ private struct DashboardPackageRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
