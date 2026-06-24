@@ -1021,25 +1021,22 @@ private struct DashboardPackageRow: View {
     let trailing: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AVGlassPalette.primaryText)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                    .lineLimit(1)
-            }
-            .layoutPriority(1)
-            Spacer(minLength: 8)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(subtitle)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Text(trailing)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AVGlassPalette.secondaryText)
                 .lineLimit(1)
-                .truncationMode(.middle)
-                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.vertical, 9)
     }
