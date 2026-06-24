@@ -957,20 +957,10 @@ private struct DashboardDonutCard: View {
                                 .foregroundStyle(AVGlassPalette.secondaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            Group {
-                                if slice.id == "security-alerts" && slice.count > 0 {
-                                    DashboardCountPill(
-                                        count: slice.count,
-                                        color: dashboardSliceColor(slice.id)
-                                    )
-                                } else {
-                                    Text(slice.count.formatted())
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(AVGlassPalette.primaryText)
-                                        .monospacedDigit()
-                                }
-                            }
-                            .frame(width: 34, alignment: .trailing)
+                            DashboardLegendCount(
+                                slice: slice,
+                                color: dashboardSliceColor(slice.id)
+                            )
                         }
                     }
                 }
@@ -1035,6 +1025,25 @@ private struct DashboardCountPill: View {
     }
 }
 
+private struct DashboardLegendCount: View {
+    let slice: DashboardPackageSlice
+    let color: Color
+
+    var body: some View {
+        Group {
+            if slice.id == "security-alerts", slice.count > 0 {
+                DashboardCountPill(count: slice.count, color: color)
+            } else {
+                Text(slice.count.formatted())
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AVGlassPalette.primaryText)
+                    .monospacedDigit()
+            }
+        }
+        .frame(width: 42, alignment: .trailing)
+    }
+}
+
 private struct DashboardPackageRow: View {
     let title: String
     let subtitle: String
@@ -1042,15 +1051,10 @@ private struct DashboardPackageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AVGlassPalette.primaryText)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(AVGlassPalette.quietText)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AVGlassPalette.primaryText)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(trailing)
@@ -1059,6 +1063,11 @@ private struct DashboardPackageRow: View {
                     .lineLimit(1)
                     .layoutPriority(1)
             }
+            Text(subtitle)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 9)
     }
