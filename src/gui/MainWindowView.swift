@@ -953,17 +953,20 @@ private struct DashboardDonutCard: View {
                                 .foregroundStyle(AVGlassPalette.secondaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            if slice.id == "security-alerts" {
-                                DashboardCountPill(
-                                    count: slice.count,
-                                    color: dashboardSliceColor(slice.id)
-                                )
-                            } else {
-                                Text(slice.count.formatted())
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(AVGlassPalette.primaryText)
-                                    .monospacedDigit()
+                            Group {
+                                if slice.id == "security-alerts" && slice.count > 0 {
+                                    DashboardCountPill(
+                                        count: slice.count,
+                                        color: dashboardSliceColor(slice.id)
+                                    )
+                                } else {
+                                    Text(slice.count.formatted())
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(AVGlassPalette.primaryText)
+                                        .monospacedDigit()
+                                }
                             }
+                            .frame(width: 34, alignment: .trailing)
                         }
                     }
                 }
