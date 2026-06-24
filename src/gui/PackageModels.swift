@@ -1280,24 +1280,28 @@ struct PackageSearchPage: Decodable, Equatable {
     let totalCount: Int
     let nextOffset: Int?
     let categoryCounts: [String: Int]
+    let sourceCounts: [String: Int]
 
     enum CodingKeys: String, CodingKey {
         case packages
         case totalCount
         case nextOffset
         case categoryCounts
+        case sourceCounts
     }
 
     init(
         packages: [PackageSearchResult],
         totalCount: Int,
         nextOffset: Int?,
-        categoryCounts: [String: Int] = [:]
+        categoryCounts: [String: Int] = [:],
+        sourceCounts: [String: Int] = [:]
     ) {
         self.packages = packages
         self.totalCount = totalCount
         self.nextOffset = nextOffset
         self.categoryCounts = categoryCounts
+        self.sourceCounts = sourceCounts
     }
 
     init(from decoder: Decoder) throws {
@@ -1308,6 +1312,10 @@ struct PackageSearchPage: Decodable, Equatable {
         categoryCounts = try container.decodeIfPresent(
             [String: Int].self,
             forKey: .categoryCounts
+        ) ?? [:]
+        sourceCounts = try container.decodeIfPresent(
+            [String: Int].self,
+            forKey: .sourceCounts
         ) ?? [:]
     }
 }

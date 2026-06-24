@@ -293,21 +293,11 @@ struct MainWindowView: View {
         let summary = model.dashboardSummary
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .lastTextBaseline) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(L10n.string("Dashboard"))
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(AVGlassPalette.primaryText)
-                        Text(dashboardStatusText(summary))
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(AVGlassPalette.secondaryText)
-                    }
-                    Spacer()
-                    if model.isReloading || model.isLoadingSectionPage {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
+                DashboardStatsPanel(
+                    summary: summary,
+                    refreshedText: model.relativeRefreshText,
+                    isLoading: model.isReloading || model.isLoadingSectionPage
+                )
 
                 DashboardDonutCard(summary: summary)
                     .frame(maxWidth: 520)
@@ -341,14 +331,6 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
-    }
-
-    private func dashboardStatusText(_ summary: DashboardSummary) -> String {
-        let refreshed = model.relativeRefreshText
-        if summary.securityAlertCount > 0 {
-            return L10n.format("%d security alerts - refreshed %@", summary.securityAlertCount, refreshed)
-        }
-        return L10n.format("%d installed packages - refreshed %@", summary.totalPackages, refreshed)
     }
 
     private func dashboardPackageSection(
@@ -813,6 +795,123 @@ struct MainWindowView: View {
         Rectangle()
             .fill(AVGlassPalette.hairline)
             .frame(width: 1)
+    }
+}
+
+private struct DashboardStatsPanel: View {
+    let summary: DashboardSummary
+    let refreshedText: String
+    let isLoading: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 18),
+                    GridItem(.flexible(), spacing: 18),
+                    GridItem(.flexible(), spacing: 18),
+                ],
+                spacing: 18
+            ) {
+                DashboardStatValue(
+                    title: L10n.string("Database"),
+                    value: summary.databasePackageCount.map { $0.formatted() } ?? "--"
+                )
+                DashboardStatValue(
+                    title: L10n.string("Installed"),
+                    value: summary.totalPackages.formatted()
+                )
+                DashboardStatValue(
+                    title: L10n.string("Security Alerts"),
+                    value: summary.securityAlertCount.formatted()
+                )
+                DashboardStatValue(
+                    title: L10n.string("Outdated"),
+                    value: summary.outdatedPackages.count.formatted()
+                )
+                DashboardStatValue(
+                    title: L10n.string("Last Refresh"),
+                    value: refreshedText
+                )
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                }
+            }
+            .layoutPriority(1)
+
+            DashboardSourceBreakdown(sourceCounts: summary.databaseSourceCounts)
+                .frame(width: 260)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            AVGlassPalette.controlFill.opacity(0.58),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(AVGlassPalette.controlBorder.opacity(0.16), lineWidth: 1)
+        )
+    }
+}
+
+private struct DashboardStatValue: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .tracking(0.7)
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(AVGlassPalette.primaryText)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+    }
+}
+
+private struct DashboardSourceBreakdown: View {
+    let sourceCounts: [(String, Int)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(L10n.string("Package Managers").uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .tracking(0.7)
+
+            if sourceCounts.isEmpty {
+                Text(L10n.string("No package manager counts loaded yet"))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(sourceCounts.prefix(5).enumerated()), id: \.offset) { _, source in
+                        HStack {
+                            Text(source.0)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(AVGlassPalette.secondaryText)
+                                .lineLimit(1)
+                            Spacer(minLength: 10)
+                            Text(source.1.formatted())
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.primaryText)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

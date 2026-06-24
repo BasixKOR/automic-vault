@@ -244,6 +244,10 @@ final class MainWindowModelTests: XCTestCase {
             "developer-tools": 2,
             "security": 1,
         ]
+        let sourceCounts = [
+            "Homebrew": 2,
+            "NPM": 1,
+        ]
         let model = MainWindowModel(
             cliToolsRecommendationProvider: { nil },
             installedPackagesFetcher: { [] },
@@ -254,7 +258,8 @@ final class MainWindowModelTests: XCTestCase {
                     packages: [],
                     totalCount: 3,
                     nextOffset: nil,
-                    categoryCounts: categoryCounts
+                    categoryCounts: categoryCounts,
+                    sourceCounts: sourceCounts
                 )
             },
             pulsePackagesFetcher: { _, _ in
@@ -274,6 +279,10 @@ final class MainWindowModelTests: XCTestCase {
 
         XCTAssertEqual(model.selectedSection, .installed)
         XCTAssertEqual(model.count(for: .security), 1)
+        XCTAssertEqual(
+            model.dashboardSummary.databaseSourceCounts.map { "\($0.0):\($0.1)" },
+            ["Homebrew:2", "NPM:1"]
+        )
         XCTAssertEqual(
             requests.values,
             [.init(offset: 0, category: nil, sortOrder: .rank)]

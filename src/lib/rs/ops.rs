@@ -445,7 +445,8 @@ fn search_packages_response(
     limit: usize,
 ) -> core::SearchPackagesResponse {
     let category_counts = package_category_counts(&packages);
-    search_packages_response_with_category_counts(packages, offset, limit, category_counts)
+    let source_counts = package_source_counts(&packages);
+    search_packages_response_with_counts(packages, offset, limit, category_counts, source_counts)
 }
 
 fn search_packages_response_with_category_counts(
@@ -453,6 +454,17 @@ fn search_packages_response_with_category_counts(
     offset: usize,
     limit: usize,
     category_counts: BTreeMap<String, usize>,
+) -> core::SearchPackagesResponse {
+    let source_counts = package_source_counts(&packages);
+    search_packages_response_with_counts(packages, offset, limit, category_counts, source_counts)
+}
+
+fn search_packages_response_with_counts(
+    packages: Vec<PackageSearchResult>,
+    offset: usize,
+    limit: usize,
+    category_counts: BTreeMap<String, usize>,
+    source_counts: BTreeMap<String, usize>,
 ) -> core::SearchPackagesResponse {
     let limit = search_page_size(limit);
     let total_count = packages.len();
@@ -468,6 +480,7 @@ fn search_packages_response_with_category_counts(
         total_count,
         next_offset,
         category_counts,
+        source_counts,
     }
 }
 
@@ -494,6 +507,27 @@ fn package_category_counts(packages: &[PackageSearchResult]) -> BTreeMap<String,
             .or_insert(0) += 1;
     }
     counts
+}
+
+fn package_source_counts(packages: &[PackageSearchResult]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for package in packages {
+        *counts
+            .entry(package_source_label(&package.source).to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn package_source_label(source: &PackageReceiptSource) -> &'static str {
+    match source {
+        PackageReceiptSource::Formula { .. } => "Homebrew",
+        PackageReceiptSource::Cask { .. } => "Homebrew Cask",
+        PackageReceiptSource::Isotope { .. } => "Isotope",
+        PackageReceiptSource::Vendor { .. } => "Vault",
+        PackageReceiptSource::Npm { .. } => "NPM",
+        PackageReceiptSource::Pip { .. } => "PyPI",
+    }
 }
 
 fn search_page_size(limit: usize) -> usize {

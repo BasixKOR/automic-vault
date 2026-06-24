@@ -11646,6 +11646,10 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             !ranked_page.category_counts.is_empty(),
             "ranked catalog response should include category counts"
         );
+        assert!(
+            !ranked_page.source_counts.is_empty(),
+            "ranked catalog response should include package manager counts"
+        );
 
         let first_page =
             ops::list_available_packages_matching_category(0, 1, None, Some("az")).unwrap();
@@ -11662,6 +11666,7 @@ info: requested `imagemagick`; `brew:imagemagick-full` is recommended instead\n"
             ops::list_available_packages_matching_category(1, 1, None, Some("az")).unwrap();
         assert_eq!(second_page.packages.len(), 1);
         assert_eq!(second_page.total_count, first_page.total_count);
+        assert_eq!(second_page.source_counts, first_page.source_counts);
 
         let category = first_page
             .category_counts

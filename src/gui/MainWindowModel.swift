@@ -340,6 +340,8 @@ struct DashboardPackageSlice: Identifiable {
 struct DashboardSummary {
     let slices: [DashboardPackageSlice]
     let totalPackages: Int
+    let databasePackageCount: Int?
+    let databaseSourceCounts: [(String, Int)]
     let newPackages: [PackagePresentation]
     let recentlyUpdatedPackages: [PackagePresentation]
     let outdatedPackages: [PackagePresentation]
@@ -434,6 +436,7 @@ final class MainWindowModel: ObservableObject {
     private var geigerTotalCount: Int?
     private var catalogTotalCount: Int?
     private var catalogCategoryCounts: [String: Int] = [:]
+    private var catalogSourceCounts: [String: Int] = [:]
     private var categoryPackagesByPageKey: [CategoryCatalogPageKey: [PackagePresentation]] = [:]
     private var categoryTotalCountsByPageKey: [CategoryCatalogPageKey: Int] = [:]
     private var pulseTotalCount: Int?
@@ -584,6 +587,9 @@ final class MainWindowModel: ObservableObject {
                 ),
             ],
             totalPackages: packages.count,
+            databasePackageCount: catalogTotalCount
+                ?? (catalogPackages.isEmpty ? nil : catalogPackages.count),
+            databaseSourceCounts: sortedDashboardSourceCounts,
             newPackages: Array(pulsePackages.filter(isPulseNewPackage).prefix(6)),
             recentlyUpdatedPackages: Array(
                 pulsePackages.filter { !isPulseNewPackage($0) }.prefix(6)
@@ -1971,6 +1977,17 @@ final class MainWindowModel: ObservableObject {
         return result.isNewPulse
     }
 
+    private var sortedDashboardSourceCounts: [(String, Int)] {
+        catalogSourceCounts
+            .map { ($0.key, $0.value) }
+            .sorted { left, right in
+                if left.1 == right.1 {
+                    return left.0.localizedStandardCompare(right.0) == .orderedAscending
+                }
+                return left.1 > right.1
+            }
+    }
+
     private func recordNewUpdatedSidebarClick() {
         let clickedAt = Date()
         newUpdatedLastClickedAt = clickedAt
@@ -2399,6 +2416,7 @@ final class MainWindowModel: ObservableObject {
         sectionPageNextOffsets[kind] = nil
         if case .catalog = kind {
             catalogCategoryCounts = [:]
+            catalogSourceCounts = [:]
             categoryPackagesByPageKey.removeAll()
             categoryTotalCountsByPageKey.removeAll()
         }
@@ -2554,6 +2572,9 @@ final class MainWindowModel: ObservableObject {
             case .catalog(let category, let sortOrder):
                 if !page.categoryCounts.isEmpty {
                     catalogCategoryCounts = page.categoryCounts
+                }
+                if category == nil, !page.sourceCounts.isEmpty {
+                    catalogSourceCounts = page.sourceCounts
                 }
                 let packages = page.packages.map {
                     presentation(for: $0, prefix: nil)

@@ -9,7 +9,7 @@ pub(crate) fn global_test_env_lock() -> &'static Mutex<()> {
     GLOBAL_TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.18";
+pub(crate) const PROTOCOL_VERSION: &str = "1.19";
 
 pub(crate) const PKG_DISPLAY_NAME: &str = "av";
 pub(crate) const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
@@ -143,6 +143,8 @@ pub(crate) struct SearchPackagesResponse {
     pub(crate) next_offset: Option<usize>,
     #[serde(rename = "categoryCounts", skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) category_counts: BTreeMap<String, usize>,
+    #[serde(rename = "sourceCounts", skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) source_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -357,6 +359,7 @@ mod tests {
             total_count: 1,
             next_offset: Some(25),
             category_counts: BTreeMap::from([("developer-tools".to_string(), 1)]),
+            source_counts: BTreeMap::from([("NPM".to_string(), 1)]),
         };
         let search_json = serde_json::to_value(search).unwrap();
         assert_eq!(search_json["totalCount"], 1);
@@ -385,6 +388,7 @@ mod tests {
         assert_eq!(search_json["packages"][0]["installsHardened"], true);
         assert_eq!(search_json["packages"][0]["rank"], 7);
         assert_eq!(search_json["categoryCounts"]["developer-tools"], 1);
+        assert_eq!(search_json["sourceCounts"]["NPM"], 1);
         assert_eq!(search_json["packages"][0]["pulseKind"], "release");
 
         let plan = IsotopeMigrationPlanResponse {
