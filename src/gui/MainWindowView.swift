@@ -824,7 +824,7 @@ private struct DashboardStatsPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 28) {
                 DashboardStatValue(
-                    title: L10n.string("Database"),
+                    title: L10n.string("Packages Monitored"),
                     value: summary.databasePackageCount.map { $0.formatted() } ?? "--"
                 )
                 DashboardStatValue(

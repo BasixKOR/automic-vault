@@ -358,7 +358,7 @@
 "SSH Target" = "SSH Target";
 "Categories" = "Categories";
 "Dashboard" = "Dashboard";
-"Database" = "Database";
+"Packages Monitored" = "Packages Monitored";
 "Mutable" = "Mutable";
 "New Packages" = "New Packages";
 "No package manager counts loaded yet" = "No package manager counts loaded yet";
