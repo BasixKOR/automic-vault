@@ -291,7 +291,7 @@ struct MainWindowView: View {
 
     private var dashboardPanel: some View {
         let summary = model.dashboardSummary
-        let isLoading = model.isReloading || model.isLoadingSectionPage
+        let isLoading = model.isDashboardLoading
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 18) {

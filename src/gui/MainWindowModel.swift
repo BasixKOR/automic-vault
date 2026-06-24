@@ -545,6 +545,17 @@ final class MainWindowModel: ObservableObject {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
     }
 
+    var isDashboardLoading: Bool {
+        isReloading
+            || isLoadingSectionPage
+            || (
+                lastErrorMessage == nil
+                    && (geigerTotalCount == nil
+                        || catalogTotalCount == nil
+                        || pulseTotalCount == nil)
+            )
+    }
+
     var dashboardSummary: DashboardSummary {
         let securityAlertPackages = geigerActionPackages
         let securityAlertIDs = Set(securityAlertPackages.map(\.selectionID))

@@ -327,6 +327,35 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardKeepsLoadingDuringStartupPreloadGap() async {
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: { [] },
+            outdatedPackagesFetcher: { [] },
+            availablePackagesFetcher: { _, _, _, _ in
+                Thread.sleep(forTimeInterval: 0.15)
+                return PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            },
+            pulsePackagesFetcher: { _, _ in
+                Thread.sleep(forTimeInterval: 0.15)
+                return PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            },
+            geigerPackagesFetcher: { _, _ in
+                Thread.sleep(forTimeInterval: 0.15)
+                return PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        await waitUntil(!model.isReloading)
+
+        XCTAssertTrue(model.isDashboardLoading)
+
+        await waitUntil(!model.isDashboardLoading)
+    }
+
+    @MainActor
     func testStartFocusesSecurityAlertsWhenInstalledHazardsExist() async {
         let state = securityState(
             isotopeName: "gh",
