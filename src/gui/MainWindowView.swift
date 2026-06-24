@@ -1019,9 +1019,12 @@ private struct DashboardCountPill: View {
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(color)
             .monospacedDigit()
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.14), in: Capsule())
+            .background {
+                Capsule()
+                    .fill(color.opacity(0.14))
+                    .padding(.horizontal, -7)
+                    .padding(.vertical, -2)
+            }
     }
 }
 
