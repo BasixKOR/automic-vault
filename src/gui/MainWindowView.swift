@@ -953,10 +953,17 @@ private struct DashboardDonutCard: View {
                                 .foregroundStyle(AVGlassPalette.secondaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(slice.count.formatted())
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(AVGlassPalette.primaryText)
-                                .monospacedDigit()
+                            if slice.id == "security-alerts" {
+                                DashboardCountPill(
+                                    count: slice.count,
+                                    color: dashboardSliceColor(slice.id)
+                                )
+                            } else {
+                                Text(slice.count.formatted())
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(AVGlassPalette.primaryText)
+                                    .monospacedDigit()
+                            }
                         }
                     }
                 }
@@ -988,16 +995,7 @@ private struct DashboardSectionCard<Content: View>: View {
                     .foregroundStyle(AVGlassPalette.quietText)
                     .tracking(0.8)
                 if let badgeCount, badgeCount > 0 {
-                    Text(badgeCount.formatted())
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(AVGlassPalette.orange)
-                        .monospacedDigit()
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(
-                            AVGlassPalette.orange.opacity(0.14),
-                            in: Capsule()
-                        )
+                    DashboardCountPill(count: badgeCount, color: AVGlassPalette.orange)
                 }
             }
             content
@@ -1012,6 +1010,21 @@ private struct DashboardSectionCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(AVGlassPalette.controlBorder.opacity(0.16), lineWidth: 1)
         )
+    }
+}
+
+private struct DashboardCountPill: View {
+    let count: Int
+    let color: Color
+
+    var body: some View {
+        Text(count.formatted())
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(color)
+            .monospacedDigit()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.14), in: Capsule())
     }
 }
 
