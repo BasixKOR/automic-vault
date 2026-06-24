@@ -291,14 +291,15 @@ struct MainWindowView: View {
 
     private var dashboardPanel: some View {
         let summary = model.dashboardSummary
+        let isLoading = model.isReloading || model.isLoadingSectionPage
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 18) {
-                    DashboardDonutCard(summary: summary)
+                    DashboardDonutCard(summary: summary, isLoading: isLoading)
                         .frame(maxWidth: 520)
                     DashboardStatsPanel(
                         summary: summary,
-                        isLoading: model.isReloading || model.isLoadingSectionPage
+                        isLoading: isLoading
                     )
                     .frame(maxWidth: 420)
                 }
@@ -307,18 +308,21 @@ struct MainWindowView: View {
                     dashboardPackageSection(
                         title: L10n.string("New Packages"),
                         packages: summary.newPackages,
-                        emptyText: L10n.string("No new packages loaded yet")
+                        emptyText: L10n.string("No new packages loaded yet"),
+                        isLoading: isLoading
                     )
                     dashboardPackageSection(
                         title: L10n.string("Recently Updated"),
                         packages: summary.recentlyUpdatedPackages,
-                        emptyText: L10n.string("No recent updates loaded yet")
+                        emptyText: L10n.string("No recent updates loaded yet"),
+                        isLoading: isLoading
                     )
                     dashboardPackageSection(
                         title: L10n.string("Outdated AV Packages"),
                         badgeCount: summary.outdatedPackageCount,
                         packages: summary.outdatedPackages,
-                        emptyText: L10n.string("No outdated AV packages")
+                        emptyText: L10n.string("No outdated AV packages"),
+                        isLoading: isLoading
                     )
                 }
             }
@@ -339,14 +343,21 @@ struct MainWindowView: View {
         title: String,
         badgeCount: Int? = nil,
         packages: [PackagePresentation],
-        emptyText: String
+        emptyText: String,
+        isLoading: Bool = false
     ) -> some View {
         DashboardSectionCard(title: title, badgeCount: badgeCount) {
             if packages.isEmpty {
-                Text(emptyText)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                    .frame(maxWidth: .infinity, minHeight: 106, alignment: .center)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, minHeight: 106, alignment: .center)
+                } else {
+                    Text(emptyText)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AVGlassPalette.quietText)
+                        .frame(maxWidth: .infinity, minHeight: 106, alignment: .center)
+                }
             } else {
                 VStack(spacing: 0) {
                     ForEach(packages, id: \.selectionID) { package in
@@ -807,7 +818,7 @@ private struct DashboardStatsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 28) {
                 DashboardStatValue(
                     title: L10n.string("Database"),
                     value: summary.databasePackageCount.map { $0.formatted() } ?? "--"
@@ -825,7 +836,7 @@ private struct DashboardStatsPanel: View {
                 }
             }
 
-            DashboardSourceBreakdown(sourceCounts: summary.databaseSourceCounts)
+            DashboardSourceBreakdown(sourceCounts: summary.databaseSourceCounts, isLoading: isLoading)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -858,12 +869,13 @@ private struct DashboardStatValue: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
         }
-        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .frame(minWidth: 88, minHeight: 54, alignment: .leading)
     }
 }
 
 private struct DashboardSourceBreakdown: View {
     let sourceCounts: [(String, Int)]
+    let isLoading: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -873,10 +885,16 @@ private struct DashboardSourceBreakdown: View {
                 .tracking(0.7)
 
             if sourceCounts.isEmpty {
-                Text(L10n.string("No package manager counts loaded yet"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .center)
+                } else {
+                    Text(L10n.string("No package manager counts loaded yet"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AVGlassPalette.quietText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
                 VStack(spacing: 8) {
                     ForEach(Array(sourceCounts.prefix(5).enumerated()), id: \.offset) { _, source in
@@ -900,6 +918,7 @@ private struct DashboardSourceBreakdown: View {
 
 private struct DashboardDonutCard: View {
     let summary: DashboardSummary
+    let isLoading: Bool
 
     var body: some View {
         DashboardSectionCard(title: L10n.string("Package Posture")) {
@@ -907,14 +926,19 @@ private struct DashboardDonutCard: View {
                 DashboardDonutChart(slices: summary.slices)
                     .frame(width: 190, height: 190)
                     .overlay {
-                        VStack(spacing: 3) {
-                            Text(summary.totalPackages.formatted())
-                                .font(.system(size: 32, weight: .semibold))
-                                .foregroundStyle(AVGlassPalette.primaryText)
-                                .monospacedDigit()
-                            Text(L10n.string("Installed"))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AVGlassPalette.quietText)
+                        if isLoading && summary.totalPackages == 0 {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            VStack(spacing: 3) {
+                                Text(summary.totalPackages.formatted())
+                                    .font(.system(size: 32, weight: .semibold))
+                                    .foregroundStyle(AVGlassPalette.primaryText)
+                                    .monospacedDigit()
+                                Text(L10n.string("Installed"))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(AVGlassPalette.quietText)
+                            }
                         }
                     }
 
@@ -1008,13 +1032,14 @@ private struct DashboardPackageRow: View {
                     .foregroundStyle(AVGlassPalette.quietText)
                     .lineLimit(1)
             }
+            .layoutPriority(1)
             Spacer(minLength: 8)
             Text(trailing)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AVGlassPalette.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: 110, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.vertical, 9)
     }
