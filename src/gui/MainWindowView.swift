@@ -322,7 +322,8 @@ struct MainWindowView: View {
                         badgeCount: summary.outdatedPackageCount,
                         packages: summary.outdatedPackages,
                         emptyText: L10n.string("No outdated AV packages"),
-                        isLoading: isLoading
+                        isLoading: isLoading,
+                        showsOutdatedVersionRange: true
                     )
                 }
             }
@@ -344,7 +345,8 @@ struct MainWindowView: View {
         badgeCount: Int? = nil,
         packages: [PackagePresentation],
         emptyText: String,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        showsOutdatedVersionRange: Bool = false
     ) -> some View {
         DashboardSectionCard(title: title, badgeCount: badgeCount) {
             if packages.isEmpty {
@@ -364,7 +366,9 @@ struct MainWindowView: View {
                         DashboardPackageRow(
                             title: model.displayName(for: package),
                             subtitle: model.packageDescription(for: package),
-                            trailing: model.versionText(for: package)
+                            trailing: showsOutdatedVersionRange
+                                ? model.outdatedVersionText(for: package)
+                                : model.versionText(for: package)
                         )
                         if package.selectionID != packages.last?.selectionID {
                             hairline
@@ -1043,16 +1047,18 @@ private struct DashboardPackageRow: View {
                 .foregroundStyle(AVGlassPalette.primaryText)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(subtitle)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(AVGlassPalette.quietText)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(trailing)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AVGlassPalette.secondaryText)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(trailing)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AVGlassPalette.secondaryText)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
         }
         .padding(.vertical, 9)
     }

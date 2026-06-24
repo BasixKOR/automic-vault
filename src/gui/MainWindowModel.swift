@@ -1418,17 +1418,23 @@ final class MainWindowModel: ObservableObject {
     func versionText(for package: PackagePresentation) -> String {
         switch package.item {
         case .installed(let record):
-            if !isSearchActive,
-               selectedSection == .outdated,
-               let latestVersion = record.latestVersion,
-               latestVersion.isEmpty == false,
-               latestVersion != record.version {
-                return "\(record.version) → \(latestVersion)"
+            if !isSearchActive, selectedSection == .outdated {
+                return outdatedVersionText(for: package)
             }
             return record.version
         case .recommendation, .available, .blogPost, .command:
             return package.versionText
         }
+    }
+
+    func outdatedVersionText(for package: PackagePresentation) -> String {
+        if case .installed(let record) = package.item,
+           let latestVersion = record.latestVersion,
+           latestVersion.isEmpty == false,
+           latestVersion != record.version {
+            return "\(record.version) → \(latestVersion)"
+        }
+        return package.versionText
     }
 
     func dossierVersionText(

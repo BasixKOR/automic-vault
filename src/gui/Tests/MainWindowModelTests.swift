@@ -1369,10 +1369,12 @@ final class MainWindowModelTests: XCTestCase {
         )
 
         XCTAssertEqual(model.versionText(for: package), "1.0 → 2.0")
+        XCTAssertEqual(model.outdatedVersionText(for: package), "1.0 → 2.0")
 
         model.searchText = "rg"
 
         XCTAssertEqual(model.versionText(for: package), "1.0")
+        XCTAssertEqual(model.outdatedVersionText(for: package), "1.0 → 2.0")
         XCTAssertEqual(model.packageInlineBadges(for: package), [])
     }
 
