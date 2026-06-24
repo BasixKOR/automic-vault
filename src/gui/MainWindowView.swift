@@ -309,14 +309,8 @@ struct MainWindowView: View {
                     }
                 }
 
-                HStack(alignment: .top, spacing: 18) {
-                    DashboardDonutCard(summary: summary)
-                        .frame(minWidth: 400, maxWidth: 460)
-                    VStack(spacing: 12) {
-                        DashboardMetricGrid(summary: summary)
-                        DashboardSourceCard(sourceCounts: summary.sourceCounts)
-                    }
-                }
+                DashboardDonutCard(summary: summary)
+                    .frame(maxWidth: 520)
 
                 HStack(alignment: .top, spacing: 18) {
                     dashboardPackageSection(
@@ -854,75 +848,6 @@ private struct DashboardDonutCard: View {
                                 .lineLimit(1)
                             Spacer(minLength: 8)
                             Text(slice.count.formatted())
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(AVGlassPalette.primaryText)
-                                .monospacedDigit()
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct DashboardMetricGrid: View {
-    let summary: DashboardSummary
-
-    var body: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12),
-            ],
-            spacing: 12
-        ) {
-            ForEach(summary.slices) { slice in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: slice.systemImage)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(dashboardSliceColor(slice.id))
-                            .frame(width: 17)
-                        Text(slice.title)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AVGlassPalette.secondaryText)
-                            .lineLimit(1)
-                    }
-                    Text(slice.count.formatted())
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(AVGlassPalette.primaryText)
-                        .monospacedDigit()
-                }
-                .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
-                .padding(13)
-                .background(
-                    AVGlassPalette.controlFill,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-            }
-        }
-    }
-}
-
-private struct DashboardSourceCard: View {
-    let sourceCounts: [(String, Int)]
-
-    var body: some View {
-        DashboardSectionCard(title: L10n.string("Mutable Sources")) {
-            if sourceCounts.isEmpty {
-                Text(L10n.string("No source scan data loaded yet"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AVGlassPalette.quietText)
-                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .center)
-            } else {
-                VStack(spacing: 9) {
-                    ForEach(Array(sourceCounts.prefix(6).enumerated()), id: \.offset) { _, source in
-                        HStack {
-                            Text(source.0)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(AVGlassPalette.secondaryText)
-                            Spacer()
-                            Text(source.1.formatted())
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(AVGlassPalette.primaryText)
                                 .monospacedDigit()

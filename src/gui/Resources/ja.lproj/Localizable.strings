@@ -360,14 +360,11 @@
 "%d security alerts - refreshed %@" = "%d security alerts - refreshed %@";
 "Dashboard" = "Dashboard";
 "Mutable" = "Mutable";
-"Mutable Sources" = "Mutable Sources";
 "New Packages" = "New Packages";
 "No new packages loaded yet" = "No new packages loaded yet";
 "No outdated AV packages" = "No outdated AV packages";
 "No recent updates loaded yet" = "No recent updates loaded yet";
-"No source scan data loaded yet" = "No source scan data loaded yet";
 "Outdated AV Packages" = "Outdated AV Packages";
 "Package Posture" = "Package Posture";
 "Package posture chart" = "Package posture chart";
 "Recently Updated" = "Recently Updated";
-"Vault" = "Vault";

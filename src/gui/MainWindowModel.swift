@@ -335,7 +335,6 @@ struct DashboardPackageSlice: Identifiable {
     let id: String
     let title: String
     let count: Int
-    let systemImage: String
 }
 
 struct DashboardSummary {
@@ -344,7 +343,6 @@ struct DashboardSummary {
     let newPackages: [PackagePresentation]
     let recentlyUpdatedPackages: [PackagePresentation]
     let outdatedPackages: [PackagePresentation]
-    let sourceCounts: [(String, Int)]
 
     var securityAlertCount: Int {
         slices.first { $0.id == "security-alerts" }?.count ?? 0
@@ -562,40 +560,27 @@ final class MainWindowModel: ObservableObject {
             0
         )
 
-        let sourceCounts = Dictionary(grouping: packages, by: dashboardSourceLabel)
-            .map { ($0.key, $0.value.count) }
-            .sorted { left, right in
-                if left.1 == right.1 {
-                    return left.0.localizedStandardCompare(right.0) == .orderedAscending
-                }
-                return left.1 > right.1
-            }
-
         return DashboardSummary(
             slices: [
                 DashboardPackageSlice(
                     id: "hardened",
                     title: L10n.string("Hardened"),
-                    count: hardened.count,
-                    systemImage: "shield.checkered"
+                    count: hardened.count
                 ),
                 DashboardPackageSlice(
                     id: "immutable",
                     title: L10n.string("Immutable"),
-                    count: immutable.count,
-                    systemImage: "lock"
+                    count: immutable.count
                 ),
                 DashboardPackageSlice(
                     id: "mutable",
                     title: L10n.string("Mutable"),
-                    count: mutable,
-                    systemImage: "wrench.and.screwdriver"
+                    count: mutable
                 ),
                 DashboardPackageSlice(
                     id: "security-alerts",
                     title: L10n.string("Security Alerts"),
-                    count: securityAlertPackages.count,
-                    systemImage: "exclamationmark.shield"
+                    count: securityAlertPackages.count
                 ),
             ],
             totalPackages: packages.count,
@@ -603,8 +588,7 @@ final class MainWindowModel: ObservableObject {
             recentlyUpdatedPackages: Array(
                 pulsePackages.filter { !isPulseNewPackage($0) }.prefix(6)
             ),
-            outdatedPackages: Array((packages.filter(isOutdated) + localOutdatedPackages).prefix(6)),
-            sourceCounts: sourceCounts
+            outdatedPackages: Array((packages.filter(isOutdated) + localOutdatedPackages).prefix(6))
         )
     }
 
@@ -1985,15 +1969,6 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         return result.isNewPulse
-    }
-
-    private func dashboardSourceLabel(for package: PackagePresentation) -> String {
-        switch package.item {
-        case .installed(let record):
-            return record.source?.displayLabel ?? L10n.string("Vault")
-        case .recommendation, .available, .blogPost, .command:
-            return L10n.string("Other")
-        }
     }
 
     private func recordNewUpdatedSidebarClick() {
