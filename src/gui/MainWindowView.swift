@@ -293,14 +293,15 @@ struct MainWindowView: View {
         let summary = model.dashboardSummary
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                DashboardStatsPanel(
-                    summary: summary,
-                    refreshedText: model.relativeRefreshText,
-                    isLoading: model.isReloading || model.isLoadingSectionPage
-                )
-
-                DashboardDonutCard(summary: summary)
-                    .frame(maxWidth: 520)
+                HStack(alignment: .top, spacing: 18) {
+                    DashboardDonutCard(summary: summary)
+                        .frame(maxWidth: 520)
+                    DashboardStatsPanel(
+                        summary: summary,
+                        isLoading: model.isReloading || model.isLoadingSectionPage
+                    )
+                    .frame(maxWidth: 420)
+                }
 
                 HStack(alignment: .top, spacing: 18) {
                     dashboardPackageSection(
@@ -315,6 +316,7 @@ struct MainWindowView: View {
                     )
                     dashboardPackageSection(
                         title: L10n.string("Outdated AV Packages"),
+                        badgeCount: summary.outdatedPackageCount,
                         packages: summary.outdatedPackages,
                         emptyText: L10n.string("No outdated AV packages")
                     )
@@ -335,10 +337,11 @@ struct MainWindowView: View {
 
     private func dashboardPackageSection(
         title: String,
+        badgeCount: Int? = nil,
         packages: [PackagePresentation],
         emptyText: String
     ) -> some View {
-        DashboardSectionCard(title: title) {
+        DashboardSectionCard(title: title, badgeCount: badgeCount) {
             if packages.isEmpty {
                 Text(emptyText)
                     .font(.system(size: 13, weight: .medium))
@@ -800,49 +803,29 @@ struct MainWindowView: View {
 
 private struct DashboardStatsPanel: View {
     let summary: DashboardSummary
-    let refreshedText: String
     let isLoading: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 24) {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 18),
-                    GridItem(.flexible(), spacing: 18),
-                    GridItem(.flexible(), spacing: 18),
-                ],
-                spacing: 18
-            ) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 18) {
                 DashboardStatValue(
                     title: L10n.string("Database"),
                     value: summary.databasePackageCount.map { $0.formatted() } ?? "--"
                 )
                 DashboardStatValue(
-                    title: L10n.string("Installed"),
-                    value: summary.totalPackages.formatted()
-                )
-                DashboardStatValue(
-                    title: L10n.string("Security Alerts"),
-                    value: summary.securityAlertCount.formatted()
-                )
-                DashboardStatValue(
-                    title: L10n.string("Outdated"),
-                    value: summary.outdatedPackages.count.formatted()
-                )
-                DashboardStatValue(
-                    title: L10n.string("Last Refresh"),
-                    value: refreshedText
+                    title: L10n.string("Categories"),
+                    value: summary.databaseCategoryCount > 0
+                        ? summary.databaseCategoryCount.formatted()
+                        : "--"
                 )
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
-                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                        .frame(width: 18, height: 54, alignment: .center)
                 }
             }
-            .layoutPriority(1)
 
             DashboardSourceBreakdown(sourceCounts: summary.databaseSourceCounts)
-                .frame(width: 260)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -960,14 +943,39 @@ private struct DashboardDonutCard: View {
 
 private struct DashboardSectionCard<Content: View>: View {
     let title: String
+    let badgeCount: Int?
     @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        badgeCount: Int? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.badgeCount = badgeCount
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(AVGlassPalette.quietText)
-                .tracking(0.8)
+            HStack(spacing: 8) {
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .tracking(0.8)
+                if let badgeCount, badgeCount > 0 {
+                    Text(badgeCount.formatted())
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(AVGlassPalette.orange)
+                        .monospacedDigit()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            AVGlassPalette.orange.opacity(0.14),
+                            in: Capsule()
+                        )
+                }
+            }
             content
         }
         .padding(16)

@@ -341,14 +341,12 @@ struct DashboardSummary {
     let slices: [DashboardPackageSlice]
     let totalPackages: Int
     let databasePackageCount: Int?
+    let databaseCategoryCount: Int
     let databaseSourceCounts: [(String, Int)]
+    let outdatedPackageCount: Int
     let newPackages: [PackagePresentation]
     let recentlyUpdatedPackages: [PackagePresentation]
     let outdatedPackages: [PackagePresentation]
-
-    var securityAlertCount: Int {
-        slices.first { $0.id == "security-alerts" }?.count ?? 0
-    }
 }
 
 private enum WebsiteBlogIndexFetchError: Error, LocalizedError {
@@ -562,6 +560,7 @@ final class MainWindowModel: ObservableObject {
             installedPosturePackages.count - hardened.count - immutable.count,
             0
         )
+        let outdatedPackages = packages.filter(isOutdated) + localOutdatedPackages
 
         return DashboardSummary(
             slices: [
@@ -589,12 +588,14 @@ final class MainWindowModel: ObservableObject {
             totalPackages: packages.count,
             databasePackageCount: catalogTotalCount
                 ?? (catalogPackages.isEmpty ? nil : catalogPackages.count),
+            databaseCategoryCount: catalogCategoryCounts.count,
             databaseSourceCounts: sortedDashboardSourceCounts,
+            outdatedPackageCount: outdatedPackages.count,
             newPackages: Array(pulsePackages.filter(isPulseNewPackage).prefix(6)),
             recentlyUpdatedPackages: Array(
                 pulsePackages.filter { !isPulseNewPackage($0) }.prefix(6)
             ),
-            outdatedPackages: Array((packages.filter(isOutdated) + localOutdatedPackages).prefix(6))
+            outdatedPackages: Array(outdatedPackages.prefix(6))
         )
     }
 
