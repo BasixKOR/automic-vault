@@ -318,7 +318,7 @@ struct MainWindowView: View {
                         isLoading: isLoading
                     )
                     dashboardPackageSection(
-                        title: L10n.string("Outdated AV Packages"),
+                        title: L10n.string("Outdated Packages"),
                         badgeCount: summary.outdatedPackageCount,
                         packages: summary.outdatedPackages,
                         emptyText: L10n.string("No outdated AV packages"),
