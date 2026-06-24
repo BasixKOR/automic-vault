@@ -386,12 +386,14 @@ fn compare_package_rank_order(
     right: &PackageSearchResult,
 ) -> std::cmp::Ordering {
     match (left.rank, right.rank) {
-        (Some(left_rank), Some(right_rank)) => left_rank
-            .cmp(&right_rank)
-            .then_with(|| left.package_name.cmp(&right.package_name)),
+        (Some(left_rank), Some(right_rank)) => left_rank.cmp(&right_rank).then_with(|| {
+            compare_package_names_for_search_order(&left.package_name, &right.package_name)
+        }),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => left.package_name.cmp(&right.package_name),
+        (None, None) => {
+            compare_package_names_for_search_order(&left.package_name, &right.package_name)
+        }
     }
 }
 
@@ -2377,6 +2379,23 @@ mod tests {
                 .map(|package| package.package_name.as_str())
                 .collect::<Vec<_>>(),
             ["alpha", "middle", "missing", "zulu"]
+        );
+    }
+
+    #[test]
+    fn package_rank_sort_falls_back_to_alphabetical_when_ranks_are_missing() {
+        let mut packages = vec![
+            ranked_search_result("npm:zulu", None),
+            ranked_search_result("brew:alpha", None),
+            ranked_search_result("cask:middle", None),
+        ];
+        sort_available_packages(&mut packages, PackageListSort::Rank).unwrap();
+        assert_eq!(
+            packages
+                .iter()
+                .map(|package| package.package_name.as_str())
+                .collect::<Vec<_>>(),
+            ["brew:alpha", "cask:middle", "npm:zulu"]
         );
     }
 

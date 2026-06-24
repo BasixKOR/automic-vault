@@ -382,7 +382,7 @@ final class MainWindowModel: ObservableObject {
             scheduleSearch()
         }
     }
-    @Published private(set) var categoryPackageSortOrder: CategoryPackageSortOrder = .rank
+    @Published private(set) var categoryPackageSortOrder: CategoryPackageSortOrder = .alphabetical
     @Published private(set) var packages: [PackagePresentation] = []
     @Published private(set) var securityRecommendationPackages: [PackagePresentation] = []
     @Published private(set) var geigerPackages: [PackagePresentation] = []

@@ -752,7 +752,7 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
-    func testCategorySortOrderCanSwitchFromRankToAlphabetical() async throws {
+    func testCategorySortOrderDefaultsToAlphabeticalAndCanSwitchToRank() async throws {
         let requests = CategoryPageRequestRecorder()
         let model = MainWindowModel(
             availablePackagesFetcher: { offset, _, category, sortOrder in
@@ -800,23 +800,23 @@ final class MainWindowModelTests: XCTestCase {
         )
         defer { model.stop() }
 
-        XCTAssertEqual(model.categoryPackageSortOrder, .rank)
-        XCTAssertEqual(model.categorySortButtonTitle, "Sort: Popularity")
+        XCTAssertEqual(model.categoryPackageSortOrder, .alphabetical)
+        XCTAssertEqual(model.categorySortButtonTitle, "Sort: A-Z")
 
         model.selectedSection = .developerTools
-        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:zulu", "brew:alpha"])
-
-        model.selectCategorySortOrder(.alphabetical)
         await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:alpha", "brew:zulu"])
+
+        model.selectCategorySortOrder(.rank)
+        await waitUntil(model.displayedPackages.map(\.selectionID) == ["brew:zulu", "brew:alpha"])
 
         XCTAssertEqual(
             requests.values,
             [
-                .init(offset: 0, category: "developer-tools", sortOrder: .rank),
                 .init(offset: 0, category: "developer-tools", sortOrder: .alphabetical),
+                .init(offset: 0, category: "developer-tools", sortOrder: .rank),
             ]
         )
-        XCTAssertEqual(model.categorySortButtonTitle, "Sort: A-Z")
+        XCTAssertEqual(model.categorySortButtonTitle, "Sort: Popularity")
     }
 
     @MainActor
