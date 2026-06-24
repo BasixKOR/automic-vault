@@ -54,7 +54,7 @@ final class MainWindowModelTests: XCTestCase {
     func testSidebarGroupsPutCatalogShortcutsBelowCategories() {
         XCTAssertEqual(
             MainWindowSection.librarySections,
-            [.installed, .geigerCounter, .outdated]
+            [.dashboard, .installed, .geigerCounter, .outdated]
         )
         XCTAssertEqual(
             MainWindowSection.categoryShortcutSections,
@@ -152,6 +152,69 @@ final class MainWindowModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardSummaryClassifiesPackagePosture() async {
+        let alertState = securityState(
+            isotopeName: "brew:awscli",
+            reason: "Plain text secret exposure"
+        )
+        let model = MainWindowModel(
+            cliToolsRecommendationProvider: { nil },
+            installedPackagesFetcher: {
+                [
+                    PackageRecord(
+                        name: "isotope:gh",
+                        source: .isotope(isotopeName: "gh"),
+                        version: "1.0.0",
+                        description: nil,
+                        securityState: nil
+                    ),
+                    PackageRecord(
+                        name: "brew:git",
+                        source: .formula(rootFormula: "git"),
+                        version: "2.0.0",
+                        description: nil,
+                        securityState: nil,
+                        installRoot: "/usr/local"
+                    ),
+                    PackageRecord(
+                        name: "npm:typescript",
+                        source: .npm(packageName: "typescript"),
+                        version: "5.0.0",
+                        description: nil,
+                        securityState: nil,
+                        installRoot: "/opt/homebrew"
+                    ),
+                    PackageRecord(
+                        name: "brew:awscli",
+                        source: .formula(rootFormula: "awscli"),
+                        version: "2.0.0",
+                        description: nil,
+                        securityState: alertState
+                    ),
+                ]
+            },
+            outdatedPackagesFetcher: { [] },
+            geigerPackagesFetcher: { _, _ in
+                PackageSearchPage(packages: [], totalCount: 0, nextOffset: nil)
+            }
+        )
+        defer { model.stop() }
+
+        model.start()
+        await waitUntil(model.dashboardSummary.totalPackages == 4)
+
+        let counts = Dictionary(
+            uniqueKeysWithValues: model.dashboardSummary.slices.map { ($0.id, $0.count) }
+        )
+
+        XCTAssertEqual(counts["hardened"], 1)
+        XCTAssertEqual(counts["immutable"], 1)
+        XCTAssertEqual(counts["mutable"], 1)
+        XCTAssertEqual(counts["security-alerts"], 1)
+        XCTAssertEqual(model.selectedSection, .dashboard)
+    }
+
+    @MainActor
     func testPersistentSidebarCountsShowZeroWhenThereAreNoAlertsOrUpdates() {
         let model = MainWindowModel()
         defer { model.stop() }
@@ -203,6 +266,7 @@ final class MainWindowModelTests: XCTestCase {
         )
         defer { model.stop() }
 
+        model.selectedSection = .installed
         XCTAssertEqual(model.selectedSection, .installed)
 
         model.start()
@@ -276,6 +340,7 @@ final class MainWindowModelTests: XCTestCase {
         )
         defer { model.stop() }
 
+        model.selectedSection = .installed
         model.start()
         await waitUntil(model.selectedSection == .geigerCounter)
 
@@ -309,6 +374,7 @@ final class MainWindowModelTests: XCTestCase {
         )
         defer { model.stop() }
 
+        model.selectedSection = .installed
         model.start()
         await waitUntil(
             model.selectedSection == .geigerCounter

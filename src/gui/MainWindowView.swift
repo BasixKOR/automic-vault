@@ -71,14 +71,19 @@ struct MainWindowView: View {
                 sidebar
                     .frame(width: sidebarWidth)
                 verticalHairline
-                packageList
-                    .frame(width: packageWidth)
-                verticalHairline
-                dossierPanel
-                    .frame(width: dossierWidth)
-                verticalHairline
-                linksPanel
-                    .frame(width: linksWidth)
+                if model.selectedSection == .dashboard {
+                    dashboardPanel
+                        .frame(width: max(width - sidebarWidth - 1, 720))
+                } else {
+                    packageList
+                        .frame(width: packageWidth)
+                    verticalHairline
+                    dossierPanel
+                        .frame(width: dossierWidth)
+                    verticalHairline
+                    linksPanel
+                        .frame(width: linksWidth)
+                }
             }
         }
     }
@@ -282,6 +287,103 @@ struct MainWindowView: View {
                 tint: AVGlassPalette.packageTint
             )
         }
+    }
+
+    private var dashboardPanel: some View {
+        let summary = model.dashboardSummary
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .lastTextBaseline) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(L10n.string("Dashboard"))
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(AVGlassPalette.primaryText)
+                        Text(dashboardStatusText(summary))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(AVGlassPalette.secondaryText)
+                    }
+                    Spacer()
+                    if model.isReloading || model.isLoadingSectionPage {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 18) {
+                    DashboardDonutCard(summary: summary)
+                        .frame(minWidth: 400, maxWidth: 460)
+                    VStack(spacing: 12) {
+                        DashboardMetricGrid(summary: summary)
+                        DashboardSourceCard(sourceCounts: summary.sourceCounts)
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 18) {
+                    dashboardPackageSection(
+                        title: L10n.string("New Packages"),
+                        packages: summary.newPackages,
+                        emptyText: L10n.string("No new packages loaded yet")
+                    )
+                    dashboardPackageSection(
+                        title: L10n.string("Recently Updated"),
+                        packages: summary.recentlyUpdatedPackages,
+                        emptyText: L10n.string("No recent updates loaded yet")
+                    )
+                    dashboardPackageSection(
+                        title: L10n.string("Outdated AV Packages"),
+                        packages: summary.outdatedPackages,
+                        emptyText: L10n.string("No outdated AV packages")
+                    )
+                }
+            }
+            .padding(.horizontal, 26)
+            .padding(.vertical, 26)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .scrollIndicators(.visible)
+        .background {
+            LiquidGlassSurface(
+                material: .thinMaterial,
+                tint: AVGlassPalette.packageTint
+            )
+        }
+    }
+
+    private func dashboardStatusText(_ summary: DashboardSummary) -> String {
+        let refreshed = model.relativeRefreshText
+        if summary.securityAlertCount > 0 {
+            return L10n.format("%d security alerts - refreshed %@", summary.securityAlertCount, refreshed)
+        }
+        return L10n.format("%d installed packages - refreshed %@", summary.totalPackages, refreshed)
+    }
+
+    private func dashboardPackageSection(
+        title: String,
+        packages: [PackagePresentation],
+        emptyText: String
+    ) -> some View {
+        DashboardSectionCard(title: title) {
+            if packages.isEmpty {
+                Text(emptyText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .frame(maxWidth: .infinity, minHeight: 106, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(packages, id: \.selectionID) { package in
+                        DashboardPackageRow(
+                            title: model.displayName(for: package),
+                            subtitle: model.packageDescription(for: package),
+                            trailing: model.versionText(for: package)
+                        )
+                        if package.selectionID != packages.last?.selectionID {
+                            hairline
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var shouldShowPackageListSpinner: Bool {
@@ -717,6 +819,250 @@ struct MainWindowView: View {
         Rectangle()
             .fill(AVGlassPalette.hairline)
             .frame(width: 1)
+    }
+}
+
+private struct DashboardDonutCard: View {
+    let summary: DashboardSummary
+
+    var body: some View {
+        DashboardSectionCard(title: L10n.string("Package Posture")) {
+            HStack(alignment: .center, spacing: 24) {
+                DashboardDonutChart(slices: summary.slices)
+                    .frame(width: 190, height: 190)
+                    .overlay {
+                        VStack(spacing: 3) {
+                            Text(summary.totalPackages.formatted())
+                                .font(.system(size: 32, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.primaryText)
+                                .monospacedDigit()
+                            Text(L10n.string("Installed"))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.quietText)
+                        }
+                    }
+
+                VStack(spacing: 10) {
+                    ForEach(summary.slices) { slice in
+                        HStack(spacing: 9) {
+                            Circle()
+                                .fill(dashboardSliceColor(slice.id))
+                                .frame(width: 9, height: 9)
+                            Text(slice.title)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(AVGlassPalette.secondaryText)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(slice.count.formatted())
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.primaryText)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct DashboardMetricGrid: View {
+    let summary: DashboardSummary
+
+    var body: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12),
+            ],
+            spacing: 12
+        ) {
+            ForEach(summary.slices) { slice in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: slice.systemImage)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(dashboardSliceColor(slice.id))
+                            .frame(width: 17)
+                        Text(slice.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AVGlassPalette.secondaryText)
+                            .lineLimit(1)
+                    }
+                    Text(slice.count.formatted())
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(AVGlassPalette.primaryText)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
+                .padding(13)
+                .background(
+                    AVGlassPalette.controlFill,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+            }
+        }
+    }
+}
+
+private struct DashboardSourceCard: View {
+    let sourceCounts: [(String, Int)]
+
+    var body: some View {
+        DashboardSectionCard(title: L10n.string("Mutable Sources")) {
+            if sourceCounts.isEmpty {
+                Text(L10n.string("No source scan data loaded yet"))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .center)
+            } else {
+                VStack(spacing: 9) {
+                    ForEach(Array(sourceCounts.prefix(6).enumerated()), id: \.offset) { _, source in
+                        HStack {
+                            Text(source.0)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(AVGlassPalette.secondaryText)
+                            Spacer()
+                            Text(source.1.formatted())
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AVGlassPalette.primaryText)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct DashboardSectionCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(AVGlassPalette.quietText)
+                .tracking(0.8)
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            AVGlassPalette.controlFill.opacity(0.58),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(AVGlassPalette.controlBorder.opacity(0.16), lineWidth: 1)
+        )
+    }
+}
+
+private struct DashboardPackageRow: View {
+    let title: String
+    let subtitle: String
+    let trailing: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AVGlassPalette.primaryText)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(AVGlassPalette.quietText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(trailing)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AVGlassPalette.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 110, alignment: .trailing)
+        }
+        .padding(.vertical, 9)
+    }
+}
+
+private struct DashboardDonutChart: View {
+    let slices: [DashboardPackageSlice]
+
+    private var total: Int {
+        slices.reduce(0) { $0 + max($1.count, 0) }
+    }
+
+    var body: some View {
+        ZStack {
+            if total == 0 {
+                Circle()
+                    .stroke(AVGlassPalette.controlBorder.opacity(0.22), lineWidth: 26)
+            } else {
+                ForEach(Array(slices.enumerated()), id: \.element.id) { index, slice in
+                    DonutSegment(
+                        start: startFraction(at: index),
+                        end: endFraction(at: index)
+                    )
+                    .stroke(
+                        dashboardSliceColor(slice.id),
+                        style: StrokeStyle(lineWidth: 26, lineCap: .butt)
+                    )
+                }
+            }
+        }
+        .rotationEffect(.degrees(-90))
+        .padding(13)
+        .accessibilityLabel(L10n.string("Package posture chart"))
+    }
+
+    private func startFraction(at index: Int) -> Double {
+        fraction(slices.prefix(index).reduce(0) { $0 + max($1.count, 0) })
+    }
+
+    private func endFraction(at index: Int) -> Double {
+        fraction(slices.prefix(index + 1).reduce(0) { $0 + max($1.count, 0) })
+    }
+
+    private func fraction(_ value: Int) -> Double {
+        guard total > 0 else { return 0 }
+        return Double(value) / Double(total)
+    }
+}
+
+private struct DonutSegment: Shape {
+    let start: Double
+    let end: Double
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        path.addArc(
+            center: center,
+            radius: radius,
+            startAngle: .degrees(start * 360),
+            endAngle: .degrees(end * 360),
+            clockwise: false
+        )
+        return path
+    }
+}
+
+private func dashboardSliceColor(_ id: String) -> Color {
+    switch id {
+    case "hardened":
+        return AVGlassPalette.green
+    case "immutable":
+        return AVGlassPalette.blue
+    case "mutable":
+        return AVGlassPalette.orange
+    case "security-alerts":
+        return AVGlassPalette.vulnerableText
+    default:
+        return AVGlassPalette.secondaryText
     }
 }
 

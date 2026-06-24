@@ -3,6 +3,7 @@ import Combine
 import Foundation
 
 enum MainWindowSection: String, CaseIterable, Identifiable {
+    case dashboard
     case installed
     case securityRecommendations
     case geigerCounter
@@ -28,6 +29,7 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let librarySections: [MainWindowSection] = [
+        .dashboard,
         .installed,
         .geigerCounter,
         // .securityRecommendations,
@@ -71,6 +73,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .dashboard:
+            return L10n.string("Dashboard")
         case .installed:
             return L10n.string("Installed")
         case .securityRecommendations:
@@ -118,6 +122,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .dashboard:
+            return "chart.pie"
         case .installed:
             return "shippingbox"
         case .securityRecommendations:
@@ -199,8 +205,8 @@ enum MainWindowSection: String, CaseIterable, Identifiable {
             return "toys"
         case .other:
             return "other"
-        case .installed, .securityRecommendations, .geigerCounter, .newUpdated, .outdated,
-             .allPackages, .settings, .about:
+        case .dashboard, .installed, .securityRecommendations, .geigerCounter, .newUpdated,
+             .outdated, .allPackages, .settings, .about:
             return nil
         }
     }
@@ -325,6 +331,26 @@ struct DotenvApprovalPolicyRequest: Equatable {
     let policy: DotenvApprovalPolicy
 }
 
+struct DashboardPackageSlice: Identifiable {
+    let id: String
+    let title: String
+    let count: Int
+    let systemImage: String
+}
+
+struct DashboardSummary {
+    let slices: [DashboardPackageSlice]
+    let totalPackages: Int
+    let newPackages: [PackagePresentation]
+    let recentlyUpdatedPackages: [PackagePresentation]
+    let outdatedPackages: [PackagePresentation]
+    let sourceCounts: [(String, Int)]
+
+    var securityAlertCount: Int {
+        slices.first { $0.id == "security-alerts" }?.count ?? 0
+    }
+}
+
 private enum WebsiteBlogIndexFetchError: Error, LocalizedError {
     case invalidHTTPStatus(Int)
     case missingHTTPResponse
@@ -341,7 +367,7 @@ private enum WebsiteBlogIndexFetchError: Error, LocalizedError {
 
 @MainActor
 final class MainWindowModel: ObservableObject {
-    @Published var selectedSection: MainWindowSection = .installed {
+    @Published var selectedSection: MainWindowSection = .dashboard {
         didSet {
             if selectedSection != .newUpdated {
                 newUpdatedSelectionDisplayCount = nil
@@ -518,6 +544,68 @@ final class MainWindowModel: ObservableObject {
 
     var installedCount: Int {
         snapshot.installedCount > 0 ? snapshot.installedCount : packages.count
+    }
+
+    var dashboardSummary: DashboardSummary {
+        let securityAlertPackages = geigerActionPackages
+        let securityAlertIDs = Set(securityAlertPackages.map(\.selectionID))
+        let installedPosturePackages = packages.filter {
+            !securityAlertIDs.contains($0.selectionID)
+                && packageBadge(for: $0) != .vulnerable
+        }
+        let hardened = installedPosturePackages.filter { isHardened($0) }
+        let immutable = installedPosturePackages.filter {
+            !isHardened($0) && isInstalledAsRoot($0)
+        }
+        let mutable = max(
+            installedPosturePackages.count - hardened.count - immutable.count,
+            0
+        )
+
+        let sourceCounts = Dictionary(grouping: packages, by: dashboardSourceLabel)
+            .map { ($0.key, $0.value.count) }
+            .sorted { left, right in
+                if left.1 == right.1 {
+                    return left.0.localizedStandardCompare(right.0) == .orderedAscending
+                }
+                return left.1 > right.1
+            }
+
+        return DashboardSummary(
+            slices: [
+                DashboardPackageSlice(
+                    id: "hardened",
+                    title: L10n.string("Hardened"),
+                    count: hardened.count,
+                    systemImage: "shield.checkered"
+                ),
+                DashboardPackageSlice(
+                    id: "immutable",
+                    title: L10n.string("Immutable"),
+                    count: immutable.count,
+                    systemImage: "lock"
+                ),
+                DashboardPackageSlice(
+                    id: "mutable",
+                    title: L10n.string("Mutable"),
+                    count: mutable,
+                    systemImage: "wrench.and.screwdriver"
+                ),
+                DashboardPackageSlice(
+                    id: "security-alerts",
+                    title: L10n.string("Security Alerts"),
+                    count: securityAlertPackages.count,
+                    systemImage: "exclamationmark.shield"
+                ),
+            ],
+            totalPackages: packages.count,
+            newPackages: Array(pulsePackages.filter(isPulseNewPackage).prefix(6)),
+            recentlyUpdatedPackages: Array(
+                pulsePackages.filter { !isPulseNewPackage($0) }.prefix(6)
+            ),
+            outdatedPackages: Array((packages.filter(isOutdated) + localOutdatedPackages).prefix(6)),
+            sourceCounts: sourceCounts
+        )
     }
 
     var selectedPackage: PackagePresentation? {
@@ -1092,6 +1180,8 @@ final class MainWindowModel: ObservableObject {
 
     func count(for section: MainWindowSection) -> Int? {
         switch section {
+        case .dashboard:
+            return nil
         case .installed:
             return installedCount
         case .securityRecommendations:
@@ -1753,12 +1843,14 @@ final class MainWindowModel: ObservableObject {
         if query.isEmpty == false {
             return mergedSearchPackages(query: query)
         }
-        guard section != .settings else {
+        guard section != .dashboard, section != .settings else {
             return []
         }
 
         let source: [PackagePresentation]
         switch section {
+        case .dashboard:
+            source = []
         case .installed:
             source = packages
         case .securityRecommendations:
@@ -1804,6 +1896,8 @@ final class MainWindowModel: ObservableObject {
         package: PackagePresentation
     ) -> Bool {
         switch section {
+        case .dashboard:
+            return false
         case .installed, .securityRecommendations, .allPackages:
             return true
         case .geigerCounter:
@@ -1884,6 +1978,22 @@ final class MainWindowModel: ObservableObject {
             return false
         }
         return packageUpdatedAt > newUpdatedLastClickedAt
+    }
+
+    private func isPulseNewPackage(_ package: PackagePresentation) -> Bool {
+        guard case .available(let result) = package.item else {
+            return false
+        }
+        return result.isNewPulse
+    }
+
+    private func dashboardSourceLabel(for package: PackagePresentation) -> String {
+        switch package.item {
+        case .installed(let record):
+            return record.source?.displayLabel ?? L10n.string("Vault")
+        case .recommendation, .available, .blogPost, .command:
+            return L10n.string("Other")
+        }
     }
 
     private func recordNewUpdatedSidebarClick() {
@@ -2358,7 +2468,7 @@ final class MainWindowModel: ObservableObject {
                     category: section.categoryIdentifier,
                     sortOrder: categorySortOrder
                 )
-            case .installed, .outdated, .settings, .about:
+            case .dashboard, .installed, .outdated, .settings, .about:
                 return nil
             }
         }
