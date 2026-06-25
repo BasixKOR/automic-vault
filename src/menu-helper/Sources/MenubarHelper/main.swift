@@ -152,17 +152,18 @@ private final class CredentialBroker: @unchecked Sendable {
     private func mint(tool: String, identity: AVProcessIdentity) -> String {
         guard tool == "aws" else { return "err unsupported tool\n" }
         let path = pathString(identity)
-        guard URL(fileURLWithPath: path).lastPathComponent == tool else {
-            return "err nonce requester is not \(tool)\n"
+        guard path == "/usr/local/bin/av" else {
+            return "err nonce requester is not /usr/local/bin/av\n"
         }
-        let sidecar = path + ".av-target"
+        let stub = "/usr/local/bin/\(tool)"
+        let sidecar = stub + ".av-target"
         guard let target = try? String(contentsOfFile: sidecar, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !target.isEmpty
         else {
             return "err nonce requester is not a hardened stub\n"
         }
-        guard standardUserCannotWrite(path) else {
+        guard standardUserCannotWrite(path), standardUserCannotWrite(stub) else {
             return "err hardened stub path is writable by the standard user\n"
         }
         guard standardUserCannotWrite(target) else {

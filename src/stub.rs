@@ -1,52 +1,47 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use crate::harden;
-
 const TOKEN_ENV: &str = "AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN";
+const STUB_DIR: &str = "/usr/local/bin";
 
 unsafe extern "C" {
     fn getuid() -> u32;
 }
 
-pub(crate) fn is_hardened_stub_invocation(args: &[OsString]) -> bool {
-    let Some(program) = args.first() else {
-        return false;
-    };
-    let Some(name) = Path::new(program)
-        .file_name()
-        .and_then(|value| value.to_str())
-    else {
-        return false;
-    };
-    name != "av"
-        && std::env::current_exe()
-            .map(|path| harden::target_path_sidecar(&path).exists())
-            .unwrap_or(false)
-}
-
-pub(crate) fn run(args: &[OsString]) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|err| format!("failed to locate stub: {err}"))?;
-    let tool = exe
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| "stub path must end in a UTF-8 tool name".to_string())?;
-    let original = harden::read_stub_target(&exe)?;
+pub(crate) fn run(tool: &OsStr, args: impl Iterator<Item = OsString>) -> Result<(), String> {
+    let tool = tool
+        .to_str()
+        .ok_or_else(|| "stub tool must be valid UTF-8".to_string())?;
+    let original = read_stub_target(tool)?;
     let nonce = broker_request(&format!("mint {tool}\n"))?;
 
     let mut command = Command::new(&original);
-    command.args(args.iter().skip(1));
+    command.args(args);
     command.env(TOKEN_ENV, nonce);
     Err(format!(
         "failed to exec {}: {}",
         original.display(),
         command.exec()
     ))
+}
+
+fn read_stub_target(tool: &str) -> Result<PathBuf, String> {
+    let path = Path::new(STUB_DIR).join(format!("{tool}.av-target"));
+    let value = std::fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let target = PathBuf::from(value.trim());
+    if !target.is_absolute() {
+        return Err(format!(
+            "{} must contain an absolute target path",
+            path.display()
+        ));
+    }
+    Ok(target)
 }
 
 pub(crate) fn broker_request(message: &str) -> Result<String, String> {

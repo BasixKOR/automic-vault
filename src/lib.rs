@@ -40,17 +40,6 @@ pub fn run_terminal<I>(args: I) -> i32
 where
     I: IntoIterator<Item = OsString>,
 {
-    let args = args.into_iter().collect::<Vec<_>>();
-    if stub::is_hardened_stub_invocation(&args) {
-        return match stub::run(&args) {
-            Ok(()) => 0,
-            Err(err) => {
-                eprintln!("av stub: {err}");
-                1
-            }
-        };
-    }
-
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
     let color = stdout.is_terminal() && color_enabled();
@@ -89,6 +78,13 @@ where
                 }
             }
         }
+        (Some(command), Some(tool), _) if command == "stub-exec" => match stub::run(&tool, args) {
+            Ok(()) => 0,
+            Err(err) => {
+                let _ = writeln!(stderr, "av stub: {err}");
+                1
+            }
+        },
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2

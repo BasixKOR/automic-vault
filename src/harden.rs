@@ -1,7 +1,4 @@
-use std::ffi::CString;
-use std::fs::{self, File};
-use std::io;
-use std::os::unix::ffi::OsStrExt;
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +7,6 @@ const TARGET_SUFFIX: &str = ".av-target";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
-    fn chown(path: *const i8, owner: u32, group: u32) -> i32;
 }
 
 pub(crate) fn run(target: &Path) -> Result<String, String> {
@@ -24,8 +20,9 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
         return Err(format!("{} does not exist", target.display()));
     }
 
-    let av =
-        std::env::current_exe().map_err(|err| format!("failed to locate av executable: {err}"))?;
+    if !Path::new("/usr/local/bin/av").exists() {
+        return Err("/usr/local/bin/av is not installed".to_string());
+    }
 
     let stub = stub_path(target)?;
     let sidecar = target_path_sidecar(&stub);
@@ -41,12 +38,14 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
         fs::remove_file(&stub)
             .map_err(|err| format!("failed to replace {}: {err}", stub.display()))?;
     }
-    install_executable(&av, &stub)?;
+    fs::write(&stub, stub_script(target)?)
+        .map_err(|err| format!("failed to install stub at {}: {err}", stub.display()))?;
     fs::write(&sidecar, format!("{}\n", target.display()))
         .map_err(|err| format!("failed to write {}: {err}", sidecar.display()))?;
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))
+        .map_err(|err| format!("failed to chmod {}: {err}", stub.display()))?;
     fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o644))
         .map_err(|err| format!("failed to chmod {}: {err}", sidecar.display()))?;
-    install_cli(&av)?;
 
     Ok(format!(
         "hardened {} with stub {}",
@@ -61,20 +60,6 @@ pub(crate) fn target_path_sidecar(path: &Path) -> PathBuf {
     value.into()
 }
 
-pub(crate) fn read_stub_target(stub: &Path) -> Result<PathBuf, String> {
-    let path = target_path_sidecar(stub);
-    let value = fs::read_to_string(&path)
-        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    let target = PathBuf::from(value.trim());
-    if !target.is_absolute() {
-        return Err(format!(
-            "{} must contain an absolute target path",
-            path.display()
-        ));
-    }
-    Ok(target)
-}
-
 fn stub_path(target: &Path) -> Result<PathBuf, String> {
     let name = target
         .file_name()
@@ -82,35 +67,13 @@ fn stub_path(target: &Path) -> Result<PathBuf, String> {
     Ok(Path::new(STUB_DIR).join(name))
 }
 
-fn install_cli(av: &Path) -> Result<(), String> {
-    let target = Path::new("/usr/local/bin/av");
-    if target == av {
-        return Ok(());
-    }
-    install_executable(av, target)
-}
-
-fn install_executable(source: &Path, target: &Path) -> Result<(), String> {
-    let mut input =
-        File::open(source).map_err(|err| format!("failed to open {}: {err}", source.display()))?;
-    let mut output = File::create(target)
-        .map_err(|err| format!("failed to install {}: {err}", target.display()))?;
-    io::copy(&mut input, &mut output)
-        .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
-    fs::set_permissions(target, fs::Permissions::from_mode(0o755))
-        .map_err(|err| format!("failed to chmod {}: {err}", target.display()))?;
-    chown_root_wheel(target)
-}
-
-fn chown_root_wheel(path: &Path) -> Result<(), String> {
-    let path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| "path contains interior NUL".to_string())?;
-    if unsafe { chown(path.as_ptr(), 0, 0) } == 0 {
-        Ok(())
-    } else {
-        Err(format!(
-            "failed to chown installed executable root:wheel: {}",
-            io::Error::last_os_error()
-        ))
-    }
+fn stub_script(target: &Path) -> Result<String, String> {
+    let name = target
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "target path must end in a UTF-8 file name".to_string())?;
+    Ok(format!(
+        "#!/bin/sh\nexec /usr/local/bin/av stub-exec '{}' \"$@\"\n",
+        name.replace('\'', "'\\''")
+    ))
 }
