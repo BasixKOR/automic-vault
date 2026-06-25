@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-const USAGE: &str = "Usage: av scan | av harden PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan | av harden aws | av harden PATH | av credential-helper aws";
 
 mod credential_helper;
 mod harden;
@@ -57,12 +57,18 @@ where
 
     match (args.next(), args.next(), args.next()) {
         (Some(command), None, None) if command == "scan" => scan::run(stdout, style),
-        (Some(command), Some(path), None) if command == "harden" => {
-            match harden::run(Path::new(&path)) {
-                Ok(message) => {
-                    let _ = writeln!(stdout, "{message}");
-                    0
+        (Some(command), Some(target), None) if command == "harden" && target == "aws" => {
+            match harden::run_aws(stdout) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av harden: {err}");
+                    1
                 }
+            }
+        }
+        (Some(command), Some(path), None) if command == "harden" => {
+            match harden::run_stub_install(Path::new(&path), stdout) {
+                Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av harden: {err}");
                     1
@@ -102,6 +108,9 @@ fn color_enabled() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn run_args(args: &[&str]) -> (i32, String, String) {
         let mut stdout = Vec::new();
