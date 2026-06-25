@@ -22,7 +22,6 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
 
     let av =
         std::env::current_exe().map_err(|err| format!("failed to locate av executable: {err}"))?;
-    restore_old_in_place_harden(target)?;
 
     let stub = stub_path(target)?;
     let sidecar = target_path_sidecar(&stub);
@@ -76,26 +75,6 @@ fn stub_path(target: &Path) -> Result<PathBuf, String> {
         .file_name()
         .ok_or_else(|| "target path must end in a file name".to_string())?;
     Ok(Path::new(STUB_DIR).join(name))
-}
-
-fn restore_old_in_place_harden(target: &Path) -> Result<(), String> {
-    let original = old_original_path(target);
-    if !original.exists() {
-        return Ok(());
-    }
-    fs::rename(&original, target).map_err(|err| {
-        format!(
-            "failed to restore old in-place hardening {} -> {}: {err}",
-            original.display(),
-            target.display()
-        )
-    })
-}
-
-fn old_original_path(path: &Path) -> PathBuf {
-    let mut value = path.as_os_str().to_os_string();
-    value.push(".av-orig");
-    value.into()
 }
 
 fn install_cli(av: &Path) -> Result<(), String> {
