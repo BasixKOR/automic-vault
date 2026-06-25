@@ -8,7 +8,16 @@ mod credential_helper;
 mod harden;
 mod isotopes;
 mod scan;
+mod shell_secrets;
 mod stub;
+
+pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secrets::bash_reasons()
+}
+
+pub(crate) fn zsh_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secrets::zsh_reasons()
+}
 
 #[cfg(test)]
 pub fn global_test_env_lock() -> &'static std::sync::Mutex<()> {
