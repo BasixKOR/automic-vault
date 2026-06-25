@@ -32,7 +32,8 @@ fn av_scan_reports_git_credentials() {
     assert_eq!(
         stdout(&output),
         format!(
-            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  affected files\n│  • {}:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n",
+            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.\n│\n│  affected files\n│  • {}:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n",
+            home.join(".git-credentials").display(),
             home.join(".git-credentials").display()
         )
     );

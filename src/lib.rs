@@ -12,6 +12,7 @@ pub(crate) struct Finding {
     homepage: &'static str,
     severity: &'static str,
     explanation: String,
+    solution: String,
     affected: Vec<AffectedFile>,
     docs_url: &'static str,
 }

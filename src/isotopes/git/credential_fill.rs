@@ -61,7 +61,9 @@ use super::{affected, config, git_config_paths, high, high_unattributed, read_to
 const GITHUB_CREDENTIAL_FILL_INPUT: &[u8] = b"protocol=https\nhost=github.com\n\n";
 const GITHUB_CREDENTIAL_FILL_TIMEOUT: Duration = Duration::from_secs(3);
 const GH_HELPER_MESSAGE: &str = "Git credential helper delegates github.com credentials to `gh auth git-credential`, exposing the GitHub CLI token through `git credential fill`. Click Learn More to learn how to fix it.";
+const GH_HELPER_SOLUTION: &str = "Edit the affected Git config and remove the `helper = !gh auth git-credential` line; then change GitHub remotes to SSH with `git remote set-url origin git@github.com:OWNER/REPO.git`.";
 const FILL_MESSAGE: &str = "Git credential helper exposes a GitHub token through `git credential fill` for github.com. Click Learn More to learn how to fix it.";
+const FILL_SOLUTION: &str = "Run `printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject`, then remove or disable the credential helper that returned the token and use SSH remotes.";
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -70,11 +72,15 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
             continue;
         };
         for line in config::gh_auth_git_credential_lines(&contents) {
-            findings.push(high(GH_HELPER_MESSAGE, vec![affected(&path, line)]));
+            findings.push(high(
+                GH_HELPER_MESSAGE,
+                GH_HELPER_SOLUTION,
+                vec![affected(&path, line)],
+            ));
         }
     }
     if findings.is_empty() && git_credential_fill_exposes_github_token().unwrap_or(false) {
-        findings.push(high_unattributed(FILL_MESSAGE));
+        findings.push(high_unattributed(FILL_MESSAGE, FILL_SOLUTION));
     }
 
     findings
@@ -211,6 +217,7 @@ mod tests {
             findings,
             vec![high(
                 GH_HELPER_MESSAGE,
+                GH_HELPER_SOLUTION,
                 vec![affected(&home.join(".gitconfig"), 2)]
             )]
         );

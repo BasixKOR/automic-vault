@@ -42,6 +42,9 @@ use crate::Finding;
 
 use super::{affected, git_config_paths, high, read_to_string};
 
+const OAUTH_HELPER_SOLUTION: &str = "Edit the affected Git config and remove the `helper = oauth ...` line; then use SSH remotes instead of OAuth-backed HTTPS credentials.";
+const OAUTH_CLIENT_SECRET_SOLUTION: &str = "Edit the affected Git config and remove the `oauthClientSecret` value; revoke that OAuth client secret if it was real.";
+
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
     for path in git_config_paths(home) {
@@ -54,6 +57,7 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
                     "Git config enables git-credential-oauth as an ambient credential helper: {}",
                     path.display()
                 ),
+                OAUTH_HELPER_SOLUTION,
                 vec![affected(&path, line)],
             ));
         }
@@ -63,6 +67,7 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
                     "Git config contains a plaintext OAuth client secret: {}",
                     path.display()
                 ),
+                OAUTH_CLIENT_SECRET_SOLUTION,
                 vec![affected(&path, line)],
             ));
         }
@@ -147,6 +152,8 @@ mod tests {
         assert_eq!(findings.len(), 2);
         assert!(findings[0].explanation.contains("git-credential-oauth"));
         assert!(findings[1].explanation.contains("OAuth client secret"));
+        assert!(findings[0].solution.contains("helper = oauth"));
+        assert!(findings[1].solution.contains("oauthClientSecret"));
         assert_eq!(findings[0].affected[0].line, 2);
         assert_eq!(findings[1].affected[0].line, 3);
 

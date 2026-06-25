@@ -92,6 +92,9 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
         let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
         let _ = writeln!(stdout, "│  {}", finding.explanation);
         let _ = writeln!(stdout, "│");
+        let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
+        let _ = writeln!(stdout, "│  {}", finding.solution);
+        let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "affected files"));
         if finding.affected.is_empty() {
             let _ = writeln!(stdout, "│  • not reported by this detector");
@@ -124,11 +127,8 @@ mod tests {
     #[test]
     fn scan_home_aggregates_git_findings() {
         let home = temp_home("aggregate");
-        fs::write(
-            home.join(".git-credentials"),
-            "https://user:token@example.com\n",
-        )
-        .unwrap();
+        let credentials = home.join(".git-credentials");
+        fs::write(&credentials, "https://user:token@example.com\n").unwrap();
 
         assert_eq!(
             scan_home(&home),
@@ -137,8 +137,12 @@ mod tests {
                 homepage: HOMEPAGE,
                 severity: HIGH,
                 explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                solution: format!(
+                    "Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.",
+                    credentials.display()
+                ),
                 affected: vec![crate::AffectedFile {
-                    path: home.join(".git-credentials").display().to_string(),
+                    path: credentials.display().to_string(),
                     line: 1,
                 }],
                 docs_url: DOCS_URL,
@@ -159,6 +163,7 @@ mod tests {
                 homepage: HOMEPAGE,
                 severity: HIGH,
                 explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                solution: "Run `rm /tmp/home/.git-credentials` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.".to_string(),
                 affected: vec![crate::AffectedFile {
                     path: "/tmp/home/.git-credentials".to_string(),
                     line: 1,
@@ -170,7 +175,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  affected files\n│  • /tmp/home/.git-credentials:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n"
+            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm /tmp/home/.git-credentials` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.\n│\n│  affected files\n│  • /tmp/home/.git-credentials:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n"
         );
     }
 
@@ -185,6 +190,7 @@ mod tests {
                 homepage: HOMEPAGE,
                 severity: HIGH,
                 explanation: "Git credential helper exposes a GitHub token".to_string(),
+                solution: "Remove the helper that returned the token.".to_string(),
                 affected: Vec::new(),
                 docs_url: DOCS_URL,
             }],

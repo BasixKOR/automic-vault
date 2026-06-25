@@ -61,18 +61,42 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
                 return None;
             }
             if path == home.join(".git-credentials") {
-                Some(high(PLAINTEXT_GIT_CREDENTIALS, affected))
+                Some(high(
+                    PLAINTEXT_GIT_CREDENTIALS,
+                    credential_file_solution(&path),
+                    affected,
+                ))
             } else {
                 Some(high(
                     format!(
                         "Git credential store contains plaintext credentials: {}",
                         path.display()
                     ),
+                    credential_file_solution(&path),
                     affected,
                 ))
             }
         })
         .collect()
+}
+
+fn credential_file_solution(path: &Path) -> String {
+    format!(
+        "Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.",
+        shell_quote(path)
+    )
+}
+
+fn shell_quote(path: &Path) -> String {
+    let value = path.display().to_string();
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | ':'))
+    {
+        value
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 fn credential_store_paths(home: &Path) -> Vec<PathBuf> {
@@ -160,6 +184,7 @@ mod tests {
             findings(&home),
             vec![high(
                 PLAINTEXT_GIT_CREDENTIALS,
+                credential_file_solution(&home.join(".git-credentials")),
                 vec![affected(&home.join(".git-credentials"), 1)]
             )]
         );
@@ -185,6 +210,7 @@ mod tests {
 
         assert_eq!(findings.len(), 1);
         assert!(findings[0].explanation.contains("custom-git-credentials"));
+        assert!(findings[0].solution.contains("rm "));
         assert_eq!(findings[0].affected[0].line, 1);
 
         let _ = fs::remove_dir_all(home);
@@ -198,6 +224,14 @@ mod tests {
         );
         assert!(credential_file_secret_lines("https://example.com/repo.git\n").is_empty());
         assert!(credential_file_secret_lines("https://user@example.com/repo.git\n").is_empty());
+    }
+
+    #[test]
+    fn solution_shell_quotes_paths_with_spaces() {
+        assert!(
+            credential_file_solution(Path::new("/tmp/home dir/.git-credentials"))
+                .contains("rm '/tmp/home dir/.git-credentials'")
+        );
     }
 
     fn temp_home(label: &str) -> std::path::PathBuf {

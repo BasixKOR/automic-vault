@@ -48,6 +48,9 @@ Automic Vault scan
 │  problem
 │  Git credential store contains plaintext credentials
 │
+│  solution
+│  Run `rm /Users/you/.git-credentials` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.
+│
 │  affected files
 │  • /Users/you/.git-credentials:1
 │
