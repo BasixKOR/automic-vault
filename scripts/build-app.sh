@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+run=0
+if [[ "${1:-}" == "--run" ]]; then
+  run=1
+  shift
+fi
+if [[ $# -ne 0 ]]; then
+  echo "usage: $0 [--run]" >&2
+  exit 64
+fi
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
 APP="$MENU_HELPER/build/Automic Vault.app"
@@ -36,4 +46,8 @@ codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/targ
 cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
+if [[ "$run" -eq 1 ]]; then
+  pkill -x AutomicVaultMenubar || true
+  open -n "$APP"
+fi
 echo "$APP"
