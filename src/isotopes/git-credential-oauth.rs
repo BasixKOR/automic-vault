@@ -1,0 +1,116 @@
+use std::path::Path;
+
+use crate::Finding;
+
+use super::{git_config_paths, high, read_to_string};
+
+pub(crate) fn findings(home: &Path) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for path in git_config_paths(home) {
+        let Some(contents) = read_to_string(&path) else {
+            continue;
+        };
+        if git_config_uses_oauth_helper(&contents) {
+            findings.push(high(format!(
+                "Git config enables git-credential-oauth as an ambient credential helper: {}",
+                path.display()
+            )));
+        }
+        if git_config_contains_oauth_client_secret(&contents) {
+            findings.push(high(format!(
+                "Git config contains a plaintext OAuth client secret: {}",
+                path.display()
+            )));
+        }
+    }
+    findings
+}
+
+fn git_config_uses_oauth_helper(contents: &str) -> bool {
+    contents.lines().any(|line| {
+        let line = uncomment(line).trim();
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        key.trim().ends_with("helper")
+            && value
+                .split_whitespace()
+                .any(|word| word.trim_matches('"').trim_matches('\'') == "oauth")
+    })
+}
+
+fn git_config_contains_oauth_client_secret(contents: &str) -> bool {
+    contents.lines().any(|line| {
+        let line = uncomment(line).trim();
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        key.trim().ends_with("oauthClientSecret") && secret_value_is_real(value)
+    })
+}
+
+fn uncomment(line: &str) -> &str {
+    line.split(['#', ';']).next().unwrap_or("")
+}
+
+fn secret_value_is_real(value: &str) -> bool {
+    let value = value.trim().trim_matches('"').trim_matches('\'');
+    value.len() >= 6 && !value.contains("${") && !value.eq_ignore_ascii_case("secret")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn detects_oauth_helper_and_client_secret() {
+        assert!(git_config_uses_oauth_helper(
+            "[credential]\nhelper = cache --timeout 21600\nhelper = oauth -device\n"
+        ));
+        assert!(git_config_contains_oauth_client_secret(
+            "[credential \"https://gitlab.example.com\"]\noauthClientSecret = abcdefgh\n"
+        ));
+    }
+
+    #[test]
+    fn config_file_triggers_oauth_findings() {
+        let home = temp_home("oauth");
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential]\nhelper = oauth -device\noauthClientSecret = abcdefgh\n",
+        )
+        .unwrap();
+
+        let findings = findings(&home);
+
+        assert_eq!(findings.len(), 2);
+        assert!(findings[0].message.contains("git-credential-oauth"));
+        assert!(findings[1].message.contains("OAuth client secret"));
+
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn ignores_placeholder_client_secret() {
+        assert!(!git_config_contains_oauth_client_secret(
+            "oauthClientSecret = ${TOKEN}\n"
+        ));
+        assert!(!git_config_contains_oauth_client_secret(
+            "oauthClientSecret = secret\n"
+        ));
+    }
+
+    fn temp_home(label: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "av-git-oauth-{label}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+}

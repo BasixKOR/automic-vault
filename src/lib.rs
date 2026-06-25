@@ -3,16 +3,16 @@ use std::io::Write;
 use std::path::Path;
 
 const USAGE: &str = "Usage: av scan";
-const GIT_SOURCE: &str = "isotope:git";
-const HIGH: &str = "high";
+pub(crate) const GIT_SOURCE: &str = "isotope:git";
+pub(crate) const HIGH: &str = "high";
 
-mod git;
+mod isotopes;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Finding {
     source: &'static str,
     severity: &'static str,
-    message: &'static str,
+    message: String,
 }
 
 pub fn run<I, W, E>(args: I, stdout: &mut W, stderr: &mut E) -> i32
@@ -44,7 +44,7 @@ fn home() -> OsString {
 }
 
 fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
-    git::findings(home.as_ref())
+    isotopes::findings(home.as_ref())
 }
 
 fn print_scan<W: Write>(stdout: &mut W, findings: &[Finding]) {
@@ -119,7 +119,7 @@ mod tests {
             vec![Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: git::PLAINTEXT_GIT_CREDENTIALS,
+                message: isotopes::git_credentials::PLAINTEXT_GIT_CREDENTIALS.to_string(),
             }]
         );
 
@@ -135,7 +135,7 @@ mod tests {
             &[Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: git::PLAINTEXT_GIT_CREDENTIALS,
+                message: isotopes::git_credentials::PLAINTEXT_GIT_CREDENTIALS.to_string(),
             }],
         );
 

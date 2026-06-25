@@ -39,6 +39,7 @@ fn av_scan(home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("scan")
         .env("HOME", home)
+        .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .output()
         .unwrap()
 }
