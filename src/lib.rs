@@ -1,10 +1,14 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
+use std::path::Path;
 
-const USAGE: &str = "Usage: av scan";
+const USAGE: &str = "Usage: av scan | av harden PATH | av credential-helper aws";
 
+mod credential_helper;
+mod harden;
 mod isotopes;
 mod scan;
+mod stub;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Finding {
@@ -36,6 +40,17 @@ pub fn run_terminal<I>(args: I) -> i32
 where
     I: IntoIterator<Item = OsString>,
 {
+    let args = args.into_iter().collect::<Vec<_>>();
+    if stub::is_hardened_stub_invocation(&args) {
+        return match stub::run(&args) {
+            Ok(()) => 0,
+            Err(err) => {
+                eprintln!("av stub: {err}");
+                1
+            }
+        };
+    }
+
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
     let color = stdout.is_terminal() && color_enabled();
@@ -51,8 +66,29 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
 
-    match (args.next(), args.next()) {
-        (Some(command), None) if command == "scan" => scan::run(stdout, style),
+    match (args.next(), args.next(), args.next()) {
+        (Some(command), None, None) if command == "scan" => scan::run(stdout, style),
+        (Some(command), Some(path), None) if command == "harden" => {
+            match harden::run(Path::new(&path)) {
+                Ok(message) => {
+                    let _ = writeln!(stdout, "{message}");
+                    0
+                }
+                Err(err) => {
+                    let _ = writeln!(stderr, "av harden: {err}");
+                    1
+                }
+            }
+        }
+        (Some(command), Some(protocol), None) if command == "credential-helper" => {
+            match credential_helper::run(&protocol, stdout) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av credential-helper: {err}");
+                    1
+                }
+            }
+        }
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
@@ -95,7 +131,7 @@ mod tests {
             let (code, stdout, stderr) = run_args(args);
             assert_eq!(code, 2);
             assert_eq!(stdout, "");
-            assert_eq!(stderr, "Usage: av scan\n");
+            assert_eq!(stderr, format!("{USAGE}\n"));
         }
     }
 }
