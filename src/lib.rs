@@ -10,6 +10,11 @@ mod isotopes;
 mod scan;
 mod stub;
 
+#[cfg(test)]
+pub fn global_test_env_lock() -> &'static std::sync::Mutex<()> {
+    &tests::ENV_LOCK
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Finding {
     source: &'static str,

@@ -4,8 +4,10 @@ use crate::Finding;
 
 pub(crate) mod aws;
 pub(crate) mod git;
+mod radioisotopes;
 
-const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[git::findings, aws::findings];
+const DETECTORS: &[fn(&Path) -> Vec<Finding>] =
+    &[git::findings, aws::findings, radioisotopes::findings];
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -21,7 +23,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 2);
+        assert_eq!(DETECTORS.len(), 3);
         assert_eq!(aws::NAME, "aws");
         assert_eq!(git::NAME, "git");
     }
