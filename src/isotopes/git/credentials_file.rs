@@ -82,7 +82,7 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
 
 fn credential_file_solution(path: &Path) -> String {
     format!(
-        "Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.",
+        "Run `rm {}` or edit it to remove the credential; then use SSH remotes.",
         shell_quote(path)
     )
 }

@@ -4,6 +4,8 @@ use std::path::Path;
 
 use crate::{Finding, isotopes};
 
+const TEXT_WIDTH: usize = 72;
+
 #[derive(Clone, Copy)]
 pub(crate) struct Style {
     pub(crate) color: bool,
@@ -90,29 +92,112 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
         );
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
-        let _ = writeln!(stdout, "│  {}", finding.explanation);
+        write_wrapped(stdout, "│  ", &finding.explanation, style, None);
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
-        let _ = writeln!(stdout, "│  {}", finding.solution);
+        write_wrapped(stdout, "│  ", &finding.solution, style, None);
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "affected files"));
         if finding.affected.is_empty() {
             let _ = writeln!(stdout, "│  • not reported by this detector");
         } else {
             for affected in &finding.affected {
-                let _ = writeln!(
+                write_wrapped_with_continuation(
                     stdout,
-                    "│  • {}",
-                    style.paint("36", format!("{}:{}", affected.path, affected.line))
+                    "│  • ",
+                    "│    ",
+                    &format!("{}:{}", affected.path, affected.line),
+                    style,
+                    Some("36"),
                 );
             }
         }
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "read more"));
-        let _ = writeln!(stdout, "│  {}", finding.docs_url);
+        write_wrapped(stdout, "│  ", finding.docs_url, style, Some("36"));
         let _ = writeln!(stdout, "│");
     }
     let _ = writeln!(stdout, "╰─ {}", style.paint("2", "scan complete"));
+}
+
+fn write_wrapped<W: Write>(
+    stdout: &mut W,
+    prefix: &str,
+    text: &str,
+    style: Style,
+    color: Option<&str>,
+) {
+    write_wrapped_with_continuation(stdout, prefix, prefix, text, style, color);
+}
+
+fn write_wrapped_with_continuation<W: Write>(
+    stdout: &mut W,
+    first_prefix: &str,
+    continuation_prefix: &str,
+    text: &str,
+    style: Style,
+    color: Option<&str>,
+) {
+    for (line_number, line) in wrap_text(text, TEXT_WIDTH).into_iter().enumerate() {
+        let rendered = match color {
+            Some(code) => style.paint(code, &line),
+            None => line,
+        };
+        let prefix = if line_number == 0 {
+            first_prefix
+        } else {
+            continuation_prefix
+        };
+        let _ = writeln!(stdout, "{prefix}{rendered}");
+    }
+}
+
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.lines() {
+        wrap_paragraph(paragraph, width, &mut lines);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn wrap_paragraph(paragraph: &str, width: usize, lines: &mut Vec<String>) {
+    let mut line = String::new();
+    for word in paragraph.split_whitespace() {
+        if line.is_empty() {
+            push_word(word, width, &mut line, lines);
+        } else if line.len() + 1 + word.len() <= width {
+            line.push(' ');
+            line.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut line));
+            push_word(word, width, &mut line, lines);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+}
+
+fn push_word(word: &str, width: usize, line: &mut String, lines: &mut Vec<String>) {
+    if word.len() <= width {
+        line.push_str(word);
+        return;
+    }
+
+    let mut chunk = String::new();
+    let mut len = 0;
+    for ch in word.chars() {
+        chunk.push(ch);
+        len += 1;
+        if len == width {
+            lines.push(std::mem::take(&mut chunk));
+            len = 0;
+        }
+    }
+    line.push_str(&chunk);
 }
 
 #[cfg(test)]
@@ -138,7 +223,7 @@ mod tests {
                 severity: HIGH,
                 explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
                 solution: format!(
-                    "Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.",
+                    "Run `rm {}` or edit it to remove the credential; then use SSH remotes.",
                     credentials.display()
                 ),
                 affected: vec![crate::AffectedFile {
@@ -163,7 +248,7 @@ mod tests {
                 homepage: HOMEPAGE,
                 severity: HIGH,
                 explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
-                solution: "Run `rm /tmp/home/.git-credentials` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.".to_string(),
+                solution: "Run `rm /tmp/home/.git-credentials` or edit it to remove the credential; then use SSH remotes.".to_string(),
                 affected: vec![crate::AffectedFile {
                     path: "/tmp/home/.git-credentials".to_string(),
                     line: 1,
@@ -175,7 +260,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm /tmp/home/.git-credentials` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.\n│\n│  affected files\n│  • /tmp/home/.git-credentials:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n"
+            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm /tmp/home/.git-credentials` or edit it to remove the credential;\n│  then use SSH remotes.\n│\n│  affected files\n│  • /tmp/home/.git-credentials:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n"
         );
     }
 
@@ -214,6 +299,23 @@ mod tests {
             String::from_utf8(stdout)
                 .unwrap()
                 .starts_with("\x1b[1;36mAutomic Vault scan\x1b[0m\n")
+        );
+    }
+
+    #[test]
+    fn wraps_long_lines_inside_the_rail() {
+        let lines = wrap_text(
+            "Run `rm /Users/mxcl/.av-trigger-git-credentials` or edit it to remove the credential; then use SSH remotes.",
+            48,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "Run `rm /Users/mxcl/.av-trigger-git-credentials`",
+                "or edit it to remove the credential; then use",
+                "SSH remotes.",
+            ]
         );
     }
 

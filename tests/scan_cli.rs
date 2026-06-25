@@ -27,16 +27,27 @@ fn av_scan_reports_git_credentials() {
     .unwrap();
 
     let output = av_scan(&home);
+    let stdout = stdout(&output);
 
     assert!(output.status.success());
-    assert_eq!(
-        stdout(&output),
-        format!(
-            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm {}` or edit that file and remove the credential URL; then use SSH remotes instead of HTTPS.\n│\n│  affected files\n│  • {}:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n",
-            home.join(".git-credentials").display(),
-            home.join(".git-credentials").display()
-        )
-    );
+    assert!(stdout.contains("│  solution\n"));
+    assert!(stdout.contains("│  Run `rm"));
+    assert!(stdout.contains(".git-credentials"));
+    assert!(stdout.contains("│  affected files\n"));
+    assert!(stdout.contains("╰─ scan complete\n"));
+    for line in stdout.lines().filter(|line| !line.is_empty()) {
+        assert!(
+            line.starts_with("Automic Vault scan")
+                || line.starts_with('╭')
+                || line.starts_with('◆')
+                || line.starts_with('└')
+                || line.starts_with('├')
+                || line.starts_with('╰')
+                || line.starts_with('│'),
+            "{line}"
+        );
+        assert!(line.chars().count() <= 78, "{line}");
+    }
     assert_eq!(stderr(&output), "");
 
     let _ = fs::remove_dir_all(home);
