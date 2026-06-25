@@ -37,9 +37,14 @@ Start with the boring check:
 ```sh
 $ av scan
 Automic Vault scan
-Findings:
-1. high isotope:git - Git credential store contains plaintext credentials
-   /Users/you/.git-credentials:1
+⚠ Findings: 1
+
+1. git
+   Homepage: https://git-scm.com/
+   Severity: high
+   Problem: Git credential store contains plaintext credentials
+   Affected files:
+     /Users/you/.git-credentials:1
    Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md
 ```
 

@@ -56,7 +56,7 @@ use std::time::{Duration, Instant};
 
 use crate::Finding;
 
-use super::{affected, git_config, git_config_paths, high, high_unattributed, read_to_string};
+use super::{affected, config, git_config_paths, high, high_unattributed, read_to_string};
 
 const GITHUB_CREDENTIAL_FILL_INPUT: &[u8] = b"protocol=https\nhost=github.com\n\n";
 const GITHUB_CREDENTIAL_FILL_TIMEOUT: Duration = Duration::from_secs(3);
@@ -69,7 +69,7 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
         let Some(contents) = read_to_string(&path) else {
             continue;
         };
-        for line in git_config::gh_auth_git_credential_lines(&contents) {
+        for line in config::gh_auth_git_credential_lines(&contents) {
             findings.push(high(GH_HELPER_MESSAGE, vec![affected(&path, line)]));
         }
     }

@@ -9,6 +9,7 @@ mod scan;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Finding {
     source: &'static str,
+    homepage: &'static str,
     severity: &'static str,
     explanation: String,
     affected: Vec<AffectedFile>,

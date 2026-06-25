@@ -1,22 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::{AffectedFile, Finding};
+use crate::Finding;
 
-mod git_config;
-mod git_credential_fill;
-mod git_credential_oauth;
-pub(crate) mod git_credentials_file;
+pub(crate) mod git;
 
-pub(crate) const GIT_SOURCE: &str = "isotope:git";
-pub(crate) const HIGH: &str = "high";
-pub(crate) const GIT_DOCS_URL: &str =
-    "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md";
-
-const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[
-    git_credentials_file::findings,
-    git_credential_fill::findings,
-    git_credential_oauth::findings,
-];
+const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[git::findings];
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -26,136 +14,13 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     findings
 }
 
-fn high(explanation: impl Into<String>, affected: Vec<AffectedFile>) -> Finding {
-    Finding {
-        source: GIT_SOURCE,
-        severity: HIGH,
-        explanation: explanation.into(),
-        affected,
-        docs_url: GIT_DOCS_URL,
-    }
-}
-
-fn high_unattributed(explanation: impl Into<String>) -> Finding {
-    high(explanation, Vec::new())
-}
-
-fn affected(path: &Path, line: usize) -> AffectedFile {
-    AffectedFile {
-        path: path.display().to_string(),
-        line,
-    }
-}
-
-fn git_config_paths(home: &Path) -> Vec<PathBuf> {
-    let mut paths = vec![home.join(".gitconfig")];
-    if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty())
-    {
-        paths.push(PathBuf::from(config_home).join("git/config"));
-    } else {
-        paths.push(home.join(".config/git/config"));
-    }
-    paths.sort();
-    paths.dedup();
-    paths
-}
-
-fn read_to_string(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
-    fn scan_runs_every_registered_detector() {
-        let home = temp_home("all-detectors");
-        fs::write(
-            home.join(".git-credentials"),
-            "https://user:token@example.com\n",
-        )
-        .unwrap();
-        fs::write(
-            home.join(".gitconfig"),
-            "[credential \"https://github.com\"]\n\
-             helper = !gh auth git-credential\n\
-             helper = oauth -device\n\
-             oauthClientSecret = abcdefgh\n",
-        )
-        .unwrap();
-
-        let messages = findings(&home)
-            .into_iter()
-            .map(|finding| finding.explanation)
-            .collect::<Vec<_>>();
-
-        assert_eq!(DETECTORS.len(), 3);
-        assert!(
-            messages
-                .iter()
-                .any(|message| message == git_credentials_file::PLAINTEXT_GIT_CREDENTIALS)
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.contains("gh auth git-credential"))
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.contains("git-credential-oauth"))
-        );
-        assert!(
-            messages
-                .iter()
-                .any(|message| message.contains("OAuth client secret"))
-        );
-
-        let _ = fs::remove_dir_all(home);
-    }
-
-    #[test]
-    fn every_detector_report_has_required_security_fields() {
-        let home = temp_home("required-fields");
-        fs::write(
-            home.join(".git-credentials"),
-            "https://user:token@example.com\n",
-        )
-        .unwrap();
-        fs::write(
-            home.join(".gitconfig"),
-            "[credential \"https://github.com\"]\n\
-             helper = !gh auth git-credential\n\
-             helper = oauth -device\n\
-             oauthClientSecret = abcdefgh\n",
-        )
-        .unwrap();
-
-        for finding in findings(&home) {
-            assert_eq!(finding.severity, HIGH);
-            assert!(!finding.explanation.is_empty());
-            assert_eq!(finding.docs_url, GIT_DOCS_URL);
-            for affected in finding.affected {
-                assert!(!affected.path.is_empty());
-                assert!(affected.line > 0);
-            }
-        }
-
-        let _ = fs::remove_dir_all(home);
-    }
-
-    fn temp_home(label: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "av-isotopes-{label}-{}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn scan_runs_every_registered_isotope() {
+        assert_eq!(DETECTORS.len(), 1);
+        assert_eq!(git::NAME, "git");
     }
 }

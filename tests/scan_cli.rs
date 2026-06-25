@@ -32,7 +32,7 @@ fn av_scan_reports_git_credentials() {
     assert_eq!(
         stdout(&output),
         format!(
-            "Automic Vault scan\n⚠ Findings: 1\n\n1. isotope:git\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
+            "Automic Vault scan\n⚠ Findings: 1\n\n1. git\n   Homepage: https://git-scm.com/\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
             home.join(".git-credentials").display()
         )
     );

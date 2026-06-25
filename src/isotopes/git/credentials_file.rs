@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 
 use crate::Finding;
 
-use super::{affected, git_config, git_config_paths, high, read_to_string};
+use super::{affected, config, git_config_paths, high, read_to_string};
 
 pub(crate) const PLAINTEXT_GIT_CREDENTIALS: &str =
     "Git credential store contains plaintext credentials";
@@ -81,7 +81,7 @@ fn credential_store_paths(home: &Path) -> Vec<PathBuf> {
         let Some(contents) = read_to_string(&config) else {
             continue;
         };
-        paths.extend(git_config::store_paths(home, &contents));
+        paths.extend(config::store_paths(home, &contents));
     }
     paths.sort();
     paths.dedup();

@@ -29,6 +29,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding]) {
     for (index, finding) in findings.iter().enumerate() {
         let _ = writeln!(stdout);
         let _ = writeln!(stdout, "{}. {}", index + 1, finding.source);
+        let _ = writeln!(stdout, "   Homepage: {}", finding.homepage);
         let _ = writeln!(stdout, "   Severity: {}", finding.severity);
         let _ = writeln!(stdout, "   Problem: {}", finding.explanation);
         let _ = writeln!(stdout, "   Affected files:");
@@ -46,7 +47,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::isotopes::{GIT_DOCS_URL, GIT_SOURCE, HIGH};
+    use crate::isotopes::git::{self, DOCS_URL, HIGH, HOMEPAGE, NAME};
     use std::fs;
     use std::path::PathBuf;
     use std::process;
@@ -64,14 +65,15 @@ mod tests {
         assert_eq!(
             scan_home(&home),
             vec![Finding {
-                source: GIT_SOURCE,
+                source: NAME,
+                homepage: HOMEPAGE,
                 severity: HIGH,
-                explanation: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
                 affected: vec![crate::AffectedFile {
                     path: home.join(".git-credentials").display().to_string(),
                     line: 1,
                 }],
-                docs_url: GIT_DOCS_URL,
+                docs_url: DOCS_URL,
             }]
         );
 
@@ -85,20 +87,21 @@ mod tests {
         print(
             &mut stdout,
             &[Finding {
-                source: GIT_SOURCE,
+                source: NAME,
+                homepage: HOMEPAGE,
                 severity: HIGH,
-                explanation: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
                 affected: vec![crate::AffectedFile {
                     path: "/tmp/home/.git-credentials".to_string(),
                     line: 1,
                 }],
-                docs_url: GIT_DOCS_URL,
+                docs_url: DOCS_URL,
             }],
         );
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\n⚠ Findings: 1\n\n1. isotope:git\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     /tmp/home/.git-credentials:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n"
+            "Automic Vault scan\n⚠ Findings: 1\n\n1. git\n   Homepage: https://git-scm.com/\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     /tmp/home/.git-credentials:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n"
         );
     }
 
@@ -109,11 +112,12 @@ mod tests {
         print(
             &mut stdout,
             &[Finding {
-                source: GIT_SOURCE,
+                source: NAME,
+                homepage: HOMEPAGE,
                 severity: HIGH,
                 explanation: "Git credential helper exposes a GitHub token".to_string(),
                 affected: Vec::new(),
-                docs_url: GIT_DOCS_URL,
+                docs_url: DOCS_URL,
             }],
         );
 
