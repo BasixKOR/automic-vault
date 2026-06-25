@@ -26,7 +26,7 @@ pub(crate) fn is_hardened_stub_invocation(args: &[OsString]) -> bool {
     };
     name != "av"
         && std::env::current_exe()
-            .map(|path| harden::original_path(&path).exists())
+            .map(|path| harden::target_path_sidecar(&path).exists())
             .unwrap_or(false)
 }
 
@@ -36,7 +36,7 @@ pub(crate) fn run(args: &[OsString]) -> Result<(), String> {
         .file_name()
         .and_then(|value| value.to_str())
         .ok_or_else(|| "stub path must end in a UTF-8 tool name".to_string())?;
-    let original = harden::original_path(&exe);
+    let original = harden::read_stub_target(&exe)?;
     let nonce = broker_request(&format!("mint {tool}\n"))?;
 
     let mut command = Command::new(&original);

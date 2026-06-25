@@ -155,11 +155,18 @@ private final class CredentialBroker: @unchecked Sendable {
         guard URL(fileURLWithPath: path).lastPathComponent == tool else {
             return "err nonce requester is not \(tool)\n"
         }
-        guard FileManager.default.fileExists(atPath: path + ".av-orig") else {
+        let sidecar = path + ".av-target"
+        guard let target = try? String(contentsOfFile: sidecar, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !target.isEmpty
+        else {
             return "err nonce requester is not a hardened stub\n"
         }
         guard standardUserCannotWrite(path) else {
             return "err hardened stub path is writable by the standard user\n"
+        }
+        guard standardUserCannotWrite(target) else {
+            return "err hardened target path is writable by the standard user\n"
         }
 
         guard let token = randomToken() else { return "err token generation failed\n" }
