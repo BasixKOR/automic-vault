@@ -10,7 +10,7 @@ fn av_scan_reports_clean_home() {
     assert!(output.status.success());
     assert_eq!(
         stdout(&output),
-        "Automic Vault scan\n✓ No problems found.\n"
+        "Automic Vault scan\n╭─ credential exposure audit\n│\n◇ No plaintext credential paths found\n│\n╰─ vault sealed\n"
     );
     assert_eq!(stderr(&output), "");
 
@@ -32,7 +32,7 @@ fn av_scan_reports_git_credentials() {
     assert_eq!(
         stdout(&output),
         format!(
-            "Automic Vault scan\n⚠ Findings: 1\n\n1. git\n   Homepage: https://git-scm.com/\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
+            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  affected files\n│  • {}:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n",
             home.join(".git-credentials").display()
         )
     );

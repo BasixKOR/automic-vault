@@ -37,15 +37,24 @@ Start with the boring check:
 ```sh
 $ av scan
 Automic Vault scan
-⚠ Findings: 1
-
-1. git
-   Homepage: https://git-scm.com/
-   Severity: high
-   Problem: Git credential store contains plaintext credentials
-   Affected files:
-     /Users/you/.git-credentials:1
-   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md
+╭─ credential exposure audit
+│
+◆ 1 finding requires attention
+│
+└─ 1. git
+│  severity HIGH
+│  homepage https://git-scm.com/
+│
+│  problem
+│  Git credential store contains plaintext credentials
+│
+│  affected files
+│  • /Users/you/.git-credentials:1
+│
+│  read more
+│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md
+│
+╰─ scan complete
 ```
 
 Then check what Git itself can retrieve for GitHub:

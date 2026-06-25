@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 
 const USAGE: &str = "Usage: av scan";
 
@@ -28,16 +28,40 @@ where
     W: Write,
     E: Write,
 {
+    run_with_style(args, stdout, stderr, scan::Style::plain())
+}
+
+pub fn run_terminal<I>(args: I) -> i32
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut stdout = std::io::stdout();
+    let mut stderr = std::io::stderr();
+    let color = stdout.is_terminal() && color_enabled();
+    run_with_style(args, &mut stdout, &mut stderr, scan::Style { color })
+}
+
+fn run_with_style<I, W, E>(args: I, stdout: &mut W, stderr: &mut E, style: scan::Style) -> i32
+where
+    I: IntoIterator<Item = OsString>,
+    W: Write,
+    E: Write,
+{
     let mut args = args.into_iter();
     let _program = args.next();
 
     match (args.next(), args.next()) {
-        (Some(command), None) if command == "scan" => scan::run(stdout),
+        (Some(command), None) if command == "scan" => scan::run(stdout, style),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
         }
     }
+}
+
+fn color_enabled() -> bool {
+    std::env::var_os("NO_COLOR").is_none()
+        && std::env::var_os("TERM").is_none_or(|term| term != "dumb")
 }
 
 #[cfg(test)]
