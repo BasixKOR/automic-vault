@@ -68,7 +68,7 @@ fn stub_script(target: &Path) -> Result<String, String> {
         .and_then(|value| value.to_str())
         .ok_or_else(|| "target path must end in a UTF-8 file name".to_string())?;
     Ok(format!(
-        "#!/bin/sh\n{STUB_MARKER}\n/usr/local/bin/av stub-exec '{}' '{}' \"$@\"\n",
+        "#!/bin/sh\n{STUB_MARKER}\nexec /usr/local/bin/av stub-exec '{}' '{}' \"$@\"\n",
         shell_quote(name),
         shell_quote(&target.display().to_string())
     ))

@@ -160,16 +160,14 @@ private final class CredentialBroker: @unchecked Sendable {
         }
 
         let stub = "/usr/local/bin/\(tool)"
-        var parent = AVProcessIdentity()
-        guard av_process_identity(identity.ppid, &parent),
-              pathString(parent) == "/bin/sh",
-              argvLines(parent).dropFirst().first == stub
+        let argv = argvLines(identity)
+        guard argv.dropFirst().prefix(3).elementsEqual(["stub-exec", tool, target])
         else {
             return "err nonce requester was not launched by hardened stub\n"
         }
         guard let script = try? String(contentsOfFile: stub, encoding: .utf8),
               script.contains("# Automic Vault hardened stub\n"),
-              script.contains("stub-exec '\(tool)' '\(shellQuote(target))'")
+              script.contains("exec /usr/local/bin/av stub-exec '\(tool)' '\(shellQuote(target))'")
         else {
             return "err hardened stub does not match requested target\n"
         }
