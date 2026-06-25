@@ -2,21 +2,21 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AV_ROOT="$(cd "$ROOT/../.." && pwd)"
-APP="$ROOT/build/Automic Vault.app"
+MENU_HELPER="$ROOT/src/menu-helper"
+APP="$MENU_HELPER/build/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
-cargo build --release --manifest-path "$AV_ROOT/Cargo.toml"
-swift build -c release --package-path "$ROOT"
+cargo build --release --manifest-path "$ROOT/Cargo.toml"
+swift build -c release --package-path "$MENU_HELPER"
 
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
-cp "$ROOT/.build/release/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
-cp "$ROOT/Info.plist" "$CONTENTS/Info.plist"
-cp "$ROOT/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
-cp "$ROOT/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+cp "$MENU_HELPER/.build/release/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
+cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
+cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
+cp "$MENU_HELPER/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 
 identity="$(
   security find-identity -v -p codesigning |
@@ -32,8 +32,8 @@ if [[ -z "$identity" ]]; then
   identity="-"
 fi
 
-codesign --force --sign "$identity" --identifier com.automicvault.av "$AV_ROOT/target/release/av"
-cp "$AV_ROOT/target/release/av" "$MACOS/av"
+codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/target/release/av"
+cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
 echo "$APP"
