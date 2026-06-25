@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const STUB_DIR: &str = "/usr/local/bin";
-const TARGET_SUFFIX: &str = ".av-target";
+const STUB_MARKER: &str = "# Automic Vault hardened stub";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -25,8 +25,7 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
     }
 
     let stub = stub_path(target)?;
-    let sidecar = target_path_sidecar(&stub);
-    if stub.exists() && !sidecar.exists() {
+    if stub.exists() && !is_av_stub(&stub) {
         return Err(format!(
             "{} already exists and is not an av hardened stub",
             stub.display()
@@ -40,24 +39,14 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
     }
     fs::write(&stub, stub_script(target)?)
         .map_err(|err| format!("failed to install stub at {}: {err}", stub.display()))?;
-    fs::write(&sidecar, format!("{}\n", target.display()))
-        .map_err(|err| format!("failed to write {}: {err}", sidecar.display()))?;
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))
         .map_err(|err| format!("failed to chmod {}: {err}", stub.display()))?;
-    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o644))
-        .map_err(|err| format!("failed to chmod {}: {err}", sidecar.display()))?;
 
     Ok(format!(
         "hardened {} with stub {}",
         target.display(),
         stub.display()
     ))
-}
-
-pub(crate) fn target_path_sidecar(path: &Path) -> PathBuf {
-    let mut value = path.as_os_str().to_os_string();
-    value.push(TARGET_SUFFIX);
-    value.into()
 }
 
 fn stub_path(target: &Path) -> Result<PathBuf, String> {
@@ -67,13 +56,24 @@ fn stub_path(target: &Path) -> Result<PathBuf, String> {
     Ok(Path::new(STUB_DIR).join(name))
 }
 
+fn is_av_stub(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|contents| contents.lines().nth(1) == Some(STUB_MARKER))
+        .unwrap_or(false)
+}
+
 fn stub_script(target: &Path) -> Result<String, String> {
     let name = target
         .file_name()
         .and_then(|value| value.to_str())
         .ok_or_else(|| "target path must end in a UTF-8 file name".to_string())?;
     Ok(format!(
-        "#!/bin/sh\nexec /usr/local/bin/av stub-exec '{}' \"$@\"\n",
-        name.replace('\'', "'\\''")
+        "#!/bin/sh\n{STUB_MARKER}\n/usr/local/bin/av stub-exec '{}' '{}' \"$@\"\n",
+        shell_quote(name),
+        shell_quote(&target.display().to_string())
     ))
+}
+
+fn shell_quote(value: &str) -> String {
+    value.replace('\'', "'\\''")
 }

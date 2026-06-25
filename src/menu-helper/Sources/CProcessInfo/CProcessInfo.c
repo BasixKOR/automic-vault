@@ -30,3 +30,47 @@ bool av_process_identity(pid_t pid, AVProcessIdentity *identity_out) {
     return true;
 }
 
+bool av_process_arguments(pid_t pid, char *out, size_t out_len) {
+    if (out_len == 0) {
+        return false;
+    }
+    out[0] = '\0';
+
+    char buffer[8192];
+    size_t len = sizeof(buffer);
+    int mib[] = { CTL_KERN, KERN_PROCARGS2, pid };
+    if (sysctl(mib, 3, buffer, &len, NULL, 0) != 0 || len <= sizeof(int)) {
+        return false;
+    }
+
+    int argc = 0;
+    memcpy(&argc, buffer, sizeof(argc));
+    if (argc <= 0) {
+        return false;
+    }
+
+    char *cursor = buffer + sizeof(argc);
+    char *end = buffer + len;
+    while (cursor < end && *cursor != '\0') cursor++;
+    while (cursor < end && *cursor == '\0') cursor++;
+
+    size_t written = 0;
+    for (int i = 0; i < argc && cursor < end && written + 1 < out_len; i++) {
+        size_t arg_len = strnlen(cursor, (size_t)(end - cursor));
+        if (arg_len == 0) {
+            break;
+        }
+        if (i > 0 && written + 1 < out_len) {
+            out[written++] = '\n';
+        }
+        size_t copy_len = arg_len;
+        if (copy_len > out_len - written - 1) {
+            copy_len = out_len - written - 1;
+        }
+        memcpy(out + written, cursor, copy_len);
+        written += copy_len;
+        cursor += arg_len + 1;
+    }
+    out[written] = '\0';
+    return written > 0;
+}

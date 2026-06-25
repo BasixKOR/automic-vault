@@ -78,13 +78,15 @@ where
                 }
             }
         }
-        (Some(command), Some(tool), _) if command == "stub-exec" => match stub::run(&tool, args) {
-            Ok(()) => 0,
-            Err(err) => {
-                let _ = writeln!(stderr, "av stub: {err}");
-                1
+        (Some(command), Some(tool), Some(target)) if command == "stub-exec" => {
+            match stub::run(&tool, &target, args) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av stub: {err}");
+                    1
+                }
             }
-        },
+        }
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2

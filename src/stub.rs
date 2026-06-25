@@ -2,23 +2,29 @@ use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
 const TOKEN_ENV: &str = "AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN";
-const STUB_DIR: &str = "/usr/local/bin";
 
 unsafe extern "C" {
     fn getuid() -> u32;
 }
 
-pub(crate) fn run(tool: &OsStr, args: impl Iterator<Item = OsString>) -> Result<(), String> {
+pub(crate) fn run(
+    tool: &OsStr,
+    target: &OsStr,
+    args: impl Iterator<Item = OsString>,
+) -> Result<(), String> {
     let tool = tool
         .to_str()
         .ok_or_else(|| "stub tool must be valid UTF-8".to_string())?;
-    let original = read_stub_target(tool)?;
-    let nonce = broker_request(&format!("mint {tool}\n"))?;
+    let original = PathBuf::from(target);
+    if !original.is_absolute() {
+        return Err("stub target must be absolute".to_string());
+    }
+    let nonce = broker_request(&format!("mint {tool} {}\n", original.display()))?;
 
     let mut command = Command::new(&original);
     command.args(args);
@@ -28,20 +34,6 @@ pub(crate) fn run(tool: &OsStr, args: impl Iterator<Item = OsString>) -> Result<
         original.display(),
         command.exec()
     ))
-}
-
-fn read_stub_target(tool: &str) -> Result<PathBuf, String> {
-    let path = Path::new(STUB_DIR).join(format!("{tool}.av-target"));
-    let value = std::fs::read_to_string(&path)
-        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    let target = PathBuf::from(value.trim());
-    if !target.is_absolute() {
-        return Err(format!(
-            "{} must contain an absolute target path",
-            path.display()
-        ));
-    }
-    Ok(target)
 }
 
 pub(crate) fn broker_request(message: &str) -> Result<String, String> {

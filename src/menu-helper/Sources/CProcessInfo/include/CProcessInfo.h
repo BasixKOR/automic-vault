@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -17,4 +18,4 @@ typedef struct {
 
 bool av_peer_pid(int fd, pid_t *pid_out);
 bool av_process_identity(pid_t pid, AVProcessIdentity *identity_out);
-
+bool av_process_arguments(pid_t pid, char *out, size_t out_len);

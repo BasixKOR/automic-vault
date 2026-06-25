@@ -134,13 +134,16 @@ private final class CredentialBroker: @unchecked Sendable {
 
     private func process(_ request: String, from identity: AVProcessIdentity) -> String {
         cleanup()
-        let parts = request.split(whereSeparator: \.isWhitespace).map(String.init)
+        let parts = request
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            .map(String.init)
         guard let command = parts.first else { return "err empty request\n" }
 
         switch command {
         case "mint":
-            guard parts.count == 2 else { return "err invalid mint request\n" }
-            return mint(tool: parts[1], identity: identity)
+            guard parts.count == 3 else { return "err invalid mint request\n" }
+            return mint(tool: parts[1], target: parts[2], identity: identity)
         case "validate":
             guard parts.count == 3 else { return "err invalid validate request\n" }
             return validate(tool: parts[1], token: parts[2], helper: identity)
@@ -149,19 +152,26 @@ private final class CredentialBroker: @unchecked Sendable {
         }
     }
 
-    private func mint(tool: String, identity: AVProcessIdentity) -> String {
+    private func mint(tool: String, target: String, identity: AVProcessIdentity) -> String {
         guard tool == "aws" else { return "err unsupported tool\n" }
         let path = pathString(identity)
         guard path == "/usr/local/bin/av" else {
             return "err nonce requester is not /usr/local/bin/av\n"
         }
+
         let stub = "/usr/local/bin/\(tool)"
-        let sidecar = stub + ".av-target"
-        guard let target = try? String(contentsOfFile: sidecar, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !target.isEmpty
+        var parent = AVProcessIdentity()
+        guard av_process_identity(identity.ppid, &parent),
+              pathString(parent) == "/bin/sh",
+              argvLines(parent).dropFirst().first == stub
         else {
-            return "err nonce requester is not a hardened stub\n"
+            return "err nonce requester was not launched by hardened stub\n"
+        }
+        guard let script = try? String(contentsOfFile: stub, encoding: .utf8),
+              script.contains("# Automic Vault hardened stub\n"),
+              script.contains("stub-exec '\(tool)' '\(shellQuote(target))'")
+        else {
+            return "err hardened stub does not match requested target\n"
         }
         guard standardUserCannotWrite(path), standardUserCannotWrite(stub) else {
             return "err hardened stub path is writable by the standard user\n"
@@ -238,6 +248,21 @@ private func pathString(_ identity: AVProcessIdentity) -> String {
             String(cString: $0)
         }
     }
+}
+
+private func argvLines(_ identity: AVProcessIdentity) -> [String] {
+    var buffer = [CChar](repeating: 0, count: 8192)
+    guard av_process_arguments(identity.pid, &buffer, buffer.count) else {
+        return []
+    }
+    let end = buffer.firstIndex(of: 0) ?? buffer.count
+    return String(decoding: buffer[..<end].map(UInt8.init(bitPattern:)), as: UTF8.self)
+        .split(separator: "\n")
+        .map(String.init)
+}
+
+private func shellQuote(_ value: String) -> String {
+    value.replacingOccurrences(of: "'", with: "'\\''")
 }
 
 private func standardUserCannotWrite(_ path: String) -> Bool {
