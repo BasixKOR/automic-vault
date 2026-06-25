@@ -1,16 +1,13 @@
-use std::path::Path;
+#![allow(dead_code)]
 
-use crate::Finding;
-
-mod detect {
-    #![allow(dead_code)]
-
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../radioisotopes/zsh/detect.rs"
-    ));
+pub fn install_is_insecure() -> Result<bool, String> {
+    install_insecurity_reasons().map(|reasons| !reasons.is_empty())
 }
 
-pub(crate) fn findings(home: &Path) -> Vec<Finding> {
-    super::radioisotope::findings("zsh", detect::install_insecurity_reasons, home)
+pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
+    crate::zsh_shell_secret_insecurity_reasons()
+}
+
+pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
+    super::radioisotope::findings("zsh", install_insecurity_reasons, home)
 }
