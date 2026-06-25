@@ -10,7 +10,7 @@ fn av_scan_reports_clean_home() {
     assert!(output.status.success());
     assert_eq!(
         stdout(&output),
-        "Automic Vault scan\n╭─ credential exposure audit\n│\n◇ No plaintext credential paths found\n│\n╰─ vault sealed\n"
+        "Automic Vault scan\n╭─ system exposure audit\n│\n◇ No problems found\n│\n╰─ vault sealed\n"
     );
     assert_eq!(stderr(&output), "");
 
@@ -18,7 +18,7 @@ fn av_scan_reports_clean_home() {
 }
 
 #[test]
-fn av_scan_reports_git_credentials() {
+fn av_scan_reports_findings() {
     let home = temp_home("triggered");
     fs::write(
         home.join(".git-credentials"),

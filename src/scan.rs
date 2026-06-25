@@ -42,18 +42,10 @@ fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
 
 fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
     let _ = writeln!(stdout, "{}", style.paint("1;36", "Automic Vault scan"));
-    let _ = writeln!(
-        stdout,
-        "╭─ {}",
-        style.paint("36", "credential exposure audit")
-    );
+    let _ = writeln!(stdout, "╭─ {}", style.paint("36", "system exposure audit"));
     let _ = writeln!(stdout, "│");
     if findings.is_empty() {
-        let _ = writeln!(
-            stdout,
-            "◇ {}",
-            style.paint("32", "No plaintext credential paths found")
-        );
+        let _ = writeln!(stdout, "◇ {}", style.paint("32", "No problems found"));
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "╰─ {}", style.paint("2", "vault sealed"));
         return;
@@ -203,64 +195,16 @@ fn push_word(word: &str, width: usize, line: &mut String, lines: &mut Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::isotopes::git::{self, DOCS_URL, HIGH, HOMEPAGE, NAME};
-    use std::fs;
-    use std::path::PathBuf;
-    use std::process;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn scan_home_aggregates_git_findings() {
-        let home = temp_home("aggregate");
-        let credentials = home.join(".git-credentials");
-        fs::write(&credentials, "https://user:token@example.com\n").unwrap();
-
-        assert_eq!(
-            scan_home(&home),
-            vec![Finding {
-                source: NAME,
-                homepage: HOMEPAGE,
-                severity: HIGH,
-                explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
-                solution: format!(
-                    "Run `rm {}` or edit it to remove the credential; then use SSH remotes.",
-                    credentials.display()
-                ),
-                affected: vec![crate::AffectedFile {
-                    path: credentials.display().to_string(),
-                    line: 1,
-                }],
-                docs_url: DOCS_URL,
-            }]
-        );
-
-        let _ = fs::remove_dir_all(home);
-    }
 
     #[test]
     fn print_displays_findings() {
         let mut stdout = Vec::new();
 
-        print(
-            &mut stdout,
-            &[Finding {
-                source: NAME,
-                homepage: HOMEPAGE,
-                severity: HIGH,
-                explanation: git::credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
-                solution: "Run `rm /tmp/home/.git-credentials` or edit it to remove the credential; then use SSH remotes.".to_string(),
-                affected: vec![crate::AffectedFile {
-                    path: "/tmp/home/.git-credentials".to_string(),
-                    line: 1,
-                }],
-                docs_url: DOCS_URL,
-            }],
-            Style::plain(),
-        );
+        print(&mut stdout, &[fake_finding()], Style::plain());
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\n╭─ credential exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. git\n│  severity HIGH\n│  homepage https://git-scm.com/\n│\n│  problem\n│  Git credential store contains plaintext credentials\n│\n│  solution\n│  Run `rm /tmp/home/.git-credentials` or edit it to remove the credential;\n│  then use SSH remotes.\n│\n│  affected files\n│  • /tmp/home/.git-credentials:1\n│\n│  read more\n│  https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n│\n╰─ scan complete\n"
+            "Automic Vault scan\n╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n│  read more\n│  https://example.test/docs/example.md\n│\n╰─ scan complete\n"
         );
     }
 
@@ -271,13 +215,13 @@ mod tests {
         print(
             &mut stdout,
             &[Finding {
-                source: NAME,
-                homepage: HOMEPAGE,
-                severity: HIGH,
-                explanation: "Git credential helper exposes a GitHub token".to_string(),
-                solution: "Remove the helper that returned the token.".to_string(),
+                source: "example",
+                homepage: "https://example.test/",
+                severity: "high",
+                explanation: "Example detector found a risky setting".to_string(),
+                solution: "Run `examplectl fix`.".to_string(),
                 affected: Vec::new(),
-                docs_url: DOCS_URL,
+                docs_url: "https://example.test/docs/example.md",
             }],
             Style::plain(),
         );
@@ -305,27 +249,31 @@ mod tests {
     #[test]
     fn wraps_long_lines_inside_the_rail() {
         let lines = wrap_text(
-            "Run `rm /Users/mxcl/.av-trigger-git-credentials` or edit it to remove the credential; then use SSH remotes.",
+            "Run `examplectl harden very-long-target-name` or edit the affected configuration file.",
             48,
         );
 
         assert_eq!(
             lines,
             vec![
-                "Run `rm /Users/mxcl/.av-trigger-git-credentials`",
-                "or edit it to remove the credential; then use",
-                "SSH remotes.",
+                "Run `examplectl harden very-long-target-name` or",
+                "edit the affected configuration file.",
             ]
         );
     }
 
-    fn temp_home(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("av-{label}-{}-{nanos}", process::id()));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn fake_finding() -> Finding {
+        Finding {
+            source: "example",
+            homepage: "https://example.test/",
+            severity: "high",
+            explanation: "Example detector found a risky setting".to_string(),
+            solution: "Run `examplectl fix` or edit the affected file.".to_string(),
+            affected: vec![crate::AffectedFile {
+                path: "/tmp/example.conf".to_string(),
+                line: 7,
+            }],
+            docs_url: "https://example.test/docs/example.md",
+        }
     }
 }

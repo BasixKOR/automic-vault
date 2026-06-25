@@ -37,7 +37,7 @@ Start with the boring check:
 ```sh
 $ av scan
 Automic Vault scan
-╭─ credential exposure audit
+╭─ system exposure audit
 │
 ◆ 1 finding requires attention
 │
