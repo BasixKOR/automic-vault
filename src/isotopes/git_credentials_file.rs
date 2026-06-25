@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 
 use crate::Finding;
 
-use super::{git_config, git_config_paths, high, read_to_string};
+use super::{affected, git_config, git_config_paths, high, read_to_string};
 
 pub(crate) const PLAINTEXT_GIT_CREDENTIALS: &str =
     "Git credential store contains plaintext credentials";
@@ -51,19 +51,24 @@ pub(crate) const PLAINTEXT_GIT_CREDENTIALS: &str =
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     credential_store_paths(home)
         .into_iter()
-        .filter(|path| {
-            path.exists()
-                && read_to_string(path)
-                    .as_deref()
-                    .is_some_and(credential_file_contains_plaintext_secret)
-        })
-        .map(|path| {
+        .filter_map(|path| {
+            let contents = read_to_string(&path)?;
+            let affected = credential_file_secret_lines(&contents)
+                .into_iter()
+                .map(|line| affected(&path, line))
+                .collect::<Vec<_>>();
+            if affected.is_empty() {
+                return None;
+            }
             if path == home.join(".git-credentials") {
-                high(PLAINTEXT_GIT_CREDENTIALS)
+                Some(high(PLAINTEXT_GIT_CREDENTIALS, affected))
             } else {
-                high(format!(
-                    "Git credential store contains plaintext credentials: {}",
-                    path.display()
+                Some(high(
+                    format!(
+                        "Git credential store contains plaintext credentials: {}",
+                        path.display()
+                    ),
+                    affected,
                 ))
             }
         })
@@ -83,11 +88,18 @@ fn credential_store_paths(home: &Path) -> Vec<PathBuf> {
     paths
 }
 
-fn credential_file_contains_plaintext_secret(contents: &str) -> bool {
-    contents.lines().any(|line| {
-        let trimmed = line.trim();
-        !trimmed.is_empty() && !trimmed.starts_with('#') && url_contains_userinfo_secret(trimmed)
-    })
+fn credential_file_secret_lines(contents: &str) -> Vec<usize> {
+    contents
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let trimmed = line.trim();
+            (!trimmed.is_empty()
+                && !trimmed.starts_with('#')
+                && url_contains_userinfo_secret(trimmed))
+            .then_some(index + 1)
+        })
+        .collect()
 }
 
 fn url_contains_userinfo_secret(value: &str) -> bool {
@@ -144,7 +156,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(findings(&home), vec![high(PLAINTEXT_GIT_CREDENTIALS)]);
+        assert_eq!(
+            findings(&home),
+            vec![high(
+                PLAINTEXT_GIT_CREDENTIALS,
+                vec![affected(&home.join(".git-credentials"), 1)]
+            )]
+        );
 
         let _ = fs::remove_dir_all(home);
     }
@@ -166,22 +184,20 @@ mod tests {
         let findings = findings(&home);
 
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].message.contains("custom-git-credentials"));
+        assert!(findings[0].explanation.contains("custom-git-credentials"));
+        assert_eq!(findings[0].affected[0].line, 1);
 
         let _ = fs::remove_dir_all(home);
     }
 
     #[test]
     fn plaintext_secret_requires_userinfo_password() {
-        assert!(credential_file_contains_plaintext_secret(
-            "https://user:secret@example.com/repo.git\n"
-        ));
-        assert!(!credential_file_contains_plaintext_secret(
-            "https://example.com/repo.git\n"
-        ));
-        assert!(!credential_file_contains_plaintext_secret(
-            "https://user@example.com/repo.git\n"
-        ));
+        assert_eq!(
+            credential_file_secret_lines("https://user:secret@example.com/repo.git\n"),
+            vec![1]
+        );
+        assert!(credential_file_secret_lines("https://example.com/repo.git\n").is_empty());
+        assert!(credential_file_secret_lines("https://user@example.com/repo.git\n").is_empty());
     }
 
     fn temp_home(label: &str) -> std::path::PathBuf {

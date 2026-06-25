@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{Finding, GIT_SOURCE, HIGH};
+use crate::{AffectedFile, Finding, GIT_DOCS_URL, GIT_SOURCE, HIGH};
 
 mod git_config;
 mod git_credential_fill;
@@ -21,11 +21,21 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     findings
 }
 
-fn high(message: impl Into<String>) -> Finding {
+fn high(explanation: impl Into<String>, affected: Vec<AffectedFile>) -> Finding {
+    debug_assert!(!affected.is_empty());
     Finding {
         source: GIT_SOURCE,
         severity: HIGH,
-        message: message.into(),
+        explanation: explanation.into(),
+        affected,
+        docs_url: GIT_DOCS_URL,
+    }
+}
+
+fn affected(path: &Path, line: usize) -> AffectedFile {
+    AffectedFile {
+        path: path.display().to_string(),
+        line,
     }
 }
 
@@ -70,7 +80,7 @@ mod tests {
 
         let messages = findings(&home)
             .into_iter()
-            .map(|finding| finding.message)
+            .map(|finding| finding.explanation)
             .collect::<Vec<_>>();
 
         assert_eq!(DETECTORS.len(), 3);
@@ -94,6 +104,37 @@ mod tests {
                 .iter()
                 .any(|message| message.contains("OAuth client secret"))
         );
+
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn every_detector_report_has_required_security_fields() {
+        let home = temp_home("required-fields");
+        fs::write(
+            home.join(".git-credentials"),
+            "https://user:token@example.com\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential \"https://github.com\"]\n\
+             helper = !gh auth git-credential\n\
+             helper = oauth -device\n\
+             oauthClientSecret = abcdefgh\n",
+        )
+        .unwrap();
+
+        for finding in findings(&home) {
+            assert_eq!(finding.severity, HIGH);
+            assert!(!finding.explanation.is_empty());
+            assert_eq!(finding.docs_url, GIT_DOCS_URL);
+            assert!(!finding.affected.is_empty());
+            for affected in finding.affected {
+                assert!(!affected.path.is_empty());
+                assert!(affected.line > 0);
+            }
+        }
 
         let _ = fs::remove_dir_all(home);
     }

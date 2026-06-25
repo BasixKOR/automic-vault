@@ -28,7 +28,10 @@ fn av_scan_reports_git_credentials() {
     assert!(output.status.success());
     assert_eq!(
         stdout(&output),
-        "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n"
+        format!(
+            "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n   {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
+            home.join(".git-credentials").display()
+        )
     );
     assert_eq!(stderr(&output), "");
 

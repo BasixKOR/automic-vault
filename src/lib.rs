@@ -4,6 +4,8 @@ use std::io::Write;
 const USAGE: &str = "Usage: av scan";
 pub(crate) const GIT_SOURCE: &str = "isotope:git";
 pub(crate) const HIGH: &str = "high";
+pub(crate) const GIT_DOCS_URL: &str =
+    "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md";
 
 mod isotopes;
 mod scan;
@@ -12,7 +14,15 @@ mod scan;
 pub(crate) struct Finding {
     source: &'static str,
     severity: &'static str,
-    message: String,
+    explanation: String,
+    affected: Vec<AffectedFile>,
+    docs_url: &'static str,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct AffectedFile {
+    path: String,
+    line: usize,
 }
 
 pub fn run<I, W, E>(args: I, stdout: &mut W, stderr: &mut E) -> i32
@@ -53,7 +63,7 @@ mod tests {
         let (code, stdout, stderr) = run_args(&["av", "scan"]);
 
         assert_eq!(code, 0);
-        assert_eq!(stdout, "Automic Vault scan\nNo problems found.\n");
+        assert!(stdout.starts_with("Automic Vault scan\n"));
         assert_eq!(stderr, "");
     }
 

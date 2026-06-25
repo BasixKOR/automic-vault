@@ -14,11 +14,12 @@ Detected hazards:
 
 - `~/.git-credentials`
 - global `credential.helper = store --file ...` paths
-- `printf 'protocol=https\nhost=github.com\n\n' | git credential fill`
-  returning a non-empty `password=` for `github.com`
 - Git config that delegates GitHub credentials to `gh auth git-credential`
 - Git config that enables `git-credential-oauth`
 - plaintext `oauthClientSecret` values in Git config
+
+The manual `git credential fill` check below is still worth running. `av scan`
+only reports issues it can tie back to a file and line.
 
 The fix is not "use a better HTTPS credential helper". On macOS, if Git can ask
 a helper for an HTTPS token non-interactively, an agent command can ask too.
@@ -34,6 +35,8 @@ $ av scan
 Automic Vault scan
 Findings:
 1. high isotope:git - Git credential store contains plaintext credentials
+   /Users/you/.git-credentials:1
+   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md
 ```
 
 Then check what Git itself can retrieve for GitHub:

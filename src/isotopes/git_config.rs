@@ -47,7 +47,8 @@ enum GitConfigSection {
 
 pub(super) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    for (value, _) in credential_helpers(contents) {
+    for helper in credential_helpers(contents) {
+        let value = helper.value;
         if value
             .split_whitespace()
             .next()
@@ -62,17 +63,27 @@ pub(super) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
     paths
 }
 
-pub(super) fn exposes_github_token_via_gh_helper(contents: &str) -> bool {
+pub(super) fn gh_auth_git_credential_lines(contents: &str) -> Vec<usize> {
     credential_helpers(contents)
         .into_iter()
-        .any(|(value, applies)| applies && helper_invokes_gh_auth_git_credential(value))
+        .filter_map(|helper| {
+            (helper.applies_to_github && helper_invokes_gh_auth_git_credential(helper.value))
+                .then_some(helper.line)
+        })
+        .collect()
 }
 
-fn credential_helpers(contents: &str) -> Vec<(&str, bool)> {
+struct CredentialHelper<'a> {
+    value: &'a str,
+    applies_to_github: bool,
+    line: usize,
+}
+
+fn credential_helpers(contents: &str) -> Vec<CredentialHelper<'_>> {
     let mut helpers = Vec::new();
     let mut section = GitConfigSection::Other;
 
-    for line in contents.lines() {
+    for (index, line) in contents.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
             continue;
@@ -89,7 +100,11 @@ fn credential_helpers(contents: &str) -> Vec<(&str, bool)> {
         else {
             continue;
         };
-        helpers.push((git_config_value(value), applies_to_github));
+        helpers.push(CredentialHelper {
+            value: git_config_value(value),
+            applies_to_github,
+            line: index + 1,
+        });
     }
 
     helpers
@@ -259,11 +274,17 @@ mod tests {
 
     #[test]
     fn detects_github_gh_helper_only_for_github_scope() {
-        assert!(exposes_github_token_via_gh_helper(
-            "[credential \"https://github.com\"]\nhelper = !'/Applications/GitHub CLI.app/Contents/MacOS/gh' auth git-credential\n"
-        ));
-        assert!(!exposes_github_token_via_gh_helper(
-            "[credential \"https://example.com\"]\nhelper = !gh auth git-credential\n"
-        ));
+        assert_eq!(
+            gh_auth_git_credential_lines(
+                "[credential \"https://github.com\"]\nhelper = !'/Applications/GitHub CLI.app/Contents/MacOS/gh' auth git-credential\n"
+            ),
+            vec![2]
+        );
+        assert!(
+            gh_auth_git_credential_lines(
+                "[credential \"https://example.com\"]\nhelper = !gh auth git-credential\n"
+            )
+            .is_empty()
+        );
     }
 }

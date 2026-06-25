@@ -33,8 +33,12 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding]) {
             index + 1,
             finding.severity,
             finding.source,
-            finding.message
+            finding.explanation
         );
+        for affected in &finding.affected {
+            let _ = writeln!(stdout, "   {}:{}", affected.path, affected.line);
+        }
+        let _ = writeln!(stdout, "   Read more: {}", finding.docs_url);
     }
 }
 
@@ -61,7 +65,12 @@ mod tests {
             vec![Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                explanation: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                affected: vec![crate::AffectedFile {
+                    path: home.join(".git-credentials").display().to_string(),
+                    line: 1,
+                }],
+                docs_url: crate::GIT_DOCS_URL,
             }]
         );
 
@@ -77,13 +86,18 @@ mod tests {
             &[Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                explanation: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                affected: vec![crate::AffectedFile {
+                    path: "/tmp/home/.git-credentials".to_string(),
+                    line: 1,
+                }],
+                docs_url: crate::GIT_DOCS_URL,
             }],
         );
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n"
+            "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n   /tmp/home/.git-credentials:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n"
         );
     }
 
