@@ -21,22 +21,23 @@ fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
 fn print<W: Write>(stdout: &mut W, findings: &[Finding]) {
     let _ = writeln!(stdout, "Automic Vault scan");
     if findings.is_empty() {
-        let _ = writeln!(stdout, "No problems found.");
+        let _ = writeln!(stdout, "✓ No problems found.");
         return;
     }
 
-    let _ = writeln!(stdout, "Findings:");
+    let _ = writeln!(stdout, "⚠ Findings: {}", findings.len());
     for (index, finding) in findings.iter().enumerate() {
-        let _ = writeln!(
-            stdout,
-            "{}. {} {} - {}",
-            index + 1,
-            finding.severity,
-            finding.source,
-            finding.explanation
-        );
-        for affected in &finding.affected {
-            let _ = writeln!(stdout, "   {}:{}", affected.path, affected.line);
+        let _ = writeln!(stdout);
+        let _ = writeln!(stdout, "{}. {}", index + 1, finding.source);
+        let _ = writeln!(stdout, "   Severity: {}", finding.severity);
+        let _ = writeln!(stdout, "   Problem: {}", finding.explanation);
+        let _ = writeln!(stdout, "   Affected files:");
+        if finding.affected.is_empty() {
+            let _ = writeln!(stdout, "     not reported by this detector");
+        } else {
+            for affected in &finding.affected {
+                let _ = writeln!(stdout, "     {}:{}", affected.path, affected.line);
+            }
         }
         let _ = writeln!(stdout, "   Read more: {}", finding.docs_url);
     }
@@ -97,7 +98,29 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n   /tmp/home/.git-credentials:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n"
+            "Automic Vault scan\n⚠ Findings: 1\n\n1. isotope:git\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     /tmp/home/.git-credentials:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n"
+        );
+    }
+
+    #[test]
+    fn print_displays_unattributed_findings_without_fake_file_location() {
+        let mut stdout = Vec::new();
+
+        print(
+            &mut stdout,
+            &[Finding {
+                source: GIT_SOURCE,
+                severity: HIGH,
+                explanation: "Git credential helper exposes a GitHub token".to_string(),
+                affected: Vec::new(),
+                docs_url: crate::GIT_DOCS_URL,
+            }],
+        );
+
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("     not reported by this detector\n")
         );
     }
 

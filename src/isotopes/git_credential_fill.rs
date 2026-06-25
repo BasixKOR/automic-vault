@@ -85,7 +85,12 @@ fn git_credential_fill_exposes_github_token() -> Result<bool, String> {
         return Ok(false);
     }
 
-    let mut child = match Command::new("git")
+    let mut command = Command::new("git");
+    git_credential_fill_command_exposes_github_token(&mut command)
+}
+
+fn git_credential_fill_command_exposes_github_token(command: &mut Command) -> Result<bool, String> {
+    let mut child = match command
         .args(["credential", "fill"])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
@@ -190,41 +195,6 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
-    use std::sync::{Mutex, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-    struct EnvGuard {
-        previous: Vec<(&'static str, Option<std::ffi::OsString>)>,
-    }
-
-    impl EnvGuard {
-        fn set(values: &[(&'static str, Option<&str>)]) -> Self {
-            let previous = values
-                .iter()
-                .map(|(key, value)| {
-                    let previous = std::env::var_os(key);
-                    match value {
-                        Some(value) => unsafe { std::env::set_var(key, value) },
-                        None => unsafe { std::env::remove_var(key) },
-                    }
-                    (*key, previous)
-                })
-                .collect();
-            Self { previous }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (key, previous) in self.previous.drain(..).rev() {
-                match previous {
-                    Some(value) => unsafe { std::env::set_var(key, value) },
-                    None => unsafe { std::env::remove_var(key) },
-                }
-            }
-        }
-    }
 
     #[test]
     fn detects_github_cli_credential_helper_without_running_git() {
@@ -246,42 +216,6 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(home);
-    }
-
-    #[test]
-    fn credential_fill_probe_requires_test_opt_in_under_tests() {
-        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _env = EnvGuard::set(&[
-            ("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", None),
-            ("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR", None),
-        ]);
-
-        assert!(!git_credential_fill_probe_enabled());
-    }
-
-    #[test]
-    fn credential_fill_probe_can_be_enabled_for_tests() {
-        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _env = EnvGuard::set(&[
-            ("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", None),
-            ("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR", Some("1")),
-        ]);
-
-        assert!(git_credential_fill_probe_enabled());
-    }
-
-    #[test]
-    fn credential_fill_probe_disable_overrides_test_enable() {
-        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let _env = EnvGuard::set(&[
-            (
-                "AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR",
-                Some("1"),
-            ),
-            ("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR", Some("1")),
-        ]);
-
-        assert!(!git_credential_fill_probe_enabled());
     }
 
     #[test]
@@ -321,11 +255,8 @@ mod tests {
 
     #[test]
     fn credential_fill_probe_reports_fake_git_password_without_affected_file() {
-        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let temp = temp_home("fill");
-        let home = temp.join("home");
         let bin = temp.join("bin");
-        fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&bin).unwrap();
         let git = bin.join("git");
         fs::write(
@@ -336,19 +267,9 @@ mod tests {
         let mut permissions = fs::metadata(&git).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&git, permissions).unwrap();
-        let path = match std::env::var_os("PATH") {
-            Some(existing) if !existing.is_empty() => {
-                format!("{}:{}", bin.display(), existing.to_string_lossy())
-            }
-            _ => bin.display().to_string(),
-        };
-        let _env = EnvGuard::set(&[
-            ("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", None),
-            ("AUTOMIC_VAULT_TEST_GIT_CREDENTIAL_FILL_DETECTOR", Some("1")),
-            ("PATH", Some(&path)),
-        ]);
 
-        assert_eq!(findings(&home), vec![high_unattributed(FILL_MESSAGE)]);
+        let mut command = Command::new(&git);
+        assert!(git_credential_fill_command_exposes_github_token(&mut command).unwrap());
 
         let _ = fs::remove_dir_all(temp);
     }

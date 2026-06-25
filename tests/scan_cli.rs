@@ -8,7 +8,10 @@ fn av_scan_reports_clean_home() {
     let output = av_scan(&home);
 
     assert!(output.status.success());
-    assert_eq!(stdout(&output), "Automic Vault scan\nNo problems found.\n");
+    assert_eq!(
+        stdout(&output),
+        "Automic Vault scan\n✓ No problems found.\n"
+    );
     assert_eq!(stderr(&output), "");
 
     let _ = fs::remove_dir_all(home);
@@ -29,7 +32,7 @@ fn av_scan_reports_git_credentials() {
     assert_eq!(
         stdout(&output),
         format!(
-            "Automic Vault scan\nFindings:\n1. high isotope:git - Git credential store contains plaintext credentials\n   {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
+            "Automic Vault scan\n⚠ Findings: 1\n\n1. isotope:git\n   Severity: high\n   Problem: Git credential store contains plaintext credentials\n   Affected files:\n     {}:1\n   Read more: https://github.com/automic-vault/automic-vault/main/docs/securing-git.md\n",
             home.join(".git-credentials").display()
         )
     );
