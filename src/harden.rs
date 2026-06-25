@@ -37,6 +37,7 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
     })?;
     fs::set_permissions(target, fs::Permissions::from_mode(0o755))
         .map_err(|err| format!("failed to chmod {}: {err}", target.display()))?;
+    install_cli(&av)?;
 
     Ok(format!(
         "hardened {} -> {}",
@@ -49,4 +50,14 @@ pub(crate) fn original_path(path: &Path) -> std::path::PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(".av-orig");
     value.into()
+}
+
+fn install_cli(av: &Path) -> Result<(), String> {
+    let target = Path::new("/usr/local/bin/av");
+    if target == av {
+        return Ok(());
+    }
+    fs::copy(av, target).map_err(|err| format!("failed to install {}: {err}", target.display()))?;
+    fs::set_permissions(target, fs::Permissions::from_mode(0o755))
+        .map_err(|err| format!("failed to chmod {}: {err}", target.display()))
 }
