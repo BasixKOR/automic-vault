@@ -33,6 +33,10 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
     }
 
     fs::create_dir_all(STUB_DIR).map_err(|err| format!("failed to create {STUB_DIR}: {err}"))?;
+    if stub.exists() {
+        fs::remove_file(&stub)
+            .map_err(|err| format!("failed to replace {}: {err}", stub.display()))?;
+    }
     fs::copy(&av, &stub)
         .map_err(|err| format!("failed to install stub at {}: {err}", stub.display()))?;
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))
