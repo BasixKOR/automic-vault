@@ -22,7 +22,6 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
 }
 
 fn high(explanation: impl Into<String>, affected: Vec<AffectedFile>) -> Finding {
-    debug_assert!(!affected.is_empty());
     Finding {
         source: GIT_SOURCE,
         severity: HIGH,
@@ -30,6 +29,10 @@ fn high(explanation: impl Into<String>, affected: Vec<AffectedFile>) -> Finding 
         affected,
         docs_url: GIT_DOCS_URL,
     }
+}
+
+fn high_unattributed(explanation: impl Into<String>) -> Finding {
+    high(explanation, Vec::new())
 }
 
 fn affected(path: &Path, line: usize) -> AffectedFile {
@@ -129,7 +132,6 @@ mod tests {
             assert_eq!(finding.severity, HIGH);
             assert!(!finding.explanation.is_empty());
             assert_eq!(finding.docs_url, GIT_DOCS_URL);
-            assert!(!finding.affected.is_empty());
             for affected in finding.affected {
                 assert!(!affected.path.is_empty());
                 assert!(affected.line > 0);

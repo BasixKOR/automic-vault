@@ -14,12 +14,16 @@ Detected hazards:
 
 - `~/.git-credentials`
 - global `credential.helper = store --file ...` paths
+- `printf 'protocol=https\nhost=github.com\n\n' | git credential fill`
+  returning a non-empty `password=` for `github.com`
 - Git config that delegates GitHub credentials to `gh auth git-credential`
 - Git config that enables `git-credential-oauth`
 - plaintext `oauthClientSecret` values in Git config
 
-The manual `git credential fill` check below is still worth running. `av scan`
-only reports issues it can tie back to a file and line.
+The live `git credential fill` finding may not have a file and line. Git does
+not always say which helper returned the token. File-backed findings do include
+the affected path and line.
+
 
 The fix is not "use a better HTTPS credential helper". On macOS, if Git can ask
 a helper for an HTTPS token non-interactively, an agent command can ask too.
