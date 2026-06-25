@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let url = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
         guard let url, let image = NSImage(contentsOf: url) else { return nil }
         image.isTemplate = true
+        image.size = NSSize(width: 15, height: 18)
         return image
     }
 }
