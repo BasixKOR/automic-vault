@@ -11,7 +11,7 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-ai/SKILL.md",
-      "computedHash": "cce290fff384d9648c87f1d878177e335104c6cc1b7a0eab16dc47989e87029c"
+      "computedHash": "7a708d228d8061ab04ac9002031eeba441116b04b948392bd2ffb9db828cf72e"
     },
     "axiom-apple-docs": {
       "source": "CharlesWiltgen/Axiom",
@@ -23,13 +23,13 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-build/SKILL.md",
-      "computedHash": "306ff1e39736c1110bd4ccd7976ae4ced61de8beb696ebd010cd9bce1c247627"
+      "computedHash": "b5afbe5429d5b6e57e991aabcc242e5b44896e93b45b1451be68adafbb541cde"
     },
     "axiom-concurrency": {
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-concurrency/SKILL.md",
-      "computedHash": "1428e84af38df3638c89d0e8b53ab72966616821e35f6281607e9208f1cb2306"
+      "computedHash": "fab4322b63e97f23206ca14e4e77b002efbae0b840423a33545f870b2dae1787"
     },
     "axiom-data": {
       "source": "CharlesWiltgen/Axiom",
@@ -65,7 +65,7 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-integration/SKILL.md",
-      "computedHash": "678b47e9e7d8ab393d6d32677b6101bf2e3b3ccf2146d94ddb85445c10b1ae21"
+      "computedHash": "0821374ce4827957405a62fc220f7631cb011c2f4b98891e3d4f902d92397500"
     },
     "axiom-location": {
       "source": "CharlesWiltgen/Axiom",
@@ -83,13 +83,13 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-media/SKILL.md",
-      "computedHash": "14538b079aa9c7b81a4b747a1367bdc8d45af273a24d32fbfa505e48cee1e970"
+      "computedHash": "98dfa8f9c0f3eb0fcceb06bfe4a0d94f0ecbb312797318831da2bd564a4627dd"
     },
     "axiom-networking": {
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-networking/SKILL.md",
-      "computedHash": "0436e19aba0b0a260609a0d8b10c91b000faf0d88c59a898adaeefd18d474fff"
+      "computedHash": "01730d13153144d754b52dc5442ee6c3b3a8d915790120ff4e8487859a5d123c"
     },
     "axiom-payments": {
       "source": "CharlesWiltgen/Axiom",
@@ -101,7 +101,7 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-performance/SKILL.md",
-      "computedHash": "164ff155ce077f80f7766538a26edb5c166b4293dbd22c194a511eea75b17bf3"
+      "computedHash": "5a9a9a888a8b99c03f88daba5f67df806b026460364ba4bc3be7e10bed31e38b"
     },
     "axiom-security": {
       "source": "CharlesWiltgen/Axiom",
@@ -119,25 +119,25 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-swift/SKILL.md",
-      "computedHash": "ff1615c74528416a810ab36024002405935252e5fae8bcc0ed30d0a517407b4d"
+      "computedHash": "8822f1137298c95218e922b7a0395e8407dbdb33166bb2d2d5f5c95d1d7613ae"
     },
     "axiom-swiftui": {
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-swiftui/SKILL.md",
-      "computedHash": "e4e1d50a145aa99ee963d6c824399815b0be15987339a539b922c03ed87395e5"
+      "computedHash": "c906ef774bdb54c065e30f83cbf616352d84ec216598dd41c76638afcd9e0db8"
     },
     "axiom-testing": {
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-testing/SKILL.md",
-      "computedHash": "59e4991afc2ae696c1257975c3bed4ba1450c5e22710bd3956a47363617f87ed"
+      "computedHash": "b6ae2f689f041a2392f772dc97cd2dad0817ea4360649b3a8cca57e54fe32807"
     },
     "axiom-tools": {
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-tools/SKILL.md",
-      "computedHash": "9b6b688123512864797174a363616a46893fb4f938b3500d3c906afcf9ee9926"
+      "computedHash": "26e0ad13ede61ca11d66fd9364f10d65e01e7bb2c47f94e5eabc6e6f720bb5e8"
     },
     "axiom-uikit": {
       "source": "CharlesWiltgen/Axiom",
@@ -149,7 +149,7 @@
       "source": "CharlesWiltgen/Axiom",
       "sourceType": "github",
       "skillPath": ".claude-plugin/plugins/axiom/skills/axiom-vision/SKILL.md",
-      "computedHash": "8981a7b279c1e4deca8b80c7cb1c06714d42fb41aad1c797d8ad2907297ba617"
+      "computedHash": "e53b408b257a7e4f0abd2bba371e490924935c600f4e0f53d8696454bbf5d2ff"
     },
     "axiom-watchos": {
       "source": "CharlesWiltgen/Axiom",

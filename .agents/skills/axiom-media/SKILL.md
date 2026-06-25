@@ -20,13 +20,17 @@ license: MIT
 | Photo pickers, library access | See `skills/photo-library.md` |
 | PHPicker, PhotosPicker API reference | See `skills/photo-library-ref.md` |
 | Audio, AVFoundation, spatial audio | See `skills/avfoundation-ref.md` |
+| Video write/export/playback, sample-buffer engine, resumable export, Apple Log 2, iOS 27 deprecations (`OS27`) | See `skills/avfoundation-video-ref.md` |
 | Audio recognition, ShazamKit | See `skills/shazamkit.md` |
 | ShazamKit API reference | See `skills/shazamkit-ref.md` |
 | On-device music analysis (key, tempo, structure, loudness), MusicUnderstanding (`OS27`) | See `skills/music-understanding.md` |
+| On-device face grouping (cluster faces into people across a library), video highlights/key frames, MediaIntelligence (`OS27`) | See `skills/media-intelligence.md` |
 | Haptic feedback, Core Haptics | See `skills/haptics.md` |
 | Now Playing metadata, remote commands | See `skills/now-playing.md` |
 | Animated lock-screen artwork (iOS 26+) | See `skills/now-playing.md` Pattern 8 |
 | NowPlaying framework (`import NowPlaying`, Swift-native `MediaSession`, `OS27`) | See `skills/now-playing.md` (NowPlaying Framework section) |
+| Cast / route media to non-AirPlay devices (Google Cast/Chromecast, DLNA) as system routes, AVSystemRouting (`iOS27`, EU-gated/beta) | See `skills/system-media-routing.md` |
+| Screen capture / recording / streaming the screen or your own app, ScreenCaptureKit (`OS27` — new on iOS/iPadOS/tvOS/visionOS 27; macOS 12.3+) | See `skills/screen-capture.md` |
 | CarPlay HIG, app categories, design rules, entitlements | See `skills/carplay-hig.md` |
 | CarPlay templates reference (all 12 templates, availability matrix, depth limits) | See `skills/carplay-templates-ref.md` |
 | CarPlay navigation reference (base view, route guidance, cluster/HUD, multitouch, voice prompts, map panels + EV charging iOS 27) | See `skills/carplay-navigation-ref.md` |
@@ -45,10 +49,14 @@ digraph media {
     what -> "skills/camera-capture.md" [label="camera capture"];
     what -> "skills/photo-library.md" [label="photo pickers\n/ library"];
     what -> "skills/avfoundation-ref.md" [label="audio / AVFoundation"];
+    what -> "skills/avfoundation-video-ref.md" [label="video write/export\n/ sample-buffer (OS27)"];
     what -> "skills/shazamkit.md" [label="ShazamKit\n/ audio recognition"];
     what -> "skills/music-understanding.md" [label="music analysis\n(key/tempo/structure)"];
+    what -> "skills/media-intelligence.md" [label="face grouping /\nvideo highlights (OS27)"];
     what -> "skills/haptics.md" [label="haptic feedback"];
     what -> "skills/now-playing.md" [label="Now Playing\n/ remote commands"];
+    what -> "skills/system-media-routing.md" [label="cast to non-AirPlay\n(Chromecast/DLNA, iOS27)"];
+    what -> "skills/screen-capture.md" [label="screen capture /\nrecording (OS27)"];
     what -> "skills/carplay-hig.md" [label="CarPlay app design\n/ categories / entitlements"];
     what -> "skills/dockkit.md" [label="DockKit stands\n/ gimbals / tracking"];
 }
@@ -56,14 +64,17 @@ digraph media {
 
 1. Camera capture? → `skills/camera-capture.md` (patterns), `skills/camera-capture-ref.md` (API), `skills/camera-capture-diag.md` (debugging)
 2. Photo pickers / library? → `skills/photo-library.md`, `skills/photo-library-ref.md`
-3. Audio / AVFoundation? → `skills/avfoundation-ref.md`
+3. Audio / AVFoundation (audio)? → `skills/avfoundation-ref.md`; video write/export/playback, sample-buffer engine, resumable export, iOS 27 deprecations? → `skills/avfoundation-video-ref.md` (`OS27`)
 4. ShazamKit / audio recognition? → `skills/shazamkit.md`, `skills/shazamkit-ref.md`
 5. On-device music analysis (key, tempo, structure, pace, instruments, loudness)? → `skills/music-understanding.md` (`OS27`)
-6. Haptics? → `skills/haptics.md`
-7. Now Playing / remote commands? → `skills/now-playing.md`, `skills/now-playing-carplay.md`, `skills/now-playing-musickit.md`
-8. CarPlay app design, category selection, entitlement request? → `skills/carplay-hig.md` (start here for any CarPlay work)
-9. DockKit motorized stands / gimbals, subject tracking, custom motor control? → `skills/dockkit.md`
-10. Want camera code audit? → Launch `camera-auditor` agent (detects deprecated APIs and architectural gaps: missing interruption handlers, runtime-error recovery, audio session deactivation, permission-denied UX, RotationCoordinator on iOS 17+; scores RELIABLE / FRAGILE / BROKEN)
+6. On-device face grouping (cluster faces into people across a library) or video highlights / key-frame detection? → `skills/media-intelligence.md` (`OS27`)
+7. Haptics? → `skills/haptics.md`
+8. Now Playing / remote commands? → `skills/now-playing.md`, `skills/now-playing-carplay.md`, `skills/now-playing-musickit.md`
+9. Cast / route media to non-AirPlay devices (Google Cast/Chromecast, DLNA) as system routes? → `skills/system-media-routing.md` (`iOS27`, EU-gated/beta)
+10. Screen capture / recording / streaming the screen or your own app (ScreenCaptureKit)? → `skills/screen-capture.md` (`OS27` — new on iOS/iPadOS/tvOS/visionOS 27)
+11. CarPlay app design, category selection, entitlement request? → `skills/carplay-hig.md` (start here for any CarPlay work)
+12. DockKit motorized stands / gimbals, subject tracking, custom motor control? → `skills/dockkit.md`
+13. Want camera code audit? → Launch `camera-auditor` agent (detects deprecated APIs and architectural gaps: missing interruption handlers, runtime-error recovery, audio session deactivation, permission-denied UX, RotationCoordinator on iOS 17+; scores RELIABLE / FRAGILE / BROKEN)
 
 ## Cross-Domain Routing
 
@@ -91,6 +102,11 @@ digraph media {
 - Custom Vision / Core ML inference feeding observations → **invoke axiom-vision**
 - Camera permission (NSCameraUsageDescription) → **invoke axiom-integration** (privacy-ux reference)
 
+**MediaIntelligence + Vision** (faces, image analysis):
+- Group faces into people across a library, video highlights / key frames → **stay here** (media-intelligence) — clustering identities + on-device video moment detection
+- Detect *where* a face is in one image (bounding box, landmarks), OCR, segmentation → **invoke axiom-vision** — per-image detection, a different problem
+- System Photos "People" album → that album is system-owned (PhotoKit); MediaIntelligence builds *your own* index over assets you manage → **stay here** (photo-library for the asset access)
+
 ## Anti-Rationalization
 
 | Thought | Reality |
@@ -102,6 +118,9 @@ digraph media {
 | "Now Playing info is just setting metadata" | Remote commands, artwork handling, and state sync have 15+ gotchas. |
 | "I'll use UIImagePickerController for photos" | PHPicker/PhotosPicker are the modern API — no permissions required. |
 | "DockKit is just pairing a stand" | Custom control needs system tracking disabled, handles inverted dock states, and two different coordinate origins. |
+| "Grouping faces is just Vision face detection" | Vision detects faces in one image; MediaIntelligence clusters them into persistent people (entities) across a whole library, with its own working directory and state. |
+| "Casting to Chromecast means bundling the Google Cast SDK" | On iOS 27, AVSystemRouting exposes non-AirPlay routes as system routes — you adopt one Apple API (observe events, start a session, drive playbackControl) instead of a per-vendor SDK. Likely EU-gated/beta — gate and keep a fallback. |
+| "ScreenCaptureKit on iPad works like the Mac (enumerate displays/windows)" | On iOS/iPadOS `SCShareableContent` and all `SCContentFilter` initializers are macOS-only — you get a filter ONLY from the system `SCContentSharingPicker`. New on iOS/iPadOS/tvOS/visionOS 27. Also not `ImageRenderer` (that snapshots your own SwiftUI view). |
 
 ## Example Invocations
 
@@ -131,6 +150,15 @@ User: "How do I identify songs with ShazamKit?"
 
 User: "How do I detect a song's tempo / key / beat grid on-device?" / "Analyze audio loudness or structure"
 → Read: `skills/music-understanding.md`
+
+User: "Group faces into people across my photo library" / "cluster faces on-device" / "find highlights or a thumbnail frame in a video"
+→ Read: `skills/media-intelligence.md`
+
+User: "Cast to Chromecast / Google Cast without the Cast SDK" / "support non-AirPlay casting" / "route media to a DLNA device as a system route"
+→ Read: `skills/system-media-routing.md`
+
+User: "Record / stream the iPad screen" / "ScreenCaptureKit on iOS" / "screen recording in my app" / "capture just my app's content"
+→ Read: `skills/screen-capture.md`
 
 User: "Track a subject with a motorized stand" / "Control a DockKit gimbal"
 → Read: `skills/dockkit.md`
