@@ -41,7 +41,6 @@ fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
 }
 
 fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
-    let _ = writeln!(stdout, "{}", style.paint("1;36", "Automic Vault scan"));
     let _ = writeln!(stdout, "╭─ {}", style.paint("36", "system exposure audit"));
     let _ = writeln!(stdout, "│");
     if findings.is_empty() {
@@ -204,7 +203,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "Automic Vault scan\n╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n│  read more\n│  https://example.test/docs/example.md\n│\n╰─ scan complete\n"
+            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n│  read more\n│  https://example.test/docs/example.md\n│\n╰─ scan complete\n"
         );
     }
 
@@ -242,7 +241,7 @@ mod tests {
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .starts_with("\x1b[1;36mAutomic Vault scan\x1b[0m\n")
+                .starts_with("╭─ \x1b[36msystem exposure audit\x1b[0m\n")
         );
     }
 

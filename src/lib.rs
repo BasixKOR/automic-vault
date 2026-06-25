@@ -85,7 +85,7 @@ mod tests {
         let (code, stdout, stderr) = run_args(&["av", "scan"]);
 
         assert_eq!(code, 0);
-        assert!(stdout.starts_with("Automic Vault scan\n"));
+        assert!(stdout.starts_with("╭─ system exposure audit\n"));
         assert_eq!(stderr, "");
     }
 

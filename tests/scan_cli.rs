@@ -10,7 +10,7 @@ fn av_scan_reports_clean_home() {
     assert!(output.status.success());
     assert_eq!(
         stdout(&output),
-        "Automic Vault scan\n╭─ system exposure audit\n│\n◇ No problems found\n│\n╰─ vault sealed\n"
+        "╭─ system exposure audit\n│\n◇ No problems found\n│\n╰─ vault sealed\n"
     );
     assert_eq!(stderr(&output), "");
 
@@ -37,8 +37,7 @@ fn av_scan_reports_findings() {
     assert!(stdout.contains("╰─ scan complete\n"));
     for line in stdout.lines().filter(|line| !line.is_empty()) {
         assert!(
-            line.starts_with("Automic Vault scan")
-                || line.starts_with('╭')
+            line.starts_with('╭')
                 || line.starts_with('◆')
                 || line.starts_with('└')
                 || line.starts_with('├')

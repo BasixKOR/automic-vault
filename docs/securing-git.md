@@ -36,7 +36,6 @@ Start with the boring check:
 
 ```sh
 $ av scan
-Automic Vault scan
 ╭─ system exposure audit
 │
 ◆ 1 finding requires attention
@@ -379,8 +378,11 @@ Run the scanner:
 
 ```sh
 $ av scan
-Automic Vault scan
-No problems found.
+╭─ system exposure audit
+│
+◇ No problems found
+│
+╰─ vault sealed
 ```
 
 Check GitHub HTTPS credential fill:
