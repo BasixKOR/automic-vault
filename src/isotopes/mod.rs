@@ -1,11 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use crate::{AffectedFile, Finding, GIT_DOCS_URL, GIT_SOURCE, HIGH};
+use crate::{AffectedFile, Finding};
 
 mod git_config;
 mod git_credential_fill;
 mod git_credential_oauth;
 pub(crate) mod git_credentials_file;
+
+pub(crate) const GIT_SOURCE: &str = "isotope:git";
+pub(crate) const HIGH: &str = "high";
+pub(crate) const GIT_DOCS_URL: &str =
+    "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md";
 
 const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[
     git_credentials_file::findings,

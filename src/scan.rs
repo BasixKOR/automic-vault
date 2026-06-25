@@ -46,7 +46,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GIT_SOURCE, HIGH};
+    use crate::isotopes::{GIT_DOCS_URL, GIT_SOURCE, HIGH};
     use std::fs;
     use std::path::PathBuf;
     use std::process;
@@ -71,7 +71,7 @@ mod tests {
                     path: home.join(".git-credentials").display().to_string(),
                     line: 1,
                 }],
-                docs_url: crate::GIT_DOCS_URL,
+                docs_url: GIT_DOCS_URL,
             }]
         );
 
@@ -92,7 +92,7 @@ mod tests {
                     path: "/tmp/home/.git-credentials".to_string(),
                     line: 1,
                 }],
-                docs_url: crate::GIT_DOCS_URL,
+                docs_url: GIT_DOCS_URL,
             }],
         );
 
@@ -113,7 +113,7 @@ mod tests {
                 severity: HIGH,
                 explanation: "Git credential helper exposes a GitHub token".to_string(),
                 affected: Vec::new(),
-                docs_url: crate::GIT_DOCS_URL,
+                docs_url: GIT_DOCS_URL,
             }],
         );
 

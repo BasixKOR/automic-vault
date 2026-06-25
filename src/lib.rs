@@ -2,10 +2,6 @@ use std::ffi::OsString;
 use std::io::Write;
 
 const USAGE: &str = "Usage: av scan";
-pub(crate) const GIT_SOURCE: &str = "isotope:git";
-pub(crate) const HIGH: &str = "high";
-pub(crate) const GIT_DOCS_URL: &str =
-    "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md";
 
 mod isotopes;
 mod scan;
