@@ -1,4 +1,7 @@
-use std::fs;
+use std::ffi::CString;
+use std::fs::{self, File};
+use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -7,6 +10,7 @@ const TARGET_SUFFIX: &str = ".av-target";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
+    fn chown(path: *const i8, owner: u32, group: u32) -> i32;
 }
 
 pub(crate) fn run(target: &Path) -> Result<String, String> {
@@ -37,10 +41,7 @@ pub(crate) fn run(target: &Path) -> Result<String, String> {
         fs::remove_file(&stub)
             .map_err(|err| format!("failed to replace {}: {err}", stub.display()))?;
     }
-    fs::copy(&av, &stub)
-        .map_err(|err| format!("failed to install stub at {}: {err}", stub.display()))?;
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))
-        .map_err(|err| format!("failed to chmod {}: {err}", stub.display()))?;
+    install_executable(&av, &stub)?;
     fs::write(&sidecar, format!("{}\n", target.display()))
         .map_err(|err| format!("failed to write {}: {err}", sidecar.display()))?;
     fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o644))
@@ -86,7 +87,30 @@ fn install_cli(av: &Path) -> Result<(), String> {
     if target == av {
         return Ok(());
     }
-    fs::copy(av, target).map_err(|err| format!("failed to install {}: {err}", target.display()))?;
+    install_executable(av, target)
+}
+
+fn install_executable(source: &Path, target: &Path) -> Result<(), String> {
+    let mut input =
+        File::open(source).map_err(|err| format!("failed to open {}: {err}", source.display()))?;
+    let mut output = File::create(target)
+        .map_err(|err| format!("failed to install {}: {err}", target.display()))?;
+    io::copy(&mut input, &mut output)
+        .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
     fs::set_permissions(target, fs::Permissions::from_mode(0o755))
-        .map_err(|err| format!("failed to chmod {}: {err}", target.display()))
+        .map_err(|err| format!("failed to chmod {}: {err}", target.display()))?;
+    chown_root_wheel(target)
+}
+
+fn chown_root_wheel(path: &Path) -> Result<(), String> {
+    let path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| "path contains interior NUL".to_string())?;
+    if unsafe { chown(path.as_ptr(), 0, 0) } == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "failed to chown installed executable root:wheel: {}",
+            io::Error::last_os_error()
+        ))
+    }
 }
