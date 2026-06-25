@@ -14,7 +14,6 @@ swift build -c release --package-path "$ROOT"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
 cp "$ROOT/.build/release/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
-cp "$AV_ROOT/target/release/av" "$MACOS/av"
 cp "$ROOT/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 cp "$ROOT/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
@@ -33,5 +32,8 @@ if [[ -z "$identity" ]]; then
   identity="-"
 fi
 
-codesign --force --deep --sign "$identity" "$APP"
+codesign --force --sign "$identity" --identifier com.automicvault.av "$AV_ROOT/target/release/av"
+cp "$AV_ROOT/target/release/av" "$MACOS/av"
+codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
+codesign --force --sign "$identity" "$APP"
 echo "$APP"
