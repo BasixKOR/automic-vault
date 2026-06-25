@@ -119,7 +119,7 @@ mod tests {
             vec![Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: isotopes::git_credentials::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                message: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
             }]
         );
 
@@ -135,7 +135,7 @@ mod tests {
             &[Finding {
                 source: GIT_SOURCE,
                 severity: HIGH,
-                message: isotopes::git_credentials::PLAINTEXT_GIT_CREDENTIALS.to_string(),
+                message: isotopes::git_credentials_file::PLAINTEXT_GIT_CREDENTIALS.to_string(),
             }],
         );
 

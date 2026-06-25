@@ -5,10 +5,10 @@ use crate::{Finding, GIT_SOURCE, HIGH};
 mod git_config;
 mod git_credential_fill;
 mod git_credential_oauth;
-pub(crate) mod git_credentials;
+pub(crate) mod git_credentials_file;
 
 const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[
-    git_credentials::findings,
+    git_credentials_file::findings,
     git_credential_fill::findings,
     git_credential_oauth::findings,
 ];
@@ -77,7 +77,7 @@ mod tests {
         assert!(
             messages
                 .iter()
-                .any(|message| message == git_credentials::PLAINTEXT_GIT_CREDENTIALS)
+                .any(|message| message == git_credentials_file::PLAINTEXT_GIT_CREDENTIALS)
         );
         assert!(
             messages
