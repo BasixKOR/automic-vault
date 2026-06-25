@@ -158,6 +158,9 @@ private final class CredentialBroker: @unchecked Sendable {
         guard path == "/usr/local/bin/av" else {
             return "err nonce requester is not /usr/local/bin/av\n"
         }
+        guard signedByAutomicVaultCLI(path) else {
+            return "err /usr/local/bin/av is not signed as com.automicvault.av\n"
+        }
 
         let stub = "/usr/local/bin/\(tool)"
         let argv = argvLines(identity)
@@ -266,6 +269,33 @@ private func shellQuote(_ value: String) -> String {
 private func standardUserCannotWrite(_ path: String) -> Bool {
     let parent = URL(fileURLWithPath: path).deletingLastPathComponent().path
     return access(path, W_OK) != 0 && access(parent, W_OK) != 0
+}
+
+private func signedByAutomicVaultCLI(_ path: String) -> Bool {
+    let requirement = """
+    identifier "com.automicvault.av" and anchor apple generic and \
+    certificate leaf[subject.OU] = ZU76A67LGU
+    """
+    return satisfiesRequirement(path, requirement)
+}
+
+private func satisfiesRequirement(_ path: String, _ requirement: String) -> Bool {
+    var staticCode: SecStaticCode?
+    let url = URL(fileURLWithPath: path) as CFURL
+    guard SecStaticCodeCreateWithPath(url, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else {
+        return false
+    }
+
+    var secRequirement: SecRequirement?
+    guard SecRequirementCreateWithString(requirement as CFString, [], &secRequirement) == errSecSuccess,
+          let secRequirement
+    else {
+        return false
+    }
+
+    return SecStaticCodeCheckValidity(staticCode, [], secRequirement) == errSecSuccess
 }
 
 let app = NSApplication.shared
