@@ -1,3 +1,41 @@
+//! Security check: `git-credential-oauth` ambient helper configuration.
+//!
+//! What this detects:
+//! - Git config lines that enable the `oauth` credential helper.
+//! - Git config lines that contain a likely real `oauthClientSecret` value.
+//!
+//! Why this matters:
+//! - OAuth credential helpers can make credentials available to Git without an
+//!   explicit user decision at command time.
+//! - A plaintext OAuth client secret in Git config is readable by any same-user
+//!   process and may allow impersonation of the configured OAuth app/client.
+//! - Agent-run commands can exercise ambient helper configuration in the same
+//!   environment as the user.
+//!
+//! Evidence used:
+//! - `$HOME/.gitconfig` and the XDG Git config path are scanned.
+//! - Comment suffixes beginning with `#` or `;` are ignored.
+//! - A helper token equal to `oauth` triggers the helper finding.
+//! - `oauthClientSecret` triggers only when the value is non-trivial: at least
+//!   six characters, not `${...}`, and not the placeholder word `secret`.
+//!
+//! Known issues:
+//! - This is a line-oriented detector and does not fully parse Git config.
+//! - Inline comments inside quoted values are not preserved.
+//! - The detector may report helper configuration even when the helper binary is
+//!   not installed.
+//!
+//! Known omissions:
+//! - Repository-local `.git/config` files are not scanned yet.
+//! - Included Git config files are not followed.
+//! - The detector does not inspect helper caches or OAuth refresh-token stores.
+//! - It does not validate whether a client secret is active.
+//!
+//! Safety notes:
+//! - This detector only reads config files.
+//! - It reports the config path but not the secret value.
+//! - Missing or unreadable config files are treated as clean.
+
 use std::path::Path;
 
 use crate::Finding;

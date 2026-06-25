@@ -1,3 +1,44 @@
+//! Security check: Git plaintext credential stores.
+//!
+//! What this detects:
+//! - The default Git credential-store file at `$HOME/.git-credentials`.
+//! - Additional `credential.helper = store` files declared in `$HOME/.gitconfig`
+//!   or the XDG Git config path.
+//! - HTTP(S) credential URLs that include non-empty userinfo passwords, such as
+//!   `https://user:token@example.com/repo.git`.
+//!
+//! Why this matters:
+//! - Git's `store` helper writes credentials to plaintext files.
+//! - Agent subprocesses, editors, shell tools, malware running as the same user,
+//!   and accidental logs can read these files without a keychain prompt.
+//! - GitHub, GitLab, and internal Git tokens commonly have repository read/write
+//!   authority, so plaintext exposure is treated as high severity.
+//!
+//! Evidence used:
+//! - File existence is not enough; the file must contain an HTTP(S) URL with a
+//!   `user:password@host` component.
+//! - Blank lines, comments, host-only URLs, and username-only URLs are ignored.
+//! - Custom store paths are resolved from Git config, including `--file path`,
+//!   `--file=path`, `~`, and `~/...`.
+//!
+//! Known issues:
+//! - This is a conservative parser, not a full Git config implementation.
+//! - It does not understand every possible quoting or shell expansion accepted
+//!   by Git helper configuration.
+//! - It reports the file path for configured stores, but not the credential
+//!   value or affected host, to avoid printing secrets.
+//!
+//! Known omissions:
+//! - Non-HTTP credential formats are not inspected.
+//! - Credentials stored by other helpers are handled by separate detectors.
+//! - Repository-local `.git/config` files are not scanned yet.
+//! - Included Git config files (`include.path`, `includeIf`) are not followed.
+//!
+//! Safety notes:
+//! - This detector only reads files under the supplied home/config paths.
+//! - Missing or unreadable files are treated as clean to avoid noisy scans.
+//! - No credential material is returned in findings.
+
 use std::path::{Path, PathBuf};
 
 use crate::Finding;

@@ -1,3 +1,42 @@
+//! Shared security parser: Git credential-helper config.
+//!
+//! What this supports:
+//! - Extracting `credential.helper` values from Git config text.
+//! - Resolving whether helper configuration applies to `github.com`.
+//! - Finding plaintext `store` helper file paths.
+//! - Recognizing `gh auth git-credential` helper commands.
+//!
+//! Why this matters:
+//! - Multiple Git detectors need the same boundary logic: which helper applies,
+//!   which host it targets, and which file path it references.
+//! - Keeping this logic shared prevents detector drift while avoiding a full
+//!   Git config parser until it is needed.
+//!
+//! Evidence model:
+//! - Supports section form, such as `[credential]` and
+//!   `[credential "https://github.com"]`.
+//! - Supports key form, such as `credential.helper = ...` and
+//!   `credential.https://github.com.helper = ...`.
+//! - Treats global credential helper settings as applying to GitHub.
+//! - Expands only `~` and `~/...` for store helper paths.
+//!
+//! Known issues:
+//! - This is intentionally smaller than Git's parser.
+//! - It does not implement Git's escape rules, include directives, conditional
+//!   includes, multiline values, or platform-specific config precedence.
+//! - Shell parsing for helper commands is minimal and only needs enough to
+//!   identify `gh auth git-credential`.
+//!
+//! Known omissions:
+//! - Repository-local config is not represented here.
+//! - System config and global config outside the supplied scan home are not
+//!   included by this helper.
+//! - Non-GitHub host matching is only present where needed for exclusion.
+//!
+//! Safety notes:
+//! - This module parses strings only; it does not read files or spawn commands.
+//! - Callers decide which config files are in scope for a scan.
+
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]

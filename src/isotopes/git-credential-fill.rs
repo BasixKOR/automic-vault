@@ -1,3 +1,49 @@
+//! Security check: `git credential fill` GitHub token exposure.
+//!
+//! What this detects:
+//! - Git credential helpers that return a password/token when asked for
+//!   `protocol=https` and `host=github.com`.
+//! - Git config that delegates GitHub credentials to
+//!   `gh auth git-credential`, which exposes the GitHub CLI token through
+//!   Git's credential protocol.
+//!
+//! Why this matters:
+//! - `git credential fill` is intentionally scriptable; any same-user process
+//!   can ask Git for credentials if helper policy allows it.
+//! - Agents often run shell commands and can trigger the same credential lookup.
+//! - A GitHub token exposed this way may carry broad repository authority.
+//!
+//! Evidence used:
+//! - Static config evidence wins first: a GitHub-scoped `credential.helper`
+//!   command invoking `gh auth git-credential` produces a finding without
+//!   spawning `git`.
+//! - Otherwise, the detector runs `git credential fill` with prompts disabled
+//!   and checks whether stdout includes a non-empty `password` for GitHub.
+//! - A missing `host` in output is treated as GitHub-scoped because the query
+//!   was for `github.com`.
+//!
+//! Known issues:
+//! - Running `git credential fill` can invoke third-party helper binaries.
+//! - A helper may return different results depending on machine state, helper
+//!   cache, keychain unlock state, or network availability.
+//! - The process is timeout-bound, but helper startup cost can still make scans
+//!   slower than pure file checks.
+//!
+//! Known omissions:
+//! - Only `github.com` is queried today.
+//! - The detector does not inspect token scopes or validate token shape.
+//! - It does not remediate helper configuration.
+//! - It does not query repository-local credential context.
+//!
+//! Safety notes:
+//! - Prompts are disabled with `GIT_TERMINAL_PROMPT=0` and
+//!   `GCM_INTERACTIVE=never`.
+//! - The child process is killed on timeout.
+//! - Returned passwords are never printed; only the exposure condition is
+//!   reported.
+//! - Tests require explicit opt-in for the live probe, and CLI integration tests
+//!   disable it for hermetic output.
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
