@@ -3,11 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::{Finding, GIT_SOURCE, HIGH};
 
 mod git_config;
-#[path = "git-credential-fill.rs"]
 mod git_credential_fill;
-#[path = "git-credential-oauth.rs"]
 mod git_credential_oauth;
-#[path = "git-credentials.rs"]
 pub(crate) mod git_credentials;
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
