@@ -2,7 +2,8 @@ use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-const USAGE: &str = "Usage: av scan | av harden aws | av harden PATH | av credential-helper aws";
+const USAGE: &str =
+    "Usage: av scan | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
 
 mod credential_helper;
 mod harden;
@@ -68,11 +69,29 @@ where
 {
     let mut args = args.into_iter();
     let _program = args.next();
+    let Some(command) = args.next() else {
+        let _ = writeln!(stderr, "{USAGE}");
+        return 2;
+    };
+    let rest = args.collect::<Vec<_>>();
 
-    match (args.next(), args.next(), args.next()) {
-        (Some(command), None, None) if command == "scan" => scan::run(stdout, style),
-        (Some(command), Some(target), None) if command == "harden" && target == "aws" => {
-            match harden::run_aws(stdout) {
+    match command.to_str() {
+        Some("scan") if rest.is_empty() => scan::run(stdout, style),
+        Some("harden") => {
+            let Some((target, yes)) = parse_harden_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            if target == "aws" {
+                return match harden::run_aws(stdout, yes) {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
+            match harden::run_stub_install(Path::new(&target), stdout, yes) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av harden: {err}");
@@ -80,16 +99,8 @@ where
                 }
             }
         }
-        (Some(command), Some(path), None) if command == "harden" => {
-            match harden::run_stub_install(Path::new(&path), stdout) {
-                Ok(()) => 0,
-                Err(err) => {
-                    let _ = writeln!(stderr, "av harden: {err}");
-                    1
-                }
-            }
-        }
-        (Some(command), Some(protocol), None) if command == "credential-helper" => {
+        Some("credential-helper") if rest.len() == 1 => {
+            let protocol = &rest[0];
             match credential_helper::run(&protocol, stdout) {
                 Ok(()) => 0,
                 Err(err) => {
@@ -98,8 +109,10 @@ where
                 }
             }
         }
-        (Some(command), Some(tool), Some(target)) if command == "stub-exec" => {
-            match stub::run(&tool, &target, args) {
+        Some("stub-exec") if rest.len() >= 2 => {
+            let tool = &rest[0];
+            let target = &rest[1];
+            match stub::run(tool, target, rest.iter().skip(2).cloned()) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av stub: {err}");
@@ -112,6 +125,21 @@ where
             2
         }
     }
+}
+
+fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
+    let mut yes = false;
+    let mut target = None;
+    for arg in args {
+        if arg == "--yes" || arg == "-y" {
+            yes = true;
+        } else if target.is_none() {
+            target = Some(arg.clone());
+        } else {
+            return None;
+        }
+    }
+    target.map(|target| (target, yes))
 }
 
 fn color_enabled() -> bool {

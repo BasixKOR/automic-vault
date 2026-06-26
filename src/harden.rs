@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,7 @@ unsafe extern "C" {
     fn geteuid() -> u32;
 }
 
-pub(crate) fn run_aws(stdout: &mut dyn Write) -> Result<(), String> {
+pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if is_root() {
         return Err("run `av harden aws` as your normal user".to_string());
     }
@@ -28,11 +28,38 @@ pub(crate) fn run_aws(stdout: &mut dyn Write) -> Result<(), String> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/aws"));
 
-    writeln!(stdout, "╭─ harden aws").ok();
     let contents = fs::read_to_string(&credentials_path)
         .map_err(|_| format!("no AWS credentials found at {}", credentials_path.display()))?;
     let credentials = default_aws_credentials(&contents)
         .ok_or_else(|| "no default AWS access key pair found".to_string())?;
+
+    writeln!(stdout, "╭─ harden aws").ok();
+    writeln!(stdout, "│").ok();
+    writeln!(stdout, "◆ This will:").ok();
+    writeln!(
+        stdout,
+        "│  1. move default AWS keys from {} to Keychain",
+        credentials_path.display()
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "│  2. configure {} credential_process",
+        config_path.display()
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "│  3. remove plaintext keys from {}",
+        credentials_path.display()
+    )
+    .ok();
+    writeln!(stdout, "│").ok();
+    if !confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
+        return Ok(());
+    }
+    writeln!(stdout, "│").ok();
 
     store_secret(AWS_ACCESS_KEY_ID_ENV_KEY, &credentials.access_key_id)?;
     store_secret(
@@ -53,7 +80,11 @@ pub(crate) fn run_aws(stdout: &mut dyn Write) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn run_stub_install(target: &Path, stdout: &mut dyn Write) -> Result<(), String> {
+pub(crate) fn run_stub_install(
+    target: &Path,
+    stdout: &mut dyn Write,
+    yes: bool,
+) -> Result<(), String> {
     if unsafe { geteuid() } != 0 {
         return Err("must be run as root, use: sudo av harden PATH".to_string());
     }
@@ -71,9 +102,6 @@ pub(crate) fn run_stub_install(target: &Path, stdout: &mut dyn Write) -> Result<
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("tool");
-    writeln!(stdout, "╭─ install stub {tool}").ok();
-    writeln!(stdout, "├─ ✓ verified /usr/local/bin/av").ok();
-
     let stub = stub_path(target)?;
     if stub.exists() && !is_av_stub(&stub) {
         return Err(format!(
@@ -81,6 +109,20 @@ pub(crate) fn run_stub_install(target: &Path, stdout: &mut dyn Write) -> Result<
             stub.display()
         ));
     }
+
+    writeln!(stdout, "╭─ install stub {tool}").ok();
+    writeln!(stdout, "│").ok();
+    writeln!(stdout, "◆ This will:").ok();
+    writeln!(stdout, "│  1. verify /usr/local/bin/av").ok();
+    writeln!(stdout, "│  2. write {}", stub.display()).ok();
+    writeln!(stdout, "│  3. point it at {}", target.display()).ok();
+    writeln!(stdout, "│").ok();
+    if !confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
+        return Ok(());
+    }
+    writeln!(stdout, "│").ok();
+    writeln!(stdout, "├─ ✓ verified /usr/local/bin/av").ok();
 
     fs::create_dir_all(STUB_DIR).map_err(|err| format!("failed to create {STUB_DIR}: {err}"))?;
     if stub.exists() {
@@ -95,6 +137,29 @@ pub(crate) fn run_stub_install(target: &Path, stdout: &mut dyn Write) -> Result<
     writeln!(stdout, "├─ ✓ wrote {}", stub.display()).ok();
     writeln!(stdout, "╰─ done").ok();
     Ok(())
+}
+
+fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
+    if yes {
+        writeln!(stdout, "◇ Continue? yes (--yes)").ok();
+        return Ok(true);
+    }
+
+    write!(stdout, "◇ Continue? [y/N] ").ok();
+    stdout
+        .flush()
+        .map_err(|err| format!("failed to flush prompt: {err}"))?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|err| format!("failed to read confirmation: {err}"))?;
+    if !io::stdin().is_terminal() {
+        writeln!(stdout).ok();
+    }
+    Ok(matches!(
+        input.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 fn stub_path(target: &Path) -> Result<PathBuf, String> {
@@ -430,7 +495,7 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_AWS_PATH", "/tmp/aws");
         }
         let mut stdout = Vec::new();
-        run_aws(&mut stdout).unwrap();
+        run_aws(&mut stdout, true).unwrap();
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_PATH");
