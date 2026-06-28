@@ -2,11 +2,11 @@ use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-const USAGE: &str =
-    "Usage: av scan | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
 
 mod credential_helper;
 mod harden;
+mod inject;
 mod isotopes;
 mod scan;
 mod shell_secrets;
@@ -73,7 +73,14 @@ where
         let _ = writeln!(stderr, "{USAGE}");
         return 2;
     };
-    let rest = args.collect::<Vec<_>>();
+    let mut rest = args.collect::<Vec<_>>();
+
+    let command = if let Some(words) = split_shebang_inject_arg(&command) {
+        rest.splice(0..0, words.into_iter().skip(1));
+        OsString::from("inject")
+    } else {
+        command
+    };
 
     match command.to_str() {
         Some("scan") if rest.is_empty() => scan::run(stdout, style),
@@ -109,6 +116,7 @@ where
                 }
             }
         }
+        Some("inject") => inject::run(rest, stdout, stderr),
         Some("stub-exec") if rest.len() >= 2 => {
             let tool = &rest[0];
             let target = &rest[1];
@@ -140,6 +148,14 @@ fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
         }
     }
     target.map(|target| (target, yes))
+}
+
+fn split_shebang_inject_arg(value: &OsString) -> Option<Vec<OsString>> {
+    let value = value.to_str()?;
+    if value == "inject" || !value.starts_with("inject ") {
+        return None;
+    }
+    Some(value.split_whitespace().map(OsString::from).collect())
 }
 
 fn color_enabled() -> bool {

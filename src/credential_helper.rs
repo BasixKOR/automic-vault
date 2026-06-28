@@ -27,15 +27,27 @@ pub(crate) fn run(protocol: &OsStr, stdout: &mut dyn Write) -> Result<(), String
     .map_err(|err| format!("failed to write AWS credential_process response: {err}"))
 }
 
-fn load_secret(key: &str) -> Result<String, String> {
-    if let Ok(value) = std::env::var(format!("AUTOMIC_VAULT_TEST_{key}")) {
-        return Ok(value);
+pub(crate) fn load_secret(key: &str) -> Result<String, String> {
+    load_secret_if_present(key)?.ok_or_else(|| format!("failed to load isotope key {key}: -25300"))
+}
+
+pub(crate) fn load_secret_if_present(key: &str) -> Result<Option<String>, String> {
+    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+        let path = std::path::PathBuf::from(dir).join(key);
+        return match std::fs::read_to_string(&path) {
+            Ok(value) => Ok(Some(value)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(format!("failed to read {}: {err}", path.display())),
+        };
     }
-    keychain_load_secret(KEYCHAIN_SERVICE, key)
+    if let Ok(value) = std::env::var(format!("AUTOMIC_VAULT_TEST_{key}")) {
+        return Ok(Some(value));
+    }
+    keychain_load_secret_if_present(KEYCHAIN_SERVICE, key)
 }
 
 #[cfg(target_os = "macos")]
-fn keychain_load_secret(service: &str, account: &str) -> Result<String, String> {
+fn keychain_load_secret_if_present(service: &str, account: &str) -> Result<Option<String>, String> {
     use std::ffi::{CString, c_void};
 
     #[link(name = "Security", kind = "framework")]
@@ -71,6 +83,9 @@ fn keychain_load_secret(service: &str, account: &str) -> Result<String, String> 
             std::ptr::null_mut(),
         )
     };
+    if status == -25300 {
+        return Ok(None);
+    }
     if status != 0 {
         return Err(format!("failed to load isotope key {account}: {status}"));
     }
@@ -79,11 +94,16 @@ fn keychain_load_secret(service: &str, account: &str) -> Result<String, String> 
     unsafe {
         let _ = SecKeychainItemFreeContent(std::ptr::null(), data);
     }
-    String::from_utf8(bytes).map_err(|_| format!("isotope key {account} is not valid UTF-8"))
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| format!("isotope key {account} is not valid UTF-8"))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_load_secret(_service: &str, _account: &str) -> Result<String, String> {
+fn keychain_load_secret_if_present(
+    _service: &str,
+    _account: &str,
+) -> Result<Option<String>, String> {
     Err("keychain access is only available on macOS".to_string())
 }
 
