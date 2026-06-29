@@ -13,17 +13,19 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
-APP="$MENU_HELPER/build/Automic Vault.app"
+SWIFT_TARGET="$ROOT/target/swift"
+APP="$SWIFT_TARGET/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
 cargo build --release --manifest-path "$ROOT/Cargo.toml"
-swift build -c release --package-path "$MENU_HELPER"
+swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET"
+SWIFT_BIN="$(swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
-cp "$MENU_HELPER/.build/release/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
+cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 cp "$MENU_HELPER/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
