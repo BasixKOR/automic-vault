@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::io::Write;
 
-use crate::stub;
+use super::stub;
 
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const TOKEN_ENV: &str = "AUTOMIC_VAULT_CREDENTIAL_HELPER_TOKEN";

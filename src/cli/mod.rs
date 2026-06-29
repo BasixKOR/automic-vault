@@ -2,9 +2,22 @@ use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-use crate::{credential_helper, harden, inject, scan, stub};
+mod credential_helper;
+mod harden;
+mod inject;
+mod scan;
+mod shell_secrets;
+mod stub;
 
 const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
+
+pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secrets::bash_reasons()
+}
+
+pub(crate) fn zsh_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
+    shell_secrets::zsh_reasons()
+}
 
 pub fn run<I, W, E>(args: I, stdout: &mut W, stderr: &mut E) -> i32
 where

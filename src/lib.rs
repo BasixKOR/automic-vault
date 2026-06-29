@@ -1,20 +1,14 @@
 mod cli;
-mod credential_helper;
-mod harden;
-mod inject;
 mod isotopes;
-mod scan;
-mod shell_secrets;
-mod stub;
 
 pub use cli::{run, run_terminal};
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
-    shell_secrets::bash_reasons()
+    cli::bash_shell_secret_insecurity_reasons()
 }
 
 pub(crate) fn zsh_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
-    shell_secrets::zsh_reasons()
+    cli::zsh_shell_secret_insecurity_reasons()
 }
 
 #[cfg(test)]
