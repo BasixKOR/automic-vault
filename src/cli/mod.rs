@@ -3,11 +3,12 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 mod credential_helper;
-mod harden;
 mod inject;
 mod scan;
 mod shell_secrets;
 mod stub;
+
+use crate::isotopes::hardeners;
 
 const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
 
@@ -67,7 +68,7 @@ where
                 return 2;
             };
             if target == "aws" {
-                return match harden::run_aws(stdout, yes) {
+                return match hardeners::aws_cli::run_aws(stdout, yes) {
                     Ok(()) => 0,
                     Err(err) => {
                         let _ = writeln!(stderr, "av harden: {err}");
@@ -75,7 +76,7 @@ where
                     }
                 };
             }
-            match harden::run_stub_install(Path::new(&target), stdout, yes) {
+            match hardeners::aws_cli::run_stub_install(Path::new(&target), stdout, yes) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av harden: {err}");
