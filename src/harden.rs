@@ -488,7 +488,7 @@ mod tests {
         )
         .unwrap();
 
-        let _guard = crate::tests::ENV_LOCK.lock().unwrap();
+        let _guard = crate::global_test_env_lock().lock().unwrap();
         unsafe {
             std::env::set_var("HOME", &home);
             std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
