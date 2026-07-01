@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
+const AWS_HARDEN_PROFILE: &str = "default";
 const STUB_DIR: &str = "/usr/local/bin";
 const STUB_MARKER: &str = "# Automic Vault hardened stub";
 const AWS_STUB: &str = include_str!("aws");
@@ -21,9 +22,8 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !aws_vault.exists() {
         return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
     }
-    let profile = std::env::var("AWS_PROFILE").unwrap_or_else(|_| "default".to_string());
     let credentials_path = aws_credentials_path()?;
-    let credentials = read_aws_credentials(&credentials_path, &profile)?;
+    let credentials = read_aws_credentials(&credentials_path, AWS_HARDEN_PROFILE)?;
     let is_root = unsafe { geteuid() } == 0;
     let has_test_keychain = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some();
     if is_root && credentials.is_some() && !has_test_keychain {
@@ -40,20 +40,20 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if credentials.is_some() {
         writeln!(
             stdout,
-            "├─ import {profile} keys from {} into the login keychain",
+            "├─ import {AWS_HARDEN_PROFILE} keys from {} into the login keychain",
             credentials_path.display()
         )
         .ok();
         writeln!(
             stdout,
-            "├─ delete {profile} plaintext keys from {}",
+            "├─ delete {AWS_HARDEN_PROFILE} plaintext keys from {}",
             credentials_path.display()
         )
         .ok();
     } else {
         writeln!(
             stdout,
-            "├─ no {profile} plaintext keys found in {}",
+            "├─ no {AWS_HARDEN_PROFILE} plaintext keys found in {}",
             credentials_path.display()
         )
         .ok();
@@ -66,7 +66,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
             return Ok(());
         }
         import_aws_credentials(&credentials)?;
-        delete_aws_credentials(&credentials_path, &profile)?;
+        delete_aws_credentials(&credentials_path, AWS_HARDEN_PROFILE)?;
         writeln!(stdout, "├─ imported keys").ok();
         writeln!(stdout, "├─ deleted plaintext keys").ok();
     }
@@ -517,12 +517,12 @@ mod tests {
         fs::write(&aws_vault, "").unwrap();
         fs::write(
             &credentials_path,
-            "[default]\naws_access_key_id = AKIA\nregion = us-east-1\naws_secret_access_key = secret\n",
+            "[default]\naws_access_key_id = AKIA\nregion = us-east-1\naws_secret_access_key = secret\n[dev]\naws_access_key_id = DEV\naws_secret_access_key = dev-secret\n",
         )
         .unwrap();
         unsafe {
             std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", &credentials_path);
-            std::env::remove_var("AWS_PROFILE");
+            std::env::set_var("AWS_PROFILE", "dev");
             std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain_dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH", &aws_vault);
             std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub);
@@ -532,6 +532,7 @@ mod tests {
 
         unsafe {
             std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
+            std::env::remove_var("AWS_PROFILE");
             std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
@@ -546,7 +547,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(credentials_path).unwrap(),
-            "[default]\nregion = us-east-1\n"
+            "[default]\nregion = us-east-1\n[dev]\naws_access_key_id = DEV\naws_secret_access_key = dev-secret\n"
         );
         let _ = fs::remove_dir_all(dir);
     }
