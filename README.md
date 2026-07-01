@@ -63,6 +63,10 @@ $ av scan
 # - finds vulenerable package configurations
 # - finds plaintext credentials visible to agents
 # - finds insecure macOS configurations
+
+$ av harden aws
+# - configures aws to run through aws-vault
+# - tells you to remove plaintext AWS keys manually
 ```
 
 We also have some limited secret management features to help you keep secrets

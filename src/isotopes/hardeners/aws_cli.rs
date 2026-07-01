@@ -5,9 +5,45 @@ use std::path::{Path, PathBuf};
 
 const STUB_DIR: &str = "/usr/local/bin";
 const STUB_MARKER: &str = "# Automic Vault hardened stub";
+const AWS_STUB: &str = include_str!("aws");
+const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
+const AWS_VAULT_PATH: &str = "/opt/homebrew/bin/aws-vault";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
+}
+
+pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+    let aws_vault = aws_vault_path();
+    if !aws_vault.exists() {
+        return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
+    }
+
+    writeln!(stdout, "╭─ harden aws").ok();
+    writeln!(stdout, "│").ok();
+    writeln!(stdout, "◆ This will use aws-vault for AWS credentials.").ok();
+    writeln!(stdout, "│").ok();
+    writeln!(stdout, "├─ run `aws-vault add ${{AWS_PROFILE:-default}}`").ok();
+    writeln!(
+        stdout,
+        "├─ remove plaintext keys from ~/.aws/credentials manually"
+    )
+    .ok();
+
+    if unsafe { geteuid() } != 0 {
+        writeln!(stdout, "╰─ finish with `sudo av harden aws`").ok();
+        return Ok(());
+    }
+
+    writeln!(stdout, "├─ write {AWS_STUB_PATH}").ok();
+    writeln!(stdout, "│").ok();
+    if !confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
+        return Ok(());
+    }
+    install_aws_stub(&aws_stub_path())?;
+    writeln!(stdout, "╰─ wrote {AWS_STUB_PATH}").ok();
+    Ok(())
 }
 
 pub(crate) fn run_stub_install(
@@ -119,4 +155,67 @@ fn stub_script(target: &Path) -> Result<String, String> {
 
 fn shell_quote(value: &str) -> String {
     value.replace('\'', "'\\''")
+}
+
+fn aws_vault_path() -> PathBuf {
+    std::env::var_os("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(AWS_VAULT_PATH))
+}
+
+fn aws_stub_path() -> PathBuf {
+    std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(AWS_STUB_PATH))
+}
+
+fn install_aws_stub(path: &Path) -> Result<(), String> {
+    fs::write(path, AWS_STUB)
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+        .map_err(|err| format!("failed to chmod {}: {err}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn aws_stub_uses_aws_vault_profile_env() {
+        let path = temp_path("aws-stub");
+        install_aws_stub(&path).unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
+        assert!(AWS_STUB.contains("${AWS_PROFILE:-default}"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn missing_aws_vault_tells_user_to_install_it() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = temp_path("missing-aws-vault");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH", &missing);
+        }
+
+        let err = run_aws(&mut Vec::new(), true).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH");
+        }
+        assert_eq!(
+            err,
+            "aws-vault is not installed; run `brew install aws-vault`"
+        );
+    }
+
+    fn temp_path(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("av-{label}-{}-{nanos}", std::process::id()))
+    }
 }

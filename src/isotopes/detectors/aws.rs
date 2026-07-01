@@ -7,7 +7,7 @@ const HOMEPAGE: &str = "https://aws.amazon.com/cli/";
 const HIGH: &str = "high";
 const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault";
 const MESSAGE: &str = "AWS default profile stores plaintext access keys in ~/.aws/credentials.";
-const SOLUTION: &str = "Move the default AWS key pair out of ~/.aws/credentials; prefer AWS SSO or a credential_process that does not store plaintext keys.";
+const SOLUTION: &str = "Run `av harden aws`, add the profile to aws-vault, then remove the plaintext keys from ~/.aws/credentials.";
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let path = home.join(".aws/credentials");
