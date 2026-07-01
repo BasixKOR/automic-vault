@@ -2,14 +2,18 @@
 set -euo pipefail
 
 run=0
-if [[ "${1:-}" == "--run" ]]; then
-  run=1
+install=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --run) run=1 ;;
+    --install) install=1 ;;
+    *)
+      echo "usage: $0 [--run] [--install]" >&2
+      exit 64
+      ;;
+  esac
   shift
-fi
-if [[ $# -ne 0 ]]; then
-  echo "usage: $0 [--run]" >&2
-  exit 64
-fi
+done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
@@ -47,6 +51,9 @@ if [[ -z "$identity" ]]; then
 fi
 
 codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/target/release/av"
+if [[ "$install" -eq 1 ]]; then
+  sudo install -m 0755 "$ROOT/target/release/av" /usr/local/bin/av
+fi
 cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
