@@ -1,5 +1,6 @@
 import AppKit
 import CProcessInfo
+import CryptoKit
 import Darwin
 import Foundation
 import Security
@@ -7,6 +8,8 @@ import Security
 
 private let socketPath = "/tmp/com.automicvault.av2.credential-helper.\(getuid()).sock"
 private let approvalServiceName = "com.automicvault.av2.approval"
+private let alwaysAllowDefaultsKey = "AlwaysAllowScriptChecksums"
+private var toastWindows: [NSWindow] = []
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -64,11 +67,23 @@ private struct ApprovalRequest {
     let replaceExistingEnv: Bool
     let allowMissingKeys: Bool
     let envConflicts: [String]
+    let shebangScript: String?
 }
 
 private struct SigningInfo {
     let identifier: String
     let teamIdentifier: String
+}
+
+private struct ScriptApproval {
+    let path: String
+    let checksum: String
+}
+
+private enum ApprovalDecision: Equatable {
+    case denied
+    case approved
+    case alwaysAllow
 }
 
 private final class ApprovalServer: @unchecked Sendable {
@@ -157,19 +172,31 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
+        let scriptApproval = scriptApproval(for: request)
+        if let scriptApproval, alwaysAllows(scriptApproval) {
+            DispatchQueue.main.async {
+                showAutoApprovedToast(keys: request.keys, script: scriptApproval.path)
+                self.reply(peer, to: message, ok: true, error: nil)
+            }
+            return
+        }
 
         DispatchQueue.main.async {
-            let approved = showApprovalAlert(
+            let decision = showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
                 pid: pid,
-                signing: signing
+                signing: signing,
+                scriptApproval: scriptApproval
             )
+            if decision == .alwaysAllow, let scriptApproval {
+                rememberAlwaysAllow(scriptApproval)
+            }
             self.reply(
                 peer,
                 to: message,
-                ok: approved,
-                error: approved ? nil : "injection denied"
+                ok: decision != .denied,
+                error: decision == .denied ? "injection denied" : nil
             )
         }
     }
@@ -193,7 +220,8 @@ private final class ApprovalServer: @unchecked Sendable {
             cwd: String(cString: cwdPointer),
             replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
             allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
-            envConflicts: envConflicts
+            envConflicts: envConflicts,
+            shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:))
         )
     }
 
@@ -516,19 +544,42 @@ private func copySigningInformation(_ code: SecStaticCode) -> [CFString: Any]? {
     return info as? [CFString: Any]
 }
 
+private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
+    guard let script = request.shebangScript else { return nil }
+    let url = script.hasPrefix("/")
+        ? URL(fileURLWithPath: script)
+        : URL(fileURLWithPath: request.cwd).appendingPathComponent(script)
+    let path = url.standardizedFileURL.path
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+    let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    return ScriptApproval(path: path, checksum: checksum)
+}
+
+private func alwaysAllows(_ script: ScriptApproval) -> Bool {
+    let approvals = UserDefaults.standard.dictionary(forKey: alwaysAllowDefaultsKey) as? [String: String]
+    return approvals?[script.path] == script.checksum
+}
+
+private func rememberAlwaysAllow(_ script: ScriptApproval) {
+    var approvals = UserDefaults.standard.dictionary(forKey: alwaysAllowDefaultsKey) as? [String: String] ?? [:]
+    approvals[script.path] = script.checksum
+    UserDefaults.standard.set(approvals, forKey: alwaysAllowDefaultsKey)
+}
+
 @MainActor
 private func showApprovalAlert(
     request: ApprovalRequest,
     callerPath: String,
     pid: pid_t,
-    signing: SigningInfo
-) -> Bool {
+    signing: SigningInfo,
+    scriptApproval: ScriptApproval?
+) -> ApprovalDecision {
     NSApp.activate(ignoringOtherApps: true)
 
     let alert = NSAlert()
     alert.alertStyle = .warning
     alert.messageText = "Approve secret injection?"
-    alert.informativeText = [
+    var lines = [
         "Caller: \(callerPath) (pid \(pid))",
         "Signed: \(signing.identifier) / \(signing.teamIdentifier)",
         "Target: \(request.target)",
@@ -538,10 +589,82 @@ private func showApprovalAlert(
         "Existing environment: \(request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", "))",
         "Replace existing environment: \(request.replaceExistingEnv ? "yes" : "no")",
         "Allow missing keys: \(request.allowMissingKeys ? "yes" : "no")",
-    ].joined(separator: "\n")
+    ]
+    if let scriptApproval {
+        lines.append("Script: \(scriptApproval.path)")
+        lines.append("Script checksum: \(scriptApproval.checksum)")
+    } else if let script = request.shebangScript {
+        lines.append("Script: \(script)")
+        lines.append("Script checksum: unavailable")
+    }
+    alert.informativeText = lines.joined(separator: "\n")
     alert.addButton(withTitle: "Deny")
     alert.addButton(withTitle: "Approve")
-    return alert.runModal() == .alertSecondButtonReturn
+    if scriptApproval != nil {
+        alert.addButton(withTitle: "Always Allow")
+    }
+    switch alert.runModal() {
+    case .alertSecondButtonReturn:
+        return .approved
+    case .alertThirdButtonReturn:
+        return .alwaysAllow
+    default:
+        return .denied
+    }
+}
+
+@MainActor
+private func showAutoApprovedToast(keys: [String], script: String) {
+    let text = "Auto approved \(keys.joined(separator: ", ")) for \(script)"
+    let width = min(max((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width + 28, 280), 640)
+    let height: CGFloat = 38
+
+    let label = NSTextField(labelWithString: text)
+    label.frame = NSRect(x: 12, y: 0, width: width - 24, height: height)
+    label.autoresizingMask = [.width, .height]
+    label.lineBreakMode = .byTruncatingMiddle
+    label.maximumNumberOfLines = 1
+    label.textColor = .labelColor
+    label.font = .systemFont(ofSize: 13, weight: .medium)
+
+    let box = NSBox()
+    box.frame = NSRect(x: 0, y: 0, width: width, height: height)
+    box.autoresizingMask = [.width, .height]
+    box.boxType = .custom
+    box.cornerRadius = 8
+    box.borderWidth = 1
+    box.borderColor = .separatorColor
+    box.fillColor = .windowBackgroundColor
+
+    let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+    content.addSubview(box)
+    content.addSubview(label)
+
+    let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let frame = NSRect(
+        x: screenFrame.midX - width / 2,
+        y: screenFrame.maxY - height - 8,
+        width: width,
+        height: height
+    )
+    let window = NSPanel(
+        contentRect: frame,
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    window.level = .statusBar
+    window.isOpaque = false
+    window.backgroundColor = .clear
+    window.hasShadow = true
+    window.contentView = content
+    toastWindows.append(window)
+    window.orderFront(nil)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        window.orderOut(nil)
+        toastWindows.removeAll { $0 === window }
+    }
 }
 
 let app = NSApplication.shared

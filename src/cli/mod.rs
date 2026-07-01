@@ -53,7 +53,9 @@ where
     };
     let mut rest = args.collect::<Vec<_>>();
 
+    let mut shebang_script = None;
     let command = if let Some(words) = split_shebang_inject_arg(&command) {
+        shebang_script = rest.first().cloned();
         rest.splice(0..0, words.into_iter().skip(1));
         OsString::from("inject")
     } else {
@@ -94,7 +96,7 @@ where
                 }
             }
         }
-        Some("inject") => inject::run(rest, stdout, stderr),
+        Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
         Some("stub-exec") if rest.len() >= 2 => {
             let tool = &rest[0];
             let target = &rest[1];

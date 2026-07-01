@@ -21,6 +21,7 @@ struct Options {
     keys: Vec<String>,
     target: OsString,
     args: Vec<OsString>,
+    shebang_script: Option<OsString>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,14 +33,20 @@ struct ApprovalRequest {
     replace_existing_env: bool,
     allow_missing_keys: bool,
     env_conflicts: Vec<String>,
+    shebang_script: Option<String>,
 }
 
 unsafe extern "C" {
     fn geteuid() -> u32;
 }
 
-pub(crate) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
-    match dispatch(args, stdout) {
+pub(crate) fn run(
+    args: Vec<OsString>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    shebang_script: Option<OsString>,
+) -> i32 {
+    match dispatch(args, stdout, shebang_script) {
         Ok(Some(options)) => exec(options, stderr),
         Ok(None) => 0,
         Err(err) => {
@@ -49,7 +56,11 @@ pub(crate) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn 
     }
 }
 
-fn dispatch(args: Vec<OsString>, stdout: &mut dyn Write) -> Result<Option<Options>, String> {
+fn dispatch(
+    args: Vec<OsString>,
+    stdout: &mut dyn Write,
+    shebang_script: Option<OsString>,
+) -> Result<Option<Options>, String> {
     if args
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
@@ -65,7 +76,10 @@ fn dispatch(args: Vec<OsString>, stdout: &mut dyn Write) -> Result<Option<Option
         return Ok(None);
     }
     match parse(args) {
-        Ok(options) => Ok(Some(options)),
+        Ok(mut options) => {
+            options.shebang_script = shebang_script;
+            Ok(Some(options))
+        }
         Err(err) => {
             if err.starts_with("missing ") {
                 writeln!(stdout, "{USAGE}").ok();
@@ -127,6 +141,7 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 keys,
                 target,
                 args: iter.collect(),
+                shebang_script: None,
             });
         }
 
@@ -140,6 +155,7 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
             keys,
             target: arg,
             args: iter.collect(),
+            shebang_script: None,
         });
     }
 
@@ -213,6 +229,7 @@ fn approval_request(options: &Options, target: &Path) -> Result<ApprovalRequest,
         replace_existing_env: options.replace_existing_env,
         allow_missing_keys: options.allow_missing_keys,
         env_conflicts,
+        shebang_script: options.shebang_script.as_ref().map(os_display),
     })
 }
 
@@ -384,6 +401,9 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
         set_string(message, b"op\0", "inject")?;
         set_string(message, b"target\0", &request.target)?;
         set_string(message, b"cwd\0", &request.cwd)?;
+        if let Some(script) = &request.shebang_script {
+            set_string(message, b"shebang_script\0", script)?;
+        }
         xpc_dictionary_set_bool(
             message,
             b"replace_existing_env\0".as_ptr().cast(),
@@ -468,6 +488,7 @@ mod tests {
                 keys: vec!["A".into(), "B".into()],
                 target: "/bin/echo".into(),
                 args: os(&["hi"]),
+                shebang_script: None,
             }
         );
         assert_eq!(
@@ -486,6 +507,7 @@ mod tests {
             keys: vec!["SOME_SECRET".into()],
             target: "/bin/echo".into(),
             args: os(&["hi"]),
+            shebang_script: None,
         };
         let mut stderr = Vec::new();
         let err = prepare_injection(
@@ -507,6 +529,7 @@ mod tests {
             keys: vec!["A".into(), "B".into()],
             target: "/bin/echo".into(),
             args: os(&["hi"]),
+            shebang_script: Some("/tmp/tool".into()),
         };
         let request = approval_request(&options, Path::new("/bin/echo")).unwrap();
 
@@ -515,5 +538,6 @@ mod tests {
         assert_eq!(request.args, ["hi"]);
         assert!(request.replace_existing_env);
         assert!(request.allow_missing_keys);
+        assert_eq!(request.shebang_script.as_deref(), Some("/tmp/tool"));
     }
 }
