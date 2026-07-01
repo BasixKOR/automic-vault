@@ -1,3 +1,73 @@
-#!/bin/sh
+#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh
+set -euo pipefail
 
-exec /opt/homebrew/bin/aws-vault --keychain='' exec "${AWS_PROFILE:-default}" -- /opt/homebrew/bin/aws "$@"
+profile=${AWS_PROFILE:-default}
+tmp=${TMPDIR:-/tmp}/aws-vault-pass.$$
+store=$tmp/store
+shim=$tmp/pass
+prefix=aws-vault
+aws_config=${AWS_CONFIG_FILE:-$HOME/.aws/config}
+
+cleanup() { rm -rf "$tmp" }
+trap cleanup EXIT INT TERM
+
+source_profile_for() {
+  [[ -r $aws_config ]] || return 0
+  awk -v wanted="$1" '
+    /^\[[^]]+\]$/ {
+      section = $0
+      sub(/^\[/, "", section)
+      sub(/\]$/, "", section)
+      sub(/^profile /, "", section)
+      in_section = section == wanted
+      next
+    }
+    in_section && /^[[:space:]]*source_profile[[:space:]]*=/ {
+      sub(/^[^=]*=/, "")
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$aws_config"
+}
+
+master_profile=$profile
+while source_profile=$(source_profile_for "$master_profile"); [[ -n $source_profile && $source_profile != "$master_profile" ]]; do
+  master_profile=$source_profile
+done
+
+marker=$store/$prefix/$master_profile.gpg
+mkdir -p "$marker:h"
+: > "$marker"
+
+cat > "$shim" <<'EOF'
+#!/bin/zsh
+set -euo pipefail
+
+case "$1" in
+  show)
+    creds=$(printf '{"AccessKeyID":"%s","SecretAccessKey":"%s"}' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY")
+    data=$(printf '%s' "$creds" | base64 | tr -d '\n')
+    printf '{"Key":"aws-vault","Data":"%s"}\n' "$data"
+    ;;
+  insert)
+    cat >/dev/null
+    ;;
+  rm)
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+chmod 700 "$shim"
+
+AWS_VAULT_BACKEND=pass \
+AWS_VAULT_PASS_CMD="$shim" \
+AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store" \
+AWS_VAULT_PASS_PREFIX="$prefix" \
+  /opt/homebrew/bin/aws-vault \
+    exec "$profile" \
+    --server \
+    -- \
+    /opt/homebrew/bin/aws "$@"
