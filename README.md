@@ -6,7 +6,7 @@ $ av scan aws
 
 $ av harden aws --dry-run
 1. Would import `~/.aws/credentials` into the macOS keychain
-2. Would remove `~/.aws/credentials`
+2. Would delete plaintext keys from `~/.aws/credentials`
 3. Would `brew install aws-vault`
 4. Would stub `~/.local/bin/aws` to invoke `aws-vault` with hardened approval
    gates

@@ -7,7 +7,8 @@ const HOMEPAGE: &str = "https://aws.amazon.com/cli/";
 const HIGH: &str = "high";
 const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault";
 const MESSAGE: &str = "AWS default profile stores plaintext access keys in ~/.aws/credentials.";
-const SOLUTION: &str = "Run `av harden aws`, add the profile to aws-vault, then remove the plaintext keys from ~/.aws/credentials.";
+const SOLUTION: &str =
+    "Run `av harden aws` to import the keys into Keychain and remove them from ~/.aws/credentials.";
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let path = home.join(".aws/credentials");
