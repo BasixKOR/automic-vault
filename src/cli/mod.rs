@@ -10,7 +10,7 @@ mod stub;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan [--json] | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden [--yes] PATH | av credential-helper aws";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -64,6 +64,7 @@ where
 
     match command.to_str() {
         Some("scan") if rest.is_empty() => scan::run(stdout, style),
+        Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),
         Some("harden") => {
             let Some((target, yes)) = parse_harden_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");
@@ -202,7 +203,7 @@ mod tests {
 
     #[test]
     fn only_scan_is_supported() {
-        for args in [&["av"][..], &["av", "harden"], &["av", "scan", "--json"]] {
+        for args in [&["av"][..], &["av", "harden"], &["av", "scan", "--bad"]] {
             let (code, stdout, stderr) = run_args(args);
             assert_eq!(code, 2);
             assert_eq!(stdout, "");

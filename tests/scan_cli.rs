@@ -52,9 +52,39 @@ fn av_scan_reports_findings() {
     let _ = fs::remove_dir_all(home);
 }
 
+#[test]
+fn av_scan_json_reports_findings() {
+    let home = temp_home("json");
+    fs::write(
+        home.join(".git-credentials"),
+        "https://user:token@example.com\n",
+    )
+    .unwrap();
+
+    let output = av_scan_json(&home);
+    let stdout = stdout(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.starts_with(r#"{"findings":[{"#));
+    assert!(stdout.contains(r#""source":"git""#));
+    assert!(stdout.contains(".git-credentials"));
+    assert_eq!(stderr(&output), "");
+
+    let _ = fs::remove_dir_all(home);
+}
+
 fn av_scan(home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("scan")
+        .env("HOME", home)
+        .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
+        .output()
+        .unwrap()
+}
+
+fn av_scan_json(home: &std::path::Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_av"))
+        .args(["scan", "--json"])
         .env("HOME", home)
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .output()

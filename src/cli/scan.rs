@@ -32,6 +32,15 @@ pub(crate) fn run<W: Write>(stdout: &mut W, style: Style) -> i32 {
     0
 }
 
+pub(crate) fn run_json<W: Write>(stdout: &mut W) -> i32 {
+    let findings = scan_home(home());
+    let report = serde_json::json!({
+        "findings": findings.iter().map(json_finding).collect::<Vec<_>>(),
+    });
+    let _ = writeln!(stdout, "{report}");
+    0
+}
+
 fn home() -> OsString {
     std::env::var_os("HOME").unwrap_or_default()
 }
@@ -109,6 +118,23 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
         let _ = writeln!(stdout, "│");
     }
     let _ = writeln!(stdout, "╰─ {}", style.paint("2", "scan complete"));
+}
+
+fn json_finding(finding: &Finding) -> serde_json::Value {
+    serde_json::json!({
+        "source": finding.source,
+        "severity": finding.severity,
+        "homepage": finding.homepage,
+        "explanation": finding.explanation,
+        "solution": finding.solution,
+        "affected": finding.affected.iter().map(|affected| {
+            serde_json::json!({
+                "path": affected.path,
+                "line": affected.line,
+            })
+        }).collect::<Vec<_>>(),
+        "docs_url": finding.docs_url,
+    })
 }
 
 fn write_wrapped<W: Write>(
@@ -242,6 +268,21 @@ mod tests {
             String::from_utf8(stdout)
                 .unwrap()
                 .starts_with("╭─ \x1b[36msystem exposure audit\x1b[0m\n")
+        );
+    }
+
+    #[test]
+    fn json_output_reports_findings() {
+        let mut stdout = Vec::new();
+
+        let report = serde_json::json!({
+            "findings": [json_finding(&fake_finding())],
+        });
+        let _ = writeln!(stdout, "{report}");
+
+        assert_eq!(
+            String::from_utf8(stdout).unwrap(),
+            r#"{"findings":[{"affected":[{"line":7,"path":"/tmp/example.conf"}],"docs_url":"https://example.test/docs/example.md","explanation":"Example detector found a risky setting","homepage":"https://example.test/","severity":"high","solution":"Run `examplectl fix` or edit the affected file.","source":"example"}]}"#.to_string() + "\n"
         );
     }
 

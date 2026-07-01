@@ -1,5 +1,6 @@
 import AppKit
 import CProcessInfo
+import CoreServices
 import CryptoKit
 import Darwin
 import Foundation
@@ -9,12 +10,17 @@ import Security
 private let socketPath = "/tmp/com.automicvault.av2.credential-helper.\(getuid()).sock"
 private let approvalServiceName = "com.automicvault.av2.approval"
 private let alwaysAllowDefaultsKey = "AlwaysAllowScriptChecksums"
+private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
     private let broker = CredentialBroker(socketPath: socketPath)
     private var approval: ApprovalServer?
+    private var scanWorkItem: DispatchWorkItem?
+    private var eventStream: FSEventStreamRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let button = statusItem.button {
@@ -26,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         title.isEnabled = false
         menu.addItem(title)
         menu.addItem(NSMenuItem(title: "Credential broker running", action: nil, keyEquivalent: ""))
+        menu.addItem(scanStatusItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -35,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try approval.start()
             try broker.start()
             self.approval = approval
+            scheduleScan(after: 0)
+            startHomeWatcher()
         } catch {
             NSAlert(error: error).runModal()
             NSApp.terminate(nil)
@@ -42,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let eventStream {
+            FSEventStreamStop(eventStream)
+            FSEventStreamInvalidate(eventStream)
+            FSEventStreamRelease(eventStream)
+        }
         approval?.stop()
         broker.stop()
     }
@@ -57,6 +71,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.size = NSSize(width: 15, height: 18)
         return image
     }
+
+    private func startHomeWatcher() {
+        // ponytail: one home FSEvents stream; add detector path metadata if rescans get noisy.
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+            guard let info else { return }
+            MainActor.assumeIsolated {
+                Unmanaged<AppDelegate>.fromOpaque(info).takeUnretainedValue().scheduleScan(after: 1)
+            }
+        }
+        guard let stream = FSEventStreamCreate(
+            nil,
+            callback,
+            &context,
+            [FileManager.default.homeDirectoryForCurrentUser.path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            1,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+        ) else {
+            scanStatusItem.title = "Scan watcher unavailable"
+            return
+        }
+        eventStream = stream
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        FSEventStreamStart(stream)
+    }
+
+    private func scheduleScan(after delay: TimeInterval) {
+        scanWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.runScan()
+        }
+        scanWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func runScan() {
+        scanQueue.async { [weak self] in
+            let result = scanResult()
+            Task { @MainActor in
+                self?.applyScanResult(result)
+            }
+        }
+    }
+
+    private func applyScanResult(_ result: ScanResult) {
+        switch result {
+        case .clean:
+            statusItem.button?.contentTintColor = nil
+            scanStatusItem.title = "No scan findings"
+        case .findings(let count):
+            statusItem.button?.contentTintColor = .systemRed
+            scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
+        case .failed:
+            statusItem.button?.contentTintColor = .systemRed
+            scanStatusItem.title = "Scan failed"
+        }
+    }
+}
+
+private enum ScanResult {
+    case clean
+    case findings(Int)
+    case failed
+}
+
+private func scanResult() -> ScanResult {
+    let process = Process()
+    process.executableURL = avExecutableURL()
+    process.arguments = ["scan", "--json"]
+
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = Pipe()
+
+    do {
+        try process.run()
+    } catch {
+        return .failed
+    }
+
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0,
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let findings = object["findings"] as? [Any]
+    else {
+        return .failed
+    }
+    return findings.isEmpty ? .clean : .findings(findings.count)
+}
+
+private func avExecutableURL() -> URL {
+    if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("av"),
+       FileManager.default.isExecutableFile(atPath: bundled.path)
+    {
+        return bundled
+    }
+    return URL(fileURLWithPath: "/usr/local/bin/av")
 }
 
 private struct ApprovalRequest {
