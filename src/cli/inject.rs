@@ -328,6 +328,7 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
             connection: XpcObject,
             requirement: *const c_char,
         ) -> c_int;
+        fn av_xpc_connection_set_empty_event_handler(connection: XpcObject);
     }
 
     unsafe fn set_string(dict: XpcObject, key: &[u8], value: &str) -> Result<(), String> {
@@ -367,7 +368,10 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
         return Err("failed to configure approval XPC signing requirement".into());
     }
 
-    unsafe { xpc_connection_activate(connection) };
+    unsafe {
+        av_xpc_connection_set_empty_event_handler(connection);
+        xpc_connection_activate(connection);
+    }
 
     let message = unsafe { xpc_dictionary_create_empty() };
     if message.is_null() {
@@ -424,7 +428,11 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
                     .to_string_lossy()
                     .into_owned()
             };
-            Err(error)
+            if error == "Connection invalid" {
+                Err("Automic Vault approval service is not running; open the menu bar app".into())
+            } else {
+                Err(error)
+            }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
             Ok(())
         } else {
