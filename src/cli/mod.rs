@@ -10,7 +10,7 @@ mod stub;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan | av inject +KEY [--] COMMAND | av harden [--yes] PATH | av credential-helper aws";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -67,15 +67,6 @@ where
                 let _ = writeln!(stderr, "{USAGE}");
                 return 2;
             };
-            if target == "aws" {
-                return match hardeners::aws_cli::run_aws(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
-            }
             match hardeners::aws_cli::run_stub_install(Path::new(&target), stdout, yes) {
                 Ok(()) => 0,
                 Err(err) => {

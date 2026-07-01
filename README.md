@@ -63,11 +63,6 @@ $ av scan
 # - finds vulenerable package configurations
 # - finds plaintext credentials visible to agents
 # - finds insecure macOS configurations
-
-$ av harden aws
-# - migrates your plaintext AWS keys into the macOS Keychain
-# - configures aws to use `av credential-helper` so that your AWS keys are no
-#   stored in plaintext for agents and malware to read.
 ```
 
 We also have some limited secret management features to help you keep secrets
