@@ -77,7 +77,7 @@ fn dispatch(
     }
     match parse(args) {
         Ok(mut options) => {
-            options.shebang_script = shebang_script;
+            options.shebang_script = shebang_script.or_else(|| infer_shebang_script(&options));
             Ok(Some(options))
         }
         Err(err) => {
@@ -235,6 +235,20 @@ fn approval_request(options: &Options, target: &Path) -> Result<ApprovalRequest,
 
 fn os_display(value: &OsString) -> String {
     value.to_string_lossy().into_owned()
+}
+
+fn infer_shebang_script(options: &Options) -> Option<OsString> {
+    let script = options.args.first()?;
+    let first_line = std::fs::read_to_string(script)
+        .ok()?
+        .lines()
+        .next()?
+        .to_string();
+    if first_line.starts_with("#!") && first_line.contains("av inject") {
+        Some(script.clone())
+    } else {
+        None
+    }
 }
 
 fn build_env(
@@ -478,6 +492,19 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
+    fn temp_script(contents: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "av-inject-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
     #[test]
     fn parses_old_and_separator_forms() {
         assert_eq!(
@@ -539,5 +566,20 @@ mod tests {
         assert!(request.replace_existing_env);
         assert!(request.allow_missing_keys);
         assert_eq!(request.shebang_script.as_deref(), Some("/tmp/tool"));
+    }
+
+    #[test]
+    fn infers_split_shebang_script_argument() {
+        let script = temp_script("#!/usr/local/bin/av inject +A /bin/zsh\n");
+        let options = Options {
+            replace_existing_env: false,
+            allow_missing_keys: false,
+            keys: vec!["A".into()],
+            target: "/bin/zsh".into(),
+            args: vec![script.clone().into_os_string()],
+            shebang_script: None,
+        };
+
+        assert_eq!(infer_shebang_script(&options), Some(script.into_os_string()));
     }
 }
