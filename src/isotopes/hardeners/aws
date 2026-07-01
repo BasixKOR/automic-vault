@@ -66,18 +66,15 @@ esac
 EOF
 chmod 700 "$shim"
 
-AWS_VAULT_BACKEND=pass
-AWS_VAULT_PASS_CMD="$shim"
-AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store"
-AWS_VAULT_PASS_PREFIX="$prefix"
+export AWS_VAULT_BACKEND=pass
+export AWS_VAULT_PASS_CMD="$shim"
+export AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store"
+export AWS_VAULT_PASS_PREFIX="$prefix"
 
-env \
-  AWS_VAULT_BACKEND="$AWS_VAULT_BACKEND" \
-  AWS_VAULT_PASS_CMD="$AWS_VAULT_PASS_CMD" \
-  AWS_VAULT_PASS_PASSWORD_STORE_DIR="$AWS_VAULT_PASS_PASSWORD_STORE_DIR" \
-  AWS_VAULT_PASS_PREFIX="$AWS_VAULT_PASS_PREFIX" \
-  /opt/homebrew/bin/aws-vault \
+exec /opt/homebrew/bin/aws-vault \
     exec "$profile" \
     --server \
     -- \
     /opt/homebrew/bin/aws "$@"
+
+# ^^ --server allows extremely short lived creds but is slower and more overhead
