@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::OsString;
+use std::ffi::{CString, OsString};
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,8 @@ Usage: av inject [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] 
 
 Injects named Keychain secrets into COMMAND's environment.";
 
+const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+
 #[derive(Debug, PartialEq, Eq)]
 struct Options {
     replace_existing_env: bool,
@@ -19,6 +21,17 @@ struct Options {
     keys: Vec<String>,
     target: OsString,
     args: Vec<OsString>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ApprovalRequest {
+    keys: Vec<String>,
+    target: String,
+    args: Vec<String>,
+    cwd: String,
+    replace_existing_env: bool,
+    allow_missing_keys: bool,
+    env_conflicts: Vec<String>,
 }
 
 unsafe extern "C" {
@@ -143,15 +156,8 @@ fn exec(options: Options, stderr: &mut dyn Write) -> i32 {
         return 1;
     }
 
-    let target = match resolve_target(&options.target) {
-        Ok(target) => target,
-        Err(err) => {
-            let _ = writeln!(stderr, "av inject: {err}");
-            return 1;
-        }
-    };
-    let env = match build_env(&options, stderr) {
-        Ok(env) => env,
+    let (target, env) = match prepare_injection(&options, stderr, approve_injection, build_env) {
+        Ok(prepared) => prepared,
         Err(err) => {
             let _ = writeln!(stderr, "av inject: {err}");
             return 1;
@@ -169,6 +175,49 @@ fn exec(options: Options, stderr: &mut dyn Write) -> i32 {
         target.display()
     );
     1
+}
+
+fn prepare_injection<A, B>(
+    options: &Options,
+    stderr: &mut dyn Write,
+    approve: A,
+    build: B,
+) -> Result<(PathBuf, BTreeMap<OsString, OsString>), String>
+where
+    A: FnOnce(&ApprovalRequest) -> Result<(), String>,
+    B: FnOnce(&Options, &mut dyn Write) -> Result<BTreeMap<OsString, OsString>, String>,
+{
+    let target = resolve_target(&options.target)?;
+    let request = approval_request(options, &target)?;
+    approve(&request)?;
+    let env = build(options, stderr)?;
+    Ok((target, env))
+}
+
+fn approval_request(options: &Options, target: &Path) -> Result<ApprovalRequest, String> {
+    let current_env = std::env::vars_os().collect::<BTreeMap<_, _>>();
+    let env_conflicts = options
+        .keys
+        .iter()
+        .filter(|key| current_env.contains_key(std::ffi::OsStr::new(key.as_str())))
+        .cloned()
+        .collect();
+    Ok(ApprovalRequest {
+        keys: options.keys.clone(),
+        target: target.display().to_string(),
+        args: options.args.iter().map(os_display).collect(),
+        cwd: std::env::current_dir()
+            .map_err(|err| format!("failed to read current directory: {err}"))?
+            .display()
+            .to_string(),
+        replace_existing_env: options.replace_existing_env,
+        allow_missing_keys: options.allow_missing_keys,
+        env_conflicts,
+    })
+}
+
+fn os_display(value: &OsString) -> String {
+    value.to_string_lossy().into_owned()
 }
 
 fn build_env(
@@ -230,6 +279,169 @@ fn validate_key_name(key: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn approve_injection(request: &ApprovalRequest) -> Result<(), String> {
+    if std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some() {
+        return Ok(());
+    }
+    xpc_approve_injection(request)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn approve_injection(_request: &ApprovalRequest) -> Result<(), String> {
+    Err("menu bar approval is only available on macOS".into())
+}
+
+#[cfg(target_os = "macos")]
+fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
+    use std::os::raw::{c_char, c_int, c_void};
+
+    type XpcObject = *mut c_void;
+
+    unsafe extern "C" {
+        static _xpc_type_error: u8;
+        static _xpc_error_key_description: *const c_char;
+
+        fn xpc_connection_create_mach_service(
+            name: *const c_char,
+            targetq: *mut c_void,
+            flags: u64,
+        ) -> XpcObject;
+        fn xpc_connection_activate(connection: XpcObject);
+        fn xpc_connection_cancel(connection: XpcObject);
+        fn xpc_connection_send_message_with_reply_sync(
+            connection: XpcObject,
+            message: XpcObject,
+        ) -> XpcObject;
+        fn xpc_dictionary_create_empty() -> XpcObject;
+        fn xpc_dictionary_set_bool(xdict: XpcObject, key: *const c_char, value: bool);
+        fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
+        fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
+        fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
+        fn xpc_dictionary_set_value(xdict: XpcObject, key: *const c_char, value: XpcObject);
+        fn xpc_array_create_empty() -> XpcObject;
+        fn xpc_array_append_value(xarray: XpcObject, value: XpcObject);
+        fn xpc_string_create(string: *const c_char) -> XpcObject;
+        fn xpc_get_type(object: XpcObject) -> *const c_void;
+        fn xpc_release(object: XpcObject);
+        fn xpc_connection_set_peer_code_signing_requirement(
+            connection: XpcObject,
+            requirement: *const c_char,
+        ) -> c_int;
+    }
+
+    unsafe fn set_string(dict: XpcObject, key: &[u8], value: &str) -> Result<(), String> {
+        let value =
+            CString::new(value).map_err(|_| format!("XPC field contains NUL: {value:?}"))?;
+        unsafe { xpc_dictionary_set_string(dict, key.as_ptr().cast(), value.as_ptr()) };
+        Ok(())
+    }
+
+    unsafe fn string_array(values: &[String]) -> Result<XpcObject, String> {
+        let array = unsafe { xpc_array_create_empty() };
+        for value in values {
+            let value = CString::new(value.as_str())
+                .map_err(|_| format!("XPC array contains NUL: {value:?}"))?;
+            let string = unsafe { xpc_string_create(value.as_ptr()) };
+            unsafe {
+                xpc_array_append_value(array, string);
+                xpc_release(string);
+            }
+        }
+        Ok(array)
+    }
+
+    let service = CString::new(APPROVAL_SERVICE).unwrap();
+    let connection =
+        unsafe { xpc_connection_create_mach_service(service.as_ptr(), std::ptr::null_mut(), 0) };
+    if connection.is_null() {
+        return Err("failed to create approval XPC connection".into());
+    }
+
+    let menu_requirement = CString::new(r#"identifier "com.automicvault.menubar-helper""#).unwrap();
+    let requirement_status = unsafe {
+        xpc_connection_set_peer_code_signing_requirement(connection, menu_requirement.as_ptr())
+    };
+    if requirement_status != 0 {
+        unsafe { xpc_release(connection) };
+        return Err("failed to configure approval XPC signing requirement".into());
+    }
+
+    unsafe { xpc_connection_activate(connection) };
+
+    let message = unsafe { xpc_dictionary_create_empty() };
+    if message.is_null() {
+        unsafe { xpc_connection_cancel(connection) };
+        unsafe { xpc_release(connection) };
+        return Err("failed to create approval XPC message".into());
+    }
+
+    unsafe {
+        set_string(message, b"op\0", "inject")?;
+        set_string(message, b"target\0", &request.target)?;
+        set_string(message, b"cwd\0", &request.cwd)?;
+        xpc_dictionary_set_bool(
+            message,
+            b"replace_existing_env\0".as_ptr().cast(),
+            request.replace_existing_env,
+        );
+        xpc_dictionary_set_bool(
+            message,
+            b"allow_missing_keys\0".as_ptr().cast(),
+            request.allow_missing_keys,
+        );
+
+        let keys = string_array(&request.keys)?;
+        xpc_dictionary_set_value(message, b"keys\0".as_ptr().cast(), keys);
+        xpc_release(keys);
+
+        let args = string_array(&request.args)?;
+        xpc_dictionary_set_value(message, b"args\0".as_ptr().cast(), args);
+        xpc_release(args);
+
+        let conflicts = string_array(&request.env_conflicts)?;
+        xpc_dictionary_set_value(message, b"env_conflicts\0".as_ptr().cast(), conflicts);
+        xpc_release(conflicts);
+    }
+
+    let reply = unsafe { xpc_connection_send_message_with_reply_sync(connection, message) };
+    unsafe {
+        xpc_release(message);
+        xpc_connection_cancel(connection);
+        xpc_release(connection);
+    }
+    if reply.is_null() {
+        return Err("Automic Vault approval did not reply".into());
+    }
+
+    let result = unsafe {
+        if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
+            let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+            let error = if error.is_null() {
+                "approval XPC connection failed".into()
+            } else {
+                std::ffi::CStr::from_ptr(error)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            Err(error)
+        } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
+            Ok(())
+        } else {
+            let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
+            Err(if error.is_null() {
+                "injection denied".into()
+            } else {
+                std::ffi::CStr::from_ptr(error)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        }
+    };
+    unsafe { xpc_release(reply) };
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +468,44 @@ mod tests {
                 .target,
             OsString::from("env")
         );
+    }
+
+    #[test]
+    fn denied_approval_does_not_load_secrets() {
+        let options = Options {
+            replace_existing_env: false,
+            allow_missing_keys: false,
+            keys: vec!["SOME_SECRET".into()],
+            target: "/bin/echo".into(),
+            args: os(&["hi"]),
+        };
+        let mut stderr = Vec::new();
+        let err = prepare_injection(
+            &options,
+            &mut stderr,
+            |_| Err("user denied injection".into()),
+            |_, _| panic!("approval denial must happen before loading secrets"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "user denied injection");
+    }
+
+    #[test]
+    fn builds_approval_request_without_secret_values() {
+        let options = Options {
+            replace_existing_env: true,
+            allow_missing_keys: true,
+            keys: vec!["A".into(), "B".into()],
+            target: "/bin/echo".into(),
+            args: os(&["hi"]),
+        };
+        let request = approval_request(&options, Path::new("/bin/echo")).unwrap();
+
+        assert_eq!(request.keys, ["A", "B"]);
+        assert_eq!(request.target, "/bin/echo");
+        assert_eq!(request.args, ["hi"]);
+        assert!(request.replace_existing_env);
+        assert!(request.allow_missing_keys);
     }
 }

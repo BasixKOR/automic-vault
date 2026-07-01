@@ -30,6 +30,8 @@ fn av_inject_loads_keychain_secret_into_child_environment() {
 #[test]
 fn av_inject_accepts_shebang_dispatch() {
     let home = temp_home("inject-shebang");
+    let keychain = home.join("keychain");
+    fs::create_dir_all(&keychain).unwrap();
     let script = home.join("tool");
     fs::write(
         &script,
@@ -45,6 +47,7 @@ fn av_inject_accepts_shebang_dispatch() {
 
     let output = Command::new(&script)
         .env("HOME", &home)
+        .env("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain)
         .env("SOME_SECRET", "expected")
         .output()
         .unwrap();

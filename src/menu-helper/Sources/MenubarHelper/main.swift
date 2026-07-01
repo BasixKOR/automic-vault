@@ -3,12 +3,15 @@ import CProcessInfo
 import Darwin
 import Foundation
 import Security
+@preconcurrency import XPC
 
 private let socketPath = "/tmp/com.automicvault.av2.credential-helper.\(getuid()).sock"
+private let approvalServiceName = "com.automicvault.av2.approval"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let broker = CredentialBroker(socketPath: socketPath)
+    private var approval: ApprovalServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let button = statusItem.button {
@@ -25,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
 
         do {
+            let approval = try ApprovalServer(serviceName: approvalServiceName)
+            try approval.start()
             try broker.start()
+            self.approval = approval
         } catch {
             NSAlert(error: error).runModal()
             NSApp.terminate(nil)
@@ -33,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        approval?.stop()
         broker.stop()
     }
 
@@ -46,6 +53,173 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.isTemplate = true
         image.size = NSSize(width: 15, height: 18)
         return image
+    }
+}
+
+private struct ApprovalRequest {
+    let keys: [String]
+    let target: String
+    let args: [String]
+    let cwd: String
+    let replaceExistingEnv: Bool
+    let allowMissingKeys: Bool
+    let envConflicts: [String]
+}
+
+private struct SigningInfo {
+    let identifier: String
+    let teamIdentifier: String
+}
+
+private final class ApprovalServer: @unchecked Sendable {
+    private let serviceName: String
+    private let teamIdentifier: String
+    private var listener: xpc_connection_t?
+
+    init(serviceName: String) throws {
+        guard let teamIdentifier = selfTeamIdentifier() else {
+            throw BrokerError("missing menu bar signing team identifier")
+        }
+        self.serviceName = serviceName
+        self.teamIdentifier = teamIdentifier
+    }
+
+    func start() throws {
+        listener = serviceName.withCString {
+            xpc_connection_create_mach_service(
+                $0,
+                nil,
+                UInt64(XPC_CONNECTION_MACH_SERVICE_LISTENER)
+            )
+        }
+        guard let listener else { throw BrokerError("approval XPC listener failed") }
+
+        let requirement = """
+        identifier "com.automicvault.av" and anchor apple generic and \
+        certificate leaf[subject.OU] = \(teamIdentifier)
+        """
+        let status = requirement.withCString {
+            xpc_connection_set_peer_code_signing_requirement(listener, $0)
+        }
+        guard status == 0 else {
+            throw BrokerError("approval XPC signing requirement failed")
+        }
+
+        xpc_connection_set_event_handler(listener) { [weak self] event in
+            self?.accept(event)
+        }
+        xpc_connection_activate(listener)
+    }
+
+    func stop() {
+        if let listener {
+            xpc_connection_cancel(listener)
+            self.listener = nil
+        }
+    }
+
+    private func accept(_ event: xpc_object_t) {
+        guard xpc_get_type(event) == XPC_TYPE_CONNECTION else { return }
+        let peer = event
+        xpc_connection_set_event_handler(peer) { [weak self] message in
+            self?.handle(message, on: peer)
+        }
+        xpc_connection_activate(peer)
+    }
+
+    private func handle(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard xpc_get_type(message) == XPC_TYPE_DICTIONARY else { return }
+
+        let pid = xpc_connection_get_pid(peer)
+        var identity = AVProcessIdentity()
+        guard av_process_identity(pid, &identity) else {
+            reply(peer, to: message, ok: false, error: "approval caller identity is unavailable")
+            return
+        }
+
+        let callerPath = pathString(identity)
+        guard callerPath == "/usr/local/bin/av"
+                || URL(fileURLWithPath: callerPath).lastPathComponent == "av"
+        else {
+            reply(peer, to: message, ok: false, error: "approval caller is not av")
+            return
+        }
+
+        let signing = signingInfo(path: callerPath)
+        guard signing.identifier == "com.automicvault.av",
+              signing.teamIdentifier == teamIdentifier
+        else {
+            reply(peer, to: message, ok: false, error: "approval caller is not signed as av")
+            return
+        }
+
+        guard let request = approvalRequest(from: message) else {
+            reply(peer, to: message, ok: false, error: "invalid approval request")
+            return
+        }
+
+        DispatchQueue.main.async {
+            let approved = showApprovalAlert(
+                request: request,
+                callerPath: callerPath,
+                pid: pid,
+                signing: signing
+            )
+            self.reply(
+                peer,
+                to: message,
+                ok: approved,
+                error: approved ? nil : "injection denied"
+            )
+        }
+    }
+
+    private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
+        guard let opPointer = xpc_dictionary_get_string(message, "op"),
+              String(cString: opPointer) == "inject",
+              let targetPointer = xpc_dictionary_get_string(message, "target"),
+              let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
+              let keys = stringArray(message, "keys"),
+              let args = stringArray(message, "args"),
+              let envConflicts = stringArray(message, "env_conflicts")
+        else {
+            return nil
+        }
+
+        return ApprovalRequest(
+            keys: keys,
+            target: String(cString: targetPointer),
+            args: args,
+            cwd: String(cString: cwdPointer),
+            replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
+            allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
+            envConflicts: envConflicts
+        )
+    }
+
+    private func stringArray(_ message: xpc_object_t, _ key: String) -> [String]? {
+        guard let value = xpc_dictionary_get_value(message, key),
+              xpc_get_type(value) == XPC_TYPE_ARRAY
+        else {
+            return nil
+        }
+        var strings: [String] = []
+        for index in 0..<xpc_array_get_count(value) {
+            guard let pointer = xpc_array_get_string(value, index) else { return nil }
+            strings.append(String(cString: pointer))
+        }
+        return strings
+    }
+
+    private func reply(_ peer: xpc_connection_t, to message: xpc_object_t, ok: Bool, error: String?) {
+        let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
+        xpc_dictionary_set_bool(response, "ok", ok)
+        if let error {
+            error.withCString {
+                xpc_dictionary_set_string(response, "error", $0)
+            }
+        }
+        xpc_connection_send_message(peer, response)
     }
 }
 
@@ -273,9 +447,10 @@ private func standardUserCannotWrite(_ path: String) -> Bool {
 }
 
 private func signedByAutomicVaultCLI(_ path: String) -> Bool {
+    guard let teamIdentifier = selfTeamIdentifier() else { return false }
     let requirement = """
     identifier "com.automicvault.av" and anchor apple generic and \
-    certificate leaf[subject.OU] = ZU76A67LGU
+    certificate leaf[subject.OU] = \(teamIdentifier)
     """
     return satisfiesRequirement(path, requirement)
 }
@@ -297,6 +472,76 @@ private func satisfiesRequirement(_ path: String, _ requirement: String) -> Bool
     }
 
     return SecStaticCodeCheckValidity(staticCode, [], secRequirement) == errSecSuccess
+}
+
+private func signingInfo(path: String) -> SigningInfo {
+    var staticCode: SecStaticCode?
+    let url = URL(fileURLWithPath: path) as CFURL
+    guard SecStaticCodeCreateWithPath(url, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          let info = copySigningInformation(staticCode)
+    else {
+        return SigningInfo(identifier: "unknown", teamIdentifier: "unknown")
+    }
+
+    return SigningInfo(
+        identifier: info[kSecCodeInfoIdentifier] as? String ?? "unknown",
+        teamIdentifier: info[kSecCodeInfoTeamIdentifier] as? String ?? "unknown"
+    )
+}
+
+private func selfTeamIdentifier() -> String? {
+    var code: SecCode?
+    var staticCode: SecStaticCode?
+    guard SecCodeCopySelf([], &code) == errSecSuccess,
+          let code,
+          SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          let info = copySigningInformation(staticCode)
+    else {
+        return nil
+    }
+    return info[kSecCodeInfoTeamIdentifier] as? String
+}
+
+private func copySigningInformation(_ code: SecStaticCode) -> [CFString: Any]? {
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(
+        code,
+        SecCSFlags(rawValue: kSecCSSigningInformation),
+        &info
+    ) == errSecSuccess else {
+        return nil
+    }
+    return info as? [CFString: Any]
+}
+
+@MainActor
+private func showApprovalAlert(
+    request: ApprovalRequest,
+    callerPath: String,
+    pid: pid_t,
+    signing: SigningInfo
+) -> Bool {
+    NSApp.activate(ignoringOtherApps: true)
+
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Approve secret injection?"
+    alert.informativeText = [
+        "Caller: \(callerPath) (pid \(pid))",
+        "Signed: \(signing.identifier) / \(signing.teamIdentifier)",
+        "Target: \(request.target)",
+        "Arguments: \(request.args.isEmpty ? "(none)" : request.args.joined(separator: " "))",
+        "Working directory: \(request.cwd)",
+        "Keys: \(request.keys.joined(separator: ", "))",
+        "Existing environment: \(request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", "))",
+        "Replace existing environment: \(request.replaceExistingEnv ? "yes" : "no")",
+        "Allow missing keys: \(request.allowMissingKeys ? "yes" : "no")",
+    ].joined(separator: "\n")
+    alert.addButton(withTitle: "Deny")
+    alert.addButton(withTitle: "Approve")
+    return alert.runModal() == .alertSecondButtonReturn
 }
 
 let app = NSApplication.shared
