@@ -11,6 +11,7 @@ aws_config=${AWS_CONFIG_FILE:-$HOME/.aws/config}
 cleanup() { rm -rf "$tmp" }
 trap cleanup EXIT INT TERM
 
+# aws-vault checks for stored credentials by profile name before invoking pass.
 source_profile_for() {
   [[ -r $aws_config ]] || return 0
   awk -v wanted="$1" '
@@ -36,10 +37,12 @@ while source_profile=$(source_profile_for "$master_profile"); [[ -n $source_prof
   master_profile=$source_profile
 done
 
+# This marker satisfies pass backend discovery; it contains no credentials.
 marker=$store/$prefix/$master_profile.gpg
 mkdir -p "$marker:h"
 : > "$marker"
 
+# The shim exposes av-injected keys only through pass stdout, never disk.
 cat > "$shim" <<'EOF'
 #!/bin/zsh
 set -euo pipefail
@@ -51,6 +54,7 @@ case "$1" in
     printf '{"Key":"aws-vault","Data":"%s"}\n' "$data"
     ;;
   insert)
+    # Discard aws-vault session cache writes so temp credentials do not persist.
     cat >/dev/null
     ;;
   rm)
