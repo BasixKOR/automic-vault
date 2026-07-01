@@ -66,12 +66,11 @@ esac
 EOF
 chmod 700 "$shim"
 
-export AWS_VAULT_BACKEND=pass
-export AWS_VAULT_PASS_CMD="$shim"
-export AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store"
-export AWS_VAULT_PASS_PREFIX="$prefix"
-
-exec /opt/homebrew/bin/aws-vault \
+AWS_VAULT_BACKEND=pass \
+AWS_VAULT_PASS_CMD="$shim" \
+AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store" \
+AWS_VAULT_PASS_PREFIX="$prefix" \
+  /opt/homebrew/bin/aws-vault \
     exec "$profile" \
     --server \
     -- \
