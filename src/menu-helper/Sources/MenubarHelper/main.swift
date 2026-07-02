@@ -10,7 +10,7 @@ import Security
 
 private let socketPath = "/tmp/com.automicvault.av2.credential-helper.\(getuid()).sock"
 private let approvalServiceName = "com.automicvault.av2.approval"
-private let trustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
+private let legacyTrustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
+
         if let button = statusItem.button {
             button.image = menuImage()
         }
@@ -241,16 +243,6 @@ private struct LauncherIdentity {
 private struct ScriptApproval {
     let path: String
     let checksum: String
-}
-
-private struct TrustedScriptApproval: Codable, Equatable {
-    let scriptPath: String
-    let scriptChecksum: String
-    let keys: [String]
-    let target: String
-    let replaceExistingEnv: Bool
-    let allowMissingKeys: Bool
-    let launcherRequirement: String
 }
 
 private enum ApprovalDecision: Equatable {
@@ -841,31 +833,22 @@ private func trustedApprovalRecord(
 
 private func alwaysAllows(
     _ approval: TrustedScriptApproval,
-    defaults: UserDefaults = .standard
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
 ) -> Bool {
-    rememberedApprovals(defaults: defaults).contains(approval)
+    loadTrustedScriptApprovals(service: service, account: account).contains(approval)
 }
 
 private func rememberAlwaysAllow(
     _ approval: TrustedScriptApproval,
-    defaults: UserDefaults = .standard
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
 ) {
-    var approvals = rememberedApprovals(defaults: defaults)
+    var approvals = loadTrustedScriptApprovals(service: service, account: account)
     if !approvals.contains(approval) {
         approvals.append(approval)
     }
-    if let data = try? JSONEncoder().encode(approvals) {
-        defaults.set(data, forKey: trustedScriptApprovalsDefaultsKey)
-    }
-}
-
-private func rememberedApprovals(defaults: UserDefaults = .standard) -> [TrustedScriptApproval] {
-    guard let data = defaults.data(forKey: trustedScriptApprovalsDefaultsKey),
-          let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
-    else {
-        return []
-    }
-    return approvals
+    _ = saveTrustedScriptApprovals(approvals, service: service, account: account)
 }
 
 @MainActor
@@ -978,9 +961,8 @@ private func showAutoApprovedToast(keys: [String], script: String, launcher: Str
 }
 
 private func runApprovalSelfCheck() -> Int32 {
-    let suite = "com.automicvault.av2.approval-self-check.\(UUID().uuidString)"
-    guard let defaults = UserDefaults(suiteName: suite) else { return 1 }
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let service = "com.automicvault.av2.approval-self-check.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
     let request = ApprovalRequest(
         keys: ["B", "A"],
@@ -1030,19 +1012,19 @@ private func runApprovalSelfCheck() -> Int32 {
     guard approval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
           isAppBundleExecutable("/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"),
-          !alwaysAllows(approval, defaults: defaults)
+          !alwaysAllows(approval, service: service)
     else {
         return 1
     }
 
-    rememberAlwaysAllow(approval, defaults: defaults)
-    guard alwaysAllows(approval, defaults: defaults),
-          !alwaysAllows(altered(checksum: "def"), defaults: defaults),
-          !alwaysAllows(altered(keys: ["A"]), defaults: defaults),
-          !alwaysAllows(altered(target: "/usr/bin/env"), defaults: defaults),
-          !alwaysAllows(altered(replaceExistingEnv: false), defaults: defaults),
-          !alwaysAllows(altered(allowMissingKeys: true), defaults: defaults),
-          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), defaults: defaults)
+    rememberAlwaysAllow(approval, service: service)
+    guard alwaysAllows(approval, service: service),
+          !alwaysAllows(altered(checksum: "def"), service: service),
+          !alwaysAllows(altered(keys: ["A"]), service: service),
+          !alwaysAllows(altered(target: "/usr/bin/env"), service: service),
+          !alwaysAllows(altered(replaceExistingEnv: false), service: service),
+          !alwaysAllows(altered(allowMissingKeys: true), service: service),
+          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), service: service)
     else {
         return 1
     }

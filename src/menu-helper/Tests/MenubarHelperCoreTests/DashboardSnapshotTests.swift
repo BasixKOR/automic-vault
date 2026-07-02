@@ -65,11 +65,10 @@ import Testing
 }
 
 @Test func secretGatesDecodeRememberedApprovals() throws {
-    let suite = "com.automicvault.tests.\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
-    let data = try JSONEncoder().encode([
+    #expect(saveTrustedScriptApprovals([
         TrustedScriptApproval(
             scriptPath: "/tmp/deploy",
             scriptChecksum: "abc",
@@ -88,10 +87,9 @@ import Testing
             allowMissingKeys: false,
             launcherRequirement: #"identifier "com.other.app""#
         )
-    ])
-    defaults.set(data, forKey: trustedScriptApprovalsDefaultsKey)
+    ], service: service) == errSecSuccess)
 
-    #expect(loadSecretGates(defaults: defaults) == [
+    #expect(loadSecretGates(service: service) == [
         SecretGate(scriptPath: "/tmp/deploy", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.example.app", "com.other.app"])
     ])
 }

@@ -1,8 +1,9 @@
 import Foundation
 import Security
 
-public let trustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 public let automicVaultKeychainService = "com.automicvault.isotope"
+public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
+public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]
@@ -27,13 +28,13 @@ public struct DashboardSnapshot: Equatable, Sendable {
         avExecutableURL: URL = defaultAVExecutableURL(),
         stubDirectory: URL = URL(fileURLWithPath: "/usr/local/bin", isDirectory: true),
         ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
-        defaults: UserDefaults = .standard
+        approvalService: String = trustedScriptApprovalsKeychainService
     ) -> DashboardSnapshot {
         DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: loadHardenedTools(in: stubDirectory, ghCLIURL: ghCLIURL),
-            secretGates: loadSecretGates(defaults: defaults),
+            secretGates: loadSecretGates(service: approvalService),
             secrets: loadStoredSecrets()
         )
     }
@@ -107,14 +108,32 @@ struct DetectorReport: Codable {
     let detectors: [DetectorMetadata]
 }
 
-struct TrustedScriptApproval: Codable {
-    let scriptPath: String
-    let scriptChecksum: String
-    let keys: [String]
-    let target: String
-    let replaceExistingEnv: Bool
-    let allowMissingKeys: Bool
-    let launcherRequirement: String
+public struct TrustedScriptApproval: Codable, Equatable, Sendable {
+    public let scriptPath: String
+    public let scriptChecksum: String
+    public let keys: [String]
+    public let target: String
+    public let replaceExistingEnv: Bool
+    public let allowMissingKeys: Bool
+    public let launcherRequirement: String
+
+    public init(
+        scriptPath: String,
+        scriptChecksum: String,
+        keys: [String],
+        target: String,
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool,
+        launcherRequirement: String
+    ) {
+        self.scriptPath = scriptPath
+        self.scriptChecksum = scriptChecksum
+        self.keys = keys
+        self.target = target
+        self.replaceExistingEnv = replaceExistingEnv
+        self.allowMissingKeys = allowMissingKeys
+        self.launcherRequirement = launcherRequirement
+    }
 }
 
 public func detectorFindings(from scanJSON: Data) throws -> [DetectorFinding] {
@@ -157,13 +176,8 @@ public func loadHardenedTools(
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 }
 
-public func loadSecretGates(defaults: UserDefaults = .standard) -> [SecretGate] {
-    guard let data = defaults.data(forKey: trustedScriptApprovalsDefaultsKey),
-          let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
-    else {
-        return []
-    }
-
+public func loadSecretGates(service: String = trustedScriptApprovalsKeychainService) -> [SecretGate] {
+    let approvals = loadTrustedScriptApprovals(service: service)
     let grouped = Dictionary(grouping: approvals) {
         "\($0.scriptPath)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))"
     }
@@ -177,6 +191,30 @@ public func loadSecretGates(defaults: UserDefaults = .standard) -> [SecretGate] 
         )
     }
     .sorted { $0.scriptPath.localizedStandardCompare($1.scriptPath) == .orderedAscending }
+}
+
+public func loadTrustedScriptApprovals(
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
+) -> [TrustedScriptApproval] {
+    guard let data = loadKeychainData(service: service, account: account),
+          let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
+    else {
+        return []
+    }
+    return approvals
+}
+
+public func saveTrustedScriptApprovals(
+    _ approvals: [TrustedScriptApproval],
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
+) -> OSStatus {
+    do {
+        return saveKeychainData(try JSONEncoder().encode(approvals), service: service, account: account)
+    } catch {
+        return errSecParam
+    }
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
@@ -199,7 +237,31 @@ public func loadStoredSecrets(service: String = automicVaultKeychainService) -> 
 }
 
 public func saveStoredSecret(account: String, value: String, service: String = automicVaultKeychainService) -> OSStatus {
-    let data = Data(value.utf8)
+    saveKeychainData(Data(value.utf8), service: service, account: account)
+}
+
+public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+    ]
+    return SecItemDelete(query as CFDictionary)
+}
+
+private func loadKeychainData(service: String, account: String) -> Data? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecReturnData as String: true,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+    return result as? Data
+}
+
+private func saveKeychainData(_ data: Data, service: String, account: String) -> OSStatus {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
@@ -215,15 +277,6 @@ public func saveStoredSecret(account: String, value: String, service: String = a
     var addQuery = query
     addQuery[kSecValueData as String] = data
     return SecItemAdd(addQuery as CFDictionary, nil)
-}
-
-public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
-    let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: account,
-    ]
-    return SecItemDelete(query as CFDictionary)
 }
 
 func hardenedTargetPath(from script: String) -> String? {
