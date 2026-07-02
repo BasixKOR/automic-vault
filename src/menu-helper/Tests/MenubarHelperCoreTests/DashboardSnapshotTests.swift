@@ -14,7 +14,8 @@ import Testing
     let snapshot = DashboardSnapshot(
         detectorFindings: try detectorFindings(from: data),
         hardenedTools: [],
-        secretGates: []
+        secretGates: [],
+        secrets: []
     )
 
     #expect(snapshot.flaggedDetectorCount == 2)
@@ -29,12 +30,27 @@ import Testing
     """.write(to: directory.appendingPathComponent("aws"), atomically: true, encoding: .utf8)
     try "not a stub".write(to: directory.appendingPathComponent("plain"), atomically: true, encoding: .utf8)
 
-    let tools = loadHardenedTools(in: directory)
+    let tools = loadHardenedTools(in: directory, ghCLIURL: nil)
 
     #expect(tools.count == 1)
     #expect(tools.first?.name == "aws")
     #expect(tools.first?.stubPath.hasSuffix("/aws") == true)
     #expect(tools.first?.targetPath == "/opt/homebrew/bin/aws")
+}
+
+@Test func hardenedToolsFindsLegacyAWSInjectStubAndGHTap() throws {
+    let directory = temporaryDirectory()
+    try """
+    #!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh
+    exec /opt/homebrew/bin/aws-vault exec default -- /opt/homebrew/bin/aws "$@"
+    """.write(to: directory.appendingPathComponent("aws"), atomically: true, encoding: .utf8)
+    let gh = directory.appendingPathComponent("gh")
+    try "".write(to: gh, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
+
+    let tools = loadHardenedTools(in: directory, ghCLIURL: gh)
+
+    #expect(tools.map(\.name) == ["aws", "gh-cli"])
 }
 
 @Test func secretGatesDecodeRememberedApprovals() throws {
@@ -51,13 +67,32 @@ import Testing
             replaceExistingEnv: true,
             allowMissingKeys: false,
             launcherRequirement: #"identifier "com.example.app""#
+        ),
+        TrustedScriptApproval(
+            scriptPath: "/tmp/deploy",
+            scriptChecksum: "abc",
+            keys: ["A", "B"],
+            target: "/bin/echo",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            launcherRequirement: #"identifier "com.other.app""#
         )
     ])
     defaults.set(data, forKey: trustedScriptApprovalsDefaultsKey)
 
     #expect(loadSecretGates(defaults: defaults) == [
-        SecretGate(scriptPath: "/tmp/deploy", keys: ["A", "B"], target: "/bin/echo")
+        SecretGate(scriptPath: "/tmp/deploy", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.example.app", "com.other.app"])
     ])
+}
+
+@Test func storedSecretsListNamesOnlyAndDelete() throws {
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    #expect(loadStoredSecrets(service: service) == [StoredSecret(account: "API_TOKEN")])
+    #expect(deleteStoredSecret(account: "API_TOKEN", service: service) == errSecSuccess)
+    #expect(loadStoredSecrets(service: service).isEmpty)
 }
 
 private func temporaryDirectory() -> URL {

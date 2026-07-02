@@ -1,16 +1,20 @@
 import Foundation
+import Security
 
 public let trustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
+public let automicVaultKeychainService = "com.automicvault.isotope"
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectorFindings: [DetectorFinding]
     public var hardenedTools: [HardenedTool]
     public var secretGates: [SecretGate]
+    public var secrets: [StoredSecret]
 
     public static let empty = DashboardSnapshot(
         detectorFindings: [],
         hardenedTools: [],
-        secretGates: []
+        secretGates: [],
+        secrets: []
     )
 
     public var flaggedDetectorCount: Int {
@@ -20,12 +24,14 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public static func load(
         avExecutableURL: URL = defaultAVExecutableURL(),
         stubDirectory: URL = URL(fileURLWithPath: "/usr/local/bin", isDirectory: true),
+        ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
         defaults: UserDefaults = .standard
     ) -> DashboardSnapshot {
         DashboardSnapshot(
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
-            hardenedTools: loadHardenedTools(in: stubDirectory),
-            secretGates: loadSecretGates(defaults: defaults)
+            hardenedTools: loadHardenedTools(in: stubDirectory, ghCLIURL: ghCLIURL),
+            secretGates: loadSecretGates(defaults: defaults),
+            secrets: loadStoredSecrets()
         )
     }
 }
@@ -65,6 +71,11 @@ public struct SecretGate: Equatable, Sendable {
     public let scriptPath: String
     public let keys: [String]
     public let target: String
+    public let approvedApps: [String]
+}
+
+public struct StoredSecret: Equatable, Sendable {
+    public let account: String
 }
 
 struct ScanReport: Codable {
@@ -85,17 +96,22 @@ public func detectorFindings(from scanJSON: Data) throws -> [DetectorFinding] {
     try JSONDecoder().decode(ScanReport.self, from: scanJSON).findings
 }
 
-public func loadHardenedTools(in directory: URL) -> [HardenedTool] {
+public func loadHardenedTools(
+    in directory: URL,
+    ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh")
+) -> [HardenedTool] {
     let fileManager = FileManager.default
-    guard let urls = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else {
-        return []
-    }
-
-    return urls.compactMap { url in
+    let urls = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+    var tools: [HardenedTool] = urls.compactMap { url in
         guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-              let contents = try? String(contentsOf: url, encoding: .utf8),
-              contents.split(whereSeparator: \.isNewline).dropFirst().first == "# Automic Vault hardened stub"
+              let contents = try? String(contentsOf: url, encoding: .utf8)
         else {
+            return nil
+        }
+        if url.lastPathComponent == "aws", contents.hasPrefix("#!/usr/local/bin/av inject "), contents.contains("aws-vault") {
+            return HardenedTool(name: "aws", stubPath: url.path, targetPath: "/opt/homebrew/bin/aws")
+        }
+        guard contents.split(whereSeparator: \.isNewline).dropFirst().first == "# Automic Vault hardened stub" else {
             return nil
         }
         return HardenedTool(
@@ -104,7 +120,12 @@ public func loadHardenedTools(in directory: URL) -> [HardenedTool] {
             targetPath: hardenedTargetPath(from: contents)
         )
     }
-    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    if let ghCLIURL, fileManager.isExecutableFile(atPath: ghCLIURL.path) {
+        tools.append(HardenedTool(name: "gh-cli", stubPath: ghCLIURL.path, targetPath: "gh auth av-migrate"))
+    }
+    return tools
+        .uniquedByName()
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 }
 
 public func loadSecretGates(defaults: UserDefaults = .standard) -> [SecretGate] {
@@ -114,10 +135,66 @@ public func loadSecretGates(defaults: UserDefaults = .standard) -> [SecretGate] 
         return []
     }
 
-    return approvals.map {
-        SecretGate(scriptPath: $0.scriptPath, keys: $0.keys.sorted(), target: $0.target)
+    let grouped = Dictionary(grouping: approvals) {
+        "\($0.scriptPath)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))"
+    }
+    return grouped.values.compactMap { approvals in
+        guard let first = approvals.first else { return nil }
+        return SecretGate(
+            scriptPath: first.scriptPath,
+            keys: first.keys.sorted(),
+            target: first.target,
+            approvedApps: approvals.map(\.launcherRequirement).compactMap(appIdentifier).uniqueSorted()
+        )
     }
     .sorted { $0.scriptPath.localizedStandardCompare($1.scriptPath) == .orderedAscending }
+}
+
+public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecReturnAttributes as String: true,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let items = result as? [[String: Any]]
+    else {
+        return []
+    }
+    return items.compactMap { item in
+        (item[kSecAttrAccount as String] as? String).map(StoredSecret.init(account:))
+    }
+    .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
+}
+
+public func saveStoredSecret(account: String, value: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let data = Data(value.utf8)
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+    ]
+    let attributes: [String: Any] = [
+        kSecValueData as String: data,
+    ]
+    let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    if status != errSecItemNotFound {
+        return status
+    }
+    var addQuery = query
+    addQuery[kSecValueData as String] = data
+    return SecItemAdd(addQuery as CFDictionary, nil)
+}
+
+public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+    ]
+    return SecItemDelete(query as CFDictionary)
 }
 
 func hardenedTargetPath(from script: String) -> String? {
@@ -127,6 +204,26 @@ func hardenedTargetPath(from script: String) -> String? {
     let quoted = line.split(separator: "'", omittingEmptySubsequences: false)
     guard quoted.count >= 4 else { return nil }
     return String(quoted[3]).replacingOccurrences(of: "'\\''", with: "'")
+}
+
+func appIdentifier(from requirement: String) -> String? {
+    guard let range = requirement.range(of: #"identifier ""#) else { return nil }
+    let rest = requirement[range.upperBound...]
+    guard let end = rest.firstIndex(of: "\"") else { return nil }
+    return String(rest[..<end])
+}
+
+private extension Array where Element == HardenedTool {
+    func uniquedByName() -> [HardenedTool] {
+        var seen = Set<String>()
+        return filter { seen.insert($0.name).inserted }
+    }
+}
+
+private extension Array where Element == String {
+    func uniqueSorted() -> [String] {
+        Array(Set(self)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 }
 
 func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {

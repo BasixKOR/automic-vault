@@ -1,5 +1,6 @@
 import AppKit
 import MenubarHelperCore
+import Security
 import SwiftUI
 
 @MainActor
@@ -110,6 +111,8 @@ final class DashboardModel: ObservableObject {
     @Published var selectedSection: DashboardSection = .detectors
     @Published private(set) var snapshot = DashboardSnapshot.empty
     @Published private(set) var isReloading = false
+    @Published var isAddingSecret = false
+    @Published var errorMessage: String?
     @Published var selectedItemID: String?
 
     private var reloadTask: Task<Void, Never>?
@@ -124,7 +127,12 @@ final class DashboardModel: ObservableObject {
             }
         case .secretGates:
             snapshot.secretGates.map {
-                DashboardItem(id: $0.scriptPath + $0.target, title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent, subtitle: $0.target, detail: $0.keys.joined(separator: ", "))
+                let apps = $0.approvedApps.isEmpty ? "No approved apps recorded" : "Approved for: \($0.approvedApps.joined(separator: ", "))"
+                return DashboardItem(id: $0.scriptPath + $0.target, title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent, subtitle: $0.target, detail: "Keys: \($0.keys.joined(separator: ", "))\n\(apps)")
+            }
+        case .allSecrets:
+            snapshot.secrets.map {
+                DashboardItem(id: $0.account, title: $0.account, subtitle: "Keychain secret", detail: "Secret value is hidden.")
             }
         }
     }
@@ -141,6 +149,7 @@ final class DashboardModel: ObservableObject {
         case .detectors: snapshot.flaggedDetectorCount
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
+        case .allSecrets: snapshot.secrets.count
         }
     }
 
@@ -169,6 +178,30 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func addSecret(account: String, value: String) {
+        let account = account.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !account.isEmpty, !value.isEmpty else { return }
+        let status = saveStoredSecret(account: account, value: value)
+        if status == errSecSuccess {
+            selectedSection = .allSecrets
+            selectedItemID = account
+            reload()
+        } else {
+            errorMessage = "Could not save \(account): \(status)"
+        }
+    }
+
+    func deleteSelectedSecret() {
+        guard selectedSection == .allSecrets, let account = selectedItem?.id else { return }
+        let status = deleteStoredSecret(account: account)
+        if status == errSecSuccess || status == errSecItemNotFound {
+            selectedItemID = nil
+            reload()
+        } else {
+            errorMessage = "Could not delete \(account): \(status)"
+        }
+    }
+
     private var detectorItems: [DashboardItem] {
         Dictionary(grouping: snapshot.detectorFindings, by: \.source)
             .map { source, findings in
@@ -190,6 +223,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case detectors
     case hardenedTools
     case secretGates
+    case allSecrets
 
     var id: String { rawValue }
 
@@ -198,6 +232,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .detectors: "Detectors"
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Secret Gates"
+        case .allSecrets: "All Secrets"
         }
     }
 
@@ -206,6 +241,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .detectors: "sensor.tag.radiowaves.forward"
         case .hardenedTools: "hammer"
         case .secretGates: "lock.shield"
+        case .allSecrets: "key"
         }
     }
 }
@@ -275,6 +311,7 @@ private struct DashboardSidebarView: View {
         case .detectors: GlassPalette.red
         case .hardenedTools: GlassPalette.blue
         case .secretGates: GlassPalette.gray
+        case .allSecrets: GlassPalette.green
         }
     }
 }
@@ -304,6 +341,13 @@ private struct DashboardListView: View {
                 HStack {
                     Text(model.selectedSection.title)
                     Spacer()
+                    if model.selectedSection == .allSecrets {
+                        Button { model.isAddingSecret = true } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add Secret")
+                    }
                     if model.isReloading { ProgressView().controlSize(.small) }
                 }
                 .font(.system(size: 13, weight: .bold))
@@ -316,6 +360,9 @@ private struct DashboardListView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .background(GlassSurface(tint: GlassPalette.windowTint).ignoresSafeArea())
+        .sheet(isPresented: $model.isAddingSecret) {
+            AddSecretView(model: model)
+        }
         .preferredColorScheme(.dark)
     }
 }
@@ -335,6 +382,18 @@ private struct DashboardDetailView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(GlassPalette.secondaryText)
                     InfoBlock(title: model.selectedSection.title, text: item.detail)
+                    if model.selectedSection == .allSecrets {
+                        Button { model.deleteSelectedSecret() } label: {
+                            Label("Delete Secret", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(.red)
+                    }
+                    if let error = model.errorMessage {
+                        InfoBlock(title: "Error", text: error)
+                    }
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 32)
@@ -396,7 +455,41 @@ private struct EmptyListView: View {
         case .detectors: "No flagged detectors"
         case .hardenedTools: "No hardened tools"
         case .secretGates: "No remembered gates"
+        case .allSecrets: "No stored secrets"
         }
+    }
+}
+
+private struct AddSecretView: View {
+    @ObservedObject var model: DashboardModel
+    @State private var account = ""
+    @State private var value = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add Secret")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(GlassPalette.primaryText)
+            TextField("Name", text: $account)
+                .textFieldStyle(.roundedBorder)
+            SecureField("Value", text: $value)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") {
+                    model.addSecret(account: account, value: value)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.isEmpty)
+            }
+        }
+        .padding(22)
+        .frame(width: 360)
+        .background(GlassSurface(tint: GlassPalette.windowTint))
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -458,5 +551,6 @@ private enum GlassPalette {
     static let controlFill = Color.white.opacity(0.18)
     static let red = Color(red: 0.95, green: 0.18, blue: 0.16)
     static let blue = Color(red: 0.00, green: 0.48, blue: 1.00)
+    static let green = Color(red: 0.18, green: 0.62, blue: 0.31)
     static let gray = Color(red: 0.46, green: 0.49, blue: 0.53)
 }
