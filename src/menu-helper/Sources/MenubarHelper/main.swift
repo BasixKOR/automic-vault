@@ -9,7 +9,7 @@ import Security
 
 private let socketPath = "/tmp/com.automicvault.av2.credential-helper.\(getuid()).sock"
 private let approvalServiceName = "com.automicvault.av2.approval"
-private let alwaysAllowDefaultsKey = "AlwaysAllowScriptChecksums"
+private let trustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
@@ -194,9 +194,27 @@ private struct SigningInfo {
     let teamIdentifier: String
 }
 
+private struct LauncherIdentity {
+    let pid: pid_t
+    let path: String
+    let identifier: String
+    let teamIdentifier: String
+    let designatedRequirement: String
+}
+
 private struct ScriptApproval {
     let path: String
     let checksum: String
+}
+
+private struct TrustedScriptApproval: Codable, Equatable {
+    let scriptPath: String
+    let scriptChecksum: String
+    let keys: [String]
+    let target: String
+    let replaceExistingEnv: Bool
+    let allowMissingKeys: Bool
+    let launcherRequirement: String
 }
 
 private enum ApprovalDecision: Equatable {
@@ -292,9 +310,19 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
-        if let scriptApproval, alwaysAllows(scriptApproval) {
+        let launcher = launcherIdentity(startingAt: identity.ppid)
+        let trustedApproval = trustedApprovalRecord(
+            script: scriptApproval,
+            request: request,
+            launcher: launcher
+        )
+        if let scriptApproval, let launcher, let trustedApproval, alwaysAllows(trustedApproval) {
             DispatchQueue.main.async {
-                showAutoApprovedToast(keys: request.keys, script: scriptApproval.path)
+                showAutoApprovedToast(
+                    keys: request.keys,
+                    script: scriptApproval.path,
+                    launcher: launcher.identifier
+                )
                 self.reply(peer, to: message, ok: true, error: nil)
             }
             return
@@ -306,10 +334,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 pid: pid,
                 signing: signing,
-                scriptApproval: scriptApproval
+                scriptApproval: scriptApproval,
+                launcher: launcher
             )
-            if decision == .alwaysAllow, let scriptApproval {
-                rememberAlwaysAllow(scriptApproval)
+            if decision == .alwaysAllow, let trustedApproval {
+                rememberAlwaysAllow(trustedApproval)
             }
             self.reply(
                 peer,
@@ -663,6 +692,89 @@ private func copySigningInformation(_ code: SecStaticCode) -> [CFString: Any]? {
     return info as? [CFString: Any]
 }
 
+private func launcherIdentity(startingAt startPID: pid_t) -> LauncherIdentity? {
+    var pid = startPID
+    var seen = Set<pid_t>()
+    for _ in 0..<32 {
+        guard pid > 1, seen.insert(pid).inserted else { return nil }
+
+        var identity = AVProcessIdentity()
+        guard av_process_identity(pid, &identity) else { return nil }
+        let path = pathString(identity)
+        if let signing = liveSigningInfo(pid: pid),
+           isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable)
+        {
+            return LauncherIdentity(
+                pid: pid,
+                path: path,
+                identifier: signing.identifier,
+                teamIdentifier: signing.teamIdentifier,
+                designatedRequirement: signing.designatedRequirement
+            )
+        }
+        pid = identity.ppid
+    }
+    return nil
+}
+
+private struct LiveSigningInfo {
+    let identifier: String
+    let teamIdentifier: String
+    let designatedRequirement: String
+    let mainExecutable: String
+}
+
+private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+          let code
+    else {
+        return nil
+    }
+    guard SecCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
+
+    var staticCode: SecStaticCode?
+    guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else {
+        return nil
+    }
+
+    var info: CFDictionary?
+    let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
+    guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any],
+          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement]
+    else {
+        return nil
+    }
+    let requirement = requirementValue as! SecRequirement
+    guard let requirementText = requirementString(requirement) else { return nil }
+
+    let executable = (dictionary[kSecCodeInfoMainExecutable] as? URL)?.path ?? ""
+    return LiveSigningInfo(
+        identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
+        teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
+        designatedRequirement: requirementText,
+        mainExecutable: executable
+    )
+}
+
+private func requirementString(_ requirement: SecRequirement) -> String? {
+    var text: CFString?
+    guard SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
+          let text
+    else {
+        return nil
+    }
+    return text as String
+}
+
+private func isAppBundleExecutable(_ path: String) -> Bool {
+    path.range(of: ".app/Contents/MacOS/", options: [.caseInsensitive]) != nil
+}
+
 private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     guard let script = request.shebangScript else { return nil }
     let url = script.hasPrefix("/")
@@ -674,15 +786,50 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
-private func alwaysAllows(_ script: ScriptApproval) -> Bool {
-    let approvals = UserDefaults.standard.dictionary(forKey: alwaysAllowDefaultsKey) as? [String: String]
-    return approvals?[script.path] == script.checksum
+private func trustedApprovalRecord(
+    script: ScriptApproval?,
+    request: ApprovalRequest,
+    launcher: LauncherIdentity?
+) -> TrustedScriptApproval? {
+    guard let script, let launcher else { return nil }
+    return TrustedScriptApproval(
+        scriptPath: script.path,
+        scriptChecksum: script.checksum,
+        keys: request.keys.sorted(),
+        target: request.target,
+        replaceExistingEnv: request.replaceExistingEnv,
+        allowMissingKeys: request.allowMissingKeys,
+        launcherRequirement: launcher.designatedRequirement
+    )
 }
 
-private func rememberAlwaysAllow(_ script: ScriptApproval) {
-    var approvals = UserDefaults.standard.dictionary(forKey: alwaysAllowDefaultsKey) as? [String: String] ?? [:]
-    approvals[script.path] = script.checksum
-    UserDefaults.standard.set(approvals, forKey: alwaysAllowDefaultsKey)
+private func alwaysAllows(
+    _ approval: TrustedScriptApproval,
+    defaults: UserDefaults = .standard
+) -> Bool {
+    rememberedApprovals(defaults: defaults).contains(approval)
+}
+
+private func rememberAlwaysAllow(
+    _ approval: TrustedScriptApproval,
+    defaults: UserDefaults = .standard
+) {
+    var approvals = rememberedApprovals(defaults: defaults)
+    if !approvals.contains(approval) {
+        approvals.append(approval)
+    }
+    if let data = try? JSONEncoder().encode(approvals) {
+        defaults.set(data, forKey: trustedScriptApprovalsDefaultsKey)
+    }
+}
+
+private func rememberedApprovals(defaults: UserDefaults = .standard) -> [TrustedScriptApproval] {
+    guard let data = defaults.data(forKey: trustedScriptApprovalsDefaultsKey),
+          let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
+    else {
+        return []
+    }
+    return approvals
 }
 
 @MainActor
@@ -691,7 +838,8 @@ private func showApprovalAlert(
     callerPath: String,
     pid: pid_t,
     signing: SigningInfo,
-    scriptApproval: ScriptApproval?
+    scriptApproval: ScriptApproval?,
+    launcher: LauncherIdentity?
 ) -> ApprovalDecision {
     NSApp.activate(ignoringOtherApps: true)
 
@@ -709,6 +857,13 @@ private func showApprovalAlert(
         "Replace existing environment: \(request.replaceExistingEnv ? "yes" : "no")",
         "Allow missing keys: \(request.allowMissingKeys ? "yes" : "no")",
     ]
+    if let launcher {
+        lines.append("Launcher: \(launcher.identifier) (pid \(launcher.pid))")
+        lines.append("Launcher path: \(launcher.path)")
+        lines.append("Launcher signed: \(launcher.identifier) / \(launcher.teamIdentifier)")
+    } else {
+        lines.append("Launcher: unavailable; persistent auto-approve disabled")
+    }
     if let scriptApproval {
         lines.append("Script: \(scriptApproval.path)")
         lines.append("Script checksum: \(scriptApproval.checksum)")
@@ -719,8 +874,8 @@ private func showApprovalAlert(
     alert.informativeText = lines.joined(separator: "\n")
     alert.addButton(withTitle: "Deny")
     alert.addButton(withTitle: "Approve")
-    if scriptApproval != nil {
-        alert.addButton(withTitle: "Always Allow")
+    if scriptApproval != nil, launcher != nil {
+        alert.addButton(withTitle: "Always Allow From This App")
     }
     switch alert.runModal() {
     case .alertSecondButtonReturn:
@@ -733,8 +888,8 @@ private func showApprovalAlert(
 }
 
 @MainActor
-private func showAutoApprovedToast(keys: [String], script: String) {
-    let text = "Auto approved \(keys.joined(separator: ", ")) for \(script)"
+private func showAutoApprovedToast(keys: [String], script: String, launcher: String) {
+    let text = "Auto approved \(keys.joined(separator: ", ")) for \(script) from \(launcher)"
     let width = min(max((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width + 28, 280), 640)
     let height: CGFloat = 38
 
@@ -784,6 +939,81 @@ private func showAutoApprovedToast(keys: [String], script: String) {
         window.orderOut(nil)
         toastWindows.removeAll { $0 === window }
     }
+}
+
+private func runApprovalSelfCheck() -> Int32 {
+    let suite = "com.automicvault.av2.approval-self-check.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suite) else { return 1 }
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let request = ApprovalRequest(
+        keys: ["B", "A"],
+        target: "/bin/echo",
+        args: ["ignored"],
+        cwd: "/tmp",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        envConflicts: ["ignored"],
+        shebangScript: "/tmp/deploy"
+    )
+    let script = ScriptApproval(path: "/tmp/deploy", checksum: "abc")
+    let launcher = LauncherIdentity(
+        pid: 42,
+        path: "/Applications/Codex.app/Contents/MacOS/Codex",
+        identifier: "com.openai.codex",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.openai.codex" and anchor apple generic"#
+    )
+    guard let approval = trustedApprovalRecord(
+        script: script,
+        request: request,
+        launcher: launcher
+    ) else {
+        return 1
+    }
+
+    func altered(
+        checksum: String = "abc",
+        keys: [String] = ["A", "B"],
+        target: String = "/bin/echo",
+        replaceExistingEnv: Bool = true,
+        allowMissingKeys: Bool = false,
+        launcherRequirement: String = #"identifier "com.openai.codex" and anchor apple generic"#
+    ) -> TrustedScriptApproval {
+        TrustedScriptApproval(
+            scriptPath: "/tmp/deploy",
+            scriptChecksum: checksum,
+            keys: keys,
+            target: target,
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            launcherRequirement: launcherRequirement
+        )
+    }
+
+    guard approval.keys == ["A", "B"],
+          trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
+          !alwaysAllows(approval, defaults: defaults)
+    else {
+        return 1
+    }
+
+    rememberAlwaysAllow(approval, defaults: defaults)
+    guard alwaysAllows(approval, defaults: defaults),
+          !alwaysAllows(altered(checksum: "def"), defaults: defaults),
+          !alwaysAllows(altered(keys: ["A"]), defaults: defaults),
+          !alwaysAllows(altered(target: "/usr/bin/env"), defaults: defaults),
+          !alwaysAllows(altered(replaceExistingEnv: false), defaults: defaults),
+          !alwaysAllows(altered(allowMissingKeys: true), defaults: defaults),
+          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), defaults: defaults)
+    else {
+        return 1
+    }
+    return 0
+}
+
+if CommandLine.arguments.contains("--self-check-approvals") {
+    exit(runApprovalSelfCheck())
 }
 
 let app = NSApplication.shared
