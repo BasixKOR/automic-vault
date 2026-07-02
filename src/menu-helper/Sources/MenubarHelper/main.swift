@@ -772,7 +772,7 @@ private func requirementString(_ requirement: SecRequirement) -> String? {
 }
 
 private func isAppBundleExecutable(_ path: String) -> Bool {
-    path.range(of: ".app/Contents/MacOS/", options: [.caseInsensitive]) != nil
+    path.range(of: ".app/Contents/", options: [.caseInsensitive]) != nil
 }
 
 private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
@@ -993,6 +993,7 @@ private func runApprovalSelfCheck() -> Int32 {
 
     guard approval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
+          isAppBundleExecutable("/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"),
           !alwaysAllows(approval, defaults: defaults)
     else {
         return 1
