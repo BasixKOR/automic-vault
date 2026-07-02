@@ -203,19 +203,44 @@ final class DashboardModel: ObservableObject {
     }
 
     private var detectorItems: [DashboardItem] {
-        Dictionary(grouping: snapshot.detectorFindings, by: \.source)
-            .map { source, findings in
+        let findingsBySource = Dictionary(grouping: snapshot.detectorFindings, by: \.source)
+        let detectors = snapshot.detectors.isEmpty
+            ? findingsBySource.keys.map { DetectorMetadata(name: $0, homepage: "", docsURL: "") }
+            : snapshot.detectors
+
+        return detectors
+            .map { detector in
+                let findings = findingsBySource[detector.name] ?? []
+                guard !findings.isEmpty else {
+                    return DashboardItem(
+                        id: detector.name,
+                        title: detector.name,
+                        subtitle: "No findings",
+                        detail: detectorInfo(detector)
+                    )
+                }
                 let severity = findings.map(\.severity).max() ?? "flagged"
                 let affectedCount = findings.flatMap(\.affected).count
                 let subtitle = affectedCount == 1 ? "1 affected file" : "\(affectedCount) affected files"
                 return DashboardItem(
-                    id: source,
-                    title: source,
+                    id: detector.name,
+                    title: detector.name,
                     subtitle: "\(severity.uppercased()) - \(subtitle)",
-                    detail: findings.first?.explanation ?? findings.first?.solution ?? "Detector flagged this tool."
+                    detail: [
+                        findings.first?.explanation ?? "Detector flagged this tool.",
+                        findings.first?.solution,
+                        detectorInfo(detector),
+                    ].compactMap(\.self).joined(separator: "\n\n")
                 )
             }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    private func detectorInfo(_ detector: DetectorMetadata) -> String {
+        [
+            detector.homepage.isEmpty ? nil : "Homepage: \(detector.homepage)",
+            detector.docsURL.isEmpty ? nil : "Docs: \(detector.docsURL)",
+        ].compactMap(\.self).joined(separator: "\n")
     }
 }
 

@@ -144,155 +144,216 @@ mod wsk;
 mod yt_dlp;
 mod zsh;
 
-const DETECTORS: &[fn(&Path) -> Vec<Finding>] = &[
-    git::findings,
-    aws::findings,
-    acli::findings,
-    akamai::findings,
-    algolia::findings,
-    aliyun_cli::findings,
-    ansible::findings,
-    argocd::findings,
-    ast_cli::findings,
-    astra::findings,
-    atuin::findings,
-    aws_cli::findings,
-    aws_sso_cli::findings,
-    aws_vault::findings,
-    azure_cli::findings,
-    bash::findings,
-    bitwarden_cli::findings,
-    buf::findings,
-    cariddi::findings,
-    censys::findings,
-    certbot::findings,
-    checkov::findings,
-    circleci::findings,
-    civo::findings,
-    cloudflare_wrangler::findings,
-    cloudflared::findings,
-    cloudsmith_cli::findings,
-    composer::findings,
-    curl::findings,
-    databricks::findings,
-    dcos_cli::findings,
-    docker::findings,
-    docker_credential_helper::findings,
-    docker_machine::findings,
-    doctl::findings,
-    dropbox_uploader::findings,
-    envchain::findings,
-    fastlane::findings,
-    fastly::findings,
-    fauna_shell::findings,
-    firebase_cli::findings,
-    flyctl::findings,
-    gallery_dl::findings,
-    gcli::findings,
-    git_credential_oauth::findings,
-    glab::findings,
-    goat::findings,
-    gotify::findings,
-    gptcommit::findings,
-    grafanactl::findings,
-    graphite::findings,
-    hcloud::findings,
-    helm::findings,
-    heroku::findings,
-    httpie::findings,
-    huggingface_cli::findings,
-    imap_backup::findings,
-    jfrog_cli::findings,
-    k6::findings,
-    kubernetes_cli::findings,
-    luarocks::findings,
-    maestro::findings,
-    mariadb::findings,
-    maven::findings,
-    mcp_remote::findings,
-    mercurial::findings,
-    midnight_commander::findings,
-    minio_mc::findings,
-    mkcert::findings,
-    mongodb_atlas_cli::findings,
-    mycli::findings,
-    mysql::findings,
-    mysql_client::findings,
-    mysql_8_0::findings,
-    mysql_8_4::findings,
-    netlify_cli::findings,
-    node::findings,
-    node_18::findings,
-    nuget::findings,
-    oauth2l::findings,
-    oci_cli::findings,
-    opencode::findings,
-    openhue_cli::findings,
-    openssh::findings,
-    openssl_3::findings,
-    openstackclient::findings,
-    opentofu::findings,
-    openvpn::findings,
-    ordercli::findings,
-    ossutil::findings,
-    oxide_cli::findings,
-    perl::findings,
-    phylum_cli::findings,
-    pianobar::findings,
-    plumber::findings,
-    pnpm::findings,
-    podman::findings,
-    poetry::findings,
-    pulumi::findings,
-    qwen_code::findings,
-    railway::findings,
-    rclone::findings,
-    rsync::findings,
-    ruby::findings,
-    runpodctl::findings,
-    rust::findings,
-    s3cmd::findings,
-    sbt::findings,
-    secretlint::findings,
-    sentry_cli::findings,
-    shodan::findings,
-    skopeo::findings,
-    snowflake_cli::findings,
-    snyk::findings,
-    soracom_cli::findings,
-    sqlcmd::findings,
-    sshpass::findings,
-    sslmate::findings,
-    stripe_cli::findings,
-    tailscale::findings,
-    talosctl::findings,
-    terraform::findings,
-    terraform_core::findings,
-    todoist_cli::findings,
-    transifex_cli::findings,
-    travis::findings,
-    twine::findings,
-    uaa_cli::findings,
-    uv::findings,
-    vagrant::findings,
-    vault::findings,
-    vercel_cli::findings,
-    virustotal_cli::findings,
-    vultr::findings,
-    wakatime_cli::findings,
-    wget::findings,
-    wget2::findings,
-    wsk::findings,
-    yt_dlp::findings,
-    zsh::findings,
+pub(crate) struct DetectorMetadata {
+    pub(crate) name: String,
+    pub(crate) homepage: String,
+    pub(crate) docs_url: String,
+}
+
+struct Detector {
+    module: &'static str,
+    findings: fn(&Path) -> Vec<Finding>,
+}
+
+macro_rules! detector {
+    ($module:ident) => {
+        Detector {
+            module: stringify!($module),
+            findings: $module::findings,
+        }
+    };
+}
+
+const DETECTORS: &[Detector] = &[
+    detector!(git),
+    detector!(aws),
+    detector!(acli),
+    detector!(akamai),
+    detector!(algolia),
+    detector!(aliyun_cli),
+    detector!(ansible),
+    detector!(argocd),
+    detector!(ast_cli),
+    detector!(astra),
+    detector!(atuin),
+    detector!(aws_cli),
+    detector!(aws_sso_cli),
+    detector!(aws_vault),
+    detector!(azure_cli),
+    detector!(bash),
+    detector!(bitwarden_cli),
+    detector!(buf),
+    detector!(cariddi),
+    detector!(censys),
+    detector!(certbot),
+    detector!(checkov),
+    detector!(circleci),
+    detector!(civo),
+    detector!(cloudflare_wrangler),
+    detector!(cloudflared),
+    detector!(cloudsmith_cli),
+    detector!(composer),
+    detector!(curl),
+    detector!(databricks),
+    detector!(dcos_cli),
+    detector!(docker),
+    detector!(docker_credential_helper),
+    detector!(docker_machine),
+    detector!(doctl),
+    detector!(dropbox_uploader),
+    detector!(envchain),
+    detector!(fastlane),
+    detector!(fastly),
+    detector!(fauna_shell),
+    detector!(firebase_cli),
+    detector!(flyctl),
+    detector!(gallery_dl),
+    detector!(gcli),
+    detector!(git_credential_oauth),
+    detector!(glab),
+    detector!(goat),
+    detector!(gotify),
+    detector!(gptcommit),
+    detector!(grafanactl),
+    detector!(graphite),
+    detector!(hcloud),
+    detector!(helm),
+    detector!(heroku),
+    detector!(httpie),
+    detector!(huggingface_cli),
+    detector!(imap_backup),
+    detector!(jfrog_cli),
+    detector!(k6),
+    detector!(kubernetes_cli),
+    detector!(luarocks),
+    detector!(maestro),
+    detector!(mariadb),
+    detector!(maven),
+    detector!(mcp_remote),
+    detector!(mercurial),
+    detector!(midnight_commander),
+    detector!(minio_mc),
+    detector!(mkcert),
+    detector!(mongodb_atlas_cli),
+    detector!(mycli),
+    detector!(mysql),
+    detector!(mysql_client),
+    detector!(mysql_8_0),
+    detector!(mysql_8_4),
+    detector!(netlify_cli),
+    detector!(node),
+    detector!(node_18),
+    detector!(nuget),
+    detector!(oauth2l),
+    detector!(oci_cli),
+    detector!(opencode),
+    detector!(openhue_cli),
+    detector!(openssh),
+    detector!(openssl_3),
+    detector!(openstackclient),
+    detector!(opentofu),
+    detector!(openvpn),
+    detector!(ordercli),
+    detector!(ossutil),
+    detector!(oxide_cli),
+    detector!(perl),
+    detector!(phylum_cli),
+    detector!(pianobar),
+    detector!(plumber),
+    detector!(pnpm),
+    detector!(podman),
+    detector!(poetry),
+    detector!(pulumi),
+    detector!(qwen_code),
+    detector!(railway),
+    detector!(rclone),
+    detector!(rsync),
+    detector!(ruby),
+    detector!(runpodctl),
+    detector!(rust),
+    detector!(s3cmd),
+    detector!(sbt),
+    detector!(secretlint),
+    detector!(sentry_cli),
+    detector!(shodan),
+    detector!(skopeo),
+    detector!(snowflake_cli),
+    detector!(snyk),
+    detector!(soracom_cli),
+    detector!(sqlcmd),
+    detector!(sshpass),
+    detector!(sslmate),
+    detector!(stripe_cli),
+    detector!(tailscale),
+    detector!(talosctl),
+    detector!(terraform),
+    detector!(terraform_core),
+    detector!(todoist_cli),
+    detector!(transifex_cli),
+    detector!(travis),
+    detector!(twine),
+    detector!(uaa_cli),
+    detector!(uv),
+    detector!(vagrant),
+    detector!(vault),
+    detector!(vercel_cli),
+    detector!(virustotal_cli),
+    detector!(vultr),
+    detector!(wakatime_cli),
+    detector!(wget),
+    detector!(wget2),
+    detector!(wsk),
+    detector!(yt_dlp),
+    detector!(zsh),
 ];
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
     for detector in DETECTORS {
-        findings.extend(detector(home));
+        findings.extend((detector.findings)(home));
     }
     findings
+}
+
+pub(crate) fn metadata() -> Vec<DetectorMetadata> {
+    DETECTORS
+        .iter()
+        .map(|detector| {
+            let name = detector_name(detector.module);
+            DetectorMetadata {
+                homepage: detector_homepage(&name),
+                docs_url: detector_docs_url(&name),
+                name,
+            }
+        })
+        .collect()
+}
+
+fn detector_name(module: &str) -> String {
+    match module {
+        "mysql_8_0" => "mysql@8.0".to_string(),
+        "mysql_8_4" => "mysql@8.4".to_string(),
+        "node_18" => "node@18".to_string(),
+        "openssl_3" => "openssl@3".to_string(),
+        _ => module.replace('_', "-"),
+    }
+}
+
+fn detector_homepage(name: &str) -> String {
+    match name {
+        "aws" => "https://aws.amazon.com/cli/".to_string(),
+        "git" => "https://git-scm.com/".to_string(),
+        _ => detector_docs_url(name),
+    }
+}
+
+fn detector_docs_url(name: &str) -> String {
+    match name {
+        "aws" => "https://github.com/automic-vault/automic-vault".to_string(),
+        "git" => "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md"
+            .to_string(),
+        _ => format!("https://github.com/automic-vault/radioisotopes/tree/main/{name}"),
+    }
 }
 
 #[cfg(test)]
@@ -304,5 +365,18 @@ mod tests {
         assert_eq!(DETECTORS.len(), 140);
         assert_eq!(aws::NAME, "aws");
         assert_eq!(git::NAME, "git");
+    }
+
+    #[test]
+    fn metadata_names_detectors() {
+        let names = metadata()
+            .into_iter()
+            .map(|detector| detector.name)
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"aws".to_string()));
+        assert!(names.contains(&"git".to_string()));
+        assert!(names.contains(&"mysql@8.0".to_string()));
+        assert!(names.contains(&"terraform-core".to_string()));
     }
 }

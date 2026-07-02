@@ -5,12 +5,14 @@ public let trustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 public let automicVaultKeychainService = "com.automicvault.isotope"
 
 public struct DashboardSnapshot: Equatable, Sendable {
+    public var detectors: [DetectorMetadata]
     public var detectorFindings: [DetectorFinding]
     public var hardenedTools: [HardenedTool]
     public var secretGates: [SecretGate]
     public var secrets: [StoredSecret]
 
     public static let empty = DashboardSnapshot(
+        detectors: [],
         detectorFindings: [],
         hardenedTools: [],
         secretGates: [],
@@ -28,11 +30,30 @@ public struct DashboardSnapshot: Equatable, Sendable {
         defaults: UserDefaults = .standard
     ) -> DashboardSnapshot {
         DashboardSnapshot(
+            detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: loadHardenedTools(in: stubDirectory, ghCLIURL: ghCLIURL),
             secretGates: loadSecretGates(defaults: defaults),
             secrets: loadStoredSecrets()
         )
+    }
+}
+
+public struct DetectorMetadata: Codable, Equatable, Sendable {
+    public let name: String
+    public let homepage: String
+    public let docsURL: String
+
+    public init(name: String, homepage: String, docsURL: String) {
+        self.name = name
+        self.homepage = homepage
+        self.docsURL = docsURL
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case homepage
+        case docsURL = "docs_url"
     }
 }
 
@@ -82,6 +103,10 @@ struct ScanReport: Codable {
     let findings: [DetectorFinding]
 }
 
+struct DetectorReport: Codable {
+    let detectors: [DetectorMetadata]
+}
+
 struct TrustedScriptApproval: Codable {
     let scriptPath: String
     let scriptChecksum: String
@@ -94,6 +119,10 @@ struct TrustedScriptApproval: Codable {
 
 public func detectorFindings(from scanJSON: Data) throws -> [DetectorFinding] {
     try JSONDecoder().decode(ScanReport.self, from: scanJSON).findings
+}
+
+public func detectorMetadata(from detectorsJSON: Data) throws -> [DetectorMetadata] {
+    try JSONDecoder().decode(DetectorReport.self, from: detectorsJSON).detectors
 }
 
 public func loadHardenedTools(
@@ -227,9 +256,19 @@ private extension Array where Element == String {
 }
 
 func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
+    loadJSON(avExecutableURL: avExecutableURL, arguments: ["scan", "--json"])
+        .flatMap { try? detectorFindings(from: $0) } ?? []
+}
+
+func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
+    loadJSON(avExecutableURL: avExecutableURL, arguments: ["detectors", "--json"])
+        .flatMap { try? detectorMetadata(from: $0) } ?? []
+}
+
+func loadJSON(avExecutableURL: URL, arguments: [String]) -> Data? {
     let process = Process()
     process.executableURL = avExecutableURL
-    process.arguments = ["scan", "--json"]
+    process.arguments = arguments
 
     let output = Pipe()
     process.standardOutput = output
@@ -238,13 +277,13 @@ func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
     do {
         try process.run()
     } catch {
-        return []
+        return nil
     }
 
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return [] }
-    return (try? detectorFindings(from: data)) ?? []
+    guard process.terminationStatus == 0 else { return nil }
+    return data
 }
 
 public func defaultAVExecutableURL() -> URL {

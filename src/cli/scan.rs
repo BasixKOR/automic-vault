@@ -41,6 +41,20 @@ pub(crate) fn run_json<W: Write>(stdout: &mut W) -> i32 {
     0
 }
 
+pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
+    let report = serde_json::json!({
+        "detectors": isotopes::detector_metadata().into_iter().map(|detector| {
+            serde_json::json!({
+                "name": detector.name,
+                "homepage": detector.homepage,
+                "docs_url": detector.docs_url,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    let _ = writeln!(stdout, "{report}");
+    0
+}
+
 fn home() -> OsString {
     std::env::var_os("HOME").unwrap_or_default()
 }
@@ -284,6 +298,17 @@ mod tests {
             String::from_utf8(stdout).unwrap(),
             r#"{"findings":[{"affected":[{"line":7,"path":"/tmp/example.conf"}],"docs_url":"https://example.test/docs/example.md","explanation":"Example detector found a risky setting","homepage":"https://example.test/","severity":"high","solution":"Run `examplectl fix` or edit the affected file.","source":"example"}]}"#.to_string() + "\n"
         );
+    }
+
+    #[test]
+    fn detectors_json_reports_metadata() {
+        let mut stdout = Vec::new();
+
+        assert_eq!(run_detectors_json(&mut stdout), 0);
+        let output = String::from_utf8(stdout).unwrap();
+
+        assert!(output.contains(r#""name":"git""#));
+        assert!(output.contains(r#""docs_url":"https://github.com/automic-vault/automic-vault/main/docs/securing-git.md""#));
     }
 
     #[test]

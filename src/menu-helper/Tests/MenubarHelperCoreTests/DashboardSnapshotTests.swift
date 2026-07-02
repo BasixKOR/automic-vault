@@ -12,6 +12,7 @@ import Testing
     """.utf8)
 
     let snapshot = DashboardSnapshot(
+        detectors: [],
         detectorFindings: try detectorFindings(from: data),
         hardenedTools: [],
         secretGates: [],
@@ -19,6 +20,16 @@ import Testing
     )
 
     #expect(snapshot.flaggedDetectorCount == 2)
+}
+
+@Test func detectorMetadataDecodesAllDetectors() throws {
+    let data = Data("""
+    {"detectors":[{"name":"git","homepage":"https://git-scm.com/","docs_url":"https://example.test/git"}]}
+    """.utf8)
+
+    #expect(try detectorMetadata(from: data) == [
+        DetectorMetadata(name: "git", homepage: "https://git-scm.com/", docsURL: "https://example.test/git")
+    ])
 }
 
 @Test func hardenedToolsFindsAutomicVaultStubs() throws {
