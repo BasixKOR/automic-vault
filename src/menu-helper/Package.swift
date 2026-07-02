@@ -9,10 +9,15 @@ let package = Package(
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
     ],
     targets: [
+        .target(name: "MenubarHelperCore"),
         .target(name: "CProcessInfo", publicHeadersPath: "include"),
         .executableTarget(
             name: "MenubarHelper",
-            dependencies: ["CProcessInfo"]
+            dependencies: ["CProcessInfo", "MenubarHelperCore"]
+        ),
+        .testTarget(
+            name: "MenubarHelperCoreTests",
+            dependencies: ["MenubarHelperCore"]
         ),
     ]
 )

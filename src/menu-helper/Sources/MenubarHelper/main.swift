@@ -4,6 +4,7 @@ import CoreServices
 import CryptoKit
 import Darwin
 import Foundation
+import MenubarHelperCore
 import Security
 @preconcurrency import XPC
 
@@ -21,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var approval: ApprovalServer?
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
+    private var mainWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let button = statusItem.button {
@@ -33,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(title)
         menu.addItem(NSMenuItem(title: "Credential broker running", action: nil, keyEquivalent: ""))
         menu.addItem(scanStatusItem)
+        menu.addItem(.separator())
+        let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -62,6 +68,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @MainActor @objc private func openMainWindow() {
+        if let mainWindow {
+            mainWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let controller = AutomicVaultMainWindowController()
+        let window = AutomicVaultWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 1020, height: 660)),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = controller
+        window.title = "Automic Vault"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        window.toolbarStyle = .automatic
+        window.toolbar = controller.makeToolbar()
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 860, height: 560)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        self.mainWindow = window
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func menuImage() -> NSImage? {
