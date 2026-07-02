@@ -114,11 +114,12 @@ final class DashboardModel: ObservableObject {
     @Published var isAddingSecret = false
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
+    @Published var searchText = ""
 
     private var reloadTask: Task<Void, Never>?
 
     var items: [DashboardItem] {
-        switch selectedSection {
+        let base = switch selectedSection {
         case .detectors:
             detectorItems
         case .hardenedTools:
@@ -134,6 +135,13 @@ final class DashboardModel: ObservableObject {
             snapshot.secrets.map {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: "Keychain secret", detail: "Secret value is hidden.")
             }
+        }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return base }
+        return base.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.subtitle.localizedCaseInsensitiveContains(query)
+                || $0.detail.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -282,20 +290,18 @@ private struct DashboardSidebarView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("AUTOMIC VAULT")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(GlassPalette.quietText)
-                .tracking(0.5)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
-            ForEach(DashboardSection.allCases) { section in
-                sidebarRow(section)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                searchField
+                    .padding(.bottom, 18)
+                ForEach(DashboardSection.allCases) { section in
+                    sidebarRow(section)
+                }
+                Spacer(minLength: 24)
             }
-            Spacer()
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
         .preferredColorScheme(.dark)
     }
@@ -303,18 +309,20 @@ private struct DashboardSidebarView: View {
     private func sidebarRow(_ section: DashboardSection) -> some View {
         Button { model.selectSection(section) } label: {
             HStack(spacing: 12) {
-                Image(systemName: section.systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(iconFill(for: section), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                sidebarIcon(section)
                 Text(section.title)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: .regular))
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 let count = model.count(for: section)
                 if count > 0 {
-                    CountPill(count: count, isWarning: section == .detectors)
+                    if section == .detectors {
+                        DetectorCountPill(count: count)
+                            .fixedSize()
+                    } else {
+                        SidebarCountText(count: count)
+                            .fixedSize()
+                    }
                 }
             }
             .foregroundStyle(model.selectedSection == section ? GlassPalette.primaryText : GlassPalette.secondaryText)
@@ -328,7 +336,28 @@ private struct DashboardSidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+            TextField("Search", text: $model.searchText)
+                .textFieldStyle(.plain)
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(GlassPalette.secondaryText)
         .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(GlassPalette.searchFill, in: Capsule(style: .continuous))
+    }
+
+    private func sidebarIcon(_ section: DashboardSection) -> some View {
+        Image(systemName: section.systemImage)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(iconFill(for: section), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private func iconFill(for section: DashboardSection) -> Color {
@@ -518,9 +547,26 @@ private struct AddSecretView: View {
     }
 }
 
-private struct CountPill: View {
+private enum SidebarCountMetrics {
+    static let columnWidth: CGFloat = 18
+    static let pillHorizontalPadding: CGFloat = 8
+}
+
+private struct SidebarCountText: View {
     let count: Int
-    let isWarning: Bool
+
+    var body: some View {
+        Text(count.formatted())
+            .font(.system(size: 11, weight: .regular))
+            .foregroundStyle(GlassPalette.quietText)
+            .monospacedDigit()
+            .lineLimit(1)
+            .frame(minWidth: SidebarCountMetrics.columnWidth, alignment: .trailing)
+    }
+}
+
+private struct DetectorCountPill: View {
+    let count: Int
 
     var body: some View {
         Text(count.formatted())
@@ -529,7 +575,8 @@ private struct CountPill: View {
             .monospacedDigit()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(isWarning ? GlassPalette.red : GlassPalette.controlFill, in: Capsule())
+            .background(GlassPalette.red, in: Capsule())
+            .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 }
 
@@ -574,6 +621,7 @@ private enum GlassPalette {
     static let sidebarSelectedFill = Color(red: 0.00, green: 0.38, blue: 0.86)
     static let packageSelectedFill = Color.white.opacity(0.08)
     static let controlFill = Color.white.opacity(0.18)
+    static let searchFill = Color.white.opacity(0.11)
     static let red = Color(red: 0.95, green: 0.18, blue: 0.16)
     static let blue = Color(red: 0.00, green: 0.48, blue: 1.00)
     static let green = Color(red: 0.18, green: 0.62, blue: 0.31)
