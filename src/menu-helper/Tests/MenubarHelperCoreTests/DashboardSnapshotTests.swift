@@ -86,11 +86,21 @@ import Testing
             replaceExistingEnv: true,
             allowMissingKeys: false,
             launcherRequirement: #"identifier "com.other.app""#
+        ),
+        TrustedScriptApproval(
+            scriptPath: "/tmp/deploy",
+            scriptChecksum: "def",
+            keys: ["A", "B"],
+            target: "/bin/echo",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            launcherRequirement: #"identifier "com.third.app""#
         )
     ], service: service) == errSecSuccess)
 
     #expect(loadSecretGates(service: service) == [
-        SecretGate(scriptPath: "/tmp/deploy", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.example.app", "com.other.app"])
+        SecretGate(scriptPath: "/tmp/deploy", scriptChecksum: "abc", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.example.app", "com.other.app"]),
+        SecretGate(scriptPath: "/tmp/deploy", scriptChecksum: "def", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.third.app"]),
     ])
 }
 

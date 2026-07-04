@@ -91,6 +91,7 @@ public struct HardenedTool: Equatable, Sendable {
 
 public struct SecretGate: Equatable, Sendable {
     public let scriptPath: String
+    public let scriptChecksum: String
     public let keys: [String]
     public let target: String
     public let approvedApps: [String]
@@ -179,18 +180,22 @@ public func loadHardenedTools(
 public func loadSecretGates(service: String = trustedScriptApprovalsKeychainService) -> [SecretGate] {
     let approvals = loadTrustedScriptApprovals(service: service)
     let grouped = Dictionary(grouping: approvals) {
-        "\($0.scriptPath)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))"
+        "\($0.scriptPath)\u{1f}\($0.scriptChecksum)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))"
     }
     return grouped.values.compactMap { approvals in
         guard let first = approvals.first else { return nil }
         return SecretGate(
             scriptPath: first.scriptPath,
+            scriptChecksum: first.scriptChecksum,
             keys: first.keys.sorted(),
             target: first.target,
             approvedApps: approvals.map(\.launcherRequirement).compactMap(appIdentifier).uniqueSorted()
         )
     }
-    .sorted { $0.scriptPath.localizedStandardCompare($1.scriptPath) == .orderedAscending }
+    .sorted {
+        [$0.scriptPath, $0.scriptChecksum, $0.target].joined(separator: "\u{1f}")
+            .localizedStandardCompare([$1.scriptPath, $1.scriptChecksum, $1.target].joined(separator: "\u{1f}")) == .orderedAscending
+    }
 }
 
 public func loadTrustedScriptApprovals(

@@ -128,8 +128,19 @@ final class DashboardModel: ObservableObject {
             }
         case .secretGates:
             snapshot.secretGates.map {
-                let apps = $0.approvedApps.isEmpty ? "No approved apps recorded" : "Approved for: \($0.approvedApps.joined(separator: ", "))"
-                return DashboardItem(id: $0.scriptPath + $0.target, title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent, subtitle: $0.target, detail: "Keys: \($0.keys.joined(separator: ", "))\n\(apps)")
+                let apps = $0.approvedApps.isEmpty ? "No approved apps recorded" : $0.approvedApps.joined(separator: ", ")
+                return DashboardItem(
+                    id: [$0.scriptPath, $0.scriptChecksum, $0.target, $0.keys.joined(separator: "\u{1e}")].joined(separator: "\u{1f}"),
+                    title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent,
+                    subtitle: $0.keys.joined(separator: ", "),
+                    detail: [
+                        "Script: \($0.scriptPath)",
+                        "SHA: \($0.scriptChecksum)",
+                        "Secrets: \($0.keys.joined(separator: ", "))",
+                        "Target: \($0.target)",
+                        "Calling apps: \(apps)",
+                    ].joined(separator: "\n")
+                )
             }
         case .allSecrets:
             snapshot.secrets.map {
