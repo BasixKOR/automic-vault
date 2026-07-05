@@ -70,8 +70,11 @@ if [[ "$install" -eq 1 ]]; then
   launchctl bootstrap "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT"
   launchctl enable "gui/$(id -u)/$LAUNCH_AGENT_NAME"
   launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_NAME"
-fi
-if [[ "$run" -eq 1 ]]; then
+  if [[ "$run" -eq 1 ]]; then
+    pkill -x AutomicVaultMenubar || true
+    open -n "$INSTALLED_APP"
+  fi
+elif [[ "$run" -eq 1 ]]; then
   pkill -x AutomicVaultMenubar || true
   open -n "$APP"
 fi
