@@ -27,9 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
 
-        if let button = statusItem.button {
-            button.image = menuImage()
-        }
+        statusItem.button?.image = menuImage()
 
         let menu = NSMenu()
         let title = NSMenuItem(title: "Automic Vault", action: nil, keyEquivalent: "")
@@ -102,12 +100,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func menuImage() -> NSImage? {
+    private func menuImage(alerted: Bool = false) -> NSImage? {
         let url = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
         guard let url, let image = NSImage(contentsOf: url) else { return nil }
-        image.isTemplate = true
         image.size = NSSize(width: 15, height: 18)
-        return image
+        guard alerted else {
+            image.isTemplate = true
+            return image
+        }
+
+        let tinted = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            NSColor.systemRed.setFill()
+            rect.fill(using: .sourceIn)
+            return true
+        }
+        tinted.isTemplate = false
+        return tinted
     }
 
     private func startHomeWatcher() {
@@ -163,13 +172,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyScanResult(_ result: ScanResult) {
         switch result {
         case .clean:
-            statusItem.button?.contentTintColor = nil
+            statusItem.button?.image = menuImage()
             scanStatusItem.title = "No scan findings"
         case .findings(let count):
-            statusItem.button?.contentTintColor = .systemRed
+            statusItem.button?.image = menuImage(alerted: true)
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
-            statusItem.button?.contentTintColor = .systemRed
+            statusItem.button?.image = menuImage(alerted: true)
             scanStatusItem.title = "Scan failed"
         }
     }
