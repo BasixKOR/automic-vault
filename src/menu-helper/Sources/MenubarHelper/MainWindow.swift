@@ -320,7 +320,8 @@ final class DashboardModel: ObservableObject {
                         findings.first?.explanation ?? "Detector flagged this tool.",
                         findings.first?.solution,
                     ].compactMap(\.self).joined(separator: "\n\n"),
-                    documentation: detector.documentation
+                    documentation: detector.documentation,
+                    isTriggered: true
                 )
             }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -361,13 +362,15 @@ struct DashboardItem: Identifiable, Equatable {
     let subtitle: String
     let detail: String
     let documentation: String
+    let isTriggered: Bool
 
-    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "") {
+    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "", isTriggered: Bool = false) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.detail = detail
         self.documentation = documentation
+        self.isTriggered = isTriggered
     }
 }
 
@@ -466,12 +469,11 @@ private struct DashboardListView: View {
                         EmptyListView(section: model.selectedSection)
                             .frame(maxWidth: .infinity, minHeight: 180)
                             .padding(.top, 43)
+                    } else if model.selectedSection == .detectors, model.snapshot.flaggedDetectorCount > 0 {
+                        detectorSection("Triggered", model.items.filter(\.isTriggered))
+                        detectorSection("Not Triggered", model.items.filter { !$0.isTriggered })
                     } else {
-                        ForEach(model.items) { item in
-                            DashboardRow(item: item, selected: model.selectedItem?.id == item.id) {
-                                model.select(item)
-                            }
-                        }
+                        rows(model.items)
                     }
                 }
                 .padding(.top, 43)
@@ -503,6 +505,23 @@ private struct DashboardListView: View {
             AddSecretView(model: model)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func rows(_ items: [DashboardItem]) -> some View {
+        ForEach(items) { item in
+            DashboardRow(item: item, selected: model.selectedItem?.id == item.id) {
+                model.select(item)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detectorSection(_ title: String, _ items: [DashboardItem]) -> some View {
+        if !items.isEmpty {
+            Section(title) {
+                rows(items)
+            }
+        }
     }
 }
 
