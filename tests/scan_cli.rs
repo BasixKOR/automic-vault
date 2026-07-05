@@ -78,6 +78,7 @@ fn av_scan(home: &std::path::Path) -> Output {
         .arg("scan")
         .env("HOME", home)
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
+        .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
         .output()
         .unwrap()
 }
@@ -87,6 +88,7 @@ fn av_scan_json(home: &std::path::Path) -> Output {
         .args(["scan", "--json"])
         .env("HOME", home)
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
+        .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
         .output()
         .unwrap()
 }

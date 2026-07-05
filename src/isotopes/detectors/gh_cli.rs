@@ -63,7 +63,10 @@ fn hosts_contains_oauth_token(contents: &str) -> bool {
 }
 
 fn non_empty_yaml_scalar(value: &str) -> bool {
-    let value = value.split_once('#').map_or(value, |(value, _)| value).trim();
+    let value = value
+        .split_once('#')
+        .map_or(value, |(value, _)| value)
+        .trim();
     let value = value.trim_matches('"').trim_matches('\'');
     !value.is_empty() && value != "null" && value != "~"
 }

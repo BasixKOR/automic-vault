@@ -580,6 +580,9 @@ mod tests {
             shebang_script: None,
         };
 
-        assert_eq!(infer_shebang_script(&options), Some(script.into_os_string()));
+        assert_eq!(
+            infer_shebang_script(&options),
+            Some(script.into_os_string())
+        );
     }
 }

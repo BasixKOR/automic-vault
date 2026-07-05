@@ -125,6 +125,7 @@ mod sqlcmd;
 mod sshpass;
 mod sslmate;
 mod stripe_cli;
+mod sudo;
 mod supabase;
 mod tailscale;
 mod talosctl;
@@ -294,6 +295,7 @@ const DETECTORS: &[Detector] = &[
     detector!(sshpass),
     detector!(sslmate),
     detector!(stripe_cli),
+    detector!(sudo),
     detector!(supabase),
     detector!(tailscale),
     detector!(talosctl),
@@ -374,7 +376,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 144);
+        assert_eq!(DETECTORS.len(), 145);
         assert_eq!(git::NAME, "git");
     }
 
@@ -389,6 +391,7 @@ mod tests {
         assert!(names.contains(&"aws-cli".to_string()));
         assert!(names.contains(&"git".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
+        assert!(names.contains(&"sudo".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));
     }
 }
