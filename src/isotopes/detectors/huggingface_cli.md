@@ -1,4 +1,9 @@
 # huggingface-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - Hugging Face token file contains a plaintext token.
+
+## Sensitive Files
+
+- `~/.cache/huggingface/token`

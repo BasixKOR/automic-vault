@@ -1,4 +1,9 @@
 # wsk Detector
 
-Reports when:
+## Trigger Conditions
+
 - OpenWhisk CLI properties contain a plaintext AUTH key.
+
+## Sensitive Files
+
+- `~/.wskprops`

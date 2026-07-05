@@ -1,4 +1,9 @@
 # transifex-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - Transifex root config contains plaintext credentials.
+
+## Sensitive Files
+
+- `~/.transifexrc`

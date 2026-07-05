@@ -1,4 +1,10 @@
 # snyk Detector
 
-Reports when:
+## Trigger Conditions
+
 - Snyk CLI configstore contains credentials.
+
+## Sensitive Files
+
+- `$XDG_CONFIG_HOME/configstore/snyk.json`
+- `~/.config/configstore/snyk.json`

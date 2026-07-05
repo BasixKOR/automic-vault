@@ -1,4 +1,10 @@
 # fastlane Detector
 
-Reports when:
+## Trigger Conditions
+
 - fastlane Spaceship session cookie is stored in plaintext.
+
+## Sensitive Files
+
+- `~/.fastlane/spaceship/**`
+- `~/.spaceship/**`

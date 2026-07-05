@@ -1,4 +1,10 @@
 # kubernetes-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - kubeconfig contains plaintext cluster credentials.
+
+## Sensitive Files
+
+- `$KUBECONFIG`
+- `~/.kube/config`

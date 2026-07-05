@@ -1,8 +1,9 @@
 # oauth2l Detector
 
-Reports when:
+## Trigger Conditions
+
 - oauth2l default cache contains plaintext OAuth tokens.
 
-## Detection Caveats
+## Sensitive Files
 
-- Only scans the default `~/.oauth2l` cache.
+- `~/.oauth2l`

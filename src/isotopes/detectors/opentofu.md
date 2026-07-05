@@ -1,4 +1,9 @@
 # opentofu Detector
 
-Reports when:
+## Trigger Conditions
+
 - OpenTofu credentials file contains plaintext API tokens.
+
+## Sensitive Files
+
+- `~/.terraform.d/credentials.tfrc.json`

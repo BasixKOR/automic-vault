@@ -1,4 +1,9 @@
 # uaa-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - UAA CLI config contains plaintext OAuth tokens.
+
+## Sensitive Files
+
+- `~/.uaa/config.json`

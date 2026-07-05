@@ -1,4 +1,9 @@
 # vault Detector
 
-Reports when:
+## Trigger Conditions
+
 - Vault token helper file contains a plaintext token.
+
+## Sensitive Files
+
+- `~/.vault-token`

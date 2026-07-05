@@ -1,4 +1,9 @@
 # oxide-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - Oxide CLI credentials contain plaintext access tokens.
+
+## Sensitive Files
+
+- `~/.config/oxide/credentials.toml`

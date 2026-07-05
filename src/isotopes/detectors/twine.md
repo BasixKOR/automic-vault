@@ -1,4 +1,9 @@
 # twine Detector
 
-Reports when:
+## Trigger Conditions
+
 - Twine config contains plaintext package index credentials.
+
+## Sensitive Files
+
+- `~/.pypirc`

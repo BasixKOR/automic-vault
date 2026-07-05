@@ -1,10 +1,15 @@
 # aws-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - AWS shared credentials file contains plaintext access keys.
 - AWS CLI legacy plugins are configured.
 - AWS login cache contains cached access credentials.
 
-## Detection Caveats
+## Sensitive Files
 
-- Scans `AWS_SHARED_CREDENTIALS_FILE` or `~/.aws/credentials`, `AWS_CONFIG_FILE` or `~/.aws/config`, and `~/.aws/login/cache`.
+- `$AWS_SHARED_CREDENTIALS_FILE`
+- `~/.aws/credentials`
+- `$AWS_CONFIG_FILE`
+- `~/.aws/config`
+- `~/.aws/login/cache/*.json`

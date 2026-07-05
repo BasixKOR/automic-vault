@@ -1,4 +1,9 @@
 # docker-machine Detector
 
-Reports when:
+## Trigger Conditions
+
 - Docker Machine private key is stored without passphrase encryption.
+
+## Sensitive Files
+
+- `~/.docker/machine/**`

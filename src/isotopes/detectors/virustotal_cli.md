@@ -1,4 +1,9 @@
 # virustotal-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - VirusTotal config contains a plaintext API key.
+
+## Sensitive Files
+
+- `~/.vt.toml`

@@ -1,4 +1,9 @@
 # qwen-code Detector
 
-Reports when:
+## Trigger Conditions
+
 - Qwen Code settings contain plaintext API keys.
+
+## Sensitive Files
+
+- `~/.qwen/settings.json`

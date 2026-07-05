@@ -1,9 +1,13 @@
 # bash Detector
 
-Reports when:
+## Trigger Conditions
+
 - Bash startup file contains plaintext-looking credential assignment.
 
-## Detection Caveats
+## Sensitive Files
 
-- Scans `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`, `~/.profile`, and `BASH_ENV` when set.
-- Only literal assignments are reported; empty, masked, command-substitution, and variable-reference values are ignored.
+- `~/.bashrc`
+- `~/.bash_profile`
+- `~/.bash_login`
+- `~/.profile`
+- `$BASH_ENV`

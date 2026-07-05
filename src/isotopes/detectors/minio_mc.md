@@ -1,4 +1,9 @@
 # minio-mc Detector
 
-Reports when:
+## Trigger Conditions
+
 - MinIO mc config file contains plaintext alias secrets.
+
+## Sensitive Files
+
+- `~/.mc/config.json`

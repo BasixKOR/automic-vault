@@ -1,9 +1,18 @@
 # zsh Detector
 
-Reports when:
+## Trigger Conditions
+
 - Zsh startup file contains plaintext-looking credential assignment.
 
-## Detection Caveats
+## Sensitive Files
 
-- Scans `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`, and `.zlogout` under `ZDOTDIR` when set, otherwise under `HOME`.
-- Only literal assignments are reported; empty, masked, command-substitution, and variable-reference values are ignored.
+- `$ZDOTDIR/.zshenv`
+- `$ZDOTDIR/.zprofile`
+- `$ZDOTDIR/.zshrc`
+- `$ZDOTDIR/.zlogin`
+- `$ZDOTDIR/.zlogout`
+- `~/.zshenv`
+- `~/.zprofile`
+- `~/.zshrc`
+- `~/.zlogin`
+- `~/.zlogout`

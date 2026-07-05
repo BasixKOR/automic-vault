@@ -1,4 +1,9 @@
 # aliyun-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - Alibaba Cloud CLI config contains plaintext credentials.
+
+## Sensitive Files
+
+- `~/.aliyun/config.json`

@@ -1,4 +1,9 @@
 # sentry-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - Sentry CLI config contains a plaintext auth token.
+
+## Sensitive Files
+
+- `~/.sentryclirc`

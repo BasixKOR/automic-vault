@@ -1,4 +1,9 @@
 # wakatime-cli Detector
 
-Reports when:
+## Trigger Conditions
+
 - WakaTime config contains plaintext API keys.
+
+## Sensitive Files
+
+- `~/.wakatime.cfg`

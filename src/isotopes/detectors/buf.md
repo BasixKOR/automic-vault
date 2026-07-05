@@ -1,4 +1,9 @@
 # buf Detector
 
-Reports when:
+## Trigger Conditions
+
 - Buf registry token is stored in plaintext netrc.
+
+## Sensitive Files
+
+- `~/.netrc`
