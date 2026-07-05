@@ -56,6 +56,19 @@ pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
     0
 }
 
+pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
+    let report = serde_json::json!({
+        "hardeners": isotopes::hardener_metadata().iter().map(|hardener| {
+            serde_json::json!({
+                "name": hardener.name,
+                "documentation": hardener.documentation,
+            })
+        }).collect::<Vec<_>>(),
+    });
+    let _ = writeln!(stdout, "{report}");
+    0
+}
+
 fn home() -> OsString {
     std::env::var_os("HOME").unwrap_or_default()
 }
@@ -311,6 +324,18 @@ mod tests {
         assert!(output.contains(r#""name":"git""#));
         assert!(output.contains(r#""docs_url":"https://github.com/automic-vault/automic-vault/main/docs/securing-git.md""#));
         assert!(output.contains(r##""documentation":"# git Detector"##));
+    }
+
+    #[test]
+    fn hardeners_json_reports_metadata() {
+        let mut stdout = Vec::new();
+
+        assert_eq!(run_hardeners_json(&mut stdout), 0);
+        let output = String::from_utf8(stdout).unwrap();
+
+        assert!(output.contains(r#""name":"aws""#));
+        assert!(output.contains(r#""name":"gh-cli""#));
+        assert!(output.contains(r###""documentation":"## What It Does"###));
     }
 
     #[test]

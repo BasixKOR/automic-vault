@@ -10,7 +10,7 @@ mod stub;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden [--yes] PATH | av credential-helper aws";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -66,6 +66,7 @@ where
         Some("scan") if rest.is_empty() => scan::run(stdout, style),
         Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
+        Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
         Some("harden") => {
             let Some((target, yes)) = parse_harden_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");

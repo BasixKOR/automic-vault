@@ -12,3 +12,7 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
 pub(crate) fn detector_metadata() -> Vec<detectors::DetectorMetadata> {
     detectors::metadata()
 }
+
+pub(crate) fn hardener_metadata() -> &'static [hardeners::HardenerMetadata] {
+    hardeners::metadata()
+}

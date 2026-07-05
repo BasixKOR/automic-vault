@@ -33,7 +33,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
         DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
-            hardenedTools: loadHardenedTools(in: stubDirectory, ghCLIURL: ghCLIURL),
+            hardenedTools: loadHardenedTools(
+                in: stubDirectory,
+                ghCLIURL: ghCLIURL,
+                metadata: loadHardenerMetadata(avExecutableURL: avExecutableURL)
+            ),
             secretGates: loadSecretGates(service: approvalService),
             secrets: loadStoredSecrets()
         )
@@ -98,6 +102,19 @@ public struct HardenedTool: Equatable, Sendable {
     public let name: String
     public let stubPath: String
     public let targetPath: String?
+    public let documentation: String
+
+    public init(name: String, stubPath: String, targetPath: String?, documentation: String = "") {
+        self.name = name
+        self.stubPath = stubPath
+        self.targetPath = targetPath
+        self.documentation = documentation
+    }
+}
+
+public struct HardenerMetadata: Codable, Equatable, Sendable {
+    public let name: String
+    public let documentation: String
 }
 
 public struct SecretGate: Equatable, Sendable {
@@ -143,6 +160,10 @@ struct DetectorReport: Codable {
     let detectors: [DetectorMetadata]
 }
 
+struct HardenerReport: Codable {
+    let hardeners: [HardenerMetadata]
+}
+
 public struct TrustedScriptApproval: Codable, Equatable, Sendable {
     public let scriptPath: String
     public let scriptChecksum: String
@@ -179,12 +200,18 @@ public func detectorMetadata(from detectorsJSON: Data) throws -> [DetectorMetada
     try JSONDecoder().decode(DetectorReport.self, from: detectorsJSON).detectors
 }
 
+public func hardenerMetadata(from hardenersJSON: Data) throws -> [HardenerMetadata] {
+    try JSONDecoder().decode(HardenerReport.self, from: hardenersJSON).hardeners
+}
+
 public func loadHardenedTools(
     in directory: URL,
-    ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh")
+    ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
+    metadata: [HardenerMetadata] = []
 ) -> [HardenedTool] {
     let fileManager = FileManager.default
     let urls = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+    let documentation = Dictionary(uniqueKeysWithValues: metadata.map { ($0.name, $0.documentation) })
     var tools: [HardenedTool] = urls.compactMap { url in
         guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
               let contents = try? String(contentsOf: url, encoding: .utf8)
@@ -192,19 +219,21 @@ public func loadHardenedTools(
             return nil
         }
         if url.lastPathComponent == "aws", contents.hasPrefix("#!/usr/local/bin/av inject "), contents.contains("aws-vault") {
-            return HardenedTool(name: "aws", stubPath: url.path, targetPath: "/opt/homebrew/bin/aws")
+            return HardenedTool(name: "aws", stubPath: url.path, targetPath: "/opt/homebrew/bin/aws", documentation: documentation["aws"] ?? "")
         }
         guard contents.split(whereSeparator: \.isNewline).dropFirst().first == "# Automic Vault hardened stub" else {
             return nil
         }
+        let name = url.lastPathComponent
         return HardenedTool(
-            name: url.lastPathComponent,
+            name: name,
             stubPath: url.path,
-            targetPath: hardenedTargetPath(from: contents)
+            targetPath: hardenedTargetPath(from: contents),
+            documentation: documentation[name] ?? ""
         )
     }
     if let ghCLIURL, fileManager.isExecutableFile(atPath: ghCLIURL.path) {
-        tools.append(HardenedTool(name: "gh-cli", stubPath: ghCLIURL.path, targetPath: "gh auth av-migrate"))
+        tools.append(HardenedTool(name: "gh-cli", stubPath: ghCLIURL.path, targetPath: "gh auth av-migrate", documentation: documentation["gh-cli"] ?? ""))
     }
     return tools
         .uniquedByName()
@@ -424,6 +453,11 @@ func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
 func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
     loadJSON(avExecutableURL: avExecutableURL, arguments: ["detectors", "--json"])
         .flatMap { try? detectorMetadata(from: $0) } ?? []
+}
+
+func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
+    loadJSON(avExecutableURL: avExecutableURL, arguments: ["hardeners", "--json"])
+        .flatMap { try? hardenerMetadata(from: $0) } ?? []
 }
 
 func loadJSON(avExecutableURL: URL, arguments: [String]) -> Data? {

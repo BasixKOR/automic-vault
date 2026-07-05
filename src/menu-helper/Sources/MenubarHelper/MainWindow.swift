@@ -126,7 +126,16 @@ final class DashboardModel: ObservableObject {
             detectorItems
         case .hardenedTools:
             snapshot.hardenedTools.map {
-                DashboardItem(id: $0.stubPath, title: $0.name, subtitle: $0.targetPath ?? "target unknown", detail: $0.stubPath)
+                DashboardItem(
+                    id: $0.stubPath,
+                    title: $0.name,
+                    subtitle: $0.targetPath ?? "target unknown",
+                    detail: [
+                        "Stub: \($0.stubPath)",
+                        $0.targetPath.map { "Target: \($0)" },
+                    ].compactMap(\.self).joined(separator: "\n"),
+                    documentation: $0.documentation
+                )
             }
         case .secretGates:
             snapshot.secretGates.map {
@@ -509,7 +518,27 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
-                DetectorDetailView(item: item)
+                ReferenceDetailView(
+                    item: item,
+                    summary: "Detector behavior and sensitive files checked by this rule.",
+                    referenceTitle: "Detector Reference",
+                    fallbackDocumentation: "No detector documentation is bundled for this item.",
+                    badge: item.subtitle == "No findings"
+                        ? ReferenceBadge(title: "Ready", color: GlassPalette.green)
+                        : ReferenceBadge(title: "Flagged", color: GlassPalette.red)
+                )
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .hardenedTools, let item = model.selectedItem {
+                ReferenceDetailView(
+                    item: item,
+                    summary: "Installed hardening behavior and caveats for this tool.",
+                    referenceTitle: "Hardener Reference",
+                    fallbackDocumentation: "No hardener documentation is bundled for this item.",
+                    badge: ReferenceBadge(title: "Hardened", color: GlassPalette.blue)
+                )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -734,8 +763,17 @@ private struct InfoBlock: View {
     }
 }
 
-private struct DetectorDetailView: View {
+private struct ReferenceBadge {
+    let title: String
+    let color: Color
+}
+
+private struct ReferenceDetailView: View {
     let item: DashboardItem
+    let summary: String
+    let referenceTitle: String
+    let fallbackDocumentation: String
+    let badge: ReferenceBadge
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -745,9 +783,9 @@ private struct DetectorDetailView: View {
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(GlassPalette.primaryText)
                         .lineLimit(3)
-                    detectorStateBadge
+                    referenceBadge
                 }
-                Text("Detector behavior and sensitive files checked by this rule.")
+                Text(summary)
                     .font(.system(size: 13))
                     .foregroundStyle(GlassPalette.secondaryText)
             }
@@ -763,11 +801,11 @@ private struct DetectorDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                Text("Detector Reference")
+                Text(referenceTitle)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(GlassPalette.quietText)
                     .tracking(0.7)
-                RenderedMarkdown(markdown: item.documentation.isEmpty ? "No detector documentation is bundled for this item." : item.documentation)
+                RenderedMarkdown(markdown: item.documentation.isEmpty ? fallbackDocumentation : item.documentation)
                     .font(.system(size: 13))
                     .foregroundStyle(GlassPalette.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -785,13 +823,13 @@ private struct DetectorDetailView: View {
         }
     }
 
-    private var detectorStateBadge: some View {
-        Text(item.subtitle == "No findings" ? "Ready" : "Flagged")
+    private var referenceBadge: some View {
+        Text(badge.title)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(item.subtitle == "No findings" ? GlassPalette.green : GlassPalette.red, in: Capsule())
+            .background(badge.color, in: Capsule())
     }
 }
 

@@ -42,6 +42,16 @@ import Testing
     ])
 }
 
+@Test func hardenerMetadataDecodesDocumentation() throws {
+    let data = Data("""
+    {"hardeners":[{"name":"aws","documentation":"## What It Does"}]}
+    """.utf8)
+
+    #expect(try hardenerMetadata(from: data) == [
+        HardenerMetadata(name: "aws", documentation: "## What It Does")
+    ])
+}
+
 @Test func hardenedToolsFindsAutomicVaultStubs() throws {
     let directory = temporaryDirectory()
     try """
@@ -69,9 +79,17 @@ import Testing
     try "".write(to: gh, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
 
-    let tools = loadHardenedTools(in: directory, ghCLIURL: gh)
+    let tools = loadHardenedTools(
+        in: directory,
+        ghCLIURL: gh,
+        metadata: [
+            HardenerMetadata(name: "aws", documentation: "AWS docs"),
+            HardenerMetadata(name: "gh-cli", documentation: "GitHub docs"),
+        ]
+    )
 
     #expect(tools.map(\.name) == ["aws", "gh-cli"])
+    #expect(tools.map(\.documentation) == ["AWS docs", "GitHub docs"])
 }
 
 @Test func secretGatesDecodeRememberedApprovals() throws {
