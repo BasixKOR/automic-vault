@@ -94,7 +94,30 @@ public struct SecretGate: Equatable, Sendable {
     public let scriptChecksum: String
     public let keys: [String]
     public let target: String
-    public let approvedApps: [String]
+    public let replaceExistingEnv: Bool
+    public let allowMissingKeys: Bool
+    public let approvedApps: [SecretGateApprovedApp]
+
+    public var id: String {
+        [
+            scriptPath,
+            scriptChecksum,
+            target,
+            keys.sorted().joined(separator: "\u{1e}"),
+            replaceExistingEnv.description,
+            allowMissingKeys.description,
+        ].joined(separator: "\u{1f}")
+    }
+}
+
+public struct SecretGateApprovedApp: Equatable, Sendable {
+    public let bundleIdentifier: String
+    public let requirement: String
+
+    public init(bundleIdentifier: String, requirement: String) {
+        self.bundleIdentifier = bundleIdentifier
+        self.requirement = requirement
+    }
 }
 
 public struct StoredSecret: Equatable, Sendable {
@@ -180,7 +203,7 @@ public func loadHardenedTools(
 public func loadSecretGates(service: String = trustedScriptApprovalsKeychainService) -> [SecretGate] {
     let approvals = loadTrustedScriptApprovals(service: service)
     let grouped = Dictionary(grouping: approvals) {
-        "\($0.scriptPath)\u{1f}\($0.scriptChecksum)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))"
+        "\($0.scriptPath)\u{1f}\($0.scriptChecksum)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
     }
     return grouped.values.compactMap { approvals in
         guard let first = approvals.first else { return nil }
@@ -189,13 +212,51 @@ public func loadSecretGates(service: String = trustedScriptApprovalsKeychainServ
             scriptChecksum: first.scriptChecksum,
             keys: first.keys.sorted(),
             target: first.target,
-            approvedApps: approvals.map(\.launcherRequirement).compactMap(appIdentifier).uniqueSorted()
+            replaceExistingEnv: first.replaceExistingEnv,
+            allowMissingKeys: first.allowMissingKeys,
+            approvedApps: approvals.map {
+                SecretGateApprovedApp(
+                    bundleIdentifier: appIdentifier(from: $0.launcherRequirement) ?? "unknown",
+                    requirement: $0.launcherRequirement
+                )
+            }.uniqueSorted()
         )
     }
-    .sorted {
-        [$0.scriptPath, $0.scriptChecksum, $0.target].joined(separator: "\u{1f}")
-            .localizedStandardCompare([$1.scriptPath, $1.scriptChecksum, $1.target].joined(separator: "\u{1f}")) == .orderedAscending
+    .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+}
+
+public func rememberTrustedApp(
+    requirement: String,
+    for gate: SecretGate,
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
+) -> OSStatus {
+    var approvals = loadTrustedScriptApprovals(service: service, account: account)
+    let approval = TrustedScriptApproval(
+        scriptPath: gate.scriptPath,
+        scriptChecksum: gate.scriptChecksum,
+        keys: gate.keys.sorted(),
+        target: gate.target,
+        replaceExistingEnv: gate.replaceExistingEnv,
+        allowMissingKeys: gate.allowMissingKeys,
+        launcherRequirement: requirement
+    )
+    if !approvals.contains(approval) {
+        approvals.append(approval)
     }
+    return saveTrustedScriptApprovals(approvals, service: service, account: account)
+}
+
+public func forgetTrustedApp(
+    _ app: SecretGateApprovedApp,
+    from gate: SecretGate,
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
+) -> OSStatus {
+    let approvals = loadTrustedScriptApprovals(service: service, account: account).filter {
+        !($0.matches(gate) && $0.launcherRequirement == app.requirement)
+    }
+    return saveTrustedScriptApprovals(approvals, service: service, account: account)
 }
 
 public func loadTrustedScriptApprovals(
@@ -310,6 +371,28 @@ private extension Array where Element == HardenedTool {
 private extension Array where Element == String {
     func uniqueSorted() -> [String] {
         Array(Set(self)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+}
+
+private extension Array where Element == SecretGateApprovedApp {
+    func uniqueSorted() -> [SecretGateApprovedApp] {
+        var seen = Set<String>()
+        return filter { seen.insert($0.requirement).inserted }
+            .sorted {
+                [$0.bundleIdentifier, $0.requirement].joined(separator: "\u{1f}")
+                    .localizedStandardCompare([$1.bundleIdentifier, $1.requirement].joined(separator: "\u{1f}")) == .orderedAscending
+            }
+    }
+}
+
+private extension TrustedScriptApproval {
+    func matches(_ gate: SecretGate) -> Bool {
+        scriptPath == gate.scriptPath
+            && scriptChecksum == gate.scriptChecksum
+            && keys.sorted() == gate.keys.sorted()
+            && target == gate.target
+            && replaceExistingEnv == gate.replaceExistingEnv
+            && allowMissingKeys == gate.allowMissingKeys
     }
 }
 

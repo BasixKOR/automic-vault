@@ -99,9 +99,53 @@ import Testing
     ], service: service) == errSecSuccess)
 
     #expect(loadSecretGates(service: service) == [
-        SecretGate(scriptPath: "/tmp/deploy", scriptChecksum: "abc", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.example.app", "com.other.app"]),
-        SecretGate(scriptPath: "/tmp/deploy", scriptChecksum: "def", keys: ["A", "B"], target: "/bin/echo", approvedApps: ["com.third.app"]),
+        SecretGate(
+            scriptPath: "/tmp/deploy",
+            scriptChecksum: "abc",
+            keys: ["A", "B"],
+            target: "/bin/echo",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: [
+                SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: #"identifier "com.example.app""#),
+                SecretGateApprovedApp(bundleIdentifier: "com.other.app", requirement: #"identifier "com.other.app""#),
+            ]
+        ),
+        SecretGate(
+            scriptPath: "/tmp/deploy",
+            scriptChecksum: "def",
+            keys: ["A", "B"],
+            target: "/bin/echo",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: [
+                SecretGateApprovedApp(bundleIdentifier: "com.third.app", requirement: #"identifier "com.third.app""#),
+            ]
+        ),
     ])
+}
+
+@Test func secretGateAppsCanBeAddedAndRemoved() throws {
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
+
+    let gate = SecretGate(
+        scriptPath: "/tmp/deploy",
+        scriptChecksum: "abc",
+        keys: ["A", "B"],
+        target: "/bin/echo",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        approvedApps: []
+    )
+    let requirement = #"identifier "com.example.app""#
+
+    #expect(rememberTrustedApp(requirement: requirement, for: gate, service: service) == errSecSuccess)
+    #expect(loadSecretGates(service: service).first?.approvedApps == [
+        SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement)
+    ])
+    #expect(forgetTrustedApp(SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement), from: gate, service: service) == errSecSuccess)
+    #expect(loadSecretGates(service: service).isEmpty)
 }
 
 @Test func storedSecretsListNamesOnlyAndDelete() throws {

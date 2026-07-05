@@ -128,17 +128,18 @@ final class DashboardModel: ObservableObject {
             }
         case .secretGates:
             snapshot.secretGates.map {
-                let apps = $0.approvedApps.isEmpty ? "No approved apps recorded" : $0.approvedApps.joined(separator: ", ")
+                let secrets = $0.keys.count == 1 ? "1 secret" : "\($0.keys.count) secrets"
+                let apps = $0.approvedApps.count == 1 ? "1 app" : "\($0.approvedApps.count) apps"
                 return DashboardItem(
-                    id: [$0.scriptPath, $0.scriptChecksum, $0.target, $0.keys.joined(separator: "\u{1e}")].joined(separator: "\u{1f}"),
+                    id: $0.id,
                     title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent,
-                    subtitle: $0.keys.joined(separator: ", "),
+                    subtitle: "\(secrets) - \(apps)",
                     detail: [
                         "Script: \($0.scriptPath)",
                         "SHA: \($0.scriptChecksum)",
                         "Secrets: \($0.keys.joined(separator: ", "))",
                         "Target: \($0.target)",
-                        "Calling apps: \(apps)",
+                        "Calling apps: \($0.approvedApps.map(\.bundleIdentifier).joined(separator: ", "))",
                     ].joined(separator: "\n")
                 )
             }
@@ -161,6 +162,13 @@ final class DashboardModel: ObservableObject {
             return item
         }
         return items.first
+    }
+
+    var selectedSecretGate: SecretGate? {
+        if let selectedItemID, let gate = snapshot.secretGates.first(where: { $0.id == selectedItemID }) {
+            return gate
+        }
+        return snapshot.secretGates.first
     }
 
     func count(for section: DashboardSection) -> Int {
@@ -218,6 +226,42 @@ final class DashboardModel: ObservableObject {
             reload()
         } else {
             errorMessage = "Could not delete \(account): \(status)"
+        }
+    }
+
+    func addApp(to gate: SecretGate) {
+        let panel = NSOpenPanel()
+        panel.title = "Allow Calling App"
+        panel.prompt = "Allow"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard url.pathExtension == "app" else {
+            errorMessage = "Choose a .app bundle."
+            return
+        }
+        guard let requirement = appBundleSigning(url)?.requirement else {
+            errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
+            return
+        }
+        let status = rememberTrustedApp(requirement: requirement, for: gate)
+        if status == errSecSuccess {
+            errorMessage = nil
+            reload()
+        } else {
+            errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
+        }
+    }
+
+    func remove(_ app: SecretGateApprovedApp, from gate: SecretGate) {
+        let status = forgetTrustedApp(app, from: gate)
+        if status == errSecSuccess {
+            errorMessage = nil
+            reload()
+        } else {
+            errorMessage = "Could not remove \(app.bundleIdentifier): \(status)"
         }
     }
 
@@ -437,7 +481,13 @@ private struct DashboardDetailView: View {
 
     var body: some View {
         ScrollView {
-            if let item = model.selectedItem {
+            if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
+                SecretGateDetailView(model: model, gate: gate)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let item = model.selectedItem {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(item.title)
                         .font(.system(size: 24, weight: .semibold))
@@ -607,6 +657,205 @@ private struct InfoBlock: View {
                 .textSelection(.enabled)
         }
     }
+}
+
+private struct SecretGateDetailView: View {
+    @ObservedObject var model: DashboardModel
+    let gate: SecretGate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(URL(fileURLWithPath: gate.scriptPath).lastPathComponent)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(GlassPalette.primaryText)
+                    .lineLimit(3)
+                Text("\(countLabel(gate.keys.count, "secret")) allowed for \(countLabel(gate.approvedApps.count, "calling app"))")
+                    .font(.system(size: 13))
+                    .foregroundStyle(GlassPalette.secondaryText)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                SecretGateField("Script", gate.scriptPath)
+                SecretGateField("SHA", gate.scriptChecksum, monospaced: true)
+                SecretGateField("Secrets", gate.keys.joined(separator: ", "))
+                SecretGateField("Target", gate.target)
+                SecretGateField("Replace Existing Env", gate.replaceExistingEnv ? "Yes" : "No")
+                SecretGateField("Allow Missing Keys", gate.allowMissingKeys ? "Yes" : "No")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Always Approved Apps")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(GlassPalette.primaryText)
+                    Spacer()
+                    Button { model.addApp(to: gate) } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add Calling App")
+                }
+
+                if gate.approvedApps.isEmpty {
+                    Text("No apps are always approved for this gate.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(GlassPalette.quietText)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(gate.approvedApps, id: \.requirement) { app in
+                            ApprovedAppRow(app: app) {
+                                model.remove(app, from: gate)
+                            }
+                            if app.requirement != gate.approvedApps.last?.requirement {
+                                hairline
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let error = model.errorMessage {
+                InfoBlock(title: "Error", text: error)
+            }
+        }
+    }
+
+    private func countLabel(_ count: Int, _ singular: String) -> String {
+        count == 1 ? "1 \(singular)" : "\(count) \(singular)s"
+    }
+}
+
+private struct SecretGateField: View {
+    let label: String
+    let value: String
+    let monospaced: Bool
+
+    init(_ label: String, _ value: String, monospaced: Bool = false) {
+        self.label = label
+        self.value = value
+        self.monospaced = monospaced
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(GlassPalette.quietText)
+            Text(value)
+                .font(monospaced ? .system(size: 12, design: .monospaced) : .system(size: 12))
+                .foregroundStyle(GlassPalette.secondaryText)
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct ApprovedAppRow: View {
+    let app: SecretGateApprovedApp
+    let remove: () -> Void
+
+    private var display: ApprovedAppDisplay {
+        ApprovedAppDisplay(app)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(nsImage: display.icon)
+                .resizable()
+                .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(display.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(GlassPalette.primaryText)
+                    .lineLimit(1)
+                Text(display.bundleIdentifier)
+                    .font(.system(size: 12))
+                    .foregroundStyle(GlassPalette.secondaryText)
+                    .textSelection(.enabled)
+                Text(display.signingSummary)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(GlassPalette.quietText)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 8)
+            Button(action: remove) {
+                Image(systemName: "minus")
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GlassPalette.quietText)
+            .help("Remove Calling App")
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct ApprovedAppDisplay {
+    let name: String
+    let bundleIdentifier: String
+    let icon: NSImage
+    let signingSummary: String
+
+    init(_ app: SecretGateApprovedApp) {
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
+        let bundle = url.flatMap(Bundle.init(url:))
+        name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? url?.deletingPathExtension().lastPathComponent
+            ?? app.bundleIdentifier
+        bundleIdentifier = app.bundleIdentifier
+        icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+        if let signing = url.flatMap(appBundleSigning) {
+            signingSummary = "identifier \(signing.identifier) / team \(signing.teamIdentifier)\n\(app.requirement)"
+        } else {
+            signingSummary = app.requirement
+        }
+    }
+}
+
+private struct AppBundleSigning {
+    let identifier: String
+    let teamIdentifier: String
+    let requirement: String
+}
+
+private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else {
+        return nil
+    }
+
+    var info: CFDictionary?
+    let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
+    guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any],
+          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement]
+    else {
+        return nil
+    }
+    let requirement = requirementValue as! SecRequirement
+    guard let requirementText = requirementText(requirement) else {
+        return nil
+    }
+    return AppBundleSigning(
+        identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
+        teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
+        requirement: requirementText
+    )
+}
+
+private func requirementText(_ requirement: SecRequirement) -> String? {
+    var text: CFString?
+    guard SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
+          let text
+    else {
+        return nil
+    }
+    return text as String
 }
 
 private struct GlassSurface: View {
