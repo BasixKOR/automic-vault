@@ -322,7 +322,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .detectors: "Detectors"
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Secret Gates"
-        case .allSecrets: "All Secrets"
+        case .allSecrets: "Secrets"
         }
     }
 
