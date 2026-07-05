@@ -296,7 +296,7 @@ final class DashboardModel: ObservableObject {
                         id: detector.name,
                         title: detector.name,
                         subtitle: "No findings",
-                        detail: detectorInfo(detector),
+                        detail: "",
                         documentation: detector.documentation
                     )
                 }
@@ -310,7 +310,6 @@ final class DashboardModel: ObservableObject {
                     detail: [
                         findings.first?.explanation ?? "Detector flagged this tool.",
                         findings.first?.solution,
-                        detectorInfo(detector),
                     ].compactMap(\.self).joined(separator: "\n\n"),
                     documentation: detector.documentation
                 )
@@ -318,12 +317,6 @@ final class DashboardModel: ObservableObject {
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
-    private func detectorInfo(_ detector: DetectorMetadata) -> String {
-        [
-            detector.homepage.isEmpty ? nil : "Homepage: \(detector.homepage)",
-            detector.docsURL.isEmpty ? nil : "Docs: \(detector.docsURL)",
-        ].compactMap(\.self).joined(separator: "\n")
-    }
 }
 
 enum DashboardSection: String, CaseIterable, Identifiable {
