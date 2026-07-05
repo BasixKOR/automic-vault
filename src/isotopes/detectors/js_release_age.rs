@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{AffectedFile, Finding};
 
-pub(crate) const SEVEN_DAYS_SECONDS: u64 = 7 * 24 * 60 * 60;
+pub(crate) const ONE_DAY_SECONDS: u64 = 24 * 60 * 60;
 
 pub(crate) fn npm_days(contents: &str) -> Option<u64> {
     numeric_setting(contents, &["min-release-age"]).map(|days| days * 24 * 60 * 60)
@@ -34,9 +34,10 @@ pub(crate) fn policy_findings(
         .filter_map(|path| {
             let contents = std::fs::read_to_string(&path).ok()?;
             let reason = match configured_seconds(&contents) {
-                Some(seconds) if seconds >= SEVEN_DAYS_SECONDS => return None,
-                Some(_) => "config sets npm package minimum release age below 7 days",
-                None => "config does not set a 7-day npm package minimum release age",
+                Some(seconds) if seconds < ONE_DAY_SECONDS => {
+                    "config sets npm package minimum release age below 24 hours"
+                }
+                _ => return None,
             };
             Some(finding(source, home, path, reason, solution))
         })
@@ -126,22 +127,22 @@ mod tests {
 
     #[test]
     fn parses_release_age_units() {
-        assert_eq!(npm_days("min-release-age=7\n"), Some(SEVEN_DAYS_SECONDS));
+        assert_eq!(npm_days("min-release-age=1\n"), Some(ONE_DAY_SECONDS));
         assert_eq!(
-            pnpm_minutes("minimumReleaseAge: 10080\n"),
-            Some(SEVEN_DAYS_SECONDS)
+            pnpm_minutes("minimumReleaseAge: 1440\n"),
+            Some(ONE_DAY_SECONDS)
         );
         assert_eq!(
-            pnpm_minutes("minimum-release-age=10080\n"),
-            Some(SEVEN_DAYS_SECONDS)
+            pnpm_minutes("minimum-release-age=1440\n"),
+            Some(ONE_DAY_SECONDS)
         );
         assert_eq!(
-            bun_seconds("[install]\nminimumReleaseAge = 604800 # seconds\n"),
-            Some(SEVEN_DAYS_SECONDS)
+            bun_seconds("[install]\nminimumReleaseAge = 86400 # seconds\n"),
+            Some(ONE_DAY_SECONDS)
         );
         assert_eq!(
-            yarn_duration(r#"npmMinimalAgeGate: "1w""#),
-            Some(SEVEN_DAYS_SECONDS)
+            yarn_duration(r#"npmMinimalAgeGate: "1d""#),
+            Some(ONE_DAY_SECONDS)
         );
     }
 
@@ -150,19 +151,21 @@ mod tests {
         let home = temp_home();
         let low = home.join(".npmrc");
         let ok = home.join(".npmrc-ok");
-        std::fs::write(&low, "min-release-age=1\n").unwrap();
-        std::fs::write(&ok, "min-release-age=7\n").unwrap();
+        let unset = home.join(".npmrc-unset");
+        std::fs::write(&low, "min-release-age=0\n").unwrap();
+        std::fs::write(&ok, "min-release-age=1\n").unwrap();
+        std::fs::write(&unset, "registry=https://registry.npmjs.org/\n").unwrap();
 
         let findings = policy_findings(
             "npm",
             &home,
-            [low, ok],
+            [low, ok, unset],
             npm_days,
-            "Set `min-release-age=7` in the reported npm config file.",
+            "Set `min-release-age=1` in the reported npm config file.",
         );
 
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].explanation.contains("below 7 days"));
+        assert!(findings[0].explanation.contains("below 24 hours"));
         std::fs::remove_dir_all(home).unwrap();
     }
 

@@ -2,7 +2,7 @@
 
 ## Trigger Conditions
 
-- Yarn config exists without a package minimum release age of at least 7 days.
+- Yarn config sets a package minimum release age below 24 hours.
 
 ## Sensitive Files
 

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-const SOLUTION: &str = "Set `min-release-age=7` in the reported npm config file.";
+const SOLUTION: &str = "Set `min-release-age=1` in the reported npm config file.";
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     super::js_release_age::policy_findings(

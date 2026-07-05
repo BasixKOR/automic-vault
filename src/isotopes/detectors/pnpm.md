@@ -3,7 +3,7 @@
 ## Trigger Conditions
 
 - npm user config contains a plaintext auth token.
-- pnpm config exists without a package minimum release age of at least 7 days.
+- pnpm config sets a package minimum release age below 24 hours.
 
 ## Sensitive Files
 

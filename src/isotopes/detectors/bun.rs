@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 const SOLUTION: &str =
-    "Set `minimumReleaseAge = 604800` under `[install]` in the reported Bun config file.";
+    "Set `minimumReleaseAge = 86400` under `[install]` in the reported Bun config file.";
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     super::js_release_age::policy_findings(

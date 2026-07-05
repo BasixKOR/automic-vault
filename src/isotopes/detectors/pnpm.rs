@@ -122,7 +122,7 @@ pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
         home,
         pnpm_config_paths(home),
         super::js_release_age::pnpm_minutes,
-        "Set `minimum-release-age=10080` in the reported pnpm config file.",
+        "Set `minimum-release-age=1440` in the reported pnpm config file.",
     ));
     findings
 }
