@@ -11,7 +11,6 @@ mod argocd;
 mod ast_cli;
 mod astra;
 mod atuin;
-pub(crate) mod aws;
 mod aws_cli;
 mod aws_sso_cli;
 mod aws_vault;
@@ -166,7 +165,6 @@ macro_rules! detector {
 
 const DETECTORS: &[Detector] = &[
     detector!(git),
-    detector!(aws),
     detector!(acli),
     detector!(akamai),
     detector!(algolia),
@@ -341,7 +339,6 @@ fn detector_name(module: &str) -> String {
 
 fn detector_homepage(name: &str) -> String {
     match name {
-        "aws" => "https://aws.amazon.com/cli/".to_string(),
         "git" => "https://git-scm.com/".to_string(),
         _ => detector_docs_url(name),
     }
@@ -349,9 +346,9 @@ fn detector_homepage(name: &str) -> String {
 
 fn detector_docs_url(name: &str) -> String {
     match name {
-        "aws" => "https://github.com/automic-vault/automic-vault".to_string(),
-        "git" => "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md"
-            .to_string(),
+        "git" => {
+            "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md".to_string()
+        }
         _ => format!("https://github.com/automic-vault/radioisotopes/tree/main/{name}"),
     }
 }
@@ -362,8 +359,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 140);
-        assert_eq!(aws::NAME, "aws");
+        assert_eq!(DETECTORS.len(), 139);
         assert_eq!(git::NAME, "git");
     }
 
@@ -374,7 +370,8 @@ mod tests {
             .map(|detector| detector.name)
             .collect::<Vec<_>>();
 
-        assert!(names.contains(&"aws".to_string()));
+        assert!(!names.contains(&"aws".to_string()));
+        assert!(names.contains(&"aws-cli".to_string()));
         assert!(names.contains(&"git".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));

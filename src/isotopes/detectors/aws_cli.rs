@@ -51,7 +51,7 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
 fn credentials_file_is_insecure(path: &std::path::Path) -> Result<bool, String> {
     let contents = std::fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    let mut in_default_section = false;
+    let mut in_profile = false;
 
     for line in contents.lines() {
         let trimmed = line.trim();
@@ -60,15 +60,15 @@ fn credentials_file_is_insecure(path: &std::path::Path) -> Result<bool, String> 
         }
 
         if trimmed.starts_with('[') {
-            in_default_section = trimmed
+            in_profile = trimmed
                 .strip_prefix('[')
                 .and_then(|section| section.strip_suffix(']'))
                 .map(str::trim)
-                == Some("default");
+                .is_some_and(|section| !section.is_empty());
             continue;
         }
 
-        if !in_default_section {
+        if !in_profile {
             continue;
         }
 
@@ -190,6 +190,21 @@ mod tests {
         let contents = "[default]\naws_secret_access_key = secret\n";
         let path =
             std::env::temp_dir().join(format!("aws-cli-detect-credentials-{}", std::process::id()));
+        std::fs::write(&path, contents).unwrap();
+
+        let result = credentials_file_is_insecure(&path);
+
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(result, Ok(true));
+    }
+
+    #[test]
+    fn detects_secret_access_key_in_named_credentials_profile() {
+        let contents = "[profile dev]\naws_secret_access_key = secret\n";
+        let path = std::env::temp_dir().join(format!(
+            "aws-cli-detect-profile-credentials-{}",
+            std::process::id()
+        ));
         std::fs::write(&path, contents).unwrap();
 
         let result = credentials_file_is_insecure(&path);
