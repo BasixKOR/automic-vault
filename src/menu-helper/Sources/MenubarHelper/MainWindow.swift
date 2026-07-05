@@ -134,7 +134,7 @@ final class DashboardModel: ObservableObject {
                 let apps = $0.approvedApps.count == 1 ? "1 app" : "\($0.approvedApps.count) apps"
                 return DashboardItem(
                     id: $0.id,
-                    title: URL(fileURLWithPath: $0.scriptPath).lastPathComponent,
+                    title: $0.scriptPath,
                     subtitle: "\(secrets) - \(apps)",
                     detail: [
                         "Script: \($0.scriptPath)",
