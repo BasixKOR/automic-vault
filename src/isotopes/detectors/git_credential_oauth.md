@@ -1,7 +1,5 @@
-# git-credential-oauth Radioisotope
+# git-credential-oauth Detector
 
-Detect-only coverage for global Git OAuth helper configuration.
-
-git-credential-oauth is a credential helper rather than a normal application
-secret store. This radioisotope reports global helper use and plaintext OAuth
-client secrets in Git config without changing Git helper order.
+Reports when:
+- Git config enables git-credential-oauth as an ambient credential helper.
+- Git config contains a plaintext OAuth client secret.

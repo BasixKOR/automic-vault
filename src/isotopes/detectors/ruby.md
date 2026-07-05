@@ -1,4 +1,4 @@
-# RubyGems Radioisotope Detector
+# ruby Detector
 
-This detector reports plaintext RubyGems API keys in `~/.gem/credentials`.
-It does not currently migrate credentials or modify Ruby/RubyGems.
+Reports when:
+- RubyGems credentials file contains plaintext API keys.

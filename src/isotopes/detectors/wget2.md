@@ -1,8 +1,5 @@
-# Wget2 Radioisotope Detector
+# wget2 Detector
 
-This detector reports plaintext Wget2 credential inputs.
-
-Wget2 can consume credentials from `~/.netrc` and from password options in user
-configuration files such as `~/.wget2rc`.
-
-This radioisotope is detect-only.
+Reports when:
+- Wget2 netrc file contains plaintext credentials.
+- Wget2 config contains plaintext password options.

@@ -1,7 +1,5 @@
-# aws-vault Radioisotope
+# aws-vault Detector
 
-Detect-only coverage for aws-vault configuration and file-backed state.
-
-aws-vault is already a credential manager, so this radioisotope does not move
-its backend data. It reports AWS config entries that invoke aws-vault and the
-default file backend directory when present.
+Reports when:
+- AWS config invokes aws-vault as an ambient credential_process.
+- aws-vault file backend directory contains credential vault files.

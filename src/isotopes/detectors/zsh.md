@@ -1,16 +1,9 @@
-# Zsh Radioisotope Detector
+# zsh Detector
 
-This detector reports plaintext-looking credential assignments in Zsh startup
-files. It does not modify Zsh or rewrite a user's shell configuration.
+Reports when:
+- Zsh startup file contains plaintext-looking credential assignment.
 
-Detected files under `$ZDOTDIR`, or under `$HOME` when `ZDOTDIR` is unset:
+## Detection Caveats
 
-- `.zshenv`
-- `.zprofile`
-- `.zshrc`
-- `.zlogin`
-- `.zlogout`
-
-Move reported values into Automic Vault with `av save KEY`, then run tools with
-`av inject +KEY /absolute/tool` instead of exporting the value from a startup
-file.
+- Scans `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`, and `.zlogout` under `ZDOTDIR` when set, otherwise under `HOME`.
+- Only literal assignments are reported; empty, masked, command-substitution, and variable-reference values are ignored.

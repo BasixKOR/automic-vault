@@ -1,7 +1,8 @@
-# oauth2l Radioisotope
+# oauth2l Detector
 
-Detect-only coverage for oauth2l's default token cache.
+Reports when:
+- oauth2l default cache contains plaintext OAuth tokens.
 
-oauth2l stores fetched OAuth tokens in `~/.oauth2l` unless caching is disabled
-or redirected. This radioisotope reports that default plaintext cache without
-changing oauth2l behavior.
+## Detection Caveats
+
+- Only scans the default `~/.oauth2l` cache.
