@@ -37,7 +37,7 @@ pub(crate) fn findings(
         .collect()
 }
 
-fn docs_url(name: &'static str) -> &'static str {
+pub(crate) fn docs_url(name: &'static str) -> &'static str {
     match name {
         "acli" => "https://github.com/automic-vault/radioisotopes/tree/main/acli",
         "akamai" => "https://github.com/automic-vault/radioisotopes/tree/main/akamai",
@@ -55,6 +55,7 @@ fn docs_url(name: &'static str) -> &'static str {
         "bash" => "https://github.com/automic-vault/radioisotopes/tree/main/bash",
         "bitwarden-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/bitwarden-cli",
         "buf" => "https://github.com/automic-vault/radioisotopes/tree/main/buf",
+        "bun" => "https://github.com/automic-vault/radioisotopes/tree/main/bun",
         "cariddi" => "https://github.com/automic-vault/radioisotopes/tree/main/cariddi",
         "censys" => "https://github.com/automic-vault/radioisotopes/tree/main/censys",
         "certbot" => "https://github.com/automic-vault/radioisotopes/tree/main/certbot",
@@ -136,6 +137,7 @@ fn docs_url(name: &'static str) -> &'static str {
         "netlify-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/netlify-cli",
         "node" => "https://github.com/automic-vault/radioisotopes/tree/main/node",
         "node@18" => "https://github.com/automic-vault/radioisotopes/tree/main/node@18",
+        "npm" => "https://github.com/automic-vault/radioisotopes/tree/main/npm",
         "nuget" => "https://github.com/automic-vault/radioisotopes/tree/main/nuget",
         "oauth2l" => "https://github.com/automic-vault/radioisotopes/tree/main/oauth2l",
         "oci-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/oci-cli",
@@ -204,6 +206,7 @@ fn docs_url(name: &'static str) -> &'static str {
         "wget2" => "https://github.com/automic-vault/radioisotopes/tree/main/wget2",
         "wsk" => "https://github.com/automic-vault/radioisotopes/tree/main/wsk",
         "yt-dlp" => "https://github.com/automic-vault/radioisotopes/tree/main/yt-dlp",
+        "yarn" => "https://github.com/automic-vault/radioisotopes/tree/main/yarn",
         "zsh" => "https://github.com/automic-vault/radioisotopes/tree/main/zsh",
         _ => "https://github.com/automic-vault/radioisotopes",
     }

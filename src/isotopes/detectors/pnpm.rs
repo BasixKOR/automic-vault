@@ -116,5 +116,25 @@ mod tests {
 }
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
-    super::radioisotope::findings("pnpm", install_insecurity_reasons, home)
+    let mut findings = super::radioisotope::findings("pnpm", install_insecurity_reasons, home);
+    findings.extend(super::js_release_age::policy_findings(
+        "pnpm",
+        home,
+        pnpm_config_paths(home),
+        super::js_release_age::pnpm_minutes,
+        "Set `minimum-release-age=10080` in the reported pnpm config file.",
+    ));
+    findings
+}
+
+fn pnpm_config_paths(home: &std::path::Path) -> Vec<PathBuf> {
+    let mut paths = vec![
+        home.join(".npmrc"),
+        home.join("Library/Preferences/pnpm/rc"),
+        home.join(".config/pnpm/rc"),
+    ];
+    if let Some(path) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        paths.push(PathBuf::from(path).join("pnpm/rc"));
+    }
+    paths
 }

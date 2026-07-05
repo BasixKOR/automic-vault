@@ -18,6 +18,7 @@ mod azure_cli;
 mod bash;
 mod bitwarden_cli;
 mod buf;
+mod bun;
 mod cariddi;
 mod censys;
 mod certbot;
@@ -60,6 +61,7 @@ mod httpie;
 mod huggingface_cli;
 mod imap_backup;
 mod jfrog_cli;
+mod js_release_age;
 mod k6;
 mod kubernetes_cli;
 mod luarocks;
@@ -80,6 +82,7 @@ mod mysql_client;
 mod netlify_cli;
 mod node;
 mod node_18;
+mod npm;
 mod nuget;
 mod oauth2l;
 mod oci_cli;
@@ -142,6 +145,7 @@ mod wakatime_cli;
 mod wget;
 mod wget2;
 mod wsk;
+mod yarn;
 mod yt_dlp;
 mod zsh;
 
@@ -186,6 +190,7 @@ const DETECTORS: &[Detector] = &[
     detector!(bash),
     detector!(bitwarden_cli),
     detector!(buf),
+    detector!(bun),
     detector!(cariddi),
     detector!(censys),
     detector!(certbot),
@@ -247,6 +252,7 @@ const DETECTORS: &[Detector] = &[
     detector!(netlify_cli),
     detector!(node),
     detector!(node_18),
+    detector!(npm),
     detector!(nuget),
     detector!(oauth2l),
     detector!(oci_cli),
@@ -308,6 +314,7 @@ const DETECTORS: &[Detector] = &[
     detector!(wget),
     detector!(wget2),
     detector!(wsk),
+    detector!(yarn),
     detector!(yt_dlp),
     detector!(zsh),
 ];
@@ -367,7 +374,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 141);
+        assert_eq!(DETECTORS.len(), 144);
         assert_eq!(git::NAME, "git");
     }
 
