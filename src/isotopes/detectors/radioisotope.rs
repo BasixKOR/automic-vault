@@ -91,6 +91,7 @@ fn docs_url(name: &'static str) -> &'static str {
         "flyctl" => "https://github.com/automic-vault/radioisotopes/tree/main/flyctl",
         "gallery-dl" => "https://github.com/automic-vault/radioisotopes/tree/main/gallery-dl",
         "gcli" => "https://github.com/automic-vault/radioisotopes/tree/main/gcli",
+        "gh-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/gh-cli",
         "git-credential-oauth" => {
             "https://github.com/automic-vault/radioisotopes/tree/main/git-credential-oauth"
         }
@@ -178,6 +179,7 @@ fn docs_url(name: &'static str) -> &'static str {
         "sshpass" => "https://github.com/automic-vault/radioisotopes/tree/main/sshpass",
         "sslmate" => "https://github.com/automic-vault/radioisotopes/tree/main/sslmate",
         "stripe-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/stripe-cli",
+        "supabase" => "https://github.com/automic-vault/radioisotopes/tree/main/supabase",
         "tailscale" => "https://github.com/automic-vault/radioisotopes/tree/main/tailscale",
         "talosctl" => "https://github.com/automic-vault/radioisotopes/tree/main/talosctl",
         "terraform" => "https://github.com/automic-vault/radioisotopes/tree/main/terraform",

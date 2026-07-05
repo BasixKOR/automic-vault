@@ -44,6 +44,7 @@ mod firebase_cli;
 mod flyctl;
 mod gallery_dl;
 mod gcli;
+mod gh_cli;
 pub(crate) mod git;
 mod git_credential_oauth;
 mod glab;
@@ -121,6 +122,7 @@ mod sqlcmd;
 mod sshpass;
 mod sslmate;
 mod stripe_cli;
+mod supabase;
 mod tailscale;
 mod talosctl;
 mod terraform;
@@ -210,6 +212,7 @@ const DETECTORS: &[Detector] = &[
     detector!(flyctl),
     detector!(gallery_dl),
     detector!(gcli),
+    detector!(gh_cli),
     detector!(git_credential_oauth),
     detector!(glab),
     detector!(goat),
@@ -285,6 +288,7 @@ const DETECTORS: &[Detector] = &[
     detector!(sshpass),
     detector!(sslmate),
     detector!(stripe_cli),
+    detector!(supabase),
     detector!(tailscale),
     detector!(talosctl),
     detector!(terraform),
@@ -363,7 +367,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 139);
+        assert_eq!(DETECTORS.len(), 141);
         assert_eq!(git::NAME, "git");
     }
 
