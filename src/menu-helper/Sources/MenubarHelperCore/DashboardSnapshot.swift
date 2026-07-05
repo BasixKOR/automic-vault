@@ -306,6 +306,15 @@ public func saveStoredSecret(account: String, value: String, service: String = a
     saveKeychainData(Data(value.utf8), service: service, account: account)
 }
 
+public func renameStoredSecret(account: String, to newAccount: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+    ]
+    return SecItemUpdate(query as CFDictionary, [kSecAttrAccount as String: newAccount] as CFDictionary)
+}
+
 public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,

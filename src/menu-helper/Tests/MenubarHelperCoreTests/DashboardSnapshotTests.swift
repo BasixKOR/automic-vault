@@ -158,6 +158,16 @@ import Testing
     #expect(loadStoredSecrets(service: service).isEmpty)
 }
 
+@Test func storedSecretsCanBeRenamed() throws {
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(saveStoredSecret(account: "OLD_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "OLD_TOKEN", service: service) }
+    defer { _ = deleteStoredSecret(account: "NEW_TOKEN", service: service) }
+
+    #expect(renameStoredSecret(account: "OLD_TOKEN", to: "NEW_TOKEN", service: service) == errSecSuccess)
+    #expect(loadStoredSecrets(service: service) == [StoredSecret(account: "NEW_TOKEN")])
+}
+
 private func temporaryDirectory() -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("av-menubar-tests-\(UUID().uuidString)", isDirectory: true)

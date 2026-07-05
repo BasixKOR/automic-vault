@@ -113,6 +113,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var snapshot = DashboardSnapshot.empty
     @Published private(set) var isReloading = false
     @Published var isAddingSecret = false
+    @Published var isRenamingSecret = false
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
     @Published var searchText = ""
@@ -227,6 +228,20 @@ final class DashboardModel: ObservableObject {
             reload()
         } else {
             errorMessage = "Could not delete \(account): \(status)"
+        }
+    }
+
+    func renameSelectedSecret(to newAccount: String) {
+        guard selectedSection == .allSecrets, let account = selectedItem?.id else { return }
+        let newAccount = newAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newAccount.isEmpty, newAccount != account else { return }
+        let status = renameStoredSecret(account: account, to: newAccount)
+        if status == errSecSuccess {
+            errorMessage = nil
+            selectedItemID = newAccount
+            reload()
+        } else {
+            errorMessage = "Could not rename \(account): \(status)"
         }
     }
 
@@ -500,13 +515,21 @@ private struct DashboardDetailView: View {
                         .foregroundStyle(GlassPalette.secondaryText)
                     InfoBlock(title: model.selectedSection.title, text: item.detail)
                     if model.selectedSection == .allSecrets {
-                        Button { model.deleteSelectedSecret() } label: {
-                            Label("Delete Secret", systemImage: "trash")
-                                .frame(maxWidth: .infinity)
+                        HStack {
+                            Button { model.isRenamingSecret = true } label: {
+                                Label("Rename Secret", systemImage: "pencil")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            Button { model.deleteSelectedSecret() } label: {
+                                Label("Delete Secret", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .tint(.red)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(.red)
                     }
                     if let error = model.errorMessage {
                         InfoBlock(title: "Error", text: error)
@@ -520,6 +543,11 @@ private struct DashboardDetailView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .background(GlassSurface(tint: GlassPalette.windowTint).ignoresSafeArea())
+        .sheet(isPresented: $model.isRenamingSecret) {
+            if let account = model.selectedItem?.id {
+                RenameSecretView(model: model, account: account)
+            }
+        }
         .preferredColorScheme(.dark)
     }
 }
@@ -601,6 +629,41 @@ private struct AddSecretView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.isEmpty)
+            }
+        }
+        .padding(22)
+        .frame(width: 360)
+        .background(GlassSurface(tint: GlassPalette.windowTint))
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct RenameSecretView: View {
+    @ObservedObject var model: DashboardModel
+    @State private var account: String
+    @Environment(\.dismiss) private var dismiss
+
+    init(model: DashboardModel, account: String) {
+        self.model = model
+        _account = State(initialValue: account)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rename Secret")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(GlassPalette.primaryText)
+            TextField("Name", text: $account)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Rename") {
+                    model.renameSelectedSecret(to: account)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(22)
