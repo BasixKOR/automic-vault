@@ -6,5 +6,4 @@
 
 ## Sensitive Files
 
-- `$AKAMAI_EDGERC`
-- `~/.edgerc`
+- `${AKAMAI_EDGERC:-$HOME/.edgerc}`

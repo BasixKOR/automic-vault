@@ -6,5 +6,4 @@
 
 ## Sensitive Files
 
-- `$ANSIBLE_GALAXY_TOKEN_PATH`
-- `~/.ansible/galaxy_token`
+- `${ANSIBLE_GALAXY_TOKEN_PATH:-$HOME/.ansible/galaxy_token}`

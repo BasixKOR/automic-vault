@@ -6,5 +6,4 @@
 
 ## Sensitive Files
 
-- `$XDG_CONFIG_HOME/algolia/config.toml`
-- `~/.config/algolia/config.toml`
+- `${XDG_CONFIG_HOME:-$HOME/.config}/algolia/config.toml`

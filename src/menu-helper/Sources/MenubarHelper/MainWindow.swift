@@ -21,8 +21,8 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         super.viewDidLoad()
         splitView.isVertical = true
         addSplitViewItem(sidebarItem())
-        addSplitViewItem(contentItem(DashboardListView(model: model), width: 300, minimumWidth: 260, maximumWidth: 360))
-        addSplitViewItem(contentItem(DashboardDetailView(model: model), width: 470, minimumWidth: 320))
+        addSplitViewItem(contentItem(DashboardListView(model: model), width: 180, minimumWidth: 180, maximumWidth: 360))
+        addSplitViewItem(contentItem(DashboardDetailView(model: model), width: 570, minimumWidth: 320))
     }
 
     override func viewDidAppear() {
