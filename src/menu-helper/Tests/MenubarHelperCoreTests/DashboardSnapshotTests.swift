@@ -20,6 +20,23 @@ import Testing
     )
 
     #expect(snapshot.flaggedDetectorCount == 2)
+    #expect(snapshot.detectorDisplayCount == 2)
+}
+
+@Test func cleanScanDisplaysTotalDetectorCount() {
+    let snapshot = DashboardSnapshot(
+        detectors: [
+            DetectorMetadata(name: "aws", homepage: "", docsURL: ""),
+            DetectorMetadata(name: "git", homepage: "", docsURL: ""),
+        ],
+        detectorFindings: [],
+        hardenedTools: [],
+        secretGates: [],
+        secrets: []
+    )
+
+    #expect(snapshot.flaggedDetectorCount == 0)
+    #expect(snapshot.detectorDisplayCount == 2)
 }
 
 @Test func detectorMetadataDecodesAllDetectors() throws {

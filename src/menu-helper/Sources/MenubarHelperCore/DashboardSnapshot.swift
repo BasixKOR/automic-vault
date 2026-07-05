@@ -24,6 +24,10 @@ public struct DashboardSnapshot: Equatable, Sendable {
         Set(detectorFindings.map(\.source)).count
     }
 
+    public var detectorDisplayCount: Int {
+        flaggedDetectorCount == 0 ? detectors.count : flaggedDetectorCount
+    }
+
     public static func load(
         avExecutableURL: URL = defaultAVExecutableURL(),
         stubDirectory: URL = URL(fileURLWithPath: "/usr/local/bin", isDirectory: true),

@@ -184,7 +184,7 @@ final class DashboardModel: ObservableObject {
 
     func count(for section: DashboardSection) -> Int {
         switch section {
-        case .detectors: snapshot.flaggedDetectorCount
+        case .detectors: snapshot.detectorDisplayCount
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
         case .allSecrets: snapshot.secrets.count
@@ -401,7 +401,7 @@ private struct DashboardSidebarView: View {
                 Spacer(minLength: 6)
                 let count = model.count(for: section)
                 if count > 0 {
-                    if section == .detectors {
+                    if section == .detectors, model.snapshot.flaggedDetectorCount > 0 {
                         DetectorCountPill(count: count)
                             .fixedSize()
                     } else {
