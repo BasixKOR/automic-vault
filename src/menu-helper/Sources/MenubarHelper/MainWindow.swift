@@ -2,6 +2,7 @@ import AppKit
 import MenubarHelperCore
 import Security
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 final class AutomicVaultMainWindowController: NSSplitViewController {
@@ -234,8 +235,9 @@ final class DashboardModel: ObservableObject {
         panel.title = "Allow Calling App"
         panel.prompt = "Allow"
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.pathExtension == "app" else {
