@@ -6,4 +6,11 @@
 
 ## Sensitive Files
 
-- `~/.config/acli/{confluence_config.yaml,jira_config.yaml,assets_config.yaml,rovodev_config.yaml,brie_config.yaml,global_auth_config.yaml,global_config.yaml,admin_config.yaml}`
+- `~/.config/acli/confluence_config.yaml`
+- `~/.config/acli/jira_config.yaml`
+- `~/.config/acli/assets_config.yaml`
+- `~/.config/acli/rovodev_config.yaml`
+- `~/.config/acli/brie_config.yaml`
+- `~/.config/acli/global_auth_config.yaml`
+- `~/.config/acli/global_config.yaml`
+- `~/.config/acli/admin_config.yaml`
