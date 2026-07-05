@@ -44,17 +44,28 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
     public let name: String
     public let homepage: String
     public let docsURL: String
+    public let documentation: String
 
-    public init(name: String, homepage: String, docsURL: String) {
+    public init(name: String, homepage: String, docsURL: String, documentation: String = "") {
         self.name = name
         self.homepage = homepage
         self.docsURL = docsURL
+        self.documentation = documentation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.homepage = try container.decode(String.self, forKey: .homepage)
+        self.docsURL = try container.decode(String.self, forKey: .docsURL)
+        self.documentation = try container.decodeIfPresent(String.self, forKey: .documentation) ?? ""
     }
 
     enum CodingKeys: String, CodingKey {
         case name
         case homepage
         case docsURL = "docs_url"
+        case documentation
     }
 }
 

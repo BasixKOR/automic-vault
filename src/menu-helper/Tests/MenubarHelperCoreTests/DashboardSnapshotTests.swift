@@ -24,6 +24,16 @@ import Testing
 
 @Test func detectorMetadataDecodesAllDetectors() throws {
     let data = Data("""
+    {"detectors":[{"name":"git","homepage":"https://git-scm.com/","docs_url":"https://example.test/git","documentation":"# git Detector"}]}
+    """.utf8)
+
+    #expect(try detectorMetadata(from: data) == [
+        DetectorMetadata(name: "git", homepage: "https://git-scm.com/", docsURL: "https://example.test/git", documentation: "# git Detector")
+    ])
+}
+
+@Test func detectorMetadataAcceptsOlderDetectorOutput() throws {
+    let data = Data("""
     {"detectors":[{"name":"git","homepage":"https://git-scm.com/","docs_url":"https://example.test/git"}]}
     """.utf8)
 

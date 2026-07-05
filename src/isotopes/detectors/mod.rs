@@ -147,11 +147,13 @@ pub(crate) struct DetectorMetadata {
     pub(crate) name: String,
     pub(crate) homepage: String,
     pub(crate) docs_url: String,
+    pub(crate) documentation: &'static str,
 }
 
 struct Detector {
     module: &'static str,
     findings: fn(&Path) -> Vec<Finding>,
+    documentation: &'static str,
 }
 
 macro_rules! detector {
@@ -159,6 +161,7 @@ macro_rules! detector {
         Detector {
             module: stringify!($module),
             findings: $module::findings,
+            documentation: include_str!(concat!(stringify!($module), ".md")),
         }
     };
 }
@@ -319,6 +322,7 @@ pub(crate) fn metadata() -> Vec<DetectorMetadata> {
         .map(|detector| {
             let name = detector_name(detector.module);
             DetectorMetadata {
+                documentation: detector.documentation,
                 homepage: detector_homepage(&name),
                 docs_url: detector_docs_url(&name),
                 name,

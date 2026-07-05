@@ -48,6 +48,7 @@ pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
                 "name": detector.name,
                 "homepage": detector.homepage,
                 "docs_url": detector.docs_url,
+                "documentation": detector.documentation,
             })
         }).collect::<Vec<_>>(),
     });
@@ -309,6 +310,7 @@ mod tests {
 
         assert!(output.contains(r#""name":"git""#));
         assert!(output.contains(r#""docs_url":"https://github.com/automic-vault/automic-vault/main/docs/securing-git.md""#));
+        assert!(output.contains(r##""documentation":"# git Detector"##));
     }
 
     #[test]

@@ -296,7 +296,8 @@ final class DashboardModel: ObservableObject {
                         id: detector.name,
                         title: detector.name,
                         subtitle: "No findings",
-                        detail: detectorInfo(detector)
+                        detail: detectorInfo(detector),
+                        documentation: detector.documentation
                     )
                 }
                 let severity = findings.map(\.severity).max() ?? "flagged"
@@ -310,7 +311,8 @@ final class DashboardModel: ObservableObject {
                         findings.first?.explanation ?? "Detector flagged this tool.",
                         findings.first?.solution,
                         detectorInfo(detector),
-                    ].compactMap(\.self).joined(separator: "\n\n")
+                    ].compactMap(\.self).joined(separator: "\n\n"),
+                    documentation: detector.documentation
                 )
             }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -356,6 +358,15 @@ struct DashboardItem: Identifiable, Equatable {
     let title: String
     let subtitle: String
     let detail: String
+    let documentation: String
+
+    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "") {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.detail = detail
+        self.documentation = documentation
+    }
 }
 
 private struct DashboardSidebarView: View {
@@ -500,6 +511,12 @@ private struct DashboardDetailView: View {
         ScrollView {
             if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
                 SecretGateDetailView(model: model, gate: gate)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .detectors, let item = model.selectedItem {
+                DetectorDetailView(item: item)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -721,6 +738,67 @@ private struct InfoBlock: View {
                 .foregroundStyle(GlassPalette.secondaryText)
                 .textSelection(.enabled)
         }
+    }
+}
+
+private struct DetectorDetailView: View {
+    let item: DashboardItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(item.title)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(GlassPalette.primaryText)
+                        .lineLimit(3)
+                    detectorStateBadge
+                }
+                Text("Detector behavior and sensitive files checked by this rule.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(GlassPalette.secondaryText)
+            }
+
+            if !item.detail.isEmpty {
+                InfoBlock(title: "Current Result", text: item.detail)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(GlassPalette.packageSelectedFill)
+                    }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Detector Reference")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(GlassPalette.quietText)
+                    .tracking(0.7)
+                RenderedMarkdown(markdown: item.documentation.isEmpty ? "No detector documentation is bundled for this item." : item.documentation)
+                    .font(.system(size: 13))
+                    .foregroundStyle(GlassPalette.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.045))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(GlassPalette.hairline)
+            }
+        }
+    }
+
+    private var detectorStateBadge: some View {
+        Text(item.subtitle == "No findings" ? "Ready" : "Flagged")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(item.subtitle == "No findings" ? GlassPalette.green : GlassPalette.red, in: Capsule())
     }
 }
 

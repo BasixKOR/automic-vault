@@ -8,12 +8,19 @@ let package = Package(
     products: [
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
+    ],
     targets: [
         .target(name: "MenubarHelperCore"),
         .target(name: "CProcessInfo", publicHeadersPath: "include"),
         .executableTarget(
             name: "MenubarHelper",
-            dependencies: ["CProcessInfo", "MenubarHelperCore"]
+            dependencies: [
+                "CProcessInfo",
+                "MenubarHelperCore",
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
+            ]
         ),
         .testTarget(
             name: "MenubarHelperCoreTests",
