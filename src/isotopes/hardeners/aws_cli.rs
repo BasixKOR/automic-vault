@@ -22,22 +22,28 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !aws_vault.exists() {
         return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
     }
-    let credentials_path = aws_credentials_path()?;
-    let credentials = read_aws_credentials(&credentials_path, AWS_HARDEN_PROFILE)?;
     let is_root = unsafe { geteuid() } == 0;
     let has_test_keychain = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some();
-    if is_root && credentials.is_some() && !has_test_keychain {
-        return Err(
-            "run `av harden aws` without sudo first to import keys into your login keychain"
-                .to_string(),
-        );
-    }
+    let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
+    let credentials_path = if should_import_credentials {
+        Some(aws_credentials_path()?)
+    } else {
+        None
+    };
+    let credentials = if let Some(credentials_path) = &credentials_path {
+        read_aws_credentials(credentials_path, AWS_HARDEN_PROFILE)?
+    } else {
+        None
+    };
 
     writeln!(stdout, "╭─ harden aws").ok();
     writeln!(stdout, "│").ok();
     writeln!(stdout, "◆ This will use aws-vault for AWS credentials.").ok();
     writeln!(stdout, "│").ok();
-    if credentials.is_some() {
+    if !should_import_credentials {
+        writeln!(stdout, "├─ skip credential import while running as root").ok();
+    } else if credentials.is_some() {
+        let credentials_path = credentials_path.as_ref().unwrap();
         writeln!(
             stdout,
             "├─ import {AWS_HARDEN_PROFILE} keys from {} into the login keychain",
@@ -51,6 +57,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         )
         .ok();
     } else {
+        let credentials_path = credentials_path.as_ref().unwrap();
         writeln!(
             stdout,
             "├─ no {AWS_HARDEN_PROFILE} plaintext keys found in {}",
@@ -66,7 +73,8 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
             return Ok(());
         }
         import_aws_credentials(&credentials)?;
-        delete_aws_credentials(&credentials_path, AWS_HARDEN_PROFILE)?;
+        let credentials_path = credentials_path.as_ref().unwrap();
+        delete_aws_credentials(credentials_path, AWS_HARDEN_PROFILE)?;
         writeln!(stdout, "├─ imported keys").ok();
         writeln!(stdout, "├─ deleted plaintext keys").ok();
     }
@@ -120,6 +128,10 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
         input.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
+}
+
+fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool {
+    !is_root || has_test_keychain
 }
 
 fn is_aws_stub(path: &Path) -> bool {
@@ -411,6 +423,13 @@ mod tests {
             err,
             "aws-vault is not installed; run `brew install aws-vault`"
         );
+    }
+
+    #[test]
+    fn root_skips_aws_credential_import_without_test_keychain() {
+        assert!(!should_import_aws_credentials(true, false));
+        assert!(should_import_aws_credentials(true, true));
+        assert!(should_import_aws_credentials(false, false));
     }
 
     #[test]
