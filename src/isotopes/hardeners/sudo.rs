@@ -1,7 +1,10 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::HardenerDetection;
+
 const PAM_DIR: &str = "/etc/pam.d";
+const SUDO_LOCAL_PATH: &str = "/etc/pam.d/sudo_local";
 const ENABLE_TOUCH_ID_COMMAND: &str =
     "echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null";
 
@@ -18,6 +21,15 @@ pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
         writeln!(stdout, "        {ENABLE_TOUCH_ID_COMMAND}").ok();
     }
     Ok(())
+}
+
+pub(crate) fn detect() -> HardenerDetection {
+    let target = Some(SUDO_LOCAL_PATH.to_string());
+    if pam_tid_enabled(&pam_dir()).unwrap_or(false) {
+        HardenerDetection::hardened(None, target)
+    } else {
+        HardenerDetection::missing(target)
+    }
 }
 
 fn green(text: &str, color: bool) -> String {

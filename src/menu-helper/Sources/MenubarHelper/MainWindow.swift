@@ -86,11 +86,11 @@ final class DashboardModel: ObservableObject {
         case .hardenedTools:
             snapshot.hardenedTools.map {
                 DashboardItem(
-                    id: $0.stubPath,
+                    id: $0.stubPath ?? $0.name,
                     title: $0.name,
                     subtitle: $0.targetPath ?? "target unknown",
                     detail: [
-                        "Stub: \($0.stubPath)",
+                        $0.stubPath.map { "Stub: \($0)" },
                         $0.targetPath.map { "Target: \($0)" },
                     ].compactMap(\.self).joined(separator: "\n"),
                     documentation: $0.documentation

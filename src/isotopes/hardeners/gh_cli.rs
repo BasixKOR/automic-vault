@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use super::HardenerDetection;
+
 const GH_CLI_PATH: &str = "/opt/homebrew/opt/gh-cli/bin/gh";
 const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
 const MIGRATE_COMMAND: &str = "gh auth av-migrate";
@@ -18,6 +20,18 @@ pub(crate) fn run(stdout: &mut dyn Write) -> Result<(), String> {
     )
     .ok();
     Ok(())
+}
+
+pub(crate) fn detect() -> HardenerDetection {
+    let path = gh_cli_path();
+    if path.exists() {
+        HardenerDetection::hardened(
+            Some(path.display().to_string()),
+            Some(MIGRATE_COMMAND.to_string()),
+        )
+    } else {
+        HardenerDetection::missing(Some(MIGRATE_COMMAND.to_string()))
+    }
 }
 
 fn gh_cli_path() -> PathBuf {

@@ -67,52 +67,47 @@ import Testing
 
 @Test func hardenerMetadataDecodesDocumentation() throws {
     let data = Data("""
-    {"hardeners":[{"name":"aws","documentation":"## What It Does"}]}
+    {"hardeners":[{"name":"aws","documentation":"## What It Does","hardened":true,"stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws"}]}
     """.utf8)
 
     #expect(try hardenerMetadata(from: data) == [
-        HardenerMetadata(name: "aws", documentation: "## What It Does")
+        HardenerMetadata(
+            name: "aws",
+            documentation: "## What It Does",
+            hardened: true,
+            stubPath: "/usr/local/bin/aws",
+            targetPath: "/opt/homebrew/bin/aws"
+        )
     ])
 }
 
-@Test func hardenedToolsFindsAutomicVaultStubs() throws {
+@Test func hardenedToolsUseHardenerDetection() throws {
     let directory = temporaryDirectory()
-    try """
-    #!/bin/sh
-    # Automic Vault hardened stub
-    exec /usr/local/bin/av stub-exec 'aws' '/opt/homebrew/bin/aws' "$@"
-    """.write(to: directory.appendingPathComponent("aws"), atomically: true, encoding: .utf8)
-    try "not a stub".write(to: directory.appendingPathComponent("plain"), atomically: true, encoding: .utf8)
-
-    let tools = loadHardenedTools(in: directory, ghCLIURL: nil)
-
-    #expect(tools.count == 1)
-    #expect(tools.first?.name == "aws")
-    #expect(tools.first?.stubPath.hasSuffix("/aws") == true)
-    #expect(tools.first?.targetPath == "/opt/homebrew/bin/aws")
-}
-
-@Test func hardenedToolsFindsLegacyAWSInjectStubAndGHTap() throws {
-    let directory = temporaryDirectory()
-    try """
-    #!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh
-    exec /opt/homebrew/bin/aws-vault exec default -- /opt/homebrew/bin/aws "$@"
-    """.write(to: directory.appendingPathComponent("aws"), atomically: true, encoding: .utf8)
-    let gh = directory.appendingPathComponent("gh")
-    try "".write(to: gh, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
-
     let tools = loadHardenedTools(
         in: directory,
-        ghCLIURL: gh,
+        ghCLIURL: nil,
         metadata: [
-            HardenerMetadata(name: "aws", documentation: "AWS docs"),
-            HardenerMetadata(name: "gh-cli", documentation: "GitHub docs"),
+            HardenerMetadata(
+                name: "aws",
+                documentation: "AWS docs",
+                hardened: true,
+                stubPath: "/usr/local/bin/aws",
+                targetPath: "/opt/homebrew/bin/aws"
+            ),
+            HardenerMetadata(
+                name: "sudo",
+                documentation: "Sudo docs",
+                hardened: true,
+                targetPath: "/etc/pam.d/sudo_local"
+            ),
+            HardenerMetadata(name: "gh-cli", documentation: "GitHub docs", hardened: false),
         ]
     )
 
-    #expect(tools.map(\.name) == ["aws", "gh-cli"])
-    #expect(tools.map(\.documentation) == ["AWS docs", "GitHub docs"])
+    #expect(tools.map(\.name) == ["aws", "sudo"])
+    #expect(tools.map(\.documentation) == ["AWS docs", "Sudo docs"])
+    #expect(tools.first?.stubPath == "/usr/local/bin/aws")
+    #expect(tools.last?.stubPath == nil)
 }
 
 @Test func secretGatesDecodeRememberedApprovals() throws {

@@ -58,10 +58,13 @@ pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
 
 pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
     let report = serde_json::json!({
-        "hardeners": isotopes::hardener_metadata().iter().map(|hardener| {
+        "hardeners": isotopes::hardener_metadata().into_iter().map(|hardener| {
             serde_json::json!({
                 "name": hardener.name,
                 "documentation": hardener.documentation,
+                "hardened": hardener.detection.hardened,
+                "stub_path": hardener.detection.stub_path,
+                "target_path": hardener.detection.target_path,
             })
         }).collect::<Vec<_>>(),
     });
@@ -336,6 +339,9 @@ mod tests {
         assert!(output.contains(r#""name":"aws""#));
         assert!(output.contains(r#""name":"gh-cli""#));
         assert!(output.contains(r#""name":"sudo""#));
+        assert!(output.contains(r#""hardened":"#));
+        assert!(output.contains(r#""stub_path":"#));
+        assert!(output.contains(r#""target_path":"#));
         assert!(output.contains(r###""documentation":"## What It Does"###));
     }
 

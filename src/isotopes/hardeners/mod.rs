@@ -5,6 +5,31 @@ pub(crate) mod sudo;
 pub(crate) struct HardenerMetadata {
     pub(crate) name: &'static str,
     pub(crate) documentation: &'static str,
+    pub(crate) detection: HardenerDetection,
+}
+
+pub(crate) struct HardenerDetection {
+    pub(crate) hardened: bool,
+    pub(crate) stub_path: Option<String>,
+    pub(crate) target_path: Option<String>,
+}
+
+impl HardenerDetection {
+    pub(crate) fn hardened(stub_path: Option<String>, target_path: Option<String>) -> Self {
+        Self {
+            hardened: true,
+            stub_path,
+            target_path,
+        }
+    }
+
+    pub(crate) fn missing(target_path: Option<String>) -> Self {
+        Self {
+            hardened: false,
+            stub_path: None,
+            target_path,
+        }
+    }
 }
 
 macro_rules! hardener {
@@ -12,16 +37,15 @@ macro_rules! hardener {
         HardenerMetadata {
             name: $name,
             documentation: include_str!(concat!(stringify!($module), ".md")),
+            detection: $module::detect(),
         }
     };
 }
 
-const HARDENERS: &[HardenerMetadata] = &[
-    hardener!(aws_cli, "aws"),
-    hardener!(gh_cli, "gh-cli"),
-    hardener!(sudo, "sudo"),
-];
-
-pub(crate) fn metadata() -> &'static [HardenerMetadata] {
-    HARDENERS
+pub(crate) fn metadata() -> Vec<HardenerMetadata> {
+    vec![
+        hardener!(aws_cli, "aws"),
+        hardener!(gh_cli, "gh-cli"),
+        hardener!(sudo, "sudo"),
+    ]
 }

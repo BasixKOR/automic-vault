@@ -13,6 +13,6 @@ pub(crate) fn detector_metadata() -> Vec<detectors::DetectorMetadata> {
     detectors::metadata()
 }
 
-pub(crate) fn hardener_metadata() -> &'static [hardeners::HardenerMetadata] {
+pub(crate) fn hardener_metadata() -> Vec<hardeners::HardenerMetadata> {
     hardeners::metadata()
 }

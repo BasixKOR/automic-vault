@@ -3,6 +3,8 @@ use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use super::HardenerDetection;
+
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
@@ -85,6 +87,18 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     install_aws_stub(&aws_stub_path())?;
     writeln!(stdout, "╰─ wrote {AWS_STUB_PATH}").ok();
     Ok(())
+}
+
+pub(crate) fn detect() -> HardenerDetection {
+    let path = aws_stub_path();
+    if is_aws_stub(&path) {
+        HardenerDetection::hardened(
+            Some(path.display().to_string()),
+            Some("/opt/homebrew/bin/aws".to_string()),
+        )
+    } else {
+        HardenerDetection::missing(Some("/opt/homebrew/bin/aws".to_string()))
+    }
 }
 
 pub(crate) fn run_stub_install(
@@ -179,6 +193,16 @@ fn stub_path(target: &Path) -> Result<PathBuf, String> {
 fn is_av_stub(path: &Path) -> bool {
     fs::read_to_string(path)
         .map(|contents| contents.lines().nth(1) == Some(STUB_MARKER))
+        .unwrap_or(false)
+}
+
+fn is_aws_stub(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|contents| {
+            is_av_stub(path)
+                || (contents.starts_with("#!/usr/local/bin/av inject ")
+                    && contents.contains("aws-vault"))
+        })
         .unwrap_or(false)
 }
 
