@@ -401,14 +401,19 @@ private struct DashboardSidebarView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        List(selection: sectionSelection) {
-            ForEach(DashboardSection.allCases) { section in
-                sidebarRow(section)
-                    .tag(section)
+        VStack(spacing: 8) {
+            SidebarSearchField(text: $model.searchText)
+                .frame(height: 28)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+            List(selection: sectionSelection) {
+                ForEach(DashboardSection.allCases) { section in
+                    sidebarRow(section)
+                        .tag(section)
+                }
             }
+            .listStyle(.sidebar)
         }
-        .listStyle(.sidebar)
-        .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
     }
 
     private var sectionSelection: Binding<DashboardSection?> {
@@ -445,6 +450,42 @@ private struct DashboardSidebarView: View {
         Image(systemName: section.systemImage)
             .font(.system(size: 14, weight: .semibold))
             .frame(width: 20, height: 20)
+    }
+}
+
+private struct SidebarSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let searchField = NSSearchField()
+        searchField.placeholderString = "Search"
+        searchField.delegate = context.coordinator
+        searchField.sendsSearchStringImmediately = true
+        return searchField
+    }
+
+    func updateNSView(_ searchField: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if searchField.stringValue != text {
+            searchField.stringValue = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let searchField = notification.object as? NSSearchField else { return }
+            text.wrappedValue = searchField.stringValue
+        }
     }
 }
 
