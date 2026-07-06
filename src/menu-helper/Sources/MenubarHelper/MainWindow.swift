@@ -21,8 +21,16 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         super.viewDidLoad()
         splitView.isVertical = true
         addSplitViewItem(sidebarItem())
-        addSplitViewItem(contentItem(DashboardListView(model: model), width: 180, minimumWidth: 180, maximumWidth: 360))
-        addSplitViewItem(contentItem(DashboardDetailView(model: model), width: 570, minimumWidth: 320))
+        addSplitViewItem(contentItem(
+            HStack(spacing: 0) {
+                DashboardListView(model: model)
+                    .frame(minWidth: 180, idealWidth: 180, maxWidth: 360)
+                DashboardDetailView(model: model)
+                    .frame(minWidth: 320)
+            },
+            width: 750,
+            minimumWidth: 500
+        ))
     }
 
     override func viewDidAppear() {
@@ -415,7 +423,7 @@ private struct DashboardSidebarView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
+        // .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
