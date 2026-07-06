@@ -28,9 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = menuImage()
 
         let menu = NSMenu()
-        let title = NSMenuItem(title: "Automic Vault", action: nil, keyEquivalent: "")
-        title.isEnabled = false
-        menu.addItem(title)
         menu.addItem(scanStatusItem)
         menu.addItem(.separator())
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
