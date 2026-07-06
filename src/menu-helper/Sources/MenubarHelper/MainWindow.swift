@@ -24,7 +24,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         addSplitViewItem(contentItem(
             HStack(spacing: 0) {
                 DashboardListView(model: model)
-                    .frame(minWidth: 180, idealWidth: 180, maxWidth: 360)
+                    .frame(width: 180)
                 DashboardDetailView(model: model)
                     .frame(minWidth: 320)
             },
@@ -1092,4 +1092,3 @@ private enum GlassPalette {
     static let green = Color(red: 0.18, green: 0.62, blue: 0.31)
     static let gray = Color(red: 0.46, green: 0.49, blue: 0.53)
 }
-
