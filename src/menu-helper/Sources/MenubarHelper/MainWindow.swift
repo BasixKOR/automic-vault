@@ -42,7 +42,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
     }
 
     private func sidebarItem() -> NSSplitViewItem {
-        let controller = NSHostingController(rootView: DashboardSidebarView(model: model).appAccent())
+        let controller = NSHostingController(rootView: DashboardSidebarView(model: model))
         let item = NSSplitViewItem(sidebarWithViewController: controller)
         item.minimumThickness = 250
         item.maximumThickness = 250
@@ -51,7 +51,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
 
     private func columnItem<Content: View>(_ rootView: Content, width: CGFloat, minimumWidth: CGFloat? = nil) -> NSSplitViewItem {
         let minimumWidth = minimumWidth ?? width
-        let controller = NSHostingController(rootView: rootView.appAccent())
+        let controller = NSHostingController(rootView: rootView)
         let item = NSSplitViewItem(viewController: controller)
         item.minimumThickness = minimumWidth
         item.preferredThicknessFraction = 0
@@ -401,76 +401,59 @@ private struct DashboardSidebarView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                searchField
-                    .padding(.bottom, 22)
+        VStack(spacing: 8) {
+            searchField
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+            List(selection: sectionSelection) {
                 ForEach(DashboardSection.allCases) { section in
                     sidebarRow(section)
+                        .tag(section)
                 }
-                Spacer(minLength: 24)
             }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .listStyle(.sidebar)
         }
-        .scrollEdgeEffectStyle(.soft, for: .top)
+    }
+
+    private var sectionSelection: Binding<DashboardSection?> {
+        Binding {
+            model.selectedSection
+        } set: { section in
+            if let section {
+                model.selectSection(section)
+            }
+        }
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
-        Button { model.selectSection(section) } label: {
-            HStack(spacing: 12) {
-                sidebarIcon(section)
-                Text(section.title)
-                    .font(.system(size: 14, weight: .regular))
-                    .lineLimit(1)
-                Spacer(minLength: 6)
-                let count = model.count(for: section)
-                if count > 0 {
-                    if section == .detectors, model.snapshot.flaggedDetectorCount > 0 {
-                        DetectorCountPill(count: count)
-                            .fixedSize()
-                    } else {
-                        SidebarCountText(count: count)
-                            .fixedSize()
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .foregroundStyle(model.selectedSection == section ? Color.accentColor : .primary)
-            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-            .contentShape(Rectangle())
-            .background {
-                if model.selectedSection == section {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(GlassPalette.sidebarSelectedFill)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                        }
+        HStack(spacing: 12) {
+            sidebarIcon(section)
+            Text(section.title)
+                .font(.system(size: 14, weight: .regular))
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            let count = model.count(for: section)
+            if count > 0 {
+                if section == .detectors, model.snapshot.flaggedDetectorCount > 0 {
+                    DetectorCountPill(count: count)
+                        .fixedSize()
+                } else {
+                    SidebarCountText(count: count)
+                        .fixedSize()
                 }
             }
         }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-            TextField("Search", text: $model.searchText)
-                .textFieldStyle(.plain)
-        }
-        .font(.system(size: 13))
-        .foregroundStyle(GlassPalette.secondaryText)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(GlassPalette.searchFill, in: Capsule(style: .continuous))
+        TextField("Search", text: $model.searchText)
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 13))
     }
 
     private func sidebarIcon(_ section: DashboardSection) -> some View {
         Image(systemName: section.systemImage)
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(model.selectedSection == section ? GlassPalette.accent : .primary)
             .frame(width: 20, height: 20)
     }
 }
@@ -479,29 +462,35 @@ private struct DashboardListView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if model.items.isEmpty && !model.isReloading {
-                    EmptyListView(section: model.selectedSection)
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                } else {
+        Group {
+            if model.items.isEmpty && !model.isReloading {
+                EmptyListView(section: model.selectedSection)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: itemSelection) {
                     rows(model.items)
                 }
+                .listStyle(.inset)
             }
         }
         .ignoresSafeArea()
-        .contentMargins(.top, 8, for: .scrollContent)
-        .contentMargins(.horizontal, 2, for: .scrollContent)
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
     }
 
+    private var itemSelection: Binding<String?> {
+        Binding {
+            model.selectedItem?.id
+        } set: { id in
+            model.selectedItemID = id
+        }
+    }
+
     private func rows(_ items: [DashboardItem]) -> some View {
         ForEach(items) { item in
-            DashboardRow(item: item, selected: model.selectedItem?.id == item.id) {
-                model.select(item)
-            }
+            DashboardRow(item: item)
+                .tag(item.id)
         }
     }
 }
@@ -524,8 +513,8 @@ private struct DashboardDetailView: View {
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
-                        ? ReferenceBadge(title: "Flagged", color: GlassPalette.red)
-                        : ReferenceBadge(title: "Ready", color: GlassPalette.green)
+                        ? ReferenceBadge(title: "Flagged", color: .red)
+                        : ReferenceBadge(title: "Ready", color: .green)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -537,7 +526,7 @@ private struct DashboardDetailView: View {
                     summary: "Installed hardening behavior and caveats for this tool.",
                     referenceTitle: "Hardener Reference",
                     fallbackDocumentation: "No hardener documentation is bundled for this item.",
-                    badge: ReferenceBadge(title: "Hardened", color: GlassPalette.blue)
+                    badge: ReferenceBadge(title: "Hardened", color: .blue)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -547,11 +536,11 @@ private struct DashboardDetailView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(item.title)
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(GlassPalette.primaryText)
+                        .foregroundStyle(.primary)
                         .lineLimit(3)
                     Text(item.subtitle)
                         .font(.system(size: 14))
-                        .foregroundStyle(GlassPalette.secondaryText)
+                        .foregroundStyle(.secondary)
                     InfoBlock(title: model.selectedSection.title, text: item.detail)
                     if model.selectedSection == .allSecrets {
                         HStack {
@@ -581,7 +570,7 @@ private struct DashboardDetailView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
-        .background(GlassSurface(tint: GlassPalette.windowTint).ignoresSafeArea())
+        .background(.ultraThinMaterial)
         .sheet(isPresented: $model.isRenamingSecret) {
             if let account = model.selectedItem?.id {
                 RenameSecretView(model: model, account: account)
@@ -592,44 +581,30 @@ private struct DashboardDetailView: View {
 
 private struct DashboardRow: View {
     let item: DashboardItem
-    let selected: Bool
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(GlassPalette.primaryText)
-                        .lineLimit(1)
-                    if let severity = item.severity {
-                        Text(severity)
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .frame(height: 18)
-                            .outlinedPill()
-                    }
-                }
-                Text(item.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(GlassPalette.quietText)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
-            .frame(height: 58, alignment: .topLeading)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(GlassPalette.packageSelectedFill)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if let severity = item.severity {
+                    Text(severity)
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .frame(height: 18)
+                        .outlinedPill()
                 }
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+            Text(item.subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .frame(height: 54, alignment: .topLeading)
     }
 }
 
@@ -639,7 +614,7 @@ private struct EmptyListView: View {
     var body: some View {
         Text(emptyText)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(GlassPalette.quietText)
+            .foregroundStyle(.secondary)
     }
 
     private var emptyText: String {
@@ -662,7 +637,7 @@ private struct AddSecretView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Add Secret")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(GlassPalette.primaryText)
+                .foregroundStyle(.primary)
             TextField("Name", text: $account)
                 .textFieldStyle(.roundedBorder)
             SecureField("Value", text: $value)
@@ -680,7 +655,7 @@ private struct AddSecretView: View {
         }
         .padding(22)
         .frame(width: 360)
-        .background(GlassSurface(tint: GlassPalette.windowTint))
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -698,7 +673,7 @@ private struct RenameSecretView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Rename Secret")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(GlassPalette.primaryText)
+                .foregroundStyle(.primary)
             TextField("Name", text: $account)
                 .textFieldStyle(.roundedBorder)
             HStack {
@@ -714,7 +689,7 @@ private struct RenameSecretView: View {
         }
         .padding(22)
         .frame(width: 360)
-        .background(GlassSurface(tint: GlassPalette.windowTint))
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -729,7 +704,7 @@ private struct SidebarCountText: View {
     var body: some View {
         Text(count.formatted())
             .font(.system(size: 11, weight: .regular))
-            .foregroundStyle(GlassPalette.quietText)
+            .foregroundStyle(.secondary)
             .monospacedDigit()
             .lineLimit(1)
             .frame(minWidth: SidebarCountMetrics.columnWidth, alignment: .trailing)
@@ -758,11 +733,11 @@ private struct InfoBlock: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(GlassPalette.quietText)
+                .foregroundStyle(.secondary)
                 .tracking(0.7)
             Text(text)
                 .font(.system(size: 12))
-                .foregroundStyle(GlassPalette.secondaryText)
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
     }
@@ -786,13 +761,13 @@ private struct ReferenceDetailView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(item.title)
                         .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(GlassPalette.primaryText)
+                        .foregroundStyle(.primary)
                         .lineLimit(3)
                     referenceBadge
                 }
                 Text(summary)
                     .font(.system(size: 13))
-                    .foregroundStyle(GlassPalette.secondaryText)
+                    .foregroundStyle(.secondary)
             }
 
             if !item.detail.isEmpty {
@@ -801,29 +776,29 @@ private struct ReferenceDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(GlassPalette.packageSelectedFill)
+                            .fill(Color(nsColor: .controlBackgroundColor))
                     }
             }
 
             VStack(alignment: .leading, spacing: 14) {
                 Text(referenceTitle)
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(GlassPalette.quietText)
+                    .foregroundStyle(.secondary)
                     .tracking(0.7)
                 RenderedMarkdown(markdown: item.documentation.isEmpty ? fallbackDocumentation : item.documentation)
                     .font(.system(size: 13))
-                    .foregroundStyle(GlassPalette.secondaryText)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.045))
+                    .fill(Color(nsColor: .controlBackgroundColor))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(GlassPalette.hairline)
+                    .stroke(Color(nsColor: .separatorColor))
             }
         }
     }
@@ -846,11 +821,11 @@ private struct SecretGateDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(URL(fileURLWithPath: gate.scriptPath).lastPathComponent)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(GlassPalette.primaryText)
+                    .foregroundStyle(.primary)
                     .lineLimit(3)
                 Text("\(countLabel(gate.keys.count, "secret")) allowed for \(countLabel(gate.approvedApps.count, "calling app"))")
                     .font(.system(size: 13))
-                    .foregroundStyle(GlassPalette.secondaryText)
+                    .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -866,7 +841,7 @@ private struct SecretGateDetailView: View {
                 HStack {
                     Text("Always Approved Apps")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(GlassPalette.primaryText)
+                        .foregroundStyle(.primary)
                     Spacer()
                     Button { model.addApp(to: gate) } label: {
                         Image(systemName: "plus")
@@ -879,7 +854,7 @@ private struct SecretGateDetailView: View {
                 if gate.approvedApps.isEmpty {
                     Text("No apps are always approved for this gate.")
                         .font(.system(size: 12))
-                        .foregroundStyle(GlassPalette.quietText)
+                        .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(gate.approvedApps, id: \.requirement) { app in
@@ -920,10 +895,10 @@ private struct SecretGateField: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(GlassPalette.quietText)
+                .foregroundStyle(.secondary)
             Text(value)
                 .font(monospaced ? .system(size: 12, design: .monospaced) : .system(size: 12))
-                .foregroundStyle(GlassPalette.secondaryText)
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
     }
@@ -945,15 +920,15 @@ private struct ApprovedAppRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(display.name)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(GlassPalette.primaryText)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(display.bundleIdentifier)
                     .font(.system(size: 12))
-                    .foregroundStyle(GlassPalette.secondaryText)
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                 Text(display.signingSummary)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(GlassPalette.quietText)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .textSelection(.enabled)
             }
@@ -963,7 +938,7 @@ private struct ApprovedAppRow: View {
                     .frame(width: 20, height: 20)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(GlassPalette.quietText)
+            .foregroundStyle(.secondary)
             .help("Remove Calling App")
         }
         .padding(.vertical, 10)
@@ -1036,21 +1011,8 @@ private func requirementText(_ requirement: SecRequirement) -> String? {
     return text as String
 }
 
-private struct GlassSurface: View {
-    let tint: Color
-
-    var body: some View {
-        Rectangle().fill(.ultraThinMaterial).overlay(tint)
-    }
-}
-
 private extension View {
-    func appAccent() -> some View {
-        tint(GlassPalette.accent)
-            .accentColor(GlassPalette.accent)
-    }
-
-    func outlinedPill(_ color: Color = GlassPalette.red) -> some View {
+    func outlinedPill(_ color: Color = .red) -> some View {
         foregroundStyle(color)
             .background(color.opacity(0.12), in: Capsule())
             .overlay {
@@ -1060,24 +1022,5 @@ private extension View {
 }
 
 private var hairline: some View {
-    Rectangle().fill(GlassPalette.hairline).frame(height: 1)
-}
-
-private enum GlassPalette {
-    static let windowTint = Color.clear
-    // static let topBarTint = Color(red: 0.07, green: 0.08, blue: 0.09).opacity(0.36)
-    // static let sidebarTint = Color(red: 0.06, green: 0.07, blue: 0.07).opacity(0.72)
-    static let primaryText = Color.white.opacity(0.92)
-    static let secondaryText = Color.white.opacity(0.72)
-    static let quietText = Color.white.opacity(0.42)
-    static let hairline = Color.white.opacity(0.07)
-    static let accent = Color(red: 0.55, green: 0.28, blue: 1.00)
-    static let sidebarSelectedFill = Color.white.opacity(0.04)
-    static let packageSelectedFill = Color(nsColor: .selectedContentBackgroundColor)
-    static let controlFill = Color.white.opacity(0.18)
-    static let searchFill = Color.white.opacity(0.11)
-    static let red = Color(red: 0.95, green: 0.18, blue: 0.16)
-    static let blue = Color(red: 0.00, green: 0.48, blue: 1.00)
-    static let green = Color(red: 0.18, green: 0.62, blue: 0.31)
-    static let gray = Color(red: 0.46, green: 0.49, blue: 0.53)
+    Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 1)
 }
