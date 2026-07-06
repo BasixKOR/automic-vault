@@ -487,42 +487,16 @@ private struct DashboardListView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if model.items.isEmpty && !model.isReloading {
-                        EmptyListView(section: model.selectedSection)
-                            .frame(maxWidth: .infinity, minHeight: 180)
-                            .padding(.top, 43)
-                    } else {
-                        rows(model.items)
-                    }
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if model.items.isEmpty && !model.isReloading {
+                    EmptyListView(section: model.selectedSection)
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                } else {
+                    rows(model.items)
                 }
-                .padding(.top, 43)
-            }
-            VStack(spacing: 0) {
-                HStack {
-                    Text(model.selectedSection.title)
-                    Spacer()
-                    if model.selectedSection == .allSecrets {
-                        Button { model.isAddingSecret = true } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Add Secret")
-                    }
-                    if model.isReloading { ProgressView().controlSize(.small) }
-                }
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(GlassPalette.quietText)
-                .padding(.horizontal, 12)
-                .frame(height: 42)
-                .background(GlassSurface(tint: GlassPalette.topBarTint).ignoresSafeArea(.container, edges: .top))
-                hairline
             }
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .background(GlassSurface(tint: GlassPalette.windowTint).ignoresSafeArea())
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
