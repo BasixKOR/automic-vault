@@ -598,11 +598,11 @@ private struct DashboardRow: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GlassPalette.primaryText)
-                    .lineLimit(1)
                 HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(GlassPalette.primaryText)
+                        .lineLimit(1)
                     if let severity = item.severity {
                         Text(severity)
                             .font(.system(size: 10, weight: .bold))
@@ -610,11 +610,11 @@ private struct DashboardRow: View {
                             .frame(height: 18)
                             .outlinedPill()
                     }
-                    Text(item.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(GlassPalette.quietText)
-                        .lineLimit(2)
                 }
+                Text(item.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(GlassPalette.quietText)
+                    .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
