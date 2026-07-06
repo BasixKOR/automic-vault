@@ -416,6 +416,21 @@ private struct DashboardSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: .green.opacity(0.55), radius: 2)
+                Text("Automic Vault Monitoring")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
     }
 
     private var sectionSelection: Binding<DashboardSection?> {
