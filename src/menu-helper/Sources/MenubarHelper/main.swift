@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = AutomicVaultMainWindowController()
         let window = AutomicVaultWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 1020, height: 660)),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 1120, height: 760)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
