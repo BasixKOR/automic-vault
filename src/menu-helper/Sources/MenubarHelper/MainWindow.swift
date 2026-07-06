@@ -67,8 +67,20 @@ final class DashboardModel: ObservableObject {
 
     private var reloadTask: Task<Void, Never>?
 
+    init(snapshot: DashboardSnapshot = .empty) {
+        self.snapshot = snapshot
+    }
+
     var items: [DashboardItem] {
-        let base = switch selectedSection {
+        items(for: selectedSection)
+    }
+
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func items(for section: DashboardSection) -> [DashboardItem] {
+        let base = switch section {
         case .detectors:
             detectorItems
         case .hardenedTools:
@@ -106,7 +118,7 @@ final class DashboardModel: ObservableObject {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: "Keychain secret", detail: "Secret value is hidden.")
             }
         }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = searchQuery
         guard !query.isEmpty else { return base }
         return base.filter {
             $0.title.localizedCaseInsensitiveContains(query)
@@ -130,7 +142,8 @@ final class DashboardModel: ObservableObject {
     }
 
     func count(for section: DashboardSection) -> Int {
-        switch section {
+        guard searchQuery.isEmpty else { return items(for: section).count }
+        return switch section {
         case .detectors: snapshot.detectorDisplayCount
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
@@ -278,6 +291,36 @@ final class DashboardModel: ObservableObject {
             }
     }
 
+}
+
+@MainActor
+func runDashboardSearchSelfCheck() -> Int32 {
+    let model = DashboardModel(snapshot: DashboardSnapshot(
+        detectors: [
+            DetectorMetadata(name: "aws", homepage: "", docsURL: ""),
+            DetectorMetadata(name: "git", homepage: "", docsURL: ""),
+        ],
+        detectorFindings: [],
+        hardenedTools: [
+            HardenedTool(name: "aws", stubPath: "/usr/local/bin/aws", targetPath: "/opt/homebrew/bin/aws"),
+            HardenedTool(name: "gh", stubPath: "/usr/local/bin/gh", targetPath: "/opt/homebrew/bin/gh"),
+        ],
+        secretGates: [],
+        secrets: [
+            StoredSecret(account: "AWS_TOKEN"),
+            StoredSecret(account: "GITHUB_TOKEN"),
+        ]
+    ))
+    guard model.count(for: .detectors) == 2,
+          model.count(for: .hardenedTools) == 2,
+          model.count(for: .allSecrets) == 2
+    else { return 1 }
+    model.searchText = "aws"
+    guard model.count(for: .detectors) == 1,
+          model.count(for: .hardenedTools) == 1,
+          model.count(for: .allSecrets) == 1
+    else { return 1 }
+    return 0
 }
 
 enum DashboardSection: String, CaseIterable, Identifiable {

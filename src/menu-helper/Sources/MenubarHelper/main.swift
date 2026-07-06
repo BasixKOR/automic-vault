@@ -1045,6 +1045,10 @@ if CommandLine.arguments.contains("--self-check-approvals") {
     exit(runApprovalSelfCheck())
 }
 
+if CommandLine.arguments.contains("--self-check-dashboard-search") {
+    exit(MainActor.assumeIsolated { runDashboardSearchSelfCheck() })
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

@@ -12,6 +12,20 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var secretGates: [SecretGate]
     public var secrets: [StoredSecret]
 
+    public init(
+        detectors: [DetectorMetadata],
+        detectorFindings: [DetectorFinding],
+        hardenedTools: [HardenedTool],
+        secretGates: [SecretGate],
+        secrets: [StoredSecret]
+    ) {
+        self.detectors = detectors
+        self.detectorFindings = detectorFindings
+        self.hardenedTools = hardenedTools
+        self.secretGates = secretGates
+        self.secrets = secrets
+    }
+
     public static let empty = DashboardSnapshot(
         detectors: [],
         detectorFindings: [],
@@ -154,6 +168,10 @@ public struct SecretGateApprovedApp: Equatable, Sendable {
 
 public struct StoredSecret: Equatable, Sendable {
     public let account: String
+
+    public init(account: String) {
+        self.account = account
+    }
 }
 
 struct ScanReport: Codable {
