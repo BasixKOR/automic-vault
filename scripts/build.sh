@@ -71,11 +71,15 @@ if [[ "$notarize" -eq 1 && -z "${APPLE_TEAM_ID:-}" ]]; then
   echo "error: --notarize requires APPLE_TEAM_ID" >&2
   exit 64
 fi
+codesign_args=(--force --sign "$identity" --options runtime)
+if [[ "$identity" != "-" ]]; then
+  codesign_args+=(--timestamp)
+fi
 
-codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/target/release/av"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 cp "$ROOT/target/release/av" "$MACOS/av"
-codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
-codesign --force --sign "$identity" "$APP"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
+codesign "${codesign_args[@]}" "$APP"
 if [[ "$dmg" -eq 1 ]]; then
   rm -rf "$DMG" "$DMG_STAGE"
   mkdir -p "$DMG_STAGE"
