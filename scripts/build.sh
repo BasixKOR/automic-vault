@@ -3,22 +3,36 @@ set -euo pipefail
 
 run=0
 install=0
+dmg=0
+notarize=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run) run=1 ;;
     --install) install=1 ;;
+    --dmg) dmg=1 ;;
+    --notarize) notarize=1 ;;
     *)
-      echo "usage: $0 [--run] [--install]" >&2
+      echo "usage: $0 [--run] [--install] [--dmg] [--notarize]" >&2
       exit 64
       ;;
   esac
   shift
 done
+if [[ "$notarize" -eq 1 && "$dmg" -ne 1 ]]; then
+  echo "error: --notarize requires --dmg" >&2
+  exit 64
+fi
+if [[ "$notarize" -eq 1 && -z "${APPLE_TEAM_ID:-}" ]]; then
+  echo "error: --notarize requires APPLE_TEAM_ID" >&2
+  exit 64
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
 SWIFT_TARGET="$ROOT/target/swift"
 APP="$SWIFT_TARGET/Automic Vault.app"
+DMG="$SWIFT_TARGET/Automic Vault.dmg"
+DMG_STAGE="$SWIFT_TARGET/dmg"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -61,6 +75,25 @@ fi
 cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
+if [[ "$dmg" -eq 1 ]]; then
+  rm -rf "$DMG" "$DMG_STAGE"
+  mkdir -p "$DMG_STAGE"
+  ditto "$APP" "$DMG_STAGE/Automic Vault.app"
+  create-dmg \
+    --volname "Automic Vault" \
+    --volicon "$RESOURCES/AppIcon.icns" \
+    --icon "Automic Vault.app" 125 120 \
+    --app-drop-link 425 120 \
+    --codesign "$identity" \
+    --overwrite \
+    "$DMG" \
+    "$DMG_STAGE"
+  codesign --verify "$DMG"
+  rm -rf "$DMG_STAGE"
+  if [[ "$notarize" -eq 1 ]]; then
+    "$ROOT/scripts/build-notarize-dmg.sh" "$DMG"
+  fi
+fi
 if [[ "$install" -eq 1 ]]; then
   rm -rf "$INSTALLED_APP"
   ditto "$APP" "$INSTALLED_APP"
@@ -78,4 +111,8 @@ elif [[ "$run" -eq 1 ]]; then
   pkill -x AutomicVaultMenubar || true
   open -n "$APP"
 fi
-echo "$APP"
+if [[ "$dmg" -eq 1 ]]; then
+  echo "$DMG"
+else
+  echo "$APP"
+fi
