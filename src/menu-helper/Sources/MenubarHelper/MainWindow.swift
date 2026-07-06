@@ -1082,7 +1082,7 @@ private enum GlassPalette {
     static let secondaryText = Color.white.opacity(0.72)
     static let quietText = Color.white.opacity(0.42)
     static let hairline = Color.white.opacity(0.07)
-    static let accent = Color(red: 1.00, green: 0.34, blue: 0.00)
+    static let accent = Color(red: 0.20, green: 1.00, blue: 0.00)
     static let sidebarSelectedFill = Color(red: 0.00, green: 0.38, blue: 0.86)
     static let packageSelectedFill = Color.white.opacity(0.08)
     static let controlFill = Color.white.opacity(0.18)
