@@ -442,6 +442,7 @@ struct DashboardRootView: View {
                 } label: {
                     Label("Install av-cli", systemImage: "terminal")
                 }
+                .labelStyle(.titleAndIcon)
                 .help("Install /usr/local/bin/av")
             }
             if model.selectedSection == .allSecrets {
