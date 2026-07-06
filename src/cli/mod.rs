@@ -7,7 +7,13 @@ mod shell_secrets;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden sudo";
+const USAGE: &str = "\
+Usage:
+  av scan [--json]
+  av detectors --json
+  av hardeners --json
+  av inject +KEY [--] COMMAND
+  av harden";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -48,6 +54,10 @@ where
         let _ = writeln!(stderr, "{USAGE}");
         return 2;
     };
+    if command == "--help" || command == "-h" {
+        let _ = writeln!(stdout, "{USAGE}");
+        return 0;
+    }
     let mut rest = args.collect::<Vec<_>>();
 
     let mut shebang_script = None;
@@ -216,6 +226,17 @@ mod tests {
             assert_eq!(stdout, "");
             assert_eq!(stderr, format!("{USAGE}\n"));
         }
+    }
+
+    #[test]
+    fn help_prints_one_command_per_line() {
+        let (code, stdout, stderr) = run_args(&["av", "--help"]);
+
+        assert_eq!(code, 0);
+        assert_eq!(stdout, format!("{USAGE}\n"));
+        assert_eq!(stderr, "");
+        assert!(stdout.contains("\n  av harden\n"));
+        assert!(!stdout.contains("av harden [--yes]"));
     }
 
     #[test]
