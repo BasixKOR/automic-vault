@@ -327,8 +327,10 @@ private var bundledAVURL: URL? {
 private func installCLICommand(bundleAVPath: String) -> String {
     """
     #!/bin/sh
+    set -x
     sudo install \(shellQuoted(bundleAVPath)) \(installedAVCLIPath)
     status=$?
+    set +x
     printf '\\nPress Return to close this window.'
     read _
     exit "$status"
@@ -368,7 +370,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     guard shellQuoted("/tmp/Automic Vault's av") == "'/tmp/Automic Vault'\"'\"'s av'",
           installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
-            .contains("sudo install '/tmp/Automic Vault.app/Contents/MacOS/av' /usr/local/bin/av")
+            .contains("set -x\nsudo install '/tmp/Automic Vault.app/Contents/MacOS/av' /usr/local/bin/av")
     else { return 1 }
     return 0
 }
