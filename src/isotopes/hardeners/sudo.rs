@@ -11,7 +11,9 @@ pub(crate) fn run(stdout: &mut dyn Write) -> Result<(), String> {
     if pam_tid_enabled(&pam_dir())? {
         writeln!(stdout, "╰─ ☑︎ already hardened").ok();
     } else {
-        writeln!(stdout, "╰─ run `{ENABLE_TOUCH_ID_COMMAND}`").ok();
+        writeln!(stdout, "╰─ run:").ok();
+        writeln!(stdout).ok();
+        writeln!(stdout, "        {ENABLE_TOUCH_ID_COMMAND}").ok();
     }
     Ok(())
 }
@@ -70,8 +72,10 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("echo 'auth sufficient pam_tid.so'"));
-        assert!(stdout.contains("/etc/pam.d/sudo_local"));
+        assert_eq!(
+            stdout,
+            "╭─ harden sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+        );
         let _ = fs::remove_dir_all(pam);
     }
 

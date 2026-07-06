@@ -230,8 +230,10 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(pam);
         assert_eq!(code, 0);
-        assert!(stdout.contains("echo 'auth sufficient pam_tid.so'"));
-        assert!(stdout.contains("/etc/pam.d/sudo_local"));
+        assert_eq!(
+            stdout,
+            "╭─ harden sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+        );
         assert_eq!(stderr, "");
     }
 
