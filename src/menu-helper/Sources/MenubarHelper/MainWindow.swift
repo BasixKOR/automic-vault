@@ -331,9 +331,9 @@ struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView() {
             DashboardSidebarView(model: model)
-                .navigationSplitViewColumnWidth(min: 250, ideal: 250, max: 250)
+                .navigationSplitViewColumnWidth(min: 186, ideal: 250, max: 250)
         } content: {
             DashboardListView(model: model)
                 .navigationSplitViewColumnWidth(min: 168, ideal: 280)
@@ -377,12 +377,12 @@ private struct DashboardSidebarView: View {
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             sidebarIcon(section)
             Text(section.title)
                 .font(.system(size: 14, weight: .regular))
                 .lineLimit(1)
-            Spacer(minLength: 6)
+            Spacer(minLength: 0)
             let count = model.count(for: section)
             if count > 0 {
                 if section == .detectors, model.snapshot.flaggedDetectorCount > 0, model.selectedSection != .detectors {
@@ -418,7 +418,6 @@ private struct DashboardListView: View {
                 .listStyle(.inset)
             }
         }
-        .ignoresSafeArea()
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
@@ -652,7 +651,6 @@ private struct SidebarCountText: View {
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .lineLimit(1)
-            .frame(minWidth: SidebarCountMetrics.columnWidth, alignment: .trailing)
     }
 }
 
