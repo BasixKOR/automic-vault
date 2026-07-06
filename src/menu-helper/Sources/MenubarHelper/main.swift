@@ -78,8 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let controller = AutomicVaultMainWindowController()
+        let defaultWindowSize = NSSize(width: 860, height: 580)
         let window = AutomicVaultWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 1120, height: 760)),
+            contentRect: NSRect(origin: .zero, size: defaultWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -98,6 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.mainWindow = window
         NSApp.activate(ignoringOtherApps: true)
+        window.setContentSize(defaultWindowSize)
+        window.center()
     }
 
     private func menuImage(alerted: Bool = false) -> NSImage? {

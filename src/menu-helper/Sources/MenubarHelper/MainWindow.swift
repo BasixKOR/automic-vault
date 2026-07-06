@@ -28,8 +28,8 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
                 DashboardDetailView(model: model)
                     .frame(minWidth: 320)
             },
-            width: 750,
-            minimumWidth: 500
+            width: 602,
+            minimumWidth: 602
         ))
     }
 
