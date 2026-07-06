@@ -401,18 +401,14 @@ private struct DashboardSidebarView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
-        VStack(spacing: 8) {
-            searchField
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-            List(selection: sectionSelection) {
-                ForEach(DashboardSection.allCases) { section in
-                    sidebarRow(section)
-                        .tag(section)
-                }
+        List(selection: sectionSelection) {
+            ForEach(DashboardSection.allCases) { section in
+                sidebarRow(section)
+                    .tag(section)
             }
-            .listStyle(.sidebar)
         }
+        .listStyle(.sidebar)
+        .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
     }
 
     private var sectionSelection: Binding<DashboardSection?> {
@@ -443,12 +439,6 @@ private struct DashboardSidebarView: View {
                 }
             }
         }
-    }
-
-    private var searchField: some View {
-        TextField("Search", text: $model.searchText)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 13))
     }
 
     private func sidebarIcon(_ section: DashboardSection) -> some View {
