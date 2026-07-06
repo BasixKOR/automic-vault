@@ -412,9 +412,9 @@ private struct DashboardSidebarView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
                 searchField
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 22)
                 ForEach(DashboardSection.allCases) { section in
                     sidebarRow(section)
                 }
@@ -429,7 +429,7 @@ private struct DashboardSidebarView: View {
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
         Button { model.selectSection(section) } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 sidebarIcon(section)
                 Text(section.title)
                     .font(.system(size: 14, weight: .regular))
@@ -446,14 +446,14 @@ private struct DashboardSidebarView: View {
                     }
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
             .foregroundStyle(model.selectedSection == section ? GlassPalette.accent : .primary)
-            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             .contentShape(Rectangle())
             .background {
                 if model.selectedSection == section {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(.selection.opacity(0.22))
+                        .fill(GlassPalette.accent.opacity(0.18))
                         .background {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(.ultraThinMaterial)
@@ -1077,7 +1077,7 @@ private enum GlassPalette {
     static let secondaryText = Color.white.opacity(0.72)
     static let quietText = Color.white.opacity(0.42)
     static let hairline = Color.white.opacity(0.07)
-    static let accent = Color(red: 1.00, green: 0.18, blue: 0.00)
+    static let accent = Color(red: 1.00, green: 0.34, blue: 0.00)
     static let sidebarSelectedFill = Color(red: 0.00, green: 0.38, blue: 0.86)
     static let packageSelectedFill = Color.white.opacity(0.08)
     static let controlFill = Color.white.opacity(0.18)
