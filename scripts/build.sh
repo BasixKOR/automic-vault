@@ -33,6 +33,7 @@ SWIFT_TARGET="$ROOT/target/swift"
 APP="$SWIFT_TARGET/Automic Vault.app"
 DMG="$SWIFT_TARGET/Automic Vault.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
+DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -95,10 +96,23 @@ if [[ "$dmg" -eq 1 ]]; then
   fi
 fi
 if [[ "$install" -eq 1 ]]; then
+  install_app="$APP"
+  if [[ "$dmg" -eq 1 ]]; then
+    rm -rf "$DMG_MOUNT"
+    mkdir -p "$DMG_MOUNT"
+    hdiutil attach -nobrowse -readonly -mountpoint "$DMG_MOUNT" "$DMG"
+    trap 'hdiutil detach "$DMG_MOUNT" >/dev/null 2>&1 || true' EXIT
+    install_app="$DMG_MOUNT/Automic Vault.app"
+  fi
   rm -rf "$INSTALLED_APP"
-  ditto "$APP" "$INSTALLED_APP"
+  ditto "$install_app" "$INSTALLED_APP"
+  if [[ "$dmg" -eq 1 ]]; then
+    hdiutil detach "$DMG_MOUNT"
+    trap - EXIT
+    rm -rf "$DMG_MOUNT"
+  fi
   mkdir -p "$HOME/Library/LaunchAgents"
-  cp "$LAUNCH_AGENT_PLIST" "$INSTALLED_LAUNCH_AGENT"
+  cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT"
   launchctl enable "gui/$(id -u)/$LAUNCH_AGENT_NAME"

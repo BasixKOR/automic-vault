@@ -7,3 +7,5 @@
   --wait \
   "$1" \
   >&2
+/usr/bin/xcrun stapler staple "$1" >&2
+/usr/bin/xcrun stapler validate "$1" >&2
