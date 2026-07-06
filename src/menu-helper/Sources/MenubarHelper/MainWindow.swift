@@ -490,7 +490,6 @@ private struct DashboardListView: View {
                 }
             }
         }
-        .ignoresSafeArea()
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 2, for: .scrollContent)
         .sheet(isPresented: $model.isAddingSecret) {
