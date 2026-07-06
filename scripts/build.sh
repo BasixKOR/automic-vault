@@ -73,9 +73,6 @@ if [[ "$notarize" -eq 1 && -z "${APPLE_TEAM_ID:-}" ]]; then
 fi
 
 codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/target/release/av"
-if [[ "$install" -eq 1 ]]; then
-  sudo install -m 0755 "$ROOT/target/release/av" /usr/local/bin/av
-fi
 cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
@@ -114,6 +111,7 @@ if [[ "$install" -eq 1 ]]; then
     trap - EXIT
     rm -rf "$DMG_MOUNT"
   fi
+  sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
