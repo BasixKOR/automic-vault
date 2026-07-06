@@ -435,7 +435,7 @@ private struct DashboardSidebarView: View {
             Spacer(minLength: 6)
             let count = model.count(for: section)
             if count > 0 {
-                if section == .detectors, model.snapshot.flaggedDetectorCount > 0 {
+                if section == .detectors, model.snapshot.flaggedDetectorCount > 0, model.selectedSection != .detectors {
                     DetectorCountPill(count: count)
                         .fixedSize()
                 } else {
