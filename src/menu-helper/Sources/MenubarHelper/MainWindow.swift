@@ -376,10 +376,10 @@ struct DashboardRootView: View {
     var body: some View {
         NavigationSplitView() {
             DashboardSidebarView(model: model)
-                .navigationSplitViewColumnWidth(min: 186, ideal: 250, max: 250)
+                .navigationSplitViewColumnWidth(min: 186, ideal: 215, max: 250)
         } content: {
             DashboardListView(model: model)
-                .navigationSplitViewColumnWidth(min: 168, ideal: 280)
+                .navigationSplitViewColumnWidth(min: 168, ideal: 230)
                 .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
         } detail: {
             DashboardDetailView(model: model)
@@ -422,7 +422,7 @@ private struct DashboardSidebarView: View {
                     .fill(.green)
                     .frame(width: 8, height: 8)
                     .shadow(color: .green.opacity(0.55), radius: 2)
-                Text("Active Vulnerability Monitoring: ENABLED")
+                Text("Actively Monitoring Vulnerabilities")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
