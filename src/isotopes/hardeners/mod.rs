@@ -1,5 +1,6 @@
 pub(crate) mod aws_cli;
 pub(crate) mod gh_cli;
+pub(crate) mod sudo;
 
 pub(crate) struct HardenerMetadata {
     pub(crate) name: &'static str,
@@ -15,7 +16,11 @@ macro_rules! hardener {
     };
 }
 
-const HARDENERS: &[HardenerMetadata] = &[hardener!(aws_cli, "aws"), hardener!(gh_cli, "gh-cli")];
+const HARDENERS: &[HardenerMetadata] = &[
+    hardener!(aws_cli, "aws"),
+    hardener!(gh_cli, "gh-cli"),
+    hardener!(sudo, "sudo"),
+];
 
 pub(crate) fn metadata() -> &'static [HardenerMetadata] {
     HARDENERS

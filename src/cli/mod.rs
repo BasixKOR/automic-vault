@@ -10,7 +10,7 @@ mod stub;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden sudo | av harden [--yes] PATH | av credential-helper aws";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -83,6 +83,15 @@ where
             }
             if target == "gh-cli" {
                 return match hardeners::gh_cli::run(stdout) {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
+            if target == "sudo" {
+                return match hardeners::sudo::run(stdout) {
                     Ok(()) => 0,
                     Err(err) => {
                         let _ = writeln!(stderr, "av harden: {err}");
@@ -201,6 +210,16 @@ mod tests {
             stderr,
             "av harden: gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`\n"
         );
+    }
+
+    #[test]
+    fn harden_sudo_prints_touch_id_command() {
+        let (code, stdout, stderr) = run_args(&["av", "harden", "sudo"]);
+
+        assert_eq!(code, 0);
+        assert!(stdout.contains("pam_tid\\.so"));
+        assert!(stdout.contains("/etc/pam.d/sudo_local"));
+        assert_eq!(stderr, "");
     }
 
     #[test]

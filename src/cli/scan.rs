@@ -335,6 +335,7 @@ mod tests {
 
         assert!(output.contains(r#""name":"aws""#));
         assert!(output.contains(r#""name":"gh-cli""#));
+        assert!(output.contains(r#""name":"sudo""#));
         assert!(output.contains(r###""documentation":"## What It Does"###));
     }
 
