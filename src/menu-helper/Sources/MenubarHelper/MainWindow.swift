@@ -349,7 +349,7 @@ struct DashboardRootView: View {
             }
             .help("Refresh")
         }
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
+        .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
     }
 }
 
