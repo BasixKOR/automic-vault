@@ -21,7 +21,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         super.viewDidLoad()
         splitView.isVertical = true
         addSplitViewItem(sidebarItem())
-        addSplitViewItem(columnItem(DashboardListView(model: model), width: 280))
+        addSplitViewItem(columnItem(DashboardListView(model: model), width: 280, minimumWidth: 168))
         addSplitViewItem(columnItem(DashboardDetailView(model: model), width: 320))
     }
 
@@ -49,12 +49,13 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         return item
     }
 
-    private func columnItem<Content: View>(_ rootView: Content, width: CGFloat) -> NSSplitViewItem {
+    private func columnItem<Content: View>(_ rootView: Content, width: CGFloat, minimumWidth: CGFloat? = nil) -> NSSplitViewItem {
+        let minimumWidth = minimumWidth ?? width
         let controller = NSHostingController(rootView: rootView.appAccent())
         let item = NSSplitViewItem(viewController: controller)
-        item.minimumThickness = width
+        item.minimumThickness = minimumWidth
         item.preferredThicknessFraction = 0
-        controller.view.widthAnchor.constraint(greaterThanOrEqualToConstant: width).isActive = true
+        controller.view.widthAnchor.constraint(greaterThanOrEqualToConstant: minimumWidth).isActive = true
         let widthConstraint = controller.view.widthAnchor.constraint(equalToConstant: width)
         widthConstraint.priority = .defaultLow
         widthConstraint.isActive = true
