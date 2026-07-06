@@ -8,6 +8,8 @@ const ENABLE_TOUCH_ID_COMMAND: &str =
 pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
     writeln!(stdout, "╭─ harden sudo").ok();
     writeln!(stdout, "│").ok();
+    writeln!(stdout, "│  • enables biometric authentication for sudo").ok();
+    writeln!(stdout, "│").ok();
     if pam_tid_enabled(&pam_dir())? {
         writeln!(stdout, "╰─ {}", green("already hardened ✔︎", color)).ok();
     } else {
@@ -82,7 +84,7 @@ mod tests {
         let stdout = String::from_utf8(stdout).unwrap();
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+            "╭─ harden sudo\n│\n│  • enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
         );
         let _ = fs::remove_dir_all(pam);
     }
@@ -103,6 +105,7 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("│  • enables biometric authentication for sudo"));
         assert!(stdout.contains("already hardened ✔︎"));
         let _ = fs::remove_dir_all(pam);
     }

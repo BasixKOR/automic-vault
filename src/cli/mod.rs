@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+            "╭─ harden sudo\n│\n│  • enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
         );
         assert_eq!(stderr, "");
     }
