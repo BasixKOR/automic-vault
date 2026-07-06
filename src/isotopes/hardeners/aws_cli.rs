@@ -256,7 +256,7 @@ fn import_aws_credentials(credentials: &AwsCredentials) -> Result<(), String> {
     store_keychain_secret(AWS_SECRET_ACCESS_KEY, &credentials.secret_access_key)
 }
 
-fn store_keychain_secret(account: &str, value: &str) -> Result<(), String> {
+pub(crate) fn store_keychain_secret(account: &str, value: &str) -> Result<(), String> {
     if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
         fs::create_dir_all(&dir)
             .map_err(|err| format!("failed to create test keychain dir: {err}"))?;

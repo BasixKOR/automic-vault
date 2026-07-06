@@ -372,7 +372,7 @@ fn resolve_target(target: &OsString) -> Result<PathBuf, String> {
     ))
 }
 
-fn validate_key_name(key: &str) -> Result<(), String> {
+pub(super) fn validate_key_name(key: &str) -> Result<(), String> {
     let mut chars = key.chars();
     let Some(first) = chars.next() else {
         return Err("empty isotope key name".into());

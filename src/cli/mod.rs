@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 
 mod inject;
+mod save;
 mod scan;
 mod shell_secrets;
 
@@ -13,6 +14,7 @@ Usage:
   av detectors --json
   av hardeners --json
   av inject +KEY [--] COMMAND
+  av save KEY
   av harden";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
@@ -110,6 +112,7 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
+        Some("save") => save::run(rest, stderr),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
