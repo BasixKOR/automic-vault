@@ -929,12 +929,13 @@ private struct ApprovedAppRow: View {
                     .textSelection(.enabled)
             }
             Spacer(minLength: 8)
-            Button(action: remove) {
+            Button(role: .destructive, action: remove) {
                 Image(systemName: "minus")
-                    .frame(width: 20, height: 20)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .help("Remove Calling App")
         }
         .padding(.vertical, 10)
