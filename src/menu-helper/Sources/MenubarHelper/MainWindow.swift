@@ -334,16 +334,20 @@ final class DashboardModel: ObservableObject {
                 return DashboardItem(
                     id: detector.name,
                     title: detector.name,
-                    subtitle: "\(severity.uppercased()) - \(subtitle)",
+                    subtitle: subtitle,
                     detail: [
                         findings.first?.explanation ?? "Detector flagged this tool.",
                         findings.first?.solution,
                     ].compactMap(\.self).joined(separator: "\n\n"),
                     documentation: detector.documentation,
+                    severity: severity.uppercased(),
                     isTriggered: true
                 )
             }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            .sorted {
+                if $0.isTriggered != $1.isTriggered { return $0.isTriggered }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
     }
 
 }
@@ -381,14 +385,16 @@ struct DashboardItem: Identifiable, Equatable {
     let subtitle: String
     let detail: String
     let documentation: String
+    let severity: String?
     let isTriggered: Bool
 
-    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "", isTriggered: Bool = false) {
+    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "", severity: String? = nil, isTriggered: Bool = false) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.detail = detail
         self.documentation = documentation
+        self.severity = severity
         self.isTriggered = isTriggered
     }
 }
@@ -488,9 +494,6 @@ private struct DashboardListView: View {
                         EmptyListView(section: model.selectedSection)
                             .frame(maxWidth: .infinity, minHeight: 180)
                             .padding(.top, 43)
-                    } else if model.selectedSection == .detectors, model.snapshot.flaggedDetectorCount > 0 {
-                        detectorSection("Triggered", model.items.filter(\.isTriggered))
-                        detectorSection("Not Triggered", model.items.filter { !$0.isTriggered })
                     } else {
                         rows(model.items)
                     }
@@ -533,15 +536,6 @@ private struct DashboardListView: View {
             }
         }
     }
-
-    @ViewBuilder
-    private func detectorSection(_ title: String, _ items: [DashboardItem]) -> some View {
-        if !items.isEmpty {
-            Section(title) {
-                rows(items)
-            }
-        }
-    }
 }
 
 private struct DashboardDetailView: View {
@@ -561,9 +555,9 @@ private struct DashboardDetailView: View {
                     summary: "Detector behavior and sensitive files checked by this rule.",
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
-                    badge: item.subtitle == "No findings"
-                        ? ReferenceBadge(title: "Ready", color: GlassPalette.green)
-                        : ReferenceBadge(title: "Flagged", color: GlassPalette.red)
+                    badge: item.isTriggered
+                        ? ReferenceBadge(title: "Flagged", color: GlassPalette.red)
+                        : ReferenceBadge(title: "Ready", color: GlassPalette.green)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -641,10 +635,20 @@ private struct DashboardRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(GlassPalette.primaryText)
                     .lineLimit(1)
-                Text(item.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(GlassPalette.quietText)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let severity = item.severity {
+                        Text(severity)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .frame(height: 18)
+                            .background(GlassPalette.red, in: Capsule())
+                    }
+                    Text(item.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(GlassPalette.quietText)
+                        .lineLimit(2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
