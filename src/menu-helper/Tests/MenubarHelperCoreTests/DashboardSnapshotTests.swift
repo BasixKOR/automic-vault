@@ -3,7 +3,8 @@ import Testing
 @testable import MenubarHelperCore
 
 @Test func markdownRenderingDropsInitialHeadingMarker() {
-    #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector\n\n## Trigger Conditions") == "gh-cli Detector\n\n## Trigger Conditions")
+    #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector\n\n## Trigger Conditions") == "\n## Trigger Conditions")
+    #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector") == "")
     #expect(markdownDroppingInitialHeadingMarker("## Trigger Conditions") == "## Trigger Conditions")
 }
 
