@@ -11,8 +11,10 @@
 
 ## Recommended Further Action
 
-- As root, confirm sudoers sets `Defaults timestamp_timeout=0`. This detector
-  does not check it because reading the effective sudoers config requires root.
+You should set `Defaults timestamp_timeout=0` in `/etc/sudoers` or
+`/etc/sudoers.d/*` to disable the grace period.
+
+> We cannot check this for you because the file can only be read as root.
 
 ## Detailed Discussion
 
