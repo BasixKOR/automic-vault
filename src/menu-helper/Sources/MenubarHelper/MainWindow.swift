@@ -504,6 +504,9 @@ private struct DashboardListView: View {
                 }
             }
         }
+        .ignoresSafeArea()
+        .contentMargins(.top, 8, for: .scrollContent)
+        .contentMargins(.horizontal, 2, for: .scrollContent)
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
@@ -1080,3 +1083,4 @@ private enum GlassPalette {
     static let green = Color(red: 0.18, green: 0.62, blue: 0.31)
     static let gray = Color(red: 0.46, green: 0.49, blue: 0.53)
 }
+
