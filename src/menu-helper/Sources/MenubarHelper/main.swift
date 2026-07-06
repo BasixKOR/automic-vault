@@ -167,9 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyScanResult(_ result: ScanResult) {
         switch result {
-        case .clean:
+        case .clean(let detectorCount):
             statusItem.button?.image = menuImage()
-            scanStatusItem.title = "No scan findings"
+            scanStatusItem.title = "Vulnerability Detectors: 🟢 (\(detectorCount)/\(detectorCount))"
         case .findings(let count):
             statusItem.button?.image = menuImage(alerted: true)
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
@@ -181,14 +181,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 private enum ScanResult {
-    case clean
+    case clean(Int)
     case findings(Int)
     case failed
 }
 
 private func scanResult() -> ScanResult {
+    let executableURL = avExecutableURL()
     let process = Process()
-    process.executableURL = avExecutableURL()
+    process.executableURL = executableURL
     process.arguments = ["scan", "--json"]
 
     let output = Pipe()
@@ -209,7 +210,9 @@ private func scanResult() -> ScanResult {
     else {
         return .failed
     }
-    return findings.isEmpty ? .clean : .findings(findings.count)
+    return findings.isEmpty
+        ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
+        : .findings(findings.count)
 }
 
 private func avExecutableURL() -> URL {

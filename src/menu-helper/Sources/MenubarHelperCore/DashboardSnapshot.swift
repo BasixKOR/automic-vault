@@ -471,7 +471,7 @@ func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
         .flatMap { try? detectorFindings(from: $0) } ?? []
 }
 
-func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
+public func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
     loadJSON(avExecutableURL: avExecutableURL, arguments: ["detectors", "--json"])
         .flatMap { try? detectorMetadata(from: $0) } ?? []
 }
