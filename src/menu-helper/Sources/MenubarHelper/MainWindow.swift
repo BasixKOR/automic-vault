@@ -95,6 +95,25 @@ private final class NoDividerSplitView: NSSplitView {
 }
 
 final class AutomicVaultWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let key = event.charactersIgnoringModifiers?.lowercased()
+        else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch key {
+        case "w":
+            performClose(nil)
+            return true
+        case "h":
+            NSApp.hide(nil)
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+
     override func cancelOperation(_ sender: Any?) {
         makeFirstResponder(nil)
     }
