@@ -535,8 +535,8 @@ private struct DashboardDetailView: View {
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
-                        ? ReferenceBadge(title: "Flagged", color: GlassPalette.red)
-                        : ReferenceBadge(title: "Ready", color: GlassPalette.green)
+                        ? ReferenceBadge(title: "Flagged")
+                        : ReferenceBadge(title: "Ready")
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -548,7 +548,7 @@ private struct DashboardDetailView: View {
                     summary: "Installed hardening behavior and caveats for this tool.",
                     referenceTitle: "Hardener Reference",
                     fallbackDocumentation: "No hardener documentation is bundled for this item.",
-                    badge: ReferenceBadge(title: "Hardened", color: GlassPalette.blue)
+                    badge: ReferenceBadge(title: "Hardened")
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -617,10 +617,9 @@ private struct DashboardRow: View {
                     if let severity = item.severity {
                         Text(severity)
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .frame(height: 18)
-                            .background(GlassPalette.red, in: Capsule())
+                            .redPill()
                     }
                     Text(item.subtitle)
                         .font(.system(size: 12))
@@ -754,11 +753,10 @@ private struct DetectorCountPill: View {
     var body: some View {
         Text(count.formatted())
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white)
             .monospacedDigit()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(GlassPalette.red, in: Capsule())
+            .redPill()
             .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 }
@@ -783,7 +781,6 @@ private struct InfoBlock: View {
 
 private struct ReferenceBadge {
     let title: String
-    let color: Color
 }
 
 private struct ReferenceDetailView: View {
@@ -844,10 +841,9 @@ private struct ReferenceDetailView: View {
     private var referenceBadge: some View {
         Text(badge.title)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(badge.color, in: Capsule())
+            .redPill()
     }
 }
 
@@ -1062,6 +1058,14 @@ private extension View {
     func appAccent() -> some View {
         tint(GlassPalette.accent)
             .accentColor(GlassPalette.accent)
+    }
+
+    func redPill() -> some View {
+        foregroundStyle(GlassPalette.red)
+            .background(GlassPalette.red.opacity(0.12), in: Capsule())
+            .overlay {
+                Capsule().stroke(GlassPalette.red, lineWidth: 1)
+            }
     }
 }
 
