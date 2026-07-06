@@ -50,7 +50,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
     }
 
     private func sidebarItem() -> NSSplitViewItem {
-        let controller = NSHostingController(rootView: DashboardSidebarView(model: model))
+        let controller = NSHostingController(rootView: DashboardSidebarView(model: model).appAccent())
         let item = NSSplitViewItem(sidebarWithViewController: controller)
         item.minimumThickness = 250
         item.maximumThickness = 250
@@ -58,7 +58,7 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
     }
 
     private func contentItem<Content: View>(_ rootView: Content, width: CGFloat, minimumWidth: CGFloat, maximumWidth: CGFloat? = nil) -> NSSplitViewItem {
-        let controller = NSHostingController(rootView: rootView)
+        let controller = NSHostingController(rootView: rootView.appAccent())
         let item = NSSplitViewItem(viewController: controller)
         item.minimumThickness = minimumWidth
         if let maximumWidth {
@@ -423,12 +423,13 @@ private struct DashboardSidebarView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollEdgeEffectStyle(.soft, for: .top)
         // .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
         Button { model.selectSection(section) } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 sidebarIcon(section)
                 Text(section.title)
                     .font(.system(size: 14, weight: .regular))
@@ -445,15 +446,20 @@ private struct DashboardSidebarView: View {
                     }
                 }
             }
-            .foregroundStyle(model.selectedSection == section ? GlassPalette.primaryText : GlassPalette.secondaryText)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .padding(.horizontal, 6)
+            .foregroundStyle(model.selectedSection == section ? GlassPalette.accent : .primary)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .contentShape(Rectangle())
             .background {
                 if model.selectedSection == section {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(GlassPalette.sidebarSelectedFill)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.selection.opacity(0.22))
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        }
                 }
             }
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
@@ -474,19 +480,9 @@ private struct DashboardSidebarView: View {
 
     private func sidebarIcon(_ section: DashboardSection) -> some View {
         Image(systemName: section.systemImage)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 22, height: 22)
-            .background(iconFill(for: section), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    private func iconFill(for section: DashboardSection) -> Color {
-        switch section {
-        case .detectors: GlassPalette.red
-        case .hardenedTools: GlassPalette.blue
-        case .secretGates: GlassPalette.gray
-        case .allSecrets: GlassPalette.green
-        }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(model.selectedSection == section ? GlassPalette.accent : .primary)
+            .frame(width: 20, height: 20)
     }
 }
 
@@ -1062,6 +1058,13 @@ private struct GlassSurface: View {
     }
 }
 
+private extension View {
+    func appAccent() -> some View {
+        tint(GlassPalette.accent)
+            .accentColor(GlassPalette.accent)
+    }
+}
+
 private var hairline: some View {
     Rectangle().fill(GlassPalette.hairline).frame(height: 1)
 }
@@ -1074,6 +1077,7 @@ private enum GlassPalette {
     static let secondaryText = Color.white.opacity(0.72)
     static let quietText = Color.white.opacity(0.42)
     static let hairline = Color.white.opacity(0.07)
+    static let accent = Color(red: 1.00, green: 0.18, blue: 0.00)
     static let sidebarSelectedFill = Color(red: 0.00, green: 0.38, blue: 0.86)
     static let packageSelectedFill = Color.white.opacity(0.08)
     static let controlFill = Color.white.opacity(0.18)
