@@ -71,6 +71,10 @@ final class DashboardModel: ObservableObject {
         self.snapshot = snapshot
     }
 
+    var shouldOfferCLIInstall: Bool {
+        !FileManager.default.isExecutableFile(atPath: installedAVCLIPath)
+    }
+
     var items: [DashboardItem] {
         items(for: selectedSection)
     }
@@ -214,6 +218,25 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func installCLI() {
+        guard let bundledAVURL else {
+            errorMessage = "Bundled av executable is unavailable."
+            return
+        }
+        let commandURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
+            .appendingPathExtension("command")
+        do {
+            try installCLICommand(bundleAVPath: bundledAVURL.path).write(to: commandURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
+            if !NSWorkspace.shared.open(commandURL) {
+                errorMessage = "Could not open the install command."
+            }
+        } catch {
+            errorMessage = "Could not create install command: \(error.localizedDescription)"
+        }
+    }
+
     func addApp(to gate: SecretGate) {
         let panel = NSOpenPanel()
         panel.title = "Allow Calling App"
@@ -293,6 +316,29 @@ final class DashboardModel: ObservableObject {
 
 }
 
+private let installedAVCLIPath = "/usr/local/bin/av"
+
+private var bundledAVURL: URL? {
+    guard let macOSURL = Bundle.main.executableURL?.deletingLastPathComponent() else { return nil }
+    let url = macOSURL.appendingPathComponent("av")
+    return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+}
+
+private func installCLICommand(bundleAVPath: String) -> String {
+    """
+    #!/bin/sh
+    sudo install \(shellQuoted(bundleAVPath)) \(installedAVCLIPath)
+    status=$?
+    printf '\\nPress Return to close this window.'
+    read _
+    exit "$status"
+    """
+}
+
+private func shellQuoted(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+}
+
 @MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
     let model = DashboardModel(snapshot: DashboardSnapshot(
@@ -319,6 +365,10 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard model.count(for: .detectors) == 1,
           model.count(for: .hardenedTools) == 1,
           model.count(for: .allSecrets) == 1
+    else { return 1 }
+    guard shellQuoted("/tmp/Automic Vault's av") == "'/tmp/Automic Vault'\"'\"'s av'",
+          installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
+            .contains("sudo install '/tmp/Automic Vault.app/Contents/MacOS/av' /usr/local/bin/av")
     else { return 1 }
     return 0
 }
@@ -386,6 +436,14 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
         }
         .toolbar {
+            if model.shouldOfferCLIInstall {
+                Button {
+                    model.installCLI()
+                } label: {
+                    Label("Install av-cli", systemImage: "terminal")
+                }
+                .help("Install /usr/local/bin/av")
+            }
             if model.selectedSection == .allSecrets {
                 Button {
                     model.isAddingSecret = true
