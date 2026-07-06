@@ -62,8 +62,8 @@ cp "$ROOT/target/release/av" "$MACOS/av"
 codesign --force --sign "$identity" --identifier com.automicvault.av "$MACOS/av"
 codesign --force --sign "$identity" "$APP"
 if [[ "$install" -eq 1 ]]; then
-  sudo rm -rf "$INSTALLED_APP"
-  sudo ditto "$APP" "$INSTALLED_APP"
+  rm -rf "$INSTALLED_APP"
+  ditto "$APP" "$INSTALLED_APP"
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$LAUNCH_AGENT_PLIST" "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
