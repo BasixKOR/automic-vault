@@ -453,7 +453,7 @@ private struct DashboardSidebarView: View {
             .background {
                 if model.selectedSection == section {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(GlassPalette.accent.opacity(0.18))
+                        .fill(GlassPalette.packageSelectedFill)
                         .background {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(.ultraThinMaterial)
