@@ -21,16 +21,8 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         super.viewDidLoad()
         splitView.isVertical = true
         addSplitViewItem(sidebarItem())
-        addSplitViewItem(contentItem(
-            HStack(spacing: 0) {
-                DashboardListView(model: model)
-                    .frame(width: 280)
-                DashboardDetailView(model: model)
-                    .frame(minWidth: 320)
-            },
-            width: 602,
-            minimumWidth: 602
-        ))
+        addSplitViewItem(columnItem(DashboardListView(model: model), width: 280))
+        addSplitViewItem(columnItem(DashboardDetailView(model: model), width: 320))
     }
 
     override func viewDidAppear() {
@@ -57,17 +49,14 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
         return item
     }
 
-    private func contentItem<Content: View>(_ rootView: Content, width: CGFloat, minimumWidth: CGFloat, maximumWidth: CGFloat? = nil) -> NSSplitViewItem {
+    private func columnItem<Content: View>(_ rootView: Content, width: CGFloat) -> NSSplitViewItem {
         let controller = NSHostingController(rootView: rootView.appAccent())
         let item = NSSplitViewItem(viewController: controller)
-        item.minimumThickness = minimumWidth
-        if let maximumWidth {
-            item.maximumThickness = maximumWidth
-        }
+        item.minimumThickness = width
         item.preferredThicknessFraction = 0
-        controller.view.widthAnchor.constraint(greaterThanOrEqualToConstant: minimumWidth).isActive = true
+        controller.view.widthAnchor.constraint(greaterThanOrEqualToConstant: width).isActive = true
         let widthConstraint = controller.view.widthAnchor.constraint(equalToConstant: width)
-        widthConstraint.priority = maximumWidth == nil ? .defaultLow : .required
+        widthConstraint.priority = .defaultLow
         widthConstraint.isActive = true
         return item
     }
