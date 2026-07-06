@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let controller = AutomicVaultMainWindowController()
-        let defaultWindowSize = NSSize(width: 860, height: 580)
+        let defaultWindowSize = NSSize(width: 860, height: 578)
         let window = AutomicVaultWindow(
             contentRect: NSRect(origin: .zero, size: defaultWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.toolbar = controller.makeToolbar()
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 860, height: 560)
+        window.minSize = NSSize(width: 860, height: 558)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.mainWindow = window
