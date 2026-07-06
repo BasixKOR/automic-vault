@@ -214,10 +214,23 @@ mod tests {
 
     #[test]
     fn harden_sudo_prints_touch_id_command() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let pam = std::env::temp_dir().join(format!("av-cli-sudo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&pam);
+        std::fs::create_dir_all(&pam).unwrap();
+        std::fs::write(pam.join("sudo_local"), "#auth sufficient pam_tid.so\n").unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR", &pam);
+        }
+
         let (code, stdout, stderr) = run_args(&["av", "harden", "sudo"]);
 
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
+        }
+        let _ = std::fs::remove_dir_all(pam);
         assert_eq!(code, 0);
-        assert!(stdout.contains("pam_tid\\.so"));
+        assert!(stdout.contains("echo 'auth sufficient pam_tid.so'"));
         assert!(stdout.contains("/etc/pam.d/sudo_local"));
         assert_eq!(stderr, "");
     }

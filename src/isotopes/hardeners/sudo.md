@@ -1,6 +1,6 @@
 ## What It Does
 
-`av harden sudo` prints the command to enable Touch ID for sudo through `/etc/pam.d/sudo_local`.
+`av harden sudo` checks whether Touch ID is already enabled for sudo. If it is not, it prints the command to enable it through `/etc/pam.d/sudo_local`.
 
 The hardener does not edit PAM files itself. It leaves the root-owned change to the user.
 
