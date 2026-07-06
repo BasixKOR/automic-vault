@@ -436,13 +436,13 @@ private struct DashboardSidebarView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .foregroundStyle(model.selectedSection == section ? GlassPalette.accent : .primary)
+            .foregroundStyle(model.selectedSection == section ? Color.accentColor : .primary)
             .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             .contentShape(Rectangle())
             .background {
                 if model.selectedSection == section {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(GlassPalette.packageSelectedFill)
+                        .fill(GlassPalette.sidebarSelectedFill)
                         .background {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(.ultraThinMaterial)
@@ -1064,16 +1064,16 @@ private var hairline: some View {
 }
 
 private enum GlassPalette {
-    static let windowTint = Color(red: 0.05, green: 0.06, blue: 0.07).opacity(0.50)
-    static let topBarTint = Color(red: 0.07, green: 0.08, blue: 0.09).opacity(0.36)
-    static let sidebarTint = Color(red: 0.06, green: 0.07, blue: 0.07).opacity(0.72)
+    static let windowTint = Color.clear
+    // static let topBarTint = Color(red: 0.07, green: 0.08, blue: 0.09).opacity(0.36)
+    // static let sidebarTint = Color(red: 0.06, green: 0.07, blue: 0.07).opacity(0.72)
     static let primaryText = Color.white.opacity(0.92)
     static let secondaryText = Color.white.opacity(0.72)
     static let quietText = Color.white.opacity(0.42)
     static let hairline = Color.white.opacity(0.07)
     static let accent = Color(red: 0.55, green: 0.28, blue: 1.00)
-    static let sidebarSelectedFill = Color(red: 0.00, green: 0.38, blue: 0.86)
-    static let packageSelectedFill = Color.white.opacity(0.08)
+    static let sidebarSelectedFill = Color.white.opacity(0.04)
+    static let packageSelectedFill = Color(nsColor: .selectedContentBackgroundColor)
     static let controlFill = Color.white.opacity(0.18)
     static let searchFill = Color.white.opacity(0.11)
     static let red = Color(red: 0.95, green: 0.18, blue: 0.16)
