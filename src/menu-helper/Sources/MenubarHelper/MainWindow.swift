@@ -386,6 +386,14 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
         }
         .toolbar {
+            if model.selectedSection == .allSecrets {
+                Button {
+                    model.isAddingSecret = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Add Secret")
+            }
             Button {
                 model.reload()
             } label: {
