@@ -1,16 +1,13 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
-use std::path::Path;
 
-mod credential_helper;
 mod inject;
 mod scan;
 mod shell_secrets;
-mod stub;
 
 use crate::isotopes::hardeners;
 
-const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden sudo | av harden [--yes] PATH | av credential-helper aws";
+const USAGE: &str = "Usage: av scan [--json] | av detectors --json | av hardeners --json | av inject +KEY [--] COMMAND | av harden [--yes] aws | av harden gh-cli | av harden sudo";
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -99,36 +96,10 @@ where
                     }
                 };
             }
-            match hardeners::aws_cli::run_stub_install(Path::new(&target), stdout, yes) {
-                Ok(()) => 0,
-                Err(err) => {
-                    let _ = writeln!(stderr, "av harden: {err}");
-                    1
-                }
-            }
-        }
-        Some("credential-helper") if rest.len() == 1 => {
-            let protocol = &rest[0];
-            match credential_helper::run(protocol, stdout) {
-                Ok(()) => 0,
-                Err(err) => {
-                    let _ = writeln!(stderr, "av credential-helper: {err}");
-                    1
-                }
-            }
+            let _ = writeln!(stderr, "{USAGE}");
+            2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
-        Some("stub-exec") if rest.len() >= 2 => {
-            let tool = &rest[0];
-            let target = &rest[1];
-            match stub::run(tool, target, rest.iter().skip(2).cloned()) {
-                Ok(()) => 0,
-                Err(err) => {
-                    let _ = writeln!(stderr, "av stub: {err}");
-                    1
-                }
-            }
-        }
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2

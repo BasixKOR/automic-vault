@@ -5,14 +5,13 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::credential_helper;
-
 const USAGE: &str = "\
 Usage: av inject [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] [--] COMMAND [args...]
 
 Injects named Keychain secrets into COMMAND's environment.";
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 
 #[derive(Debug, PartialEq, Eq)]
 struct Options {
@@ -265,7 +264,7 @@ fn build_env(
             .ok();
             continue;
         }
-        match credential_helper::load_secret_if_present(key)? {
+        match load_secret_if_present(key)? {
             Some(value) => {
                 env.insert(OsString::from(key), OsString::from(value));
             }
@@ -274,6 +273,82 @@ fn build_env(
         }
     }
     Ok(env)
+}
+
+fn load_secret_if_present(key: &str) -> Result<Option<String>, String> {
+    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+        let path = std::path::PathBuf::from(dir).join(key);
+        return match std::fs::read_to_string(&path) {
+            Ok(value) => Ok(Some(value)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(format!("failed to read {}: {err}", path.display())),
+        };
+    }
+    if let Ok(value) = std::env::var(format!("AUTOMIC_VAULT_TEST_{key}")) {
+        return Ok(Some(value));
+    }
+    keychain_load_secret_if_present(KEYCHAIN_SERVICE, key)
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_load_secret_if_present(service: &str, account: &str) -> Result<Option<String>, String> {
+    use std::ffi::{CString, c_void};
+
+    #[link(name = "Security", kind = "framework")]
+    unsafe extern "C" {
+        fn SecKeychainFindGenericPassword(
+            keychain_or_array: *const c_void,
+            service_name_length: u32,
+            service_name: *const i8,
+            account_name_length: u32,
+            account_name: *const i8,
+            password_length: *mut u32,
+            password_data: *mut *mut c_void,
+            item_ref: *mut *mut c_void,
+        ) -> i32;
+        fn SecKeychainItemFreeContent(attr_list: *const c_void, data: *mut c_void) -> i32;
+    }
+
+    let service_cstr =
+        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
+    let account_cstr =
+        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
+    let mut len = 0u32;
+    let mut data = std::ptr::null_mut();
+    let status = unsafe {
+        SecKeychainFindGenericPassword(
+            std::ptr::null(),
+            service.len() as u32,
+            service_cstr.as_ptr(),
+            account.len() as u32,
+            account_cstr.as_ptr(),
+            &mut len,
+            &mut data,
+            std::ptr::null_mut(),
+        )
+    };
+    if status == -25300 {
+        return Ok(None);
+    }
+    if status != 0 {
+        return Err(format!("failed to load isotope key {account}: {status}"));
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), len as usize) }.to_vec();
+    unsafe {
+        let _ = SecKeychainItemFreeContent(std::ptr::null(), data);
+    }
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| format!("isotope key {account} is not valid UTF-8"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_load_secret_if_present(
+    _service: &str,
+    _account: &str,
+) -> Result<Option<String>, String> {
+    Err("keychain access is only available on macOS".to_string())
 }
 
 fn resolve_target(target: &OsString) -> Result<PathBuf, String> {

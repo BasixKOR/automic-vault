@@ -424,15 +424,6 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     return SecItemAdd(addQuery as CFDictionary, nil)
 }
 
-func hardenedTargetPath(from script: String) -> String? {
-    guard let line = script.split(whereSeparator: \.isNewline).first(where: { $0.contains(" stub-exec ") }) else {
-        return nil
-    }
-    let quoted = line.split(separator: "'", omittingEmptySubsequences: false)
-    guard quoted.count >= 4 else { return nil }
-    return String(quoted[3]).replacingOccurrences(of: "'\\''", with: "'")
-}
-
 func appIdentifier(from requirement: String) -> String? {
     guard let range = requirement.range(of: #"identifier ""#) else { return nil }
     let rest = requirement[range.upperBound...]
