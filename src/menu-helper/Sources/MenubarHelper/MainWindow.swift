@@ -424,7 +424,7 @@ private struct DashboardSidebarView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
-        // .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
+        .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
