@@ -2,6 +2,11 @@ import Foundation
 import Testing
 @testable import MenubarHelperCore
 
+@Test func markdownRenderingDropsInitialHeadingMarker() {
+    #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector\n\n## Trigger Conditions") == "gh-cli Detector\n\n## Trigger Conditions")
+    #expect(markdownDroppingInitialHeadingMarker("## Trigger Conditions") == "## Trigger Conditions")
+}
+
 @Test func scanJSONCountsUniqueFlaggedDetectors() throws {
     let data = Data("""
     {"findings":[
