@@ -9,7 +9,7 @@ pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
     writeln!(stdout, "╭─ harden sudo").ok();
     writeln!(stdout, "│").ok();
     if pam_tid_enabled(&pam_dir())? {
-        writeln!(stdout, "╰─ {}", green("already hardened ☑", color)).ok();
+        writeln!(stdout, "╰─ {}", green("already hardened ✔︎", color)).ok();
     } else {
         writeln!(stdout, "╰─ run:").ok();
         writeln!(stdout).ok();
@@ -103,15 +103,15 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("already hardened ☑"));
+        assert!(stdout.contains("already hardened ✔︎"));
         let _ = fs::remove_dir_all(pam);
     }
 
     #[test]
     fn colors_already_hardened_when_enabled() {
         assert_eq!(
-            green("already hardened ☑", true),
-            "\x1b[32malready hardened ☑\x1b[0m"
+            green("already hardened ✔︎", true),
+            "\x1b[32malready hardened ✔︎\x1b[0m"
         );
     }
 
