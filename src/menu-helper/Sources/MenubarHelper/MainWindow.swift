@@ -51,7 +51,8 @@ final class AutomicVaultMainWindowController: NSSplitViewController {
 
     private func columnItem<Content: View>(_ rootView: Content, width: CGFloat, minimumWidth: CGFloat? = nil) -> NSSplitViewItem {
         let minimumWidth = minimumWidth ?? width
-        let controller = NSHostingController(rootView: rootView.appAccent())
+        let controller = NSViewController()
+        controller.view = NonDraggableHostingView(rootView: rootView.appAccent())
         let item = NSSplitViewItem(viewController: controller)
         item.minimumThickness = minimumWidth
         item.preferredThicknessFraction = 0
@@ -90,6 +91,10 @@ private extension NSToolbarItem.Identifier {
 private final class NoDividerSplitView: NSSplitView {
     override var dividerThickness: CGFloat { 0 }
     override func drawDivider(in rect: NSRect) {}
+}
+
+private final class NonDraggableHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 final class AutomicVaultWindow: NSWindow {
@@ -489,6 +494,7 @@ private struct DashboardListView: View {
                 }
             }
         }
+        .ignoresSafeArea()
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 2, for: .scrollContent)
         .sheet(isPresented: $model.isAddingSecret) {
