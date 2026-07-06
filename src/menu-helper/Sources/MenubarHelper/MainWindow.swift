@@ -416,7 +416,6 @@ private struct DashboardSidebarView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(GlassSurface(tint: GlassPalette.sidebarTint).ignoresSafeArea())
-        .preferredColorScheme(.dark)
     }
 
     private func sidebarRow(_ section: DashboardSection) -> some View {
@@ -500,7 +499,6 @@ private struct DashboardListView: View {
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
-        .preferredColorScheme(.dark)
     }
 
     private func rows(_ items: [DashboardItem]) -> some View {
@@ -593,7 +591,6 @@ private struct DashboardDetailView: View {
                 RenameSecretView(model: model, account: account)
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -689,7 +686,6 @@ private struct AddSecretView: View {
         .padding(22)
         .frame(width: 360)
         .background(GlassSurface(tint: GlassPalette.windowTint))
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -724,7 +720,6 @@ private struct RenameSecretView: View {
         .padding(22)
         .frame(width: 360)
         .background(GlassSurface(tint: GlassPalette.windowTint))
-        .preferredColorScheme(.dark)
     }
 }
 
