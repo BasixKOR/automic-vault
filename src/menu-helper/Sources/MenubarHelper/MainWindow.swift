@@ -535,8 +535,8 @@ private struct DashboardDetailView: View {
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
-                        ? ReferenceBadge(title: "Flagged")
-                        : ReferenceBadge(title: "Ready")
+                        ? ReferenceBadge(title: "Flagged", color: GlassPalette.red)
+                        : ReferenceBadge(title: "Ready", color: GlassPalette.green)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -548,7 +548,7 @@ private struct DashboardDetailView: View {
                     summary: "Installed hardening behavior and caveats for this tool.",
                     referenceTitle: "Hardener Reference",
                     fallbackDocumentation: "No hardener documentation is bundled for this item.",
-                    badge: ReferenceBadge(title: "Hardened")
+                    badge: ReferenceBadge(title: "Hardened", color: GlassPalette.blue)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -619,7 +619,7 @@ private struct DashboardRow: View {
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 6)
                             .frame(height: 18)
-                            .redPill()
+                            .outlinedPill()
                     }
                     Text(item.subtitle)
                         .font(.system(size: 12))
@@ -756,7 +756,7 @@ private struct DetectorCountPill: View {
             .monospacedDigit()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .redPill()
+            .outlinedPill()
             .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 }
@@ -781,6 +781,7 @@ private struct InfoBlock: View {
 
 private struct ReferenceBadge {
     let title: String
+    let color: Color
 }
 
 private struct ReferenceDetailView: View {
@@ -843,7 +844,7 @@ private struct ReferenceDetailView: View {
             .font(.system(size: 11, weight: .semibold))
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .redPill()
+            .outlinedPill(badge.color)
     }
 }
 
@@ -1060,11 +1061,11 @@ private extension View {
             .accentColor(GlassPalette.accent)
     }
 
-    func redPill() -> some View {
-        foregroundStyle(GlassPalette.red)
-            .background(GlassPalette.red.opacity(0.12), in: Capsule())
+    func outlinedPill(_ color: Color = GlassPalette.red) -> some View {
+        foregroundStyle(color)
+            .background(color.opacity(0.12), in: Capsule())
             .overlay {
-                Capsule().stroke(GlassPalette.red, lineWidth: 1)
+                Capsule().stroke(color, lineWidth: 1)
             }
     }
 }
