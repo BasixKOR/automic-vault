@@ -22,10 +22,6 @@ if [[ "$notarize" -eq 1 && "$dmg" -ne 1 ]]; then
   echo "error: --notarize requires --dmg" >&2
   exit 64
 fi
-if [[ "$notarize" -eq 1 && -z "${APPLE_TEAM_ID:-}" ]]; then
-  echo "error: --notarize requires APPLE_TEAM_ID" >&2
-  exit 64
-fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
@@ -67,6 +63,13 @@ if [[ -z "$identity" ]]; then
 fi
 if [[ -z "$identity" ]]; then
   identity="-"
+fi
+if [[ -z "${APPLE_TEAM_ID:-}" && "$identity" =~ \(([A-Z0-9]+)\)$ ]]; then
+  export APPLE_TEAM_ID="${BASH_REMATCH[1]}"
+fi
+if [[ "$notarize" -eq 1 && -z "${APPLE_TEAM_ID:-}" ]]; then
+  echo "error: --notarize requires APPLE_TEAM_ID" >&2
+  exit 64
 fi
 
 codesign --force --sign "$identity" --identifier com.automicvault.av "$ROOT/target/release/av"
