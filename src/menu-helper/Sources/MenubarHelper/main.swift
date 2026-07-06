@@ -92,7 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarSeparatorStyle = .none
         window.toolbarStyle = .automatic
         window.toolbar = controller.makeToolbar()
-        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 860, height: 558)
         window.center()
