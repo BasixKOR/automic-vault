@@ -5,17 +5,25 @@ const PAM_DIR: &str = "/etc/pam.d";
 const ENABLE_TOUCH_ID_COMMAND: &str =
     "echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null";
 
-pub(crate) fn run(stdout: &mut dyn Write) -> Result<(), String> {
+pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
     writeln!(stdout, "╭─ harden sudo").ok();
     writeln!(stdout, "│").ok();
     if pam_tid_enabled(&pam_dir())? {
-        writeln!(stdout, "╰─ ☑︎ already hardened").ok();
+        writeln!(stdout, "╰─ {}", green("already hardened ☑", color)).ok();
     } else {
         writeln!(stdout, "╰─ run:").ok();
         writeln!(stdout).ok();
         writeln!(stdout, "        {ENABLE_TOUCH_ID_COMMAND}").ok();
     }
     Ok(())
+}
+
+fn green(text: &str, color: bool) -> String {
+    if color {
+        format!("\x1b[32m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
 }
 
 fn pam_dir() -> PathBuf {
@@ -66,7 +74,7 @@ mod tests {
         }
         let mut stdout = Vec::new();
 
-        run(&mut stdout).unwrap();
+        run(&mut stdout, false).unwrap();
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
@@ -89,14 +97,22 @@ mod tests {
         }
         let mut stdout = Vec::new();
 
-        run(&mut stdout).unwrap();
+        run(&mut stdout, false).unwrap();
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("☑︎ already hardened"));
+        assert!(stdout.contains("already hardened ☑"));
         let _ = fs::remove_dir_all(pam);
+    }
+
+    #[test]
+    fn colors_already_hardened_when_enabled() {
+        assert_eq!(
+            green("already hardened ☑", true),
+            "\x1b[32malready hardened ☑\x1b[0m"
+        );
     }
 
     fn temp_dir(label: &str) -> PathBuf {

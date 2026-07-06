@@ -91,7 +91,7 @@ where
                 };
             }
             if target == "sudo" {
-                return match hardeners::sudo::run(stdout) {
+                return match hardeners::sudo::run(stdout, style.color) {
                     Ok(()) => 0,
                     Err(err) => {
                         let _ = writeln!(stderr, "av harden: {err}");
