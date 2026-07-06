@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const PAM_DIR: &str = "/etc/pam.d";
 
@@ -17,7 +18,33 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
         return Ok(Vec::new());
     }
 
-    insecurity_reasons(Path::new(PAM_DIR))
+    if !biometrics_available() {
+        return Ok(Vec::new());
+    }
+
+    insecurity_reasons(&pam_dir())
+}
+
+fn pam_dir() -> PathBuf {
+    std::env::var_os("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(PAM_DIR))
+}
+
+fn biometrics_available() -> bool {
+    if let Some(value) = std::env::var_os("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE") {
+        return value != "0";
+    }
+
+    Command::new("bioutil")
+        .arg("-r")
+        .output()
+        .is_ok_and(|output| {
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .any(|line| line.trim() == "Effective biometrics for unlock: 1")
+        })
 }
 
 fn insecurity_reasons(pam_dir: &Path) -> Result<Vec<String>, String> {
@@ -92,6 +119,27 @@ mod tests {
         assert_eq!(reasons.len(), 1);
         assert!(reasons[0].contains("Touch ID authentication is not enabled"));
 
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn top_level_detector_skips_sudo_when_biometrics_are_unavailable() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = temp_dir("unavailable");
+        let pam = temp.join("pam.d");
+        fs::create_dir_all(&pam).unwrap();
+        fs::write(pam.join("sudo_local"), "#auth sufficient pam_tid.so\n").unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR", &pam);
+            std::env::set_var("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE", "0");
+        }
+
+        assert_eq!(install_insecurity_reasons().unwrap(), Vec::<String>::new());
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE");
+        }
         let _ = fs::remove_dir_all(temp);
     }
 
