@@ -9,20 +9,32 @@ import Security
 @preconcurrency import XPC
 
 private let approvalServiceName = "com.automicvault.av2.approval"
+private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let legacyTrustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
+    private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
     private var approval: ApprovalServer?
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        do {
+            if try handOffToLaunchAgentIfNeeded() {
+                NSApp.terminate(nil)
+                return
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+            NSApp.terminate(nil)
+            return
+        }
+
         UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
 
         statusItem.button?.image = menuImage()
@@ -440,6 +452,63 @@ private struct AppError: LocalizedError {
     }
 }
 
+private func handOffToLaunchAgentIfNeeded() throws -> Bool {
+    guard !isLaunchAgentInstance(),
+          let launchAgent = bundledLaunchAgentURL()
+    else {
+        return false
+    }
+
+    let installed = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/LaunchAgents/\(approvalLaunchAgentName).plist")
+    try FileManager.default.createDirectory(
+        at: installed.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try? FileManager.default.removeItem(at: installed)
+    try FileManager.default.copyItem(at: launchAgent, to: installed)
+
+    let domain = "gui/\(getuid())"
+    try? runLaunchctl(["bootout", "\(domain)/\(approvalLaunchAgentName)"])
+    do {
+        try runLaunchctl(["bootstrap", domain, installed.path])
+    } catch {
+        usleep(200_000)
+        try runLaunchctl(["bootstrap", domain, installed.path])
+    }
+    try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
+    try runLaunchctl(["kickstart", "-k", "\(domain)/\(approvalLaunchAgentName)"])
+    return true
+}
+
+private func bundledLaunchAgentURL() -> URL? {
+    let url = Bundle.main.bundleURL
+        .appendingPathComponent("Contents/Library/LaunchAgents/\(approvalLaunchAgentName).plist")
+    return FileManager.default.fileExists(atPath: url.path) ? url : nil
+}
+
+private func isLaunchAgentInstance(
+    environment: [String: String] = ProcessInfo.processInfo.environment
+) -> Bool {
+    environment["XPC_SERVICE_NAME"] == approvalLaunchAgentName
+}
+
+private func runLaunchctl(_ arguments: [String]) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+    process.arguments = arguments
+    let pipe = Pipe()
+    process.standardError = pipe
+    process.standardOutput = pipe
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw AppError("launchctl \(arguments.joined(separator: " ")) failed: \(output ?? "exit \(process.terminationStatus)")")
+    }
+}
+
 private func pathString(_ identity: AVProcessIdentity) -> String {
     var copy = identity
     return withUnsafePointer(to: &copy.path) { pointer in
@@ -802,12 +871,25 @@ private func runApprovalSelfCheck() -> Int32 {
     return 0
 }
 
+private func runLaunchAgentHandoffSelfCheck() -> Int32 {
+    guard !isLaunchAgentInstance(environment: [:]),
+          isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName])
+    else {
+        return 1
+    }
+    return 0
+}
+
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(runApprovalSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-dashboard-search") {
     exit(MainActor.assumeIsolated { runDashboardSearchSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
+    exit(runLaunchAgentHandoffSelfCheck())
 }
 
 let app = NSApplication.shared
