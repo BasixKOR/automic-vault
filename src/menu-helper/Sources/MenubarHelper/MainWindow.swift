@@ -337,6 +337,7 @@ struct DashboardRootView: View {
         } content: {
             DashboardListView(model: model)
                 .navigationSplitViewColumnWidth(min: 168, ideal: 280)
+                .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
         } detail: {
             DashboardDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
