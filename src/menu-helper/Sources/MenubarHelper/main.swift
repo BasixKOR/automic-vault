@@ -587,8 +587,9 @@ private func launcherIdentities(startingAt startPID: pid_t) -> [LauncherIdentity
 }
 
 private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> LauncherIdentity? {
-    guard let signing = liveSigningInfo(pid: pid) else { return nil }
-    return launcherIdentity(pid: pid, path: pathString(identity), signing: signing)
+    let path = pathString(identity)
+    guard let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) else { return nil }
+    return launcherIdentity(pid: pid, path: path, signing: signing)
 }
 
 private func launcherIdentity(
@@ -657,6 +658,37 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
     guard let requirementText = requirementString(requirement) else { return nil }
 
     let executable = (dictionary[kSecCodeInfoMainExecutable] as? URL)?.path ?? ""
+    let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
+    return LiveSigningInfo(
+        identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
+        teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
+        designatedRequirement: requirementText,
+        mainExecutable: executable,
+        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0
+    )
+}
+
+private func executableSigningInfo(path: String) -> LiveSigningInfo? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+    else {
+        return nil
+    }
+
+    var info: CFDictionary?
+    let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
+    guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any],
+          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement]
+    else {
+        return nil
+    }
+    let requirement = requirementValue as! SecRequirement
+    guard let requirementText = requirementString(requirement) else { return nil }
+
+    let executable = (dictionary[kSecCodeInfoMainExecutable] as? URL)?.path ?? path
     let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
     return LiveSigningInfo(
         identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
