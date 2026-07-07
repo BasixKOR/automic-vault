@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub(crate) mod auth_token;
+pub(crate) mod minimum_release_age;
+
 use std::path::PathBuf;
 
 pub fn install_is_insecure() -> Result<bool, String> {

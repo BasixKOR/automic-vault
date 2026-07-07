@@ -1,5 +1,9 @@
 #![allow(dead_code)]
 
+pub(crate) mod credentials_file;
+pub(crate) mod legacy_plugins;
+pub(crate) mod login_cache;
+
 pub fn install_is_insecure() -> Result<bool, String> {
     install_insecurity_reasons().map(|reasons| !reasons.is_empty())
 }
@@ -46,6 +50,13 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     }
 
     Ok(reasons)
+}
+
+fn reasons_matching(prefix: &str) -> Result<Vec<String>, String> {
+    Ok(install_insecurity_reasons()?
+        .into_iter()
+        .filter(|reason| reason.starts_with(prefix))
+        .collect())
 }
 
 fn credentials_file_is_insecure(path: &std::path::Path) -> Result<bool, String> {

@@ -194,7 +194,9 @@ const DETECTORS: &[Detector] = &[
     detector!(ast_cli),
     detector!(astra),
     detector!(atuin),
-    detector!(aws_cli),
+    detector!(aws_cli::credentials_file, "aws-cli-credentials-file"),
+    detector!(aws_cli::legacy_plugins, "aws-cli-legacy-plugins"),
+    detector!(aws_cli::login_cache, "aws-cli-login-cache"),
     detector!(aws_sso_cli),
     detector!(aws_vault),
     detector!(azure_cli),
@@ -202,7 +204,8 @@ const DETECTORS: &[Detector] = &[
     detector!(bitwarden_cli),
     detector!(buf),
     detector!(bun),
-    detector!(cariddi),
+    detector!(cariddi::persisted_output, "cariddi-persisted-output"),
+    detector!(cariddi::shell_history, "cariddi-shell-history"),
     detector!(censys),
     detector!(certbot),
     detector!(checkov),
@@ -215,7 +218,9 @@ const DETECTORS: &[Detector] = &[
     detector!(curl),
     detector!(databricks),
     detector!(dcos_cli),
-    detector!(docker),
+    detector!(docker::credential_helpers, "docker-credential-helpers"),
+    detector!(docker::registry_credentials, "docker-registry-credentials"),
+    detector!(docker::root_access, "docker-root-access"),
     detector!(docker_credential_helper),
     detector!(docker_machine),
     detector!(doctl),
@@ -228,7 +233,8 @@ const DETECTORS: &[Detector] = &[
     detector!(flyctl),
     detector!(gallery_dl),
     detector!(gcli),
-    detector!(gh_cli),
+    detector!(gh_cli::hosts_token, "gh-cli-hosts-token"),
+    detector!(gh_cli::keychain_access, "gh-cli-keychain-access"),
     detector!(git::credential_fill, "git-credential-fill"),
     detector!(git::credential_oauth, "git-credential-oauth"),
     detector!(git::credentials_file, "git-credentials-file"),
@@ -283,7 +289,8 @@ const DETECTORS: &[Detector] = &[
     detector!(phylum_cli),
     detector!(pianobar),
     detector!(plumber),
-    detector!(pnpm),
+    detector!(pnpm::auth_token, "pnpm-auth-token"),
+    detector!(pnpm::minimum_release_age, "pnpm-minimum-release-age"),
     detector!(podman),
     detector!(poetry),
     detector!(pulumi),
@@ -296,7 +303,8 @@ const DETECTORS: &[Detector] = &[
     detector!(rust),
     detector!(s3cmd),
     detector!(sbt),
-    detector!(secretlint),
+    detector!(secretlint::persisted_report, "secretlint-persisted-report"),
+    detector!(secretlint::shell_history, "secretlint-shell-history"),
     detector!(sentry_cli),
     detector!(shodan),
     detector!(skopeo),
@@ -385,7 +393,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 146);
+        assert_eq!(DETECTORS.len(), 154);
     }
 
     #[test]
@@ -396,7 +404,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(!names.contains(&"aws".to_string()));
-        assert!(names.contains(&"aws-cli".to_string()));
+        assert!(!names.contains(&"aws-cli".to_string()));
+        assert!(names.contains(&"aws-cli-credentials-file".to_string()));
+        assert!(names.contains(&"docker-root-access".to_string()));
+        assert!(names.contains(&"pnpm-minimum-release-age".to_string()));
         assert!(!names.contains(&"git".to_string()));
         assert!(names.contains(&"git-credential-fill".to_string()));
         assert!(names.contains(&"git-credential-oauth".to_string()));

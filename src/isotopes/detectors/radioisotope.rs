@@ -49,6 +49,15 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "astra" => "https://github.com/automic-vault/radioisotopes/tree/main/astra",
         "atuin" => "https://github.com/automic-vault/radioisotopes/tree/main/atuin",
         "aws-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/aws-cli",
+        "aws-cli-credentials-file" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/aws-cli-credentials-file"
+        }
+        "aws-cli-legacy-plugins" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/aws-cli-legacy-plugins"
+        }
+        "aws-cli-login-cache" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/aws-cli-login-cache"
+        }
         "aws-sso-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/aws-sso-cli",
         "aws-vault" => "https://github.com/automic-vault/radioisotopes/tree/main/aws-vault",
         "azure-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/azure-cli",
@@ -57,6 +66,12 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "buf" => "https://github.com/automic-vault/radioisotopes/tree/main/buf",
         "bun" => "https://github.com/automic-vault/radioisotopes/tree/main/bun",
         "cariddi" => "https://github.com/automic-vault/radioisotopes/tree/main/cariddi",
+        "cariddi-persisted-output" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/cariddi-persisted-output"
+        }
+        "cariddi-shell-history" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/cariddi-shell-history"
+        }
         "censys" => "https://github.com/automic-vault/radioisotopes/tree/main/censys",
         "certbot" => "https://github.com/automic-vault/radioisotopes/tree/main/certbot",
         "checkov" => "https://github.com/automic-vault/radioisotopes/tree/main/checkov",
@@ -74,6 +89,15 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "databricks" => "https://github.com/automic-vault/radioisotopes/tree/main/databricks",
         "dcos-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/dcos-cli",
         "docker" => "https://github.com/automic-vault/radioisotopes/tree/main/docker",
+        "docker-credential-helpers" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/docker-credential-helpers"
+        }
+        "docker-registry-credentials" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/docker-registry-credentials"
+        }
+        "docker-root-access" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/docker-root-access"
+        }
         "docker-credential-helper" => {
             "https://github.com/automic-vault/radioisotopes/tree/main/docker-credential-helper"
         }
@@ -93,6 +117,12 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "gallery-dl" => "https://github.com/automic-vault/radioisotopes/tree/main/gallery-dl",
         "gcli" => "https://github.com/automic-vault/radioisotopes/tree/main/gcli",
         "gh-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/gh-cli",
+        "gh-cli-hosts-token" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/gh-cli-hosts-token"
+        }
+        "gh-cli-keychain-access" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/gh-cli-keychain-access"
+        }
         "git-credential-oauth" => {
             "https://github.com/automic-vault/radioisotopes/tree/main/git-credential-oauth"
         }
@@ -158,6 +188,12 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "pianobar" => "https://github.com/automic-vault/radioisotopes/tree/main/pianobar",
         "plumber" => "https://github.com/automic-vault/radioisotopes/tree/main/plumber",
         "pnpm" => "https://github.com/automic-vault/radioisotopes/tree/main/pnpm",
+        "pnpm-auth-token" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/pnpm-auth-token"
+        }
+        "pnpm-minimum-release-age" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/pnpm-minimum-release-age"
+        }
         "podman" => "https://github.com/automic-vault/radioisotopes/tree/main/podman",
         "poetry" => "https://github.com/automic-vault/radioisotopes/tree/main/poetry",
         "pulumi" => "https://github.com/automic-vault/radioisotopes/tree/main/pulumi",
@@ -171,6 +207,12 @@ pub(crate) fn docs_url(name: &'static str) -> &'static str {
         "s3cmd" => "https://github.com/automic-vault/radioisotopes/tree/main/s3cmd",
         "sbt" => "https://github.com/automic-vault/radioisotopes/tree/main/sbt",
         "secretlint" => "https://github.com/automic-vault/radioisotopes/tree/main/secretlint",
+        "secretlint-persisted-report" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/secretlint-persisted-report"
+        }
+        "secretlint-shell-history" => {
+            "https://github.com/automic-vault/radioisotopes/tree/main/secretlint-shell-history"
+        }
         "sentry-cli" => "https://github.com/automic-vault/radioisotopes/tree/main/sentry-cli",
         "shodan" => "https://github.com/automic-vault/radioisotopes/tree/main/shodan",
         "skopeo" => "https://github.com/automic-vault/radioisotopes/tree/main/skopeo",

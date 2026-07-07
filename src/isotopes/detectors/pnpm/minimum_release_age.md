@@ -1,8 +1,7 @@
-# pnpm Detector
+# pnpm-minimum-release-age Detector
 
 ## Trigger Conditions
 
-- npm user config contains a plaintext auth token.
 - pnpm config sets a package minimum release age below 24 hours.
 
 ## Sensitive Files

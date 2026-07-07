@@ -1,4 +1,4 @@
-# secretlint Detector
+# secretlint-persisted-report Detector
 
 ## Trigger Conditions
 
@@ -6,8 +6,7 @@
 
 ## Sensitive Files
 
-- `~/.zsh_history`
-- `~/.bash_history`
-- `~/.history`
 - `~/secretlint-report.json`
 - `~/secretlint-output.json`
+- `./secretlint-report.json`
+- `./secretlint-output.json`

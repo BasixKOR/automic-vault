@@ -1,5 +1,9 @@
 #![allow(dead_code)]
 
+pub(crate) mod credential_helpers;
+pub(crate) mod registry_credentials;
+pub(crate) mod root_access;
+
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -31,14 +35,14 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
         ));
     }
 
-    if docker_desktop_is_installed()? && !config_has_default_helper(config_contents.as_deref()) {
-        reasons.push(format!(
-            "Docker Desktop is installed without an Automic Vault-backed default credential helper: {}",
-            config.display()
-        ));
-    }
-
     Ok(reasons)
+}
+
+fn reasons_matching(matches: impl Fn(&str) -> bool) -> Result<Vec<String>, String> {
+    Ok(install_insecurity_reasons()?
+        .into_iter()
+        .filter(|reason| matches(reason))
+        .collect())
 }
 
 fn docker_root_equivalent_access_hazards() -> Result<Vec<String>, String> {
@@ -96,12 +100,6 @@ fn home_dir() -> Result<PathBuf, String> {
 
 fn read_to_string(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))
-}
-
-fn docker_desktop_is_installed() -> Result<bool, String> {
-    let home = home_dir()?;
-    Ok(Path::new("/Applications/Docker.app").exists()
-        || home.join("Applications/Docker.app").exists())
 }
 
 #[cfg(unix)]
@@ -207,36 +205,20 @@ fn docker_config_hazards(contents: &str, path: &Path) -> Vec<String> {
     }
 
     for helper in string_values_for_key(contents, "credsStore") {
-        if !is_av_helper(&helper) {
-            reasons.push(format!(
-                "Docker config uses ambient credential store `{helper}`: {}",
-                path.display()
-            ));
-        }
+        reasons.push(format!(
+            "Docker config uses ambient credential store `{helper}`: {}",
+            path.display()
+        ));
     }
 
     for helper in credential_helper_values(contents) {
-        if !is_av_helper(&helper) {
-            reasons.push(format!(
-                "Docker config uses ambient per-registry credential helper `{helper}`: {}",
-                path.display()
-            ));
-        }
+        reasons.push(format!(
+            "Docker config uses ambient per-registry credential helper `{helper}`: {}",
+            path.display()
+        ));
     }
 
     reasons
-}
-
-fn config_has_default_helper(contents: Option<&str>) -> bool {
-    contents
-        .into_iter()
-        .flat_map(|contents| string_values_for_key(contents, "credsStore"))
-        .any(|helper| !helper.trim().is_empty())
-}
-
-fn is_av_helper(helper: &str) -> bool {
-    let helper = helper.trim().to_ascii_lowercase();
-    helper == "av" || helper.starts_with("av-") || helper.starts_with("automic-vault")
 }
 
 fn docker_config_contains_inline_secret(contents: &str) -> bool {
@@ -380,16 +362,6 @@ mod tests {
                 .iter()
                 .any(|reason| reason.contains("credential helper `desktop`"))
         );
-    }
-
-    #[test]
-    fn ignores_av_credential_helpers() {
-        let reasons = docker_config_hazards(
-            r#"{"credsStore":"av","credHelpers":{"registry.example":"av-docker"}}"#,
-            Path::new("/tmp/config.json"),
-        );
-
-        assert!(reasons.is_empty(), "{reasons:?}");
     }
 
     #[test]

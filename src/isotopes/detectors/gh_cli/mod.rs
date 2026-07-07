@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub(crate) mod hosts_token;
+pub(crate) mod keychain_access;
+
 use std::path::PathBuf;
 
 pub fn install_is_insecure() -> Result<bool, String> {
@@ -24,6 +27,13 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
         );
     }
     Ok(reasons)
+}
+
+fn reasons_matching(prefix: &str) -> Result<Vec<String>, String> {
+    Ok(install_insecurity_reasons()?
+        .into_iter()
+        .filter(|reason| reason.starts_with(prefix))
+        .collect())
 }
 
 fn candidate_hosts_paths() -> Result<Vec<PathBuf>, String> {

@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub(crate) mod persisted_output;
+pub(crate) mod shell_history;
+
 use std::path::{Path, PathBuf};
 
 pub fn install_is_insecure() -> Result<bool, String> {
@@ -27,6 +30,13 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     reasons.sort();
     reasons.dedup();
     Ok(reasons)
+}
+
+fn reasons_matching(prefix: &str) -> Result<Vec<String>, String> {
+    Ok(install_insecurity_reasons()?
+        .into_iter()
+        .filter(|reason| reason.starts_with(prefix))
+        .collect())
 }
 
 fn candidate_output_paths() -> Result<Vec<PathBuf>, String> {
