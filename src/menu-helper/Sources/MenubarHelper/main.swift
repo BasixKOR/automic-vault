@@ -432,7 +432,8 @@ private final class ApprovalServer: @unchecked Sendable {
 
         let requirement = """
         anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
-        (identifier "com.automicvault.av" or identifier "gh" or identifier "com.github.cli")
+        (identifier "com.automicvault.av" or identifier "gh" or identifier "com.github.cli" or \
+        identifier "supabase" or identifier "supabase-go" or identifier "com.supabase.cli")
         """
         let status = requirement.withCString {
             xpc_connection_set_peer_code_signing_requirement(listener, $0)
@@ -722,7 +723,13 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if name == "av", signing.identifier == "com.automicvault.av" {
         return true
     }
-    return name == "gh" && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
+    if name == "gh", signing.identifier == "gh" || signing.identifier == "com.github.cli" {
+        return true
+    }
+    return (name == "supabase" || name == "supabase-go")
+        && (signing.identifier == "supabase"
+            || signing.identifier == "supabase-go"
+            || signing.identifier == "com.supabase.cli")
 }
 
 private func validSecretKeyName(_ key: String) -> Bool {

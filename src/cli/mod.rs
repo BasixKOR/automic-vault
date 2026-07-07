@@ -108,6 +108,15 @@ where
                     }
                 };
             }
+            if target == "supabase" || target == "supabase-cli" {
+                return match hardeners::supabase::run(stdout, yes) {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
             let _ = writeln!(stderr, "{USAGE}");
             2
         }

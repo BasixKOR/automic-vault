@@ -1,6 +1,7 @@
 pub(crate) mod aws_cli;
 pub(crate) mod gh_cli;
 pub(crate) mod sudo;
+pub(crate) mod supabase;
 
 pub(crate) struct HardenerMetadata {
     pub(crate) name: &'static str,
@@ -47,5 +48,6 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         hardener!(aws_cli, "aws"),
         hardener!(gh_cli, "gh"),
         hardener!(sudo, "sudo"),
+        hardener!(supabase, "supabase"),
     ]
 }
