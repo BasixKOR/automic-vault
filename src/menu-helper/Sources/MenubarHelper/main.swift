@@ -12,6 +12,7 @@ private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let legacyTrustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
+private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
@@ -268,6 +269,42 @@ private struct ApprovalRequest {
     let detail: String?
 }
 
+private struct TransientApprovalKey: Hashable {
+    let pid: Int32
+    let startUsec: UInt64
+    let callerPath: String
+    let signingIdentifier: String
+    let signingTeamIdentifier: String
+    let op: String
+    let keys: [String]
+    let target: String
+    let args: [String]
+    let cwd: String
+    let replaceExistingEnv: Bool
+    let allowMissingKeys: Bool
+    let envConflicts: [String]
+    let shebangScript: String?
+    let tool: String?
+}
+
+private struct TransientApprovalCache {
+    private var expirations: [TransientApprovalKey: Date] = [:]
+
+    mutating func contains(_ key: TransientApprovalKey, now: Date = Date()) -> Bool {
+        prune(now: now)
+        return expirations[key].map { $0 > now } ?? false
+    }
+
+    mutating func remember(_ key: TransientApprovalKey, now: Date = Date()) {
+        prune(now: now)
+        expirations[key] = now.addingTimeInterval(transientApprovalTTL)
+    }
+
+    private mutating func prune(now: Date) {
+        expirations = expirations.filter { $0.value > now }
+    }
+}
+
 private struct SigningInfo {
     let identifier: String
     let teamIdentifier: String
@@ -296,6 +333,8 @@ private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
     private var listener: xpc_connection_t?
+    // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
+    private var transientApprovals = TransientApprovalCache()
 
     init(serviceName: String) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -396,6 +435,23 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
+        let transientApproval = TransientApprovalKey(
+            pid: pid,
+            startUsec: identity.start_usec,
+            callerPath: callerPath,
+            signingIdentifier: signing.identifier,
+            signingTeamIdentifier: signing.teamIdentifier,
+            op: request.op,
+            keys: request.keys.sorted(),
+            target: request.target,
+            args: request.args,
+            cwd: request.cwd,
+            replaceExistingEnv: request.replaceExistingEnv,
+            allowMissingKeys: request.allowMissingKeys,
+            envConflicts: request.envConflicts.sorted(),
+            shebangScript: request.shebangScript,
+            tool: request.tool
+        )
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(startingAt: identity.ppid)
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
@@ -425,6 +481,16 @@ private final class ApprovalServer: @unchecked Sendable {
         }
 
         DispatchQueue.main.async {
+            if self.transientApprovals.contains(transientApproval) {
+                do {
+                    let secrets = try self.approvedSecrets(for: request)
+                    self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                } catch {
+                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                }
+                return
+            }
+
             let decision = showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
@@ -440,6 +506,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
+            self.transientApprovals.remember(transientApproval)
             do {
                 let secrets = try self.approvedSecrets(for: request)
                 self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
@@ -1177,7 +1244,6 @@ private func runApprovalSelfCheck() -> Int32 {
     ) else {
         return 1
     }
-
     func altered(
         checksum: String = "abc",
         keys: [String] = ["A", "B"],
@@ -1223,6 +1289,39 @@ private func runApprovalSelfCheck() -> Int32 {
     return 0
 }
 
+private func runTransientApprovalSelfCheck() -> Int32 {
+    func key(startUsec: UInt64 = 456, args: [String] = ["repo", "view"]) -> TransientApprovalKey {
+        TransientApprovalKey(
+            pid: 123,
+            startUsec: startUsec,
+            callerPath: "/opt/homebrew/bin/gh",
+            signingIdentifier: "gh",
+            signingTeamIdentifier: "TEAM",
+            op: "keys",
+            keys: ["GH_TOKEN_GITHUB_COM"],
+            target: "/opt/homebrew/Cellar/gh-cli/2.94.0/bin/gh",
+            args: args,
+            cwd: "/tmp",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            tool: "gh"
+        )
+    }
+    let approval = key()
+    var cache = TransientApprovalCache()
+    cache.remember(approval, now: Date(timeIntervalSince1970: 100))
+    guard cache.contains(approval, now: Date(timeIntervalSince1970: 200)),
+          !cache.contains(key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)),
+          !cache.contains(key(startUsec: 789), now: Date(timeIntervalSince1970: 200)),
+          !cache.contains(approval, now: Date(timeIntervalSince1970: 500))
+    else {
+        return 1
+    }
+    return 0
+}
+
 private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     guard !isLaunchAgentInstance(environment: [:]),
           isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName])
@@ -1234,6 +1333,10 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(runApprovalSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-transient-approvals") {
+    exit(runTransientApprovalSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-dashboard-search") {
