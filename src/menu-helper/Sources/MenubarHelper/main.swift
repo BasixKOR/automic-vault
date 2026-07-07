@@ -355,7 +355,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
-        let launcher = launcherIdentity(startingAt: identity.ppid)
+        let launcher = launcherIdentity(startingAt: identity.ppid) ?? launcherIdentity(pid: pid, identity: identity)
         let trustedApproval = trustedApprovalRecord(
             script: scriptApproval,
             request: request,
@@ -568,21 +568,26 @@ private func launcherIdentity(startingAt startPID: pid_t) -> LauncherIdentity? {
 
         var identity = AVProcessIdentity()
         guard av_process_identity(pid, &identity) else { return nil }
-        let path = pathString(identity)
-        if let signing = liveSigningInfo(pid: pid),
-           isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable)
-        {
-            return LauncherIdentity(
-                pid: pid,
-                path: path,
-                identifier: signing.identifier,
-                teamIdentifier: signing.teamIdentifier,
-                designatedRequirement: signing.designatedRequirement
-            )
-        }
+        if let launcher = launcherIdentity(pid: pid, identity: identity) { return launcher }
         pid = identity.ppid
     }
     return nil
+}
+
+private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> LauncherIdentity? {
+    guard let signing = liveSigningInfo(pid: pid) else { return nil }
+    return launcherIdentity(pid: pid, path: pathString(identity), signing: signing)
+}
+
+private func launcherIdentity(pid: pid_t, path: String, signing: LiveSigningInfo) -> LauncherIdentity? {
+    guard isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable) else { return nil }
+    return LauncherIdentity(
+        pid: pid,
+        path: path,
+        identifier: signing.identifier,
+        teamIdentifier: signing.teamIdentifier,
+        designatedRequirement: signing.designatedRequirement
+    )
 }
 
 private struct LiveSigningInfo {
@@ -822,6 +827,23 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.openai.codex" and anchor apple generic"#
     )
+    let vaulttySigning = LiveSigningInfo(
+        identifier: "app.vaultty.Vaultty",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "app.vaultty.Vaultty" and anchor apple generic"#,
+        mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"
+    )
+    let unbundledSigning = LiveSigningInfo(
+        identifier: "com.automicvault.av",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.automicvault.av" and anchor apple generic"#,
+        mainExecutable: "/usr/local/bin/av"
+    )
+    let parentlessVaulttyLauncher = launcherIdentity(
+        pid: 43,
+        path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
+        signing: vaulttySigning
+    )
     guard let approval = trustedApprovalRecord(
         script: script,
         request: request,
@@ -851,7 +873,8 @@ private func runApprovalSelfCheck() -> Int32 {
 
     guard approval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
-          isAppBundleExecutable("/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"),
+          parentlessVaulttyLauncher?.designatedRequirement == vaulttySigning.designatedRequirement,
+          launcherIdentity(pid: 44, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
           !alwaysAllows(approval, service: service)
     else {
         return 1
