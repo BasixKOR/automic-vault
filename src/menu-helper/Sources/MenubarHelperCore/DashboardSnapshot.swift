@@ -106,7 +106,7 @@ public struct DetectorDisplayName: Equatable, Sendable {
 }
 
 public func detectorDisplayName(_ name: String) -> DetectorDisplayName {
-    splitDetectorDisplayNames[name] ?? DetectorDisplayName(packageName: name)
+    splitDetectorDisplayNames[name] ?? DetectorDisplayName(packageName: name, kind: "plaintext secret")
 }
 
 private let splitDetectorDisplayNames: [String: DetectorDisplayName] = [

@@ -826,8 +826,10 @@ private struct DetectorKindPill: View {
 
     var body: some View {
         Text(kind.uppercased())
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.primary)
+            .tracking(0.4)
+            .lineLimit(1)
             .padding(.horizontal, 7)
             .frame(height: 18)
             .background(Color.gray.opacity(0.18), in: Capsule())

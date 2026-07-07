@@ -72,10 +72,10 @@ import Testing
     #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
 }
 
-@Test func singleDetectorNamesDisplayWithoutKind() {
-    #expect(detectorDisplayName("docker-machine") == DetectorDisplayName(packageName: "docker-machine"))
-    #expect(detectorDisplayName("docker-credential-helper") == DetectorDisplayName(packageName: "docker-credential-helper"))
-    #expect(detectorDisplayName("curl") == DetectorDisplayName(packageName: "curl"))
+@Test func singleDetectorNamesDefaultToPlaintextSecretKind() {
+    #expect(detectorDisplayName("docker-machine") == DetectorDisplayName(packageName: "docker-machine", kind: "plaintext secret"))
+    #expect(detectorDisplayName("docker-credential-helper") == DetectorDisplayName(packageName: "docker-credential-helper", kind: "plaintext secret"))
+    #expect(detectorDisplayName("curl") == DetectorDisplayName(packageName: "curl", kind: "plaintext secret"))
 }
 
 @Test func hardenerMetadataDecodesDocumentation() throws {
