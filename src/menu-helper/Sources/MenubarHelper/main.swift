@@ -179,14 +179,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch result {
         case .clean(let detectorCount):
             statusItem.button?.image = menuImage()
-            scanStatusItem.title = "Vulnerability Detectors: 🟢 (\(detectorCount)/\(detectorCount))"
+            scanStatusItem.attributedTitle = cleanScanStatusTitle(detectorCount: detectorCount)
         case .findings(let count):
             statusItem.button?.image = menuImage(alerted: true)
+            scanStatusItem.attributedTitle = nil
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
             statusItem.button?.image = menuImage(alerted: true)
+            scanStatusItem.attributedTitle = nil
             scanStatusItem.title = "Scan failed"
         }
+    }
+
+    private func cleanScanStatusTitle(detectorCount: Int) -> NSAttributedString {
+        let caption = NSFont.preferredFont(forTextStyle: .caption1)
+        let title = NSMutableAttributedString(
+            string: "Vulnerability Detectors: ",
+            attributes: [.foregroundColor: NSColor.labelColor]
+        )
+        title.append(NSAttributedString(
+            string: "GREEN",
+            attributes: [.font: caption, .foregroundColor: NSColor.systemGreen]
+        ))
+        title.append(NSAttributedString(
+            string: " (\(detectorCount)/\(detectorCount))",
+            attributes: [.font: caption, .foregroundColor: NSColor.secondaryLabelColor]
+        ))
+        return title
     }
 }
 
