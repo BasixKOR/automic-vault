@@ -215,7 +215,10 @@ import Testing
     #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
     defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
 
-    #expect(loadStoredSecrets(service: service) == [StoredSecret(account: "API_TOKEN")])
+    let secrets = loadStoredSecrets(service: service)
+    #expect(secrets.map(\.account) == ["API_TOKEN"])
+    #expect(secrets.first?.keychainProperties.contains("Data Protection Enabled") == true)
+    #expect(secrets.first?.keychainProperties.contains("iCloud Off") == true)
     #expect(deleteStoredSecret(account: "API_TOKEN", service: service) == errSecSuccess)
     #expect(loadStoredSecrets(service: service).isEmpty)
 }
@@ -280,7 +283,7 @@ import Testing
     defer { _ = deleteStoredSecret(account: "NEW_TOKEN", service: service) }
 
     #expect(renameStoredSecret(account: "OLD_TOKEN", to: "NEW_TOKEN", service: service) == errSecSuccess)
-    #expect(loadStoredSecrets(service: service) == [StoredSecret(account: "NEW_TOKEN")])
+    #expect(loadStoredSecrets(service: service).map(\.account) == ["NEW_TOKEN"])
 }
 
 private func temporaryDirectory() -> URL {

@@ -119,7 +119,7 @@ final class DashboardModel: ObservableObject {
             }
         case .allSecrets:
             snapshot.secrets.map {
-                DashboardItem(id: $0.account, title: $0.account, subtitle: "Keychain secret", detail: "Secret value is hidden.")
+                DashboardItem(id: $0.account, title: $0.account, subtitle: $0.subtitle, detail: "Secret value is hidden.\n\($0.subtitle)")
             }
         }
         let query = searchQuery

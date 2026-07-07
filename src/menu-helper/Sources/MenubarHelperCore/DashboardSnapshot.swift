@@ -231,9 +231,15 @@ public struct SecretGateApprovedApp: Equatable, Sendable {
 
 public struct StoredSecret: Equatable, Sendable {
     public let account: String
+    public let keychainProperties: [String]
 
-    public init(account: String) {
+    public init(account: String, keychainProperties: [String] = []) {
         self.account = account
+        self.keychainProperties = keychainProperties
+    }
+
+    public var subtitle: String {
+        keychainProperties.isEmpty ? "Keychain secret" : keychainProperties.joined(separator: " • ")
     }
 }
 
@@ -408,9 +414,51 @@ public func loadStoredSecrets(service: String = automicVaultKeychainService) -> 
         return []
     }
     return items.compactMap { item in
-        (item[kSecAttrAccount as String] as? String).map(StoredSecret.init(account:))
+        guard let account = item[kSecAttrAccount as String] as? String else { return nil }
+        return StoredSecret(account: account, keychainProperties: keychainProperties(for: item, dataProtection: true))
     }
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
+}
+
+private func keychainProperties(for item: [String: Any], dataProtection: Bool) -> [String] {
+    [
+        dataProtection ? "Data Protection Enabled" : nil,
+        isSynchronizable(item[kSecAttrSynchronizable as String]) ? "iCloud On" : "iCloud Off",
+        accessibleLabel(item[kSecAttrAccessible as String]),
+    ].compactMap(\.self)
+}
+
+private func isSynchronizable(_ value: Any?) -> Bool {
+    if let value = value as? Bool {
+        return value
+    }
+    if let value = value as? NSNumber {
+        return value.boolValue
+    }
+    return false
+}
+
+private func accessibleLabel(_ value: Any?) -> String? {
+    guard let value = value as? String else { return nil }
+    let whenUnlocked = kSecAttrAccessibleWhenUnlocked as String
+    let afterFirstUnlock = kSecAttrAccessibleAfterFirstUnlock as String
+    let passcodeSetThisDeviceOnly = kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly as String
+    let whenUnlockedThisDeviceOnly = kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+    let afterFirstUnlockThisDeviceOnly = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    return switch value {
+    case whenUnlocked:
+        "When Unlocked"
+    case afterFirstUnlock:
+        "After First Unlock"
+    case passcodeSetThisDeviceOnly:
+        "Passcode Set, This Device Only"
+    case whenUnlockedThisDeviceOnly:
+        "When Unlocked, This Device Only"
+    case afterFirstUnlockThisDeviceOnly:
+        "After First Unlock, This Device Only"
+    default:
+        nil
+    }
 }
 
 public func saveStoredSecret(account: String, value: String, service: String = automicVaultKeychainService) -> OSStatus {
