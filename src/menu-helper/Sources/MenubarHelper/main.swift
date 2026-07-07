@@ -591,18 +591,26 @@ private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> Launch
     return launcherIdentity(pid: pid, path: pathString(identity), signing: signing)
 }
 
-private func launcherIdentity(pid: pid_t, path: String, signing: LiveSigningInfo) -> LauncherIdentity? {
+private func launcherIdentity(
+    pid: pid_t,
+    path: String,
+    signing: LiveSigningInfo,
+    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
+) -> LauncherIdentity? {
     guard !signing.isAdHoc,
-          isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable)
+          let appURL = appBundleURL(containing: path)
+              ?? appBundleURL(containing: signing.mainExecutable)
+              ?? associatedAppBundleURL(path: path, signing: signing),
+          let app = appSigning(appURL)
     else {
         return nil
     }
     return LauncherIdentity(
         pid: pid,
         path: path,
-        identifier: signing.identifier,
-        teamIdentifier: signing.teamIdentifier,
-        designatedRequirement: signing.designatedRequirement
+        identifier: app.identifier,
+        teamIdentifier: app.teamIdentifier,
+        designatedRequirement: app.designatedRequirement
     )
 }
 
@@ -612,6 +620,12 @@ private struct LiveSigningInfo {
     let designatedRequirement: String
     let mainExecutable: String
     let isAdHoc: Bool
+}
+
+private struct StaticSigningInfo {
+    let identifier: String
+    let teamIdentifier: String
+    let designatedRequirement: String
 }
 
 private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
@@ -653,6 +667,33 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
     )
 }
 
+private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else {
+        return nil
+    }
+
+    var info: CFDictionary?
+    let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
+    guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any],
+          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement],
+          ((dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0) & secCodeSignatureAdHoc == 0
+    else {
+        return nil
+    }
+    let requirement = requirementValue as! SecRequirement
+    guard let requirementText = requirementString(requirement) else { return nil }
+
+    return StaticSigningInfo(
+        identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
+        teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
+        designatedRequirement: requirementText
+    )
+}
+
 private func requirementString(_ requirement: SecRequirement) -> String? {
     var text: CFString?
     guard SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
@@ -665,6 +706,27 @@ private func requirementString(_ requirement: SecRequirement) -> String? {
 
 private func isAppBundleExecutable(_ path: String) -> Bool {
     path.range(of: ".app/Contents/", options: [.caseInsensitive]) != nil
+}
+
+private func appBundleURL(containing path: String) -> URL? {
+    var url = URL(fileURLWithPath: path)
+    while url.path != "/" {
+        if url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
+            return url
+        }
+        url.deleteLastPathComponent()
+    }
+    return nil
+}
+
+private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> URL? {
+    guard signing.identifier == "com.automicvault.vaultty.session-bridge",
+          path.hasSuffix("/Library/Application Support/Vaultty/vaultty-session-bridge")
+    else {
+        return nil
+    }
+    return NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.automicvault.vaultty")
+        ?? URL(fileURLWithPath: "/Applications/Vaultty.app")
 }
 
 private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
@@ -867,6 +929,18 @@ private func runApprovalSelfCheck() -> Int32 {
         mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
         isAdHoc: false
     )
+    let vaulttyBridgeSigning = LiveSigningInfo(
+        identifier: "com.automicvault.vaultty.session-bridge",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.automicvault.vaultty.session-bridge" and anchor apple generic"#,
+        mainExecutable: "/Users/mxcl/Library/Application Support/Vaultty/vaultty-session-bridge",
+        isAdHoc: false
+    )
+    let vaulttyAppSigning = StaticSigningInfo(
+        identifier: "com.automicvault.vaultty",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#
+    )
     let pythonSigning = LiveSigningInfo(
         identifier: "org.python.python",
         teamIdentifier: "unknown",
@@ -891,7 +965,14 @@ private func runApprovalSelfCheck() -> Int32 {
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
         path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
-        signing: vaulttySigning
+        signing: vaulttySigning,
+        appSigning: { _ in vaulttyAppSigning }
+    )
+    let vaulttyBridgeLauncher = launcherIdentity(
+        pid: 44,
+        path: "/Users/mxcl/Library/Application Support/Vaultty/vaultty-session-bridge",
+        signing: vaulttyBridgeSigning,
+        appSigning: { _ in vaulttyAppSigning }
     )
     guard let approval = trustedApprovalRecord(
         script: script,
@@ -922,9 +1003,10 @@ private func runApprovalSelfCheck() -> Int32 {
 
     guard approval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
-          parentlessVaulttyLauncher?.designatedRequirement == vaulttySigning.designatedRequirement,
-          launcherIdentity(pid: 44, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
-          launcherIdentity(pid: 44, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
+          parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
+          vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
+          launcherIdentity(pid: 45, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
+          launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
           !alwaysAllows(approval, service: service)
     else {
         return 1
