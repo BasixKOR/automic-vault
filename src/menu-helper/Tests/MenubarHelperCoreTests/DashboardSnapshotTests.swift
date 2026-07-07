@@ -66,6 +66,18 @@ import Testing
     ])
 }
 
+@Test func splitDetectorNamesDisplayPackageAndKind() {
+    #expect(detectorDisplayName("git-credential-fill") == DetectorDisplayName(packageName: "git", kind: "credential fill"))
+    #expect(detectorDisplayName("aws-cli-login-cache") == DetectorDisplayName(packageName: "aws-cli", kind: "login cache"))
+    #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
+}
+
+@Test func singleDetectorNamesDisplayWithoutKind() {
+    #expect(detectorDisplayName("docker-machine") == DetectorDisplayName(packageName: "docker-machine"))
+    #expect(detectorDisplayName("docker-credential-helper") == DetectorDisplayName(packageName: "docker-credential-helper"))
+    #expect(detectorDisplayName("curl") == DetectorDisplayName(packageName: "curl"))
+}
+
 @Test func hardenerMetadataDecodesDocumentation() throws {
     let data = Data("""
     {"hardeners":[{"name":"aws","documentation":"## What It Does","hardened":true,"stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws"}]}

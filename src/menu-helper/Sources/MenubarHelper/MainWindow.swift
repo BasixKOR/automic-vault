@@ -126,6 +126,7 @@ final class DashboardModel: ObservableObject {
         guard !query.isEmpty else { return base }
         return base.filter {
             $0.title.localizedCaseInsensitiveContains(query)
+                || $0.kind?.localizedCaseInsensitiveContains(query) == true
                 || $0.subtitle.localizedCaseInsensitiveContains(query)
                 || $0.detail.localizedCaseInsensitiveContains(query)
         }
@@ -282,11 +283,13 @@ final class DashboardModel: ObservableObject {
 
         return detectors
             .map { detector in
+                let displayName = detector.displayName
                 let findings = findingsBySource[detector.name] ?? []
                 guard !findings.isEmpty else {
                     return DashboardItem(
                         id: detector.name,
-                        title: detector.name,
+                        title: displayName.packageName,
+                        kind: displayName.kind,
                         subtitle: "No findings",
                         detail: "",
                         documentation: detector.documentation
@@ -297,7 +300,8 @@ final class DashboardModel: ObservableObject {
                 let subtitle = affectedCount == 1 ? "1 affected file" : "\(affectedCount) affected files"
                 return DashboardItem(
                     id: detector.name,
-                    title: detector.name,
+                    title: displayName.packageName,
+                    kind: displayName.kind,
                     subtitle: subtitle,
                     detail: [
                         findings.first?.explanation ?? "Detector flagged this tool.",
@@ -310,7 +314,10 @@ final class DashboardModel: ObservableObject {
             }
             .sorted {
                 if $0.isTriggered != $1.isTriggered { return $0.isTriggered }
-                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                if $0.title != $1.title {
+                    return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                }
+                return ($0.kind ?? "").localizedStandardCompare($1.kind ?? "") == .orderedAscending
             }
     }
 
@@ -416,15 +423,17 @@ enum DashboardSection: String, CaseIterable, Identifiable {
 struct DashboardItem: Identifiable, Equatable {
     let id: String
     let title: String
+    let kind: String?
     let subtitle: String
     let detail: String
     let documentation: String
     let severity: String?
     let isTriggered: Bool
 
-    init(id: String, title: String, subtitle: String, detail: String, documentation: String = "", severity: String? = nil, isTriggered: Bool = false) {
+    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", severity: String? = nil, isTriggered: Bool = false) {
         self.id = id
         self.title = title
+        self.kind = kind
         self.subtitle = subtitle
         self.detail = detail
         self.documentation = documentation
@@ -667,11 +676,15 @@ private struct DashboardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(item.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                if let kind = item.kind {
+                    DetectorKindPill(kind: kind)
+                        .fixedSize()
+                }
                 if let severity = item.severity {
                     Text(severity)
                         .font(.system(size: 10, weight: .bold))
@@ -808,6 +821,19 @@ private struct DetectorCountPill: View {
     }
 }
 
+private struct DetectorKindPill: View {
+    let kind: String
+
+    var body: some View {
+        Text(kind.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .background(Color.gray.opacity(0.18), in: Capsule())
+    }
+}
+
 private struct InfoBlock: View {
     let title: String
     let text: String
@@ -846,6 +872,10 @@ private struct ReferenceDetailView: View {
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(3)
+                    if let kind = item.kind {
+                        DetectorKindPill(kind: kind)
+                            .fixedSize()
+                    }
                     referenceBadge
                 }
                 Text(summary)

@@ -68,6 +68,10 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
     public let docsURL: String
     public let documentation: String
 
+    public var displayName: DetectorDisplayName {
+        detectorDisplayName(name)
+    }
+
     public init(name: String, homepage: String, docsURL: String, documentation: String = "") {
         self.name = name
         self.homepage = homepage
@@ -90,6 +94,40 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
         case documentation
     }
 }
+
+public struct DetectorDisplayName: Equatable, Sendable {
+    public let packageName: String
+    public let kind: String?
+
+    public init(packageName: String, kind: String? = nil) {
+        self.packageName = packageName
+        self.kind = kind
+    }
+}
+
+public func detectorDisplayName(_ name: String) -> DetectorDisplayName {
+    splitDetectorDisplayNames[name] ?? DetectorDisplayName(packageName: name)
+}
+
+private let splitDetectorDisplayNames: [String: DetectorDisplayName] = [
+    "aws-cli-credentials-file": DetectorDisplayName(packageName: "aws-cli", kind: "credentials file"),
+    "aws-cli-legacy-plugins": DetectorDisplayName(packageName: "aws-cli", kind: "legacy plugins"),
+    "aws-cli-login-cache": DetectorDisplayName(packageName: "aws-cli", kind: "login cache"),
+    "cariddi-persisted-output": DetectorDisplayName(packageName: "cariddi", kind: "persisted output"),
+    "cariddi-shell-history": DetectorDisplayName(packageName: "cariddi", kind: "shell history"),
+    "docker-credential-helpers": DetectorDisplayName(packageName: "docker", kind: "credential helpers"),
+    "docker-registry-credentials": DetectorDisplayName(packageName: "docker", kind: "registry credentials"),
+    "docker-root-access": DetectorDisplayName(packageName: "docker", kind: "root access"),
+    "gh-cli-hosts-token": DetectorDisplayName(packageName: "gh-cli", kind: "hosts token"),
+    "gh-cli-keychain-access": DetectorDisplayName(packageName: "gh-cli", kind: "keychain access"),
+    "git-credential-fill": DetectorDisplayName(packageName: "git", kind: "credential fill"),
+    "git-credential-oauth": DetectorDisplayName(packageName: "git", kind: "credential oauth"),
+    "git-credentials-file": DetectorDisplayName(packageName: "git", kind: "credentials file"),
+    "pnpm-auth-token": DetectorDisplayName(packageName: "pnpm", kind: "auth token"),
+    "pnpm-minimum-release-age": DetectorDisplayName(packageName: "pnpm", kind: "minimum release age"),
+    "secretlint-persisted-report": DetectorDisplayName(packageName: "secretlint", kind: "persisted report"),
+    "secretlint-shell-history": DetectorDisplayName(packageName: "secretlint", kind: "shell history"),
+]
 
 public struct DetectorFinding: Codable, Equatable, Sendable {
     public let source: String
