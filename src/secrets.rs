@@ -1,0 +1,139 @@
+use std::path::PathBuf;
+
+const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+
+pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
+    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+        std::fs::create_dir_all(&dir)
+            .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
+        let path = PathBuf::from(dir).join(account);
+        return std::fs::write(&path, value)
+            .map_err(|err| format!("failed to write {}: {err}", path.display()));
+    }
+    xpc_store_secret(account, value)
+}
+
+#[cfg(target_os = "macos")]
+fn xpc_store_secret(account: &str, value: &str) -> Result<(), String> {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_int, c_void};
+
+    type XpcObject = *mut c_void;
+
+    unsafe extern "C" {
+        static _xpc_type_error: u8;
+        static _xpc_error_key_description: *const c_char;
+
+        fn xpc_connection_create_mach_service(
+            name: *const c_char,
+            targetq: *mut c_void,
+            flags: u64,
+        ) -> XpcObject;
+        fn xpc_connection_activate(connection: XpcObject);
+        fn xpc_connection_cancel(connection: XpcObject);
+        fn xpc_connection_send_message_with_reply_sync(
+            connection: XpcObject,
+            message: XpcObject,
+        ) -> XpcObject;
+        fn xpc_dictionary_create_empty() -> XpcObject;
+        fn xpc_dictionary_set_bool(xdict: XpcObject, key: *const c_char, value: bool);
+        fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
+        fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
+        fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
+        fn xpc_get_type(object: XpcObject) -> *const c_void;
+        fn xpc_release(object: XpcObject);
+        fn xpc_connection_set_peer_code_signing_requirement(
+            connection: XpcObject,
+            requirement: *const c_char,
+        ) -> c_int;
+        fn av_xpc_connection_set_empty_event_handler(connection: XpcObject);
+    }
+
+    unsafe fn set_string(dict: XpcObject, key: &[u8], value: &str) -> Result<(), String> {
+        let value =
+            CString::new(value).map_err(|_| format!("XPC field contains NUL: {value:?}"))?;
+        unsafe { xpc_dictionary_set_string(dict, key.as_ptr().cast(), value.as_ptr()) };
+        Ok(())
+    }
+
+    let service = CString::new(APPROVAL_SERVICE).unwrap();
+    let connection =
+        unsafe { xpc_connection_create_mach_service(service.as_ptr(), std::ptr::null_mut(), 0) };
+    if connection.is_null() {
+        return Err("failed to create approval XPC connection".into());
+    }
+
+    let menu_requirement = CString::new(r#"identifier "com.automicvault.menubar-helper""#).unwrap();
+    let requirement_status = unsafe {
+        xpc_connection_set_peer_code_signing_requirement(connection, menu_requirement.as_ptr())
+    };
+    if requirement_status != 0 {
+        unsafe { xpc_release(connection) };
+        return Err("failed to configure approval XPC signing requirement".into());
+    }
+
+    unsafe {
+        av_xpc_connection_set_empty_event_handler(connection);
+        xpc_connection_activate(connection);
+    }
+
+    let message = unsafe { xpc_dictionary_create_empty() };
+    if message.is_null() {
+        unsafe { xpc_connection_cancel(connection) };
+        unsafe { xpc_release(connection) };
+        return Err("failed to create approval XPC message".into());
+    }
+
+    unsafe {
+        set_string(message, b"op\0", "save")?;
+        set_string(message, b"key\0", account)?;
+        set_string(message, b"value\0", value)?;
+        xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
+    }
+
+    let reply = unsafe { xpc_connection_send_message_with_reply_sync(connection, message) };
+    unsafe {
+        xpc_release(message);
+        xpc_connection_cancel(connection);
+        xpc_release(connection);
+    }
+    if reply.is_null() {
+        return Err("Automic Vault approval did not reply".into());
+    }
+
+    let result = unsafe {
+        if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
+            let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+            let error = if error.is_null() {
+                "approval XPC connection failed".into()
+            } else {
+                std::ffi::CStr::from_ptr(error)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            if error == "Connection invalid" {
+                Err("Automic Vault approval service is not running; open the menu bar app".into())
+            } else {
+                Err(error)
+            }
+        } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
+            Ok(())
+        } else {
+            let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
+            Err(if error.is_null() {
+                "secret save failed".into()
+            } else {
+                std::ffi::CStr::from_ptr(error)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        }
+    };
+    unsafe { xpc_release(reply) };
+    result
+}
+
+#[cfg(not(target_os = "macos"))]
+fn xpc_store_secret(_account: &str, _value: &str) -> Result<(), String> {
+    Err("menu bar secret storage is only available on macOS".to_string())
+}

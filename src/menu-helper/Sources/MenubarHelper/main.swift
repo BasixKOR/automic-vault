@@ -370,6 +370,29 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
 
+        guard let opPointer = xpc_dictionary_get_string(message, "op") else {
+            reply(peer, to: message, ok: false, error: "invalid XPC request")
+            return
+        }
+
+        switch String(cString: opPointer) {
+        case "inject":
+            handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
+        case "save":
+            handleSave(message, on: peer)
+        default:
+            reply(peer, to: message, ok: false, error: "invalid XPC operation")
+        }
+    }
+
+    private func handleInject(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) {
         guard let request = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
@@ -387,12 +410,17 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         if let scriptApproval, let launcher, let trustedApproval, alwaysAllows(trustedApproval) {
             DispatchQueue.main.async {
-                showAutoApprovedToast(
-                    keys: request.keys,
-                    script: scriptApproval.path,
-                    launcher: launcher.identifier
-                )
-                self.reply(peer, to: message, ok: true, error: nil)
+                do {
+                    let secrets = try self.approvedSecrets(for: request)
+                    showAutoApprovedToast(
+                        keys: request.keys,
+                        script: scriptApproval.path,
+                        launcher: launcher.identifier
+                    )
+                    self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                } catch {
+                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                }
             }
             return
         }
@@ -409,13 +437,51 @@ private final class ApprovalServer: @unchecked Sendable {
             if decision == .alwaysAllow, let trustedApproval {
                 rememberAlwaysAllow(trustedApproval)
             }
-            self.reply(
-                peer,
-                to: message,
-                ok: decision != .denied,
-                error: decision == .denied ? "injection denied" : nil
-            )
+            guard decision != .denied else {
+                self.reply(peer, to: message, ok: false, error: "injection denied")
+                return
+            }
+            do {
+                let secrets = try self.approvedSecrets(for: request)
+                self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+            } catch {
+                self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
         }
+    }
+
+    private func handleSave(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              let valuePointer = xpc_dictionary_get_string(message, "value")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid save request")
+            return
+        }
+        let key = String(cString: keyPointer)
+        guard validSecretKeyName(key) else {
+            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            return
+        }
+        let value = String(cString: valuePointer)
+        let status = saveStoredSecret(account: key, value: value)
+        if status == errSecSuccess {
+            reply(peer, to: message, ok: true, error: nil)
+        } else {
+            reply(peer, to: message, ok: false, error: "failed to store isotope key \(key): \(status)")
+        }
+    }
+
+    private func approvedSecrets(for request: ApprovalRequest) throws -> [String: String] {
+        let conflicts = Set(request.envConflicts)
+        var secrets: [String: String] = [:]
+        for key in request.keys where request.replaceExistingEnv || !conflicts.contains(key) {
+            guard let value = loadStoredSecret(account: key) else {
+                if request.allowMissingKeys { continue }
+                throw AppError("failed to load isotope key \(key): \(errSecItemNotFound)")
+            }
+            secrets[key] = value
+        }
+        return secrets
     }
 
     private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
@@ -456,7 +522,13 @@ private final class ApprovalServer: @unchecked Sendable {
         return strings
     }
 
-    private func reply(_ peer: xpc_connection_t, to message: xpc_object_t, ok: Bool, error: String?) {
+    private func reply(
+        _ peer: xpc_connection_t,
+        to message: xpc_object_t,
+        ok: Bool,
+        error: String?,
+        secrets: [String: String]? = nil
+    ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
         xpc_dictionary_set_bool(response, "ok", ok)
         if let error {
@@ -464,7 +536,39 @@ private final class ApprovalServer: @unchecked Sendable {
                 xpc_dictionary_set_string(response, "error", $0)
             }
         }
+        if let secrets {
+            let values = xpc_dictionary_create_empty()
+            for (key, value) in secrets {
+                key.withCString { keyPointer in
+                    value.withCString { valuePointer in
+                        xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                    }
+                }
+            }
+            xpc_dictionary_set_value(response, "secrets", values)
+        }
         xpc_connection_send_message(peer, response)
+    }
+}
+
+private func validSecretKeyName(_ key: String) -> Bool {
+    guard let first = key.unicodeScalars.first,
+          first == "_" || first.isASCIIAlpha
+    else {
+        return false
+    }
+    return key.unicodeScalars.dropFirst().allSatisfy {
+        $0 == "_" || $0.isASCIIAlpha || $0.isASCIIDigit
+    }
+}
+
+private extension UnicodeScalar {
+    var isASCIIAlpha: Bool {
+        (65...90).contains(value) || (97...122).contains(value)
+    }
+
+    var isASCIIDigit: Bool {
+        (48...57).contains(value)
     }
 }
 

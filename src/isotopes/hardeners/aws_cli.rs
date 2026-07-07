@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use super::HardenerDetection;
 
-const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
 const AWS_HARDEN_PROFILE: &str = "default";
@@ -269,125 +268,7 @@ fn import_aws_credentials(credentials: &AwsCredentials) -> Result<(), String> {
 }
 
 pub(crate) fn store_keychain_secret(account: &str, value: &str) -> Result<(), String> {
-    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
-        fs::create_dir_all(&dir)
-            .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
-        let path = PathBuf::from(dir).join(account);
-        return fs::write(&path, value)
-            .map_err(|err| format!("failed to write {}: {err}", path.display()));
-    }
-    keychain_store_secret(KEYCHAIN_SERVICE, account, value)
-}
-
-#[cfg(target_os = "macos")]
-fn keychain_store_secret(service: &str, account: &str, value: &str) -> Result<(), String> {
-    use std::ffi::{CString, c_void};
-
-    #[link(name = "Security", kind = "framework")]
-    unsafe extern "C" {
-        fn SecKeychainAddGenericPassword(
-            keychain: *const c_void,
-            service_name_length: u32,
-            service_name: *const i8,
-            account_name_length: u32,
-            account_name: *const i8,
-            password_length: u32,
-            password_data: *const c_void,
-            item_ref: *mut *mut c_void,
-        ) -> i32;
-        fn SecKeychainFindGenericPassword(
-            keychain_or_array: *const c_void,
-            service_name_length: u32,
-            service_name: *const i8,
-            account_name_length: u32,
-            account_name: *const i8,
-            password_length: *mut u32,
-            password_data: *mut *mut c_void,
-            item_ref: *mut *mut c_void,
-        ) -> i32;
-        fn SecKeychainItemModifyAttributesAndData(
-            item_ref: *mut c_void,
-            attr_list: *const c_void,
-            length: u32,
-            data: *const c_void,
-        ) -> i32;
-        fn SecKeychainItemFreeContent(attr_list: *const c_void, data: *mut c_void) -> i32;
-    }
-    #[link(name = "CoreFoundation", kind = "framework")]
-    unsafe extern "C" {
-        fn CFRelease(cf: *const c_void);
-    }
-
-    let service_cstr =
-        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
-    let account_cstr =
-        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
-    let mut item_ref = std::ptr::null_mut();
-    let status = unsafe {
-        SecKeychainAddGenericPassword(
-            std::ptr::null(),
-            service.len() as u32,
-            service_cstr.as_ptr(),
-            account.len() as u32,
-            account_cstr.as_ptr(),
-            value.len() as u32,
-            value.as_ptr().cast(),
-            &mut item_ref,
-        )
-    };
-    if status == 0 {
-        if !item_ref.is_null() {
-            unsafe { CFRelease(item_ref.cast()) };
-        }
-        return Ok(());
-    }
-    if status != -25299 {
-        return Err(format!("failed to store isotope key {account}: {status}"));
-    }
-
-    let mut old_len = 0u32;
-    let mut old_data = std::ptr::null_mut();
-    let status = unsafe {
-        SecKeychainFindGenericPassword(
-            std::ptr::null(),
-            service.len() as u32,
-            service_cstr.as_ptr(),
-            account.len() as u32,
-            account_cstr.as_ptr(),
-            &mut old_len,
-            &mut old_data,
-            &mut item_ref,
-        )
-    };
-    if status != 0 {
-        return Err(format!("failed to find isotope key {account}: {status}"));
-    }
-    if !old_data.is_null() {
-        unsafe {
-            let _ = SecKeychainItemFreeContent(std::ptr::null(), old_data);
-        }
-    }
-    let status = unsafe {
-        SecKeychainItemModifyAttributesAndData(
-            item_ref,
-            std::ptr::null(),
-            value.len() as u32,
-            value.as_ptr().cast(),
-        )
-    };
-    if !item_ref.is_null() {
-        unsafe { CFRelease(item_ref.cast()) };
-    }
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(format!("failed to update isotope key {account}: {status}"))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn keychain_store_secret(_service: &str, _account: &str, _value: &str) -> Result<(), String> {
-    Err("keychain access is only available on macOS".to_string())
+    crate::secrets::store_secret(account, value)
 }
 
 #[cfg(test)]

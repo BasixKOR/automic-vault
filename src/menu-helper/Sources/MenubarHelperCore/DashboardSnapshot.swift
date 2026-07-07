@@ -333,6 +333,7 @@ public func loadTrustedScriptApprovals(
     service: String = trustedScriptApprovalsKeychainService,
     account: String = trustedScriptApprovalsKeychainAccount
 ) -> [TrustedScriptApproval] {
+    migrateStoredSecretsToDataProtection(service: service)
     guard let data = loadKeychainData(service: service, account: account),
           let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
     else {
@@ -354,9 +355,11 @@ public func saveTrustedScriptApprovals(
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
+    migrateStoredSecretsToDataProtection(service: service)
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
+        kSecUseDataProtectionKeychain as String: true,
         kSecReturnAttributes as String: true,
         kSecMatchLimit as String: kSecMatchLimitAll,
     ]
@@ -381,6 +384,7 @@ public func renameStoredSecret(account: String, to newAccount: String, service: 
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
     ]
     return SecItemUpdate(query as CFDictionary, [kSecAttrAccount as String: newAccount] as CFDictionary)
 }
@@ -390,8 +394,14 @@ public func deleteStoredSecret(account: String, service: String = automicVaultKe
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
     ]
     return SecItemDelete(query as CFDictionary)
+}
+
+public func loadStoredSecret(account: String, service: String = automicVaultKeychainService) -> String? {
+    guard let data = loadKeychainData(service: service, account: account) else { return nil }
+    return String(data: data, encoding: .utf8)
 }
 
 private func loadKeychainData(service: String, account: String) -> Data? {
@@ -399,6 +409,7 @@ private func loadKeychainData(service: String, account: String) -> Data? {
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
         kSecReturnData as String: true,
     ]
     var result: CFTypeRef?
@@ -411,9 +422,11 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
     ]
     let attributes: [String: Any] = [
         kSecValueData as String: data,
+        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
     ]
     let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     if status != errSecItemNotFound {
@@ -421,7 +434,39 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     }
     var addQuery = query
     addQuery[kSecValueData as String] = data
+    addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
     return SecItemAdd(addQuery as CFDictionary, nil)
+}
+
+public func migrateStoredSecretsToDataProtection(service: String = automicVaultKeychainService) {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecReturnAttributes as String: true,
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let items = result as? [[String: Any]]
+    else {
+        return
+    }
+
+    for item in items {
+        guard let account = item[kSecAttrAccount as String] as? String,
+              let data = item[kSecValueData as String] as? Data,
+              saveKeychainData(data, service: service, account: account) == errSecSuccess
+        else {
+            continue
+        }
+        let legacyQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        _ = SecItemDelete(legacyQuery as CFDictionary)
+    }
 }
 
 func appIdentifier(from requirement: String) -> String? {

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import MenubarHelperCore
 
@@ -111,6 +112,7 @@ import Testing
 }
 
 @Test func secretGatesDecodeRememberedApprovals() throws {
+    guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
@@ -172,6 +174,7 @@ import Testing
 }
 
 @Test func secretGateAppsCanBeAddedAndRemoved() throws {
+    guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
@@ -195,6 +198,7 @@ import Testing
 }
 
 @Test func storedSecretsListNamesOnlyAndDelete() throws {
+    guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
     defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
@@ -204,7 +208,54 @@ import Testing
     #expect(loadStoredSecrets(service: service).isEmpty)
 }
 
+@Test func storedSecretsUseDataProtectionKeychain() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: "API_TOKEN",
+        kSecUseDataProtectionKeychain as String: true,
+        kSecReturnAttributes as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var result: CFTypeRef?
+    #expect(SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess)
+    let attributes = try #require(result as? [String: Any])
+    #expect(attributes[kSecAttrAccessible as String] as? String == kSecAttrAccessibleWhenUnlocked as String)
+}
+
+@Test func legacyStoredSecretsMigrateToDataProtectionKeychain() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let legacyQuery: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: "API_TOKEN",
+    ]
+    _ = SecItemDelete(legacyQuery as CFDictionary)
+    var addQuery = legacyQuery
+    addQuery[kSecValueData as String] = Data("secret".utf8)
+    #expect(SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+    defer { _ = SecItemDelete(legacyQuery as CFDictionary) }
+
+    migrateStoredSecretsToDataProtection(service: service)
+
+    #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
+    var result: CFTypeRef?
+    let legacyStatus = SecItemCopyMatching((legacyQuery.merging([
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]) { _, new in new }) as CFDictionary, &result)
+    #expect(legacyStatus == errSecItemNotFound)
+}
+
 @Test func storedSecretsCanBeRenamed() throws {
+    guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     #expect(saveStoredSecret(account: "OLD_TOKEN", value: "secret", service: service) == errSecSuccess)
     defer { _ = deleteStoredSecret(account: "OLD_TOKEN", service: service) }
@@ -219,4 +270,11 @@ private func temporaryDirectory() -> URL {
         .appendingPathComponent("av-menubar-tests-\(UUID().uuidString)", isDirectory: true)
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+private func dataProtectionKeychainAvailable() -> Bool {
+    let service = "com.automicvault.tests.probe.\(UUID().uuidString)"
+    let status = saveStoredSecret(account: "PROBE", value: "secret", service: service)
+    defer { _ = deleteStoredSecret(account: "PROBE", service: service) }
+    return status != errSecMissingEntitlement
 }

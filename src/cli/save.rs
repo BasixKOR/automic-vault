@@ -3,8 +3,6 @@ use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::os::fd::AsRawFd;
 
-use crate::isotopes::hardeners::aws_cli;
-
 use super::inject;
 
 pub(crate) fn run(args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
@@ -33,7 +31,7 @@ fn save_value(key: &str, value: &str) -> Result<(), String> {
     if value.is_empty() {
         return Err("empty key value".into());
     }
-    aws_cli::store_keychain_secret(key, &value)
+    crate::secrets::store_secret(key, value)
 }
 
 fn read_secret_from_tty(key: &str) -> Result<String, String> {

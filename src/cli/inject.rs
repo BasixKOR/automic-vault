@@ -11,7 +11,7 @@ Usage: av inject [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] 
 Injects named Keychain secrets into COMMAND's environment.";
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
-const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
+type SecretValues = BTreeMap<String, String>;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Options {
@@ -199,13 +199,17 @@ fn prepare_injection<A, B>(
     build: B,
 ) -> Result<(PathBuf, BTreeMap<OsString, OsString>), String>
 where
-    A: FnOnce(&ApprovalRequest) -> Result<(), String>,
-    B: FnOnce(&Options, &mut dyn Write) -> Result<BTreeMap<OsString, OsString>, String>,
+    A: FnOnce(&ApprovalRequest) -> Result<SecretValues, String>,
+    B: FnOnce(
+        &Options,
+        &mut dyn Write,
+        SecretValues,
+    ) -> Result<BTreeMap<OsString, OsString>, String>,
 {
     let target = resolve_target(&options.target)?;
     let request = approval_request(options, &target)?;
-    approve(&request)?;
-    let env = build(options, stderr)?;
+    let secrets = approve(&request)?;
+    let env = build(options, stderr, secrets)?;
     Ok((target, env))
 }
 
@@ -253,6 +257,7 @@ fn infer_shebang_script(options: &Options) -> Option<OsString> {
 fn build_env(
     options: &Options,
     stderr: &mut dyn Write,
+    secrets: SecretValues,
 ) -> Result<BTreeMap<OsString, OsString>, String> {
     let mut env = std::env::vars_os().collect::<BTreeMap<_, _>>();
     for key in &options.keys {
@@ -264,7 +269,12 @@ fn build_env(
             .ok();
             continue;
         }
-        match load_secret_if_present(key)? {
+        let value = if let Some(value) = secrets.get(key) {
+            Some(value.clone())
+        } else {
+            load_test_secret_if_present(key)?
+        };
+        match value {
             Some(value) => {
                 env.insert(OsString::from(key), OsString::from(value));
             }
@@ -275,7 +285,7 @@ fn build_env(
     Ok(env)
 }
 
-fn load_secret_if_present(key: &str) -> Result<Option<String>, String> {
+fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
     if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
         let path = std::path::PathBuf::from(dir).join(key);
         return match std::fs::read_to_string(&path) {
@@ -287,68 +297,7 @@ fn load_secret_if_present(key: &str) -> Result<Option<String>, String> {
     if let Ok(value) = std::env::var(format!("AUTOMIC_VAULT_TEST_{key}")) {
         return Ok(Some(value));
     }
-    keychain_load_secret_if_present(KEYCHAIN_SERVICE, key)
-}
-
-#[cfg(target_os = "macos")]
-fn keychain_load_secret_if_present(service: &str, account: &str) -> Result<Option<String>, String> {
-    use std::ffi::{CString, c_void};
-
-    #[link(name = "Security", kind = "framework")]
-    unsafe extern "C" {
-        fn SecKeychainFindGenericPassword(
-            keychain_or_array: *const c_void,
-            service_name_length: u32,
-            service_name: *const i8,
-            account_name_length: u32,
-            account_name: *const i8,
-            password_length: *mut u32,
-            password_data: *mut *mut c_void,
-            item_ref: *mut *mut c_void,
-        ) -> i32;
-        fn SecKeychainItemFreeContent(attr_list: *const c_void, data: *mut c_void) -> i32;
-    }
-
-    let service_cstr =
-        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
-    let account_cstr =
-        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
-    let mut len = 0u32;
-    let mut data = std::ptr::null_mut();
-    let status = unsafe {
-        SecKeychainFindGenericPassword(
-            std::ptr::null(),
-            service.len() as u32,
-            service_cstr.as_ptr(),
-            account.len() as u32,
-            account_cstr.as_ptr(),
-            &mut len,
-            &mut data,
-            std::ptr::null_mut(),
-        )
-    };
-    if status == -25300 {
-        return Ok(None);
-    }
-    if status != 0 {
-        return Err(format!("failed to load isotope key {account}: {status}"));
-    }
-
-    let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), len as usize) }.to_vec();
-    unsafe {
-        let _ = SecKeychainItemFreeContent(std::ptr::null(), data);
-    }
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| format!("isotope key {account} is not valid UTF-8"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn keychain_load_secret_if_present(
-    _service: &str,
-    _account: &str,
-) -> Result<Option<String>, String> {
-    Err("keychain access is only available on macOS".to_string())
+    Ok(None)
 }
 
 fn resolve_target(target: &OsString) -> Result<PathBuf, String> {
@@ -386,20 +335,20 @@ pub(super) fn validate_key_name(key: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn approve_injection(request: &ApprovalRequest) -> Result<(), String> {
+fn approve_injection(request: &ApprovalRequest) -> Result<SecretValues, String> {
     if std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some() {
-        return Ok(());
+        return Ok(SecretValues::new());
     }
     xpc_approve_injection(request)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn approve_injection(_request: &ApprovalRequest) -> Result<(), String> {
+fn approve_injection(_request: &ApprovalRequest) -> Result<SecretValues, String> {
     Err("menu bar approval is only available on macOS".into())
 }
 
 #[cfg(target_os = "macos")]
-fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
+fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, String> {
     use std::os::raw::{c_char, c_int, c_void};
 
     type XpcObject = *mut c_void;
@@ -424,6 +373,7 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
         fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
         fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
         fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
+        fn xpc_dictionary_get_dictionary(xdict: XpcObject, key: *const c_char) -> XpcObject;
         fn xpc_dictionary_set_value(xdict: XpcObject, key: *const c_char, value: XpcObject);
         fn xpc_array_create_empty() -> XpcObject;
         fn xpc_array_append_value(xarray: XpcObject, value: XpcObject);
@@ -543,7 +493,24 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<(), String> {
                 Err(error)
             }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
-            Ok(())
+            let mut secrets = SecretValues::new();
+            let values = xpc_dictionary_get_dictionary(reply, b"secrets\0".as_ptr().cast());
+            if !values.is_null() {
+                for key in &request.keys {
+                    let key_cstr = CString::new(key.as_str())
+                        .map_err(|_| format!("invalid key returned by approval: {key:?}"))?;
+                    let value = xpc_dictionary_get_string(values, key_cstr.as_ptr());
+                    if !value.is_null() {
+                        secrets.insert(
+                            key.clone(),
+                            std::ffi::CStr::from_ptr(value)
+                                .to_string_lossy()
+                                .into_owned(),
+                        );
+                    }
+                }
+            }
+            Ok(secrets)
         } else {
             let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
             Err(if error.is_null() {
@@ -616,7 +583,7 @@ mod tests {
             &options,
             &mut stderr,
             |_| Err("user denied injection".into()),
-            |_, _| panic!("approval denial must happen before loading secrets"),
+            |_, _, _| panic!("approval denial must happen before loading secrets"),
         )
         .unwrap_err();
 
@@ -641,6 +608,28 @@ mod tests {
         assert!(request.replace_existing_env);
         assert!(request.allow_missing_keys);
         assert_eq!(request.shebang_script.as_deref(), Some("/tmp/tool"));
+    }
+
+    #[test]
+    fn build_env_uses_approved_secret_values() {
+        let options = Options {
+            replace_existing_env: true,
+            allow_missing_keys: false,
+            keys: vec!["APPROVED_SECRET".into()],
+            target: "/bin/echo".into(),
+            args: vec![],
+            shebang_script: None,
+        };
+        let mut secrets = SecretValues::new();
+        secrets.insert("APPROVED_SECRET".into(), "expected".into());
+        let mut stderr = Vec::new();
+
+        let env = build_env(&options, &mut stderr, secrets).unwrap();
+
+        assert_eq!(
+            env.get(std::ffi::OsStr::new("APPROVED_SECRET")),
+            Some(&OsString::from("expected"))
+        );
     }
 
     #[test]

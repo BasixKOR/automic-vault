@@ -1,5 +1,6 @@
 mod cli;
 mod isotopes;
+mod secrets;
 
 pub use cli::{run, run_terminal};
 
