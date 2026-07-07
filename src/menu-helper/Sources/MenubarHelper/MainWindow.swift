@@ -697,10 +697,11 @@ private struct DashboardRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
-        .frame(height: 54, alignment: .topLeading)
+        .frame(height: 70, alignment: .topLeading)
     }
 }
 
