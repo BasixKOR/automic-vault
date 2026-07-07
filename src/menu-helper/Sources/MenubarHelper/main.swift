@@ -20,6 +20,15 @@ private var toastWindows: [NSWindow] = []
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
+    private var autoApprovalItems: [NSMenuItem] = []
+    private var autoApprovalSeparator: NSMenuItem?
+    private var autoApprovals: [AutoApprovalRecord] = []
+    private let autoApprovalTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
     private var approval: ApprovalServer?
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
@@ -52,7 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
 
         do {
-            let approval = try ApprovalServer(serviceName: approvalServiceName)
+            let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
+                self?.recordAutoApproval(event)
+            }
             try approval.start()
             self.approval = approval
             scheduleScan(after: 0)
@@ -178,36 +189,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyScanResult(_ result: ScanResult) {
         switch result {
-        case .clean(let detectorCount):
+        case .clean:
             statusItem.button?.image = menuImage()
-            scanStatusItem.attributedTitle = cleanScanStatusTitle(detectorCount: detectorCount)
+            scanStatusItem.attributedTitle = nil
+            scanStatusItem.image = shieldImage()
+            scanStatusItem.title = "No Vulnerabilities Detected"
         case .findings(let count):
             statusItem.button?.image = menuImage(alerted: true)
             scanStatusItem.attributedTitle = nil
+            scanStatusItem.image = nil
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
             statusItem.button?.image = menuImage(alerted: true)
             scanStatusItem.attributedTitle = nil
+            scanStatusItem.image = nil
             scanStatusItem.title = "Scan failed"
         }
     }
 
-    private func cleanScanStatusTitle(detectorCount: Int) -> NSAttributedString {
-        let caption = NSFont.preferredFont(forTextStyle: .caption1)
-        let title = NSMutableAttributedString(
-            string: "Vulnerability Detectors: ",
-            attributes: [.foregroundColor: NSColor.labelColor]
-        )
-        title.append(NSAttributedString(
-            string: "GREEN",
-            attributes: [.font: caption, .foregroundColor: NSColor.systemGreen]
-        ))
-        title.append(NSAttributedString(
-            string: " (\(detectorCount)/\(detectorCount))",
-            attributes: [.font: caption, .foregroundColor: NSColor.secondaryLabelColor]
-        ))
-        return title
+    private func shieldImage() -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "SHIELD") else {
+            return nil
+        }
+        let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
+        image.size = NSSize(width: 16, height: 16)
+        let tinted = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            NSColor.systemGreen.setFill()
+            rect.fill(using: .sourceIn)
+            return true
+        }
+        tinted.isTemplate = false
+        return tinted
     }
+
+    private func recordAutoApproval(_ record: AutoApprovalRecord) {
+        autoApprovals.insert(record, at: 0)
+        autoApprovals = Array(autoApprovals.prefix(5))
+        refreshAutoApprovalMenuItems()
+    }
+
+    private func refreshAutoApprovalMenuItems() {
+        guard let menu = statusItem.menu else { return }
+        for item in autoApprovalItems {
+            menu.removeItem(item)
+        }
+        if let separator = autoApprovalSeparator {
+            menu.removeItem(separator)
+            autoApprovalSeparator = nil
+        }
+        autoApprovalItems = autoApprovals.map {
+            let item = NSMenuItem(title: autoApprovalTitle($0, formatter: autoApprovalTimeFormatter), action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            return item
+        }
+        for item in autoApprovalItems.reversed() {
+            menu.insertItem(item, at: 0)
+        }
+        if !autoApprovalItems.isEmpty {
+            let separator = NSMenuItem.separator()
+            menu.insertItem(separator, at: autoApprovalItems.count)
+            autoApprovalSeparator = separator
+        }
+    }
+}
+
+private struct AutoApprovalRecord {
+    let date: Date
+    let launcher: String
+    let tool: String
+}
+
+private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
+    "\(formatter.string(from: record.date)) – \(record.launcher) used \(record.tool)"
+}
+
+private func autoApprovalRecord(request: ApprovalRequest, launcher: LauncherIdentity) -> AutoApprovalRecord {
+    AutoApprovalRecord(
+        date: Date(),
+        launcher: shortAppName(launcher.identifier),
+        tool: autoApprovalToolName(request)
+    )
+}
+
+private func shortAppName(_ identifier: String) -> String {
+    let name = identifier.split(separator: ".").last.map(String.init) ?? identifier
+    return name.prefix(1).uppercased() + name.dropFirst()
+}
+
+private func autoApprovalToolName(_ request: ApprovalRequest) -> String {
+    request.tool ?? URL(fileURLWithPath: request.target).lastPathComponent
 }
 
 private enum ScanResult {
@@ -332,16 +403,21 @@ private enum ApprovalDecision: Equatable {
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
+    private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
 
-    init(serviceName: String) throws {
+    init(
+        serviceName: String,
+        onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in }
+    ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
         }
         self.serviceName = serviceName
         self.teamIdentifier = teamIdentifier
+        self.onAutoApproval = onAutoApproval
     }
 
     func start() throws {
@@ -467,6 +543,7 @@ private final class ApprovalServer: @unchecked Sendable {
             DispatchQueue.main.async {
                 do {
                     let secrets = try self.approvedSecrets(for: request)
+                    self.onAutoApproval(autoApprovalRecord(request: request, launcher: launcher))
                     showAutoApprovedToast(
                         keys: request.keys,
                         script: scriptApproval.path,
@@ -1331,6 +1408,37 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     return 0
 }
 
+private func runMenuStatusSelfCheck() -> Int32 {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "h:mm a"
+    let request = ApprovalRequest(
+        op: "inject",
+        keys: ["AWS_SECRET_ACCESS_KEY"],
+        target: "/opt/homebrew/bin/aws",
+        args: [],
+        cwd: "/tmp",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
+    guard shortAppName("com.openai.codex") == "Codex",
+          autoApprovalToolName(request) == "aws",
+          autoApprovalTitle(
+              AutoApprovalRecord(date: Date(timeIntervalSince1970: 18_900), launcher: "Codex", tool: "aws"),
+              formatter: formatter
+          ) == "5:15 AM – Codex used aws"
+    else {
+        return 1
+    }
+    return 0
+}
+
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(runApprovalSelfCheck())
 }
@@ -1345,6 +1453,10 @@ if CommandLine.arguments.contains("--self-check-dashboard-search") {
 
 if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
     exit(runLaunchAgentHandoffSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-menu-status") {
+    exit(runMenuStatusSelfCheck())
 }
 
 let app = NSApplication.shared
