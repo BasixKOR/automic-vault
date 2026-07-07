@@ -45,7 +45,7 @@ macro_rules! hardener {
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     vec![
         hardener!(aws_cli, "aws"),
-        hardener!(gh_cli, "gh-cli"),
+        hardener!(gh_cli, "gh"),
         hardener!(sudo, "sudo"),
     ]
 }

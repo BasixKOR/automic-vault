@@ -338,12 +338,12 @@ mod tests {
         let output = String::from_utf8(stdout).unwrap();
 
         assert!(output.contains(r#""name":"aws""#));
-        assert!(output.contains(r#""name":"gh-cli""#));
+        assert!(output.contains(r#""name":"gh""#));
         assert!(output.contains(r#""name":"sudo""#));
         assert!(output.contains(r#""hardened":"#));
         assert!(output.contains(r#""stub_path":"#));
         assert!(output.contains(r#""target_path":"#));
-        assert!(output.contains(r###""documentation":"## What It Does"###));
+        assert!(output.contains(r###""documentation":"# GitHub CLI"###));
     }
 
     #[test]

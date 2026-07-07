@@ -90,8 +90,8 @@ where
                     }
                 };
             }
-            if target == "gh-cli" {
-                return match hardeners::gh_cli::run(stdout) {
+            if target == "gh" || target == "gh-cli" {
+                return match hardeners::gh_cli::run(stdout, yes) {
                     Ok(()) => 0,
                     Err(err) => {
                         let _ = writeln!(stderr, "av harden: {err}");
@@ -176,14 +176,14 @@ mod tests {
     }
 
     #[test]
-    fn harden_gh_cli_tells_user_to_install_isotope() {
+    fn harden_gh_tells_user_to_install_isotope() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let missing = std::env::temp_dir().join(format!("av-missing-gh-{}", std::process::id()));
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
         }
 
-        let (code, stdout, stderr) = run_args(&["av", "harden", "gh-cli"]);
+        let (code, stdout, stderr) = run_args(&["av", "harden", "gh"]);
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");

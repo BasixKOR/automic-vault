@@ -254,6 +254,7 @@ private func avExecutableURL() -> URL {
 }
 
 private struct ApprovalRequest {
+    let op: String
     let keys: [String]
     let target: String
     let args: [String]
@@ -262,6 +263,9 @@ private struct ApprovalRequest {
     let allowMissingKeys: Bool
     let envConflicts: [String]
     let shebangScript: String?
+    let tool: String?
+    let title: String?
+    let detail: String?
 }
 
 private struct SigningInfo {
@@ -312,8 +316,8 @@ private final class ApprovalServer: @unchecked Sendable {
         guard let listener else { throw AppError("approval XPC listener failed") }
 
         let requirement = """
-        identifier "com.automicvault.av" and anchor apple generic and \
-        certificate leaf[subject.OU] = \(teamIdentifier)
+        anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
+        (identifier "com.automicvault.av" or identifier "gh" or identifier "com.github.cli")
         """
         let status = requirement.withCString {
             xpc_connection_set_peer_code_signing_requirement(listener, $0)
@@ -355,31 +359,26 @@ private final class ApprovalServer: @unchecked Sendable {
         }
 
         let callerPath = pathString(identity)
-        guard callerPath == "/usr/local/bin/av"
-                || URL(fileURLWithPath: callerPath).lastPathComponent == "av"
-        else {
-            reply(peer, to: message, ok: false, error: "approval caller is not av")
-            return
-        }
-
         let signing = signingInfo(path: callerPath)
-        guard signing.identifier == "com.automicvault.av",
-              signing.teamIdentifier == teamIdentifier
-        else {
-            reply(peer, to: message, ok: false, error: "approval caller is not signed as av")
-            return
-        }
 
         guard let opPointer = xpc_dictionary_get_string(message, "op") else {
             reply(peer, to: message, ok: false, error: "invalid XPC request")
             return
         }
+        let op = String(cString: opPointer)
 
-        switch String(cString: opPointer) {
-        case "inject":
+        guard isAllowedCaller(path: callerPath, signing: signing) else {
+            reply(peer, to: message, ok: false, error: "approval caller is not trusted")
+            return
+        }
+
+        switch op {
+        case "inject", "keys":
             handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
         case "save":
             handleSave(message, on: peer)
+        case "delete":
+            handleDelete(message, on: peer)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
@@ -438,7 +437,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 rememberAlwaysAllow(trustedApproval)
             }
             guard decision != .denied else {
-                self.reply(peer, to: message, ok: false, error: "injection denied")
+                self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
             do {
@@ -471,6 +470,24 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
+            reply(peer, to: message, ok: false, error: "invalid delete request")
+            return
+        }
+        let key = String(cString: keyPointer)
+        guard validSecretKeyName(key) else {
+            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            return
+        }
+        let status = deleteStoredSecret(account: key)
+        if status == errSecSuccess || status == errSecItemNotFound {
+            reply(peer, to: message, ok: true, error: nil)
+        } else {
+            reply(peer, to: message, ok: false, error: "failed to delete isotope key \(key): \(status)")
+        }
+    }
+
     private func approvedSecrets(for request: ApprovalRequest) throws -> [String: String] {
         let conflicts = Set(request.envConflicts)
         var secrets: [String: String] = [:]
@@ -486,7 +503,6 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
         guard let opPointer = xpc_dictionary_get_string(message, "op"),
-              String(cString: opPointer) == "inject",
               let targetPointer = xpc_dictionary_get_string(message, "target"),
               let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
               let keys = stringArray(message, "keys"),
@@ -495,8 +511,11 @@ private final class ApprovalServer: @unchecked Sendable {
         else {
             return nil
         }
+        let op = String(cString: opPointer)
+        guard op == "inject" || op == "keys" else { return nil }
 
         return ApprovalRequest(
+            op: op,
             keys: keys,
             target: String(cString: targetPointer),
             args: args,
@@ -504,7 +523,10 @@ private final class ApprovalServer: @unchecked Sendable {
             replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
             allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
             envConflicts: envConflicts,
-            shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:))
+            shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
+            tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
+            title: xpc_dictionary_get_string(message, "title").map(String.init(cString:)),
+            detail: xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
         )
     }
 
@@ -549,6 +571,14 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         xpc_connection_send_message(peer, response)
     }
+}
+
+private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    if name == "av", signing.identifier == "com.automicvault.av" {
+        return true
+    }
+    return name == "gh" && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
 }
 
 private func validSecretKeyName(_ key: String) -> Bool {
@@ -959,10 +989,11 @@ private func showApprovalAlert(
 
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "Approve secret injection?"
+    alert.messageText = request.title ?? (request.op == "keys" ? "Approve key request?" : "Approve secret injection?")
     var lines = [
         "Caller: \(callerPath) (pid \(pid))",
         "Signed: \(signing.identifier) / \(signing.teamIdentifier)",
+        "Operation: \(request.op)",
         "Target: \(request.target)",
         "Arguments: \(request.args.isEmpty ? "(none)" : request.args.joined(separator: " "))",
         "Working directory: \(request.cwd)",
@@ -971,6 +1002,12 @@ private func showApprovalAlert(
         "Replace existing environment: \(request.replaceExistingEnv ? "yes" : "no")",
         "Allow missing keys: \(request.allowMissingKeys ? "yes" : "no")",
     ]
+    if let tool = request.tool {
+        lines.append("Tool: \(tool)")
+    }
+    if let detail = request.detail {
+        lines.append("Detail: \(detail)")
+    }
     if let launcher {
         lines.append("Launcher: \(launcher.identifier) (pid \(launcher.pid))")
         lines.append("Launcher path: \(launcher.path)")
@@ -1060,6 +1097,7 @@ private func runApprovalSelfCheck() -> Int32 {
     defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
     let request = ApprovalRequest(
+        op: "inject",
         keys: ["B", "A"],
         target: "/bin/echo",
         args: ["ignored"],
@@ -1067,7 +1105,10 @@ private func runApprovalSelfCheck() -> Int32 {
         replaceExistingEnv: true,
         allowMissingKeys: false,
         envConflicts: ["ignored"],
-        shebangScript: "/tmp/deploy"
+        shebangScript: "/tmp/deploy",
+        tool: nil,
+        title: nil,
+        detail: nil
     )
     let script = ScriptApproval(path: "/tmp/deploy", checksum: "abc")
     let launcher = LauncherIdentity(
