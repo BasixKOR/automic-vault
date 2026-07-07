@@ -46,10 +46,7 @@ mod flyctl;
 mod gallery_dl;
 mod gcli;
 mod gh_cli;
-mod git_config;
-mod git_credential_fill;
-mod git_credential_oauth;
-mod git_credentials_file;
+mod git;
 mod glab;
 mod goat;
 mod gotify;
@@ -170,7 +167,19 @@ macro_rules! detector {
         Detector {
             module: stringify!($module),
             findings: $module::findings,
-            documentation: include_str!(concat!(stringify!($module), ".md")),
+            documentation: include_str!(concat!(stringify!($module), "/detector.md")),
+        }
+    };
+    ($package:ident::$module:ident, $name:literal) => {
+        Detector {
+            module: $name,
+            findings: $package::$module::findings,
+            documentation: include_str!(concat!(
+                stringify!($package),
+                "/",
+                stringify!($module),
+                ".md"
+            )),
         }
     };
 }
@@ -220,9 +229,9 @@ const DETECTORS: &[Detector] = &[
     detector!(gallery_dl),
     detector!(gcli),
     detector!(gh_cli),
-    detector!(git_credential_fill),
-    detector!(git_credential_oauth),
-    detector!(git_credentials_file),
+    detector!(git::credential_fill, "git-credential-fill"),
+    detector!(git::credential_oauth, "git-credential-oauth"),
+    detector!(git::credentials_file, "git-credentials-file"),
     detector!(glab),
     detector!(goat),
     detector!(gotify),

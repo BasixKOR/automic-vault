@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{AffectedFile, Finding};
 
-use super::git_config::{self as config, git_config_paths, read_to_string};
+use super::config::{self, git_config_paths, read_to_string};
 
 const NAME: &str = "git-credentials-file";
 const DOCS_URL: &str =

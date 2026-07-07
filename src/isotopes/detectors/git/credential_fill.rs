@@ -56,7 +56,7 @@ use std::time::{Duration, Instant};
 
 use crate::{AffectedFile, Finding};
 
-use super::git_config::{self as config, git_config_paths, read_to_string};
+use super::config::{self, git_config_paths, read_to_string};
 
 const NAME: &str = "git-credential-fill";
 const DOCS_URL: &str =
