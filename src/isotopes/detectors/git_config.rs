@@ -39,13 +39,69 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::{AffectedFile, Finding};
+
+pub(crate) const HOMEPAGE: &str = "https://git-scm.com/";
+const HIGH: &str = "high";
+
+pub(crate) fn high(
+    source: &'static str,
+    docs_url: &'static str,
+    explanation: impl Into<String>,
+    solution: impl Into<String>,
+    affected: Vec<AffectedFile>,
+) -> Finding {
+    Finding {
+        source,
+        homepage: HOMEPAGE,
+        severity: HIGH,
+        explanation: explanation.into(),
+        solution: solution.into(),
+        affected,
+        docs_url,
+    }
+}
+
+pub(crate) fn high_unattributed(
+    source: &'static str,
+    docs_url: &'static str,
+    explanation: impl Into<String>,
+    solution: impl Into<String>,
+) -> Finding {
+    high(source, docs_url, explanation, solution, Vec::new())
+}
+
+pub(crate) fn affected(path: &Path, line: usize) -> AffectedFile {
+    AffectedFile {
+        path: path.display().to_string(),
+        line,
+    }
+}
+
+pub(crate) fn git_config_paths(home: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![home.join(".gitconfig")];
+    if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty())
+    {
+        paths.push(PathBuf::from(config_home).join("git/config"));
+    } else {
+        paths.push(home.join(".config/git/config"));
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+pub(crate) fn read_to_string(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()
+}
+
 #[derive(Clone, Copy)]
 enum GitConfigSection {
     Other,
     Credential { applies_to_github: bool },
 }
 
-pub(super) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
+pub(crate) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for helper in credential_helpers(contents) {
         let value = helper.value;
@@ -63,7 +119,7 @@ pub(super) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
     paths
 }
 
-pub(super) fn gh_auth_git_credential_lines(contents: &str) -> Vec<usize> {
+pub(crate) fn gh_auth_git_credential_lines(contents: &str) -> Vec<usize> {
     credential_helpers(contents)
         .into_iter()
         .filter_map(|helper| {

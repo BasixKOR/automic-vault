@@ -46,8 +46,10 @@ mod flyctl;
 mod gallery_dl;
 mod gcli;
 mod gh_cli;
-pub(crate) mod git;
+mod git_config;
+mod git_credential_fill;
 mod git_credential_oauth;
+mod git_credentials_file;
 mod glab;
 mod goat;
 mod gotify;
@@ -174,7 +176,6 @@ macro_rules! detector {
 }
 
 const DETECTORS: &[Detector] = &[
-    detector!(git),
     detector!(acli),
     detector!(akamai),
     detector!(algolia),
@@ -219,7 +220,9 @@ const DETECTORS: &[Detector] = &[
     detector!(gallery_dl),
     detector!(gcli),
     detector!(gh_cli),
+    detector!(git_credential_fill),
     detector!(git_credential_oauth),
+    detector!(git_credentials_file),
     detector!(glab),
     detector!(goat),
     detector!(gotify),
@@ -356,18 +359,15 @@ fn detector_name(module: &str) -> String {
 
 fn detector_homepage(name: &str) -> String {
     match name {
-        "git" => "https://git-scm.com/".to_string(),
+        "git-credential-fill" | "git-credential-oauth" | "git-credentials-file" => {
+            "https://git-scm.com/".to_string()
+        }
         _ => detector_docs_url(name),
     }
 }
 
 fn detector_docs_url(name: &str) -> String {
-    match name {
-        "git" => {
-            "https://github.com/automic-vault/automic-vault/main/docs/securing-git.md".to_string()
-        }
-        _ => format!("https://github.com/automic-vault/radioisotopes/tree/main/{name}"),
-    }
+    format!("https://github.com/automic-vault/radioisotopes/tree/main/{name}")
 }
 
 #[cfg(test)]
@@ -376,8 +376,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 145);
-        assert_eq!(git::NAME, "git");
+        assert_eq!(DETECTORS.len(), 146);
     }
 
     #[test]
@@ -389,7 +388,10 @@ mod tests {
 
         assert!(!names.contains(&"aws".to_string()));
         assert!(names.contains(&"aws-cli".to_string()));
-        assert!(names.contains(&"git".to_string()));
+        assert!(!names.contains(&"git".to_string()));
+        assert!(names.contains(&"git-credential-fill".to_string()));
+        assert!(names.contains(&"git-credential-oauth".to_string()));
+        assert!(names.contains(&"git-credentials-file".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"sudo".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));

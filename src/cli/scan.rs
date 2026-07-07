@@ -324,9 +324,10 @@ mod tests {
         assert_eq!(run_detectors_json(&mut stdout), 0);
         let output = String::from_utf8(stdout).unwrap();
 
-        assert!(output.contains(r#""name":"git""#));
-        assert!(output.contains(r#""docs_url":"https://github.com/automic-vault/automic-vault/main/docs/securing-git.md""#));
-        assert!(output.contains(r##""documentation":"# git Detector"##));
+        assert!(output.contains(r#""name":"git-credential-fill""#));
+        assert!(output.contains(r#""name":"git-credential-oauth""#));
+        assert!(output.contains(r#""name":"git-credentials-file""#));
+        assert!(output.contains(r##""documentation":"# git-credential-fill Detector"##));
     }
 
     #[test]

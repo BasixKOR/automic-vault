@@ -41,12 +41,28 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::Finding;
+use crate::{AffectedFile, Finding};
 
-use super::{affected, config, git_config_paths, high, read_to_string};
+use super::git_config::{self as config, git_config_paths, read_to_string};
+
+const NAME: &str = "git-credentials-file";
+const DOCS_URL: &str =
+    "https://github.com/automic-vault/radioisotopes/tree/main/git-credentials-file";
 
 pub(crate) const PLAINTEXT_GIT_CREDENTIALS: &str =
     "Git credential store contains plaintext credentials";
+
+fn high(
+    explanation: impl Into<String>,
+    solution: impl Into<String>,
+    affected: Vec<AffectedFile>,
+) -> Finding {
+    config::high(NAME, DOCS_URL, explanation, solution, affected)
+}
+
+fn affected(path: &Path, line: usize) -> AffectedFile {
+    config::affected(path, line)
+}
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     credential_store_paths(home)

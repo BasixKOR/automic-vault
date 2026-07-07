@@ -54,16 +54,35 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::Finding;
+use crate::{AffectedFile, Finding};
 
-use super::{affected, config, git_config_paths, high, high_unattributed, read_to_string};
+use super::git_config::{self as config, git_config_paths, read_to_string};
 
+const NAME: &str = "git-credential-fill";
+const DOCS_URL: &str =
+    "https://github.com/automic-vault/radioisotopes/tree/main/git-credential-fill";
 const GITHUB_CREDENTIAL_FILL_INPUT: &[u8] = b"protocol=https\nhost=github.com\n\n";
 const GITHUB_CREDENTIAL_FILL_TIMEOUT: Duration = Duration::from_secs(3);
 const GH_HELPER_MESSAGE: &str = "Git credential helper delegates github.com credentials to `gh auth git-credential`, exposing the GitHub CLI token through `git credential fill`. Click Learn More to learn how to fix it.";
 const GH_HELPER_SOLUTION: &str = "Edit the affected Git config and remove the `helper = !gh auth git-credential` line; then change GitHub remotes to SSH with `git remote set-url origin git@github.com:OWNER/REPO.git`.";
 const FILL_MESSAGE: &str = "Git credential helper exposes a GitHub token through `git credential fill` for github.com. Click Learn More to learn how to fix it.";
 const FILL_SOLUTION: &str = "Run `printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject`, then remove or disable the credential helper that returned the token and use SSH remotes.";
+
+fn high(
+    explanation: impl Into<String>,
+    solution: impl Into<String>,
+    affected: Vec<AffectedFile>,
+) -> Finding {
+    config::high(NAME, DOCS_URL, explanation, solution, affected)
+}
+
+fn high_unattributed(explanation: impl Into<String>, solution: impl Into<String>) -> Finding {
+    config::high_unattributed(NAME, DOCS_URL, explanation, solution)
+}
+
+fn affected(path: &Path, line: usize) -> AffectedFile {
+    config::affected(path, line)
+}
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();

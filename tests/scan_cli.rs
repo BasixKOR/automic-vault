@@ -66,7 +66,7 @@ fn av_scan_json_reports_findings() {
 
     assert!(output.status.success());
     assert!(stdout.starts_with(r#"{"findings":[{"#));
-    assert!(stdout.contains(r#""source":"git""#));
+    assert!(stdout.contains(r#""source":"git-credentials-file""#));
     assert!(stdout.contains(".git-credentials"));
     assert_eq!(stderr(&output), "");
 
