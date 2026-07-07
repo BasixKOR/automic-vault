@@ -258,12 +258,18 @@ import Testing
     migrateStoredSecretsToDataProtection(service: service)
 
     #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
-    var result: CFTypeRef?
-    let legacyStatus = SecItemCopyMatching((legacyQuery.merging([
-        kSecReturnData as String: true,
-        kSecMatchLimit as String: kSecMatchLimitOne,
-    ]) { _, new in new }) as CFDictionary, &result)
-    #expect(legacyStatus == errSecItemNotFound)
+    #expect(legacyGenericPasswordStatus(service: service, account: "API_TOKEN") == errSecItemNotFound)
+}
+
+@Test func migratingDoesNotDeleteProtectedSecrets() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    migrateStoredSecretsToDataProtection(service: service)
+
+    #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
 }
 
 @Test func storedSecretsCanBeRenamed() throws {
@@ -289,4 +295,22 @@ private func dataProtectionKeychainAvailable() -> Bool {
     let status = saveStoredSecret(account: "PROBE", value: "secret", service: service)
     defer { _ = deleteStoredSecret(account: "PROBE", service: service) }
     return status != errSecMissingEntitlement
+}
+
+private func legacyGenericPasswordStatus(service: String, account: String) -> OSStatus {
+    var item: SecKeychainItem?
+    return service.withCString { servicePointer in
+        account.withCString { accountPointer in
+            SecKeychainFindGenericPassword(
+                nil,
+                UInt32(strlen(servicePointer)),
+                servicePointer,
+                UInt32(strlen(accountPointer)),
+                accountPointer,
+                nil,
+                nil,
+                &item
+            )
+        }
+    }
 }

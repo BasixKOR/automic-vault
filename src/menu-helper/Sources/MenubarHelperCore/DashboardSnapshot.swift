@@ -481,7 +481,6 @@ public func migrateStoredSecretsToDataProtection(service: String = automicVaultK
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecReturnAttributes as String: true,
-        kSecReturnData as String: true,
         kSecMatchLimit as String: kSecMatchLimitAll,
     ]
     var result: CFTypeRef?
@@ -493,18 +492,36 @@ public func migrateStoredSecretsToDataProtection(service: String = automicVaultK
 
     for item in items {
         guard let account = item[kSecAttrAccount as String] as? String,
-              let data = item[kSecValueData as String] as? Data,
-              saveKeychainData(data, service: service, account: account) == errSecSuccess
+              let legacy = legacyKeychainItem(service: service, account: account),
+              saveKeychainData(legacy.data, service: service, account: account) == errSecSuccess
         else {
             continue
         }
-        let legacyQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        _ = SecItemDelete(legacyQuery as CFDictionary)
+        _ = SecKeychainItemDelete(legacy.item)
     }
+}
+
+private func legacyKeychainItem(service: String, account: String) -> (data: Data, item: SecKeychainItem)? {
+    var length: UInt32 = 0
+    var bytes: UnsafeMutableRawPointer?
+    var item: SecKeychainItem?
+    let status = service.withCString { servicePointer in
+        account.withCString { accountPointer in
+            SecKeychainFindGenericPassword(
+                nil,
+                UInt32(strlen(servicePointer)),
+                servicePointer,
+                UInt32(strlen(accountPointer)),
+                accountPointer,
+                &length,
+                &bytes,
+                &item
+            )
+        }
+    }
+    guard status == errSecSuccess, let bytes, let item else { return nil }
+    defer { SecKeychainItemFreeContent(nil, bytes) }
+    return (Data(bytes: bytes, count: Int(length)), item)
 }
 
 func appIdentifier(from requirement: String) -> String? {
