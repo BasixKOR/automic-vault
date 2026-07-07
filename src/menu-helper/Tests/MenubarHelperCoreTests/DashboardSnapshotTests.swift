@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 import Testing
@@ -182,6 +183,35 @@ import Testing
                 SecretGateApprovedApp(bundleIdentifier: "com.third.app", requirement: #"identifier "com.third.app""#),
             ]
         ),
+    ])
+}
+
+@Test func configuredSecretGatesDoNotRequireStoredKeys() throws {
+    let directory = temporaryDirectory()
+    let stub = directory.appendingPathComponent("aws")
+    let contents = """
+    #!/usr/local/bin/av inject --replace-existing-env +AWS_SECRET_ACCESS_KEY +AWS_ACCESS_KEY_ID /bin/zsh
+    echo ignored
+    """
+    try contents.write(to: stub, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let gates = loadSecretGates(
+        configuredTools: [HardenedTool(name: "aws", stubPath: stub.path, targetPath: "/opt/homebrew/bin/aws")],
+        service: "com.automicvault.tests.\(UUID().uuidString)"
+    )
+
+    #expect(gates == [
+        SecretGate(
+            scriptPath: stub.standardizedFileURL.path,
+            scriptChecksum: SHA256.hash(data: Data(contents.utf8)).map { String(format: "%02x", $0) }.joined(),
+            keys: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+            target: "/bin/zsh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: []
+        )
     ])
 }
 

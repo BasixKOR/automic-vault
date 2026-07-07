@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -48,15 +49,17 @@ public struct DashboardSnapshot: Equatable, Sendable {
         ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
         approvalService: String = trustedScriptApprovalsKeychainService
     ) -> DashboardSnapshot {
-        DashboardSnapshot(
+        let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
+        let hardenedTools = loadHardenedTools(
+            in: stubDirectory,
+            ghCLIURL: ghCLIURL,
+            metadata: hardenerMetadata
+        )
+        return DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
-            hardenedTools: loadHardenedTools(
-                in: stubDirectory,
-                ghCLIURL: ghCLIURL,
-                metadata: loadHardenerMetadata(avExecutableURL: avExecutableURL)
-            ),
-            secretGates: loadSecretGates(service: approvalService),
+            hardenedTools: hardenedTools,
+            secretGates: loadSecretGates(configuredTools: hardenedTools, service: approvalService),
             secrets: loadStoredSecrets()
         )
     }
@@ -314,8 +317,31 @@ public func loadHardenedTools(
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 }
 
-public func loadSecretGates(service: String = trustedScriptApprovalsKeychainService) -> [SecretGate] {
+public func loadSecretGates(
+    configuredTools: [HardenedTool] = [],
+    service: String = trustedScriptApprovalsKeychainService
+) -> [SecretGate] {
+    var gates = Dictionary(uniqueKeysWithValues: configuredSecretGates(from: configuredTools).map { ($0.id, $0) })
     let approvals = loadTrustedScriptApprovals(service: service)
+    for gate in secretGates(from: approvals) {
+        if let configured = gates[gate.id] {
+            gates[gate.id] = SecretGate(
+                scriptPath: configured.scriptPath,
+                scriptChecksum: configured.scriptChecksum,
+                keys: configured.keys,
+                target: configured.target,
+                replaceExistingEnv: configured.replaceExistingEnv,
+                allowMissingKeys: configured.allowMissingKeys,
+                approvedApps: gate.approvedApps
+            )
+        } else {
+            gates[gate.id] = gate
+        }
+    }
+    return gates.values.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+}
+
+private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate] {
     let grouped = Dictionary(grouping: approvals) {
         "\($0.scriptPath)\u{1f}\($0.scriptChecksum)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
     }
@@ -337,6 +363,74 @@ public func loadSecretGates(service: String = trustedScriptApprovalsKeychainServ
         )
     }
     .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+}
+
+private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
+    tools.compactMap { tool in
+        guard let stubPath = tool.stubPath,
+              let data = try? Data(contentsOf: URL(fileURLWithPath: stubPath)),
+              let contents = String(data: data, encoding: .utf8),
+              let firstLine = contents.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init),
+              let injection = parseInjectShebang(firstLine)
+        else {
+            return nil
+        }
+        return SecretGate(
+            scriptPath: URL(fileURLWithPath: stubPath).standardizedFileURL.path,
+            scriptChecksum: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
+            keys: injection.keys,
+            target: injection.target,
+            replaceExistingEnv: injection.replaceExistingEnv,
+            allowMissingKeys: injection.allowMissingKeys,
+            approvedApps: []
+        )
+    }
+}
+
+private func parseInjectShebang(_ line: String) -> (keys: [String], target: String, replaceExistingEnv: Bool, allowMissingKeys: Bool)? {
+    guard line.hasPrefix("#!") else { return nil }
+    let parts = line.dropFirst(2).split(whereSeparator: \.isWhitespace).map(String.init)
+    guard let injectIndex = parts.firstIndex(of: "inject") else { return nil }
+    var replaceExistingEnv = false
+    var allowMissingKeys = false
+    var keys: [String] = []
+    var index = parts.index(after: injectIndex)
+    while index < parts.endIndex {
+        let part = parts[index]
+        if part == "--replace-existing-env" {
+            replaceExistingEnv = true
+        } else if part == "--allow-missing-keys" {
+            allowMissingKeys = true
+        } else if part.hasPrefix("+") {
+            keys.append(String(part.dropFirst()))
+        } else if part == "--" {
+            index = parts.index(after: index)
+            break
+        } else {
+            break
+        }
+        index = parts.index(after: index)
+    }
+    guard !keys.isEmpty, index < parts.endIndex else { return nil }
+    return (
+        keys: keys.uniqueSorted(),
+        target: resolvedExecutable(parts[index]),
+        replaceExistingEnv: replaceExistingEnv,
+        allowMissingKeys: allowMissingKeys
+    )
+}
+
+private func resolvedExecutable(_ executable: String) -> String {
+    if executable.contains("/") {
+        return URL(fileURLWithPath: executable).standardizedFileURL.path
+    }
+    for directory in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") {
+        let path = URL(fileURLWithPath: String(directory)).appendingPathComponent(executable).path
+        if FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+    }
+    return executable
 }
 
 public func rememberTrustedApp(

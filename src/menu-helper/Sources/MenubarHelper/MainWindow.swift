@@ -718,7 +718,7 @@ private struct EmptyListView: View {
         switch section {
         case .detectors: "No flagged detectors"
         case .hardenedTools: "No hardened tools"
-        case .secretGates: "No remembered gates"
+        case .secretGates: "No configured gates"
         case .allSecrets: "No stored secrets"
         }
     }
