@@ -30,6 +30,8 @@ APP="$SWIFT_TARGET/Automic Vault.app"
 DMG="$SWIFT_TARGET/Automic Vault.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
 DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
+MENU_HELPER_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/Automic_Vault_Menu_Developer_ID.provisionprofile"
+MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -79,7 +81,14 @@ fi
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 cp "$ROOT/target/release/av" "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
-codesign "${codesign_args[@]}" "$APP"
+app_codesign_args=("${codesign_args[@]}")
+if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
+  cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
+  security cms -D -i "$MENU_HELPER_PROFILE" |
+    plutil -extract Entitlements xml1 -o "$MENU_HELPER_ENTITLEMENTS" -
+  app_codesign_args+=(--entitlements "$MENU_HELPER_ENTITLEMENTS")
+fi
+codesign "${app_codesign_args[@]}" "$APP"
 if [[ "$dmg" -eq 1 ]]; then
   rm -rf "$DMG" "$DMG_STAGE"
   mkdir -p "$DMG_STAGE"
