@@ -494,7 +494,7 @@ private struct DashboardSidebarView: View {
                     .fill(.green)
                     .frame(width: 8, height: 8)
                     .shadow(color: .green.opacity(0.55), radius: 2)
-                Text("Actively Monitoring Vulnerabilities")
+                Text("Vulnerability Monitor Active")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
