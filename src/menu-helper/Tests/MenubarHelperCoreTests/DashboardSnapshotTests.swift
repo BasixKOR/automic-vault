@@ -156,6 +156,15 @@ import Testing
             replaceExistingEnv: true,
             allowMissingKeys: false,
             launcherRequirement: #"identifier "com.third.app""#
+        ),
+        TrustedScriptApproval(
+            scriptPath: nil,
+            scriptChecksum: nil,
+            keys: ["A", "B"],
+            target: "/bin/echo",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            launcherRequirement: #"identifier "com.direct.app""#
         )
     ], service: service) == errSecSuccess)
 

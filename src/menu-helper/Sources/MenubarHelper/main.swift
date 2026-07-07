@@ -540,14 +540,14 @@ private final class ApprovalServer: @unchecked Sendable {
             request: request,
             launcher: launcher
         )
-        if let scriptApproval, let launcher, let trustedApproval, alwaysAllows(trustedApproval) {
+        if let launcher, let trustedApproval, alwaysAllows(trustedApproval) {
             DispatchQueue.main.async {
                 do {
                     let secrets = try self.approvedSecrets(for: request)
                     self.onAutoApproval(autoApprovalRecord(request: request, launcher: launcher))
                     showAutoApprovedToast(
                         keys: request.keys,
-                        script: scriptApproval.path,
+                        script: scriptApproval?.path ?? request.tool ?? request.target,
                         launcher: launcher.identifier
                     )
                     self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
@@ -1081,10 +1081,10 @@ private func trustedApprovalRecord(
     request: ApprovalRequest,
     launcher: LauncherIdentity?
 ) -> TrustedScriptApproval? {
-    guard let script, let launcher else { return nil }
+    guard let launcher else { return nil }
     return TrustedScriptApproval(
-        scriptPath: script.path,
-        scriptChecksum: script.checksum,
+        scriptPath: script?.path,
+        scriptChecksum: script?.checksum,
         keys: request.keys.sorted(),
         target: request.target,
         replaceExistingEnv: request.replaceExistingEnv,
@@ -1176,7 +1176,7 @@ private func showApprovalAlert(
     alert.informativeText = lines.joined(separator: "\n")
     alert.addButton(withTitle: "Deny")
     alert.addButton(withTitle: "Approve")
-    if scriptApproval != nil, launcher != nil {
+    if launcher != nil {
         alert.addButton(withTitle: "Always Allow From This App")
     }
     switch alert.runModal() {
@@ -1325,6 +1325,10 @@ private func runApprovalSelfCheck() -> Int32 {
         script: script,
         request: request,
         launcher: launcher
+    ), let appApproval = trustedApprovalRecord(
+        script: nil,
+        request: request,
+        launcher: launcher
     ) else {
         return 1
     }
@@ -1348,6 +1352,9 @@ private func runApprovalSelfCheck() -> Int32 {
     }
 
     guard approval.keys == ["A", "B"],
+          appApproval.scriptPath == nil,
+          appApproval.scriptChecksum == nil,
+          appApproval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
           parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
@@ -1367,6 +1374,21 @@ private func runApprovalSelfCheck() -> Int32 {
           !alwaysAllows(altered(replaceExistingEnv: false), service: service),
           !alwaysAllows(altered(allowMissingKeys: true), service: service),
           !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), service: service)
+    else {
+        return 1
+    }
+    rememberAlwaysAllow(appApproval, service: service)
+    guard alwaysAllows(appApproval, service: service),
+          trustedLauncher(script: nil, request: request, launchers: [wrapperLauncher, launcher], service: service)?.designatedRequirement == launcher.designatedRequirement,
+          !alwaysAllows(TrustedScriptApproval(
+              scriptPath: nil,
+              scriptChecksum: nil,
+              keys: ["A"],
+              target: "/bin/echo",
+              replaceExistingEnv: true,
+              allowMissingKeys: false,
+              launcherRequirement: launcher.designatedRequirement
+          ), service: service)
     else {
         return 1
     }

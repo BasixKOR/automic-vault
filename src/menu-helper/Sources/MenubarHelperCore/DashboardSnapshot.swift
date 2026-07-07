@@ -259,8 +259,8 @@ struct HardenerReport: Codable {
 }
 
 public struct TrustedScriptApproval: Codable, Equatable, Sendable {
-    public let scriptPath: String
-    public let scriptChecksum: String
+    public let scriptPath: String?
+    public let scriptChecksum: String?
     public let keys: [String]
     public let target: String
     public let replaceExistingEnv: Bool
@@ -268,8 +268,8 @@ public struct TrustedScriptApproval: Codable, Equatable, Sendable {
     public let launcherRequirement: String
 
     public init(
-        scriptPath: String,
-        scriptChecksum: String,
+        scriptPath: String?,
+        scriptChecksum: String?,
         keys: [String],
         target: String,
         replaceExistingEnv: Bool,
@@ -342,14 +342,17 @@ public func loadSecretGates(
 }
 
 private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate] {
-    let grouped = Dictionary(grouping: approvals) {
-        "\($0.scriptPath)\u{1f}\($0.scriptChecksum)\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
+    let grouped = Dictionary(grouping: approvals.filter { $0.scriptPath != nil && $0.scriptChecksum != nil }) {
+        "\($0.scriptPath ?? "")\u{1f}\($0.scriptChecksum ?? "")\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
     }
     return grouped.values.compactMap { approvals in
-        guard let first = approvals.first else { return nil }
+        guard let first = approvals.first,
+              let scriptPath = first.scriptPath,
+              let scriptChecksum = first.scriptChecksum
+        else { return nil }
         return SecretGate(
-            scriptPath: first.scriptPath,
-            scriptChecksum: first.scriptChecksum,
+            scriptPath: scriptPath,
+            scriptChecksum: scriptChecksum,
             keys: first.keys.sorted(),
             target: first.target,
             replaceExistingEnv: first.replaceExistingEnv,
@@ -649,8 +652,8 @@ private extension Array where Element == SecretGateApprovedApp {
 
 private extension TrustedScriptApproval {
     func matches(_ gate: SecretGate) -> Bool {
-        scriptPath == gate.scriptPath
-            && scriptChecksum == gate.scriptChecksum
+        scriptPath == Optional(gate.scriptPath)
+            && scriptChecksum == Optional(gate.scriptChecksum)
             && keys.sorted() == gate.keys.sorted()
             && target == gate.target
             && replaceExistingEnv == gate.replaceExistingEnv
