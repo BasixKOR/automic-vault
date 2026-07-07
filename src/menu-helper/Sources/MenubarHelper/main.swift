@@ -11,6 +11,7 @@ import Security
 private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let legacyTrustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
+private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
@@ -355,7 +356,11 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
-        let launcher = launcherIdentity(startingAt: identity.ppid) ?? launcherIdentity(pid: pid, identity: identity)
+        var launchers = launcherIdentities(startingAt: identity.ppid)
+        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(launcher)
+        }
+        let launcher = trustedLauncher(script: scriptApproval, request: request, launchers: launchers) ?? launchers.first
         let trustedApproval = trustedApprovalRecord(
             script: scriptApproval,
             request: request,
@@ -561,17 +566,24 @@ private func copySigningInformation(_ code: SecStaticCode) -> [CFString: Any]? {
 }
 
 private func launcherIdentity(startingAt startPID: pid_t) -> LauncherIdentity? {
+    launcherIdentities(startingAt: startPID).first
+}
+
+private func launcherIdentities(startingAt startPID: pid_t) -> [LauncherIdentity] {
     var pid = startPID
     var seen = Set<pid_t>()
+    var launchers: [LauncherIdentity] = []
     for _ in 0..<32 {
-        guard pid > 1, seen.insert(pid).inserted else { return nil }
+        guard pid > 1, seen.insert(pid).inserted else { return launchers }
 
         var identity = AVProcessIdentity()
-        guard av_process_identity(pid, &identity) else { return nil }
-        if let launcher = launcherIdentity(pid: pid, identity: identity) { return launcher }
+        guard av_process_identity(pid, &identity) else { return launchers }
+        if let launcher = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(launcher)
+        }
         pid = identity.ppid
     }
-    return nil
+    return launchers
 }
 
 private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> LauncherIdentity? {
@@ -580,7 +592,11 @@ private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> Launch
 }
 
 private func launcherIdentity(pid: pid_t, path: String, signing: LiveSigningInfo) -> LauncherIdentity? {
-    guard isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable) else { return nil }
+    guard !signing.isAdHoc,
+          isAppBundleExecutable(path) || isAppBundleExecutable(signing.mainExecutable)
+    else {
+        return nil
+    }
     return LauncherIdentity(
         pid: pid,
         path: path,
@@ -595,6 +611,7 @@ private struct LiveSigningInfo {
     let teamIdentifier: String
     let designatedRequirement: String
     let mainExecutable: String
+    let isAdHoc: Bool
 }
 
 private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
@@ -626,11 +643,13 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
     guard let requirementText = requirementString(requirement) else { return nil }
 
     let executable = (dictionary[kSecCodeInfoMainExecutable] as? URL)?.path ?? ""
+    let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
     return LiveSigningInfo(
         identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         designatedRequirement: requirementText,
-        mainExecutable: executable
+        mainExecutable: executable,
+        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0
     )
 }
 
@@ -674,6 +693,20 @@ private func trustedApprovalRecord(
         allowMissingKeys: request.allowMissingKeys,
         launcherRequirement: launcher.designatedRequirement
     )
+}
+
+private func trustedLauncher(
+    script: ScriptApproval?,
+    request: ApprovalRequest,
+    launchers: [LauncherIdentity],
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = trustedScriptApprovalsKeychainAccount
+) -> LauncherIdentity? {
+    launchers.first {
+        trustedApprovalRecord(script: script, request: request, launcher: $0).map {
+            alwaysAllows($0, service: service, account: account)
+        } == true
+    }
 }
 
 private func alwaysAllows(
@@ -831,13 +864,29 @@ private func runApprovalSelfCheck() -> Int32 {
         identifier: "app.vaultty.Vaultty",
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "app.vaultty.Vaultty" and anchor apple generic"#,
-        mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"
+        mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
+        isAdHoc: false
+    )
+    let pythonSigning = LiveSigningInfo(
+        identifier: "org.python.python",
+        teamIdentifier: "unknown",
+        designatedRequirement: #"identifier "org.python.python" and anchor apple generic"#,
+        mainExecutable: "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+        isAdHoc: true
+    )
+    let wrapperLauncher = LauncherIdentity(
+        pid: 45,
+        path: "/Applications/Wrapper.app/Contents/MacOS/Wrapper",
+        identifier: "com.example.wrapper",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.example.wrapper" and anchor apple generic"#
     )
     let unbundledSigning = LiveSigningInfo(
         identifier: "com.automicvault.av",
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.automicvault.av" and anchor apple generic"#,
-        mainExecutable: "/usr/local/bin/av"
+        mainExecutable: "/usr/local/bin/av",
+        isAdHoc: false
     )
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
@@ -874,6 +923,7 @@ private func runApprovalSelfCheck() -> Int32 {
     guard approval.keys == ["A", "B"],
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
           parentlessVaulttyLauncher?.designatedRequirement == vaulttySigning.designatedRequirement,
+          launcherIdentity(pid: 44, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
           launcherIdentity(pid: 44, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
           !alwaysAllows(approval, service: service)
     else {
@@ -882,6 +932,7 @@ private func runApprovalSelfCheck() -> Int32 {
 
     rememberAlwaysAllow(approval, service: service)
     guard alwaysAllows(approval, service: service),
+          trustedLauncher(script: script, request: request, launchers: [wrapperLauncher, launcher], service: service)?.designatedRequirement == launcher.designatedRequirement,
           !alwaysAllows(altered(checksum: "def"), service: service),
           !alwaysAllows(altered(keys: ["A"]), service: service),
           !alwaysAllows(altered(target: "/usr/bin/env"), service: service),
