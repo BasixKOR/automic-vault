@@ -701,7 +701,7 @@ private struct DashboardRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
-        .frame(height: 70, alignment: .topLeading)
+        .frame(minHeight: 54, alignment: .topLeading)
     }
 }
 
