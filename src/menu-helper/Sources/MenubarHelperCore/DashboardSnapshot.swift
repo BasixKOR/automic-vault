@@ -471,7 +471,6 @@ public func loadTrustedScriptApprovals(
     service: String = trustedScriptApprovalsKeychainService,
     account: String = trustedScriptApprovalsKeychainAccount
 ) -> [TrustedScriptApproval] {
-    migrateStoredSecretsToDataProtection(service: service)
     guard let data = loadKeychainData(service: service, account: account),
           let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
     else {
@@ -493,7 +492,6 @@ public func saveTrustedScriptApprovals(
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
-    migrateStoredSecretsToDataProtection(service: service)
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
@@ -616,54 +614,6 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     addQuery[kSecValueData as String] = data
     addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
     return SecItemAdd(addQuery as CFDictionary, nil)
-}
-
-public func migrateStoredSecretsToDataProtection(service: String = automicVaultKeychainService) {
-    let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecReturnAttributes as String: true,
-        kSecMatchLimit as String: kSecMatchLimitAll,
-    ]
-    var result: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-          let items = result as? [[String: Any]]
-    else {
-        return
-    }
-
-    for item in items {
-        guard let account = item[kSecAttrAccount as String] as? String,
-              let legacy = legacyKeychainItem(service: service, account: account),
-              saveKeychainData(legacy.data, service: service, account: account) == errSecSuccess
-        else {
-            continue
-        }
-        _ = SecKeychainItemDelete(legacy.item)
-    }
-}
-
-private func legacyKeychainItem(service: String, account: String) -> (data: Data, item: SecKeychainItem)? {
-    var length: UInt32 = 0
-    var bytes: UnsafeMutableRawPointer?
-    var item: SecKeychainItem?
-    let status = service.withCString { servicePointer in
-        account.withCString { accountPointer in
-            SecKeychainFindGenericPassword(
-                nil,
-                UInt32(strlen(servicePointer)),
-                servicePointer,
-                UInt32(strlen(accountPointer)),
-                accountPointer,
-                &length,
-                &bytes,
-                &item
-            )
-        }
-    }
-    guard status == errSecSuccess, let bytes, let item else { return nil }
-    defer { SecKeychainItemFreeContent(nil, bytes) }
-    return (Data(bytes: bytes, count: Int(length)), item)
 }
 
 func appIdentifier(from requirement: String) -> String? {

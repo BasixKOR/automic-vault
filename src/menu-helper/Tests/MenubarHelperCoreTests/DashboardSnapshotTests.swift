@@ -273,38 +273,6 @@ import Testing
     #expect(attributes[kSecAttrAccessible as String] as? String == kSecAttrAccessibleWhenUnlocked as String)
 }
 
-@Test func legacyStoredSecretsMigrateToDataProtectionKeychain() throws {
-    guard dataProtectionKeychainAvailable() else { return }
-    let service = "com.automicvault.tests.\(UUID().uuidString)"
-    let legacyQuery: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: "API_TOKEN",
-    ]
-    _ = SecItemDelete(legacyQuery as CFDictionary)
-    var addQuery = legacyQuery
-    addQuery[kSecValueData as String] = Data("secret".utf8)
-    #expect(SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess)
-    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
-    defer { _ = SecItemDelete(legacyQuery as CFDictionary) }
-
-    migrateStoredSecretsToDataProtection(service: service)
-
-    #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
-    #expect(legacyGenericPasswordStatus(service: service, account: "API_TOKEN") == errSecItemNotFound)
-}
-
-@Test func migratingDoesNotDeleteProtectedSecrets() throws {
-    guard dataProtectionKeychainAvailable() else { return }
-    let service = "com.automicvault.tests.\(UUID().uuidString)"
-    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
-    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
-
-    migrateStoredSecretsToDataProtection(service: service)
-
-    #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
-}
-
 @Test func storedSecretsCanBeRenamed() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
@@ -328,22 +296,4 @@ private func dataProtectionKeychainAvailable() -> Bool {
     let status = saveStoredSecret(account: "PROBE", value: "secret", service: service)
     defer { _ = deleteStoredSecret(account: "PROBE", service: service) }
     return status != errSecMissingEntitlement
-}
-
-private func legacyGenericPasswordStatus(service: String, account: String) -> OSStatus {
-    var item: SecKeychainItem?
-    return service.withCString { servicePointer in
-        account.withCString { accountPointer in
-            SecKeychainFindGenericPassword(
-                nil,
-                UInt32(strlen(servicePointer)),
-                servicePointer,
-                UInt32(strlen(accountPointer)),
-                accountPointer,
-                nil,
-                nil,
-                &item
-            )
-        }
-    }
 }
