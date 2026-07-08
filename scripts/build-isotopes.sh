@@ -122,6 +122,7 @@ ensure_fork_branch() {
   local current_default="$3"
   local repo_dir="$clone_root/$repo_name"
   local fork_repo="$org/$repo_name"
+  local current_branch
 
   if [[ "$dry_run" == true ]]; then
     echo "Would ensure $fork_repo default branch is $branch"
@@ -129,6 +130,17 @@ ensure_fork_branch() {
   fi
 
   git -C "$repo_dir" fetch --no-tags origin
+  current_branch="$(git -C "$repo_dir" branch --show-current || true)"
+  if [[ "$current_branch" == "$branch" ]] &&
+    git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$branch" &&
+    git -C "$repo_dir" merge-base --is-ancestor "origin/$branch" HEAD &&
+    git -C "$repo_dir" diff --quiet &&
+    git -C "$repo_dir" diff --cached --quiet &&
+    ! git_rebase_in_progress "$repo_dir"; then
+    gh repo edit "$fork_repo" --default-branch "$branch"
+    return 0
+  fi
+
   if git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
     git -C "$repo_dir" checkout -B "$branch" "origin/$branch"
   elif git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$current_default"; then
@@ -221,6 +233,43 @@ git_clean() {
     ! git -C "$repo_dir" rev-parse -q --verify REVERT_HEAD >/dev/null 2>&1
 }
 
+git_rebase_in_progress() {
+  local repo_dir="$1"
+  local rebase_apply rebase_merge
+
+  rebase_apply="$(git -C "$repo_dir" rev-parse --path-format=absolute --git-path rebase-apply)"
+  rebase_merge="$(git -C "$repo_dir" rev-parse --path-format=absolute --git-path rebase-merge)"
+  [[ -d "$rebase_apply" || -d "$rebase_merge" ]]
+}
+
+unmerged_paths_have_conflict_markers() {
+  local repo_dir="$1"
+  local path
+
+  while IFS= read -r path; do
+    [[ -f "$repo_dir/$path" ]] || continue
+    if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$repo_dir/$path"; then
+      return 0
+    fi
+  done < <(git -C "$repo_dir" diff --name-only --diff-filter=U)
+  return 1
+}
+
+continue_rebase_if_resolved() {
+  local repo_dir="$1"
+
+  while git_rebase_in_progress "$repo_dir"; do
+    if git -C "$repo_dir" diff --name-only --diff-filter=U | grep -q .; then
+      if unmerged_paths_have_conflict_markers "$repo_dir"; then
+        return 1
+      fi
+      git -C "$repo_dir" diff --name-only --diff-filter=U |
+        git -C "$repo_dir" add --pathspec-from-file=-
+    fi
+    GIT_EDITOR=true git -C "$repo_dir" rebase --continue || return 1
+  done
+}
+
 build_manifest() {
   local repo_dir="$1"
   local tag="$2"
@@ -307,6 +356,7 @@ process_repo() {
   set -e
 
   invoke_codex "$repo_dir" "$fork_repo" "$upstream_repo" "$tag" "$status"
+  continue_rebase_if_resolved "$repo_dir" || true
   if ! git_clean "$repo_dir"; then
     echo "Codex did not leave $repo_dir clean" >&2
     git -C "$repo_dir" status --short >&2
