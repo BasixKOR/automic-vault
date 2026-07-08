@@ -303,7 +303,7 @@ final class DashboardModel: ObservableObject {
                         isHardened: hardener?.hardened == true
                     )
                 }
-                let severity = findings.map(\.severity).max() ?? "flagged"
+                let severity = detectorSeverityLevel(findings.map(\.severity))
                 let affectedCount = findings.flatMap(\.affected).count
                 let subtitle = affectedCount == 1 ? "1 affected file" : "\(affectedCount) affected files"
                 return DashboardItem(
@@ -317,7 +317,7 @@ final class DashboardModel: ObservableObject {
                     ].compactMap(\.self).joined(separator: "\n\n"),
                     documentation: detector.documentation,
                     hardenerDocumentation: hardener?.documentation,
-                    severity: severity.uppercased(),
+                    severity: severity.title,
                     isTriggered: true
                 )
             }
@@ -404,6 +404,11 @@ func runDashboardSearchSelfCheck() -> Int32 {
             .contains("launchctl bootstrap \"gui/$(id -u)\" \"$installed_launch_agent\""),
           installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
             .contains("sudo install \"$bundle_av\" /usr/local/bin/av")
+    else { return 1 }
+    guard detectorSeverityLevel(["medium"]) == .medium,
+          detectorSeverityLevel(["medium", "mid"]) == .medium,
+          detectorSeverityLevel(["medium", "high"]) == .high,
+          detectorSeverityLevel([]) == .high
     else { return 1 }
     return 0
 }
@@ -553,7 +558,10 @@ private struct DashboardSidebarView: View {
             let count = model.count(for: section)
             if count > 0 {
                 if section == .detectors, model.snapshot.flaggedDetectorCount > 0, model.selectedSection != .detectors {
-                    DetectorCountPill(count: count)
+                    DetectorCountPill(
+                        count: count,
+                        color: detectorSeverityLevel(model.snapshot.detectorFindings.map(\.severity)).color
+                    )
                         .fixedSize()
                 } else {
                     SidebarCountText(count: count)
@@ -834,6 +842,7 @@ private struct SidebarCountText: View {
 
 private struct DetectorCountPill: View {
     let count: Int
+    let color: Color
 
     var body: some View {
         Text(count.formatted())
@@ -842,7 +851,7 @@ private struct DetectorCountPill: View {
             .monospacedDigit()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(.red, in: Capsule())
+            .background(color, in: Capsule())
             .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 }
@@ -873,11 +882,38 @@ private struct HardenedDetectorPill: View {
 }
 
 private func detectorSeverityColor(_ severity: String?) -> Color {
-    switch severity?.lowercased() {
+    detectorSeverityLevel(severity.map { [$0] } ?? []).color
+}
+
+private enum DetectorSeverityLevel {
+    case medium
+    case high
+
+    var title: String {
+        switch self {
+        case .medium: "MEDIUM"
+        case .high: "HIGH"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .medium: .orange
+        case .high: .red
+        }
+    }
+}
+
+private func detectorSeverityLevel(_ severities: [String]) -> DetectorSeverityLevel {
+    !severities.isEmpty && severities.allSatisfy(isMediumDetectorSeverity) ? .medium : .high
+}
+
+private func isMediumDetectorSeverity(_ severity: String) -> Bool {
+    switch severity.lowercased() {
     case "medium", "mid":
-        .orange
+        true
     default:
-        .red
+        false
     }
 }
 
