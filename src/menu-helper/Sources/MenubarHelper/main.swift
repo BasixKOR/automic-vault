@@ -814,21 +814,21 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     case "auth":
         return subcommand == "status"
     case "repo":
-        return ["view", "list"].contains(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "issue":
-        return ["view", "list", "status"].contains(subcommand)
+        return ["view", "status"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "pr":
-        return ["view", "list", "status", "checks", "diff"].contains(subcommand)
+        return ["view", "status", "checks", "diff"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "run":
-        return ["view", "list", "download"].contains(subcommand)
+        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "workflow":
-        return ["view", "list"].contains(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "release":
-        return ["view", "list", "download"].contains(subcommand)
+        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "gist":
-        return ["view", "list"].contains(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "cache", "secret", "variable", "ruleset", "org", "label", "gpg-key", "ssh-key":
-        return subcommand == "list" || (command == "ruleset" && subcommand == "view")
+        return ghSubcommandIsList(subcommand) || (command == "ruleset" && subcommand == "view")
     case "attestation":
         return ["verify", "download", "trusted-root"].contains(subcommand)
     case "agent-task":
@@ -836,6 +836,10 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     default:
         return false
     }
+}
+
+private func ghSubcommandIsList(_ subcommand: String) -> Bool {
+    subcommand == "list" || subcommand == "ls"
 }
 
 private func ghCommandWords(_ args: [String]) -> [String] {
@@ -1617,6 +1621,7 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["search", "prs", "foo"],
         ["repo", "view"],
         ["repo", "list"],
+        ["repo", "ls"],
         ["issue", "view", "1"],
         ["issue", "list"],
         ["issue", "status"],
