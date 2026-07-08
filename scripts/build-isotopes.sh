@@ -260,6 +260,7 @@ process_repo() {
   local repo_dir="$clone_root/$repo_name"
   local repo_json upstream_repo upstream_default current_default release_json tag version release_url output archive_path status
 
+  echo "Checking $fork_repo"
   ensure_clone "$repo_name"
 
   repo_json="$(gh api "/repos/$fork_repo")"
