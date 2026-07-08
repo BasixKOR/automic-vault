@@ -341,7 +341,6 @@ final class DashboardModel: ObservableObject {
 }
 
 private let installedAVCLIPath = "/usr/local/bin/av"
-private let launchAgentName = "com.automicvault.menubar-helper"
 
 private var bundledAVURL: URL? {
     guard let macOSURL = Bundle.main.executableURL?.deletingLastPathComponent() else { return nil }
@@ -356,16 +355,6 @@ private func installCLICommand(bundleAVPath: String) -> String {
     set -e
     set -x
     bundle_av=\(shellQuoted(bundleAVPath))
-    contents=$(dirname "$(dirname "$bundle_av")")
-    launch_agent="$contents/Library/LaunchAgents/\(launchAgentName).plist"
-    installed_launch_agent="$HOME/Library/LaunchAgents/\(launchAgentName).plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
-    cp "$launch_agent" "$installed_launch_agent"
-    launchctl bootout "gui/$(id -u)/\(launchAgentName)" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$installed_launch_agent"
-    launchctl enable "gui/$(id -u)/\(launchAgentName)"
-    pkill -x AutomicVaultMenubar 2>/dev/null || true
-    launchctl kickstart -k "gui/$(id -u)/\(launchAgentName)"
     sudo install "$bundle_av" \(installedAVCLIPath)
     """
 }
@@ -409,7 +398,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     guard shellQuoted("/tmp/Automic Vault's av") == "'/tmp/Automic Vault'\"'\"'s av'",
           installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
-            .contains("launchctl bootstrap \"gui/$(id -u)\" \"$installed_launch_agent\""),
+            .contains("launchctl") == false,
           installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
             .contains("sudo install \"$bundle_av\" /usr/local/bin/av")
     else { return 1 }
