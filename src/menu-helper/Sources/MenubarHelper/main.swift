@@ -804,7 +804,8 @@ private func canAutoApproveReadOnlyGhRequest(
 
 private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     let words = ghCommandWords(args).map { $0.lowercased() }
-    guard let command = words.first else { return false }
+    guard let firstWord = words.first else { return false }
+    let command = ghCanonicalCommand(firstWord)
     if words.contains("--show-token") { return false }
     if ["api", "alias", "extension", "config", "skill"].contains(command) { return false }
     if ["status", "browse", "search"].contains(command) { return true }
@@ -835,6 +836,19 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
         return ["view", "list"].contains(subcommand)
     default:
         return false
+    }
+}
+
+private func ghCanonicalCommand(_ command: String) -> String {
+    switch command {
+    case "agent-tasks", "agent", "agents":
+        return "agent-task"
+    case "at":
+        return "attestation"
+    case "rs":
+        return "ruleset"
+    default:
+        return command
     }
 }
 
@@ -1645,11 +1659,20 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["variable", "list"],
         ["ruleset", "view"],
         ["ruleset", "list"],
+        ["rs", "view"],
+        ["rs", "list"],
+        ["rs", "ls"],
         ["attestation", "verify"],
         ["attestation", "download"],
         ["attestation", "trusted-root"],
+        ["at", "verify"],
+        ["at", "download"],
+        ["at", "trusted-root"],
         ["agent-task", "view"],
         ["agent-task", "list"],
+        ["agent", "view"],
+        ["agents", "list"],
+        ["agent-tasks", "list"],
         ["org", "list"],
         ["label", "list"],
         ["gpg-key", "list"],
