@@ -299,7 +299,8 @@ final class DashboardModel: ObservableObject {
                         subtitle: "No findings",
                         detail: "",
                         documentation: detector.documentation,
-                        hardenerDocumentation: hardener?.documentation
+                        hardenerDocumentation: hardener?.documentation,
+                        isHardened: hardener?.hardened == true
                     )
                 }
                 let severity = findings.map(\.severity).max() ?? "flagged"
@@ -369,13 +370,16 @@ private func shellQuoted(_ value: String) -> String {
 func runDashboardSearchSelfCheck() -> Int32 {
     let model = DashboardModel(snapshot: DashboardSnapshot(
         detectors: [
-            DetectorMetadata(name: "aws", homepage: "", docsURL: ""),
+            DetectorMetadata(name: "aws", homepage: "", docsURL: "", documentation: "Run `av harden aws`."),
             DetectorMetadata(name: "git", homepage: "", docsURL: ""),
         ],
         detectorFindings: [],
         hardenedTools: [
             HardenedTool(name: "aws", stubPath: "/usr/local/bin/aws", targetPath: "/opt/homebrew/bin/aws"),
             HardenedTool(name: "gh", stubPath: "/usr/local/bin/gh", targetPath: "/opt/homebrew/bin/gh"),
+        ],
+        hardeners: [
+            HardenerMetadata(name: "aws", hardened: true),
         ],
         secretGates: [],
         secrets: [
@@ -386,6 +390,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard model.count(for: .detectors) == 2,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2
+    else { return 1 }
+    guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
+          model.items.first(where: { $0.id == "git" })?.isHardened == false
     else { return 1 }
     model.searchText = "aws"
     guard model.count(for: .detectors) == 1,
@@ -438,8 +445,9 @@ struct DashboardItem: Identifiable, Equatable {
     let hardenerDocumentation: String?
     let severity: String?
     let isTriggered: Bool
+    let isHardened: Bool
 
-    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false) {
+    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false, isHardened: Bool = false) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -449,6 +457,7 @@ struct DashboardItem: Identifiable, Equatable {
         self.hardenerDocumentation = hardenerDocumentation
         self.severity = severity
         self.isTriggered = isTriggered
+        self.isHardened = isHardened
     }
 }
 
@@ -697,6 +706,10 @@ private struct DashboardRow: View {
                     DetectorKindPill(kind: kind)
                         .fixedSize()
                 }
+                if item.isHardened, !item.isTriggered {
+                    HardenedDetectorPill()
+                        .fixedSize()
+                }
                 if let severity = item.severity {
                     Text(severity)
                         .font(.system(size: 10, weight: .bold))
@@ -846,6 +859,16 @@ private struct DetectorKindPill: View {
             .padding(.horizontal, 7)
             .frame(height: 18)
             .background(Color.gray.opacity(0.18), in: Capsule())
+    }
+}
+
+private struct HardenedDetectorPill: View {
+    var body: some View {
+        Image(systemName: "shield.fill")
+            .font(.system(size: 9, weight: .semibold))
+            .frame(width: 22, height: 18)
+            .outlinedPill(.blue)
+            .accessibilityLabel("Hardened")
     }
 }
 
