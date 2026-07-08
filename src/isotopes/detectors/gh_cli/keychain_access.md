@@ -2,8 +2,21 @@
 
 ## Trigger Conditions
 
-- On macOS, a GitHub CLI Keychain item allows `/usr/bin/security` to read the secret without an interactive prompt.
+Any process that can run `/usr/bin/security` can trivially retrieve your GitHub
+token:
 
-## Sensitive Files
+```sh
+security find-generic-password -s gh:<host> -w
+```
 
-- Keychain generic-password items for GitHub CLI hosts.
+Or, more simply:
+
+```sh
+gh auth token
+```
+
+## Mitigation
+
+```sh
+av harden gh
+```

@@ -4,6 +4,12 @@
 
 - GitHub CLI `hosts.yml` contains a non-empty `oauth_token` entry.
 
+## Mitigation
+
+```sh
+av harden gh
+```
+
 ## Sensitive Files
 
 - `$GH_CONFIG_DIR/hosts.yml`
