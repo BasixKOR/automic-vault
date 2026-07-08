@@ -63,13 +63,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
 pub(crate) fn detect() -> HardenerDetection {
     let path = supabase_cli_path();
-    if path.exists() {
-        HardenerDetection::hardened(
-            Some(path.display().to_string()),
-            Some("supabase".to_string()),
-        )
+    let exists = path.exists();
+    let path = path.display().to_string();
+    if exists {
+        HardenerDetection::hardened(Some(path.clone()), Some(path))
     } else {
-        HardenerDetection::missing(Some("supabase".to_string()))
+        HardenerDetection::missing(Some(path))
     }
 }
 
@@ -236,6 +235,22 @@ mod tests {
         );
         assert!(!token_dir.join("access-token").exists());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn detect_reports_full_supabase_path() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = temp_path("missing-supabase-cli-detect");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH", &missing);
+        }
+
+        let detection = detect();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH");
+        }
+        assert_eq!(detection.target_path, Some(missing.display().to_string()));
     }
 
     #[test]

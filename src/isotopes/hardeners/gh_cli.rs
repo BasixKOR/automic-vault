@@ -68,10 +68,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
 pub(crate) fn detect() -> HardenerDetection {
     let path = gh_cli_path();
-    if path.exists() {
-        HardenerDetection::hardened(Some(path.display().to_string()), Some("gh".to_string()))
+    let exists = path.exists();
+    let path = path.display().to_string();
+    if exists {
+        HardenerDetection::hardened(Some(path.clone()), Some(path))
     } else {
-        HardenerDetection::missing(Some("gh".to_string()))
+        HardenerDetection::missing(Some(path))
     }
 }
 
@@ -360,6 +362,22 @@ mod tests {
             err,
             "gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`"
         );
+    }
+
+    #[test]
+    fn detect_reports_full_gh_path() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = temp_path("missing-gh-cli-detect");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
+        }
+
+        let detection = detect();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+        }
+        assert_eq!(detection.target_path, Some(missing.display().to_string()));
     }
 
     #[test]
