@@ -1574,8 +1574,8 @@ private func showApprovalAlert(
 
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = request.title ?? (request.op == "keys" ? "Approve key request?" : "Approve secret injection?")
-    alert.informativeText = request.detail ?? "Review the request details before allowing access."
+    alert.messageText = approvalPromptHeadline(request: request, launcher: launcher)
+    alert.informativeText = approvalPromptInformativeText(request)
     alert.accessoryView = approvalPromptAccessoryView(
         request: request,
         callerPath: callerPath,
@@ -1597,6 +1597,29 @@ private func showApprovalAlert(
     default:
         return .denied
     }
+}
+
+private func approvalPromptHeadline(request: ApprovalRequest, launcher: LauncherIdentity?) -> String {
+    "\(approvalPromptAppName(launcher)) wants to call \(approvalPromptCommand(request))"
+}
+
+private func approvalPromptInformativeText(_ request: ApprovalRequest) -> String {
+    let text = [request.title, request.detail]
+        .compactMap { $0?.isEmpty == false ? $0 : nil }
+        .joined(separator: "\n")
+    return text.isEmpty ? "Review the request details before allowing access." : text
+}
+
+private func approvalPromptAppName(_ launcher: LauncherIdentity?) -> String {
+    guard let launcher else { return "A process" }
+    if let app = URL(fileURLWithPath: launcher.path).pathComponents.last(where: { $0.hasSuffix(".app") }) {
+        return app
+    }
+    return shortAppName(launcher.identifier)
+}
+
+private func approvalPromptCommand(_ request: ApprovalRequest) -> String {
+    ([autoApprovalToolName(request)] + request.args).joined(separator: " ")
 }
 
 @MainActor
