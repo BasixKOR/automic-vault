@@ -558,6 +558,15 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
+        if canAutoApproveReadOnlyGhRequest(request: request, callerPath: callerPath, signing: signing) {
+            do {
+                let secrets = try approvedSecrets(for: request)
+                reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+            } catch {
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+            return
+        }
         let transientApproval = TransientApprovalKey(
             pid: pid,
             startUsec: identity.start_usec,
@@ -769,13 +778,91 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if name == "av", signing.identifier == "com.automicvault.av" {
         return true
     }
-    if name == "gh", signing.identifier == "gh" || signing.identifier == "com.github.cli" {
+    if isTrustedGhCaller(path: path, signing: signing) {
         return true
     }
     return (name == "supabase" || name == "supabase-go")
         && (signing.identifier == "supabase"
             || signing.identifier == "supabase-go"
             || signing.identifier == "com.supabase.cli")
+}
+
+private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
+    URL(fileURLWithPath: path).lastPathComponent == "gh"
+        && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
+}
+
+private func canAutoApproveReadOnlyGhRequest(
+    request: ApprovalRequest,
+    callerPath: String,
+    signing: SigningInfo,
+    defaults: UserDefaults = .standard
+) -> Bool {
+    request.op == "keys"
+        && !request.keys.isEmpty
+        && request.keys.allSatisfy { $0.hasPrefix("GH_TOKEN_") }
+        && defaults.bool(forKey: ghReadOnlyAutoApprovalDefaultsKey)
+        && isTrustedGhCaller(path: callerPath, signing: signing)
+        && ghRequestIsReadOnly(request.args)
+}
+
+private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
+    let words = ghCommandWords(args).map { $0.lowercased() }
+    guard let command = words.first else { return false }
+    if words.contains("--show-token") { return false }
+    if ["api", "alias", "extension", "config", "skill"].contains(command) { return false }
+    if ["status", "browse", "search"].contains(command) { return true }
+    guard words.count >= 2 else { return false }
+    let subcommand = words[1]
+    switch command {
+    case "auth":
+        return subcommand == "status"
+    case "repo":
+        return ["view", "list"].contains(subcommand)
+    case "issue":
+        return ["view", "list", "status"].contains(subcommand)
+    case "pr":
+        return ["view", "list", "status", "checks", "diff"].contains(subcommand)
+    case "run":
+        return ["view", "list", "download"].contains(subcommand)
+    case "workflow":
+        return ["view", "list"].contains(subcommand)
+    case "release":
+        return ["view", "list", "download"].contains(subcommand)
+    case "gist":
+        return ["view", "list"].contains(subcommand)
+    case "cache", "secret", "variable", "ruleset", "org", "label", "gpg-key", "ssh-key":
+        return subcommand == "list" || (command == "ruleset" && subcommand == "view")
+    case "attestation":
+        return ["verify", "download", "trusted-root"].contains(subcommand)
+    case "agent-task":
+        return ["view", "list"].contains(subcommand)
+    default:
+        return false
+    }
+}
+
+private func ghCommandWords(_ args: [String]) -> [String] {
+    var index = 0
+    while index < args.count {
+        let arg = args[index]
+        if arg == "--" {
+            return []
+        }
+        if ["-R", "--repo", "--hostname"].contains(arg) {
+            index += 2
+            continue
+        }
+        if arg.hasPrefix("--repo=") || arg.hasPrefix("--hostname=") {
+            index += 1
+            continue
+        }
+        if arg.hasPrefix("-") {
+            return []
+        }
+        return Array(args[index...])
+    }
+    return []
 }
 
 private func validSecretKeyName(_ key: String) -> Bool {
@@ -1153,12 +1240,32 @@ private func trustedLauncher(
     }
 }
 
+private func trustedLauncher(
+    script: ScriptApproval?,
+    request: ApprovalRequest,
+    launchers: [LauncherIdentity],
+    approvals: [TrustedScriptApproval]
+) -> LauncherIdentity? {
+    launchers.first {
+        trustedApprovalRecord(script: script, request: request, launcher: $0).map {
+            alwaysAllows($0, approvals: approvals)
+        } == true
+    }
+}
+
 private func alwaysAllows(
     _ approval: TrustedScriptApproval,
     service: String = trustedScriptApprovalsKeychainService,
     account: String = trustedScriptApprovalsKeychainAccount
 ) -> Bool {
     loadTrustedScriptApprovals(service: service, account: account).contains(approval)
+}
+
+private func alwaysAllows(
+    _ approval: TrustedScriptApproval,
+    approvals: [TrustedScriptApproval]
+) -> Bool {
+    approvals.contains(approval)
 }
 
 private func rememberAlwaysAllow(
@@ -1290,9 +1397,6 @@ private func showAutoApprovedToast(keys: [String], script: String, launcher: Str
 }
 
 private func runApprovalSelfCheck() -> Int32 {
-    let service = "com.automicvault.av2.approval-self-check.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
-
     let request = ApprovalRequest(
         op: "inject",
         keys: ["B", "A"],
@@ -1406,26 +1510,26 @@ private func runApprovalSelfCheck() -> Int32 {
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           launcherIdentity(pid: 45, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
           launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
-          !alwaysAllows(approval, service: service)
+          !alwaysAllows(approval, approvals: [])
     else {
         return 1
     }
 
-    rememberAlwaysAllow(approval, service: service)
-    guard alwaysAllows(approval, service: service),
-          trustedLauncher(script: script, request: request, launchers: [wrapperLauncher, launcher], service: service)?.designatedRequirement == launcher.designatedRequirement,
-          !alwaysAllows(altered(checksum: "def"), service: service),
-          !alwaysAllows(altered(keys: ["A"]), service: service),
-          !alwaysAllows(altered(target: "/usr/bin/env"), service: service),
-          !alwaysAllows(altered(replaceExistingEnv: false), service: service),
-          !alwaysAllows(altered(allowMissingKeys: true), service: service),
-          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), service: service)
+    let scriptApprovals = [approval]
+    guard alwaysAllows(approval, approvals: scriptApprovals),
+          trustedLauncher(script: script, request: request, launchers: [wrapperLauncher, launcher], approvals: scriptApprovals)?.designatedRequirement == launcher.designatedRequirement,
+          !alwaysAllows(altered(checksum: "def"), approvals: scriptApprovals),
+          !alwaysAllows(altered(keys: ["A"]), approvals: scriptApprovals),
+          !alwaysAllows(altered(target: "/usr/bin/env"), approvals: scriptApprovals),
+          !alwaysAllows(altered(replaceExistingEnv: false), approvals: scriptApprovals),
+          !alwaysAllows(altered(allowMissingKeys: true), approvals: scriptApprovals),
+          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), approvals: scriptApprovals)
     else {
         return 1
     }
-    rememberAlwaysAllow(appApproval, service: service)
-    guard alwaysAllows(appApproval, service: service),
-          trustedLauncher(script: nil, request: request, launchers: [wrapperLauncher, launcher], service: service)?.designatedRequirement == launcher.designatedRequirement,
+    let appApprovals = [approval, appApproval]
+    guard alwaysAllows(appApproval, approvals: appApprovals),
+          trustedLauncher(script: nil, request: request, launchers: [wrapperLauncher, launcher], approvals: appApprovals)?.designatedRequirement == launcher.designatedRequirement,
           !alwaysAllows(TrustedScriptApproval(
               scriptPath: nil,
               scriptChecksum: nil,
@@ -1434,10 +1538,144 @@ private func runApprovalSelfCheck() -> Int32 {
               replaceExistingEnv: true,
               allowMissingKeys: false,
               launcherRequirement: launcher.designatedRequirement
-          ), service: service)
+          ), approvals: appApprovals)
     else {
         return 1
     }
+    let defaultsName = "com.automicvault.av2.approval-self-check.defaults.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: defaultsName) else { return 1 }
+    defaults.removePersistentDomain(forName: defaultsName)
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
+    let ghSigning = SigningInfo(identifier: "gh", teamIdentifier: "TEAM")
+    func ghRequest(
+        op: String = "keys",
+        keys: [String] = ["GH_TOKEN_GITHUB_COM"],
+        args: [String] = ["repo", "view"]
+    ) -> ApprovalRequest {
+        ApprovalRequest(
+            op: op,
+            keys: keys,
+            target: "/opt/homebrew/Cellar/gh-cli/2.94.0/bin/gh",
+            args: args,
+            cwd: "/tmp",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            tool: "gh",
+            title: nil,
+            detail: nil
+        )
+    }
+    let readOnlyGh = ghRequest()
+    guard !canAutoApproveReadOnlyGhRequest(
+        request: readOnlyGh,
+        callerPath: "/opt/homebrew/bin/gh",
+        signing: ghSigning,
+        defaults: defaults
+    ) else {
+        return 1
+    }
+    defaults.set(true, forKey: ghReadOnlyAutoApprovalDefaultsKey)
+    guard canAutoApproveReadOnlyGhRequest(
+        request: readOnlyGh,
+        callerPath: "/opt/homebrew/bin/gh",
+        signing: ghSigning,
+        defaults: defaults
+    ),
+          !canAutoApproveReadOnlyGhRequest(
+              request: ghRequest(args: ["repo", "delete", "owner/name"]),
+              callerPath: "/opt/homebrew/bin/gh",
+              signing: ghSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyGhRequest(
+              request: ghRequest(keys: ["OTHER_TOKEN"]),
+              callerPath: "/opt/homebrew/bin/gh",
+              signing: ghSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyGhRequest(
+              request: ghRequest(op: "inject"),
+              callerPath: "/opt/homebrew/bin/gh",
+              signing: ghSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyGhRequest(
+              request: readOnlyGh,
+              callerPath: "/usr/local/bin/av",
+              signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+              defaults: defaults
+          )
+    else {
+        return 1
+    }
+    return 0
+}
+
+private func runGhReadOnlySelfCheck() -> Int32 {
+    let allowed = [
+        ["auth", "status"],
+        ["status"],
+        ["browse"],
+        ["search", "prs", "foo"],
+        ["repo", "view"],
+        ["repo", "list"],
+        ["issue", "view", "1"],
+        ["issue", "list"],
+        ["issue", "status"],
+        ["pr", "view"],
+        ["pr", "list"],
+        ["pr", "status"],
+        ["pr", "checks"],
+        ["pr", "diff"],
+        ["run", "view"],
+        ["run", "list"],
+        ["run", "download"],
+        ["workflow", "view"],
+        ["workflow", "list"],
+        ["release", "view"],
+        ["release", "list"],
+        ["release", "download"],
+        ["gist", "view"],
+        ["gist", "list"],
+        ["cache", "list"],
+        ["secret", "list"],
+        ["variable", "list"],
+        ["ruleset", "view"],
+        ["ruleset", "list"],
+        ["attestation", "verify"],
+        ["attestation", "download"],
+        ["attestation", "trusted-root"],
+        ["agent-task", "view"],
+        ["agent-task", "list"],
+        ["org", "list"],
+        ["label", "list"],
+        ["gpg-key", "list"],
+        ["ssh-key", "list"],
+        ["-R", "owner/repo", "pr", "view"],
+        ["--hostname=github.example.com", "repo", "view"],
+    ]
+    guard allowed.allSatisfy(ghRequestIsReadOnly) else { return 1 }
+
+    let denied = [
+        ["api", "repos/owner/repo"],
+        ["auth", "token"],
+        ["auth", "status", "--show-token"],
+        ["alias", "set", "x", "repo view"],
+        ["extension", "install", "owner/gh-ext"],
+        ["config", "set", "editor", "vim"],
+        ["skill", "install", "foo"],
+        ["repo", "delete", "owner/name"],
+        ["issue", "create"],
+        ["pr", "merge"],
+        ["run", "rerun"],
+        ["workflow", "enable"],
+        ["release", "create"],
+        ["unknown", "view"],
+        ["--unknown", "repo", "view"],
+    ]
+    guard denied.allSatisfy({ !ghRequestIsReadOnly($0) }) else { return 1 }
     return 0
 }
 
@@ -1518,6 +1756,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(runApprovalSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-gh-read-only") {
+    exit(runGhReadOnlySelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-transient-approvals") {

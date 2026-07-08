@@ -5,6 +5,7 @@ import Security
 public let automicVaultKeychainService = "com.automicvault.isotope"
 public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
 public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
+public let ghReadOnlyAutoApprovalDefaultsKey = "GhReadOnlyAutoApproval"
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]

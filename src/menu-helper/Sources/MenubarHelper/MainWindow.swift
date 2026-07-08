@@ -926,6 +926,10 @@ private struct ReferenceDetailView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if item.title == "gh" {
+                GhReadOnlyApprovalToggle()
+            }
+
             if !item.detail.isEmpty {
                 InfoBlock(title: "Current Result", text: item.detail)
                     .padding(14)
@@ -988,6 +992,16 @@ private struct ReferenceDetailView: View {
             .padding(.horizontal, 8)
             .frame(height: 20)
             .outlinedPill(badge.color)
+    }
+}
+
+private struct GhReadOnlyApprovalToggle: View {
+    @AppStorage(ghReadOnlyAutoApprovalDefaultsKey) private var allowReadOnlyGhRequests = false
+
+    var body: some View {
+        Toggle("Allow Read-Only gh Requests", isOn: $allowReadOnlyGhRequests)
+            .toggleStyle(.switch)
+            .font(.system(size: 13, weight: .medium))
     }
 }
 
