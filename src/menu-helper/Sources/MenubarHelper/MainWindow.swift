@@ -277,6 +277,9 @@ final class DashboardModel: ObservableObject {
 
     private var detectorItems: [DashboardItem] {
         let findingsBySource = Dictionary(grouping: snapshot.detectorFindings, by: \.source)
+        let hardenersByName = snapshot.hardeners.reduce(into: [String: HardenerMetadata]()) {
+            $0[$1.name] = $1
+        }
         let detectors = snapshot.detectors.isEmpty
             ? findingsBySource.keys.map { DetectorMetadata(name: $0, homepage: "", docsURL: "") }
             : snapshot.detectors
@@ -285,6 +288,9 @@ final class DashboardModel: ObservableObject {
             .map { detector in
                 let displayName = detector.displayName
                 let findings = findingsBySource[detector.name] ?? []
+                let hardener = hardenerNameReferencedByDocumentation(detector.documentation).flatMap {
+                    hardenersByName[$0]
+                }
                 guard !findings.isEmpty else {
                     return DashboardItem(
                         id: detector.name,
@@ -292,7 +298,8 @@ final class DashboardModel: ObservableObject {
                         kind: displayName.kind,
                         subtitle: "No findings",
                         detail: "",
-                        documentation: detector.documentation
+                        documentation: detector.documentation,
+                        hardenerDocumentation: hardener?.documentation
                     )
                 }
                 let severity = findings.map(\.severity).max() ?? "flagged"
@@ -308,6 +315,7 @@ final class DashboardModel: ObservableObject {
                         findings.first?.solution,
                     ].compactMap(\.self).joined(separator: "\n\n"),
                     documentation: detector.documentation,
+                    hardenerDocumentation: hardener?.documentation,
                     severity: severity.uppercased(),
                     isTriggered: true
                 )
@@ -427,16 +435,18 @@ struct DashboardItem: Identifiable, Equatable {
     let subtitle: String
     let detail: String
     let documentation: String
+    let hardenerDocumentation: String?
     let severity: String?
     let isTriggered: Bool
 
-    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", severity: String? = nil, isTriggered: Bool = false) {
+    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false) {
         self.id = id
         self.title = title
         self.kind = kind
         self.subtitle = subtitle
         self.detail = detail
         self.documentation = documentation
+        self.hardenerDocumentation = hardenerDocumentation
         self.severity = severity
         self.isTriggered = isTriggered
     }
@@ -915,6 +925,29 @@ private struct ReferenceDetailView: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color(nsColor: .separatorColor))
+            }
+
+            if let hardenerDocumentation = item.hardenerDocumentation, !hardenerDocumentation.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Hardener Reference")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .tracking(0.7)
+                    RenderedMarkdown(markdown: hardenerDocumentation)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor))
+                }
             }
         }
     }

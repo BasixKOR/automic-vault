@@ -10,6 +10,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]
     public var detectorFindings: [DetectorFinding]
     public var hardenedTools: [HardenedTool]
+    public var hardeners: [HardenerMetadata]
     public var secretGates: [SecretGate]
     public var secrets: [StoredSecret]
 
@@ -17,12 +18,14 @@ public struct DashboardSnapshot: Equatable, Sendable {
         detectors: [DetectorMetadata],
         detectorFindings: [DetectorFinding],
         hardenedTools: [HardenedTool],
+        hardeners: [HardenerMetadata] = [],
         secretGates: [SecretGate],
         secrets: [StoredSecret]
     ) {
         self.detectors = detectors
         self.detectorFindings = detectorFindings
         self.hardenedTools = hardenedTools
+        self.hardeners = hardeners
         self.secretGates = secretGates
         self.secrets = secrets
     }
@@ -31,6 +34,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         detectors: [],
         detectorFindings: [],
         hardenedTools: [],
+        hardeners: [],
         secretGates: [],
         secrets: []
     )
@@ -59,6 +63,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: hardenedTools,
+            hardeners: hardenerMetadata,
             secretGates: loadSecretGates(configuredTools: hardenedTools, service: approvalService),
             secrets: loadStoredSecrets()
         )
@@ -296,6 +301,16 @@ public func detectorMetadata(from detectorsJSON: Data) throws -> [DetectorMetada
 
 public func hardenerMetadata(from hardenersJSON: Data) throws -> [HardenerMetadata] {
     try JSONDecoder().decode(HardenerReport.self, from: hardenersJSON).hardeners
+}
+
+public func hardenerNameReferencedByDocumentation(_ documentation: String) -> String? {
+    guard let range = documentation.range(
+        of: #"av[ \t\r\n]+harden[ \t\r\n]+[A-Za-z0-9_-]+"#,
+        options: .regularExpression
+    ) else {
+        return nil
+    }
+    return documentation[range].split(whereSeparator: \.isWhitespace).last.map(String.init)
 }
 
 public func loadHardenedTools(

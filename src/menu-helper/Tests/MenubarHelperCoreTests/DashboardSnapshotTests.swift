@@ -95,6 +95,12 @@ import Testing
     ])
 }
 
+@Test func detectorDocumentationReferencesHardenerCommand() {
+    #expect(hardenerNameReferencedByDocumentation("```sh\nav harden gh\n```") == "gh")
+    #expect(hardenerNameReferencedByDocumentation("Run `sudo av harden aws` after import.") == "aws")
+    #expect(hardenerNameReferencedByDocumentation("No mitigation command here.") == nil)
+}
+
 @Test func hardenedToolsUseHardenerDetection() throws {
     let directory = temporaryDirectory()
     let tools = loadHardenedTools(
