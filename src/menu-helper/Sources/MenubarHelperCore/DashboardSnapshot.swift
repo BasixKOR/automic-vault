@@ -266,6 +266,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     public let tool: String
     public let command: String
     public let decision: String
+    public let approvalSource: String?
     public let reason: String
     public let launcher: String?
     public let callerPath: String
@@ -280,6 +281,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         tool: String,
         command: String,
         decision: String,
+        approvalSource: String? = nil,
         reason: String,
         launcher: String?,
         callerPath: String,
@@ -293,6 +295,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.tool = tool
         self.command = command
         self.decision = decision
+        self.approvalSource = approvalSource
         self.reason = reason
         self.launcher = launcher
         self.callerPath = callerPath
@@ -300,6 +303,19 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.cwd = cwd
         self.keys = keys
         self.detail = detail
+    }
+
+    public var approvalSourceLabel: String {
+        if let approvalSource, !approvalSource.isEmpty {
+            return approvalSource
+        }
+        if reason.localizedCaseInsensitiveContains("auto") || reason.localizedCaseInsensitiveContains("reused") {
+            return "Auto"
+        }
+        if reason.localizedCaseInsensitiveContains("prompt") {
+            return "Human"
+        }
+        return "Unknown"
     }
 }
 

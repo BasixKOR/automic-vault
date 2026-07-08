@@ -310,6 +310,7 @@ private func accessRequestRecord(
     request: ApprovalRequest,
     callerPath: String,
     decision: String,
+    approvalSource: String,
     reason: String,
     launcher: LauncherIdentity?
 ) -> AccessRequestRecord {
@@ -318,6 +319,7 @@ private func accessRequestRecord(
         tool: autoApprovalToolName(request),
         command: ([autoApprovalToolName(request)] + request.args).joined(separator: " "),
         decision: decision,
+        approvalSource: approvalSource,
         reason: reason,
         launcher: launcher.map { shortAppName($0.identifier) },
         callerPath: callerPath,
@@ -624,6 +626,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Approved",
+                    approvalSource: "Auto",
                     reason: autoApprovalReason,
                     launcher: launcher
                 ))
@@ -633,6 +636,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Failed",
+                    approvalSource: "Auto",
                     reason: error.localizedDescription,
                     launcher: launcher
                 ))
@@ -671,6 +675,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         request: request,
                         callerPath: callerPath,
                         decision: "Approved",
+                        approvalSource: "Auto",
                         reason: "Always allowed from \(shortAppName(launcher.identifier))",
                         launcher: launcher
                     ))
@@ -685,6 +690,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         request: request,
                         callerPath: callerPath,
                         decision: "Failed",
+                        approvalSource: "Auto",
                         reason: error.localizedDescription,
                         launcher: launcher
                     ))
@@ -701,6 +707,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         request: request,
                         callerPath: callerPath,
                         decision: "Denied",
+                        approvalSource: "Auto",
                         reason: "Reused recent denial",
                         launcher: launcher
                     ))
@@ -713,6 +720,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         request: request,
                         callerPath: callerPath,
                         decision: "Approved",
+                        approvalSource: "Auto",
                         reason: "Reused recent approval",
                         launcher: launcher
                     ))
@@ -722,6 +730,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         request: request,
                         callerPath: callerPath,
                         decision: "Failed",
+                        approvalSource: "Auto",
                         reason: error.localizedDescription,
                         launcher: launcher
                     ))
@@ -747,6 +756,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Denied",
+                    approvalSource: "Human",
                     reason: "Denied in prompt",
                     launcher: launcher
                 ))
@@ -760,6 +770,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: decision == .alwaysAllow ? "Always Allowed" : "Approved",
+                    approvalSource: "Human",
                     reason: decision == .alwaysAllow
                         ? "Approved and saved for \(launcher.map { shortAppName($0.identifier) } ?? "this app")"
                         : "Approved in prompt",
@@ -771,6 +782,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Failed",
+                    approvalSource: "Human",
                     reason: error.localizedDescription,
                     launcher: launcher
                 ))

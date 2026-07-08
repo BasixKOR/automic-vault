@@ -1148,6 +1148,11 @@ private struct AccessRequestRow: View {
                         .padding(.horizontal, 7)
                         .frame(height: 18)
                         .outlinedPill(color)
+                    Text(record.approvalSourceLabel.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .outlinedPill(sourceColor)
                     Text(Self.formatter.string(from: record.date))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1162,6 +1167,7 @@ private struct AccessRequestRow: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 3) {
                     AccessMetaLine("Launcher", record.launcher ?? "unknown")
+                    AccessMetaLine("Approved by", record.approvalSourceLabel)
                     AccessMetaLine("Keys", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
                     AccessMetaLine("Working directory", record.cwd)
                     if let detail = record.detail, !detail.isEmpty {
@@ -1187,6 +1193,14 @@ private struct AccessRequestRow: View {
         case "Approved", "Always Allowed": "checkmark"
         case "Denied": "xmark"
         default: "exclamationmark"
+        }
+    }
+
+    private var sourceColor: Color {
+        switch record.approvalSourceLabel {
+        case "Human": .purple
+        case "Auto": .cyan
+        default: .gray
         }
     }
 }

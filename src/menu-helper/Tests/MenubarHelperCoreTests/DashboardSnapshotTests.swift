@@ -311,6 +311,7 @@ import Testing
             tool: "aws",
             command: "aws s3 ls \(index)",
             decision: "Approved",
+            approvalSource: "Human",
             reason: "Approved in prompt",
             launcher: "Codex",
             callerPath: "/usr/local/bin/av",
@@ -324,7 +325,31 @@ import Testing
     let records = loadAccessRequestRecords(defaults: defaults)
     #expect(records.count == 50)
     #expect(records.first?.command == "aws s3 ls 54")
+    #expect(records.first?.approvalSourceLabel == "Human")
     #expect(records.last?.command == "aws s3 ls 5")
+}
+
+@Test func accessRequestLogInfersSourceForOlderRecords() throws {
+    let data = Data("""
+    [{
+      "id": "00000000-0000-0000-0000-000000000001",
+      "date": 0,
+      "tool": "gh",
+      "command": "gh pr list",
+      "decision": "Approved",
+      "reason": "Auto-approved read-only gh request",
+      "launcher": "Codex",
+      "callerPath": "/opt/homebrew/bin/gh",
+      "target": "/opt/homebrew/bin/gh",
+      "cwd": "/tmp",
+      "keys": [],
+      "detail": null
+    }]
+    """.utf8)
+
+    let records = try JSONDecoder().decode([AccessRequestRecord].self, from: data)
+    #expect(records.first?.approvalSource == nil)
+    #expect(records.first?.approvalSourceLabel == "Auto")
 }
 
 private func temporaryDirectory() -> URL {
