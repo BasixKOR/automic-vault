@@ -14,9 +14,10 @@ usage() {
 Usage: scripts/build-isotopes.sh [--clone-root PATH] [--repo NAME] [--dry-run]
 
 For each automic-vault fork, check the latest upstream GitHub release. If the
-fork does not already have a release for that tag, rebase main onto the upstream
-tag, ask Codex to verify the fork goals still hold, build the manifest, and
-publish cli-<version>.tgz to the fork release.
+fork does not already have a release for that tag, rebase the fork's mirrored
+upstream default branch onto the upstream tag, ask Codex to verify the fork
+goals still hold, build the manifest, and publish cli-<version>.tgz to the fork
+release.
 EOF
 }
 
@@ -115,25 +116,31 @@ ensure_clone() {
   fi
 }
 
-ensure_main_branch() {
+ensure_fork_branch() {
   local repo_name="$1"
+  local branch="$2"
+  local current_default="$3"
   local repo_dir="$clone_root/$repo_name"
   local fork_repo="$org/$repo_name"
 
   if [[ "$dry_run" == true ]]; then
-    echo "Would ensure $fork_repo default branch is main"
+    echo "Would ensure $fork_repo default branch is $branch"
     return 0
   fi
 
   git -C "$repo_dir" fetch --no-tags origin
-  if git -C "$repo_dir" show-ref --verify --quiet refs/remotes/origin/main; then
-    git -C "$repo_dir" checkout -B main origin/main
+  if git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+    git -C "$repo_dir" checkout -B "$branch" "origin/$branch"
+  elif git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$current_default"; then
+    git -C "$repo_dir" push origin "refs/remotes/origin/$current_default:refs/heads/$branch"
+    git -C "$repo_dir" fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
+    git -C "$repo_dir" checkout -B "$branch" "origin/$branch"
   else
     git -C "$repo_dir" checkout "$(git -C "$repo_dir" branch --show-current)"
-    git -C "$repo_dir" branch -M main
-    git -C "$repo_dir" push origin HEAD:main
+    git -C "$repo_dir" branch -M "$branch"
+    git -C "$repo_dir" push origin "HEAD:$branch"
   fi
-  gh repo edit "$fork_repo" --default-branch main
+  gh repo edit "$fork_repo" --default-branch "$branch"
 }
 
 set_upstream_remote() {
@@ -182,8 +189,8 @@ Work in the fork checkout. If a rebase is in progress, resolve conflicts and
 finish it. Then read automic-vault.yml, verify the fork goal is still intact on
 top of upstream $tag, and make the smallest fixes needed if upstream changed.
 Run the manifest build or the narrowest practical check. Leave the checkout on
-branch main with no unmerged paths, no rebase/merge/cherry-pick in progress,
-and no unstaged changes except intentional committed fork changes.
+the mirrored default branch with no unmerged paths, no rebase/merge/cherry-pick
+in progress, and no unstaged changes except intentional committed fork changes.
 EOF
 )"
 
@@ -251,10 +258,9 @@ process_repo() {
   local repo_name="$1"
   local fork_repo="$org/$repo_name"
   local repo_dir="$clone_root/$repo_name"
-  local repo_json upstream_repo release_json tag version release_url output archive_path status
+  local repo_json upstream_repo upstream_default current_default release_json tag version release_url output archive_path status
 
   ensure_clone "$repo_name"
-  ensure_main_branch "$repo_name"
 
   repo_json="$(gh api "/repos/$fork_repo")"
   upstream_repo="$(jq -r '.parent.full_name // empty' <<<"$repo_json")"
@@ -262,6 +268,13 @@ process_repo() {
     echo "Skipping $fork_repo: not a GitHub fork"
     return 0
   fi
+  upstream_default="$(jq -r '.parent.default_branch // empty' <<<"$repo_json")"
+  current_default="$(jq -r '.default_branch // empty' <<<"$repo_json")"
+  if [[ -z "$upstream_default" ]]; then
+    echo "Skipping $fork_repo: upstream default branch is unavailable"
+    return 0
+  fi
+  ensure_fork_branch "$repo_name" "$upstream_default" "$current_default"
 
   release_json="$(latest_release_json "$upstream_repo")"
   tag="$(jq -r '.tag_name' <<<"$release_json")"
@@ -281,7 +294,7 @@ process_repo() {
   echo "New upstream release for $fork_repo: $upstream_repo $tag"
 
   if [[ "$dry_run" == true ]]; then
-    echo "Would rebase main onto upstream tag $tag, verify with Codex, build, and release $archive_path"
+    echo "Would rebase $upstream_default onto upstream tag $tag, verify with Codex, build, and release $archive_path"
     return 0
   fi
 
@@ -304,7 +317,7 @@ process_repo() {
   output="$(find_output "$repo_dir" "$repo_name")"
   mv -f "$output" "$archive_path"
 
-  git -C "$repo_dir" push origin HEAD:main --force-with-lease
+  git -C "$repo_dir" push origin "HEAD:$upstream_default" --force-with-lease
   git -C "$repo_dir" push origin "+refs/tags/$tag:refs/tags/$tag"
   gh release create "$tag" "$archive_path" \
     --repo "$fork_repo" \
