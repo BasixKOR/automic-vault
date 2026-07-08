@@ -118,18 +118,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
     }
 
-    private func menuImage(alerted: Bool = false) -> NSImage? {
+    private func menuImage(alertColor: NSColor? = nil) -> NSImage? {
         let url = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
         guard let url, let image = NSImage(contentsOf: url) else { return nil }
         image.size = NSSize(width: 15, height: 18)
-        guard alerted else {
+        guard let alertColor else {
             image.isTemplate = true
             return image
         }
 
         let tinted = NSImage(size: image.size, flipped: false) { rect in
             image.draw(in: rect)
-            NSColor.systemRed.setFill()
+            alertColor.setFill()
             rect.fill(using: .sourceIn)
             return true
         }
@@ -194,13 +194,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = shieldImage()
             scanStatusItem.title = "No Vulnerabilities Detected"
-        case .findings(let count):
-            statusItem.button?.image = menuImage(alerted: true)
+        case .findings(let count, let level):
+            statusItem.button?.image = menuImage(alertColor: level.color)
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = nil
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
-            statusItem.button?.image = menuImage(alerted: true)
+            statusItem.button?.image = menuImage(alertColor: .systemRed)
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = nil
             scanStatusItem.title = "Scan failed"
@@ -304,8 +304,20 @@ private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
 
 private enum ScanResult {
     case clean(Int)
-    case findings(Int)
+    case findings(Int, ScanAlertLevel)
     case failed
+}
+
+private enum ScanAlertLevel {
+    case medium
+    case high
+
+    var color: NSColor {
+        switch self {
+        case .medium: .systemOrange
+        case .high: .systemRed
+        }
+    }
 }
 
 private func scanResult() -> ScanResult {
@@ -328,13 +340,26 @@ private func scanResult() -> ScanResult {
     process.waitUntilExit()
     guard process.terminationStatus == 0,
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let findings = object["findings"] as? [Any]
+          let findings = object["findings"] as? [[String: Any]]
     else {
         return .failed
     }
     return findings.isEmpty
         ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
-        : .findings(findings.count)
+        : .findings(findings.count, scanAlertLevel(findings))
+}
+
+private func scanAlertLevel(_ findings: [[String: Any]]) -> ScanAlertLevel {
+    findings.allSatisfy {
+        matchesMediumSeverity($0["severity"] as? String)
+    } ? .medium : .high
+}
+
+private func matchesMediumSeverity(_ severity: String?) -> Bool {
+    switch severity?.lowercased() {
+    case "medium", "mid": true
+    default: false
+    }
 }
 
 private func avExecutableURL() -> URL {
@@ -1479,6 +1504,8 @@ private func runMenuStatusSelfCheck() -> Int32 {
     )
     guard shortAppName("com.openai.codex") == "Codex",
           autoApprovalToolName(request) == "aws",
+          scanAlertLevel([["severity": "medium"]]) == .medium,
+          scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
           autoApprovalTitle(
               AutoApprovalRecord(date: Date(timeIntervalSince1970: 18_900), launcher: "Codex", tool: "aws"),
               formatter: formatter
