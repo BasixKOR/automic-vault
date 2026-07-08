@@ -1,5 +1,6 @@
 pub(crate) mod aws_cli;
 pub(crate) mod gh_cli;
+pub(crate) mod homebrew;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 
@@ -46,6 +47,7 @@ macro_rules! hardener {
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     vec![
         hardener!(aws_cli, "aws"),
+        hardener!(homebrew, "brew"),
         hardener!(gh_cli, "gh"),
         hardener!(sudo, "sudo"),
         hardener!(supabase, "supabase"),

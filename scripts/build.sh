@@ -79,8 +79,11 @@ if [[ "$identity" != "-" ]]; then
 fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
 cp "$ROOT/target/release/av" "$MACOS/av"
+cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
 app_codesign_args=("${codesign_args[@]}")
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
@@ -125,6 +128,7 @@ if [[ "$install" -eq 1 ]]; then
     rm -rf "$DMG_MOUNT"
   fi
   sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
+  sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av-brew-stub" /usr/local/bin/av-brew-stub
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true

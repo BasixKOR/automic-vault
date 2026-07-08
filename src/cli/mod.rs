@@ -99,6 +99,15 @@ where
                     }
                 };
             }
+            if target == "brew" || target == "homebrew" {
+                return match hardeners::homebrew::run(stdout, yes) {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
             if target == "sudo" {
                 return match hardeners::sudo::run(stdout, style.color) {
                     Ok(()) => 0,
@@ -202,6 +211,32 @@ mod tests {
         assert_eq!(
             stderr,
             "av harden: gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`\n"
+        );
+    }
+
+    #[test]
+    fn harden_brew_is_routed() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = std::env::temp_dir().join(format!("av-missing-brew-{}", std::process::id()));
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &missing);
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "brew"]);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_TARGET");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+        }
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            format!(
+                "av harden: Homebrew is not installed at {}\n",
+                missing.display()
+            )
         );
     }
 
