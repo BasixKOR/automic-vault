@@ -264,11 +264,15 @@ private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateForm
     "\(formatter.string(from: record.date)) – \(record.launcher) used \(record.tool)"
 }
 
-private func autoApprovalRecord(request: ApprovalRequest, launcher: LauncherIdentity) -> AutoApprovalRecord {
+private func autoApprovalRecord(
+    request: ApprovalRequest,
+    script: ScriptApproval?,
+    launcher: LauncherIdentity
+) -> AutoApprovalRecord {
     AutoApprovalRecord(
         date: Date(),
         launcher: shortAppName(launcher.identifier),
-        tool: autoApprovalToolName(request)
+        tool: autoApprovalToolName(request, scriptPath: script?.path)
     )
 }
 
@@ -277,8 +281,25 @@ private func shortAppName(_ identifier: String) -> String {
     return name.prefix(1).uppercased() + name.dropFirst()
 }
 
-private func autoApprovalToolName(_ request: ApprovalRequest) -> String {
-    request.tool ?? URL(fileURLWithPath: request.target).lastPathComponent
+private func autoApprovalToolName(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    if let tool = request.tool {
+        return tool
+    }
+    if let scriptPath {
+        return URL(fileURLWithPath: scriptPath).lastPathComponent
+    }
+    if let scriptPath = resolvedShebangScriptPath(request) {
+        return URL(fileURLWithPath: scriptPath).lastPathComponent
+    }
+    return URL(fileURLWithPath: request.target).lastPathComponent
+}
+
+private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
+    guard let script = request.shebangScript else { return nil }
+    let url = script.hasPrefix("/")
+        ? URL(fileURLWithPath: script)
+        : URL(fileURLWithPath: request.cwd).appendingPathComponent(script)
+    return url.standardizedFileURL.path
 }
 
 private enum ScanResult {
@@ -544,7 +565,7 @@ private final class ApprovalServer: @unchecked Sendable {
             DispatchQueue.main.async {
                 do {
                     let secrets = try self.approvedSecrets(for: request)
-                    self.onAutoApproval(autoApprovalRecord(request: request, launcher: launcher))
+                    self.onAutoApproval(autoApprovalRecord(request: request, script: scriptApproval, launcher: launcher))
                     showAutoApprovedToast(
                         keys: request.keys,
                         script: scriptApproval?.path ?? request.tool ?? request.target,
@@ -1445,13 +1466,13 @@ private func runMenuStatusSelfCheck() -> Int32 {
     let request = ApprovalRequest(
         op: "inject",
         keys: ["AWS_SECRET_ACCESS_KEY"],
-        target: "/opt/homebrew/bin/aws",
+        target: "/bin/zsh",
         args: [],
         cwd: "/tmp",
         replaceExistingEnv: true,
         allowMissingKeys: false,
         envConflicts: [],
-        shebangScript: nil,
+        shebangScript: "/usr/local/bin/aws",
         tool: nil,
         title: nil,
         detail: nil
