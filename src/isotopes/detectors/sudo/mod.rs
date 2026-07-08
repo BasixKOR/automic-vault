@@ -143,6 +143,29 @@ mod tests {
         let _ = fs::remove_dir_all(temp);
     }
 
+    #[test]
+    fn sudo_findings_are_medium_severity() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let temp = temp_dir("medium");
+        let pam = temp.join("pam.d");
+        fs::create_dir_all(&pam).unwrap();
+        fs::write(pam.join("sudo_local"), "#auth sufficient pam_tid.so\n").unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR", &pam);
+            std::env::set_var("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE", "1");
+        }
+
+        let findings = super::findings(&temp);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE");
+        }
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, "medium");
+        let _ = fs::remove_dir_all(temp);
+    }
+
     fn temp_dir(label: &str) -> PathBuf {
         let path =
             std::env::temp_dir().join(format!("sudo-detector-{label}-{}", std::process::id()));
@@ -154,5 +177,9 @@ mod tests {
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     let _ = home;
-    super::radioisotope::findings("sudo", install_insecurity_reasons, home)
+    let mut findings = super::radioisotope::findings("sudo", install_insecurity_reasons, home);
+    for finding in &mut findings {
+        finding.severity = "medium";
+    }
+    findings
 }

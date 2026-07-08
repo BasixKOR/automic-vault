@@ -195,7 +195,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             scanStatusItem.image = shieldImage()
             scanStatusItem.title = "No Vulnerabilities Detected"
         case .findings(let count, let level):
-            statusItem.button?.image = menuImage(alertColor: level.color)
+            statusItem.button?.image = switch level {
+            case .medium: menuImage()
+            case .high: menuImage(alertColor: .systemRed)
+            }
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = nil
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
@@ -311,13 +314,6 @@ private enum ScanResult {
 private enum ScanAlertLevel {
     case medium
     case high
-
-    var color: NSColor {
-        switch self {
-        case .medium: .systemOrange
-        case .high: .systemRed
-        }
-    }
 }
 
 private func scanResult() -> ScanResult {
