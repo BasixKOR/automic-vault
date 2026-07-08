@@ -1101,7 +1101,7 @@ private struct AccessHistoryView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else {
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(records) { record in
                         AccessRequestRow(record: record)
                         if record.id != records.last?.id {
@@ -1177,6 +1177,7 @@ private struct AccessRequestRow: View {
             }
         }
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var color: Color {
