@@ -35,19 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        do {
-            if try handOffToLaunchAgentIfNeeded() {
-                NSApp.terminate(nil)
-                return
-            }
-        } catch {
-            NSAlert(error: error).runModal()
-            NSApp.terminate(nil)
+        UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
+        installStatusMenu()
+
+        if shouldHandOffToLaunchAgent() {
+            handOffToLaunchAgent()
             return
         }
 
-        UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
+        startServices()
+    }
 
+    private func installStatusMenu() {
         statusItem.button?.image = menuImage()
 
         let menu = NSMenu()
@@ -59,7 +58,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
 
+    private func handOffToLaunchAgent() {
+        scanStatusItem.title = "Starting Automic Vault"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try handOffToLaunchAgentIfNeeded() }
+            DispatchQueue.main.async {
+                switch result {
+                case .success(true):
+                    NSApp.terminate(nil)
+                case .success(false):
+                    self.startServices()
+                case .failure(let error):
+                    NSAlert(error: error).runModal()
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+    }
+
+    private func startServices() {
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
@@ -1137,7 +1156,7 @@ private struct AppError: LocalizedError {
 }
 
 private func handOffToLaunchAgentIfNeeded() throws -> Bool {
-    guard !isLaunchAgentInstance(),
+    guard shouldHandOffToLaunchAgent(),
           let launchAgent = bundledLaunchAgentURL()
     else {
         return false
@@ -1163,6 +1182,13 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
     try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
     try runLaunchctl(["kickstart", "-k", "\(domain)/\(approvalLaunchAgentName)"])
     return true
+}
+
+private func shouldHandOffToLaunchAgent(
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    launchAgentURL: URL? = bundledLaunchAgentURL()
+) -> Bool {
+    !isLaunchAgentInstance(environment: environment) && launchAgentURL != nil
 }
 
 private func bundledLaunchAgentURL() -> URL? {
@@ -2072,7 +2098,10 @@ private func runTransientApprovalSelfCheck() -> Int32 {
 
 private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     guard !isLaunchAgentInstance(environment: [:]),
-          isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName])
+          isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]),
+          shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
+          !shouldHandOffToLaunchAgent(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
+          !shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: nil)
     else {
         return 1
     }
