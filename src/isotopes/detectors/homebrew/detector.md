@@ -2,7 +2,8 @@
 
 ## Trigger Conditions
 
-- Homebrew exists at `/opt/homebrew/bin/brew` and is not owned by `automic:vault`.
+- Homebrew exists at `/opt/homebrew/bin/brew` and is not owned by
+  `automic:vault`.
 - `/usr/local/bin/brew` is missing or is not the Automic Vault setuid brew stub.
 
 ## Rationale
@@ -22,6 +23,10 @@ vet its decision first.
 This is not a supported configuration for Homebrew. However we use it and it
 works fine for us. If you have issues with Homebrew while Automic Vault
 Hardening is enabled please report the bug to *us* first.
+
+The simple fact is: not hardening Homebrew can make everything else Automic
+Vault does moot. If malware can just modify your hardened packages then the
+hardening is either *much less effective* or potentially *completely useless*.
 
 ## Mitigation
 
