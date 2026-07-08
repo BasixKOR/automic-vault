@@ -6,6 +6,7 @@ public let automicVaultKeychainService = "com.automicvault.isotope"
 public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
 public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
 public let ghReadOnlyAutoApprovalDefaultsKey = "GhReadOnlyAutoApproval"
+public let awsReadOnlyAutoApprovalDefaultsKey = "AwsReadOnlyAutoApproval"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 
 public struct DashboardSnapshot: Equatable, Sendable {

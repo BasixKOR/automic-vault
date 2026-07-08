@@ -970,6 +970,9 @@ private struct ReferenceDetailView: View {
             if item.title == "gh" {
                 GhReadOnlyApprovalToggle()
             }
+            if item.title == "aws" {
+                AwsReadOnlyApprovalToggle()
+            }
 
             if !item.detail.isEmpty {
                 InfoBlock(title: "Current Result", text: item.detail)
@@ -1041,6 +1044,16 @@ private struct GhReadOnlyApprovalToggle: View {
 
     var body: some View {
         Toggle("Allow Read-Only gh Requests", isOn: $allowReadOnlyGhRequests)
+            .toggleStyle(.switch)
+            .font(.system(size: 13, weight: .medium))
+    }
+}
+
+private struct AwsReadOnlyApprovalToggle: View {
+    @AppStorage(awsReadOnlyAutoApprovalDefaultsKey) private var allowReadOnlyAwsRequests = false
+
+    var body: some View {
+        Toggle("Allow Read-Only AWS Requests", isOn: $allowReadOnlyAwsRequests)
             .toggleStyle(.switch)
             .font(.system(size: 13, weight: .medium))
     }

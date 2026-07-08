@@ -591,15 +591,21 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
-        if canAutoApproveReadOnlyGhRequest(request: request, callerPath: callerPath, signing: signing) {
+        let scriptApproval = scriptApproval(for: request)
+        var launchers = launcherIdentities(startingAt: identity.ppid)
+        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(launcher)
+        }
+        let launcher = trustedLauncher(script: scriptApproval, request: request, launchers: launchers) ?? launchers.first
+        if let autoApprovalReason = readOnlyAutoApprovalReason(request: request, callerPath: callerPath, signing: signing) {
             do {
                 let secrets = try approvedSecrets(for: request)
                 onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
                     decision: "Approved",
-                    reason: "Auto-approved read-only gh request",
-                    launcher: nil
+                    reason: autoApprovalReason,
+                    launcher: launcher
                 ))
                 reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
@@ -608,7 +614,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     callerPath: callerPath,
                     decision: "Failed",
                     reason: error.localizedDescription,
-                    launcher: nil
+                    launcher: launcher
                 ))
                 reply(peer, to: message, ok: false, error: error.localizedDescription)
             }
@@ -631,12 +637,6 @@ private final class ApprovalServer: @unchecked Sendable {
             shebangScript: request.shebangScript,
             tool: request.tool
         )
-        let scriptApproval = scriptApproval(for: request)
-        var launchers = launcherIdentities(startingAt: identity.ppid)
-        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
-            launchers.append(launcher)
-        }
-        let launcher = trustedLauncher(script: scriptApproval, request: request, launchers: launchers) ?? launchers.first
         let trustedApproval = trustedApprovalRecord(
             script: scriptApproval,
             request: request,
@@ -884,22 +884,42 @@ private final class ApprovalServer: @unchecked Sendable {
 }
 
 private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
-    let name = URL(fileURLWithPath: path).lastPathComponent
-    if name == "av", signing.identifier == "com.automicvault.av" {
+    if isTrustedAvCaller(path: path, signing: signing) {
         return true
     }
     if isTrustedGhCaller(path: path, signing: signing) {
         return true
     }
+    let name = URL(fileURLWithPath: path).lastPathComponent
     return (name == "supabase" || name == "supabase-go")
         && (signing.identifier == "supabase"
             || signing.identifier == "supabase-go"
             || signing.identifier == "com.supabase.cli")
 }
 
+private func isTrustedAvCaller(path: String, signing: SigningInfo) -> Bool {
+    URL(fileURLWithPath: path).lastPathComponent == "av"
+        && signing.identifier == "com.automicvault.av"
+}
+
 private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
     URL(fileURLWithPath: path).lastPathComponent == "gh"
         && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
+}
+
+private func readOnlyAutoApprovalReason(
+    request: ApprovalRequest,
+    callerPath: String,
+    signing: SigningInfo,
+    defaults: UserDefaults = .standard
+) -> String? {
+    if canAutoApproveReadOnlyGhRequest(request: request, callerPath: callerPath, signing: signing, defaults: defaults) {
+        return "Auto-approved read-only gh request"
+    }
+    if canAutoApproveReadOnlyAwsRequest(request: request, callerPath: callerPath, signing: signing, defaults: defaults) {
+        return "Auto-approved read-only aws request"
+    }
+    return nil
 }
 
 private func canAutoApproveReadOnlyGhRequest(
@@ -914,6 +934,100 @@ private func canAutoApproveReadOnlyGhRequest(
         && defaults.bool(forKey: ghReadOnlyAutoApprovalDefaultsKey)
         && isTrustedGhCaller(path: callerPath, signing: signing)
         && ghRequestIsReadOnly(request.args)
+}
+
+private func canAutoApproveReadOnlyAwsRequest(
+    request: ApprovalRequest,
+    callerPath: String,
+    signing: SigningInfo,
+    defaults: UserDefaults = .standard
+) -> Bool {
+    request.op == "inject"
+        && request.keys.sorted() == ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+        && defaults.bool(forKey: awsReadOnlyAutoApprovalDefaultsKey)
+        && isTrustedAvCaller(path: callerPath, signing: signing)
+        && resolvedShebangScriptPath(request) == "/usr/local/bin/aws"
+        && awsRequestIsReadOnly(awsCommandWords(request))
+}
+
+private func awsRequestIsReadOnly(_ args: [String]) -> Bool {
+    let words = awsCommandWords(args).map { $0.lowercased() }
+    guard let service = words.first else { return false }
+    if service == "help" { return true }
+    guard words.count >= 2 else { return false }
+    let operation = words[1]
+    if operation == "help" { return true }
+    if service == "s3", operation == "ls" { return true }
+    if service == "sts", operation == "get-caller-identity" { return true }
+    if service == "s3api", operation.hasPrefix("head-") { return true }
+    return operation.hasPrefix("list-") || operation.hasPrefix("describe-")
+}
+
+private func awsCommandWords(_ request: ApprovalRequest) -> [String] {
+    guard let scriptPath = resolvedShebangScriptPath(request),
+          let firstArg = request.args.first,
+          standardizedPath(firstArg, cwd: request.cwd) == scriptPath
+    else {
+        return []
+    }
+    return Array(request.args.dropFirst())
+}
+
+private func awsCommandWords(_ args: [String]) -> [String] {
+    var index = 0
+    while index < args.count {
+        let arg = args[index]
+        if arg == "--" {
+            return []
+        }
+        if awsGlobalOptionsWithValue.contains(arg) {
+            index += 2
+            continue
+        }
+        if awsGlobalOptionsWithValue.contains(where: { arg.hasPrefix("\($0)=") }) || awsGlobalFlags.contains(arg) {
+            index += 1
+            continue
+        }
+        if arg.hasPrefix("-") {
+            return []
+        }
+        return Array(args[index...])
+    }
+    return []
+}
+
+private let awsGlobalOptionsWithValue = Set([
+    "--ca-bundle",
+    "--cli-binary-format",
+    "--cli-input-json",
+    "--cli-input-yaml",
+    "--color",
+    "--endpoint-url",
+    "--max-items",
+    "--output",
+    "--page-size",
+    "--profile",
+    "--query",
+    "--region",
+    "--starting-token"
+])
+
+private let awsGlobalFlags = Set([
+    "--debug",
+    "--no-cli-auto-prompt",
+    "--no-cli-pager",
+    "--no-paginate",
+    "--no-sign-request",
+    "--no-verify-ssl",
+    "--only-show-errors",
+    "--version"
+])
+
+private func standardizedPath(_ path: String, cwd: String) -> String {
+    let url = path.hasPrefix("/")
+        ? URL(fileURLWithPath: path)
+        : URL(fileURLWithPath: cwd).appendingPathComponent(path)
+    return url.standardizedFileURL.path
 }
 
 private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
@@ -1739,6 +1853,77 @@ private func runApprovalSelfCheck() -> Int32 {
         return 1
     }
 
+    let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
+    func awsRequest(
+        keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+        args: [String] = ["/usr/local/bin/aws", "s3", "ls"],
+        shebangScript: String? = "/usr/local/bin/aws"
+    ) -> ApprovalRequest {
+        ApprovalRequest(
+            op: "inject",
+            keys: keys,
+            target: "/bin/zsh",
+            args: args,
+            cwd: "/tmp",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: shebangScript,
+            tool: nil,
+            title: nil,
+            detail: nil
+        )
+    }
+    let readOnlyAws = awsRequest()
+    guard !canAutoApproveReadOnlyAwsRequest(
+        request: readOnlyAws,
+        callerPath: "/usr/local/bin/av",
+        signing: avSigning,
+        defaults: defaults
+    ) else {
+        return 1
+    }
+    defaults.set(true, forKey: awsReadOnlyAutoApprovalDefaultsKey)
+    guard canAutoApproveReadOnlyAwsRequest(
+        request: readOnlyAws,
+        callerPath: "/usr/local/bin/av",
+        signing: avSigning,
+        defaults: defaults
+    ),
+          readOnlyAutoApprovalReason(
+              request: readOnlyAws,
+              callerPath: "/usr/local/bin/av",
+              signing: avSigning,
+              defaults: defaults
+          ) == "Auto-approved read-only aws request",
+          !canAutoApproveReadOnlyAwsRequest(
+              request: awsRequest(args: ["/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"]),
+              callerPath: "/usr/local/bin/av",
+              signing: avSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyAwsRequest(
+              request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]),
+              callerPath: "/usr/local/bin/av",
+              signing: avSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyAwsRequest(
+              request: awsRequest(shebangScript: nil),
+              callerPath: "/usr/local/bin/av",
+              signing: avSigning,
+              defaults: defaults
+          ),
+          !canAutoApproveReadOnlyAwsRequest(
+              request: readOnlyAws,
+              callerPath: "/opt/homebrew/bin/aws",
+              signing: SigningInfo(identifier: "aws", teamIdentifier: "TEAM"),
+              defaults: defaults
+          )
+    else {
+        return 1
+    }
+
     return 0
 }
 
@@ -1815,6 +2000,37 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["--unknown", "repo", "view"],
     ]
     guard denied.allSatisfy({ !ghRequestIsReadOnly($0) }) else { return 1 }
+    return 0
+}
+
+private func runAwsReadOnlySelfCheck() -> Int32 {
+    let allowed = [
+        ["s3", "ls"],
+        ["--profile", "dev", "s3", "ls"],
+        ["--region=us-east-1", "ec2", "describe-instances"],
+        ["ec2", "describe-vpcs", "--filters", "Name=is-default,Values=true"],
+        ["iam", "list-users"],
+        ["s3api", "list-objects-v2"],
+        ["s3api", "head-object"],
+        ["sts", "get-caller-identity"],
+        ["help"],
+    ]
+    guard allowed.allSatisfy(awsRequestIsReadOnly) else { return 1 }
+
+    let denied = [
+        ["s3", "rm", "s3://bucket/key"],
+        ["s3", "cp", "file", "s3://bucket/key"],
+        ["ec2", "start-instances"],
+        ["lambda", "invoke"],
+        ["sts", "get-session-token"],
+        ["ecr", "get-login-password"],
+        ["secretsmanager", "get-secret-value"],
+        ["ssm", "get-parameter", "--with-decryption"],
+        ["configure", "get", "aws_secret_access_key"],
+        ["--unknown", "s3", "ls"],
+        [],
+    ]
+    guard denied.allSatisfy({ !awsRequestIsReadOnly($0) }) else { return 1 }
     return 0
 }
 
@@ -1902,6 +2118,10 @@ if CommandLine.arguments.contains("--self-check-approvals") {
 
 if CommandLine.arguments.contains("--self-check-gh-read-only") {
     exit(runGhReadOnlySelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-aws-read-only") {
+    exit(runAwsReadOnlySelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-transient-approvals") {
