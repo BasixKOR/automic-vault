@@ -864,7 +864,7 @@ private struct DetectorKindPill: View {
 
 private struct HardenedDetectorPill: View {
     var body: some View {
-        Image(systemName: "shield.fill")
+        Image(systemName: "shield.lefthalf.filled")
             .font(.system(size: 9, weight: .semibold))
             .frame(width: 22, height: 18)
             .outlinedPill(.blue)

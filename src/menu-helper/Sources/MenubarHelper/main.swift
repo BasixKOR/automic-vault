@@ -208,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shieldImage() -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "SHIELD") else {
+        guard let symbol = NSImage(systemSymbolName: "shield.lefthalf.filled", accessibilityDescription: "SHIELD") else {
             return nil
         }
         let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
