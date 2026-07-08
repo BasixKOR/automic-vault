@@ -56,6 +56,7 @@ mod graphite;
 mod hcloud;
 mod helm;
 mod heroku;
+mod homebrew;
 mod httpie;
 mod huggingface_cli;
 mod imap_backup;
@@ -247,6 +248,7 @@ const DETECTORS: &[Detector] = &[
     detector!(hcloud),
     detector!(helm),
     detector!(heroku),
+    detector!(homebrew),
     detector!(httpie),
     detector!(huggingface_cli),
     detector!(imap_backup),
@@ -393,7 +395,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 154);
+        assert_eq!(DETECTORS.len(), 155);
     }
 
     #[test]
@@ -412,6 +414,7 @@ mod tests {
         assert!(names.contains(&"git-credential-fill".to_string()));
         assert!(names.contains(&"git-credential-oauth".to_string()));
         assert!(names.contains(&"git-credentials-file".to_string()));
+        assert!(names.contains(&"homebrew".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"sudo".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));

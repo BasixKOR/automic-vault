@@ -77,6 +77,10 @@ fn av_scan(home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("scan")
         .env("HOME", home)
+        .env(
+            "AUTOMIC_VAULT_TEST_BREW_TARGET",
+            home.join("missing-opt-homebrew/bin/brew"),
+        )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
         .output()
@@ -87,6 +91,10 @@ fn av_scan_json(home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .args(["scan", "--json"])
         .env("HOME", home)
+        .env(
+            "AUTOMIC_VAULT_TEST_BREW_TARGET",
+            home.join("missing-opt-homebrew/bin/brew"),
+        )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
         .output()
