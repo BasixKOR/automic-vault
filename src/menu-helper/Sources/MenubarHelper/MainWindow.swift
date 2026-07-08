@@ -611,7 +611,9 @@ private struct DashboardDetailView: View {
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
                 ReferenceDetailView(
                     item: item,
-                    summary: "Detector behavior and sensitive files checked by this rule.",
+                    summary: item.kind.map {
+                        "This detector type is \($0), and it checks sensitive files covered by this rule."
+                    } ?? "This detector checks sensitive files covered by this rule.",
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
@@ -885,10 +887,6 @@ private struct ReferenceDetailView: View {
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(3)
-                    if let kind = item.kind {
-                        DetectorKindPill(kind: kind)
-                            .fixedSize()
-                    }
                     referenceBadge
                 }
                 Text(summary)
