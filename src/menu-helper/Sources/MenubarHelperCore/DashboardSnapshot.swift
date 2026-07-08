@@ -138,7 +138,7 @@ private let splitDetectorDisplayNames: [String: DetectorDisplayName] = [
     "git-credential-fill": DetectorDisplayName(packageName: "git", kind: "credential fill"),
     "git-credential-oauth": DetectorDisplayName(packageName: "git", kind: "credential oauth"),
     "git-credentials-file": DetectorDisplayName(packageName: "git", kind: "credentials file"),
-    "homebrew": DetectorDisplayName(packageName: "homebrew", kind: "unhardened install"),
+    "homebrew": DetectorDisplayName(packageName: "homebrew", kind: "mutable"),
     "pnpm-auth-token": DetectorDisplayName(packageName: "pnpm", kind: "auth token"),
     "pnpm-minimum-release-age": DetectorDisplayName(packageName: "pnpm", kind: "minimum release age"),
     "secretlint-persisted-report": DetectorDisplayName(packageName: "secretlint", kind: "persisted report"),

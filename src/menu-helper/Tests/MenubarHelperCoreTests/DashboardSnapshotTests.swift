@@ -71,7 +71,7 @@ import Testing
     #expect(detectorDisplayName("git-credential-fill") == DetectorDisplayName(packageName: "git", kind: "credential fill"))
     #expect(detectorDisplayName("aws-cli-login-cache") == DetectorDisplayName(packageName: "aws-cli", kind: "login cache"))
     #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
-    #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "unhardened install"))
+    #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "mutable"))
 }
 
 @Test func singleDetectorNamesDefaultToPlaintextSecretKind() {
