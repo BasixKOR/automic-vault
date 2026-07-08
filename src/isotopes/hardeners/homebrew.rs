@@ -12,6 +12,7 @@ const VAULT_GROUP: &str = "vault";
 const BREW_PREFIX: &str = "/opt/homebrew";
 const BREW_TARGET: &str = "/opt/homebrew/bin/brew";
 const BREW_STUB: &str = "/usr/local/bin/brew";
+const APP_BREW_STUB: &str = "/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub";
 const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V1";
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
@@ -354,6 +355,10 @@ fn brew_stub_source_path() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE") {
         return Ok(PathBuf::from(path));
     }
+    let app_stub = PathBuf::from(APP_BREW_STUB);
+    if app_stub.exists() {
+        return Ok(app_stub);
+    }
     let exe = std::env::current_exe().map_err(|err| format!("failed to locate av: {err}"))?;
     Ok(exe
         .parent()
@@ -439,6 +444,22 @@ mod tests {
             err,
             format!("Homebrew is not installed at {}", missing.display())
         );
+    }
+
+    #[test]
+    fn test_stub_source_override_wins() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let source = temp_path("brew-source");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &source);
+        }
+
+        let got = brew_stub_source_path().unwrap();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
+        }
+        assert_eq!(got, source);
     }
 
     fn temp_path(label: &str) -> PathBuf {

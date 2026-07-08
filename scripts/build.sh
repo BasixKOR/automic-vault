@@ -128,7 +128,6 @@ if [[ "$install" -eq 1 ]]; then
     rm -rf "$DMG_MOUNT"
   fi
   sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
-  sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av-brew-stub" /usr/local/bin/av-brew-stub
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
