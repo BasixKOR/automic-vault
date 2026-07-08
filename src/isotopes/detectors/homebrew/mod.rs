@@ -15,7 +15,7 @@ pub(crate) fn findings(_home: &Path) -> Vec<Finding> {
         .map(|reason| Finding {
             source: NAME,
             homepage: DOCS_URL,
-            severity: "high",
+            severity: "medium",
             explanation: reason,
             solution: "Run `sudo av harden brew`.".to_string(),
             affected: vec![AffectedFile {
@@ -172,6 +172,11 @@ mod tests {
         assert_eq!(reasons.len(), 2);
         assert!(reasons[0].contains("setuid brew stub"));
         assert!(reasons[1].contains("not owned by automic:vault"));
+        assert!(
+            findings(&dir)
+                .iter()
+                .all(|finding| finding.severity == "medium")
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

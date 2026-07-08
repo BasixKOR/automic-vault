@@ -626,7 +626,7 @@ private struct DashboardDetailView: View {
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
-                        ? ReferenceBadge(title: "Flagged", color: .red)
+                        ? ReferenceBadge(title: "Flagged", color: detectorSeverityColor(item.severity))
                         : ReferenceBadge(title: "No Vulnerabilities Detected", color: .green)
                 )
                     .padding(.horizontal, 22)
@@ -715,7 +715,7 @@ private struct DashboardRow: View {
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 6)
                         .frame(height: 18)
-                        .outlinedPill()
+                        .outlinedPill(detectorSeverityColor(severity))
                 }
             }
             Text(item.subtitle)
@@ -869,6 +869,15 @@ private struct HardenedDetectorPill: View {
             .frame(width: 22, height: 18)
             .outlinedPill(.blue)
             .accessibilityLabel("Hardened")
+    }
+}
+
+private func detectorSeverityColor(_ severity: String?) -> Color {
+    switch severity?.lowercased() {
+    case "medium", "mid":
+        .orange
+    default:
+        .red
     }
 }
 
