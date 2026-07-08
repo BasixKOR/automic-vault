@@ -6,6 +6,7 @@ import Darwin
 import Foundation
 import MenubarHelperCore
 import Security
+import SwiftUI
 @preconcurrency import XPC
 
 private let approvalServiceName = "com.automicvault.av2.approval"
@@ -1562,39 +1563,15 @@ private func showApprovalAlert(
     let alert = NSAlert()
     alert.alertStyle = .warning
     alert.messageText = request.title ?? (request.op == "keys" ? "Approve key request?" : "Approve secret injection?")
-    var lines = [
-        "Caller: \(callerPath) (pid \(pid))",
-        "Signed: \(signing.identifier) / \(signing.teamIdentifier)",
-        "Operation: \(request.op)",
-        "Target: \(request.target)",
-        "Arguments: \(request.args.isEmpty ? "(none)" : request.args.joined(separator: " "))",
-        "Working directory: \(request.cwd)",
-        "Keys: \(request.keys.joined(separator: ", "))",
-        "Existing environment: \(request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", "))",
-        "Replace existing environment: \(request.replaceExistingEnv ? "yes" : "no")",
-        "Allow missing keys: \(request.allowMissingKeys ? "yes" : "no")",
-    ]
-    if let tool = request.tool {
-        lines.append("Tool: \(tool)")
-    }
-    if let detail = request.detail {
-        lines.append("Detail: \(detail)")
-    }
-    if let launcher {
-        lines.append("Launcher: \(launcher.identifier) (pid \(launcher.pid))")
-        lines.append("Launcher path: \(launcher.path)")
-        lines.append("Launcher signed: \(launcher.identifier) / \(launcher.teamIdentifier)")
-    } else {
-        lines.append("Launcher: unavailable; persistent auto-approve disabled")
-    }
-    if let scriptApproval {
-        lines.append("Script: \(scriptApproval.path)")
-        lines.append("Script checksum: \(scriptApproval.checksum)")
-    } else if let script = request.shebangScript {
-        lines.append("Script: \(script)")
-        lines.append("Script checksum: unavailable")
-    }
-    alert.informativeText = lines.joined(separator: "\n")
+    alert.informativeText = request.detail ?? "Review the request details before allowing access."
+    alert.accessoryView = approvalPromptAccessoryView(
+        request: request,
+        callerPath: callerPath,
+        pid: pid,
+        signing: signing,
+        scriptApproval: scriptApproval,
+        launcher: launcher
+    )
     alert.addButton(withTitle: "Deny")
     alert.addButton(withTitle: "Approve")
     if launcher != nil {
@@ -1607,6 +1584,160 @@ private func showApprovalAlert(
         return .alwaysAllow
     default:
         return .denied
+    }
+}
+
+@MainActor
+private func approvalPromptAccessoryView(
+    request: ApprovalRequest,
+    callerPath: String,
+    pid: pid_t,
+    signing: SigningInfo,
+    scriptApproval: ScriptApproval?,
+    launcher: LauncherIdentity?
+) -> NSView {
+    let sections = approvalPromptSections(
+        request: request,
+        callerPath: callerPath,
+        pid: pid,
+        signing: signing,
+        scriptApproval: scriptApproval,
+        launcher: launcher
+    )
+    let rowCount = sections.reduce(0) { $0 + $1.rows.count }
+    let width: CGFloat = 700
+    let height = min(max(CGFloat(rowCount * 30 + sections.count * 48), 260), 430)
+    let host = NSHostingView(
+        rootView: ApprovalPromptDetailsView(sections: sections)
+            .frame(width: width, height: height, alignment: .topLeading)
+    )
+    host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+    return host
+}
+
+private func approvalPromptSections(
+    request: ApprovalRequest,
+    callerPath: String,
+    pid: pid_t,
+    signing: SigningInfo,
+    scriptApproval: ScriptApproval?,
+    launcher: LauncherIdentity?
+) -> [ApprovalPromptSection] {
+    var sections = [
+        ApprovalPromptSection("Request", "key.viewfinder", [
+            request.tool.map { ApprovalPromptRow("Tool", $0) },
+            ApprovalPromptRow("Operation", request.op),
+            ApprovalPromptRow("Target", request.target),
+            ApprovalPromptRow("Arguments", request.args.isEmpty ? "(none)" : request.args.joined(separator: " ")),
+            ApprovalPromptRow("Working directory", request.cwd),
+            ApprovalPromptRow("Keys", request.keys.joined(separator: ", ")),
+        ].compactMap(\.self)),
+        ApprovalPromptSection("Environment", "arrow.triangle.2.circlepath", [
+            ApprovalPromptRow("Existing", request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", ")),
+            ApprovalPromptRow("Replace existing", request.replaceExistingEnv ? "yes" : "no"),
+            ApprovalPromptRow("Allow missing keys", request.allowMissingKeys ? "yes" : "no"),
+        ]),
+        ApprovalPromptSection("Caller Identity", "terminal", [
+            ApprovalPromptRow("Caller", "\(callerPath) (pid \(pid))"),
+            ApprovalPromptRow("Signed", "\(signing.identifier) / \(signing.teamIdentifier)"),
+        ]),
+    ]
+
+    sections.append(ApprovalPromptSection("Launcher", "app.badge", launcher.map {
+        [
+            ApprovalPromptRow("App", "\($0.identifier) (pid \($0.pid))"),
+            ApprovalPromptRow("Path", $0.path),
+            ApprovalPromptRow("Signed", "\($0.identifier) / \($0.teamIdentifier)"),
+        ]
+    } ?? [
+        ApprovalPromptRow("Status", "unavailable; persistent auto-approve disabled"),
+    ]))
+
+    if let scriptApproval {
+        sections.append(ApprovalPromptSection("Script", "doc.text", [
+            ApprovalPromptRow("Path", scriptApproval.path),
+            ApprovalPromptRow("Checksum", scriptApproval.checksum),
+        ]))
+    } else if let script = request.shebangScript {
+        sections.append(ApprovalPromptSection("Script", "doc.text", [
+            ApprovalPromptRow("Path", script),
+            ApprovalPromptRow("Checksum", "unavailable"),
+        ]))
+    }
+
+    return sections
+}
+
+private struct ApprovalPromptSection: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let rows: [ApprovalPromptRow]
+
+    init(_ title: String, _ systemImage: String, _ rows: [ApprovalPromptRow]) {
+        self.id = title
+        self.title = title
+        self.systemImage = systemImage
+        self.rows = rows
+    }
+}
+
+private struct ApprovalPromptRow: Identifiable {
+    let id: String
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.id = label
+        self.label = label
+        self.value = value
+    }
+}
+
+private struct ApprovalPromptDetailsView: View {
+    let sections: [ApprovalPromptSection]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(sections) { section in
+                    ApprovalPromptSectionView(section: section)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.visible)
+        .background(Color.clear)
+    }
+}
+
+private struct ApprovalPromptSectionView: View {
+    let section: ApprovalPromptSection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(section.title, systemImage: section.systemImage)
+                .font(.headline)
+                .symbolRenderingMode(.hierarchical)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(section.rows) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(row.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 124, alignment: .trailing)
+                        Text(row.value)
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
