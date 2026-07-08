@@ -63,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
+            } onAccessRequest: { [weak self] record in
+                Task { @MainActor in self?.recordAccessRequest(record) }
             }
             try approval.start()
             self.approval = approval
@@ -232,6 +234,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAutoApprovalMenuItems()
     }
 
+    private func recordAccessRequest(_ record: AccessRequestRecord) {
+        appendAccessRequestRecord(record)
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
+    }
+
     private func refreshAutoApprovalMenuItems() {
         guard let menu = statusItem.menu else { return }
         for item in autoApprovalItems {
@@ -276,6 +283,28 @@ private func autoApprovalRecord(
         date: Date(),
         launcher: shortAppName(launcher.identifier),
         tool: autoApprovalToolName(request, scriptPath: script?.path)
+    )
+}
+
+private func accessRequestRecord(
+    request: ApprovalRequest,
+    callerPath: String,
+    decision: String,
+    reason: String,
+    launcher: LauncherIdentity?
+) -> AccessRequestRecord {
+    AccessRequestRecord(
+        date: Date(),
+        tool: autoApprovalToolName(request),
+        command: ([autoApprovalToolName(request)] + request.args).joined(separator: " "),
+        decision: decision,
+        reason: reason,
+        launcher: launcher.map { shortAppName($0.identifier) },
+        callerPath: callerPath,
+        target: request.target,
+        cwd: request.cwd,
+        keys: request.keys.sorted(),
+        detail: request.detail
     )
 }
 
@@ -400,21 +429,32 @@ private struct TransientApprovalKey: Hashable {
     let tool: String?
 }
 
-private struct TransientApprovalCache {
-    private var expirations: [TransientApprovalKey: Date] = [:]
+private enum ApprovalDecision: Equatable {
+    case denied
+    case approved
+    case alwaysAllow
+}
 
-    mutating func contains(_ key: TransientApprovalKey, now: Date = Date()) -> Bool {
-        prune(now: now)
-        return expirations[key].map { $0 > now } ?? false
+private struct TransientApprovalCache {
+    private struct Entry {
+        let decision: ApprovalDecision
+        let expiration: Date
     }
 
-    mutating func remember(_ key: TransientApprovalKey, now: Date = Date()) {
+    private var entries: [TransientApprovalKey: Entry] = [:]
+
+    mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
         prune(now: now)
-        expirations[key] = now.addingTimeInterval(transientApprovalTTL)
+        return entries[key].map(\.decision)
+    }
+
+    mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
+        prune(now: now)
+        entries[key] = Entry(decision: decision, expiration: now.addingTimeInterval(transientApprovalTTL))
     }
 
     private mutating func prune(now: Date) {
-        expirations = expirations.filter { $0.value > now }
+        entries = entries.filter { $0.value.expiration > now }
     }
 }
 
@@ -436,23 +476,19 @@ private struct ScriptApproval {
     let checksum: String
 }
 
-private enum ApprovalDecision: Equatable {
-    case denied
-    case approved
-    case alwaysAllow
-}
-
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
+    private let onAccessRequest: @Sendable (AccessRequestRecord) -> Void
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
 
     init(
         serviceName: String,
-        onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in }
+        onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
+        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Void = { appendAccessRequestRecord($0) }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
@@ -460,6 +496,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.serviceName = serviceName
         self.teamIdentifier = teamIdentifier
         self.onAutoApproval = onAutoApproval
+        self.onAccessRequest = onAccessRequest
     }
 
     func start() throws {
@@ -557,8 +594,22 @@ private final class ApprovalServer: @unchecked Sendable {
         if canAutoApproveReadOnlyGhRequest(request: request, callerPath: callerPath, signing: signing) {
             do {
                 let secrets = try approvedSecrets(for: request)
+                onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Approved",
+                    reason: "Auto-approved read-only gh request",
+                    launcher: nil
+                ))
                 reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
+                onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    reason: error.localizedDescription,
+                    launcher: nil
+                ))
                 reply(peer, to: message, ok: false, error: error.localizedDescription)
             }
             return
@@ -596,6 +647,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 do {
                     let secrets = try self.approvedSecrets(for: request)
                     self.onAutoApproval(autoApprovalRecord(request: request, script: scriptApproval, launcher: launcher))
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        reason: "Always allowed from \(shortAppName(launcher.identifier))",
+                        launcher: launcher
+                    ))
                     showAutoApprovedToast(
                         keys: request.keys,
                         script: scriptApproval?.path ?? request.tool ?? request.target,
@@ -603,6 +661,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     )
                     self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
                 } catch {
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        reason: error.localizedDescription,
+                        launcher: launcher
+                    ))
                     self.reply(peer, to: message, ok: false, error: error.localizedDescription)
                 }
             }
@@ -610,11 +675,36 @@ private final class ApprovalServer: @unchecked Sendable {
         }
 
         DispatchQueue.main.async {
-            if self.transientApprovals.contains(transientApproval) {
+            if let decision = self.transientApprovals.decision(for: transientApproval) {
+                if decision == .denied {
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        reason: "Reused recent denial",
+                        launcher: launcher
+                    ))
+                    self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
+                    return
+                }
                 do {
                     let secrets = try self.approvedSecrets(for: request)
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        reason: "Reused recent approval",
+                        launcher: launcher
+                    ))
                     self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
                 } catch {
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        reason: error.localizedDescription,
+                        launcher: launcher
+                    ))
                     self.reply(peer, to: message, ok: false, error: error.localizedDescription)
                 }
                 return
@@ -632,14 +722,38 @@ private final class ApprovalServer: @unchecked Sendable {
                 rememberAlwaysAllow(trustedApproval)
             }
             guard decision != .denied else {
+                self.transientApprovals.remember(.denied, for: transientApproval)
+                self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    reason: "Denied in prompt",
+                    launcher: launcher
+                ))
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
-            self.transientApprovals.remember(transientApproval)
+            self.transientApprovals.remember(.approved, for: transientApproval)
             do {
                 let secrets = try self.approvedSecrets(for: request)
+                self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: decision == .alwaysAllow ? "Always Allowed" : "Approved",
+                    reason: decision == .alwaysAllow
+                        ? "Approved and saved for \(launcher.map { shortAppName($0.identifier) } ?? "this app")"
+                        : "Approved in prompt",
+                    launcher: launcher
+                ))
                 self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
+                self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    reason: error.localizedDescription,
+                    launcher: launcher
+                ))
                 self.reply(peer, to: message, ok: false, error: error.localizedDescription)
             }
         }
@@ -1624,6 +1738,7 @@ private func runApprovalSelfCheck() -> Int32 {
     else {
         return 1
     }
+
     return 0
 }
 
@@ -1724,12 +1839,15 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         )
     }
     let approval = key()
+    let denial = key(args: ["repo", "list"])
     var cache = TransientApprovalCache()
-    cache.remember(approval, now: Date(timeIntervalSince1970: 100))
-    guard cache.contains(approval, now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(key(startUsec: 789), now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(approval, now: Date(timeIntervalSince1970: 500))
+    cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
+    cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 100))
+    guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
+          cache.decision(for: denial, now: Date(timeIntervalSince1970: 200)) == .denied,
+          cache.decision(for: key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)) == nil,
+          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil,
+          cache.decision(for: approval, now: Date(timeIntervalSince1970: 500)) == nil
     else {
         return 1
     }

@@ -20,6 +20,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
         super.viewDidAppear()
         model.reload()
     }
+
+    func reload() {
+        model.reload()
+    }
 }
 
 final class AutomicVaultWindow: NSWindow {
@@ -163,6 +167,10 @@ final class DashboardModel: ObservableObject {
 
     func select(_ item: DashboardItem) {
         selectedItemID = item.id
+    }
+
+    func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {
+        snapshot.accessRequests.filter { $0.tool == item.title }
     }
 
     func reload() {
@@ -642,12 +650,9 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .hardenedTools, let item = model.selectedItem {
-                ReferenceDetailView(
+                HardenedToolDetailView(
                     item: item,
-                    summary: "Installed hardening behavior and caveats for this tool.",
-                    referenceTitle: "Hardener Reference",
-                    fallbackDocumentation: "No hardener documentation is bundled for this item.",
-                    badge: ReferenceBadge(title: "Hardened", color: .blue)
+                    records: model.accessRequests(for: item)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
@@ -1038,6 +1043,156 @@ private struct GhReadOnlyApprovalToggle: View {
         Toggle("Allow Read-Only gh Requests", isOn: $allowReadOnlyGhRequests)
             .toggleStyle(.switch)
             .font(.system(size: 13, weight: .medium))
+    }
+}
+
+private struct HardenedToolDetailView: View {
+    let item: DashboardItem
+    let records: [AccessRequestRecord]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ReferenceDetailView(
+                item: item,
+                summary: "Installed hardening behavior and caveats for this tool.",
+                referenceTitle: "Hardener Reference",
+                fallbackDocumentation: "No hardener documentation is bundled for this item.",
+                badge: ReferenceBadge(title: "Hardened", color: .blue)
+            )
+            AccessHistoryView(records: records)
+        }
+    }
+}
+
+private struct AccessHistoryView: View {
+    let records: [AccessRequestRecord]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(.blue)
+                Text("Access Requests")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.7)
+                Spacer()
+                Text("LAST \(records.count)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            if records.isEmpty {
+                Text("No access requests logged for this tool.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(records) { record in
+                        AccessRequestRow(record: record)
+                        if record.id != records.last?.id {
+                            hairline
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor))
+        }
+    }
+}
+
+private struct AccessRequestRow: View {
+    let record: AccessRequestRecord
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 22, height: 22)
+                .background(color.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(record.decision.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .outlinedPill(color)
+                    Text(Self.formatter.string(from: record.date))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Text(record.command.isEmpty ? record.target : record.command)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Text(record.reason)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    AccessMetaLine("Launcher", record.launcher ?? "unknown")
+                    AccessMetaLine("Keys", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
+                    AccessMetaLine("Working directory", record.cwd)
+                    if let detail = record.detail, !detail.isEmpty {
+                        AccessMetaLine("Detail", detail)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    private var color: Color {
+        switch record.decision {
+        case "Approved": .green
+        case "Always Allowed": .blue
+        case "Denied": .red
+        default: .orange
+        }
+    }
+
+    private var icon: String {
+        switch record.decision {
+        case "Approved", "Always Allowed": "checkmark"
+        case "Denied": "xmark"
+        default: "exclamationmark"
+        }
+    }
+}
+
+private struct AccessMetaLine: View {
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    var body: some View {
+        Text("\(label): \(value)")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .textSelection(.enabled)
     }
 }
 

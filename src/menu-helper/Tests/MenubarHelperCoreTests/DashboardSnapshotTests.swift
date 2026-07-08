@@ -300,6 +300,33 @@ import Testing
     #expect(loadStoredSecrets(service: service).map(\.account) == ["NEW_TOKEN"])
 }
 
+@Test func accessRequestLogKeepsNewestFifty() throws {
+    let defaultsName = "com.automicvault.tests.defaults.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: defaultsName))
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
+
+    for index in 0..<55 {
+        appendAccessRequestRecord(AccessRequestRecord(
+            date: Date(timeIntervalSince1970: TimeInterval(index)),
+            tool: "aws",
+            command: "aws s3 ls \(index)",
+            decision: "Approved",
+            reason: "Approved in prompt",
+            launcher: "Codex",
+            callerPath: "/usr/local/bin/av",
+            target: "/opt/homebrew/bin/aws",
+            cwd: "/tmp",
+            keys: ["AWS_ACCESS_KEY_ID"],
+            detail: nil
+        ), defaults: defaults)
+    }
+
+    let records = loadAccessRequestRecords(defaults: defaults)
+    #expect(records.count == 50)
+    #expect(records.first?.command == "aws s3 ls 54")
+    #expect(records.last?.command == "aws s3 ls 5")
+}
+
 private func temporaryDirectory() -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("av-menubar-tests-\(UUID().uuidString)", isDirectory: true)

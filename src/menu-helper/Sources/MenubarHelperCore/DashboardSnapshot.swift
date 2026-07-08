@@ -6,6 +6,7 @@ public let automicVaultKeychainService = "com.automicvault.isotope"
 public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
 public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
 public let ghReadOnlyAutoApprovalDefaultsKey = "GhReadOnlyAutoApproval"
+public let accessRequestLogDefaultsKey = "AccessRequestLog"
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]
@@ -14,6 +15,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var hardeners: [HardenerMetadata]
     public var secretGates: [SecretGate]
     public var secrets: [StoredSecret]
+    public var accessRequests: [AccessRequestRecord]
 
     public init(
         detectors: [DetectorMetadata],
@@ -21,7 +23,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardenedTools: [HardenedTool],
         hardeners: [HardenerMetadata] = [],
         secretGates: [SecretGate],
-        secrets: [StoredSecret]
+        secrets: [StoredSecret],
+        accessRequests: [AccessRequestRecord] = []
     ) {
         self.detectors = detectors
         self.detectorFindings = detectorFindings
@@ -29,6 +32,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         self.hardeners = hardeners
         self.secretGates = secretGates
         self.secrets = secrets
+        self.accessRequests = accessRequests
     }
 
     public static let empty = DashboardSnapshot(
@@ -37,7 +41,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardenedTools: [],
         hardeners: [],
         secretGates: [],
-        secrets: []
+        secrets: [],
+        accessRequests: []
     )
 
     public var flaggedDetectorCount: Int {
@@ -66,7 +71,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
             secretGates: loadSecretGates(configuredTools: hardenedTools, service: approvalService),
-            secrets: loadStoredSecrets()
+            secrets: loadStoredSecrets(),
+            accessRequests: loadAccessRequestRecords()
         )
     }
 }
@@ -250,6 +256,49 @@ public struct StoredSecret: Equatable, Sendable {
 
     public var subtitle: String {
         keychainProperties.isEmpty ? "Keychain secret" : keychainProperties.joined(separator: " • ")
+    }
+}
+
+public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let date: Date
+    public let tool: String
+    public let command: String
+    public let decision: String
+    public let reason: String
+    public let launcher: String?
+    public let callerPath: String
+    public let target: String
+    public let cwd: String
+    public let keys: [String]
+    public let detail: String?
+
+    public init(
+        id: UUID = UUID(),
+        date: Date,
+        tool: String,
+        command: String,
+        decision: String,
+        reason: String,
+        launcher: String?,
+        callerPath: String,
+        target: String,
+        cwd: String,
+        keys: [String],
+        detail: String?
+    ) {
+        self.id = id
+        self.date = date
+        self.tool = tool
+        self.command = command
+        self.decision = decision
+        self.reason = reason
+        self.launcher = launcher
+        self.callerPath = callerPath
+        self.target = target
+        self.cwd = cwd
+        self.keys = keys
+        self.detail = detail
     }
 }
 
@@ -508,6 +557,29 @@ public func saveTrustedScriptApprovals(
         return saveKeychainData(try JSONEncoder().encode(approvals), service: service, account: account)
     } catch {
         return errSecParam
+    }
+}
+
+public func loadAccessRequestRecords(
+    defaults: UserDefaults = .standard,
+    key: String = accessRequestLogDefaultsKey
+) -> [AccessRequestRecord] {
+    guard let data = defaults.data(forKey: key),
+          let records = try? JSONDecoder().decode([AccessRequestRecord].self, from: data)
+    else {
+        return []
+    }
+    return Array(records.prefix(50))
+}
+
+public func appendAccessRequestRecord(
+    _ record: AccessRequestRecord,
+    defaults: UserDefaults = .standard,
+    key: String = accessRequestLogDefaultsKey
+) {
+    let records = Array(([record] + loadAccessRequestRecords(defaults: defaults, key: key)).prefix(50))
+    if let data = try? JSONEncoder().encode(records) {
+        defaults.set(data, forKey: key)
     }
 }
 
