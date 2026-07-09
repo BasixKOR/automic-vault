@@ -126,6 +126,18 @@ where
                     }
                 };
             }
+            if let Some(result) = target
+                .to_str()
+                .and_then(|target| hardeners::env_wrapper::run_target(target, stdout, yes))
+            {
+                return match result {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
             let _ = writeln!(stderr, "{USAGE}");
             2
         }
