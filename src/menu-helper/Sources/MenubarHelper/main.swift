@@ -241,22 +241,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #endif
             statusItem.button?.image = shieldImage(color: level.color)
             scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = nil
+            scanStatusItem.image = shieldImage(color: level.color)
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
             statusItem.button?.image = shieldImage(color: .systemRed)
             scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = nil
+            scanStatusItem.image = shieldImage(color: .systemRed)
             scanStatusItem.title = "Scan failed"
         }
     }
 
-    private func shieldImage(color: NSColor = .systemGreen) -> NSImage? {
+    private func shieldImage(color: NSColor? = nil) -> NSImage? {
         guard let symbol = NSImage(systemSymbolName: "shield.lefthalf.filled", accessibilityDescription: "SHIELD") else {
             return nil
         }
         let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
         image.size = NSSize(width: 16, height: 16)
+        guard let color else {
+            image.isTemplate = true
+            return image
+        }
         let tinted = NSImage(size: image.size, flipped: false) { rect in
             image.draw(in: rect)
             color.setFill()
