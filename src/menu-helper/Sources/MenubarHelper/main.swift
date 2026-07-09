@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installStatusMenu() {
-        statusItem.button?.image = menuImage()
+        statusItem.button?.image = shieldImage()
 
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #if !DEBUG
             lastTelemetryFindingCount = nil
             #endif
-            statusItem.button?.image = menuImage()
+            statusItem.button?.image = shieldImage()
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = shieldImage()
             scanStatusItem.title = "No Vulnerabilities Detected"
@@ -239,22 +239,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 lastTelemetryFindingCount = detectorCount
             }
             #endif
-            statusItem.button?.image = switch level {
-            case .medium: menuImage()
-            case .high: menuImage(alertColor: .systemRed)
-            }
+            statusItem.button?.image = shieldImage(color: level.color)
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = nil
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
         case .failed:
-            statusItem.button?.image = menuImage(alertColor: .systemRed)
+            statusItem.button?.image = shieldImage(color: .systemRed)
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = nil
             scanStatusItem.title = "Scan failed"
         }
     }
 
-    private func shieldImage() -> NSImage? {
+    private func shieldImage(color: NSColor = .systemGreen) -> NSImage? {
         guard let symbol = NSImage(systemSymbolName: "shield.lefthalf.filled", accessibilityDescription: "SHIELD") else {
             return nil
         }
@@ -262,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.size = NSSize(width: 16, height: 16)
         let tinted = NSImage(size: image.size, flipped: false) { rect in
             image.draw(in: rect)
-            NSColor.systemGreen.setFill()
+            color.setFill()
             rect.fill(using: .sourceIn)
             return true
         }
@@ -387,6 +384,13 @@ private enum ScanResult {
 private enum ScanAlertLevel {
     case medium
     case high
+
+    var color: NSColor {
+        switch self {
+        case .medium: .systemOrange
+        case .high: .systemRed
+        }
+    }
 }
 
 private func scanResult() -> ScanResult {
