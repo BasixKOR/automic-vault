@@ -228,7 +228,7 @@ public struct SecretGate: Equatable, Sendable {
         [
             scriptPath,
             scriptChecksum,
-            target,
+            normalizedExecutablePath(target),
             keys.sorted().joined(separator: "\u{1e}"),
             replaceExistingEnv.description,
             allowMissingKeys.description,
@@ -352,7 +352,7 @@ public struct TrustedScriptApproval: Codable, Equatable, Sendable {
         self.scriptPath = scriptPath
         self.scriptChecksum = scriptChecksum
         self.keys = keys
-        self.target = target
+        self.target = normalizedExecutablePath(target)
         self.replaceExistingEnv = replaceExistingEnv
         self.allowMissingKeys = allowMissingKeys
         self.launcherRequirement = launcherRequirement
@@ -426,7 +426,7 @@ public func loadSecretGates(
 
 private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate] {
     let grouped = Dictionary(grouping: approvals.filter { ($0.scriptPath == nil) == ($0.scriptChecksum == nil) }) {
-        "\($0.scriptPath ?? "")\u{1f}\($0.scriptChecksum ?? "")\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
+        "\($0.scriptPath ?? "")\u{1f}\($0.scriptChecksum ?? "")\u{1f}\(normalizedExecutablePath($0.target))\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
     }
     return grouped.values.compactMap { approvals in
         guard let first = approvals.first else { return nil }
@@ -434,7 +434,7 @@ private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate
             scriptPath: first.scriptPath ?? "",
             scriptChecksum: first.scriptChecksum ?? "",
             keys: first.keys.sorted(),
-            target: first.target,
+            target: normalizedExecutablePath(first.target),
             replaceExistingEnv: first.replaceExistingEnv,
             allowMissingKeys: first.allowMissingKeys,
             approvedApps: approvals.map {
@@ -465,7 +465,7 @@ private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
             scriptPath: URL(fileURLWithPath: stubPath).standardizedFileURL.path,
             scriptChecksum: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
             keys: injection.keys,
-            target: injection.target,
+            target: normalizedExecutablePath(injection.target),
             replaceExistingEnv: injection.replaceExistingEnv,
             allowMissingKeys: injection.allowMissingKeys,
             approvedApps: []
@@ -479,11 +479,51 @@ private func directSecretGate(for tool: HardenedTool) -> SecretGate? {
         scriptPath: "",
         scriptChecksum: "",
         keys: ["GH_TOKEN_GITHUB_COM"],
-        target: URL(fileURLWithPath: target).standardizedFileURL.path,
+        target: normalizedExecutablePath(target),
         replaceExistingEnv: true,
         allowMissingKeys: false,
         approvedApps: []
     )
+}
+
+public func normalizedExecutablePath(_ path: String) -> String {
+    normalizedExecutablePath(path) {
+        try? FileManager.default.destinationOfSymbolicLink(atPath: $0)
+    }
+}
+
+func normalizedExecutablePath(_ path: String, symlinkDestination: (String) -> String?) -> String {
+    let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+    if let path = normalizedHomebrewCellarExecutablePath(standardized) {
+        return path
+    }
+
+    let url = URL(fileURLWithPath: standardized)
+    guard url.deletingLastPathComponent().path == "/opt/homebrew/bin",
+          let destination = symlinkDestination(standardized)
+    else {
+        return standardized
+    }
+
+    let resolved = destination.hasPrefix("/")
+        ? URL(fileURLWithPath: destination).standardizedFileURL.path
+        : url.deletingLastPathComponent().appendingPathComponent(destination).standardizedFileURL.path
+    guard resolved != standardized else { return standardized }
+    return normalizedExecutablePath(resolved, symlinkDestination: symlinkDestination)
+}
+
+private func normalizedHomebrewCellarExecutablePath(_ path: String) -> String? {
+    let components = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+    guard components.count == 8,
+          components[0] == "/",
+          components[1] == "opt",
+          components[2] == "homebrew",
+          components[3] == "Cellar",
+          components[6] == "bin"
+    else {
+        return nil
+    }
+    return "/opt/homebrew/opt/\(components[4])/bin/\(components[7])"
 }
 
 private func parseInjectShebang(_ line: String) -> (keys: [String], target: String, replaceExistingEnv: Bool, allowMissingKeys: Bool)? {
@@ -543,7 +583,7 @@ public func rememberTrustedApp(
         scriptPath: gate.scriptPath.isEmpty ? nil : gate.scriptPath,
         scriptChecksum: gate.scriptChecksum.isEmpty ? nil : gate.scriptChecksum,
         keys: gate.keys.sorted(),
-        target: gate.target,
+        target: normalizedExecutablePath(gate.target),
         replaceExistingEnv: gate.replaceExistingEnv,
         allowMissingKeys: gate.allowMissingKeys,
         launcherRequirement: requirement
@@ -575,7 +615,7 @@ public func loadTrustedScriptApprovals(
     else {
         return []
     }
-    return approvals
+    return approvals.map { $0.normalized() }
 }
 
 public func saveTrustedScriptApprovals(
@@ -584,7 +624,7 @@ public func saveTrustedScriptApprovals(
     account: String = trustedScriptApprovalsKeychainAccount
 ) -> OSStatus {
     do {
-        return saveKeychainData(try JSONEncoder().encode(approvals), service: service, account: account)
+        return saveKeychainData(try JSONEncoder().encode(approvals.map { $0.normalized() }), service: service, account: account)
     } catch {
         return errSecParam
     }
@@ -770,11 +810,23 @@ private extension Array where Element == SecretGateApprovedApp {
 }
 
 private extension TrustedScriptApproval {
+    func normalized() -> TrustedScriptApproval {
+        TrustedScriptApproval(
+            scriptPath: scriptPath,
+            scriptChecksum: scriptChecksum,
+            keys: keys,
+            target: normalizedExecutablePath(target),
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            launcherRequirement: launcherRequirement
+        )
+    }
+
     func matches(_ gate: SecretGate) -> Bool {
         scriptPath == (gate.scriptPath.isEmpty ? nil : Optional(gate.scriptPath))
             && scriptChecksum == (gate.scriptChecksum.isEmpty ? nil : Optional(gate.scriptChecksum))
             && keys.sorted() == gate.keys.sorted()
-            && target == gate.target
+            && normalizedExecutablePath(target) == normalizedExecutablePath(gate.target)
             && replaceExistingEnv == gate.replaceExistingEnv
             && allowMissingKeys == gate.allowMissingKeys
     }

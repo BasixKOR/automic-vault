@@ -1584,7 +1584,7 @@ private func trustedApprovalRecord(
         scriptPath: script?.path,
         scriptChecksum: script?.checksum,
         keys: request.keys.sorted(),
-        target: request.target,
+        target: normalizedExecutablePath(request.target),
         replaceExistingEnv: request.replaceExistingEnv,
         allowMissingKeys: request.allowMissingKeys,
         launcherRequirement: launcher.designatedRequirement

@@ -74,6 +74,15 @@ import Testing
     #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "mutable"))
 }
 
+@Test func homebrewExecutablePathsNormalizeToStableOptPath() {
+    let symlinks = ["/opt/homebrew/bin/gh": "../Cellar/gh-cli/2.96.0/bin/gh"]
+    let expected = "/opt/homebrew/opt/gh-cli/bin/gh"
+
+    #expect(normalizedExecutablePath("/opt/homebrew/bin/gh") { symlinks[$0] } == expected)
+    #expect(normalizedExecutablePath("/opt/homebrew/Cellar/gh-cli/2.96.0/bin/gh") { _ in nil } == expected)
+    #expect(normalizedExecutablePath("/opt/homebrew/opt/gh-cli/bin/gh") { _ in nil } == expected)
+}
+
 @Test func singleDetectorNamesDefaultToPlaintextSecretKind() {
     #expect(detectorDisplayName("docker-machine") == DetectorDisplayName(packageName: "docker-machine", kind: "plaintext secret"))
     #expect(detectorDisplayName("docker-credential-helper") == DetectorDisplayName(packageName: "docker-credential-helper", kind: "plaintext secret"))
@@ -246,6 +255,41 @@ import Testing
             replaceExistingEnv: true,
             allowMissingKeys: false,
             approvedApps: []
+        )
+    ])
+}
+
+@Test func hardenedGhMergesRememberedHomebrewTargetAliases() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
+
+    #expect(saveTrustedScriptApprovals([
+        TrustedScriptApproval(
+            scriptPath: nil,
+            scriptChecksum: nil,
+            keys: ["GH_TOKEN_GITHUB_COM"],
+            target: "/opt/homebrew/Cellar/gh-cli/2.96.0/bin/gh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            launcherRequirement: #"identifier "com.example.app""#
+        )
+    ], service: service) == errSecSuccess)
+
+    #expect(loadSecretGates(
+        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
+        service: service
+    ) == [
+        SecretGate(
+            scriptPath: "",
+            scriptChecksum: "",
+            keys: ["GH_TOKEN_GITHUB_COM"],
+            target: "/opt/homebrew/opt/gh-cli/bin/gh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: [
+                SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: #"identifier "com.example.app""#),
+            ]
         )
     ])
 }
