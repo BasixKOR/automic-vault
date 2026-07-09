@@ -5,14 +5,16 @@ run=0
 install=0
 dmg=0
 notarize=0
+publish=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run) run=1 ;;
     --install) install=1 ;;
     --dmg) dmg=1 ;;
     --notarize) notarize=1 ;;
+    --publish) publish=1; dmg=1; notarize=1 ;;
     *)
-      echo "usage: $0 [--run] [--install] [--dmg] [--notarize]" >&2
+      echo "usage: $0 [--run] [--install] [--dmg] [--notarize] [--publish]" >&2
       exit 64
       ;;
   esac
@@ -20,6 +22,10 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ "$notarize" -eq 1 && "$dmg" -ne 1 ]]; then
   echo "error: --notarize requires --dmg" >&2
+  exit 64
+fi
+if [[ "$publish" -eq 1 && -z "${POSTHOG_API_KEY:-}" ]]; then
+  echo "error: --publish requires POSTHOG_API_KEY" >&2
   exit 64
 fi
 
@@ -49,6 +55,9 @@ rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS"
 cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
+if [[ "$publish" -eq 1 ]]; then
+  plutil -insert PostHogAPIKey -string "$POSTHOG_API_KEY" "$CONTENTS/Info.plist"
+fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 cp "$MENU_HELPER/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"

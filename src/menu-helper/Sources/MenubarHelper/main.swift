@@ -34,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
+    #if !DEBUG
+    private let postHogTelemetry = PostHogTelemetry.shared
+    private var lastTelemetryFindingCount: Int?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
@@ -110,9 +114,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func openMainWindow() {
+        let wasVisible = mainWindow?.isVisible ?? false
         if let mainWindow {
             mainWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            #if !DEBUG
+            if wasVisible == false {
+                postHogTelemetry.captureMainWindowOpened()
+            }
+            #endif
             return
         }
 
@@ -138,6 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.setContentSize(defaultWindowSize)
         window.center()
+        #if !DEBUG
+        postHogTelemetry.captureMainWindowOpened()
+        #endif
     }
 
     private func menuImage(alertColor: NSColor? = nil) -> NSImage? {
@@ -212,11 +225,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyScanResult(_ result: ScanResult) {
         switch result {
         case .clean:
+            #if !DEBUG
+            lastTelemetryFindingCount = nil
+            #endif
             statusItem.button?.image = menuImage()
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = shieldImage()
             scanStatusItem.title = "No Vulnerabilities Detected"
-        case .findings(let count, let level):
+        case .findings(let count, let detectorCount, let level):
+            #if !DEBUG
+            if lastTelemetryFindingCount != detectorCount {
+                postHogTelemetry.captureDetectorTriggered(count: detectorCount)
+                lastTelemetryFindingCount = detectorCount
+            }
+            #endif
             statusItem.button?.image = switch level {
             case .medium: menuImage()
             case .high: menuImage(alertColor: .systemRed)
@@ -358,7 +380,7 @@ private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
 
 private enum ScanResult {
     case clean(Int)
-    case findings(Int, ScanAlertLevel)
+    case findings(Int, Int, ScanAlertLevel)
     case failed
 }
 
@@ -391,9 +413,10 @@ private func scanResult() -> ScanResult {
     else {
         return .failed
     }
+    let detectorCount = Set(findings.compactMap { $0["source"] as? String }).count
     return findings.isEmpty
         ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
-        : .findings(findings.count, scanAlertLevel(findings))
+        : .findings(findings.count, detectorCount, scanAlertLevel(findings))
 }
 
 private func scanAlertLevel(_ findings: [[String: Any]]) -> ScanAlertLevel {
