@@ -300,11 +300,18 @@ final class DashboardModel: ObservableObject {
                     hardenersByName[$0]
                 }
                 guard !findings.isEmpty else {
+                    let subtitle = if hardener?.hardened == true {
+                        "Hardened."
+                    } else if hardener == nil {
+                        "Detector only."
+                    } else {
+                        "Hardener available."
+                    }
                     return DashboardItem(
                         id: detector.name,
                         title: displayName.packageName,
                         kind: displayName.kind,
-                        subtitle: hardener == nil ? "Detector only." : "Hardener available.",
+                        subtitle: subtitle,
                         detail: "",
                         documentation: detector.documentation,
                         hardenerDocumentation: hardener?.documentation,
@@ -368,6 +375,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let model = DashboardModel(snapshot: DashboardSnapshot(
         detectors: [
             DetectorMetadata(name: "aws", homepage: "", docsURL: "", documentation: "Run `av harden aws`."),
+            DetectorMetadata(name: "gh", homepage: "", docsURL: "", documentation: "Run `av harden gh`."),
             DetectorMetadata(name: "git", homepage: "", docsURL: ""),
         ],
         detectorFindings: [],
@@ -377,6 +385,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         ],
         hardeners: [
             HardenerMetadata(name: "aws", hardened: true),
+            HardenerMetadata(name: "gh", hardened: false),
         ],
         secretGates: [],
         secrets: [
@@ -384,14 +393,15 @@ func runDashboardSearchSelfCheck() -> Int32 {
             StoredSecret(account: "GITHUB_TOKEN"),
         ]
     ))
-    guard model.count(for: .detectors) == 2,
+    guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
     else { return 1 }
-    guard model.items.first(where: { $0.id == "aws" })?.subtitle == "Hardener available.",
+    guard model.items.first(where: { $0.id == "aws" })?.subtitle == "Hardened.",
+          model.items.first(where: { $0.id == "gh" })?.subtitle == "Hardener available.",
           model.items.first(where: { $0.id == "git" })?.subtitle == "Detector only."
     else { return 1 }
     model.searchText = "aws"
