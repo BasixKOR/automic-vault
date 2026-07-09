@@ -250,8 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.image = shieldImage(symbolName: "shield.fill")
             setScanStatus(
                 "No Vulnerabilities Detected",
-                image: shieldImage(symbolName: "shield.fill", color: .systemGreen),
-                color: .systemGreen
+                image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
             )
         case .findings(let count, let detectorCount, let level):
             #if !DEBUG
@@ -266,19 +265,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             setScanStatus(
                 count == 1 ? "1 scan finding" : "\(count) scan findings",
-                image: shieldImage(color: level.color),
-                color: level.color
+                image: shieldImage(color: level.color)
             )
         case .failed:
             statusItem.button?.image = shieldImage(color: .systemRed)
-            setScanStatus("Scan failed", image: shieldImage(color: .systemRed), color: .systemRed)
+            setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
         }
     }
 
-    private func setScanStatus(_ title: String, image: NSImage?, color: NSColor) {
+    private func setScanStatus(_ title: String, image: NSImage?) {
+        scanStatusItem.attributedTitle = nil
         scanStatusItem.title = title
         scanStatusItem.image = image
-        scanStatusItem.attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: color])
     }
 
     private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
