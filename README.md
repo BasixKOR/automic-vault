@@ -1,17 +1,34 @@
 # Automic Vault
 
+The world is wild with plaintext secrets.
+
+The shadows are full of supply chain attacks that feast upon them.
+
+Your workshop shelves are filled with powerful tools that can unbridle kingdoms.
+
+From heaven descended agents, you gave them your tools and they broke prod for
+you had no real guardrails.
+
+> You need Automic Vault.
+
+Bringing operating system security primitives and approval gates to the wild
+west of developer tooling. From the creator of Homebrew.
+
+---
+
 ```sh
 $ av scan aws
 🚨 plaintext credentials found in: ~/.aws/credentials
 
-$ av harden aws --dry-run
+$ av harden aws
 1. Would import `~/.aws/credentials` into the macOS keychain
 2. Would delete plaintext keys from `~/.aws/credentials`
 3. Would `brew install aws-vault`
 4. Would stub `~/.local/bin/aws` to invoke `aws-vault` with hardened approval
    gates
 
-$ av harden aws
+Proceed? [y/N] y
+
 # …
 
 $ cat ~/.local/bin/aws
