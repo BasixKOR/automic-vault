@@ -21,8 +21,9 @@ Use `av harden gh` to migrate existing `gh` credentials into Automic Vault.
 
 The menu bar app can allow read-only `gh` commands without prompting. Enable
 `Allow Read-Only gh Requests` from the hardened `gh` detail view. This only
-auto-approves known read-only commands; raw API calls, token printing,
-configuration, extensions, aliases, and unknown commands still require approval.
+auto-approves known read-only commands and `gh api` GET requests. Non-GET API
+calls, token printing, configuration, extensions, aliases, and unknown commands
+still require approval.
 
 ## Details
 

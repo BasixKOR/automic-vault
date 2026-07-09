@@ -1090,7 +1090,8 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     guard let firstWord = words.first else { return false }
     let command = ghCanonicalCommand(firstWord)
     if words.contains("--show-token") { return false }
-    if ["api", "alias", "extension", "config", "skill"].contains(command) { return false }
+    if command == "api" { return ghApiRequestIsReadOnly(Array(words.dropFirst())) }
+    if ["alias", "extension", "config", "skill"].contains(command) { return false }
     if ["status", "browse", "search"].contains(command) { return true }
     guard words.count >= 2 else { return false }
     let subcommand = words[1]
@@ -1139,6 +1140,60 @@ private func ghSubcommandIsList(_ subcommand: String) -> Bool {
     subcommand == "list" || subcommand == "ls"
 }
 
+private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
+    var index = 0
+    var endpointSeen = false
+    var method: String?
+    var hasFields = false
+    while index < args.count {
+        let arg = args[index]
+        switch arg {
+        case "--":
+            return false
+        case "-x", "--method":
+            guard index + 1 < args.count else { return false }
+            method = args[index + 1].uppercased()
+            index += 2
+        case "-f", "--field", "--raw-field":
+            guard index + 1 < args.count else { return false }
+            hasFields = true
+            index += 2
+        case "--input":
+            return false
+        case "-h", "--header", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
+            guard index + 1 < args.count else { return false }
+            index += 2
+        case "-i", "--include", "--paginate", "--slurp", "--silent", "--verbose":
+            index += 1
+        default:
+            if let value = arg.value(afterOption: "--method=") {
+                method = value.uppercased()
+            } else if arg.hasPrefix("--field=") || arg.hasPrefix("--raw-field=") {
+                hasFields = true
+            } else if arg.hasPrefix("--input=") {
+                return false
+            } else if arg.hasPrefix("--header=")
+                || arg.hasPrefix("--preview=")
+                || arg.hasPrefix("--cache=")
+                || arg.hasPrefix("--jq=")
+                || arg.hasPrefix("--template=")
+                || arg.hasPrefix("--hostname=") {
+                // read-only option with inline value
+            } else if arg.hasPrefix("-x"), arg.count > 2 {
+                method = String(arg.dropFirst(2)).uppercased()
+            } else if arg.hasPrefix("-f") {
+                hasFields = true
+            } else if arg.hasPrefix("-") {
+                return false
+            } else {
+                endpointSeen = true
+            }
+            index += 1
+        }
+    }
+    return endpointSeen && (method ?? (hasFields ? "POST" : "GET")) == "GET"
+}
+
 private func ghCommandWords(_ args: [String]) -> [String] {
     var index = 0
     while index < args.count {
@@ -1160,6 +1215,12 @@ private func ghCommandWords(_ args: [String]) -> [String] {
         return Array(args[index...])
     }
     return []
+}
+
+private extension String {
+    func value(afterOption prefix: String) -> String? {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : nil
+    }
 }
 
 private func validSecretKeyName(_ key: String) -> Bool {
@@ -2302,11 +2363,20 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["ssh-key", "list"],
         ["-R", "owner/repo", "pr", "view"],
         ["--hostname=github.example.com", "repo", "view"],
+        ["api", "repos/owner/repo"],
+        ["api", "--method", "GET", "repos/owner/repo"],
+        ["api", "-XGET", "-H", "Accept: application/vnd.github+json", "repos/owner/repo/releases/latest"],
+        ["api", "--method=GET", "-f", "per_page=1", "search/issues"],
+        ["api", "--paginate", "repos/owner/repo/actions/runs", "--jq", ".workflow_runs[].id"],
     ]
     guard allowed.allSatisfy(ghRequestIsReadOnly) else { return 1 }
 
     let denied = [
-        ["api", "repos/owner/repo"],
+        ["api"],
+        ["api", "--method", "POST", "repos/owner/repo/dispatches"],
+        ["api", "-X", "DELETE", "repos/owner/repo"],
+        ["api", "-f", "name=value", "repos/owner/repo"],
+        ["api", "--input", "body.json", "repos/owner/repo"],
         ["auth", "token"],
         ["auth", "status", "--show-token"],
         ["alias", "set", "x", "repo view"],
