@@ -304,7 +304,7 @@ final class DashboardModel: ObservableObject {
                         id: detector.name,
                         title: displayName.packageName,
                         kind: displayName.kind,
-                        subtitle: "No findings",
+                        subtitle: hardener == nil ? "Detector only." : "Hardener available.",
                         detail: "",
                         documentation: detector.documentation,
                         hardenerDocumentation: hardener?.documentation,
@@ -390,6 +390,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
+    else { return 1 }
+    guard model.items.first(where: { $0.id == "aws" })?.subtitle == "Hardener available.",
+          model.items.first(where: { $0.id == "git" })?.subtitle == "Detector only."
     else { return 1 }
     model.searchText = "aws"
     guard model.count(for: .detectors) == 1,
