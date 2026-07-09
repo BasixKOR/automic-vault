@@ -44,6 +44,18 @@ if [[ "$publish" -eq 1 ]] && ! command -v gh >/dev/null 2>&1; then
   echo "error: --publish requires gh" >&2
   exit 64
 fi
+publish_release() {
+  local tag="$1"
+  local dmg="$2"
+  if ! gh release view "$tag" >/dev/null 2>&1; then
+    gh api repos/:owner/:repo/releases \
+      -F "tag_name=$tag" \
+      -F "target_commitish=$(git -C "$ROOT" rev-parse HEAD)" \
+      -F "name=$tag" \
+      -F "notes=Automic Vault $tag"
+  fi
+  gh release upload "$tag" "$dmg#Automic Vault $tag.dmg" --clobber
+}
 
 MENU_HELPER="$ROOT/src/menu-helper"
 SWIFT_TARGET="$ROOT/target/swift"
@@ -145,10 +157,7 @@ if [[ "$dmg" -eq 1 ]]; then
     "$ROOT/scripts/build-notarize-dmg.sh" "$DMG"
   fi
   if [[ "$publish" -eq 1 ]]; then
-    gh release create "$VERSION" "$DMG#Automic Vault $VERSION.dmg" \
-      --target "$(git -C "$ROOT" rev-parse HEAD)" \
-      --title "$VERSION" \
-      --generate-notes
+    publish_release "$VERSION" "$DMG"
   fi
 fi
 if [[ "$install" -eq 1 ]]; then
