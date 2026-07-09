@@ -36,6 +36,25 @@ private func menuImage(alertColor: NSColor? = nil, size: NSSize = NSSize(width: 
     return tinted
 }
 
+private func approvalIcon() -> NSImage? {
+    guard let image = menuImage() else { return nil }
+    let canvasSize = NSSize(width: 64, height: 64)
+    let scale = 20 / image.size.height
+    let iconSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+    let iconRect = NSRect(
+        x: (canvasSize.width - iconSize.width) / 2,
+        y: (canvasSize.height - iconSize.height) / 2,
+        width: iconSize.width,
+        height: iconSize.height
+    )
+    let icon = NSImage(size: canvasSize, flipped: false) { _ in
+        image.draw(in: iconRect)
+        return true
+    }
+    icon.isTemplate = true
+    return icon
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -1686,7 +1705,7 @@ private func showApprovalAlert(
 
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.icon = menuImage()
+    alert.icon = approvalIcon()
     alert.messageText = ""
     alert.informativeText = [
         approvalPromptHeadline(request: request, launcher: launcher),
