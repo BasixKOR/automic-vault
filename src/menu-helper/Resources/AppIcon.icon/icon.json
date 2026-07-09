@@ -1,0 +1,22 @@
+{
+  "color-space-for-untagged-svg-colors": "display-p3",
+  "fill": "automatic",
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "AppIcon.png",
+          "name": "AppIcon"
+        }
+      ],
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

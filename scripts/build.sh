@@ -36,6 +36,7 @@ APP="$SWIFT_TARGET/Automic Vault.app"
 DMG="$SWIFT_TARGET/Automic Vault.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
 DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
+ICON_BUILD="$SWIFT_TARGET/icon"
 MENU_HELPER_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/Automic_Vault_Menu_Developer_ID.provisionprofile"
 MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
 INSTALLED_APP="/Applications/Automic Vault.app"
@@ -51,8 +52,8 @@ cargo build --release --manifest-path "$ROOT/Cargo.toml"
 swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET"
 SWIFT_BIN="$(swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET" --show-bin-path)"
 
-rm -rf "$APP"
-mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS"
+rm -rf "$APP" "$ICON_BUILD"
+mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
 cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 if [[ "$publish" -eq 1 ]]; then
@@ -60,7 +61,16 @@ if [[ "$publish" -eq 1 ]]; then
 fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
-cp "$MENU_HELPER/Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
+  --compile "$ICON_BUILD" \
+  --platform macosx \
+  --target-device mac \
+  --minimum-deployment-target 26.0 \
+  --app-icon AppIcon \
+  --include-all-app-icons \
+  --enable-on-demand-resources NO \
+  --output-partial-info-plist "$ICON_BUILD/IconInfo.plist" >/dev/null
+cp "$ICON_BUILD/Assets.car" "$RESOURCES/Assets.car"
 
 identity="$(
   security find-identity -v -p codesigning |
@@ -107,7 +117,7 @@ if [[ "$dmg" -eq 1 ]]; then
   ditto "$APP" "$DMG_STAGE/Automic Vault.app"
   create-dmg \
     --volname "Automic Vault" \
-    --volicon "$RESOURCES/AppIcon.icns" \
+    --volicon "$ICON_BUILD/AppIcon.icns" \
     --icon "Automic Vault.app" 125 120 \
     --app-drop-link 425 120 \
     --codesign "$identity" \
