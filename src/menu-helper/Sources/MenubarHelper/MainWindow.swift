@@ -371,7 +371,7 @@ private func shellQuoted(_ value: String) -> String {
 }
 
 private func secretGateTitle(scriptPath: String, target: String) -> String {
-    scriptPath.isEmpty ? URL(fileURLWithPath: target).lastPathComponent : scriptPath
+    scriptPath.isEmpty ? target : scriptPath
 }
 
 @MainActor
@@ -401,7 +401,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2
     else { return 1 }
-    guard secretGateTitle(scriptPath: "", target: "/opt/homebrew/opt/gh-cli/bin/gh") == "gh",
+    guard secretGateTitle(scriptPath: "", target: "/opt/homebrew/opt/gh-cli/bin/gh") == "/opt/homebrew/opt/gh-cli/bin/gh",
           secretGateTitle(scriptPath: "/usr/local/bin/aws", target: "/opt/homebrew/bin/aws") == "/usr/local/bin/aws"
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
