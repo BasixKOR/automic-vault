@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installStatusMenu() {
-        statusItem.button?.image = shieldImage()
+        statusItem.button?.image = shieldImage(symbolName: "shield.fill")
 
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
@@ -228,9 +228,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #if !DEBUG
             lastTelemetryFindingCount = nil
             #endif
-            statusItem.button?.image = shieldImage()
+            statusItem.button?.image = shieldImage(symbolName: "shield.fill")
             scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = shieldImage()
+            scanStatusItem.image = shieldImage(symbolName: "shield.fill")
             scanStatusItem.title = "No Vulnerabilities Detected"
         case .findings(let count, let detectorCount, let level):
             #if !DEBUG
@@ -251,8 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func shieldImage(color: NSColor? = nil) -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: "shield.lefthalf.filled", accessibilityDescription: "SHIELD") else {
+    private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "SHIELD") else {
             return nil
         }
         let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
@@ -389,9 +389,9 @@ private enum ScanAlertLevel {
     case medium
     case high
 
-    var color: NSColor {
+    var color: NSColor? {
         switch self {
-        case .medium: .systemOrange
+        case .medium: nil
         case .high: .systemRed
         }
     }
