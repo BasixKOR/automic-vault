@@ -66,13 +66,14 @@ public struct DashboardSnapshot: Equatable, Sendable {
             ghCLIURL: ghCLIURL,
             metadata: hardenerMetadata
         )
+        let secrets = loadStoredSecrets()
         return DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
-            secretGates: loadSecretGates(configuredTools: hardenedTools, service: approvalService),
-            secrets: loadStoredSecrets(),
+            secretGates: loadSecretGates(configuredTools: hardenedTools, storedSecrets: secrets, service: approvalService),
+            secrets: secrets,
             accessRequests: loadAccessRequestRecords()
         )
     }
@@ -402,11 +403,16 @@ public func loadHardenedTools(
 
 public func loadSecretGates(
     configuredTools: [HardenedTool] = [],
+    storedSecrets: [StoredSecret] = [],
     service: String = trustedScriptApprovalsKeychainService
 ) -> [SecretGate] {
-    var gates = Dictionary(uniqueKeysWithValues: configuredSecretGates(from: configuredTools).map { ($0.id, $0) })
+    var gates = Dictionary(uniqueKeysWithValues: configuredSecretGates(from: configuredTools, storedSecrets: storedSecrets).map { ($0.id, $0) })
+    let storedSecretNames = Set(storedSecrets.map(\.account))
     let approvals = loadTrustedScriptApprovals(service: service)
     for gate in secretGates(from: approvals) {
+        if gate.scriptPath.isEmpty && !storedSecretNames.isEmpty && !gate.keys.allSatisfy(storedSecretNames.contains) {
+            continue
+        }
         if let configured = gates[gate.id] {
             gates[gate.id] = SecretGate(
                 scriptPath: configured.scriptPath,
@@ -448,10 +454,10 @@ private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate
     .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
 }
 
-private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
-    tools.compactMap { tool in
-        if let gate = directSecretGate(for: tool) {
-            return gate
+private func configuredSecretGates(from tools: [HardenedTool], storedSecrets: [StoredSecret]) -> [SecretGate] {
+    tools.flatMap { tool in
+        if tool.name == "gh" {
+            return directSecretGates(for: tool, storedSecrets: storedSecrets)
         }
         guard let stubPath = tool.stubPath,
               let data = try? Data(contentsOf: URL(fileURLWithPath: stubPath)),
@@ -459,9 +465,9 @@ private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
               let firstLine = contents.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init),
               let injection = parseInjectShebang(firstLine)
         else {
-            return nil
+            return []
         }
-        return SecretGate(
+        return [SecretGate(
             scriptPath: URL(fileURLWithPath: stubPath).standardizedFileURL.path,
             scriptChecksum: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
             keys: injection.keys,
@@ -469,21 +475,26 @@ private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
             replaceExistingEnv: injection.replaceExistingEnv,
             allowMissingKeys: injection.allowMissingKeys,
             approvedApps: []
-        )
+        )]
     }
 }
 
-private func directSecretGate(for tool: HardenedTool) -> SecretGate? {
-    guard tool.name == "gh", let target = tool.targetPath ?? tool.stubPath else { return nil }
-    return SecretGate(
-        scriptPath: "",
-        scriptChecksum: "",
-        keys: ["GH_TOKEN_GITHUB_COM"],
-        target: normalizedExecutablePath(target),
-        replaceExistingEnv: true,
-        allowMissingKeys: false,
-        approvedApps: []
-    )
+private func directSecretGates(for tool: HardenedTool, storedSecrets: [StoredSecret]) -> [SecretGate] {
+    guard let target = tool.targetPath ?? tool.stubPath else { return [] }
+    return storedSecrets.map(\.account)
+        .filter { $0.hasPrefix("GH_TOKEN_") }
+        .uniqueSorted()
+        .map {
+            SecretGate(
+                scriptPath: "",
+                scriptChecksum: "",
+                keys: [$0],
+                target: normalizedExecutablePath(target),
+                replaceExistingEnv: true,
+                allowMissingKeys: false,
+                approvedApps: []
+            )
+        }
 }
 
 public func normalizedExecutablePath(_ path: String) -> String {

@@ -243,6 +243,7 @@ import Testing
 @Test func hardenedGhGetsSecretGate() throws {
     let gates = loadSecretGates(
         configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
+        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM_MXCL")],
         service: "com.automicvault.tests.\(UUID().uuidString)"
     )
 
@@ -250,7 +251,7 @@ import Testing
         SecretGate(
             scriptPath: "",
             scriptChecksum: "",
-            keys: ["GH_TOKEN_GITHUB_COM"],
+            keys: ["GH_TOKEN_GITHUB_COM_MXCL"],
             target: "/opt/homebrew/opt/gh-cli/bin/gh",
             replaceExistingEnv: true,
             allowMissingKeys: false,
@@ -278,6 +279,7 @@ import Testing
 
     #expect(loadSecretGates(
         configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
+        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM")],
         service: service
     ) == [
         SecretGate(
@@ -290,6 +292,40 @@ import Testing
             approvedApps: [
                 SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: #"identifier "com.example.app""#),
             ]
+        )
+    ])
+}
+
+@Test func hardenedGhHidesApprovalsForDeletedTokens() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
+
+    #expect(saveTrustedScriptApprovals([
+        TrustedScriptApproval(
+            scriptPath: nil,
+            scriptChecksum: nil,
+            keys: ["GH_TOKEN_GITHUB_COM"],
+            target: "/opt/homebrew/opt/gh-cli/bin/gh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            launcherRequirement: #"identifier "com.example.app""#
+        )
+    ], service: service) == errSecSuccess)
+
+    #expect(loadSecretGates(
+        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
+        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM_MXCL")],
+        service: service
+    ) == [
+        SecretGate(
+            scriptPath: "",
+            scriptChecksum: "",
+            keys: ["GH_TOKEN_GITHUB_COM_MXCL"],
+            target: "/opt/homebrew/opt/gh-cli/bin/gh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: []
         )
     ])
 }
