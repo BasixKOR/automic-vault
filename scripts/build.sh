@@ -47,10 +47,29 @@ fi
 publish_release() {
   local tag="$1"
   local dmg="$2"
+  local head local_tag remote_tag
+  head="$(git -C "$ROOT" rev-parse HEAD)"
+  if git -C "$ROOT" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    local_tag="$(git -C "$ROOT" rev-parse "refs/tags/$tag")"
+    if [[ "$local_tag" != "$head" ]]; then
+      echo "error: tag $tag already exists at $local_tag, not $head" >&2
+      exit 64
+    fi
+  else
+    git -C "$ROOT" tag "$tag" "$head"
+    local_tag="$head"
+  fi
+  remote_tag="$(git -C "$ROOT" ls-remote --tags origin "refs/tags/$tag" | awk '{ print $1 }')"
+  if [[ -n "$remote_tag" && "$remote_tag" != "$local_tag" ]]; then
+    echo "error: origin tag $tag exists at $remote_tag, not $local_tag" >&2
+    exit 64
+  fi
+  if [[ -z "$remote_tag" ]]; then
+    git -C "$ROOT" push origin "refs/tags/$tag"
+  fi
   if ! gh release view "$tag" >/dev/null 2>&1; then
     gh api repos/:owner/:repo/releases \
       -F "tag_name=$tag" \
-      -F "target_commitish=$(git -C "$ROOT" rev-parse HEAD)" \
       -F "name=$tag" \
       -F "notes=Automic Vault $tag"
   fi
