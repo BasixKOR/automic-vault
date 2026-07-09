@@ -17,6 +17,25 @@ private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
+private func menuImage(alertColor: NSColor? = nil, size: NSSize = NSSize(width: 15, height: 18), isTemplate: Bool = true) -> NSImage? {
+    let url = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
+    guard let url, let image = NSImage(contentsOf: url) else { return nil }
+    image.size = size
+    guard let alertColor else {
+        image.isTemplate = isTemplate
+        return image
+    }
+
+    let tinted = NSImage(size: image.size, flipped: false) { rect in
+        image.draw(in: rect)
+        alertColor.setFill()
+        rect.fill(using: .sourceIn)
+        return true
+    }
+    tinted.isTemplate = false
+    return tinted
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -151,25 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !DEBUG
         postHogTelemetry.captureMainWindowOpened()
         #endif
-    }
-
-    private func menuImage(alertColor: NSColor? = nil) -> NSImage? {
-        let url = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
-        guard let url, let image = NSImage(contentsOf: url) else { return nil }
-        image.size = NSSize(width: 15, height: 18)
-        guard let alertColor else {
-            image.isTemplate = true
-            return image
-        }
-
-        let tinted = NSImage(size: image.size, flipped: false) { rect in
-            image.draw(in: rect)
-            alertColor.setFill()
-            rect.fill(using: .sourceIn)
-            return true
-        }
-        tinted.isTemplate = false
-        return tinted
     }
 
     private func startHomeWatcher() {
@@ -1658,8 +1658,13 @@ private func showApprovalAlert(
 
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = approvalPromptHeadline(request: request, launcher: launcher)
-    alert.informativeText = approvalPromptInformativeText(request)
+    alert.icon = menuImage(size: NSSize(width: 29, height: 34), isTemplate: false)
+        ?? NSImage(size: NSSize(width: 29, height: 34))
+    alert.messageText = "Automic Vault"
+    alert.informativeText = [
+        approvalPromptHeadline(request: request, launcher: launcher),
+        approvalPromptInformativeText(request),
+    ].joined(separator: "\n\n")
     alert.accessoryView = approvalPromptAccessoryView(
         request: request,
         callerPath: callerPath,
