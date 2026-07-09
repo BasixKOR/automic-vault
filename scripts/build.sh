@@ -6,6 +6,14 @@ install=0
 dmg=0
 notarize=0
 publish=0
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(
+  awk -F '"' '
+    /^\[package\]/ { package = 1; next }
+    /^\[/ { package = 0 }
+    package && /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }
+  ' "$ROOT/Cargo.toml"
+)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run) run=1 ;;
@@ -28,8 +36,15 @@ if [[ "$publish" -eq 1 && -z "${POSTHOG_API_KEY:-}" ]]; then
   echo "error: --publish requires POSTHOG_API_KEY" >&2
   exit 64
 fi
+if [[ "$publish" -eq 1 && -z "$VERSION" ]]; then
+  echo "error: could not read package.version from Cargo.toml" >&2
+  exit 64
+fi
+if [[ "$publish" -eq 1 ]] && ! command -v gh >/dev/null 2>&1; then
+  echo "error: --publish requires gh" >&2
+  exit 64
+fi
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MENU_HELPER="$ROOT/src/menu-helper"
 SWIFT_TARGET="$ROOT/target/swift"
 APP="$SWIFT_TARGET/Automic Vault.app"
@@ -128,6 +143,12 @@ if [[ "$dmg" -eq 1 ]]; then
   rm -rf "$DMG_STAGE"
   if [[ "$notarize" -eq 1 ]]; then
     "$ROOT/scripts/build-notarize-dmg.sh" "$DMG"
+  fi
+  if [[ "$publish" -eq 1 ]]; then
+    gh release create "$VERSION" "$DMG#Automic Vault $VERSION.dmg" \
+      --target "$(git -C "$ROOT" rev-parse HEAD)" \
+      --title "$VERSION" \
+      --generate-notes
   fi
 fi
 if [[ "$install" -eq 1 ]]; then
