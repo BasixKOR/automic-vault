@@ -230,7 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #endif
             statusItem.button?.image = shieldImage(symbolName: "shield.fill")
             scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = shieldImage(symbolName: "shield.fill")
+            scanStatusItem.image = shieldImage(symbolName: "shield.fill", color: .systemGreen)
             scanStatusItem.title = "No Vulnerabilities Detected"
         case .findings(let count, let detectorCount, let level):
             #if !DEBUG
@@ -239,7 +239,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 lastTelemetryFindingCount = detectorCount
             }
             #endif
-            statusItem.button?.image = shieldImage(color: level.color)
+            statusItem.button?.image = switch level {
+            case .medium: shieldImage()
+            case .high: shieldImage(color: .systemRed)
+            }
             scanStatusItem.attributedTitle = nil
             scanStatusItem.image = shieldImage(color: level.color)
             scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
@@ -389,9 +392,9 @@ private enum ScanAlertLevel {
     case medium
     case high
 
-    var color: NSColor? {
+    var color: NSColor {
         switch self {
-        case .medium: nil
+        case .medium: .systemOrange
         case .high: .systemRed
         }
     }
