@@ -4,6 +4,12 @@
 
 - hcloud config file contains plaintext API tokens.
 
+## Mitigation
+
+```sh
+sudo av harden hcloud
+```
+
 ## Sensitive Files
 
 - `$HCLOUD_CONFIG`

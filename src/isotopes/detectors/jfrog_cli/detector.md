@@ -4,6 +4,12 @@
 
 - JFrog CLI config contains plaintext credentials.
 
+## Mitigation
+
+```sh
+sudo av harden jfrog-cli
+```
+
 ## Sensitive Files
 
 - `~/.jfrog/jfrog-cli.conf.v6`

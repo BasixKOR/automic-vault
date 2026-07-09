@@ -4,6 +4,12 @@
 
 - Supabase CLI fallback access-token file exists and is not empty.
 
+## Mitigation
+
+```sh
+av harden supabase
+```
+
 ## Sensitive Files
 
 - `$SUPABASE_HOME/access-token`

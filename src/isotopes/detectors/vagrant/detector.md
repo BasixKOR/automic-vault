@@ -4,6 +4,12 @@
 
 - Vagrant Cloud token file contains a plaintext token.
 
+## Mitigation
+
+```sh
+sudo av harden vagrant
+```
+
 ## Sensitive Files
 
 - `$VAGRANT_HOME/data/vagrant_login_token`

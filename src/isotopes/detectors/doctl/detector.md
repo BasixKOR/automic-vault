@@ -4,6 +4,12 @@
 
 - doctl config contains plaintext DigitalOcean tokens.
 
+## Mitigation
+
+```sh
+sudo av harden doctl
+```
+
 ## Sensitive Files
 
 - `$DIGITALOCEAN_CONFIG`

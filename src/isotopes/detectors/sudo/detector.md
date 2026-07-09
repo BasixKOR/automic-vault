@@ -4,6 +4,12 @@
 
 - sudo is not configured to offer Touch ID through `pam_tid.so`.
 
+## Mitigation
+
+```sh
+av harden sudo
+```
+
 ## Sensitive Files
 
 - `/etc/pam.d/sudo`

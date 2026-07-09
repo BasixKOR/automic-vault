@@ -4,6 +4,12 @@
 
 - Snyk CLI configstore contains credentials.
 
+## Mitigation
+
+```sh
+sudo av harden snyk
+```
+
 ## Sensitive Files
 
 - `$XDG_CONFIG_HOME/configstore/snyk.json`

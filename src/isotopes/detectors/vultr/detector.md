@@ -4,6 +4,12 @@
 
 - vultr-cli config contains a plaintext API key.
 
+## Mitigation
+
+```sh
+sudo av harden vultr
+```
+
 ## Sensitive Files
 
 - `~/Library/Application Support/vultr-cli.yaml`

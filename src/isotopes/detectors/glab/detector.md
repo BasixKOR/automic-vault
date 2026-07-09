@@ -4,6 +4,12 @@
 
 - GLab config file contains plaintext tokens.
 
+## Mitigation
+
+```sh
+sudo av harden glab
+```
+
 ## Sensitive Files
 
 - `$GLAB_CONFIG_DIR/config.yml`

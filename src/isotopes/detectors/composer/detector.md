@@ -4,6 +4,12 @@
 
 - Composer auth.json contains plaintext credentials.
 
+## Mitigation
+
+```sh
+sudo av harden composer
+```
+
 ## Sensitive Files
 
 - `$COMPOSER_HOME/auth.json`

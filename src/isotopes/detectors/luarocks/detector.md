@@ -4,6 +4,12 @@
 
 - LuaRocks upload config contains a plaintext API key.
 
+## Mitigation
+
+```sh
+sudo av harden luarocks
+```
+
 ## Sensitive Files
 
 - `$XDG_CONFIG_HOME/luarocks/upload_config.lua`

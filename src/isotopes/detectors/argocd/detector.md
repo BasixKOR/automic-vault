@@ -4,6 +4,12 @@
 
 - Argo CD config file contains plaintext tokens.
 
+## Mitigation
+
+```sh
+sudo av harden argocd
+```
+
 ## Sensitive Files
 
 - `$ARGOCD_CONFIG_DIR/config`

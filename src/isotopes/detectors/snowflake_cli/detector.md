@@ -4,6 +4,12 @@
 
 - Snowflake CLI config contains plaintext credentials.
 
+## Mitigation
+
+```sh
+sudo av harden snowflake-cli
+```
+
 ## Sensitive Files
 
 - `~/.snowflake/config.toml`

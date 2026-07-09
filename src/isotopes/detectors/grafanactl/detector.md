@@ -4,6 +4,12 @@
 
 - grafanactl config contains plaintext credentials.
 
+## Mitigation
+
+```sh
+sudo av harden grafanactl
+```
+
 ## Sensitive Files
 
 - `$XDG_CONFIG_HOME/grafanactl/config.yaml`
