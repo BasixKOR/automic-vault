@@ -229,9 +229,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastTelemetryFindingCount = nil
             #endif
             statusItem.button?.image = shieldImage(symbolName: "shield.fill")
-            scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = shieldImage(symbolName: "shield.fill", color: .systemGreen)
-            scanStatusItem.title = "No Vulnerabilities Detected"
+            setScanStatus(
+                "No Vulnerabilities Detected",
+                image: shieldImage(symbolName: "shield.fill", color: .systemGreen),
+                color: .systemGreen
+            )
         case .findings(let count, let detectorCount, let level):
             #if !DEBUG
             if lastTelemetryFindingCount != detectorCount {
@@ -243,15 +245,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .medium: shieldImage()
             case .high: shieldImage(color: .systemRed)
             }
-            scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = shieldImage(color: level.color)
-            scanStatusItem.title = count == 1 ? "1 scan finding" : "\(count) scan findings"
+            setScanStatus(
+                count == 1 ? "1 scan finding" : "\(count) scan findings",
+                image: shieldImage(color: level.color),
+                color: level.color
+            )
         case .failed:
             statusItem.button?.image = shieldImage(color: .systemRed)
-            scanStatusItem.attributedTitle = nil
-            scanStatusItem.image = shieldImage(color: .systemRed)
-            scanStatusItem.title = "Scan failed"
+            setScanStatus("Scan failed", image: shieldImage(color: .systemRed), color: .systemRed)
         }
+    }
+
+    private func setScanStatus(_ title: String, image: NSImage?, color: NSColor) {
+        scanStatusItem.title = title
+        scanStatusItem.image = image
+        scanStatusItem.attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: color])
     }
 
     private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
