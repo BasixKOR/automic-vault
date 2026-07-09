@@ -1612,6 +1612,12 @@ private func showApprovalAlert(
     if launcher != nil {
         alert.addButton(withTitle: "Always Allow From This App")
     }
+    if alert.buttons.indices.contains(0) {
+        alert.buttons[0].keyEquivalent = "\u{1b}"
+    }
+    if alert.buttons.indices.contains(1) {
+        alert.buttons[1].keyEquivalent = "\r"
+    }
     switch alert.runModal() {
     case .alertSecondButtonReturn:
         return .approved
@@ -1645,6 +1651,22 @@ private func approvalPromptCommand(_ request: ApprovalRequest) -> String {
     ([autoApprovalToolName(request)] + request.args).joined(separator: " ")
 }
 
+private func prettyShellCommand(target: String, args: [String]) -> String {
+    ([target] + args).map(shellQuote).enumerated().map { index, word in
+        if args.isEmpty { return word }
+        return index == 0 ? "\(word) \\" : "  \(word)" + (index == args.count ? "" : " \\")
+    }.joined(separator: "\n")
+}
+
+private func shellQuote(_ word: String) -> String {
+    guard !word.isEmpty,
+          word.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: #"'"\\$`!&|;()<>{}[]*?"#))) == nil
+    else {
+        return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+    return word
+}
+
 @MainActor
 private func approvalPromptAccessoryView(
     request: ApprovalRequest,
@@ -1664,13 +1686,37 @@ private func approvalPromptAccessoryView(
     )
     let rowCount = sections.reduce(0) { $0 + $1.rows.count }
     let width: CGFloat = 700
-    let height = min(max(CGFloat(rowCount * 30 + sections.count * 48), 260), 430)
+    let height = min(max(CGFloat(rowCount * 28 + sections.count * 44 + 150), 340), 520)
     let host = NSHostingView(
-        rootView: ApprovalPromptDetailsView(sections: sections)
+        rootView: ApprovalPromptDetailsView(
+            command: ApprovalPromptCommandCard(
+                appName: approvalPromptAppName(launcher),
+                appIconPath: approvalPromptAppIconPath(launcher: launcher, fallback: callerPath),
+                command: prettyShellCommand(target: request.target, args: request.args),
+                cwd: request.cwd,
+                keys: request.keys.joined(separator: ", ")
+            ),
+            sections: sections
+        )
             .frame(width: width, height: height, alignment: .topLeading)
     )
     host.frame = NSRect(x: 0, y: 0, width: width, height: height)
     return host
+}
+
+private func approvalPromptAppIconPath(launcher: LauncherIdentity?, fallback: String) -> String {
+    guard let launcher else { return fallback }
+    return enclosingAppPath(launcher.path) ?? launcher.path
+}
+
+private func enclosingAppPath(_ path: String) -> String? {
+    var components = URL(fileURLWithPath: path).pathComponents
+    while let component = components.popLast() {
+        if component.hasSuffix(".app") {
+            return NSString.path(withComponents: components + [component])
+        }
+    }
+    return nil
 }
 
 private func approvalPromptSections(
@@ -1682,14 +1728,6 @@ private func approvalPromptSections(
     launcher: LauncherIdentity?
 ) -> [ApprovalPromptSection] {
     var sections = [
-        ApprovalPromptSection("Request", "key.viewfinder", [
-            request.tool.map { ApprovalPromptRow("Tool", $0) },
-            ApprovalPromptRow("Operation", request.op),
-            ApprovalPromptRow("Target", request.target),
-            ApprovalPromptRow("Arguments", request.args.isEmpty ? "(none)" : request.args.joined(separator: " ")),
-            ApprovalPromptRow("Working directory", request.cwd),
-            ApprovalPromptRow("Keys", request.keys.joined(separator: ", ")),
-        ].compactMap(\.self)),
         ApprovalPromptSection("Environment", "arrow.triangle.2.circlepath", [
             ApprovalPromptRow("Existing", request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", ")),
             ApprovalPromptRow("Replace existing", request.replaceExistingEnv ? "yes" : "no"),
@@ -1752,12 +1790,22 @@ private struct ApprovalPromptRow: Identifiable {
     }
 }
 
+private struct ApprovalPromptCommandCard {
+    let appName: String
+    let appIconPath: String
+    let command: String
+    let cwd: String
+    let keys: String
+}
+
 private struct ApprovalPromptDetailsView: View {
+    let command: ApprovalPromptCommandCard
     let sections: [ApprovalPromptSection]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                ApprovalPromptCommandCardView(command: command)
                 ForEach(sections) { section in
                     ApprovalPromptSectionView(section: section)
                 }
@@ -1766,6 +1814,57 @@ private struct ApprovalPromptDetailsView: View {
         }
         .scrollIndicators(.visible)
         .background(Color.clear)
+    }
+}
+
+private struct ApprovalPromptCommandCardView: View {
+    let command: ApprovalPromptCommandCard
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: command.appIconPath))
+                .resizable()
+                .frame(width: 52, height: 52)
+                .cornerRadius(10)
+                .accessibilityLabel(command.appName)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Command")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(command.command)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    ApprovalPromptInlineMeta(label: "cwd", value: command.cwd)
+                    ApprovalPromptInlineMeta(label: "key", value: command.keys)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ApprovalPromptInlineMeta: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "(none)" : value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
     }
 }
 
@@ -1793,7 +1892,7 @@ private struct ApprovalPromptSectionView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -1868,6 +1967,15 @@ private func runApprovalSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
+    /bin/echo \\
+      'hello world' \\
+      'it'\\''s-ok'
+    """,
+          prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo"
+    else {
+        return 1
+    }
     let script = ScriptApproval(path: "/tmp/deploy", checksum: "abc")
     let launcher = LauncherIdentity(
         pid: 42,
