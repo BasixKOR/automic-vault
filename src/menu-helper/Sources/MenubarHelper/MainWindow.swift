@@ -110,7 +110,7 @@ final class DashboardModel: ObservableObject {
                 let apps = $0.approvedApps.count == 1 ? "1 app" : "\($0.approvedApps.count) apps"
                 return DashboardItem(
                     id: $0.id,
-                    title: $0.scriptPath,
+                    title: secretGateTitle(scriptPath: $0.scriptPath, target: $0.target),
                     subtitle: "\(secrets) - \(apps)",
                     detail: [
                         "Script: \($0.scriptPath)",
@@ -370,6 +370,10 @@ private func shellQuoted(_ value: String) -> String {
     "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
 }
 
+private func secretGateTitle(scriptPath: String, target: String) -> String {
+    scriptPath.isEmpty ? URL(fileURLWithPath: target).lastPathComponent : scriptPath
+}
+
 @MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
     let model = DashboardModel(snapshot: DashboardSnapshot(
@@ -396,6 +400,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2
+    else { return 1 }
+    guard secretGateTitle(scriptPath: "", target: "/opt/homebrew/opt/gh-cli/bin/gh") == "gh",
+          secretGateTitle(scriptPath: "/usr/local/bin/aws", target: "/opt/homebrew/bin/aws") == "/usr/local/bin/aws"
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
