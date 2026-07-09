@@ -625,9 +625,7 @@ private struct DashboardDetailView: View {
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
                 ReferenceDetailView(
                     item: item,
-                    summary: item.kind.map {
-                        "This detector type is \($0), and it checks sensitive files covered by this rule."
-                    } ?? "This detector checks sensitive files covered by this rule.",
+                    summary: detectorSummary(for: item),
                     referenceTitle: "Detector Reference",
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
@@ -877,6 +875,37 @@ private struct HardenedDetectorPill: View {
 
 private func detectorSeverityColor(_ severity: String?) -> Color {
     detectorSeverityLevel(severity.map { [$0] } ?? []).color
+}
+
+private func detectorSummary(for item: DashboardItem) -> String {
+    switch item.kind?.lowercased() {
+    case "auth token", "hosts token":
+        "Auth tokens grant API access without a password. If they leak, another process can act as you until the token is revoked."
+    case "credential fill", "credential oauth", "credential helpers":
+        "Credential helpers can expose reusable Git credentials. A compromised helper or config can capture tokens and push or pull as you."
+    case "credentials file":
+        "Credentials files keep reusable keys on disk. Any process that can read them can authenticate to the linked service."
+    case "legacy plugins":
+        "Legacy plugins run code inside the tool. Old or writable plugins widen the path for unreviewed code execution."
+    case "login cache":
+        "Login caches store session material after sign-in. A readable cache can let another process reuse your cloud session."
+    case "minimum release age":
+        "Missing release-age protection allows brand-new packages immediately. That raises exposure to dependency hijacks and rushed malicious releases."
+    case "mutable":
+        "Mutable installs can be changed after installation. If an attacker edits them, future commands may run code you did not approve."
+    case "persisted output", "persisted report":
+        "Persisted output can leave discovered secrets in report files. Anyone with file access can recover those secrets later."
+    case "plaintext secret":
+        "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them."
+    case "registry credentials":
+        "Registry credentials allow image pulls, pushes, or private registry access. If exposed, they can leak images or poison deployments."
+    case "root access":
+        "Root-equivalent access can modify system files and privileged workloads. Misuse can turn a local compromise into full host control."
+    case "shell history":
+        "Shell history can preserve secrets typed into commands. Those values remain readable long after the command finishes."
+    default:
+        "Sensitive local files can expose credentials or weaken a trust boundary. If another process can read or change them, it may impersonate you or run untrusted code."
+    }
 }
 
 private enum DetectorSeverityLevel {
