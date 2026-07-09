@@ -1262,7 +1262,7 @@ private struct SecretGateDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(URL(fileURLWithPath: gate.scriptPath).lastPathComponent)
+                Text(URL(fileURLWithPath: gate.scriptPath.isEmpty ? gate.target : gate.scriptPath).lastPathComponent)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(3)
@@ -1272,8 +1272,12 @@ private struct SecretGateDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                SecretGateField("Script", gate.scriptPath)
-                SecretGateField("SHA", gate.scriptChecksum, monospaced: true)
+                if gate.scriptPath.isEmpty {
+                    SecretGateField("Request", "Direct key access")
+                } else {
+                    SecretGateField("Script", gate.scriptPath)
+                    SecretGateField("SHA", gate.scriptChecksum, monospaced: true)
+                }
                 SecretGateField("Secrets", gate.keys.joined(separator: ", "))
                 SecretGateField("Target", gate.target)
                 SecretGateField("Replace Existing Env", gate.replaceExistingEnv ? "Yes" : "No")

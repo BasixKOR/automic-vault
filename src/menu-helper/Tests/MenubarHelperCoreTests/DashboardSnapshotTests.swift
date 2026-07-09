@@ -231,6 +231,25 @@ import Testing
     ])
 }
 
+@Test func hardenedGhGetsSecretGate() throws {
+    let gates = loadSecretGates(
+        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
+        service: "com.automicvault.tests.\(UUID().uuidString)"
+    )
+
+    #expect(gates == [
+        SecretGate(
+            scriptPath: "",
+            scriptChecksum: "",
+            keys: ["GH_TOKEN_GITHUB_COM"],
+            target: "/opt/homebrew/opt/gh-cli/bin/gh",
+            replaceExistingEnv: true,
+            allowMissingKeys: false,
+            approvedApps: []
+        )
+    ])
+}
+
 @Test func secretGateAppsCanBeAddedAndRemoved() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
@@ -241,6 +260,30 @@ import Testing
         scriptChecksum: "abc",
         keys: ["A", "B"],
         target: "/bin/echo",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        approvedApps: []
+    )
+    let requirement = #"identifier "com.example.app""#
+
+    #expect(rememberTrustedApp(requirement: requirement, for: gate, service: service) == errSecSuccess)
+    #expect(loadSecretGates(service: service).first?.approvedApps == [
+        SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement)
+    ])
+    #expect(forgetTrustedApp(SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement), from: gate, service: service) == errSecSuccess)
+    #expect(loadSecretGates(service: service).isEmpty)
+}
+
+@Test func directSecretGateAppsCanBeAddedAndRemoved() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
+
+    let gate = SecretGate(
+        scriptPath: "",
+        scriptChecksum: "",
+        keys: ["GH_TOKEN_GITHUB_COM"],
+        target: "/opt/homebrew/bin/gh",
         replaceExistingEnv: true,
         allowMissingKeys: false,
         approvedApps: []

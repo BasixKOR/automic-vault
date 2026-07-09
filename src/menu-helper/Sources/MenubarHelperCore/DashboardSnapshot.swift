@@ -425,17 +425,14 @@ public func loadSecretGates(
 }
 
 private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate] {
-    let grouped = Dictionary(grouping: approvals.filter { $0.scriptPath != nil && $0.scriptChecksum != nil }) {
+    let grouped = Dictionary(grouping: approvals.filter { ($0.scriptPath == nil) == ($0.scriptChecksum == nil) }) {
         "\($0.scriptPath ?? "")\u{1f}\($0.scriptChecksum ?? "")\u{1f}\($0.target)\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
     }
     return grouped.values.compactMap { approvals in
-        guard let first = approvals.first,
-              let scriptPath = first.scriptPath,
-              let scriptChecksum = first.scriptChecksum
-        else { return nil }
+        guard let first = approvals.first else { return nil }
         return SecretGate(
-            scriptPath: scriptPath,
-            scriptChecksum: scriptChecksum,
+            scriptPath: first.scriptPath ?? "",
+            scriptChecksum: first.scriptChecksum ?? "",
             keys: first.keys.sorted(),
             target: first.target,
             replaceExistingEnv: first.replaceExistingEnv,
@@ -453,6 +450,9 @@ private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate
 
 private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
     tools.compactMap { tool in
+        if let gate = directSecretGate(for: tool) {
+            return gate
+        }
         guard let stubPath = tool.stubPath,
               let data = try? Data(contentsOf: URL(fileURLWithPath: stubPath)),
               let contents = String(data: data, encoding: .utf8),
@@ -471,6 +471,19 @@ private func configuredSecretGates(from tools: [HardenedTool]) -> [SecretGate] {
             approvedApps: []
         )
     }
+}
+
+private func directSecretGate(for tool: HardenedTool) -> SecretGate? {
+    guard tool.name == "gh", let target = tool.targetPath ?? tool.stubPath else { return nil }
+    return SecretGate(
+        scriptPath: "",
+        scriptChecksum: "",
+        keys: ["GH_TOKEN_GITHUB_COM"],
+        target: URL(fileURLWithPath: target).standardizedFileURL.path,
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        approvedApps: []
+    )
 }
 
 private func parseInjectShebang(_ line: String) -> (keys: [String], target: String, replaceExistingEnv: Bool, allowMissingKeys: Bool)? {
@@ -527,8 +540,8 @@ public func rememberTrustedApp(
 ) -> OSStatus {
     var approvals = loadTrustedScriptApprovals(service: service, account: account)
     let approval = TrustedScriptApproval(
-        scriptPath: gate.scriptPath,
-        scriptChecksum: gate.scriptChecksum,
+        scriptPath: gate.scriptPath.isEmpty ? nil : gate.scriptPath,
+        scriptChecksum: gate.scriptChecksum.isEmpty ? nil : gate.scriptChecksum,
         keys: gate.keys.sorted(),
         target: gate.target,
         replaceExistingEnv: gate.replaceExistingEnv,
@@ -758,8 +771,8 @@ private extension Array where Element == SecretGateApprovedApp {
 
 private extension TrustedScriptApproval {
     func matches(_ gate: SecretGate) -> Bool {
-        scriptPath == Optional(gate.scriptPath)
-            && scriptChecksum == Optional(gate.scriptChecksum)
+        scriptPath == (gate.scriptPath.isEmpty ? nil : Optional(gate.scriptPath))
+            && scriptChecksum == (gate.scriptChecksum.isEmpty ? nil : Optional(gate.scriptChecksum))
             && keys.sorted() == gate.keys.sorted()
             && target == gate.target
             && replaceExistingEnv == gate.replaceExistingEnv
