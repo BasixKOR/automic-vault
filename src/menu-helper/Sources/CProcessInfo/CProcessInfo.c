@@ -5,6 +5,7 @@
 #include <sys/sysctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 bool av_peer_pid(int fd, pid_t *pid_out) {
     socklen_t len = sizeof(*pid_out);
@@ -23,6 +24,7 @@ bool av_process_identity(pid_t pid, AVProcessIdentity *identity_out) {
     memset(identity_out, 0, sizeof(*identity_out));
     identity_out->pid = pid;
     identity_out->ppid = info.kp_eproc.e_ppid;
+    identity_out->sid = getsid(pid);
     identity_out->start_usec =
         ((uint64_t)info.kp_proc.p_starttime.tv_sec * 1000000ULL) +
         (uint64_t)info.kp_proc.p_starttime.tv_usec;

@@ -12,6 +12,7 @@
 typedef struct {
     pid_t pid;
     pid_t ppid;
+    pid_t sid;
     uint64_t start_usec;
     char path[PROC_PIDPATHINFO_MAXSIZE];
 } AVProcessIdentity;

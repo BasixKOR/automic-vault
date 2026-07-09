@@ -645,7 +645,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
-        var launchers = launcherIdentities(startingAt: identity.ppid)
+        var launchers = launcherIdentities(for: identity)
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
@@ -1375,8 +1375,17 @@ private func copySigningInformation(_ code: SecStaticCode) -> [CFString: Any]? {
     return info as? [CFString: Any]
 }
 
-private func launcherIdentity(startingAt startPID: pid_t) -> LauncherIdentity? {
-    launcherIdentities(startingAt: startPID).first
+private func launcherIdentities(for identity: AVProcessIdentity) -> [LauncherIdentity] {
+    for pid in launcherAncestorStartPIDs(identity) {
+        let launchers = launcherIdentities(startingAt: pid)
+        if !launchers.isEmpty { return launchers }
+    }
+    return []
+}
+
+private func launcherAncestorStartPIDs(_ identity: AVProcessIdentity) -> [pid_t] {
+    var seen = Set<pid_t>()
+    return [identity.ppid, identity.sid].filter { $0 > 1 && seen.insert($0).inserted }
 }
 
 private func launcherIdentities(startingAt startPID: pid_t) -> [LauncherIdentity] {
@@ -1666,9 +1675,8 @@ private func showApprovalAlert(
 
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.icon = menuImage(size: NSSize(width: 29, height: 34), isTemplate: false)
-        ?? NSImage(size: NSSize(width: 29, height: 34))
-    alert.messageText = "Automic Vault"
+    alert.icon = menuImage()
+    alert.messageText = ""
     alert.informativeText = [
         approvalPromptHeadline(request: request, launcher: launcher),
         approvalPromptInformativeText(request),
@@ -2077,6 +2085,9 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#
     )
+    var detachedCaller = AVProcessIdentity()
+    detachedCaller.ppid = 1
+    detachedCaller.sid = 43
     let pythonSigning = LiveSigningInfo(
         identifier: "org.python.python",
         teamIdentifier: "unknown",
@@ -2147,6 +2158,7 @@ private func runApprovalSelfCheck() -> Int32 {
           trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
           parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
+          launcherAncestorStartPIDs(detachedCaller) == [43],
           launcherIdentity(pid: 45, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
           launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
           !alwaysAllows(approval, approvals: [])
