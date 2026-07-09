@@ -6,6 +6,7 @@ install=0
 dmg=0
 notarize=0
 publish=0
+clobber=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(
   awk -F '"' '
@@ -21,8 +22,9 @@ while [[ $# -gt 0 ]]; do
     --dmg) dmg=1 ;;
     --notarize) notarize=1 ;;
     --publish) publish=1; dmg=1; notarize=1 ;;
+    --clobber) clobber=1 ;;
     *)
-      echo "usage: $0 [--run] [--install] [--dmg] [--notarize] [--publish]" >&2
+      echo "usage: $0 [--run] [--install] [--dmg] [--notarize] [--publish] [--clobber]" >&2
       exit 64
       ;;
   esac
@@ -30,6 +32,10 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ "$notarize" -eq 1 && "$dmg" -ne 1 ]]; then
   echo "error: --notarize requires --dmg" >&2
+  exit 64
+fi
+if [[ "$clobber" -eq 1 && "$publish" -ne 1 ]]; then
+  echo "error: --clobber requires --publish" >&2
   exit 64
 fi
 if [[ "$publish" -eq 1 && -z "${POSTHOG_API_KEY:-}" ]]; then
@@ -55,6 +61,14 @@ publish_release() {
     exit 64
   fi
   git -C "$ROOT" push origin "HEAD:$branch"
+  if [[ "$clobber" -eq 1 ]]; then
+    git -C "$ROOT" tag -f "$tag" "$head"
+    git -C "$ROOT" push --force origin "refs/tags/$tag"
+    if gh release view "$tag" >/dev/null 2>&1; then
+      gh release upload "$tag" "$dmg#Automic Vault $tag.dmg" --clobber
+      return
+    fi
+  fi
   gh release create "$tag" "$dmg#Automic Vault $tag.dmg" \
     --target "$head" \
     --title "$tag" \
