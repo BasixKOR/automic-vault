@@ -478,20 +478,25 @@ private enum ApprovalDecision: Equatable {
 }
 
 private struct TransientApprovalCache {
-    private var expirations: [TransientApprovalKey: Date] = [:]
-
-    mutating func contains(_ key: TransientApprovalKey, now: Date = Date()) -> Bool {
-        prune(now: now)
-        return expirations[key].map { $0 > now } ?? false
+    private struct Entry {
+        let decision: ApprovalDecision
+        let expiration: Date
     }
 
-    mutating func remember(_ key: TransientApprovalKey, now: Date = Date()) {
+    private var entries: [TransientApprovalKey: Entry] = [:]
+
+    mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
         prune(now: now)
-        expirations[key] = now.addingTimeInterval(transientApprovalTTL)
+        return entries[key].map(\.decision)
+    }
+
+    mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
+        prune(now: now)
+        entries[key] = Entry(decision: decision, expiration: now.addingTimeInterval(transientApprovalTTL))
     }
 
     private mutating func prune(now: Date) {
-        expirations = expirations.filter { $0.value > now }
+        entries = entries.filter { $0.value.expiration > now }
     }
 }
 
@@ -716,7 +721,19 @@ private final class ApprovalServer: @unchecked Sendable {
         }
 
         DispatchQueue.main.async {
-            if self.transientApprovals.contains(transientApproval) {
+            if let decision = self.transientApprovals.decision(for: transientApproval) {
+                if decision == .denied {
+                    self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        approvalSource: "Auto",
+                        reason: "Reused recent denial",
+                        launcher: launcher
+                    ))
+                    self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
+                    return
+                }
                 do {
                     let secrets = try self.approvedSecrets(for: request)
                     self.onAccessRequest(accessRequestRecord(
@@ -751,6 +768,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher
             )
             guard decision != .denied else {
+                self.transientApprovals.remember(.denied, for: transientApproval)
                 self.onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
@@ -762,7 +780,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
-            self.transientApprovals.remember(transientApproval)
+            self.transientApprovals.remember(.approved, for: transientApproval)
             do {
                 let secrets = try self.approvedSecrets(for: request)
                 self.onAccessRequest(accessRequestRecord(
@@ -2524,12 +2542,15 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         )
     }
     let approval = key()
+    let denial = key(args: ["repo", "list"])
     var cache = TransientApprovalCache()
-    cache.remember(approval, now: Date(timeIntervalSince1970: 100))
-    guard cache.contains(approval, now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(key(startUsec: 789), now: Date(timeIntervalSince1970: 200)),
-          !cache.contains(approval, now: Date(timeIntervalSince1970: 500))
+    cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
+    cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 100))
+    guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
+          cache.decision(for: denial, now: Date(timeIntervalSince1970: 200)) == .denied,
+          cache.decision(for: key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)) == nil,
+          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil,
+          cache.decision(for: approval, now: Date(timeIntervalSince1970: 500)) == nil
     else {
         return 1
     }
