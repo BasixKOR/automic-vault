@@ -478,25 +478,32 @@ private enum ApprovalDecision: Equatable {
 }
 
 private struct TransientApprovalCache {
-    private struct Entry {
-        let decision: ApprovalDecision
-        let expiration: Date
+    private enum Key: Hashable {
+        case approval(TransientApprovalKey)
+        case denial(pid: Int32, startUsec: UInt64)
     }
 
-    private var entries: [TransientApprovalKey: Entry] = [:]
+    private var expirations: [Key: Date] = [:]
 
     mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
         prune(now: now)
-        return entries[key].map(\.decision)
+        if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
+            return .denied
+        }
+        return expirations[.approval(key)] == nil ? nil : .approved
     }
 
     mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
         prune(now: now)
-        entries[key] = Entry(decision: decision, expiration: now.addingTimeInterval(transientApprovalTTL))
+        let key = switch decision {
+        case .denied: Key.denial(pid: key.pid, startUsec: key.startUsec)
+        case .approved: Key.approval(key)
+        }
+        expirations[key] = now.addingTimeInterval(transientApprovalTTL)
     }
 
     private mutating func prune(now: Date) {
-        entries = entries.filter { $0.value.expiration > now }
+        expirations = expirations.filter { $0.value > now }
     }
 }
 
@@ -2522,7 +2529,11 @@ private func runAwsReadOnlySelfCheck() -> Int32 {
 }
 
 private func runTransientApprovalSelfCheck() -> Int32 {
-    func key(startUsec: UInt64 = 456, args: [String] = ["repo", "view"]) -> TransientApprovalKey {
+    func key(
+        startUsec: UInt64 = 456,
+        args: [String] = ["repo", "view"],
+        keys: [String] = ["GH_TOKEN_GITHUB_COM"]
+    ) -> TransientApprovalKey {
         TransientApprovalKey(
             pid: 123,
             startUsec: startUsec,
@@ -2530,7 +2541,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
             signingIdentifier: "gh",
             signingTeamIdentifier: "TEAM",
             op: "keys",
-            keys: ["GH_TOKEN_GITHUB_COM"],
+            keys: keys,
             target: "/opt/homebrew/Cellar/gh-cli/2.94.0/bin/gh",
             args: args,
             cwd: "/tmp",
@@ -2542,15 +2553,24 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         )
     }
     let approval = key()
-    let denial = key(args: ["repo", "list"])
+    let denial = key(
+        args: ["auth", "token"],
+        keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
+    )
+    let fallbackAfterDenial = key(args: ["auth", "token"])
     var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
-    cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 100))
     guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
-          cache.decision(for: denial, now: Date(timeIntervalSince1970: 200)) == .denied,
-          cache.decision(for: key(args: ["auth", "token"]), now: Date(timeIntervalSince1970: 200)) == nil,
-          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil,
-          cache.decision(for: approval, now: Date(timeIntervalSince1970: 500)) == nil
+          cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 200)) == nil,
+          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil
+    else {
+        return 1
+    }
+    cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 200))
+    guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
+          cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
+          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
+          cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 501)) == nil
     else {
         return 1
     }
