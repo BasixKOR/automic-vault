@@ -1648,9 +1648,10 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?
 ) -> ApprovalDecision {
     NSApp.activate(ignoringOtherApps: true)
+    let requester = approvalPromptRequester(launcher: launcher, fallback: callerPath)
     let content = ApprovalPromptContent(
-        requesterName: approvalPromptRequesterName(callerPath: callerPath, signing: signing),
-        requesterIconPath: callerPath,
+        requesterName: requester.name,
+        requesterIconPath: requester.iconPath,
         command: prettyShellCommand(target: request.target, args: request.args),
         title: request.title,
         detail: request.detail,
@@ -1693,15 +1694,21 @@ private func showApprovalAlert(
     return decision
 }
 
-private func approvalPromptRequesterName(callerPath: String, signing: SigningInfo) -> String {
-    if isTrustedGhCaller(path: callerPath, signing: signing) {
-        return "GitHub CLI"
+private func approvalPromptRequester(
+    launcher: LauncherIdentity?,
+    fallback: String
+) -> (name: String, iconPath: String) {
+    guard let launcher else {
+        return (URL(fileURLWithPath: fallback).lastPathComponent, fallback)
     }
-    let name = URL(fileURLWithPath: callerPath).deletingPathExtension().lastPathComponent
-    if name == "supabase" || name == "supabase-go" {
-        return "Supabase CLI"
+    if let appURL = appBundleURL(containing: launcher.path)
+        ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: launcher.identifier)
+    {
+        let name = Bundle(url: appURL)?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? appURL.deletingPathExtension().lastPathComponent
+        return (name, appURL.path)
     }
-    return name.isEmpty ? shortAppName(signing.identifier) : name
+    return (shortAppName(launcher.identifier), launcher.path)
 }
 
 private func prettyShellCommand(target: String, args: [String]) -> String {
@@ -2054,16 +2061,24 @@ private func runApprovalSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let requester = approvalPromptRequester(
+        launcher: LauncherIdentity(
+            pid: 41,
+            path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
+            identifier: "com.automicvault.vaultty",
+            teamIdentifier: "TEAM",
+            designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#
+        ),
+        fallback: "/opt/homebrew/bin/gh"
+    )
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
       'it'\\''s-ok'
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
-          approvalPromptRequesterName(
-              callerPath: "/opt/homebrew/bin/gh",
-              signing: SigningInfo(identifier: "com.github.cli", teamIdentifier: "TEAM")
-          ) == "GitHub CLI"
+          requester.name == "Vaultty",
+          requester.iconPath == "/Applications/Vaultty.app"
     else {
         return 1
     }
