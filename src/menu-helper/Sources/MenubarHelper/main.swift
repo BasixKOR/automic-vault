@@ -773,7 +773,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Denied",
-                    approvalSource: "Human",
+                    approvalSource: "Manual",
                     reason: "Denied in prompt",
                     launcher: launcher
                 ))
@@ -787,7 +787,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Approved",
-                    approvalSource: "Human",
+                    approvalSource: "Manual",
                     reason: "Approved in prompt",
                     launcher: launcher
                 ))
@@ -797,7 +797,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     decision: "Failed",
-                    approvalSource: "Human",
+                    approvalSource: "Manual",
                     reason: error.localizedDescription,
                     launcher: launcher
                 ))
@@ -1922,10 +1922,10 @@ private struct ApprovalPromptView: View {
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.regularMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(.blue.opacity(0.18))
-                }
+                // .overlay {
+                //     RoundedRectangle(cornerRadius: 28, style: .continuous)
+                //         .fill(.blue.opacity(0.18))
+                // }
         }
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
