@@ -1,5 +1,10 @@
 # Automic Vault
 
+> [!IMPORTANT]
+>
+> I am currently redoing Automic Vault to be much tighter in scope.
+> Do not start using v1! There is a v2 pre-release in releases if you like!
+
 The world is wild with plaintext secrets.
 
 The shadows are full of supply chain attacks that feast upon them.
