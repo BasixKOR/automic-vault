@@ -1639,6 +1639,18 @@ private final class ApprovalPanel: NSPanel {
 }
 
 @MainActor
+private func fitApprovalPanel(_ panel: NSPanel, animate: Bool) {
+    guard let contentView = panel.contentView else { return }
+    contentView.layoutSubtreeIfNeeded()
+    let size = contentView.fittingSize
+    var frame = panel.frame
+    let top = frame.maxY
+    frame.size = size
+    frame.origin.y = top - size.height
+    panel.setFrame(frame, display: true, animate: animate)
+}
+
+@MainActor
 private func showApprovalAlert(
     request: ApprovalRequest,
     callerPath: String,
@@ -1682,11 +1694,23 @@ private func showApprovalAlert(
     panel.level = .modalPanel
     panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     panel.contentView = NSHostingView(
-        rootView: ApprovalPromptView(content: content) {
-            decision = $0
-            NSApp.stopModal()
-        }
+        rootView: ApprovalPromptView(
+            content: content,
+            decide: {
+                decision = $0
+                NSApp.stopModal()
+            },
+            contentSizeDidChange: { [weak panel] in
+                Task { @MainActor in
+                    await Task.yield()
+                    if let panel {
+                        fitApprovalPanel(panel, animate: true)
+                    }
+                }
+            }
+        )
     )
+    fitApprovalPanel(panel, animate: false)
     panel.center()
     panel.makeKeyAndOrderFront(nil)
     NSApp.runModal(for: panel)
@@ -1813,6 +1837,7 @@ private struct ApprovalPromptContent {
 private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     let decide: (ApprovalDecision) -> Void
+    let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
 
     var body: some View {
@@ -1869,8 +1894,8 @@ private struct ApprovalPromptView: View {
                 Label("Details", systemImage: "info.circle")
                     .font(.callout.weight(.medium))
             }
-
-            Spacer(minLength: 0)
+            .transaction { $0.animation = nil }
+            .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
 
             HStack(spacing: 12) {
                 Button("Deny", role: .cancel) { decide(.denied) }
@@ -1892,7 +1917,8 @@ private struct ApprovalPromptView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(28)
-        .frame(width: 560, height: 660)
+        .frame(width: 560)
+        .fixedSize(horizontal: false, vertical: true)
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.regularMaterial)
@@ -2046,6 +2072,7 @@ private func showAutoApprovedToast(keys: [String], script: String, launcher: Str
     }
 }
 
+@MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let request = ApprovalRequest(
         op: "inject",
@@ -2071,6 +2098,22 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         fallback: "/opt/homebrew/bin/gh"
     )
+    let collapsedHeight = NSHostingView(
+        rootView: ApprovalPromptView(
+            content: ApprovalPromptContent(
+                requesterName: requester.name,
+                requesterIconPath: requester.iconPath,
+                command: "/opt/homebrew/bin/gh auth token",
+                title: "GitHub token requested",
+                detail: "gh needs the GitHub token",
+                cwd: "/tmp",
+                keys: "GH_TOKEN_GITHUB_COM",
+                sections: []
+            ),
+            decide: { _ in },
+            contentSizeDidChange: {}
+        )
+    ).fittingSize.height
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
@@ -2078,7 +2121,9 @@ private func runApprovalSelfCheck() -> Int32 {
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           requester.name == "Vaultty",
-          requester.iconPath == "/Applications/Vaultty.app"
+          requester.iconPath == "/Applications/Vaultty.app",
+          collapsedHeight > 0,
+          collapsedHeight < 660
     else {
         return 1
     }
@@ -2558,7 +2603,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
 }
 
 if CommandLine.arguments.contains("--self-check-approvals") {
-    exit(runApprovalSelfCheck())
+    exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
 
 if CommandLine.arguments.contains("--self-check-gh-read-only") {
