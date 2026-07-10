@@ -153,6 +153,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    @MainActor @objc private func openAutoApproval(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString)
+        else { return }
+        openMainWindow()
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.showAccessRequest(id: id)
+    }
+
     private func startHomeWatcher() {
         // ponytail: one home FSEvents stream; add detector path metadata if rescans get noisy.
         var context = FSEventStreamContext(
@@ -282,8 +290,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             autoApprovalSeparator = nil
         }
         autoApprovalItems = autoApprovals.map {
-            let item = NSMenuItem(title: autoApprovalTitle($0, formatter: autoApprovalTimeFormatter), action: nil, keyEquivalent: "")
-            item.isEnabled = false
+            let item = NSMenuItem(
+                title: autoApprovalTitle($0, formatter: autoApprovalTimeFormatter),
+                action: #selector(openAutoApproval),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = $0.accessRequestID.uuidString
             return item
         }
         for item in autoApprovalItems.reversed() {
@@ -298,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 private struct AutoApprovalRecord {
+    let accessRequestID: UUID
     let date: Date
     let launcher: String
     let tool: String
@@ -308,11 +322,13 @@ private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateForm
 }
 
 private func autoApprovalRecord(
+    accessRequestID: UUID,
     request: ApprovalRequest,
     script: ScriptApproval?,
     launcher: LauncherIdentity
 ) -> AutoApprovalRecord {
     AutoApprovalRecord(
+        accessRequestID: accessRequestID,
         date: Date(),
         launcher: shortAppName(launcher.identifier),
         tool: autoApprovalToolName(request, scriptPath: script?.path)
@@ -320,6 +336,7 @@ private func autoApprovalRecord(
 }
 
 private func accessRequestRecord(
+    id: UUID = UUID(),
     request: ApprovalRequest,
     callerPath: String,
     decision: String,
@@ -328,6 +345,7 @@ private func accessRequestRecord(
     launcher: LauncherIdentity?
 ) -> AccessRequestRecord {
     AccessRequestRecord(
+        id: id,
         date: Date(),
         tool: autoApprovalToolName(request),
         command: ([autoApprovalToolName(request)] + request.args).joined(separator: " "),
@@ -697,8 +715,15 @@ private final class ApprovalServer: @unchecked Sendable {
             DispatchQueue.main.async {
                 do {
                     let secrets = try self.approvedSecrets(for: request)
-                    self.onAutoApproval(autoApprovalRecord(request: request, script: scriptApproval, launcher: launcher))
+                    let accessRequestID = UUID()
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: scriptApproval,
+                        launcher: launcher
+                    ))
                     self.onAccessRequest(accessRequestRecord(
+                        id: accessRequestID,
                         request: request,
                         callerPath: callerPath,
                         decision: "Approved",
@@ -2613,7 +2638,12 @@ private func runMenuStatusSelfCheck() -> Int32 {
           scanAlertLevel([["severity": "medium"]]) == .medium,
           scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
           autoApprovalTitle(
-              AutoApprovalRecord(date: Date(timeIntervalSince1970: 18_900), launcher: "Codex", tool: "aws"),
+              AutoApprovalRecord(
+                  accessRequestID: UUID(),
+                  date: Date(timeIntervalSince1970: 18_900),
+                  launcher: "Codex",
+                  tool: "aws"
+              ),
               formatter: formatter
           ) == "5:15 AM – Codex used aws"
     else {

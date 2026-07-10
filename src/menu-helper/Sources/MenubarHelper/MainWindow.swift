@@ -24,6 +24,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
     func reload() {
         model.reload()
     }
+
+    func showAccessRequest(id: UUID) {
+        model.showAccessRequest(id: id)
+    }
 }
 
 final class AutomicVaultWindow: NSWindow {
@@ -125,6 +129,15 @@ final class DashboardModel: ObservableObject {
             snapshot.secrets.map {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: $0.subtitle, detail: "Secret value is hidden.\n\($0.subtitle)")
             }
+        case .secretUsage:
+            snapshot.accessRequests.map {
+                DashboardItem(
+                    id: $0.id.uuidString,
+                    title: "\($0.launcher ?? "Unknown app") used \($0.tool)",
+                    subtitle: "\($0.decision) · \($0.date.formatted(date: .abbreviated, time: .standard))",
+                    detail: $0.reason
+                )
+            }
         }
         let query = searchQuery
         guard !query.isEmpty else { return base }
@@ -150,6 +163,14 @@ final class DashboardModel: ObservableObject {
         return snapshot.secretGates.first
     }
 
+    var selectedAccessRequest: AccessRequestRecord? {
+        if let selectedItemID,
+           let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
+            return record
+        }
+        return snapshot.accessRequests.first
+    }
+
     func count(for section: DashboardSection) -> Int {
         guard searchQuery.isEmpty else { return items(for: section).count }
         return switch section {
@@ -157,6 +178,7 @@ final class DashboardModel: ObservableObject {
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
         case .allSecrets: snapshot.secrets.count
+        case .secretUsage: snapshot.accessRequests.count
         }
     }
 
@@ -167,6 +189,13 @@ final class DashboardModel: ObservableObject {
 
     func select(_ item: DashboardItem) {
         selectedItemID = item.id
+    }
+
+    func showAccessRequest(id: UUID, records: [AccessRequestRecord] = loadAccessRequestRecords()) {
+        snapshot.accessRequests = records
+        guard snapshot.accessRequests.contains(where: { $0.id == id }) else { return }
+        selectedSection = .secretUsage
+        selectedItemID = id.uuidString
     }
 
     func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {
@@ -376,6 +405,19 @@ private func secretGateTitle(scriptPath: String, target: String) -> String {
 
 @MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
+    let accessRequest = AccessRequestRecord(
+        date: Date(timeIntervalSince1970: 18_900),
+        tool: "aws",
+        command: "aws s3 ls",
+        decision: "Approved",
+        reason: "Always allowed from Codex",
+        launcher: "Codex",
+        callerPath: "/usr/local/bin/av",
+        target: "/bin/zsh",
+        cwd: "/tmp",
+        keys: ["AWS_SECRET_ACCESS_KEY"],
+        detail: "List buckets"
+    )
     let model = DashboardModel(snapshot: DashboardSnapshot(
         detectors: [
             DetectorMetadata(name: "aws", homepage: "", docsURL: "", documentation: "Run `av harden aws`."),
@@ -395,11 +437,13 @@ func runDashboardSearchSelfCheck() -> Int32 {
         secrets: [
             StoredSecret(account: "AWS_TOKEN"),
             StoredSecret(account: "GITHUB_TOKEN"),
-        ]
+        ],
+        accessRequests: [accessRequest]
     ))
     guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
-          model.count(for: .allSecrets) == 2
+          model.count(for: .allSecrets) == 2,
+          model.count(for: .secretUsage) == 1
     else { return 1 }
     guard secretGateTitle(scriptPath: "", target: "/opt/homebrew/opt/gh-cli/bin/gh") == "/opt/homebrew/opt/gh-cli/bin/gh",
           secretGateTitle(scriptPath: "/usr/local/bin/aws", target: "/opt/homebrew/bin/aws") == "/usr/local/bin/aws"
@@ -427,6 +471,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
           detectorSeverityLevel(["medium", "high"]) == .high,
           detectorSeverityLevel([]) == .high
     else { return 1 }
+    model.searchText = ""
+    model.showAccessRequest(id: accessRequest.id, records: [accessRequest])
+    guard model.selectedSection == .secretUsage,
+          model.selectedItemID == accessRequest.id.uuidString,
+          model.selectedAccessRequest == accessRequest
+    else { return 1 }
     return 0
 }
 
@@ -435,6 +485,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case hardenedTools
     case secretGates
     case allSecrets
+    case secretUsage
 
     var id: String { rawValue }
 
@@ -444,6 +495,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Secret Gates"
         case .allSecrets: "Secrets"
+        case .secretUsage: "Secret Usage"
         }
     }
 
@@ -453,6 +505,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .hardenedTools: "hammer"
         case .secretGates: "lock.shield"
         case .allSecrets: "key"
+        case .secretUsage: "clock.arrow.circlepath"
         }
     }
 }
@@ -642,6 +695,12 @@ private struct DashboardDetailView: View {
                     .padding(.top, 32)
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .secretUsage, let record = model.selectedAccessRequest {
+                SecretUsageDetailView(record: record)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
                 ReferenceDetailView(
                     item: item,
@@ -765,6 +824,7 @@ private struct EmptyListView: View {
         case .hardenedTools: "No hardened tools"
         case .secretGates: "No configured gates"
         case .allSecrets: "No stored secrets"
+        case .secretUsage: "No secret usage logged"
         }
     }
 }
@@ -1162,6 +1222,28 @@ private struct AccessHistoryView: View {
     }
 }
 
+private struct SecretUsageDetailView: View {
+    let record: AccessRequestRecord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Secret Usage")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.primary)
+            AccessRequestRow(record: record)
+                .padding(.horizontal, 16)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor))
+                }
+        }
+    }
+}
+
 private struct AccessRequestRow: View {
     let record: AccessRequestRecord
 
@@ -1198,7 +1280,6 @@ private struct AccessRequestRow: View {
                 Text(record.command.isEmpty ? record.target : record.command)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
                     .textSelection(.enabled)
                 Text(record.reason)
                     .font(.system(size: 12))
@@ -1207,6 +1288,8 @@ private struct AccessRequestRow: View {
                     AccessMetaLine("Launcher", record.launcher ?? "unknown")
                     AccessMetaLine("Approved by", record.approvalSourceLabel)
                     AccessMetaLine("Keys", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
+                    AccessMetaLine("Caller", record.callerPath)
+                    AccessMetaLine("Target", record.target)
                     AccessMetaLine("Working directory", record.cwd)
                     if let detail = record.detail, !detail.isEmpty {
                         AccessMetaLine("Detail", detail)
@@ -1257,7 +1340,6 @@ private struct AccessMetaLine: View {
         Text("\(label): \(value)")
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
-            .lineLimit(2)
             .textSelection(.enabled)
     }
 }
