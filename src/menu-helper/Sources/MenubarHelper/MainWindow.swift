@@ -596,14 +596,6 @@ struct DashboardRootView: View {
                 .labelStyle(.titleAndIcon)
                 .help("Install /usr/local/bin/av")
             }
-            if model.selectedSection == .allSecrets {
-                Button {
-                    model.isAddingSecret = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("Add Secret")
-            }
             if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
                 Button {
                     model.addApp(to: gate)
@@ -708,6 +700,16 @@ private struct DashboardListView: View {
         }
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
+        }
+        .toolbar {
+            if model.selectedSection == .allSecrets {
+                Button {
+                    model.isAddingSecret = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Add Secret")
+            }
         }
     }
 
