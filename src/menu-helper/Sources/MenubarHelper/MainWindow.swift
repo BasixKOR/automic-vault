@@ -604,6 +604,14 @@ struct DashboardRootView: View {
                 }
                 .help("Add Secret")
             }
+            if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
+                Button {
+                    model.addApp(to: gate)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Add Calling App")
+            }
             Button {
                 model.reload()
             } label: {
@@ -1379,18 +1387,9 @@ private struct SecretGateDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("App Access")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Button { model.addApp(to: gate) } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Add Calling App")
-                }
+                Text("App Access")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
 
                 VStack(spacing: 0) {
                     DefaultAppPolicyRow(protection: gate.defaultProtection) {
