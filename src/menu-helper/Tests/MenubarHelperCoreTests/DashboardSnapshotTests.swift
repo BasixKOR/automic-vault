@@ -72,6 +72,7 @@ import Testing
     #expect(detectorDisplayName("aws-cli-login-cache") == DetectorDisplayName(packageName: "aws-cli", kind: "login cache"))
     #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
     #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "mutable"))
+    #expect(detectorDisplayName("sudo") == DetectorDisplayName(packageName: "sudo", kind: "biometric authentication"))
 }
 
 @Test func homebrewExecutablePathsNormalizeToStableOptPath() {
