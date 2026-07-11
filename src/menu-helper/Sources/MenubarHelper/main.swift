@@ -1943,7 +1943,9 @@ private struct ApprovalPromptCommandView: View {
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.white)
                 .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: true, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
