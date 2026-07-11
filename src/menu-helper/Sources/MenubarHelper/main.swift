@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installStatusMenu() {
-        statusItem.button?.image = shieldImage(symbolName: "shield.fill")
+        statusItem.button?.image = brandImage()
 
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handOffToLaunchAgent() {
-        statusItem.button?.image = shieldImage(symbolName: "shield")
+        statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 0.5
         scanStatusItem.title = "Starting Automic Vault"
         DispatchQueue.global(qos: .userInitiated).async {
@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServices() {
-        statusItem.button?.image = shieldImage(symbolName: "shield.fill")
+        statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
@@ -223,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #if !DEBUG
             lastTelemetryFindingCount = nil
             #endif
-            statusItem.button?.image = shieldImage(symbolName: "shield.fill")
+            statusItem.button?.image = brandImage()
             setScanStatus(
                 "No Vulnerabilities Detected",
                 image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
@@ -236,15 +236,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             #endif
             statusItem.button?.image = switch level {
-            case .medium: shieldImage()
-            case .high: shieldImage(color: .systemRed)
+            case .medium: brandImage()
+            case .high: brandImage(color: .systemRed)
             }
             setScanStatus(
                 count == 1 ? "1 scan finding" : "\(count) scan findings",
                 image: shieldImage(color: level.color)
             )
         case .failed:
-            statusItem.button?.image = shieldImage(color: .systemRed)
+            statusItem.button?.image = brandImage(color: .systemRed)
             setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
         }
     }
@@ -255,11 +255,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scanStatusItem.image = image
     }
 
-    private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
-        let fallback = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Automic Vault")
+    private func brandImage(color: NSColor? = nil) -> NSImage? {
+        let fallback = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
             .flatMap(NSImage.init(contentsOf:)) ?? fallback else { return nil }
         image.size = NSSize(width: 15, height: 18)
+        return tinted(image, color: color)
+    }
+
+    private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "SHIELD") else {
+            return nil
+        }
+        let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
+        image.size = NSSize(width: 16, height: 16)
+        return tinted(image, color: color)
+    }
+
+    private func tinted(_ image: NSImage, color: NSColor?) -> NSImage {
         guard let color else {
             image.isTemplate = true
             return image
