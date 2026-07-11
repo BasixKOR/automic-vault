@@ -143,7 +143,7 @@ private let splitDetectorDisplayNames: [String: DetectorDisplayName] = [
     "pnpm-minimum-release-age": DetectorDisplayName(packageName: "pnpm", kind: "minimum release age"),
     "secretlint-persisted-report": DetectorDisplayName(packageName: "secretlint", kind: "persisted report"),
     "secretlint-shell-history": DetectorDisplayName(packageName: "secretlint", kind: "shell history"),
-    "sudo": DetectorDisplayName(packageName: "sudo", kind: "biometric authentication"),
+    "sudo": DetectorDisplayName(packageName: "sudo", kind: "root hardening"),
 ]
 
 public struct DetectorFinding: Codable, Equatable, Sendable {
