@@ -133,8 +133,9 @@ final class DashboardModel: ObservableObject {
                 DashboardItem(
                     id: $0.id.uuidString,
                     title: "\($0.launcher ?? "Unknown app") used \($0.tool)",
-                    subtitle: "\($0.decision) · \($0.date.formatted(date: .abbreviated, time: .standard))",
-                    detail: $0.reason
+                    subtitle: $0.decision,
+                    detail: $0.reason,
+                    date: $0.date
                 )
             }
         }
@@ -556,8 +557,9 @@ struct DashboardItem: Identifiable, Equatable {
     let severity: String?
     let isTriggered: Bool
     let isHardened: Bool
+    let date: Date?
 
-    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false, isHardened: Bool = false) {
+    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false, isHardened: Bool = false, date: Date? = nil) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -568,6 +570,7 @@ struct DashboardItem: Identifiable, Equatable {
         self.severity = severity
         self.isTriggered = isTriggered
         self.isHardened = isHardened
+        self.date = date
     }
 }
 
@@ -845,11 +848,17 @@ private struct DashboardRow: View {
                         .outlinedPill(detectorSeverityColor(severity))
                 }
             }
-            Text(item.subtitle)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if let date = item.date {
+                    Text("\(item.subtitle) · \(Text(date, style: .relative)) · \(Text(date.formatted(date: .abbreviated, time: .standard)).foregroundStyle(.tertiary))")
+                } else {
+                    Text(item.subtitle)
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
