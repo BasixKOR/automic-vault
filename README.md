@@ -5,19 +5,7 @@
 > I am currently redoing Automic Vault to be much tighter in scope.
 > Do not start using v1! There is a v2 pre-release in releases if you like!
 
-The world is wild with plaintext secrets.
-
-The shadows are full of supply chain attacks that feast upon them.
-
-Your workshop shelves are filled with powerful tools that can unbridle kingdoms.
-
-From heaven descended agents, you gave them your tools and they broke prod for
-you had no real guardrails.
-
-> You need Automic Vault.
-
-Bringing operating system security primitives and approval gates to the wild
-west of developer tooling. From the creator of Homebrew.
+[Marketing story at Homepage](https://automicvault.com)
 
 ---
 
@@ -65,10 +53,3 @@ exec /usr/local/bin/av \
 
 For example here we insist on aws-vault because it converts your too powerful
 AWS keys into short-lived session tokens for every invocation.
-
-
-```sh
-$ av verify aws
-- checking ~/.aws/credentials
-- file doesn’t exist, good
-```
