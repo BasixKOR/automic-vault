@@ -850,7 +850,7 @@ private struct DashboardRow: View {
             }
             Group {
                 if let date = item.date {
-                    Text("\(item.subtitle) · \(date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))) · \(Text(date.formatted(date: .abbreviated, time: .standard)).foregroundStyle(.tertiary))")
+                    Text("\(item.subtitle) · \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) · \(Text(date.formatted(date: .abbreviated, time: .standard)).foregroundStyle(.tertiary))")
                 } else {
                     Text(item.subtitle)
                 }
