@@ -18,7 +18,7 @@ private var toastWindows: [NSWindow] = []
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private lazy var statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
     private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
@@ -259,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fallback = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
             .flatMap(NSImage.init(contentsOf:)) ?? fallback else { return nil }
-        image.size = NSSize(width: 16, height: 16)
+        image.size = NSSize(width: 15, height: 18)
         guard let color else {
             image.isTemplate = true
             return image
