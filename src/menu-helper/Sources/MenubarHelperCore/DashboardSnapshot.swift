@@ -285,10 +285,19 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
     public var title: String {
         switch self {
-        case .noAccess: "No Access"
+        case .noAccess: "Nothing"
         case .readOnly: "Read Only"
-        case .fullExceptSecretDumps: "Full Access Except Secret Dumps"
-        case .fullIncludingSecretDumps: "Full Access Including Secret Dumps"
+        case .fullExceptSecretDumps: "Trusted Access"
+        case .fullIncludingSecretDumps: "Full Access"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .noAccess: "All authenticated commands have approval gates"
+        case .readOnly: "Commands without side-effects are approved automatically"
+        case .fullExceptSecretDumps: "All commands are approved automatically except those that might exfiltrate secrets"
+        case .fullIncludingSecretDumps: "All commands are approved automatically"
         }
     }
 

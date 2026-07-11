@@ -1546,27 +1546,57 @@ private struct DefaultAppPolicyRow: View {
     }
 }
 
-private struct ProtectionMenu: View {
+private struct ProtectionMenu: NSViewRepresentable {
     let protection: SecretGateProtection
     let setProtection: (SecretGateProtection) -> Void
 
-    var body: some View {
-        Menu(protection.title) {
-            ForEach(SecretGateProtection.allCases) { candidate in
-                Button {
-                    setProtection(candidate)
-                } label: {
-                    if candidate == protection {
-                        Label(candidate.title, systemImage: "checkmark")
-                    } else {
-                        Text(candidate.title)
-                    }
-                }
-            }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: false)
+        button.isBordered = false
+        button.controlSize = .small
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.selectProtection(_:))
+        button.setAccessibilityLabel("Protection level")
+
+        for candidate in SecretGateProtection.allCases {
+            button.addItem(withTitle: candidate.title)
+            button.lastItem?.subtitle = candidate.subtitle
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("Protection level")
+        updateSelection(in: button)
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.parent = self
+        updateSelection(in: button)
+    }
+
+    private func updateSelection(in button: NSPopUpButton) {
+        guard let selectedIndex = SecretGateProtection.allCases.firstIndex(of: protection) else { return }
+        button.selectItem(at: selectedIndex)
+        for (index, item) in button.itemArray.enumerated() {
+            item.state = index == selectedIndex ? .on : .off
+        }
+        button.invalidateIntrinsicContentSize()
+    }
+
+    final class Coordinator: NSObject {
+        var parent: ProtectionMenu
+
+        init(parent: ProtectionMenu) {
+            self.parent = parent
+        }
+
+        @MainActor @objc func selectProtection(_ sender: NSPopUpButton) {
+            let candidates = SecretGateProtection.allCases
+            let selectedIndex = sender.indexOfSelectedItem
+            guard candidates.indices.contains(selectedIndex) else { return }
+            parent.setProtection(candidates[selectedIndex])
+        }
     }
 }
 
