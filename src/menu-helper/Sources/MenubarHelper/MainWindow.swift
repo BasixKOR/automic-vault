@@ -850,7 +850,23 @@ private struct DashboardRow: View {
             }
             Group {
                 if let date = item.date {
-                    Text("\(item.subtitle) · \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) · \(Text(date.formatted(date: .abbreviated, time: .standard)).foregroundStyle(.tertiary))")
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        switch item.subtitle {
+                        case "Approved":
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .accessibilityLabel("Approved")
+                        case "Denied":
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.red)
+                                .accessibilityLabel("Denied")
+                        default:
+                            Text(item.subtitle)
+                        }
+                        Text("· \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) ·")
+                        Text(date.formatted(date: .abbreviated, time: .standard))
+                            .foregroundStyle(.tertiary)
+                    }
                 } else {
                     Text(item.subtitle)
                 }
