@@ -5,19 +5,21 @@ org="automic-vault"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 clone_root="${AUTOMIC_VAULT_REPO_CACHE:-${repo_root}/../isotopes}"
-codex_project_root="${AUTOMIC_VAULT_CODEX_PROJECT_ROOT:-${repo_root}}"
 only_repo=""
+continue_tag=""
 dry_run=false
+continue_update=false
 
 usage() {
   cat <<'EOF'
-Usage: scripts/build-isotopes.sh [--clone-root PATH] [--repo NAME] [--dry-run]
+Usage: scripts/build-isotopes.sh [--clone-root PATH] [--repo NAME] [--continue --tag TAG] [--dry-run]
 
 For each automic-vault fork, check the latest upstream GitHub release. If the
 fork does not already have a release for that tag, rebase the fork's mirrored
-upstream default branch onto the upstream tag, ask Codex to verify the fork
-goals still hold, build the manifest, and publish cli-<version>.tgz to the fork
-release.
+upstream default branch onto the upstream tag, then stop with instructions for
+the controlling agent. After the agent resolves conflicts and verifies the fork
+goals, resume with --continue --repo NAME --tag TAG to build and publish
+cli-<version>.tgz to the fork release.
 EOF
 }
 
@@ -31,8 +33,16 @@ while [[ $# -gt 0 ]]; do
       only_repo="$2"
       shift 2
       ;;
+    --tag)
+      continue_tag="$2"
+      shift 2
+      ;;
     --dry-run)
       dry_run=true
+      shift
+      ;;
+    --continue)
+      continue_update=true
       shift
       ;;
     --help|-h)
@@ -46,6 +56,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$continue_update" == true && ( -z "$only_repo" || -z "$continue_tag" ) ]]; then
+  echo "--continue requires --repo NAME and --tag TAG" >&2
+  exit 64
+fi
+if [[ "$continue_update" == false && -n "$continue_tag" ]]; then
+  echo "--tag requires --continue" >&2
+  exit 64
+fi
 
 for tool in gh git jq ruby; do
   command -v "$tool" >/dev/null || {
@@ -175,45 +194,38 @@ latest_release_json() {
   gh api -H "Accept: application/vnd.github+json" "/repos/$1/releases/latest"
 }
 
-invoke_codex() {
+handoff_to_agent() {
   local repo_dir="$1"
   local fork_repo="$2"
   local upstream_repo="$3"
   local tag="$4"
   local rebase_status="$5"
-  local prompt
+  local resume_command
 
-  command -v codex >/dev/null || {
-    echo "Codex is required to verify isotope fork goals" >&2
-    return 127
-  }
+  printf -v resume_command '%q --clone-root %q --repo %q --continue --tag %q' \
+    "$script_dir/build-isotopes.sh" "$clone_root" "${fork_repo#*/}" "$tag"
 
-  prompt="$(cat <<EOF
-Verify and, if needed, finish this Automic Vault isotope update.
+  cat >&2 <<EOF
+CONTROLLING AGENT ACTION REQUIRED
+
+Verify and, if needed, finish this Automic Vault isotope update:
 
 Fork checkout: $repo_dir
 Fork repo: $fork_repo
 Upstream repo: $upstream_repo
 Upstream release tag: $tag
-Rebase result before you were invoked: $rebase_status
+Rebase exit status: $rebase_status
 
 Work in the fork checkout. If a rebase is in progress, resolve conflicts and
 finish it. Then read automic-vault.yml, verify the fork goal is still intact on
 top of upstream $tag, and make the smallest fixes needed if upstream changed.
 Run the manifest build or the narrowest practical check. Leave the checkout on
 the mirrored default branch with no unmerged paths, no rebase/merge/cherry-pick
-in progress, and no unstaged changes except intentional committed fork changes.
-EOF
-)"
+in progress, and no uncommitted changes.
 
-  codex exec \
-    --cd "$codex_project_root" \
-    --add-dir "$repo_dir" \
-    --sandbox workspace-write \
-    --config 'approval_policy="never"' \
-    --color never \
-    --ephemeral \
-    "$prompt" >&2
+Then resume the release with:
+  $resume_command
+EOF
 }
 
 git_clean() {
@@ -240,34 +252,6 @@ git_rebase_in_progress() {
   rebase_apply="$(git -C "$repo_dir" rev-parse --path-format=absolute --git-path rebase-apply)"
   rebase_merge="$(git -C "$repo_dir" rev-parse --path-format=absolute --git-path rebase-merge)"
   [[ -d "$rebase_apply" || -d "$rebase_merge" ]]
-}
-
-unmerged_paths_have_conflict_markers() {
-  local repo_dir="$1"
-  local path
-
-  while IFS= read -r path; do
-    [[ -f "$repo_dir/$path" ]] || continue
-    if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$repo_dir/$path"; then
-      return 0
-    fi
-  done < <(git -C "$repo_dir" diff --name-only --diff-filter=U)
-  return 1
-}
-
-continue_rebase_if_resolved() {
-  local repo_dir="$1"
-
-  while git_rebase_in_progress "$repo_dir"; do
-    if git -C "$repo_dir" diff --name-only --diff-filter=U | grep -q .; then
-      if unmerged_paths_have_conflict_markers "$repo_dir"; then
-        return 1
-      fi
-      git -C "$repo_dir" diff --name-only --diff-filter=U |
-        git -C "$repo_dir" add --pathspec-from-file=-
-    fi
-    GIT_EDITOR=true git -C "$repo_dir" rebase --continue || return 1
-  done
 }
 
 build_manifest() {
@@ -324,9 +308,16 @@ process_repo() {
     echo "Skipping $fork_repo: upstream default branch is unavailable"
     return 0
   fi
-  ensure_fork_branch "$repo_name" "$upstream_default" "$current_default"
+  if [[ "$continue_update" == false ]]; then
+    ensure_fork_branch "$repo_name" "$upstream_default" "$current_default"
+  fi
 
-  release_json="$(latest_release_json "$upstream_repo")"
+  if [[ "$continue_update" == true ]]; then
+    release_json="$(gh api -H "Accept: application/vnd.github+json" \
+      "/repos/$upstream_repo/releases/tags/$continue_tag")"
+  else
+    release_json="$(latest_release_json "$upstream_repo")"
+  fi
   tag="$(jq -r '.tag_name' <<<"$release_json")"
   release_url="$(jq -r '.html_url' <<<"$release_json")"
   if [[ -z "$tag" || "$tag" == null ]]; then
@@ -344,22 +335,37 @@ process_repo() {
   echo "New upstream release for $fork_repo: $upstream_repo $tag"
 
   if [[ "$dry_run" == true ]]; then
-    echo "Would rebase $upstream_default onto upstream tag $tag, verify with Codex, build, and release $archive_path"
+    if [[ "$continue_update" == true ]]; then
+      echo "Would validate the repaired checkout, build, and release $archive_path"
+    else
+      echo "Would rebase $upstream_default onto upstream tag $tag and stop for the controlling agent"
+    fi
     return 0
   fi
 
   set_upstream_remote "$repo_dir" "$upstream_repo"
   git -C "$repo_dir" fetch --no-tags upstream "+refs/tags/$tag:refs/tags/$tag"
-  set +e
-  git -C "$repo_dir" rebase "refs/tags/$tag"
-  status=$?
-  set -e
 
-  invoke_codex "$repo_dir" "$fork_repo" "$upstream_repo" "$tag" "$status"
-  continue_rebase_if_resolved "$repo_dir" || true
+  if [[ "$continue_update" == false ]]; then
+    set +e
+    git -C "$repo_dir" rebase "refs/tags/$tag"
+    status=$?
+    set -e
+    handoff_to_agent "$repo_dir" "$fork_repo" "$upstream_repo" "$tag" "$status"
+    exit 75
+  fi
+
+  if [[ "$(git -C "$repo_dir" branch --show-current)" != "$upstream_default" ]]; then
+    echo "Cannot continue $fork_repo: checkout must be on $upstream_default" >&2
+    return 1
+  fi
   if ! git_clean "$repo_dir"; then
-    echo "Codex did not leave $repo_dir clean" >&2
+    echo "Cannot continue $fork_repo: checkout is not clean" >&2
     git -C "$repo_dir" status --short >&2
+    return 1
+  fi
+  if ! git -C "$repo_dir" merge-base --is-ancestor "refs/tags/$tag" HEAD; then
+    echo "Cannot continue $fork_repo: HEAD is not based on upstream tag $tag" >&2
     return 1
   fi
 
