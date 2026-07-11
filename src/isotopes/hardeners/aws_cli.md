@@ -41,10 +41,9 @@ password store after the command exits.
   `/usr/local/bin/aws`.
 - During a command run, the keychain values are injected into the wrapper
   process environment so the temporary `pass` shim can hand them to `aws-vault`.
-- The menu helper can optionally auto-approve conservative read-only AWS CLI
-  requests from the hardened `/usr/local/bin/aws` wrapper. Enable
-  `Allow Read-Only AWS Requests` in the hardened AWS detail view. The first
-  allow-list covers `aws s3 ls`, `sts get-caller-identity`, `s3api list-*`,
+- The menu helper creates an AWS Secret Gate for the hardened wrapper. Its Read
+  Only level uses a conservative allow-list covering `aws s3 ls`, `sts
+  get-caller-identity`, `s3api list-*`,
   `s3api head-*`, and service operations named `list-*` or `describe-*`.
   Mutating commands, token-printing commands, manual `av inject`, and unknown
   commands still prompt.

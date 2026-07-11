@@ -11,7 +11,6 @@ import SwiftUI
 
 private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
-private let legacyTrustedScriptApprovalsDefaultsKey = "TrustedLauncherScriptApprovals"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
@@ -40,7 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.removeObject(forKey: legacyTrustedScriptApprovalsDefaultsKey)
         installStatusMenu()
 
         if shouldHandOffToLaunchAgent() {
@@ -968,13 +966,6 @@ private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
         && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
 }
 
-private enum SecretGateRequestClassification: CaseIterable {
-    case readOnly
-    case mutating
-    case secretDump
-    case unknown
-}
-
 private struct ResolvedSecretGatePolicy {
     let protection: SecretGateProtection
     let source: String
@@ -985,7 +976,7 @@ private func matchingSecretGate(
     request: ApprovalRequest,
     signing: SigningInfo,
     hardeners: [HardenerMetadata],
-    service: String = trustedScriptApprovalsKeychainService
+    service: String = secretGatePoliciesKeychainService
 ) -> SecretGate? {
     loadSecretGates(hardeners: hardeners, service: service).first { gate in
         gate.routes.contains { route in
@@ -1039,16 +1030,7 @@ private func secretGateProtectionAllows(
     _ protection: SecretGateProtection,
     classification: SecretGateRequestClassification
 ) -> Bool {
-    switch protection {
-    case .noAccess:
-        false
-    case .readOnly:
-        classification == .readOnly
-    case .fullExceptSecretDumps:
-        classification != .secretDump
-    case .fullIncludingSecretDumps:
-        true
-    }
+    protection.allows(classification)
 }
 
 private func classifySecretGateRequest(
@@ -1651,65 +1633,6 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
-private func trustedApprovalRecord(
-    script: ScriptApproval?,
-    request: ApprovalRequest,
-    launcher: LauncherIdentity?
-) -> TrustedScriptApproval? {
-    guard let launcher else { return nil }
-    return TrustedScriptApproval(
-        scriptPath: script?.path,
-        scriptChecksum: script?.checksum,
-        keys: request.keys.sorted(),
-        target: normalizedExecutablePath(request.target),
-        replaceExistingEnv: request.replaceExistingEnv,
-        allowMissingKeys: request.allowMissingKeys,
-        launcherRequirement: launcher.designatedRequirement
-    )
-}
-
-private func trustedLauncher(
-    script: ScriptApproval?,
-    request: ApprovalRequest,
-    launchers: [LauncherIdentity],
-    service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
-) -> LauncherIdentity? {
-    launchers.first {
-        trustedApprovalRecord(script: script, request: request, launcher: $0).map {
-            alwaysAllows($0, service: service, account: account)
-        } == true
-    }
-}
-
-private func trustedLauncher(
-    script: ScriptApproval?,
-    request: ApprovalRequest,
-    launchers: [LauncherIdentity],
-    approvals: [TrustedScriptApproval]
-) -> LauncherIdentity? {
-    launchers.first {
-        trustedApprovalRecord(script: script, request: request, launcher: $0).map {
-            alwaysAllows($0, approvals: approvals)
-        } == true
-    }
-}
-
-private func alwaysAllows(
-    _ approval: TrustedScriptApproval,
-    service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
-) -> Bool {
-    loadTrustedScriptApprovals(service: service, account: account).contains(approval)
-}
-
-private func alwaysAllows(
-    _ approval: TrustedScriptApproval,
-    approvals: [TrustedScriptApproval]
-) -> Bool {
-    approvals.contains(approval)
-}
-
 private final class ApprovalPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
@@ -2150,20 +2073,6 @@ private func showAutoApprovedToast(keys: [String], script: String, launcher: Str
 
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
-    let request = ApprovalRequest(
-        op: "inject",
-        keys: ["B", "A"],
-        target: "/bin/echo",
-        args: ["ignored"],
-        cwd: "/tmp",
-        replaceExistingEnv: true,
-        allowMissingKeys: false,
-        envConflicts: ["ignored"],
-        shebangScript: "/tmp/deploy",
-        tool: nil,
-        title: nil,
-        detail: nil
-    )
     let requester = approvalPromptRequester(
         launcher: LauncherIdentity(
             pid: 41,
@@ -2203,14 +2112,6 @@ private func runApprovalSelfCheck() -> Int32 {
     else {
         return 1
     }
-    let script = ScriptApproval(path: "/tmp/deploy", checksum: "abc")
-    let launcher = LauncherIdentity(
-        pid: 42,
-        path: "/Applications/Codex.app/Contents/MacOS/Codex",
-        identifier: "com.openai.codex",
-        teamIdentifier: "TEAM",
-        designatedRequirement: #"identifier "com.openai.codex" and anchor apple generic"#
-    )
     let vaulttySigning = LiveSigningInfo(
         identifier: "app.vaultty.Vaultty",
         teamIdentifier: "TEAM",
@@ -2240,13 +2141,6 @@ private func runApprovalSelfCheck() -> Int32 {
         mainExecutable: "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
         isAdHoc: true
     )
-    let wrapperLauncher = LauncherIdentity(
-        pid: 45,
-        path: "/Applications/Wrapper.app/Contents/MacOS/Wrapper",
-        identifier: "com.example.wrapper",
-        teamIdentifier: "TEAM",
-        designatedRequirement: #"identifier "com.example.wrapper" and anchor apple generic"#
-    )
     let unbundledSigning = LiveSigningInfo(
         identifier: "com.automicvault.av",
         teamIdentifier: "TEAM",
@@ -2266,82 +2160,14 @@ private func runApprovalSelfCheck() -> Int32 {
         signing: vaulttyBridgeSigning,
         appSigning: { _ in vaulttyAppSigning }
     )
-    guard let approval = trustedApprovalRecord(
-        script: script,
-        request: request,
-        launcher: launcher
-    ), let appApproval = trustedApprovalRecord(
-        script: nil,
-        request: request,
-        launcher: launcher
-    ) else {
-        return 1
-    }
-    func altered(
-        checksum: String = "abc",
-        keys: [String] = ["A", "B"],
-        target: String = "/bin/echo",
-        replaceExistingEnv: Bool = true,
-        allowMissingKeys: Bool = false,
-        launcherRequirement: String = #"identifier "com.openai.codex" and anchor apple generic"#
-    ) -> TrustedScriptApproval {
-        TrustedScriptApproval(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: checksum,
-            keys: keys,
-            target: target,
-            replaceExistingEnv: replaceExistingEnv,
-            allowMissingKeys: allowMissingKeys,
-            launcherRequirement: launcherRequirement
-        )
-    }
-
-    guard approval.keys == ["A", "B"],
-          appApproval.scriptPath == nil,
-          appApproval.scriptChecksum == nil,
-          appApproval.keys == ["A", "B"],
-          trustedApprovalRecord(script: script, request: request, launcher: nil) == nil,
-          parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
+    guard parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           launcherAncestorStartPIDs(detachedCaller) == [43],
           launcherIdentity(pid: 45, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
-          launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil,
-          !alwaysAllows(approval, approvals: [])
+          launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil
     else {
         return 1
     }
-
-    let scriptApprovals = [approval]
-    guard alwaysAllows(approval, approvals: scriptApprovals),
-          trustedLauncher(script: script, request: request, launchers: [wrapperLauncher, launcher], approvals: scriptApprovals)?.designatedRequirement == launcher.designatedRequirement,
-          !alwaysAllows(altered(checksum: "def"), approvals: scriptApprovals),
-          !alwaysAllows(altered(keys: ["A"]), approvals: scriptApprovals),
-          !alwaysAllows(altered(target: "/usr/bin/env"), approvals: scriptApprovals),
-          !alwaysAllows(altered(replaceExistingEnv: false), approvals: scriptApprovals),
-          !alwaysAllows(altered(allowMissingKeys: true), approvals: scriptApprovals),
-          !alwaysAllows(altered(launcherRequirement: #"identifier "com.apple.Terminal""#), approvals: scriptApprovals)
-    else {
-        return 1
-    }
-    let appApprovals = [approval, appApproval]
-    guard alwaysAllows(appApproval, approvals: appApprovals),
-          trustedLauncher(script: nil, request: request, launchers: [wrapperLauncher, launcher], approvals: appApprovals)?.designatedRequirement == launcher.designatedRequirement,
-          !alwaysAllows(TrustedScriptApproval(
-              scriptPath: nil,
-              scriptChecksum: nil,
-              keys: ["A"],
-              target: "/bin/echo",
-              replaceExistingEnv: true,
-              allowMissingKeys: false,
-              launcherRequirement: launcher.designatedRequirement
-          ), approvals: appApprovals)
-    else {
-        return 1
-    }
-    let defaultsName = "com.automicvault.av2.approval-self-check.defaults.\(UUID().uuidString)"
-    guard let defaults = UserDefaults(suiteName: defaultsName) else { return 1 }
-    defaults.removePersistentDomain(forName: defaultsName)
-    defer { defaults.removePersistentDomain(forName: defaultsName) }
     let ghSigning = SigningInfo(identifier: "gh", teamIdentifier: "TEAM")
     func ghRequest(
         op: String = "keys",
@@ -2364,48 +2190,36 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     }
     let readOnlyGh = ghRequest()
-    guard !canAutoApproveReadOnlyGhRequest(
-        request: readOnlyGh,
-        callerPath: "/opt/homebrew/bin/gh",
-        signing: ghSigning,
-        defaults: defaults
-    ) else {
-        return 1
-    }
-    defaults.set(true, forKey: ghReadOnlyAutoApprovalDefaultsKey)
-    guard canAutoApproveReadOnlyGhRequest(
-        request: readOnlyGh,
-        callerPath: "/opt/homebrew/bin/gh",
-        signing: ghSigning,
-        defaults: defaults
-    ),
-          !canAutoApproveReadOnlyGhRequest(
-              request: ghRequest(args: ["repo", "delete", "owner/name"]),
-              callerPath: "/opt/homebrew/bin/gh",
-              signing: ghSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyGhRequest(
-              request: ghRequest(keys: ["OTHER_TOKEN"]),
-              callerPath: "/opt/homebrew/bin/gh",
-              signing: ghSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyGhRequest(
-              request: ghRequest(op: "inject"),
-              callerPath: "/opt/homebrew/bin/gh",
-              signing: ghSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyGhRequest(
+    let ghMetadata = HardenerMetadata(
+        name: "gh",
+        hardened: true,
+        secretGate: SecretGateDescriptor(
+            id: "gh",
+            keyPatterns: ["GH_TOKEN_*"],
+            routes: [SecretGateRoute(
+                operation: "keys",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/opt/gh-cli/bin/gh",
+                callerIdentifiers: ["gh", "com.github.cli"],
+                keyPatterns: ["GH_TOKEN_*"],
+                replaceExistingEnv: true,
+                allowMissingKeys: false
+            )]
+        )
+    )
+    guard matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
+          matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, hardeners: [ghMetadata]) == nil,
+          matchingSecretGate(request: ghRequest(op: "inject"), signing: ghSigning, hardeners: [ghMetadata]) == nil,
+          matchingSecretGate(
               request: readOnlyGh,
-              callerPath: "/usr/local/bin/av",
               signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
-              defaults: defaults
-          )
-    else {
-        return 1
-    }
+              hardeners: [ghMetadata]
+          ) == nil,
+          classifySecretGateRequest(gateID: "gh", request: readOnlyGh) == .readOnly,
+          classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["repo", "delete", "owner/name"])) == .mutating,
+          classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "token"])) == .secretDump,
+          classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "status", "--show-token"])) == .secretDump
+    else { return 1 }
 
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
@@ -2429,54 +2243,45 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     }
     let readOnlyAws = awsRequest()
-    guard !canAutoApproveReadOnlyAwsRequest(
-        request: readOnlyAws,
-        callerPath: "/usr/local/bin/av",
-        signing: avSigning,
-        defaults: defaults
-    ) else {
-        return 1
-    }
-    defaults.set(true, forKey: awsReadOnlyAutoApprovalDefaultsKey)
-    guard canAutoApproveReadOnlyAwsRequest(
-        request: readOnlyAws,
-        callerPath: "/usr/local/bin/av",
-        signing: avSigning,
-        defaults: defaults
-    ),
-          readOnlyAutoApprovalReason(
+    let awsMetadata = HardenerMetadata(
+        name: "aws",
+        hardened: true,
+        secretGate: SecretGateDescriptor(
+            id: "aws",
+            keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+            routes: [SecretGateRoute(
+                operation: "inject",
+                scriptPath: "/usr/local/bin/aws",
+                targetPath: "/bin/zsh",
+                callerIdentifiers: ["com.automicvault.av"],
+                keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+                replaceExistingEnv: false,
+                allowMissingKeys: false
+            )]
+        )
+    )
+    guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
+          matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, hardeners: [awsMetadata]) == nil,
+          matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, hardeners: [awsMetadata]) == nil,
+          matchingSecretGate(
               request: readOnlyAws,
-              callerPath: "/usr/local/bin/av",
-              signing: avSigning,
-              defaults: defaults
-          ) == "Auto-approved read-only aws request",
-          !canAutoApproveReadOnlyAwsRequest(
-              request: awsRequest(args: ["/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"]),
-              callerPath: "/usr/local/bin/av",
-              signing: avSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyAwsRequest(
-              request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]),
-              callerPath: "/usr/local/bin/av",
-              signing: avSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyAwsRequest(
-              request: awsRequest(shebangScript: nil),
-              callerPath: "/usr/local/bin/av",
-              signing: avSigning,
-              defaults: defaults
-          ),
-          !canAutoApproveReadOnlyAwsRequest(
-              request: readOnlyAws,
-              callerPath: "/opt/homebrew/bin/aws",
               signing: SigningInfo(identifier: "aws", teamIdentifier: "TEAM"),
-              defaults: defaults
-          )
-    else {
-        return 1
-    }
+              hardeners: [awsMetadata]
+          ) == nil,
+          classifySecretGateRequest(gateID: "aws", request: readOnlyAws) == .readOnly,
+          classifySecretGateRequest(
+              gateID: "aws",
+              request: awsRequest(args: ["/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
+          ) == .mutating,
+          SecretGateRequestClassification.allCases.allSatisfy({
+              secretGateProtectionAllows(.fullIncludingSecretDumps, classification: $0)
+          }),
+          !secretGateProtectionAllows(.noAccess, classification: .readOnly),
+          secretGateProtectionAllows(.readOnly, classification: .readOnly),
+          !secretGateProtectionAllows(.readOnly, classification: .unknown),
+          !secretGateProtectionAllows(.fullExceptSecretDumps, classification: .secretDump),
+          secretGateProtectionAllows(.fullExceptSecretDumps, classification: .unknown)
+    else { return 1 }
 
     return 0
 }

@@ -17,13 +17,13 @@ with:
 
 Use `av harden gh` to migrate existing `gh` credentials into Automic Vault.
 
-## Read-Only Auto-Approval
+## Secret Gate
 
-The menu bar app can allow read-only `gh` commands without prompting. Enable
-`Allow Read-Only gh Requests` from the hardened `gh` detail view. This only
-auto-approves known read-only commands and `gh api` GET requests. Non-GET API
-calls, token printing, configuration, extensions, aliases, and unknown commands
-still require approval.
+The menu bar app creates a `gh` Secret Gate as soon as the hardened CLI is
+installed. Configure its default and per-app protection levels there. Read Only
+auto-approves known read-only commands and `gh api` GET requests. Full Access
+Except Secret Dumps still prompts for `gh auth token` and `gh auth status
+--show-token`.
 
 ## Details
 

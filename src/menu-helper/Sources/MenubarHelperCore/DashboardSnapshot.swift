@@ -3,8 +3,7 @@ import Foundation
 import Security
 
 public let automicVaultKeychainService = "com.automicvault.isotope"
-public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
-public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
+public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 
@@ -57,7 +56,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         avExecutableURL: URL = defaultAVExecutableURL(),
         stubDirectory: URL = URL(fileURLWithPath: "/usr/local/bin", isDirectory: true),
         ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
-        approvalService: String = trustedScriptApprovalsKeychainService
+        policyService: String = secretGatePoliciesKeychainService
     ) -> DashboardSnapshot {
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
         let hardenedTools = loadHardenedTools(
@@ -71,7 +70,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
-            secretGates: loadSecretGates(hardeners: hardenerMetadata, service: approvalService),
+            secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
             secrets: secrets,
             accessRequests: loadAccessRequestRecords()
         )
@@ -224,6 +223,12 @@ public struct SecretGateDescriptor: Codable, Equatable, Sendable {
     public let keyPatterns: [String]
     public let routes: [SecretGateRoute]
 
+    public init(id: String, keyPatterns: [String], routes: [SecretGateRoute]) {
+        self.id = id
+        self.keyPatterns = keyPatterns
+        self.routes = routes
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case keyPatterns = "key_patterns"
@@ -239,6 +244,24 @@ public struct SecretGateRoute: Codable, Equatable, Sendable {
     public let keyPatterns: [String]
     public let replaceExistingEnv: Bool
     public let allowMissingKeys: Bool
+
+    public init(
+        operation: String,
+        scriptPath: String?,
+        targetPath: String,
+        callerIdentifiers: [String],
+        keyPatterns: [String],
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool
+    ) {
+        self.operation = operation
+        self.scriptPath = scriptPath
+        self.targetPath = targetPath
+        self.callerIdentifiers = callerIdentifiers
+        self.keyPatterns = keyPatterns
+        self.replaceExistingEnv = replaceExistingEnv
+        self.allowMissingKeys = allowMissingKeys
+    }
 
     enum CodingKeys: String, CodingKey {
         case operation
@@ -267,6 +290,26 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         case .fullIncludingSecretDumps: "Full Access Including Secret Dumps"
         }
     }
+
+    public func allows(_ classification: SecretGateRequestClassification) -> Bool {
+        switch self {
+        case .noAccess:
+            false
+        case .readOnly:
+            classification == .readOnly
+        case .fullExceptSecretDumps:
+            classification != .secretDump
+        case .fullIncludingSecretDumps:
+            true
+        }
+    }
+}
+
+public enum SecretGateRequestClassification: CaseIterable, Sendable {
+    case readOnly
+    case mutating
+    case secretDump
+    case unknown
 }
 
 public struct SecretGatePolicy: Equatable, Sendable {
@@ -287,6 +330,20 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public let routes: [SecretGateRoute]
     public let defaultProtection: SecretGateProtection
     public let appPolicies: [SecretGatePolicy]
+
+    public init(
+        id: String,
+        keyPatterns: [String],
+        routes: [SecretGateRoute],
+        defaultProtection: SecretGateProtection,
+        appPolicies: [SecretGatePolicy]
+    ) {
+        self.id = id
+        self.keyPatterns = keyPatterns
+        self.routes = routes
+        self.defaultProtection = defaultProtection
+        self.appPolicies = appPolicies
+    }
 
     public var scriptPaths: [String] { routes.compactMap(\.scriptPath).uniqueSorted() }
     public var targetPaths: [String] { routes.map(\.targetPath).uniqueSorted() }
@@ -377,34 +434,6 @@ struct HardenerReport: Codable {
     let hardeners: [HardenerMetadata]
 }
 
-public struct TrustedScriptApproval: Codable, Equatable, Sendable {
-    public let scriptPath: String?
-    public let scriptChecksum: String?
-    public let keys: [String]
-    public let target: String
-    public let replaceExistingEnv: Bool
-    public let allowMissingKeys: Bool
-    public let launcherRequirement: String
-
-    public init(
-        scriptPath: String?,
-        scriptChecksum: String?,
-        keys: [String],
-        target: String,
-        replaceExistingEnv: Bool,
-        allowMissingKeys: Bool,
-        launcherRequirement: String
-    ) {
-        self.scriptPath = scriptPath
-        self.scriptChecksum = scriptChecksum
-        self.keys = keys
-        self.target = normalizedExecutablePath(target)
-        self.replaceExistingEnv = replaceExistingEnv
-        self.allowMissingKeys = allowMissingKeys
-        self.launcherRequirement = launcherRequirement
-    }
-}
-
 public func detectorFindings(from scanJSON: Data) throws -> [DetectorFinding] {
     try JSONDecoder().decode(ScanReport.self, from: scanJSON).findings
 }
@@ -448,7 +477,7 @@ public func loadHardenedTools(
 
 public func loadSecretGates(
     hardeners: [HardenerMetadata] = [],
-    service: String = trustedScriptApprovalsKeychainService,
+    service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
     let records = loadSecretGatePolicyRecords(service: service, account: account)
@@ -472,7 +501,6 @@ public func loadSecretGates(
         )
     }
     .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
-}
 }
 
 public func normalizedExecutablePath(_ path: String) -> String {
@@ -515,56 +543,10 @@ private func normalizedHomebrewCellarExecutablePath(_ path: String) -> String? {
     return "/opt/homebrew/opt/\(components[4])/bin/\(components[7])"
 }
 
-private func parseInjectShebang(_ line: String) -> (keys: [String], target: String, replaceExistingEnv: Bool, allowMissingKeys: Bool)? {
-    guard line.hasPrefix("#!") else { return nil }
-    let parts = line.dropFirst(2).split(whereSeparator: \.isWhitespace).map(String.init)
-    guard let injectIndex = parts.firstIndex(of: "inject") else { return nil }
-    var replaceExistingEnv = false
-    var allowMissingKeys = false
-    var keys: [String] = []
-    var index = parts.index(after: injectIndex)
-    while index < parts.endIndex {
-        let part = parts[index]
-        if part == "--replace-existing-env" {
-            replaceExistingEnv = true
-        } else if part == "--allow-missing-keys" {
-            allowMissingKeys = true
-        } else if part.hasPrefix("+") {
-            keys.append(String(part.dropFirst()))
-        } else if part == "--" {
-            index = parts.index(after: index)
-            break
-        } else {
-            break
-        }
-        index = parts.index(after: index)
-    }
-    guard !keys.isEmpty, index < parts.endIndex else { return nil }
-    return (
-        keys: keys.uniqueSorted(),
-        target: resolvedExecutable(parts[index]),
-        replaceExistingEnv: replaceExistingEnv,
-        allowMissingKeys: allowMissingKeys
-    )
-}
-
-private func resolvedExecutable(_ executable: String) -> String {
-    if executable.contains("/") {
-        return URL(fileURLWithPath: executable).standardizedFileURL.path
-    }
-    for directory in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") {
-        let path = URL(fileURLWithPath: String(directory)).appendingPathComponent(executable).path
-        if FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-    }
-    return executable
-}
-
 public func setSecretGateDefaultProtection(
     _ protection: SecretGateProtection,
     for gate: SecretGate,
-    service: String = trustedScriptApprovalsKeychainService,
+    service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
     setSecretGatePolicyRecord(
@@ -578,7 +560,7 @@ public func setSecretGateAppProtection(
     requirement: String,
     protection: SecretGateProtection,
     for gate: SecretGate,
-    service: String = trustedScriptApprovalsKeychainService,
+    service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
     setSecretGatePolicyRecord(
@@ -591,7 +573,7 @@ public func setSecretGateAppProtection(
 public func removeSecretGateAppPolicy(
     _ policy: SecretGatePolicy,
     from gate: SecretGate,
-    service: String = trustedScriptApprovalsKeychainService,
+    service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
     let records = loadSecretGatePolicyRecords(service: service, account: account).filter {
@@ -633,6 +615,10 @@ private func saveSecretGatePolicyRecords(
     service: String,
     account: String
 ) -> OSStatus {
+    if records.isEmpty {
+        let status = deleteStoredSecret(account: account, service: service)
+        return status == errSecItemNotFound ? errSecSuccess : status
+    }
     do {
         let sorted = records.sorted {
             [$0.gateID, $0.requirement ?? ""].joined(separator: "\u{1f}")
@@ -655,30 +641,6 @@ private func setSecretGatePolicyRecord(
         records.append(record)
     }
     return saveSecretGatePolicyRecords(records, service: service, account: account)
-}
-
-public func loadTrustedScriptApprovals(
-    service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
-) -> [TrustedScriptApproval] {
-    guard let data = loadKeychainData(service: service, account: account),
-          let approvals = try? JSONDecoder().decode([TrustedScriptApproval].self, from: data)
-    else {
-        return []
-    }
-    return approvals.map { $0.normalized() }
-}
-
-public func saveTrustedScriptApprovals(
-    _ approvals: [TrustedScriptApproval],
-    service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
-) -> OSStatus {
-    do {
-        return saveKeychainData(try JSONEncoder().encode(approvals.map { $0.normalized() }), service: service, account: account)
-    } catch {
-        return errSecParam
-    }
 }
 
 public func loadAccessRequestRecords(
@@ -858,21 +820,6 @@ private extension Array where Element == SecretGatePolicy {
                     .localizedStandardCompare([$1.bundleIdentifier, $1.requirement].joined(separator: "\u{1f}")) == .orderedAscending
             }
     }
-}
-
-private extension TrustedScriptApproval {
-    func normalized() -> TrustedScriptApproval {
-        TrustedScriptApproval(
-            scriptPath: scriptPath,
-            scriptChecksum: scriptChecksum,
-            keys: keys,
-            target: normalizedExecutablePath(target),
-            replaceExistingEnv: replaceExistingEnv,
-            allowMissingKeys: allowMissingKeys,
-            launcherRequirement: launcherRequirement
-        )
-    }
-
 }
 
 func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {

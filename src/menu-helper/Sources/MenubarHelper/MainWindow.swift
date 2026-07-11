@@ -110,18 +110,17 @@ final class DashboardModel: ObservableObject {
             }
         case .secretGates:
             snapshot.secretGates.map {
-                let secrets = $0.keys.count == 1 ? "1 secret" : "\($0.keys.count) secrets"
-                let apps = $0.approvedApps.count == 1 ? "1 app" : "\($0.approvedApps.count) apps"
+                let secrets = $0.keyPatterns.count == 1 ? "1 secret" : "\($0.keyPatterns.count) secrets"
+                let apps = $0.appPolicies.count == 1 ? "1 app" : "\($0.appPolicies.count) apps"
                 return DashboardItem(
                     id: $0.id,
-                    title: secretGateTitle(scriptPath: $0.scriptPath, target: $0.target),
+                    title: $0.id,
                     subtitle: "\(secrets) - \(apps)",
                     detail: [
-                        "Script: \($0.scriptPath)",
-                        "SHA: \($0.scriptChecksum)",
-                        "Secrets: \($0.keys.joined(separator: ", "))",
-                        "Target: \($0.target)",
-                        "Calling apps: \($0.approvedApps.map(\.bundleIdentifier).joined(separator: ", "))",
+                        "Scripts: \($0.scriptPaths.joined(separator: ", "))",
+                        "Secrets: \($0.keyPatterns.joined(separator: ", "))",
+                        "Targets: \($0.targetPaths.joined(separator: ", "))",
+                        "Calling apps: \($0.appPolicies.map(\.bundleIdentifier).joined(separator: ", "))",
                     ].joined(separator: "\n")
                 )
             }
@@ -293,7 +292,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
             return
         }
-        let status = rememberTrustedApp(requirement: requirement, for: gate)
+        let status = setSecretGateAppProtection(requirement: requirement, protection: .readOnly, for: gate)
         if status == errSecSuccess {
             errorMessage = nil
             reload()
@@ -302,13 +301,36 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    func remove(_ app: SecretGateApprovedApp, from gate: SecretGate) {
-        let status = forgetTrustedApp(app, from: gate)
+    func setDefaultProtection(_ protection: SecretGateProtection, for gate: SecretGate) {
+        finishPolicyUpdate(
+            setSecretGateDefaultProtection(protection, for: gate),
+            error: "Could not update the default protection"
+        )
+    }
+
+    func setProtection(_ protection: SecretGateProtection, for app: SecretGatePolicy, in gate: SecretGate) {
+        finishPolicyUpdate(
+            setSecretGateAppProtection(requirement: app.requirement, protection: protection, for: gate),
+            error: "Could not update \(app.bundleIdentifier)"
+        )
+    }
+
+    func remove(_ app: SecretGatePolicy, from gate: SecretGate) {
+        let status = removeSecretGateAppPolicy(app, from: gate)
         if status == errSecSuccess {
             errorMessage = nil
             reload()
         } else {
             errorMessage = "Could not remove \(app.bundleIdentifier): \(status)"
+        }
+    }
+
+    private func finishPolicyUpdate(_ status: OSStatus, error: String) {
+        if status == errSecSuccess {
+            errorMessage = nil
+            reload()
+        } else {
+            errorMessage = "\(error): \(status)"
         }
     }
 
@@ -399,10 +421,6 @@ private func shellQuoted(_ value: String) -> String {
     "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
 }
 
-private func secretGateTitle(scriptPath: String, target: String) -> String {
-    scriptPath.isEmpty ? target : scriptPath
-}
-
 @MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
     let accessRequest = AccessRequestRecord(
@@ -444,9 +462,6 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1
-    else { return 1 }
-    guard secretGateTitle(scriptPath: "", target: "/opt/homebrew/opt/gh-cli/bin/gh") == "/opt/homebrew/opt/gh-cli/bin/gh",
-          secretGateTitle(scriptPath: "/usr/local/bin/aws", target: "/opt/homebrew/bin/aws") == "/usr/local/bin/aws"
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
@@ -1065,13 +1080,6 @@ private struct ReferenceDetailView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if item.title == "gh" {
-                GhReadOnlyApprovalToggle()
-            }
-            if item.title == "aws" {
-                AwsReadOnlyApprovalToggle()
-            }
-
             if !item.detail.isEmpty {
                 InfoBlock(title: "Current Result", text: item.detail)
                     .padding(14)
@@ -1134,26 +1142,6 @@ private struct ReferenceDetailView: View {
             .padding(.horizontal, 8)
             .frame(height: 20)
             .outlinedPill(badge.color)
-    }
-}
-
-private struct GhReadOnlyApprovalToggle: View {
-    @AppStorage(ghReadOnlyAutoApprovalDefaultsKey) private var allowReadOnlyGhRequests = false
-
-    var body: some View {
-        Toggle("Allow Read-Only gh Requests", isOn: $allowReadOnlyGhRequests)
-            .toggleStyle(.switch)
-            .font(.system(size: 13, weight: .medium))
-    }
-}
-
-private struct AwsReadOnlyApprovalToggle: View {
-    @AppStorage(awsReadOnlyAutoApprovalDefaultsKey) private var allowReadOnlyAwsRequests = false
-
-    var body: some View {
-        Toggle("Allow Read-Only AWS Requests", isOn: $allowReadOnlyAwsRequests)
-            .toggleStyle(.switch)
-            .font(.system(size: 13, weight: .medium))
     }
 }
 
@@ -1351,31 +1339,28 @@ private struct SecretGateDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(URL(fileURLWithPath: gate.scriptPath.isEmpty ? gate.target : gate.scriptPath).lastPathComponent)
+                Text(gate.id)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(3)
-                Text("\(countLabel(gate.keys.count, "secret")) allowed for \(countLabel(gate.approvedApps.count, "calling app"))")
+                Text("\(countLabel(gate.keyPatterns.count, "secret")) protected with \(countLabel(gate.appPolicies.count, "app override"))")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                if gate.scriptPath.isEmpty {
+                if gate.scriptPaths.isEmpty {
                     SecretGateField("Request", "Direct key access")
                 } else {
-                    SecretGateField("Script", gate.scriptPath)
-                    SecretGateField("SHA", gate.scriptChecksum, monospaced: true)
+                    SecretGateField("Scripts", gate.scriptPaths.joined(separator: ", "))
                 }
-                SecretGateField("Secrets", gate.keys.joined(separator: ", "))
-                SecretGateField("Target", gate.target)
-                SecretGateField("Replace Existing Env", gate.replaceExistingEnv ? "Yes" : "No")
-                SecretGateField("Allow Missing Keys", gate.allowMissingKeys ? "Yes" : "No")
+                SecretGateField("Secrets", gate.keyPatterns.joined(separator: ", "))
+                SecretGateField("Targets", gate.targetPaths.joined(separator: ", "))
             }
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Always Approved Apps")
+                    Text("App Access")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
                     Spacer()
@@ -1387,19 +1372,19 @@ private struct SecretGateDetailView: View {
                     .help("Add Calling App")
                 }
 
-                if gate.approvedApps.isEmpty {
-                    Text("No apps are always approved for this gate.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(gate.approvedApps, id: \.requirement) { app in
-                            ApprovedAppRow(app: app) {
-                                model.remove(app, from: gate)
-                            }
-                            if app.requirement != gate.approvedApps.last?.requirement {
-                                hairline
-                            }
+                VStack(spacing: 0) {
+                    DefaultAppPolicyRow(protection: gate.defaultProtection) {
+                        model.setDefaultProtection($0, for: gate)
+                    }
+                    if !gate.appPolicies.isEmpty { hairline }
+                    ForEach(gate.appPolicies, id: \.requirement) { app in
+                        ApprovedAppRow(
+                            app: app,
+                            setProtection: { model.setProtection($0, for: app, in: gate) },
+                            remove: { model.remove(app, from: gate) }
+                        )
+                        if app.requirement != gate.appPolicies.last?.requirement {
+                            hairline
                         }
                     }
                 }
@@ -1441,7 +1426,8 @@ private struct SecretGateField: View {
 }
 
 private struct ApprovedAppRow: View {
-    let app: SecretGateApprovedApp
+    let app: SecretGatePolicy
+    let setProtection: (SecretGateProtection) -> Void
     let remove: () -> Void
 
     private var display: ApprovedAppDisplay {
@@ -1469,6 +1455,7 @@ private struct ApprovedAppRow: View {
                     .textSelection(.enabled)
             }
             Spacer(minLength: 8)
+            ProtectionMenu(protection: app.protection, setProtection: setProtection)
             Button(role: .destructive, action: remove) {
                 Image(systemName: "minus")
                     .frame(width: 24, height: 24)
@@ -1482,13 +1469,61 @@ private struct ApprovedAppRow: View {
     }
 }
 
+private struct DefaultAppPolicyRow: View {
+    let protection: SecretGateProtection
+    let setProtection: (SecretGateProtection) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 18))
+                .frame(width: 34, height: 34)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("All Other Apps")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Default protection")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            ProtectionMenu(protection: protection, setProtection: setProtection)
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct ProtectionMenu: View {
+    let protection: SecretGateProtection
+    let setProtection: (SecretGateProtection) -> Void
+
+    var body: some View {
+        Menu(protection.title) {
+            ForEach(SecretGateProtection.allCases) { candidate in
+                Button {
+                    setProtection(candidate)
+                } label: {
+                    if candidate == protection {
+                        Label(candidate.title, systemImage: "checkmark")
+                    } else {
+                        Text(candidate.title)
+                    }
+                }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Protection level")
+    }
+}
+
 private struct ApprovedAppDisplay {
     let name: String
     let bundleIdentifier: String
     let icon: NSImage
     let signingSummary: String
 
-    init(_ app: SecretGateApprovedApp) {
+    init(_ app: SecretGatePolicy) {
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
         let bundle = url.flatMap(Bundle.init(url:))
         name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
