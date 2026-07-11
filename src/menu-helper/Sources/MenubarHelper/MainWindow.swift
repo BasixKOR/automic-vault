@@ -582,34 +582,47 @@ struct DashboardRootView: View {
             DashboardListView(model: model)
                 .navigationSplitViewColumnWidth(min: 168, ideal: 230)
                 .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
+                .toolbar {
+                   if model.selectedSection == .allSecrets {
+                        ToolbarItem {
+                            Button {
+                                model.isAddingSecret = true
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                            .help("Add Secret")
+                        }
+                    }
+                }
         } detail: {
             DashboardDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
-        }
-        .toolbar {
-            if model.shouldOfferCLIInstall {
-                Button {
-                    model.installCLI()
-                } label: {
-                    Label("Install av-cli", systemImage: "terminal")
+                .toolbar {
+                    Spacer()
+                    if model.shouldOfferCLIInstall {
+                        Button {
+                            model.installCLI()
+                        } label: {
+                            Label("Install av-cli", systemImage: "terminal")
+                        }
+                        .labelStyle(.titleAndIcon)
+                        .help("Install /usr/local/bin/av")
+                    }
+                    if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
+                        Button {
+                            model.addApp(to: gate)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .help("Add Calling App")
+                    }
+                    Button {
+                        model.reload()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Refresh")
                 }
-                .labelStyle(.titleAndIcon)
-                .help("Install /usr/local/bin/av")
-            }
-            if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
-                Button {
-                    model.addApp(to: gate)
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("Add Calling App")
-            }
-            Button {
-                model.reload()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .help("Refresh")
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
     }
@@ -700,16 +713,6 @@ private struct DashboardListView: View {
         }
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
-        }
-        .toolbar {
-            if model.selectedSection == .allSecrets {
-                Button {
-                    model.isAddingSecret = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("Add Secret")
-            }
         }
     }
 
