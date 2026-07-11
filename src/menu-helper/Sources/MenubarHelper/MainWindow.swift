@@ -470,11 +470,18 @@ func runDashboardSearchSelfCheck() -> Int32 {
         )]
     )
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
+    let appPolicy = gate.appPolicies[0]
+    let appRowHeight = NSHostingView(rootView: ApprovedAppRow(
+        app: appPolicy,
+        setProtection: { _ in },
+        remove: {}
+    ).frame(width: 500)).fittingSize.height
     guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1,
-          gateHeight > 0
+          gateHeight > 0,
+          appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
@@ -1453,13 +1460,27 @@ private struct ApprovedAppRow: View {
                 .resizable()
                 .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 4) {
-                Text(display.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(display.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    ProtectionMenu(protection: app.protection, setProtection: setProtection)
+                    Button(role: .destructive, action: remove) {
+                        Image(systemName: "minus")
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Remove Calling App")
+                }
                 Text(display.bundleIdentifier)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .textSelection(.enabled)
                 Text(display.signingSummary)
                     .font(.system(size: 11, design: .monospaced))
@@ -1467,16 +1488,6 @@ private struct ApprovedAppRow: View {
                     .lineLimit(2)
                     .textSelection(.enabled)
             }
-            Spacer(minLength: 8)
-            ProtectionMenu(protection: app.protection, setProtection: setProtection)
-            Button(role: .destructive, action: remove) {
-                Image(systemName: "minus")
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("Remove Calling App")
         }
         .padding(.vertical, 10)
     }
