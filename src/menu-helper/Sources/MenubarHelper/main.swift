@@ -159,6 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let idString = sender.representedObject as? String,
               let id = UUID(uuidString: idString)
         else { return }
+        showAutoApproval(id: id)
+    }
+
+    private func showAutoApproval(id: UUID) {
         openMainWindow()
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.showAccessRequest(id: id)
     }
@@ -274,7 +278,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoApprovals.insert(record, at: 0)
         autoApprovals = Array(autoApprovals.prefix(5))
         refreshAutoApprovalMenuItems()
-        showAutoApprovedToast(record, below: statusItem.button)
+        showAutoApprovedToast(record, below: statusItem.button) { [weak self] in
+            self?.showAutoApproval(id: record.accessRequestID)
+        }
     }
 
     private func recordAccessRequest(_ record: AccessRequestRecord) {
@@ -2072,8 +2078,17 @@ private struct ApprovalPromptSectionView: View {
 
 private struct AutoApprovedToastView: View {
     let record: AutoApprovalRecord
+    let open: () -> Void
 
     var body: some View {
+        Button(action: open) {
+            content
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open approval details for \(record.command)")
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: record.launcherIconPath))
@@ -2134,21 +2149,32 @@ private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: 
 }
 
 @MainActor
-private func showAutoApprovedToast(_ record: AutoApprovalRecord, below button: NSStatusBarButton?) {
+private func showAutoApprovedToast(
+    _ record: AutoApprovalRecord,
+    below button: NSStatusBarButton?,
+    open: @escaping () -> Void
+) {
     guard let button, let statusWindow = button.window else { return }
     let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
-    let hostingView = NSHostingView(rootView: AutoApprovedToastView(record: record))
+    let window = NSPanel(
+        contentRect: .zero,
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    let hostingView = NSHostingView(rootView: AutoApprovedToastView(record: record) { [weak window] in
+        if let window {
+            window.orderOut(nil)
+            toastWindows.removeAll { $0 === window }
+        }
+        open()
+    })
     let size = hostingView.fittingSize
     hostingView.frame.size = size
     let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         ?? NSRect(x: 0, y: 0, width: 800, height: 600)
     let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
-    let window = NSPanel(
-        contentRect: frame,
-        styleMask: [.borderless, .nonactivatingPanel],
-        backing: .buffered,
-        defer: false
-    )
+    window.setFrame(frame, display: false)
     window.level = .statusBar
     window.isOpaque = false
     window.backgroundColor = .clear
