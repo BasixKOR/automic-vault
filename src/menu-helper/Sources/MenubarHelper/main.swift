@@ -64,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handOffToLaunchAgent() {
+        statusItem.button?.image = shieldImage(symbolName: "shield")
+        statusItem.button?.alphaValue = 0.5
         scanStatusItem.title = "Starting Automic Vault"
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try handOffToLaunchAgentIfNeeded() }
@@ -82,6 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServices() {
+        statusItem.button?.image = shieldImage(symbolName: "shield.fill")
+        statusItem.button?.alphaValue = 1
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
@@ -1329,7 +1333,7 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
         try runLaunchctl(["bootstrap", domain, installed.path])
     }
     try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
-    try runLaunchctl(["kickstart", "-k", "\(domain)/\(approvalLaunchAgentName)"])
+    try runLaunchctl(["kickstart", "\(domain)/\(approvalLaunchAgentName)"])
     return true
 }
 
