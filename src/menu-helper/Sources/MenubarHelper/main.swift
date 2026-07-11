@@ -275,6 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoApprovals.insert(record, at: 0)
         autoApprovals = Array(autoApprovals.prefix(5))
         refreshAutoApprovalMenuItems()
+        showAutoApprovedToast(record, below: statusItem.button)
     }
 
     private func recordAccessRequest(_ record: AccessRequestRecord) {
@@ -316,7 +317,9 @@ private struct AutoApprovalRecord {
     let accessRequestID: UUID
     let date: Date
     let launcher: String
+    let launcherIconPath: String
     let tool: String
+    let keys: [String]
 }
 
 private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
@@ -333,7 +336,9 @@ private func autoApprovalRecord(
         accessRequestID: accessRequestID,
         date: Date(),
         launcher: shortAppName(launcher.identifier),
-        tool: autoApprovalToolName(request, scriptPath: script?.path)
+        launcherIconPath: appBundleURL(containing: launcher.path)?.path ?? launcher.path,
+        tool: autoApprovalToolName(request, scriptPath: script?.path),
+        keys: request.keys
     )
 }
 
@@ -2050,40 +2055,78 @@ private struct ApprovalPromptSectionView: View {
     }
 }
 
+private struct AutoApprovedToastView: View {
+    let record: AutoApprovalRecord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: record.launcherIconPath))
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 42, height: 42)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityLabel(record.launcher)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(record.launcher)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text("AUTO APPROVED")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Approved")
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.tool)
+                    .font(.system(.callout, design: .monospaced).weight(.medium))
+                    .foregroundStyle(.white)
+                Text(record.keys.joined(separator: ", "))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(16)
+        .frame(width: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(.white.opacity(0.18), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: NSSize) -> NSRect {
+    let margin: CGFloat = 8
+    let x = min(max(anchor.midX - size.width / 2, visibleFrame.minX + margin), visibleFrame.maxX - size.width - margin)
+    let y = max(visibleFrame.minY + margin, min(anchor.minY - 4, visibleFrame.maxY) - size.height)
+    return NSRect(origin: NSPoint(x: x, y: y), size: size)
+}
+
 @MainActor
-private func showAutoApprovedToast(keys: [String], script: String, launcher: String) {
-    let text = "Auto approved \(keys.joined(separator: ", ")) for \(script) from \(launcher)"
-    let width = min(max((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width + 28, 280), 640)
-    let height: CGFloat = 38
-
-    let label = NSTextField(labelWithString: text)
-    label.frame = NSRect(x: 12, y: 0, width: width - 24, height: height)
-    label.autoresizingMask = [.width, .height]
-    label.lineBreakMode = .byTruncatingMiddle
-    label.maximumNumberOfLines = 1
-    label.textColor = .labelColor
-    label.font = .systemFont(ofSize: 13, weight: .medium)
-
-    let box = NSBox()
-    box.frame = NSRect(x: 0, y: 0, width: width, height: height)
-    box.autoresizingMask = [.width, .height]
-    box.boxType = .custom
-    box.cornerRadius = 8
-    box.borderWidth = 1
-    box.borderColor = .separatorColor
-    box.fillColor = .windowBackgroundColor
-
-    let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-    content.addSubview(box)
-    content.addSubview(label)
-
-    let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-    let frame = NSRect(
-        x: screenFrame.midX - width / 2,
-        y: screenFrame.maxY - height - 8,
-        width: width,
-        height: height
-    )
+private func showAutoApprovedToast(_ record: AutoApprovalRecord, below button: NSStatusBarButton?) {
+    guard let button, let statusWindow = button.window else { return }
+    let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
+    let hostingView = NSHostingView(rootView: AutoApprovedToastView(record: record))
+    let size = hostingView.fittingSize
+    hostingView.frame.size = size
+    let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
     let window = NSPanel(
         contentRect: frame,
         styleMask: [.borderless, .nonactivatingPanel],
@@ -2094,13 +2137,25 @@ private func showAutoApprovedToast(keys: [String], script: String, launcher: Str
     window.isOpaque = false
     window.backgroundColor = .clear
     window.hasShadow = true
-    window.contentView = content
+    window.contentView = hostingView
+    window.alphaValue = 0
     toastWindows.append(window)
     window.orderFront(nil)
+    NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.15
+        window.animator().alphaValue = 1
+    }
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-        window.orderOut(nil)
-        toastWindows.removeAll { $0 === window }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            window.animator().alphaValue = 0
+        }, completionHandler: {
+            Task { @MainActor in
+                window.orderOut(nil)
+                toastWindows.removeAll { $0 === window }
+            }
+        })
     }
 }
 
@@ -2530,10 +2585,17 @@ private func runMenuStatusSelfCheck() -> Int32 {
                   accessRequestID: UUID(),
                   date: Date(timeIntervalSince1970: 18_900),
                   launcher: "Codex",
-                  tool: "aws"
+                  launcherIconPath: "/Applications/Codex.app",
+                  tool: "aws",
+                  keys: ["AWS_SECRET_ACCESS_KEY"]
               ),
               formatter: formatter
-          ) == "5:15 AM – Codex used aws"
+          ) == "5:15 AM – Codex used aws",
+          autoApprovalToastFrame(
+              anchor: NSRect(x: 760, y: 600, width: 24, height: 24),
+              visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+              size: NSSize(width: 360, height: 120)
+          ) == NSRect(x: 432, y: 476, width: 360, height: 120)
     else {
         return 1
     }
