@@ -252,10 +252,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "SHIELD") else {
-            return nil
-        }
-        let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
+        let fallback = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Automic Vault")
+        guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
+            .flatMap(NSImage.init(contentsOf:)) ?? fallback else { return nil }
         image.size = NSSize(width: 16, height: 16)
         guard let color else {
             image.isTemplate = true
