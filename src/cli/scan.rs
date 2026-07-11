@@ -358,6 +358,21 @@ mod tests {
         assert!(output.contains(r#""stub_path":"#));
         assert!(output.contains(r#""target_path":"#));
         assert!(output.contains(r###""documentation":"# GitHub CLI"###));
+
+        let report: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let hardeners = report["hardeners"].as_array().unwrap();
+        let gate = |name: &str| {
+            &hardeners
+                .iter()
+                .find(|hardener| hardener["name"] == name)
+                .unwrap()["secret_gate"]
+        };
+        assert_eq!(gate("gh")["id"], "gh");
+        assert_eq!(gate("supabase")["id"], "supabase");
+        assert_eq!(gate("aws")["routes"][0]["operation"], "inject");
+        assert!(gate("brew").is_null());
+        assert!(gate("sudo").is_null());
+        assert_eq!(gate("jfrog-cli")["routes"].as_array().unwrap().len(), 2);
     }
 
     #[test]

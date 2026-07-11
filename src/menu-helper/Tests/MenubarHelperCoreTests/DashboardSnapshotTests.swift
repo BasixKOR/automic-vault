@@ -105,6 +105,17 @@ import Testing
     ])
 }
 
+@Test func hardenerMetadataDecodesSecretGateDescriptor() throws {
+    let data = Data(#"""
+    {"hardeners":[{"name":"gh","documentation":"","hardened":true,"stub_path":null,"target_path":"/opt/homebrew/opt/gh-cli/bin/gh","secret_gate":{"id":"gh","key_patterns":["GH_TOKEN_*"],"routes":[{"operation":"keys","script_path":null,"target_path":"/opt/homebrew/opt/gh-cli/bin/gh","caller_identifiers":["gh","com.github.cli"],"key_patterns":["GH_TOKEN_*"],"replace_existing_env":true,"allow_missing_keys":false}]}}]}
+    """#.utf8)
+
+    let hardener = try #require(try hardenerMetadata(from: data).first)
+    #expect(hardener.secretGate?.id == "gh")
+    #expect(hardener.secretGate?.keyPatterns == ["GH_TOKEN_*"])
+    #expect(hardener.secretGate?.routes.first?.callerIdentifiers == ["gh", "com.github.cli"])
+}
+
 @Test func detectorDocumentationReferencesHardenerCommand() {
     #expect(hardenerNameReferencedByDocumentation("```sh\nav harden gh\n```") == "gh")
     #expect(hardenerNameReferencedByDocumentation("Run `sudo av harden aws` after import.") == "aws")
@@ -140,242 +151,99 @@ import Testing
     #expect(tools.last?.stubPath == nil)
 }
 
-@Test func secretGatesDecodeRememberedApprovals() throws {
-    guard dataProtectionKeychainAvailable() else { return }
-    let service = "com.automicvault.tests.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
 
-    #expect(saveTrustedScriptApprovals([
-        TrustedScriptApproval(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: "abc",
-            keys: ["B", "A"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.example.app""#
-        ),
-        TrustedScriptApproval(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: "abc",
-            keys: ["A", "B"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.other.app""#
-        ),
-        TrustedScriptApproval(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: "def",
-            keys: ["A", "B"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.third.app""#
-        ),
-        TrustedScriptApproval(
-            scriptPath: nil,
-            scriptChecksum: nil,
-            keys: ["A", "B"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.direct.app""#
+private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
+    HardenerMetadata(
+        name: "gh",
+        hardened: hardened,
+        stubPath: "/opt/homebrew/opt/gh-cli/bin/gh",
+        targetPath: "/opt/homebrew/opt/gh-cli/bin/gh",
+        secretGate: SecretGateDescriptor(
+            id: "gh",
+            keyPatterns: ["GH_TOKEN_*"],
+            routes: [SecretGateRoute(
+                operation: "keys",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/opt/gh-cli/bin/gh",
+                callerIdentifiers: ["gh", "com.github.cli"],
+                keyPatterns: ["GH_TOKEN_*"],
+                replaceExistingEnv: true,
+                allowMissingKeys: false
+            )]
         )
-    ], service: service) == errSecSuccess)
-
-    #expect(loadSecretGates(service: service) == [
-        SecretGate(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: "abc",
-            keys: ["A", "B"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: [
-                SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: #"identifier "com.example.app""#),
-                SecretGateApprovedApp(bundleIdentifier: "com.other.app", requirement: #"identifier "com.other.app""#),
-            ]
-        ),
-        SecretGate(
-            scriptPath: "/tmp/deploy",
-            scriptChecksum: "def",
-            keys: ["A", "B"],
-            target: "/bin/echo",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: [
-                SecretGateApprovedApp(bundleIdentifier: "com.third.app", requirement: #"identifier "com.third.app""#),
-            ]
-        ),
-    ])
-}
-
-@Test func configuredSecretGatesDoNotRequireStoredKeys() throws {
-    let directory = temporaryDirectory()
-    let stub = directory.appendingPathComponent("aws")
-    let contents = """
-    #!/usr/local/bin/av inject --replace-existing-env +AWS_SECRET_ACCESS_KEY +AWS_ACCESS_KEY_ID /bin/zsh
-    echo ignored
-    """
-    try contents.write(to: stub, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    let gates = loadSecretGates(
-        configuredTools: [HardenedTool(name: "aws", stubPath: stub.path, targetPath: "/opt/homebrew/bin/aws")],
-        service: "com.automicvault.tests.\(UUID().uuidString)"
     )
-
-    #expect(gates == [
-        SecretGate(
-            scriptPath: stub.standardizedFileURL.path,
-            scriptChecksum: SHA256.hash(data: Data(contents.utf8)).map { String(format: "%02x", $0) }.joined(),
-            keys: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-            target: "/bin/zsh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: []
-        )
-    ])
 }
 
-@Test func hardenedGhGetsSecretGate() throws {
-    let gates = loadSecretGates(
-        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
-        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM_MXCL")],
-        service: "com.automicvault.tests.\(UUID().uuidString)"
-    )
+@Test func hardenedToolGetsOneGateWithoutStoredSecrets() {
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let gates = loadSecretGates(hardeners: [testGateMetadata(), testGateMetadata(hardened: false)], service: service)
 
-    #expect(gates == [
-        SecretGate(
-            scriptPath: "",
-            scriptChecksum: "",
-            keys: ["GH_TOKEN_GITHUB_COM_MXCL"],
-            target: "/opt/homebrew/opt/gh-cli/bin/gh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: []
-        )
-    ])
+    #expect(gates.count == 1)
+    #expect(gates.first?.id == "gh")
+    #expect(gates.first?.keyPatterns == ["GH_TOKEN_*"])
+    #expect(gates.first?.defaultProtection == .noAccess)
+    #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
-@Test func hardenedGhMergesRememberedHomebrewTargetAliases() throws {
+@Test(
+    arguments: SecretGateProtection.allCases,
+    SecretGateRequestClassification.allCases
+)
+func protectionPolicyMatrix(
+    protection: SecretGateProtection,
+    classification: SecretGateRequestClassification
+) {
+    let expected = switch protection {
+    case .noAccess: false
+    case .readOnly: classification == .readOnly
+    case .fullExceptSecretDumps: classification != .secretDump
+    case .fullIncludingSecretDumps: true
+    }
+    #expect(protection.allows(classification) == expected)
+}
+
+@Test func secretGatePoliciesPersistAndResolveOverrides() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
-
-    #expect(saveTrustedScriptApprovals([
-        TrustedScriptApproval(
-            scriptPath: nil,
-            scriptChecksum: nil,
-            keys: ["GH_TOKEN_GITHUB_COM"],
-            target: "/opt/homebrew/Cellar/gh-cli/2.96.0/bin/gh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.example.app""#
-        )
-    ], service: service) == errSecSuccess)
-
-    #expect(loadSecretGates(
-        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
-        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM")],
-        service: service
-    ) == [
-        SecretGate(
-            scriptPath: "",
-            scriptChecksum: "",
-            keys: ["GH_TOKEN_GITHUB_COM"],
-            target: "/opt/homebrew/opt/gh-cli/bin/gh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: [
-                SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: #"identifier "com.example.app""#),
-            ]
-        )
-    ])
-}
-
-@Test func hardenedGhHidesApprovalsForDeletedTokens() throws {
-    guard dataProtectionKeychainAvailable() else { return }
-    let service = "com.automicvault.tests.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
-
-    #expect(saveTrustedScriptApprovals([
-        TrustedScriptApproval(
-            scriptPath: nil,
-            scriptChecksum: nil,
-            keys: ["GH_TOKEN_GITHUB_COM"],
-            target: "/opt/homebrew/opt/gh-cli/bin/gh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            launcherRequirement: #"identifier "com.example.app""#
-        )
-    ], service: service) == errSecSuccess)
-
-    #expect(loadSecretGates(
-        configuredTools: [HardenedTool(name: "gh", targetPath: "/opt/homebrew/opt/gh-cli/bin/gh")],
-        storedSecrets: [StoredSecret(account: "GH_TOKEN_GITHUB_COM_MXCL")],
-        service: service
-    ) == [
-        SecretGate(
-            scriptPath: "",
-            scriptChecksum: "",
-            keys: ["GH_TOKEN_GITHUB_COM_MXCL"],
-            target: "/opt/homebrew/opt/gh-cli/bin/gh",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            approvedApps: []
-        )
-    ])
-}
-
-@Test func secretGateAppsCanBeAddedAndRemoved() throws {
-    guard dataProtectionKeychainAvailable() else { return }
-    let service = "com.automicvault.tests.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
-
-    let gate = SecretGate(
-        scriptPath: "/tmp/deploy",
-        scriptChecksum: "abc",
-        keys: ["A", "B"],
-        target: "/bin/echo",
-        replaceExistingEnv: true,
-        allowMissingKeys: false,
-        approvedApps: []
-    )
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let metadata = testGateMetadata()
+    var gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     let requirement = #"identifier "com.example.app""#
 
-    #expect(rememberTrustedApp(requirement: requirement, for: gate, service: service) == errSecSuccess)
-    #expect(loadSecretGates(service: service).first?.approvedApps == [
-        SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement)
-    ])
-    #expect(forgetTrustedApp(SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement), from: gate, service: service) == errSecSuccess)
-    #expect(loadSecretGates(service: service).isEmpty)
+    #expect(setSecretGateDefaultProtection(.fullExceptSecretDumps, for: gate, service: service, account: account) == errSecSuccess)
+    gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
+    #expect(secretGateProtection(for: nil, in: gate).protection == .fullExceptSecretDumps)
+
+    #expect(setSecretGateAppProtection(
+        requirement: requirement,
+        protection: .noAccess,
+        for: gate,
+        service: service,
+        account: account
+    ) == errSecSuccess)
+    gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
+    let appPolicy = try #require(gate.appPolicies.first)
+    #expect(appPolicy.protection == .noAccess)
+    #expect(secretGateProtection(for: requirement, in: gate).protection == .noAccess)
+    #expect(secretGateProtection(for: #"identifier "com.other.app""#, in: gate).protection == .fullExceptSecretDumps)
+
+    #expect(removeSecretGateAppPolicy(appPolicy, from: gate, service: service, account: account) == errSecSuccess)
+    gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
+    #expect(gate.appPolicies.isEmpty)
+    #expect(secretGateProtection(for: requirement, in: gate).protection == .fullExceptSecretDumps)
 }
 
-@Test func directSecretGateAppsCanBeAddedAndRemoved() throws {
+@Test func defaultNoAccessIsNotPersisted() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
-    defer { _ = deleteStoredSecret(account: trustedScriptApprovalsKeychainAccount, service: service) }
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let metadata = testGateMetadata()
+    let gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
 
-    let gate = SecretGate(
-        scriptPath: "",
-        scriptChecksum: "",
-        keys: ["GH_TOKEN_GITHUB_COM"],
-        target: "/opt/homebrew/bin/gh",
-        replaceExistingEnv: true,
-        allowMissingKeys: false,
-        approvedApps: []
-    )
-    let requirement = #"identifier "com.example.app""#
-
-    #expect(rememberTrustedApp(requirement: requirement, for: gate, service: service) == errSecSuccess)
-    #expect(loadSecretGates(service: service).first?.approvedApps == [
-        SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement)
-    ])
-    #expect(forgetTrustedApp(SecretGateApprovedApp(bundleIdentifier: "com.example.app", requirement: requirement), from: gate, service: service) == errSecSuccess)
-    #expect(loadSecretGates(service: service).isEmpty)
+    #expect(setSecretGateDefaultProtection(.noAccess, for: gate, service: service, account: account) == errSecSuccess)
+    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .noAccess)
 }
 
 @Test func storedSecretsListNamesOnlyAndDelete() throws {

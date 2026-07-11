@@ -458,10 +458,23 @@ func runDashboardSearchSelfCheck() -> Int32 {
         ],
         accessRequests: [accessRequest]
     ))
+    let gate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: "com.openai.codex",
+            requirement: #"identifier "com.openai.codex""#,
+            protection: .readOnly
+        )]
+    )
+    let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
     guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
-          model.count(for: .secretUsage) == 1
+          model.count(for: .secretUsage) == 1,
+          gateHeight > 0
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
