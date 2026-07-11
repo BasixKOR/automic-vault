@@ -319,6 +319,7 @@ private struct AutoApprovalRecord {
     let launcher: String
     let launcherIconPath: String
     let tool: String
+    let command: String
     let keys: [String]
 }
 
@@ -338,6 +339,7 @@ private func autoApprovalRecord(
         launcher: shortAppName(launcher.identifier),
         launcherIconPath: appBundleURL(containing: launcher.path)?.path ?? launcher.path,
         tool: autoApprovalToolName(request, scriptPath: script?.path),
+        command: autoApprovalCommand(request, scriptPath: script?.path),
         keys: request.keys
     )
 }
@@ -384,6 +386,20 @@ private func autoApprovalToolName(_ request: ApprovalRequest, scriptPath: String
         return URL(fileURLWithPath: scriptPath).lastPathComponent
     }
     return URL(fileURLWithPath: request.target).lastPathComponent
+}
+
+private func autoApprovalCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    let scriptPath = scriptPath ?? resolvedShebangScriptPath(request)
+    var args = request.args
+    if let scriptPath, let first = args.first {
+        let firstPath = first.hasPrefix("/")
+            ? URL(fileURLWithPath: first)
+            : URL(fileURLWithPath: request.cwd).appendingPathComponent(first)
+        if firstPath.standardizedFileURL.path == URL(fileURLWithPath: scriptPath).standardizedFileURL.path {
+            args.removeFirst()
+        }
+    }
+    return prettyShellCommand(target: autoApprovalToolName(request, scriptPath: scriptPath), args: args)
 }
 
 private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
@@ -2085,9 +2101,10 @@ private struct AutoApprovedToastView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(record.tool)
+                Text(record.command)
                     .font(.system(.callout, design: .monospaced).weight(.medium))
                     .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(record.keys.joined(separator: ", "))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.68))
@@ -2566,7 +2583,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         op: "inject",
         keys: ["AWS_SECRET_ACCESS_KEY"],
         target: "/bin/zsh",
-        args: [],
+        args: ["/usr/local/bin/aws", "s3", "ls"],
         cwd: "/tmp",
         replaceExistingEnv: true,
         allowMissingKeys: false,
@@ -2587,10 +2604,16 @@ private func runMenuStatusSelfCheck() -> Int32 {
                   launcher: "Codex",
                   launcherIconPath: "/Applications/Codex.app",
                   tool: "aws",
+                  command: "aws s3 ls",
                   keys: ["AWS_SECRET_ACCESS_KEY"]
               ),
               formatter: formatter
           ) == "5:15 AM – Codex used aws",
+          autoApprovalCommand(request) == """
+          aws \\
+            s3 \\
+            ls
+          """,
           autoApprovalToastFrame(
               anchor: NSRect(x: 760, y: 600, width: 24, height: 24),
               visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
