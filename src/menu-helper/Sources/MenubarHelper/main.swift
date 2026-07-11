@@ -661,6 +661,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(for: identity)
+        let launcherFallbackPath = launcherFallbackPath(for: identity) ?? callerPath
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
@@ -777,7 +778,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 pid: pid,
                 signing: signing,
                 scriptApproval: scriptApproval,
-                launcher: launcher
+                launcher: launcher,
+                launcherFallbackPath: launcherFallbackPath
             )
             guard decision != .denied else {
                 self.transientApprovals.remember(.denied, for: transientApproval)
@@ -1430,6 +1432,28 @@ private func launcherAncestorStartPIDs(_ identity: AVProcessIdentity) -> [pid_t]
     return [identity.ppid, identity.sid].filter { $0 > 1 && seen.insert($0).inserted }
 }
 
+private func launcherFallbackPath(for identity: AVProcessIdentity) -> String? {
+    launcherAncestorStartPIDs(identity)
+        .compactMap(launcherAncestorPath(startingAt:))
+        .max { $0.depth < $1.depth }?
+        .path
+}
+
+private func launcherAncestorPath(startingAt startPID: pid_t) -> (path: String, depth: Int)? {
+    var pid = startPID
+    var seen = Set<pid_t>()
+    var result: (path: String, depth: Int)?
+    for depth in 1...32 {
+        guard pid > 1, seen.insert(pid).inserted else { return result }
+        var identity = AVProcessIdentity()
+        guard av_process_identity(pid, &identity) else { return result }
+        let path = pathString(identity)
+        if !path.isEmpty { result = (path, depth) }
+        pid = identity.ppid
+    }
+    return result
+}
+
 private func launcherIdentities(startingAt startPID: pid_t) -> [LauncherIdentity] {
     var pid = startPID
     var seen = Set<pid_t>()
@@ -1656,10 +1680,11 @@ private func showApprovalAlert(
     pid: pid_t,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
-    launcher: LauncherIdentity?
+    launcher: LauncherIdentity?,
+    launcherFallbackPath: String
 ) -> ApprovalDecision {
     NSApp.activate(ignoringOtherApps: true)
-    let requester = approvalPromptRequester(launcher: launcher, fallback: callerPath)
+    let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
@@ -2085,6 +2110,10 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         fallback: "/opt/homebrew/bin/gh"
     )
+    let unverifiedRequester = approvalPromptRequester(
+        launcher: nil,
+        fallback: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"
+    )
     let collapsedHeight = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -2109,6 +2138,8 @@ private func runApprovalSelfCheck() -> Int32 {
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
+          unverifiedRequester.name == "vaultty-sessiond",
+          unverifiedRequester.iconPath == "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
           collapsedHeight > 0,
           collapsedHeight < 660
     else {
