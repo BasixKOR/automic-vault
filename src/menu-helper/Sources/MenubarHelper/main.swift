@@ -1968,13 +1968,15 @@ private struct ApprovalPromptCommandView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(content.command)
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: true, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
+            ScrollView(.horizontal) {
+                Text(content.command)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+            .scrollDisabled(true)
+            .scrollIndicators(.hidden)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
