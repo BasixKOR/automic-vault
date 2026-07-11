@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::HardenerDetection;
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
 const GH_CLI_PATH: &str = "/opt/homebrew/opt/gh-cli/bin/gh";
 const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
@@ -74,6 +74,22 @@ pub(crate) fn detect() -> HardenerDetection {
         HardenerDetection::hardened(Some(path.clone()), Some(path))
     } else {
         HardenerDetection::missing(Some(path))
+    }
+}
+
+pub(crate) fn secret_gate() -> SecretGateDescriptor {
+    SecretGateDescriptor {
+        id: "gh",
+        key_patterns: vec!["GH_TOKEN_*".to_string()],
+        routes: vec![SecretGateRoute {
+            operation: "keys",
+            script_path: None,
+            target_path: gh_cli_path().display().to_string(),
+            caller_identifiers: vec!["gh", "com.github.cli"],
+            key_patterns: vec!["GH_TOKEN_*".to_string()],
+            replace_existing_env: true,
+            allow_missing_keys: false,
+        }],
     }
 }
 

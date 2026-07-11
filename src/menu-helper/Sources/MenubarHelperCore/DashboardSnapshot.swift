@@ -5,8 +5,7 @@ import Security
 public let automicVaultKeychainService = "com.automicvault.isotope"
 public let trustedScriptApprovalsKeychainService = "com.automicvault.approvals"
 public let trustedScriptApprovalsKeychainAccount = "TrustedLauncherScriptApprovals"
-public let ghReadOnlyAutoApprovalDefaultsKey = "GhReadOnlyAutoApproval"
-public let awsReadOnlyAutoApprovalDefaultsKey = "AwsReadOnlyAutoApproval"
+public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 
 public struct DashboardSnapshot: Equatable, Sendable {
@@ -72,7 +71,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
-            secretGates: loadSecretGates(configuredTools: hardenedTools, storedSecrets: secrets, service: approvalService),
+            secretGates: loadSecretGates(hardeners: hardenerMetadata, service: approvalService),
             secrets: secrets,
             accessRequests: loadAccessRequestRecords()
         )
@@ -192,19 +191,22 @@ public struct HardenerMetadata: Codable, Equatable, Sendable {
     public let hardened: Bool
     public let stubPath: String?
     public let targetPath: String?
+    public let secretGate: SecretGateDescriptor?
 
     public init(
         name: String,
         documentation: String = "",
         hardened: Bool = false,
         stubPath: String? = nil,
-        targetPath: String? = nil
+        targetPath: String? = nil,
+        secretGate: SecretGateDescriptor? = nil
     ) {
         self.name = name
         self.documentation = documentation
         self.hardened = hardened
         self.stubPath = stubPath
         self.targetPath = targetPath
+        self.secretGate = secretGate
     }
 
     enum CodingKeys: String, CodingKey {
@@ -213,38 +215,81 @@ public struct HardenerMetadata: Codable, Equatable, Sendable {
         case hardened
         case stubPath = "stub_path"
         case targetPath = "target_path"
+        case secretGate = "secret_gate"
     }
 }
 
-public struct SecretGate: Equatable, Sendable {
-    public let scriptPath: String
-    public let scriptChecksum: String
-    public let keys: [String]
-    public let target: String
+public struct SecretGateDescriptor: Codable, Equatable, Sendable {
+    public let id: String
+    public let keyPatterns: [String]
+    public let routes: [SecretGateRoute]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case keyPatterns = "key_patterns"
+        case routes
+    }
+}
+
+public struct SecretGateRoute: Codable, Equatable, Sendable {
+    public let operation: String
+    public let scriptPath: String?
+    public let targetPath: String
+    public let callerIdentifiers: [String]
+    public let keyPatterns: [String]
     public let replaceExistingEnv: Bool
     public let allowMissingKeys: Bool
-    public let approvedApps: [SecretGateApprovedApp]
 
-    public var id: String {
-        [
-            scriptPath,
-            scriptChecksum,
-            normalizedExecutablePath(target),
-            keys.sorted().joined(separator: "\u{1e}"),
-            replaceExistingEnv.description,
-            allowMissingKeys.description,
-        ].joined(separator: "\u{1f}")
+    enum CodingKeys: String, CodingKey {
+        case operation
+        case scriptPath = "script_path"
+        case targetPath = "target_path"
+        case callerIdentifiers = "caller_identifiers"
+        case keyPatterns = "key_patterns"
+        case replaceExistingEnv = "replace_existing_env"
+        case allowMissingKeys = "allow_missing_keys"
     }
 }
 
-public struct SecretGateApprovedApp: Equatable, Sendable {
+public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, Sendable {
+    case noAccess
+    case readOnly
+    case fullExceptSecretDumps
+    case fullIncludingSecretDumps
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .noAccess: "No Access"
+        case .readOnly: "Read Only"
+        case .fullExceptSecretDumps: "Full Access Except Secret Dumps"
+        case .fullIncludingSecretDumps: "Full Access Including Secret Dumps"
+        }
+    }
+}
+
+public struct SecretGatePolicy: Equatable, Sendable {
     public let bundleIdentifier: String
     public let requirement: String
+    public let protection: SecretGateProtection
 
-    public init(bundleIdentifier: String, requirement: String) {
+    public init(bundleIdentifier: String, requirement: String, protection: SecretGateProtection) {
         self.bundleIdentifier = bundleIdentifier
         self.requirement = requirement
+        self.protection = protection
     }
+}
+
+public struct SecretGate: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let keyPatterns: [String]
+    public let routes: [SecretGateRoute]
+    public let defaultProtection: SecretGateProtection
+    public let appPolicies: [SecretGatePolicy]
+
+    public var scriptPaths: [String] { routes.compactMap(\.scriptPath).uniqueSorted() }
+    public var targetPaths: [String] { routes.map(\.targetPath).uniqueSorted() }
 }
 
 public struct StoredSecret: Equatable, Sendable {
@@ -402,99 +447,32 @@ public func loadHardenedTools(
 }
 
 public func loadSecretGates(
-    configuredTools: [HardenedTool] = [],
-    storedSecrets: [StoredSecret] = [],
-    service: String = trustedScriptApprovalsKeychainService
+    hardeners: [HardenerMetadata] = [],
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
-    var gates = Dictionary(uniqueKeysWithValues: configuredSecretGates(from: configuredTools, storedSecrets: storedSecrets).map { ($0.id, $0) })
-    let storedSecretNames = Set(storedSecrets.map(\.account))
-    let approvals = loadTrustedScriptApprovals(service: service)
-    for gate in secretGates(from: approvals) {
-        if gate.scriptPath.isEmpty && !storedSecretNames.isEmpty && !gate.keys.allSatisfy(storedSecretNames.contains) {
-            continue
-        }
-        if let configured = gates[gate.id] {
-            gates[gate.id] = SecretGate(
-                scriptPath: configured.scriptPath,
-                scriptChecksum: configured.scriptChecksum,
-                keys: configured.keys,
-                target: configured.target,
-                replaceExistingEnv: configured.replaceExistingEnv,
-                allowMissingKeys: configured.allowMissingKeys,
-                approvedApps: gate.approvedApps
-            )
-        } else {
-            gates[gate.id] = gate
-        }
-    }
-    return gates.values.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
-}
-
-private func secretGates(from approvals: [TrustedScriptApproval]) -> [SecretGate] {
-    let grouped = Dictionary(grouping: approvals.filter { ($0.scriptPath == nil) == ($0.scriptChecksum == nil) }) {
-        "\($0.scriptPath ?? "")\u{1f}\($0.scriptChecksum ?? "")\u{1f}\(normalizedExecutablePath($0.target))\u{1f}\($0.keys.sorted().joined(separator: "\u{1e}"))\u{1f}\($0.replaceExistingEnv)\u{1f}\($0.allowMissingKeys)"
-    }
-    return grouped.values.compactMap { approvals in
-        guard let first = approvals.first else { return nil }
+    let records = loadSecretGatePolicyRecords(service: service, account: account)
+    return hardeners.compactMap { hardener in
+        guard hardener.hardened, let descriptor = hardener.secretGate else { return nil }
+        let gateRecords = records.filter { $0.gateID == descriptor.id }
         return SecretGate(
-            scriptPath: first.scriptPath ?? "",
-            scriptChecksum: first.scriptChecksum ?? "",
-            keys: first.keys.sorted(),
-            target: normalizedExecutablePath(first.target),
-            replaceExistingEnv: first.replaceExistingEnv,
-            allowMissingKeys: first.allowMissingKeys,
-            approvedApps: approvals.map {
-                SecretGateApprovedApp(
-                    bundleIdentifier: appIdentifier(from: $0.launcherRequirement) ?? "unknown",
-                    requirement: $0.launcherRequirement
-                )
+            id: descriptor.id,
+            keyPatterns: descriptor.keyPatterns.uniqueSorted(),
+            routes: descriptor.routes,
+            defaultProtection: gateRecords.last(where: { $0.requirement == nil })?.protection ?? .noAccess,
+            appPolicies: gateRecords.compactMap { record in
+                record.requirement.map {
+                    SecretGatePolicy(
+                        bundleIdentifier: appIdentifier(from: $0) ?? "unknown",
+                        requirement: $0,
+                        protection: record.protection
+                    )
+                }
             }.uniqueSorted()
         )
     }
     .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
 }
-
-private func configuredSecretGates(from tools: [HardenedTool], storedSecrets: [StoredSecret]) -> [SecretGate] {
-    tools.flatMap { tool in
-        if tool.name == "gh" {
-            return directSecretGates(for: tool, storedSecrets: storedSecrets)
-        }
-        guard let stubPath = tool.stubPath,
-              let data = try? Data(contentsOf: URL(fileURLWithPath: stubPath)),
-              let contents = String(data: data, encoding: .utf8),
-              let firstLine = contents.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init),
-              let injection = parseInjectShebang(firstLine)
-        else {
-            return []
-        }
-        return [SecretGate(
-            scriptPath: URL(fileURLWithPath: stubPath).standardizedFileURL.path,
-            scriptChecksum: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
-            keys: injection.keys,
-            target: normalizedExecutablePath(injection.target),
-            replaceExistingEnv: injection.replaceExistingEnv,
-            allowMissingKeys: injection.allowMissingKeys,
-            approvedApps: []
-        )]
-    }
-}
-
-private func directSecretGates(for tool: HardenedTool, storedSecrets: [StoredSecret]) -> [SecretGate] {
-    guard let target = tool.targetPath ?? tool.stubPath else { return [] }
-    return storedSecrets.map(\.account)
-        .filter { $0.hasPrefix("GH_TOKEN_") }
-        .uniqueSorted()
-        .map {
-            SecretGate(
-                scriptPath: "",
-                scriptChecksum: "",
-                keys: [$0],
-                target: normalizedExecutablePath(target),
-                replaceExistingEnv: true,
-                allowMissingKeys: false,
-                approvedApps: []
-            )
-        }
 }
 
 public func normalizedExecutablePath(_ path: String) -> String {
@@ -583,38 +561,100 @@ private func resolvedExecutable(_ executable: String) -> String {
     return executable
 }
 
-public func rememberTrustedApp(
-    requirement: String,
+public func setSecretGateDefaultProtection(
+    _ protection: SecretGateProtection,
     for gate: SecretGate,
     service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
+    account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
-    var approvals = loadTrustedScriptApprovals(service: service, account: account)
-    let approval = TrustedScriptApproval(
-        scriptPath: gate.scriptPath.isEmpty ? nil : gate.scriptPath,
-        scriptChecksum: gate.scriptChecksum.isEmpty ? nil : gate.scriptChecksum,
-        keys: gate.keys.sorted(),
-        target: normalizedExecutablePath(gate.target),
-        replaceExistingEnv: gate.replaceExistingEnv,
-        allowMissingKeys: gate.allowMissingKeys,
-        launcherRequirement: requirement
+    setSecretGatePolicyRecord(
+        SecretGatePolicyRecord(gateID: gate.id, requirement: nil, protection: protection),
+        service: service,
+        account: account
     )
-    if !approvals.contains(approval) {
-        approvals.append(approval)
-    }
-    return saveTrustedScriptApprovals(approvals, service: service, account: account)
 }
 
-public func forgetTrustedApp(
-    _ app: SecretGateApprovedApp,
+public func setSecretGateAppProtection(
+    requirement: String,
+    protection: SecretGateProtection,
+    for gate: SecretGate,
+    service: String = trustedScriptApprovalsKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
+    setSecretGatePolicyRecord(
+        SecretGatePolicyRecord(gateID: gate.id, requirement: requirement, protection: protection),
+        service: service,
+        account: account
+    )
+}
+
+public func removeSecretGateAppPolicy(
+    _ policy: SecretGatePolicy,
     from gate: SecretGate,
     service: String = trustedScriptApprovalsKeychainService,
-    account: String = trustedScriptApprovalsKeychainAccount
+    account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
-    let approvals = loadTrustedScriptApprovals(service: service, account: account).filter {
-        !($0.matches(gate) && $0.launcherRequirement == app.requirement)
+    let records = loadSecretGatePolicyRecords(service: service, account: account).filter {
+        !($0.gateID == gate.id && $0.requirement == policy.requirement)
     }
-    return saveTrustedScriptApprovals(approvals, service: service, account: account)
+    return saveSecretGatePolicyRecords(records, service: service, account: account)
+}
+
+public func secretGateProtection(
+    for requirement: String?,
+    in gate: SecretGate
+) -> (protection: SecretGateProtection, source: String) {
+    if let requirement, let policy = gate.appPolicies.first(where: { $0.requirement == requirement }) {
+        return (policy.protection, policy.bundleIdentifier)
+    }
+    return (gate.defaultProtection, "All Other Apps")
+}
+
+private struct SecretGatePolicyRecord: Codable, Equatable {
+    let gateID: String
+    let requirement: String?
+    let protection: SecretGateProtection
+}
+
+private func loadSecretGatePolicyRecords(
+    service: String,
+    account: String
+) -> [SecretGatePolicyRecord] {
+    guard let data = loadKeychainData(service: service, account: account) else { return [] }
+    do {
+        return try JSONDecoder().decode([SecretGatePolicyRecord].self, from: data)
+    } catch {
+        return []
+    }
+}
+
+private func saveSecretGatePolicyRecords(
+    _ records: [SecretGatePolicyRecord],
+    service: String,
+    account: String
+) -> OSStatus {
+    do {
+        let sorted = records.sorted {
+            [$0.gateID, $0.requirement ?? ""].joined(separator: "\u{1f}")
+                .localizedStandardCompare([$1.gateID, $1.requirement ?? ""].joined(separator: "\u{1f}")) == .orderedAscending
+        }
+        return saveKeychainData(try JSONEncoder().encode(sorted), service: service, account: account)
+    } catch {
+        return errSecParam
+    }
+}
+
+private func setSecretGatePolicyRecord(
+    _ record: SecretGatePolicyRecord,
+    service: String,
+    account: String
+) -> OSStatus {
+    var records = loadSecretGatePolicyRecords(service: service, account: account)
+    records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
+    if record.requirement != nil || record.protection != .noAccess {
+        records.append(record)
+    }
+    return saveSecretGatePolicyRecords(records, service: service, account: account)
 }
 
 public func loadTrustedScriptApprovals(
@@ -809,8 +849,8 @@ private extension Array where Element == String {
     }
 }
 
-private extension Array where Element == SecretGateApprovedApp {
-    func uniqueSorted() -> [SecretGateApprovedApp] {
+private extension Array where Element == SecretGatePolicy {
+    func uniqueSorted() -> [SecretGatePolicy] {
         var seen = Set<String>()
         return filter { seen.insert($0.requirement).inserted }
             .sorted {
@@ -833,14 +873,6 @@ private extension TrustedScriptApproval {
         )
     }
 
-    func matches(_ gate: SecretGate) -> Bool {
-        scriptPath == (gate.scriptPath.isEmpty ? nil : Optional(gate.scriptPath))
-            && scriptChecksum == (gate.scriptChecksum.isEmpty ? nil : Optional(gate.scriptChecksum))
-            && keys.sorted() == gate.keys.sorted()
-            && normalizedExecutablePath(target) == normalizedExecutablePath(gate.target)
-            && replaceExistingEnv == gate.replaceExistingEnv
-            && allowMissingKeys == gate.allowMissingKeys
-    }
 }
 
 func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
@@ -853,7 +885,7 @@ public func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
         .flatMap { try? detectorMetadata(from: $0) } ?? []
 }
 
-func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
+public func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
     loadJSON(avExecutableURL: avExecutableURL, arguments: ["hardeners", "--json"])
         .flatMap { try? hardenerMetadata(from: $0) } ?? []
 }

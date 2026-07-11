@@ -546,6 +546,7 @@ private struct ScriptApproval {
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
+    private let hardeners: [HardenerMetadata]?
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Void
     private var listener: xpc_connection_t?
@@ -554,6 +555,7 @@ private final class ApprovalServer: @unchecked Sendable {
 
     init(
         serviceName: String,
+        hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Void = { appendAccessRequestRecord($0) }
     ) throws {
@@ -562,6 +564,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         self.serviceName = serviceName
         self.teamIdentifier = teamIdentifier
+        self.hardeners = hardeners
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
     }
@@ -663,16 +666,41 @@ private final class ApprovalServer: @unchecked Sendable {
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
-        let launcher = trustedLauncher(script: scriptApproval, request: request, launchers: launchers) ?? launchers.first
-        if let autoApprovalReason = readOnlyAutoApprovalReason(request: request, callerPath: callerPath, signing: signing) {
+        let configuredGate = matchingSecretGate(
+            request: request,
+            signing: signing,
+            hardeners: hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
+        )
+        let resolvedPolicy = configuredGate.map { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
+        let launcher = resolvedPolicy?.launcher ?? launchers.first
+        if let configuredGate,
+           let resolvedPolicy,
+           secretGateProtectionAllows(
+               resolvedPolicy.protection,
+               classification: classifySecretGateRequest(gateID: configuredGate.id, request: request)
+           )
+        {
             do {
                 let secrets = try approvedSecrets(for: request)
+                let reason = "\(resolvedPolicy.protection.title) from \(resolvedPolicy.source)"
+                let accessRequestID = UUID()
+                if let launcher {
+                    Task { @MainActor in
+                        self.onAutoApproval(autoApprovalRecord(
+                            accessRequestID: accessRequestID,
+                            request: request,
+                            script: scriptApproval,
+                            launcher: launcher
+                        ))
+                    }
+                }
                 onAccessRequest(accessRequestRecord(
+                    id: accessRequestID,
                     request: request,
                     callerPath: callerPath,
                     decision: "Approved",
                     approvalSource: "Auto",
-                    reason: autoApprovalReason,
+                    reason: reason,
                     launcher: launcher
                 ))
                 reply(peer, to: message, ok: true, error: nil, secrets: secrets)
@@ -706,52 +734,6 @@ private final class ApprovalServer: @unchecked Sendable {
             shebangScript: request.shebangScript,
             tool: request.tool
         )
-        let trustedApproval = trustedApprovalRecord(
-            script: scriptApproval,
-            request: request,
-            launcher: launcher
-        )
-        if let launcher, let trustedApproval, alwaysAllows(trustedApproval) {
-            DispatchQueue.main.async {
-                do {
-                    let secrets = try self.approvedSecrets(for: request)
-                    let accessRequestID = UUID()
-                    self.onAutoApproval(autoApprovalRecord(
-                        accessRequestID: accessRequestID,
-                        request: request,
-                        script: scriptApproval,
-                        launcher: launcher
-                    ))
-                    self.onAccessRequest(accessRequestRecord(
-                        id: accessRequestID,
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Approved",
-                        approvalSource: "Auto",
-                        reason: "Always allowed from \(shortAppName(launcher.identifier))",
-                        launcher: launcher
-                    ))
-                    showAutoApprovedToast(
-                        keys: request.keys,
-                        script: scriptApproval?.path ?? request.tool ?? request.target,
-                        launcher: launcher.identifier
-                    )
-                    self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
-                } catch {
-                    self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Failed",
-                        approvalSource: "Auto",
-                        reason: error.localizedDescription,
-                        launcher: launcher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
-                }
-            }
-            return
-        }
-
         DispatchQueue.main.async {
             if let decision = self.transientApprovals.decision(for: transientApproval) {
                 if decision == .denied {
@@ -986,47 +968,109 @@ private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
         && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
 }
 
-private func readOnlyAutoApprovalReason(
-    request: ApprovalRequest,
-    callerPath: String,
-    signing: SigningInfo,
-    defaults: UserDefaults = .standard
-) -> String? {
-    if canAutoApproveReadOnlyGhRequest(request: request, callerPath: callerPath, signing: signing, defaults: defaults) {
-        return "Auto-approved read-only gh request"
-    }
-    if canAutoApproveReadOnlyAwsRequest(request: request, callerPath: callerPath, signing: signing, defaults: defaults) {
-        return "Auto-approved read-only aws request"
-    }
-    return nil
+private enum SecretGateRequestClassification: CaseIterable {
+    case readOnly
+    case mutating
+    case secretDump
+    case unknown
 }
 
-private func canAutoApproveReadOnlyGhRequest(
-    request: ApprovalRequest,
-    callerPath: String,
-    signing: SigningInfo,
-    defaults: UserDefaults = .standard
-) -> Bool {
-    request.op == "keys"
-        && !request.keys.isEmpty
-        && request.keys.allSatisfy { $0.hasPrefix("GH_TOKEN_") }
-        && defaults.bool(forKey: ghReadOnlyAutoApprovalDefaultsKey)
-        && isTrustedGhCaller(path: callerPath, signing: signing)
-        && ghRequestIsReadOnly(request.args)
+private struct ResolvedSecretGatePolicy {
+    let protection: SecretGateProtection
+    let source: String
+    let launcher: LauncherIdentity?
 }
 
-private func canAutoApproveReadOnlyAwsRequest(
+private func matchingSecretGate(
     request: ApprovalRequest,
-    callerPath: String,
     signing: SigningInfo,
-    defaults: UserDefaults = .standard
+    hardeners: [HardenerMetadata],
+    service: String = trustedScriptApprovalsKeychainService
+) -> SecretGate? {
+    loadSecretGates(hardeners: hardeners, service: service).first { gate in
+        gate.routes.contains { route in
+            route.operation == request.op
+                && route.callerIdentifiers.contains(signing.identifier)
+                && normalizedExecutablePath(route.targetPath) == normalizedExecutablePath(request.target)
+                && route.scriptPath.map { standardizedPath($0, cwd: request.cwd) }
+                    == resolvedShebangScriptPath(request)
+                && routeKeysMatch(route.keyPatterns, request.keys)
+                && route.replaceExistingEnv == request.replaceExistingEnv
+                && route.allowMissingKeys == request.allowMissingKeys
+        }
+    }
+}
+
+private func routeKeysMatch(_ patterns: [String], _ keys: [String]) -> Bool {
+    guard !keys.isEmpty else { return false }
+    if patterns.allSatisfy({ !$0.hasSuffix("*") }) {
+        return patterns.sorted() == keys.sorted()
+    }
+    return keys.allSatisfy { key in
+        patterns.contains { pattern in
+            pattern.hasSuffix("*")
+                ? key.hasPrefix(String(pattern.dropLast()))
+                : key == pattern
+        }
+    }
+}
+
+private func resolveSecretGatePolicy(
+    gate: SecretGate,
+    launchers: [LauncherIdentity]
+) -> ResolvedSecretGatePolicy {
+    for launcher in launchers {
+        if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
+            return ResolvedSecretGatePolicy(
+                protection: policy.protection,
+                source: shortAppName(launcher.identifier),
+                launcher: launcher
+            )
+        }
+    }
+    return ResolvedSecretGatePolicy(
+        protection: gate.defaultProtection,
+        source: "All Other Apps",
+        launcher: launchers.first
+    )
+}
+
+private func secretGateProtectionAllows(
+    _ protection: SecretGateProtection,
+    classification: SecretGateRequestClassification
 ) -> Bool {
-    request.op == "inject"
-        && request.keys.sorted() == ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
-        && defaults.bool(forKey: awsReadOnlyAutoApprovalDefaultsKey)
-        && isTrustedAvCaller(path: callerPath, signing: signing)
-        && resolvedShebangScriptPath(request) == "/usr/local/bin/aws"
-        && awsRequestIsReadOnly(awsCommandWords(request))
+    switch protection {
+    case .noAccess:
+        false
+    case .readOnly:
+        classification == .readOnly
+    case .fullExceptSecretDumps:
+        classification != .secretDump
+    case .fullIncludingSecretDumps:
+        true
+    }
+}
+
+private func classifySecretGateRequest(
+    gateID: String,
+    request: ApprovalRequest
+) -> SecretGateRequestClassification {
+    switch gateID {
+    case "gh":
+        if ghRequestIsSecretDump(request.args) { return .secretDump }
+        return ghRequestIsReadOnly(request.args) ? .readOnly : .mutating
+    case "aws":
+        return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
+    default:
+        return .unknown
+    }
+}
+
+private func ghRequestIsSecretDump(_ args: [String]) -> Bool {
+    let words = ghCommandWords(args).map { $0.lowercased() }
+    guard words.count >= 2, words[0] == "auth" else { return false }
+    return words[1] == "token"
+        || (words[1] == "status" && words.dropFirst(2).contains("--show-token"))
 }
 
 private func awsRequestIsReadOnly(_ args: [String]) -> Bool {

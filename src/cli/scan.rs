@@ -59,12 +59,26 @@ pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
 pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
     let report = serde_json::json!({
         "hardeners": isotopes::hardener_metadata().into_iter().map(|hardener| {
+            let secret_gate = hardener.secret_gate.map(|gate| serde_json::json!({
+                "id": gate.id,
+                "key_patterns": gate.key_patterns,
+                "routes": gate.routes.into_iter().map(|route| serde_json::json!({
+                    "operation": route.operation,
+                    "script_path": route.script_path,
+                    "target_path": route.target_path,
+                    "caller_identifiers": route.caller_identifiers,
+                    "key_patterns": route.key_patterns,
+                    "replace_existing_env": route.replace_existing_env,
+                    "allow_missing_keys": route.allow_missing_keys,
+                })).collect::<Vec<_>>(),
+            }));
             serde_json::json!({
                 "name": hardener.name,
                 "documentation": hardener.documentation,
                 "hardened": hardener.detection.hardened,
                 "stub_path": hardener.detection.stub_path,
                 "target_path": hardener.detection.target_path,
+                "secret_gate": secret_gate,
             })
         }).collect::<Vec<_>>(),
     });

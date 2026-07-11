@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::HardenerDetection;
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
 const SUPABASE_CLI_PATH: &str = "/opt/homebrew/opt/supabase-cli/bin/supabase";
 const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/supabase-cli";
@@ -69,6 +69,22 @@ pub(crate) fn detect() -> HardenerDetection {
         HardenerDetection::hardened(Some(path.clone()), Some(path))
     } else {
         HardenerDetection::missing(Some(path))
+    }
+}
+
+pub(crate) fn secret_gate() -> SecretGateDescriptor {
+    SecretGateDescriptor {
+        id: "supabase",
+        key_patterns: vec![VAULT_KEY.to_string()],
+        routes: vec![SecretGateRoute {
+            operation: "keys",
+            script_path: None,
+            target_path: supabase_cli_path().display().to_string(),
+            caller_identifiers: vec!["supabase", "supabase-go", "com.supabase.cli"],
+            key_patterns: vec![VAULT_KEY.to_string()],
+            replace_existing_env: true,
+            allow_missing_keys: false,
+        }],
     }
 }
 

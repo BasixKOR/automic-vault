@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use super::HardenerDetection;
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
@@ -103,6 +103,24 @@ pub(crate) fn detect() -> HardenerDetection {
         )
     } else {
         HardenerDetection::missing(Some("/opt/homebrew/bin/aws".to_string()))
+    }
+}
+
+pub(crate) fn secret_gate() -> SecretGateDescriptor {
+    let script_path = aws_stub_path().display().to_string();
+    let keys = vec![AWS_ACCESS_KEY_ID.to_string(), AWS_SECRET_ACCESS_KEY.to_string()];
+    SecretGateDescriptor {
+        id: "aws",
+        key_patterns: keys.clone(),
+        routes: vec![SecretGateRoute {
+            operation: "inject",
+            script_path: Some(script_path),
+            target_path: "/bin/zsh".to_string(),
+            caller_identifiers: vec!["com.automicvault.av"],
+            key_patterns: keys,
+            replace_existing_env: false,
+            allow_missing_keys: false,
+        }],
     }
 }
 

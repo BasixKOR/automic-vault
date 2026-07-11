@@ -3,7 +3,9 @@ use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use super::{HardenerDetection, HardenerMetadata};
+use super::{
+    HardenerDetection, HardenerMetadata, SecretGateDescriptor, SecretGateRoute,
+};
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
 const STUB_DIR: &str = "/usr/local/bin";
@@ -28,8 +30,34 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
             name: wrapper.name,
             documentation: DOCUMENTATION,
             detection: detect(wrapper),
+            secret_gate: Some(secret_gate(wrapper)),
         })
         .collect()
+}
+
+fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
+    let routes = stubs(wrapper)
+        .map(|stub| SecretGateRoute {
+            operation: "inject",
+            script_path: Some(stub_path(stub.command).display().to_string()),
+            target_path: "/bin/sh".to_string(),
+            caller_identifiers: vec!["com.automicvault.av"],
+            key_patterns: stub.keys.iter().map(|key| (*key).to_string()).collect(),
+            replace_existing_env: false,
+            allow_missing_keys: true,
+        })
+        .collect::<Vec<_>>();
+    let mut key_patterns = routes
+        .iter()
+        .flat_map(|route| route.key_patterns.iter().cloned())
+        .collect::<Vec<_>>();
+    key_patterns.sort();
+    key_patterns.dedup();
+    SecretGateDescriptor {
+        id: wrapper.name,
+        key_patterns,
+        routes,
+    }
 }
 
 fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
