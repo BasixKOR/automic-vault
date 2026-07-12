@@ -362,7 +362,7 @@ final class DashboardModel: ObservableObject {
                 }
                 let severity = detectorSeverityLevel(findings.map(\.severity))
                 let affectedCount = findings.flatMap(\.affected).count
-                let subtitle = affectedCount == 1 ? "1 affected file" : "\(affectedCount) affected files"
+                let subtitle = affectedCount == 1 ? "1 trigger tripped" : "\(affectedCount) triggers tripped"
                 return DashboardItem(
                     id: detector.name,
                     title: displayName.packageName,
