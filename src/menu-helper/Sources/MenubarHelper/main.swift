@@ -88,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startServices() {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
+        autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
+        refreshAutoApprovalMenuItems()
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
@@ -391,6 +393,21 @@ private func autoApprovalRecord(
         tool: autoApprovalToolName(request, scriptPath: script?.path),
         command: autoApprovalCommand(request, scriptPath: script?.path),
         keys: request.keys
+    )
+}
+
+private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord? {
+    guard record.decision == "Approved",
+          record.approvalSourceLabel == "Auto"
+    else { return nil }
+    return AutoApprovalRecord(
+        accessRequestID: record.id,
+        date: record.date,
+        launcher: record.launcher ?? "Unknown app",
+        launcherIconPath: "",
+        tool: record.tool,
+        command: record.command,
+        keys: record.keys
     )
 }
 
@@ -2679,6 +2696,21 @@ private func runMenuStatusSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let recordedApproval = AccessRequestRecord(
+        date: Date(timeIntervalSince1970: 18_900),
+        tool: "aws",
+        command: "aws s3 ls",
+        decision: "Approved",
+        approvalSource: "Auto",
+        reason: "Read Only from app policy",
+        launcher: "Codex",
+        callerPath: "/usr/local/bin/av",
+        target: "/bin/zsh",
+        cwd: "/tmp",
+        keys: ["AWS_SECRET_ACCESS_KEY"],
+        detail: nil
+    )
+    guard let restoredApproval = autoApprovalRecord(recordedApproval) else { return 1 }
     guard shortAppName("com.openai.codex") == "Codex",
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
@@ -2699,6 +2731,26 @@ private func runMenuStatusSelfCheck() -> Int32 {
               formatter: formatter
           ) == "5:15 AM – Codex used aws",
           autoApprovalSubmenuCapacity(visibleHeight: 600) == 26,
+          restoredApproval.accessRequestID == recordedApproval.id,
+          restoredApproval.launcher == "Codex",
+          restoredApproval.tool == "aws",
+          restoredApproval.command == "aws s3 ls",
+          restoredApproval.keys == ["AWS_SECRET_ACCESS_KEY"],
+          autoApprovalRecord(AccessRequestRecord(
+              id: recordedApproval.id,
+              date: recordedApproval.date,
+              tool: recordedApproval.tool,
+              command: recordedApproval.command,
+              decision: "Denied",
+              approvalSource: "Auto",
+              reason: recordedApproval.reason,
+              launcher: recordedApproval.launcher,
+              callerPath: recordedApproval.callerPath,
+              target: recordedApproval.target,
+              cwd: recordedApproval.cwd,
+              keys: recordedApproval.keys,
+              detail: recordedApproval.detail
+          )) == nil,
           autoApprovalCommand(request) == """
           aws \\
             s3 \\
