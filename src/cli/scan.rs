@@ -26,9 +26,9 @@ impl Style {
     }
 }
 
-pub(crate) fn run<W: Write>(stdout: &mut W, style: Style) -> i32 {
+pub(crate) fn run<W: Write>(stdout: &mut W, style: Style, show_all: bool) -> i32 {
     let findings = scan_home(home());
-    print(stdout, &findings, style);
+    print(stdout, &findings, style, show_all);
     0
 }
 
@@ -94,7 +94,16 @@ fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
     isotopes::findings(home.as_ref())
 }
 
-fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
+fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all: bool) {
+    let visible = findings
+        .iter()
+        .filter(|finding| show_all || !is_hidden(finding))
+        .collect::<Vec<_>>();
+    let hidden = findings
+        .iter()
+        .filter(|finding| !show_all && is_hidden(finding))
+        .collect::<Vec<_>>();
+
     let _ = writeln!(stdout, "╭─ {}", style.paint("36", "system exposure audit"));
     let _ = writeln!(stdout, "│");
     if findings.is_empty() {
@@ -104,15 +113,26 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
         return;
     }
 
-    let finding_summary = if findings.len() == 1 {
+    if visible.is_empty() {
+        let _ = writeln!(
+            stdout,
+            "◇ {}",
+            style.paint("32", "No high-severity problems found")
+        );
+        let _ = writeln!(stdout, "│");
+    }
+
+    let finding_summary = if visible.len() == 1 {
         "1 finding requires attention".to_string()
     } else {
-        format!("{} findings require attention", findings.len())
+        format!("{} findings require attention", visible.len())
     };
-    let _ = writeln!(stdout, "◆ {}", style.paint("33", finding_summary));
-    let _ = writeln!(stdout, "│");
-    for (index, finding) in findings.iter().enumerate() {
-        let branch = if index + 1 == findings.len() {
+    if !visible.is_empty() {
+        let _ = writeln!(stdout, "◆ {}", style.paint("33", finding_summary));
+        let _ = writeln!(stdout, "│");
+    }
+    for (index, finding) in visible.iter().enumerate() {
+        let branch = if index + 1 == visible.len() {
             "└"
         } else {
             "├"
@@ -127,7 +147,10 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
             stdout,
             "│  {} {}",
             style.paint("2", "severity"),
-            style.paint("31;1", finding.severity.to_ascii_uppercase())
+            style.paint(
+                severity_color(finding.severity),
+                finding.severity.to_ascii_uppercase(),
+            )
         );
         let _ = writeln!(
             stdout,
@@ -162,7 +185,46 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style) {
         write_wrapped(stdout, "│  ", finding.docs_url, style, Some("36"));
         let _ = writeln!(stdout, "│");
     }
+    if !hidden.is_empty() {
+        let _ = writeln!(stdout, "◇ {}", style.paint("33", hidden_summary(&hidden)));
+        let _ = writeln!(stdout, "│");
+    }
     let _ = writeln!(stdout, "╰─ {}", style.paint("2", "scan complete"));
+}
+
+fn is_hidden(finding: &Finding) -> bool {
+    matches!(finding.severity, "medium" | "low")
+}
+
+fn severity_color(severity: &str) -> &str {
+    match severity {
+        "medium" => "33;1",
+        "low" => "33",
+        _ => "31;1",
+    }
+}
+
+fn hidden_summary(findings: &[&Finding]) -> String {
+    let medium = findings
+        .iter()
+        .filter(|finding| finding.severity == "medium")
+        .count();
+    let low = findings
+        .iter()
+        .filter(|finding| finding.severity == "low")
+        .count();
+    let counts = [(medium, "medium"), (low, "low")]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, severity)| format!("{count} {severity}"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let finding = if findings.len() == 1 {
+        "finding"
+    } else {
+        "findings"
+    };
+    format!("{counts} {finding} hidden, rerun with `--show-all` to view")
 }
 
 fn json_finding(finding: &Finding) -> serde_json::Value {
@@ -270,7 +332,7 @@ mod tests {
     fn print_displays_findings() {
         let mut stdout = Vec::new();
 
-        print(&mut stdout, &[fake_finding()], Style::plain());
+        print(&mut stdout, &[fake_finding()], Style::plain(), false);
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
@@ -294,6 +356,7 @@ mod tests {
                 docs_url: "https://example.test/docs/example.md",
             }],
             Style::plain(),
+            false,
         );
 
         assert!(
@@ -307,13 +370,52 @@ mod tests {
     fn styled_output_uses_ansi() {
         let mut stdout = Vec::new();
 
-        print(&mut stdout, &[], Style { color: true });
+        print(&mut stdout, &[], Style { color: true }, false);
 
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
                 .starts_with("╭─ \x1b[36msystem exposure audit\x1b[0m\n")
         );
+    }
+
+    #[test]
+    fn print_hides_medium_and_low_findings_by_default() {
+        let mut stdout = Vec::new();
+        let mut medium = fake_finding();
+        medium.severity = "medium";
+        let mut another_medium = fake_finding();
+        another_medium.severity = "medium";
+        let mut low = fake_finding();
+        low.severity = "low";
+
+        print(
+            &mut stdout,
+            &[medium, another_medium, low],
+            Style::plain(),
+            false,
+        );
+
+        assert_eq!(
+            String::from_utf8(stdout).unwrap(),
+            "╭─ system exposure audit\n│\n◇ No high-severity problems found\n│\n◇ 2 medium and 1 low findings hidden, rerun with `--show-all` to view\n│\n╰─ scan complete\n"
+        );
+    }
+
+    #[test]
+    fn show_all_displays_medium_and_low_in_amber() {
+        let mut stdout = Vec::new();
+        let mut medium = fake_finding();
+        medium.severity = "medium";
+        let mut low = fake_finding();
+        low.severity = "low";
+
+        print(&mut stdout, &[medium, low], Style { color: true }, true);
+        let output = String::from_utf8(stdout).unwrap();
+
+        assert!(output.contains("severity\x1b[0m \x1b[33;1mMEDIUM\x1b[0m"));
+        assert!(output.contains("severity\x1b[0m \x1b[33mLOW\x1b[0m"));
+        assert!(!output.contains("findings hidden"));
     }
 
     #[test]

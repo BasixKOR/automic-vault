@@ -10,7 +10,7 @@ use crate::isotopes::hardeners;
 
 const USAGE: &str = "\
 Usage:
-  av scan [--json]
+  av scan [--show-all | --json]
   av detectors --json
   av hardeners --json
   av inject +KEY [--] COMMAND
@@ -72,7 +72,8 @@ where
     };
 
     match command.to_str() {
-        Some("scan") if rest.is_empty() => scan::run(stdout, style),
+        Some("scan") if rest.is_empty() => scan::run(stdout, style, false),
+        Some("scan") if rest == [OsString::from("--show-all")] => scan::run(stdout, style, true),
         Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
         Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
@@ -202,6 +203,14 @@ mod tests {
 
         assert_eq!(code, 0);
         assert!(stdout.starts_with("╭─ system exposure audit\n"));
+        assert_eq!(stderr, "");
+    }
+
+    #[test]
+    fn scan_show_all_is_supported() {
+        let (code, _, stderr) = run_args(&["av", "scan", "--show-all"]);
+
+        assert_eq!(code, 0);
         assert_eq!(stderr, "");
     }
 
