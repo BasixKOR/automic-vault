@@ -1047,6 +1047,8 @@ private func detectorSummary(for item: DashboardItem) -> String {
         "Root-equivalent access can modify system files and privileged workloads. Misuse can turn a local compromise into full host control."
     case "shell history":
         "Shell history can preserve secrets typed into commands. Those values remain readable long after the command finishes."
+    case "system integrity":
+        "System Integrity Protection prevents even root processes from modifying protected macOS components. Disabling any part of it weakens a machine-wide security boundary."
     default:
         "Sensitive local files can expose credentials or weaken a trust boundary. If another process can read or change them, it may impersonate you or run untrusted code."
     }
