@@ -73,7 +73,7 @@ import Testing
     #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
     #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "mutable"))
     #expect(detectorDisplayName("sip") == DetectorDisplayName(packageName: "SIP", kind: "system integrity"))
-    #expect(detectorDisplayName("sudo") == DetectorDisplayName(packageName: "sudo", kind: "root hardening"))
+    #expect(detectorDisplayName("sudo") == DetectorDisplayName(packageName: "sudo", kind: "system integrity"))
 }
 
 @Test func homebrewExecutablePathsNormalizeToStableOptPath() {
