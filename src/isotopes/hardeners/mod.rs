@@ -30,26 +30,84 @@ pub(crate) struct SecretGateRoute {
 
 pub(crate) struct HardenerDetection {
     pub(crate) hardened: bool,
+    pub(crate) applicable: bool,
     pub(crate) stub_path: Option<String>,
     pub(crate) target_path: Option<String>,
+    pub(crate) commands: Vec<HardenerCommand>,
+}
+
+#[derive(Clone)]
+pub(crate) struct HardenerCommand {
+    pub(crate) name: String,
+    pub(crate) hardened: bool,
+    pub(crate) stub_path: Option<String>,
+    pub(crate) target_path: String,
 }
 
 impl HardenerDetection {
-    pub(crate) fn hardened(stub_path: Option<String>, target_path: Option<String>) -> Self {
+    pub(crate) fn command(
+        hardened: bool,
+        name: impl Into<String>,
+        stub_path: Option<String>,
+        target_path: String,
+    ) -> Self {
+        let applicable = stub_path
+            .as_deref()
+            .is_some_and(|path| Path::new(path).exists())
+            || executable(Path::new(&target_path));
         Self {
-            hardened: true,
-            stub_path,
-            target_path,
+            hardened,
+            applicable,
+            stub_path: stub_path.clone(),
+            target_path: Some(target_path.clone()),
+            commands: vec![HardenerCommand {
+                name: name.into(),
+                hardened,
+                stub_path,
+                target_path,
+            }],
         }
     }
 
-    pub(crate) fn missing(target_path: Option<String>) -> Self {
+    pub(crate) fn commands(hardened: bool, commands: Vec<HardenerCommand>) -> Self {
+        let applicable = commands.iter().any(|command| {
+            command
+                .stub_path
+                .as_deref()
+                .is_some_and(|path| Path::new(path).exists())
+                || executable(Path::new(&command.target_path))
+        });
+        let primary = commands.first();
         Self {
-            hardened: false,
-            stub_path: None,
-            target_path,
+            hardened,
+            applicable,
+            stub_path: primary.and_then(|command| command.stub_path.clone()),
+            target_path: primary.map(|command| command.target_path.clone()),
+            commands,
         }
     }
+
+    pub(crate) fn configuration(
+        hardened: bool,
+        applicable: bool,
+        target_path: Option<String>,
+    ) -> Self {
+        Self {
+            hardened,
+            applicable,
+            stub_path: None,
+            target_path,
+            commands: Vec::new(),
+        }
+    }
+}
+
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+
+pub(crate) fn executable(path: &Path) -> bool {
+    path.metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 macro_rules! gated_hardener {

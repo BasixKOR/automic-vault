@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 
+mod doctor;
 mod inject;
 mod save;
 mod scan;
@@ -11,6 +12,7 @@ use crate::isotopes::hardeners;
 const USAGE: &str = "\
 Usage:
   av scan [--show-all | --json]
+  av doctor [COMMAND] [--json]
   av detectors --json
   av hardeners --json
   av inject +KEY [--] COMMAND
@@ -77,6 +79,19 @@ where
         Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
         Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
+        Some("doctor") => {
+            let Some((selector, json)) = parse_doctor_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            match doctor::run(stdout, selector.as_deref(), json, style) {
+                Ok(code) => code,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av doctor: {err}");
+                    2
+                }
+            }
+        }
         Some("harden") => {
             let Some((target, yes)) = parse_harden_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");
@@ -164,6 +179,24 @@ fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
         }
     }
     target.map(|target| (target, yes))
+}
+
+fn parse_doctor_args(args: &[OsString]) -> Option<(Option<String>, bool)> {
+    let mut selector = None;
+    let mut json = false;
+    for arg in args {
+        if arg == "--json" {
+            if json {
+                return None;
+            }
+            json = true;
+        } else if selector.is_none() {
+            selector = Some(arg.to_str()?.to_string());
+        } else {
+            return None;
+        }
+    }
+    Some((selector, json))
 }
 
 fn split_shebang_inject_arg(value: &OsString) -> Option<Vec<OsString>> {

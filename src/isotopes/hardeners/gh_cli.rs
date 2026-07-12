@@ -70,11 +70,7 @@ pub(crate) fn detect() -> HardenerDetection {
     let path = gh_cli_path();
     let exists = path.exists();
     let path = path.display().to_string();
-    if exists {
-        HardenerDetection::hardened(Some(path.clone()), Some(path))
-    } else {
-        HardenerDetection::missing(Some(path))
-    }
+    HardenerDetection::command(exists, "gh", Some(path.clone()), path)
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {

@@ -31,7 +31,7 @@ fn pam_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(PAM_DIR))
 }
 
-fn biometrics_available() -> bool {
+pub(crate) fn biometrics_available() -> bool {
     if let Some(value) = std::env::var_os("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE") {
         return value != "0";
     }

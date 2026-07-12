@@ -80,15 +80,17 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 pub(crate) fn detect() -> HardenerDetection {
     let stub = brew_stub_path();
     let target = brew_target_path();
-    if let (Some(uid), Some(gid)) = (automic_uid(), vault_gid()) {
-        if is_hardened_stub(&stub, uid, gid) {
-            return HardenerDetection::hardened(
-                Some(stub.display().to_string()),
-                Some(target.display().to_string()),
-            );
-        }
-    }
-    HardenerDetection::missing(Some(target.display().to_string()))
+    let hardened = if let (Some(uid), Some(gid)) = (automic_uid(), vault_gid()) {
+        is_hardened_stub(&stub, uid, gid)
+    } else {
+        false
+    };
+    HardenerDetection::command(
+        hardened,
+        "brew",
+        Some(stub.display().to_string()),
+        target.display().to_string(),
+    )
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {

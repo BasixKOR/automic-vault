@@ -25,11 +25,11 @@ pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
 
 pub(crate) fn detect() -> HardenerDetection {
     let target = Some(SUDO_LOCAL_PATH.to_string());
-    if pam_tid_enabled(&pam_dir()).unwrap_or(false) {
-        HardenerDetection::hardened(None, target)
-    } else {
-        HardenerDetection::missing(target)
-    }
+    HardenerDetection::configuration(
+        pam_tid_enabled(&pam_dir()).unwrap_or(false),
+        crate::isotopes::detectors::sudo::biometrics_available(),
+        target,
+    )
 }
 
 fn green(text: &str, color: bool) -> String {

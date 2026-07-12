@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::{
-    HardenerDetection, HardenerMetadata, SecretGateDescriptor, SecretGateRoute,
+    HardenerCommand, HardenerDetection, HardenerMetadata, SecretGateDescriptor, SecretGateRoute,
 };
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
@@ -101,17 +101,16 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
 }
 
 fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
-    let stub = &wrapper.primary;
-    let stub_path = stub_path(stub.command);
-    let target_path = target_path(stub);
-    if is_managed_stub(&stub_path, stub) {
-        HardenerDetection::hardened(
-            Some(stub_path.display().to_string()),
-            Some(target_path.display().to_string()),
-        )
-    } else {
-        HardenerDetection::missing(Some(target_path.display().to_string()))
-    }
+    let commands = stubs(wrapper)
+        .map(|stub| HardenerCommand {
+            name: stub.command.to_string(),
+            hardened: is_managed_stub(&stub_path(stub.command), stub),
+            stub_path: Some(stub_path(stub.command).display().to_string()),
+            target_path: target_path(stub).display().to_string(),
+        })
+        .collect::<Vec<_>>();
+    let hardened = commands.iter().all(|command| command.hardened);
+    HardenerDetection::commands(hardened, commands)
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {

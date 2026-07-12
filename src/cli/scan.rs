@@ -16,7 +16,7 @@ impl Style {
         Self { color: false }
     }
 
-    fn paint(self, code: &str, text: impl AsRef<str>) -> String {
+    pub(crate) fn paint(self, code: &str, text: impl AsRef<str>) -> String {
         let text = text.as_ref();
         if self.color {
             format!("\x1b[{code}m{text}\x1b[0m")
@@ -76,8 +76,15 @@ pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
                 "name": hardener.name,
                 "documentation": hardener.documentation,
                 "hardened": hardener.detection.hardened,
+                "applicable": hardener.detection.applicable,
                 "stub_path": hardener.detection.stub_path,
                 "target_path": hardener.detection.target_path,
+                "commands": hardener.detection.commands.into_iter().map(|command| serde_json::json!({
+                    "name": command.name,
+                    "hardened": command.hardened,
+                    "stub_path": command.stub_path,
+                    "target_path": command.target_path,
+                })).collect::<Vec<_>>(),
                 "secret_gate": secret_gate,
             })
         }).collect::<Vec<_>>(),

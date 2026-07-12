@@ -126,7 +126,7 @@ mod sqlcmd;
 mod sshpass;
 mod sslmate;
 mod stripe_cli;
-mod sudo;
+pub(crate) mod sudo;
 mod supabase;
 mod tailscale;
 mod talosctl;

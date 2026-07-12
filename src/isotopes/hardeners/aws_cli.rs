@@ -96,19 +96,20 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
 pub(crate) fn detect() -> HardenerDetection {
     let path = aws_stub_path();
-    if is_aws_stub(&path) {
-        HardenerDetection::hardened(
-            Some(path.display().to_string()),
-            Some("/opt/homebrew/bin/aws".to_string()),
-        )
-    } else {
-        HardenerDetection::missing(Some("/opt/homebrew/bin/aws".to_string()))
-    }
+    HardenerDetection::command(
+        is_aws_stub(&path),
+        "aws",
+        Some(path.display().to_string()),
+        "/opt/homebrew/bin/aws".to_string(),
+    )
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
     let script_path = aws_stub_path().display().to_string();
-    let keys = vec![AWS_ACCESS_KEY_ID.to_string(), AWS_SECRET_ACCESS_KEY.to_string()];
+    let keys = vec![
+        AWS_ACCESS_KEY_ID.to_string(),
+        AWS_SECRET_ACCESS_KEY.to_string(),
+    ];
     SecretGateDescriptor {
         id: "aws",
         key_patterns: keys.clone(),

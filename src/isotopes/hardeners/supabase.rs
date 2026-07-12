@@ -65,11 +65,7 @@ pub(crate) fn detect() -> HardenerDetection {
     let path = supabase_cli_path();
     let exists = path.exists();
     let path = path.display().to_string();
-    if exists {
-        HardenerDetection::hardened(Some(path.clone()), Some(path))
-    } else {
-        HardenerDetection::missing(Some(path))
-    }
+    HardenerDetection::command(exists, "supabase", Some(path.clone()), path)
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
