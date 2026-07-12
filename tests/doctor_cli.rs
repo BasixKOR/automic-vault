@@ -13,6 +13,16 @@ fn av_doctor_reports_healthy_and_shadowed_stubs_as_json() {
     fs::create_dir_all(&stubs).unwrap();
     executable(&targets.join("npm"));
 
+    let aggregate = av(&root).args(["doctor", "--json"]).output().unwrap();
+    let aggregate: serde_json::Value = serde_json::from_slice(&aggregate.stdout).unwrap();
+    assert!(
+        aggregate["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|result| result["name"] != "node")
+    );
+
     let harden = av(&root)
         .args(["harden", "node", "--yes"])
         .output()

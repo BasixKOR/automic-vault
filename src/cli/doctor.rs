@@ -58,7 +58,7 @@ fn diagnose(
 
     Ok(hardeners
         .into_iter()
-        .filter(|hardener| hardener.detection.applicable)
+        .filter(|hardener| hardener.detection.hardened)
         .map(|hardener| diagnose_one(hardener, None, path))
         .collect())
 }
@@ -305,7 +305,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn skips_inapplicable_hardeners_but_explicit_selection_reports_target() {
+    fn aggregate_skips_unhardened_but_explicit_selection_reports_target() {
         let hardeners = vec![hardener(
             "node",
             false,
@@ -331,10 +331,23 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_reports_installed_but_nonexecutable_targets() {
+    fn aggregate_skips_installed_but_unhardened_targets() {
         let dir = temp_dir("nonexecutable");
         let target = dir.join("npm");
         fs::write(&target, "not executable").unwrap();
+        let hardeners = vec![hardener(
+            "node",
+            false,
+            command(
+                "npm",
+                false,
+                dir.join("stub").to_str().unwrap(),
+                target.to_str().unwrap(),
+            ),
+        )];
+        let results = diagnose(hardeners, None, OsStr::new("")).unwrap();
+        assert!(results.is_empty());
+
         let results = diagnose(
             vec![hardener(
                 "node",
@@ -346,13 +359,30 @@ mod tests {
                     target.to_str().unwrap(),
                 ),
             )],
-            None,
+            Some("node"),
             OsStr::new(""),
         )
         .unwrap();
 
         assert_eq!(results[0].issues[0].kind, "target_unavailable");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn accepts_homebrew_as_an_explicit_alias() {
+        let results = diagnose(
+            vec![hardener(
+                "brew",
+                false,
+                command("brew", false, "/missing/stub", "/missing/brew"),
+            )],
+            Some("homebrew"),
+            OsStr::new(""),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].name, "brew");
+        assert_eq!(results[0].issues[0].kind, "target_unavailable");
     }
 
     #[test]
@@ -404,7 +434,7 @@ mod tests {
                     target.to_str().unwrap(),
                 ),
             )],
-            None,
+            Some("aws"),
             stub_dir.as_os_str(),
         )
         .unwrap();
