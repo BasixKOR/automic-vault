@@ -536,6 +536,12 @@ private enum ApprovalDecision: Equatable {
     case approved
 }
 
+private let humanApprovalRequiredEvent = "human-approval-required"
+
+private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
+    cachedDecision == nil ? humanApprovalRequiredEvent : nil
+}
+
 private struct TransientApprovalCache {
     private enum Key: Hashable {
         case approval(TransientApprovalKey)
@@ -777,7 +783,8 @@ private final class ApprovalServer: @unchecked Sendable {
             tool: request.tool
         )
         DispatchQueue.main.async {
-            if let decision = self.transientApprovals.decision(for: transientApproval) {
+            let cachedDecision = self.transientApprovals.decision(for: transientApproval)
+            if let decision = cachedDecision {
                 if decision == .denied {
                     self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -815,6 +822,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
+            if let event = approvalEvent(for: cachedDecision) {
+                self.sendEvent(event, to: peer)
+            }
             let decision = showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
@@ -984,6 +994,12 @@ private final class ApprovalServer: @unchecked Sendable {
             xpc_dictionary_set_value(response, "secrets", values)
         }
         xpc_connection_send_message(peer, response)
+    }
+
+    private func sendEvent(_ event: String, to peer: xpc_connection_t) {
+        let message = xpc_dictionary_create_empty()
+        event.withCString { xpc_dictionary_set_string(message, "event", $0) }
+        xpc_connection_send_message(peer, message)
     }
 }
 
@@ -2632,6 +2648,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
         detail: nil
     )
     guard shortAppName("com.openai.codex") == "Codex",
+          approvalEvent(for: nil) == humanApprovalRequiredEvent,
+          approvalEvent(for: .approved) == nil,
+          approvalEvent(for: .denied) == nil,
           autoApprovalToolName(request) == "aws",
           scanAlertLevel([["severity": "medium"]]) == .medium,
           scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
