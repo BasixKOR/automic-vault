@@ -1492,7 +1492,7 @@ private struct ApprovedAppRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ProtectionMenu(protection: app.protection, setProtection: setProtection)
-                .frame(width: 132, alignment: .leading)
+                .frame(width: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
     }
@@ -1517,7 +1517,7 @@ private struct DefaultAppPolicyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ProtectionMenu(protection: protection, setProtection: setProtection)
-                .frame(width: 132, alignment: .leading)
+                .frame(width: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
     }
