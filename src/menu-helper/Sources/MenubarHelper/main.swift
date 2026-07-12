@@ -18,6 +18,7 @@ private var toastWindows: [NSWindow] = []
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
     private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
     private var autoApprovalItems: [NSMenuItem] = []
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(openItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.delegate = self
         statusItem.menu = menu
     }
 
@@ -289,7 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
         autoApprovals.insert(record, at: 0)
-        autoApprovals = Array(autoApprovals.prefix(5))
+        let capacity = NSScreen.screens.map { screen in
+            Self.visibleAutoApprovalCount + autoApprovalSubmenuCapacity(visibleHeight: screen.visibleFrame.height)
+        }.max() ?? Self.visibleAutoApprovalCount
+        autoApprovals = Array(autoApprovals.prefix(capacity))
         refreshAutoApprovalMenuItems()
         showAutoApprovedToast(record, below: statusItem.button) { [weak self] in
             self?.showAutoApproval(id: record.accessRequestID)
@@ -310,15 +315,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.removeItem(separator)
             autoApprovalSeparator = nil
         }
-        autoApprovalItems = autoApprovals.map {
-            let item = NSMenuItem(
-                title: autoApprovalTitle($0, formatter: autoApprovalTimeFormatter),
-                action: #selector(openAutoApproval),
-                keyEquivalent: ""
+        autoApprovalItems = autoApprovals.prefix(Self.visibleAutoApprovalCount).map(autoApprovalMenuItem)
+        let submenuRecords = autoApprovals.dropFirst(Self.visibleAutoApprovalCount).prefix(
+            autoApprovalSubmenuCapacity(
+                visibleHeight: statusItem.button?.window?.screen?.visibleFrame.height
+                    ?? NSScreen.main?.visibleFrame.height
+                    ?? 0
             )
-            item.target = self
-            item.representedObject = $0.accessRequestID.uuidString
-            return item
+        )
+        if !submenuRecords.isEmpty {
+            let moreItem = NSMenuItem(title: "More", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            submenuRecords.map(autoApprovalMenuItem).forEach(submenu.addItem)
+            moreItem.submenu = submenu
+            autoApprovalItems.append(moreItem)
         }
         for item in autoApprovalItems.reversed() {
             menu.insertItem(item, at: 0)
@@ -328,6 +338,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.insertItem(separator, at: autoApprovalItems.count)
             autoApprovalSeparator = separator
         }
+    }
+
+    private func autoApprovalMenuItem(_ record: AutoApprovalRecord) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: autoApprovalTitle(record, formatter: autoApprovalTimeFormatter),
+            action: #selector(openAutoApproval),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.representedObject = record.accessRequestID.uuidString
+        return item
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshAutoApprovalMenuItems()
     }
 }
 
@@ -343,6 +370,11 @@ private struct AutoApprovalRecord {
 
 private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
     "\(formatter.string(from: record.date)) – \(record.launcher) used \(record.tool)"
+}
+
+private func autoApprovalSubmenuCapacity(visibleHeight: CGFloat) -> Int {
+    guard visibleHeight > 0 else { return 0 }
+    return max(0, Int((visibleHeight - 16) / 22))
 }
 
 private func autoApprovalRecord(
@@ -2666,6 +2698,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
               ),
               formatter: formatter
           ) == "5:15 AM – Codex used aws",
+          autoApprovalSubmenuCapacity(visibleHeight: 600) == 26,
           autoApprovalCommand(request) == """
           aws \\
             s3 \\
