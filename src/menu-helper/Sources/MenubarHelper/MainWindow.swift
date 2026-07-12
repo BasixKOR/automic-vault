@@ -863,9 +863,7 @@ private struct DashboardRow: View {
                         default:
                             Text(item.subtitle)
                         }
-                        Text("· \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) ·")
-                        Text(date.formatted(date: .abbreviated, time: .standard))
-                            .foregroundStyle(.tertiary)
+                        Text("\(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))) \(date.formatted(date: .abbreviated, time: .standard))")
                     }
                 } else {
                     Text(item.subtitle)
