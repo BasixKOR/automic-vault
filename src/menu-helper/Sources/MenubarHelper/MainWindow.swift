@@ -316,16 +316,6 @@ final class DashboardModel: ObservableObject {
         )
     }
 
-    func remove(_ app: SecretGatePolicy, from gate: SecretGate) {
-        let status = removeSecretGateAppPolicy(app, from: gate)
-        if status == errSecSuccess {
-            errorMessage = nil
-            reload()
-        } else {
-            errorMessage = "Could not remove \(app.bundleIdentifier): \(status)"
-        }
-    }
-
     private func finishPolicyUpdate(_ status: OSStatus, error: String) {
         if status == errSecSuccess {
             errorMessage = nil
@@ -474,8 +464,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let appPolicy = gate.appPolicies[0]
     let appRowHeight = NSHostingView(rootView: ApprovedAppRow(
         app: appPolicy,
-        setProtection: { _ in },
-        remove: {}
+        setProtection: { _ in }
     ).frame(width: 500)).fittingSize.height
     guard model.count(for: .detectors) == 3,
           model.count(for: .hardenedTools) == 2,
@@ -1427,8 +1416,7 @@ private struct SecretGateDetailView: View {
                     ForEach(gate.appPolicies, id: \.requirement) { app in
                         ApprovedAppRow(
                             app: app,
-                            setProtection: { model.setProtection($0, for: app, in: gate) },
-                            remove: { model.remove(app, from: gate) }
+                            setProtection: { model.setProtection($0, for: app, in: gate) }
                         )
                         if app.requirement != gate.appPolicies.last?.requirement {
                             hairline
@@ -1475,7 +1463,6 @@ private struct SecretGateField: View {
 private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
     let setProtection: (SecretGateProtection) -> Void
-    let remove: () -> Void
 
     private var display: ApprovedAppDisplay {
         ApprovedAppDisplay(app)
@@ -1506,15 +1493,6 @@ private struct ApprovedAppRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             ProtectionMenu(protection: app.protection, setProtection: setProtection)
                 .frame(width: 132, alignment: .leading)
-            Button(role: .destructive, action: remove) {
-                Image(systemName: "minus")
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .frame(width: 36)
-            .help("Remove Calling App")
         }
         .padding(.vertical, 10)
     }
@@ -1540,9 +1518,6 @@ private struct DefaultAppPolicyRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             ProtectionMenu(protection: protection, setProtection: setProtection)
                 .frame(width: 132, alignment: .leading)
-            Color.clear
-                .frame(width: 36, height: 1)
-                .accessibilityHidden(true)
         }
         .padding(.vertical, 10)
     }

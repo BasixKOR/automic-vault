@@ -285,7 +285,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
     public var title: String {
         switch self {
-        case .noAccess: "Nothing"
+        case .noAccess: "no access"
         case .readOnly: "Read Only"
         case .fullExceptSecretDumps: "Trusted Access"
         case .fullIncludingSecretDumps: "Full Access"
