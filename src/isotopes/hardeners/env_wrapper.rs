@@ -107,6 +107,7 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
             hardened: is_managed_stub(&stub_path(stub.command), stub),
             stub_path: Some(stub_path(stub.command).display().to_string()),
             target_path: target_path(stub).display().to_string(),
+            required_paths: Vec::new(),
         })
         .collect::<Vec<_>>();
     let hardened = commands.iter().all(|command| command.hardened);

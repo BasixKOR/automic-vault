@@ -84,6 +84,7 @@ pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
                     "hardened": command.hardened,
                     "stub_path": command.stub_path,
                     "target_path": command.target_path,
+                    "required_paths": command.required_paths,
                 })).collect::<Vec<_>>(),
                 "secret_gate": secret_gate,
             })

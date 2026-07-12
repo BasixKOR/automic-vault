@@ -42,6 +42,7 @@ pub(crate) struct HardenerCommand {
     pub(crate) hardened: bool,
     pub(crate) stub_path: Option<String>,
     pub(crate) target_path: String,
+    pub(crate) required_paths: Vec<String>,
 }
 
 impl HardenerDetection {
@@ -54,7 +55,7 @@ impl HardenerDetection {
         let applicable = stub_path
             .as_deref()
             .is_some_and(|path| Path::new(path).exists())
-            || executable(Path::new(&target_path));
+            || Path::new(&target_path).exists();
         Self {
             hardened,
             applicable,
@@ -65,6 +66,7 @@ impl HardenerDetection {
                 hardened,
                 stub_path,
                 target_path,
+                required_paths: Vec::new(),
             }],
         }
     }
@@ -75,7 +77,7 @@ impl HardenerDetection {
                 .stub_path
                 .as_deref()
                 .is_some_and(|path| Path::new(path).exists())
-                || executable(Path::new(&command.target_path))
+                || Path::new(&command.target_path).exists()
         });
         let primary = commands.first();
         Self {

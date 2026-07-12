@@ -95,6 +95,22 @@ final class DashboardModel: ObservableObject {
         let base = switch section {
         case .detectors:
             detectorItems
+        case .doctor:
+            snapshot.doctorIssues.map { issue in
+                let paths = [
+                    issue.stubPath.map { "Stub: \($0)" },
+                    issue.targetPath.map { "Target: \($0)" },
+                    issue.resolvedPath.map { "Resolved: \($0)" },
+                ].compactMap(\.self)
+                return DashboardItem(
+                    id: issue.id,
+                    title: issue.command ?? issue.hardener,
+                    kind: issue.command == nil || issue.command == issue.hardener ? nil : issue.hardener,
+                    subtitle: issue.message,
+                    detail: ([issue.message, "Remediation: \(issue.remediation)"] + paths)
+                        .joined(separator: "\n")
+                )
+            }
         case .hardenedTools:
             snapshot.hardenedTools.map {
                 DashboardItem(
@@ -175,6 +191,7 @@ final class DashboardModel: ObservableObject {
         guard searchQuery.isEmpty else { return items(for: section).count }
         return switch section {
         case .detectors: snapshot.detectorDisplayCount
+        case .doctor: snapshot.doctorIssues.count
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
         case .allSecrets: snapshot.secrets.count
@@ -447,7 +464,17 @@ func runDashboardSearchSelfCheck() -> Int32 {
             StoredSecret(account: "AWS_TOKEN"),
             StoredSecret(account: "GITHUB_TOKEN"),
         ],
-        accessRequests: [accessRequest]
+        accessRequests: [accessRequest],
+        doctorIssues: [DoctorIssue(
+            hardener: "aws",
+            kind: "stub_not_first_on_path",
+            command: "aws",
+            message: "aws resolves to the unhardened target first",
+            remediation: "Put /usr/local/bin first in PATH.",
+            stubPath: "/usr/local/bin/aws",
+            targetPath: "/opt/homebrew/bin/aws",
+            resolvedPath: "/opt/homebrew/bin/aws"
+        )]
     ))
     let gate = SecretGate(
         id: "gh",
@@ -467,6 +494,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         setProtection: { _ in }
     ).frame(width: 500)).fittingSize.height
     guard model.count(for: .detectors) == 3,
+          model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1,
@@ -482,6 +510,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     model.searchText = "aws"
     guard model.count(for: .detectors) == 1,
+          model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 1,
           model.count(for: .allSecrets) == 1
     else { return 1 }
@@ -497,6 +526,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
           detectorSeverityLevel([]) == .high
     else { return 1 }
     model.searchText = ""
+    model.selectSection(.doctor)
+    guard model.selectedItem?.title == "aws",
+          model.selectedItem?.kind == nil,
+          model.selectedItem?.detail.contains("Resolved: /opt/homebrew/bin/aws") == true,
+          model.selectedItem?.detail.contains("Remediation:") == true
+    else { return 1 }
     model.showAccessRequest(id: accessRequest.id, records: [accessRequest])
     guard model.selectedSection == .secretUsage,
           model.selectedItemID == accessRequest.id.uuidString,
@@ -507,6 +542,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
 
 enum DashboardSection: String, CaseIterable, Identifiable {
     case detectors
+    case doctor
     case hardenedTools
     case secretGates
     case allSecrets
@@ -517,6 +553,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .detectors: "Detectors"
+        case .doctor: "Doctor"
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Secret Gates"
         case .allSecrets: "Secrets"
@@ -527,6 +564,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .detectors: "sensor.tag.radiowaves.forward"
+        case .doctor: "stethoscope"
         case .hardenedTools: "hammer"
         case .secretGates: "lock.shield"
         case .allSecrets: "key"
@@ -672,6 +710,9 @@ private struct DashboardSidebarView: View {
                         count: count,
                         color: detectorSeverityLevel(model.snapshot.detectorFindings.map(\.severity)).color
                     )
+                        .fixedSize()
+                } else if section == .doctor, model.selectedSection != .doctor {
+                    DetectorCountPill(count: count, color: .red)
                         .fixedSize()
                 } else {
                     SidebarCountText(count: count)
@@ -885,6 +926,7 @@ private struct EmptyListView: View {
     private var emptyText: String {
         switch section {
         case .detectors: "No flagged detectors"
+        case .doctor: "No doctor issues"
         case .hardenedTools: "No hardened tools"
         case .secretGates: "No configured gates"
         case .allSecrets: "No stored secrets"

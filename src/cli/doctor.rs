@@ -103,8 +103,12 @@ fn diagnose_one(
         .collect::<Vec<_>>();
     let mut issues = commands
         .iter()
-        .filter(|command| !executable(Path::new(&command.target_path)))
-        .map(|command| target_issue(hardener.name, command))
+        .flat_map(|command| {
+            std::iter::once(command.target_path.as_str())
+                .chain(command.required_paths.iter().map(String::as_str))
+                .filter(|target| !executable(Path::new(target)))
+                .map(|target| target_issue(hardener.name, command, target))
+        })
         .collect::<Vec<_>>();
 
     if issues.is_empty() {
@@ -145,20 +149,20 @@ fn diagnose_one(
     }
 }
 
-fn target_issue(hardener: &str, command: &HardenerCommand) -> DoctorIssue {
+fn target_issue(hardener: &str, command: &HardenerCommand, target: &str) -> DoctorIssue {
     DoctorIssue {
         kind: "target_unavailable",
         command: Some(command.name.clone()),
         message: format!(
             "{} target is missing or not executable: {}",
-            command.name, command.target_path
+            command.name, target
         ),
         remediation: format!(
             "Install {hardener} so {} is executable, then rerun `av doctor {}`.",
-            command.target_path, command.name
+            target, command.name
         ),
         stub_path: command.stub_path.clone(),
-        target_path: Some(command.target_path.clone()),
+        target_path: Some(target.to_string()),
         resolved_path: None,
     }
 }
@@ -327,6 +331,31 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_reports_installed_but_nonexecutable_targets() {
+        let dir = temp_dir("nonexecutable");
+        let target = dir.join("npm");
+        fs::write(&target, "not executable").unwrap();
+        let results = diagnose(
+            vec![hardener(
+                "node",
+                false,
+                command(
+                    "npm",
+                    false,
+                    dir.join("stub").to_str().unwrap(),
+                    target.to_str().unwrap(),
+                ),
+            )],
+            None,
+            OsStr::new(""),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].issues[0].kind, "target_unavailable");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn accepts_hardener_aliases_and_limits_executable_selection() {
         let dir = temp_dir("aliases");
         let jf = executable_file(&dir.join("jf"));
@@ -438,6 +467,7 @@ mod tests {
             hardened,
             stub_path: Some(stub.to_string()),
             target_path: target.to_string(),
+            required_paths: Vec::new(),
         }
     }
 

@@ -96,12 +96,16 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
 pub(crate) fn detect() -> HardenerDetection {
     let path = aws_stub_path();
-    HardenerDetection::command(
+    let mut detection = HardenerDetection::command(
         is_aws_stub(&path),
         "aws",
         Some(path.display().to_string()),
         "/opt/homebrew/bin/aws".to_string(),
-    )
+    );
+    detection.commands[0]
+        .required_paths
+        .push(aws_vault_path().display().to_string());
+    detection
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
