@@ -1487,7 +1487,7 @@ private struct ApprovedAppRow: View {
                 Text(display.signingSummary)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1599,15 +1599,14 @@ private struct ApprovedAppDisplay {
         bundleIdentifier = app.bundleIdentifier
         icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
         if let signing = url.flatMap(appBundleSigning) {
-            signingSummary = "identifier \(signing.identifier) / team \(signing.teamIdentifier)\n\(app.requirement)"
+            signingSummary = "Team \(signing.teamIdentifier)"
         } else {
-            signingSummary = app.requirement
+            signingSummary = "Signing identity unavailable"
         }
     }
 }
 
 private struct AppBundleSigning {
-    let identifier: String
     let teamIdentifier: String
     let requirement: String
 }
@@ -1633,7 +1632,6 @@ private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
         return nil
     }
     return AppBundleSigning(
-        identifier: dictionary[kSecCodeInfoIdentifier] as? String ?? "unknown",
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         requirement: requirementText
     )
