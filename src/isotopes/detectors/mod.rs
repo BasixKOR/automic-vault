@@ -117,6 +117,7 @@ mod sbt;
 mod secretlint;
 mod sentry_cli;
 mod shodan;
+mod sip;
 mod skopeo;
 mod snowflake_cli;
 mod snyk;
@@ -309,6 +310,7 @@ const DETECTORS: &[Detector] = &[
     detector!(secretlint::shell_history, "secretlint-shell-history"),
     detector!(sentry_cli),
     detector!(shodan),
+    detector!(sip),
     detector!(skopeo),
     detector!(snowflake_cli),
     detector!(snyk),
@@ -395,7 +397,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 155);
+        assert_eq!(DETECTORS.len(), 156);
     }
 
     #[test]
@@ -415,6 +417,7 @@ mod tests {
         assert!(names.contains(&"git-credential-oauth".to_string()));
         assert!(names.contains(&"git-credentials-file".to_string()));
         assert!(names.contains(&"homebrew".to_string()));
+        assert!(names.contains(&"sip".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"sudo".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));
