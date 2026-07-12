@@ -1542,8 +1542,11 @@ private struct ProtectionMenu: NSViewRepresentable {
         for candidate in SecretGateProtection.allCases {
             button.addItem(withTitle: candidate.title)
             button.lastItem?.subtitle = candidate.subtitle
-            if candidate == .fullIncludingSecretDumps {
-                button.lastItem?.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
+            if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
+                let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
+                button.lastItem?.image = candidate == .fullIncludingSecretDumps
+                    ? warning?.withSymbolConfiguration(.init(paletteColors: [.systemRed]))
+                    : warning
             }
         }
         updateSelection(in: button)
