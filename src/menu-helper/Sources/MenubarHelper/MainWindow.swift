@@ -115,7 +115,7 @@ final class DashboardModel: ObservableObject {
                 return DashboardItem(
                     id: $0.id,
                     title: $0.id,
-                    subtitle: "\(secrets) - \(apps)",
+                    subtitle: "\(secrets) • \(apps)",
                     detail: [
                         "Scripts: \($0.scriptPaths.joined(separator: ", "))",
                         "Secrets: \($0.keyPatterns.joined(separator: ", "))",
