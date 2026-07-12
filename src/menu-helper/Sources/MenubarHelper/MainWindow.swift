@@ -1484,27 +1484,15 @@ private struct ApprovedAppRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             Image(nsImage: display.icon)
                 .resizable()
                 .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(display.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    ProtectionMenu(protection: app.protection, setProtection: setProtection)
-                    Button(role: .destructive, action: remove) {
-                        Image(systemName: "minus")
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Remove Calling App")
-                }
+                Text(display.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
                 Text(display.bundleIdentifier)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -1517,6 +1505,18 @@ private struct ApprovedAppRow: View {
                     .lineLimit(2)
                     .textSelection(.enabled)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ProtectionMenu(protection: app.protection, setProtection: setProtection)
+                .frame(width: 132, alignment: .leading)
+            Button(role: .destructive, action: remove) {
+                Image(systemName: "minus")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .frame(width: 36)
+            .help("Remove Calling App")
         }
         .padding(.vertical, 10)
     }
@@ -1527,7 +1527,7 @@ private struct DefaultAppPolicyRow: View {
     let setProtection: (SecretGateProtection) -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 18))
                 .frame(width: 34, height: 34)
@@ -1539,8 +1539,12 @@ private struct DefaultAppPolicyRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             ProtectionMenu(protection: protection, setProtection: setProtection)
+                .frame(width: 132, alignment: .leading)
+            Color.clear
+                .frame(width: 36, height: 1)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 10)
     }
