@@ -118,6 +118,51 @@ import Testing
     #expect(hardener.secretGate?.routes.first?.callerIdentifiers == ["gh", "com.github.cli"])
 }
 
+@Test func doctorJSONFlattensIssuesWithHardenerNames() throws {
+    let data = Data(#"""
+    {"results":[
+      {"name":"aws","commands":["aws"],"issues":[{"kind":"stub_not_first_on_path","command":"aws","message":"aws is shadowed","remediation":"Fix PATH.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":"/opt/homebrew/bin/aws"}]},
+      {"name":"gh","commands":["gh"],"issues":[]}
+    ]}
+    """#.utf8)
+
+    #expect(try doctorIssues(from: data) == [
+        DoctorIssue(
+            hardener: "aws",
+            kind: "stub_not_first_on_path",
+            command: "aws",
+            message: "aws is shadowed",
+            remediation: "Fix PATH.",
+            stubPath: "/usr/local/bin/aws",
+            targetPath: "/opt/homebrew/bin/aws",
+            resolvedPath: "/opt/homebrew/bin/aws"
+        )
+    ])
+}
+
+@Test func unavailableLoginShellPATHSuppressesMisleadingPATHIssues() throws {
+    let data = Data(#"""
+    {"results":[{"name":"aws","commands":["aws"],"issues":[
+      {"kind":"stub_not_first_on_path","command":"aws","message":"shadowed","remediation":"Fix PATH.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":"/opt/homebrew/bin/aws"},
+      {"kind":"hardening_not_applied","command":"aws","message":"not hardened","remediation":"Harden it.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":null}
+    ]}]}
+    """#.utf8)
+
+    let issues = try doctorIssues(from: data, loginShellPATHAvailable: false)
+
+    #expect(issues.map(\.kind) == ["hardening_not_applied", "login_shell_path_unavailable"])
+}
+
+@Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {
+    let data = try #require(loadJSON(
+        avExecutableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "printf '{\"results\":[]}'; exit 1"],
+        acceptedTerminationStatuses: [0, 1]
+    ))
+
+    #expect(try doctorIssues(from: data).isEmpty)
+}
+
 @Test func detectorDocumentationReferencesHardenerCommand() {
     #expect(hardenerNameReferencedByDocumentation("```sh\nav harden gh\n```") == "gh")
     #expect(hardenerNameReferencedByDocumentation("Run `sudo av harden aws` after import.") == "aws")

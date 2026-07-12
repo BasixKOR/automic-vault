@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 
@@ -15,6 +16,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var secretGates: [SecretGate]
     public var secrets: [StoredSecret]
     public var accessRequests: [AccessRequestRecord]
+    public var doctorIssues: [DoctorIssue]
 
     public init(
         detectors: [DetectorMetadata],
@@ -23,7 +25,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [HardenerMetadata] = [],
         secretGates: [SecretGate],
         secrets: [StoredSecret],
-        accessRequests: [AccessRequestRecord] = []
+        accessRequests: [AccessRequestRecord] = [],
+        doctorIssues: [DoctorIssue] = []
     ) {
         self.detectors = detectors
         self.detectorFindings = detectorFindings
@@ -32,6 +35,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         self.secretGates = secretGates
         self.secrets = secrets
         self.accessRequests = accessRequests
+        self.doctorIssues = doctorIssues
     }
 
     public static let empty = DashboardSnapshot(
@@ -41,7 +45,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [],
         secretGates: [],
         secrets: [],
-        accessRequests: []
+        accessRequests: [],
+        doctorIssues: []
     )
 
     public var flaggedDetectorCount: Int {
@@ -72,8 +77,46 @@ public struct DashboardSnapshot: Equatable, Sendable {
             hardeners: hardenerMetadata,
             secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
             secrets: secrets,
-            accessRequests: loadAccessRequestRecords()
+            accessRequests: loadAccessRequestRecords(),
+            doctorIssues: loadDoctorIssues(avExecutableURL: avExecutableURL)
         )
+    }
+}
+
+public struct DoctorIssue: Equatable, Sendable, Identifiable {
+    public let hardener: String
+    public let kind: String
+    public let command: String?
+    public let message: String
+    public let remediation: String
+    public let stubPath: String?
+    public let targetPath: String?
+    public let resolvedPath: String?
+
+    public var id: String {
+        [hardener, command, kind, stubPath, targetPath, resolvedPath]
+            .compactMap(\.self)
+            .joined(separator: "\u{1f}")
+    }
+
+    public init(
+        hardener: String,
+        kind: String,
+        command: String? = nil,
+        message: String,
+        remediation: String,
+        stubPath: String? = nil,
+        targetPath: String? = nil,
+        resolvedPath: String? = nil
+    ) {
+        self.hardener = hardener
+        self.kind = kind
+        self.command = command
+        self.message = message
+        self.remediation = remediation
+        self.stubPath = stubPath
+        self.targetPath = targetPath
+        self.resolvedPath = resolvedPath
     }
 }
 
@@ -445,6 +488,35 @@ struct HardenerReport: Codable {
     let hardeners: [HardenerMetadata]
 }
 
+private struct DoctorReport: Codable {
+    let results: [DoctorResult]
+}
+
+private struct DoctorResult: Codable {
+    let name: String
+    let issues: [WireDoctorIssue]
+}
+
+private struct WireDoctorIssue: Codable {
+    let kind: String
+    let command: String?
+    let message: String
+    let remediation: String
+    let stubPath: String?
+    let targetPath: String?
+    let resolvedPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case command
+        case message
+        case remediation
+        case stubPath = "stub_path"
+        case targetPath = "target_path"
+        case resolvedPath = "resolved_path"
+    }
+}
+
 public func detectorFindings(from scanJSON: Data) throws -> [DetectorFinding] {
     try JSONDecoder().decode(ScanReport.self, from: scanJSON).findings
 }
@@ -455,6 +527,32 @@ public func detectorMetadata(from detectorsJSON: Data) throws -> [DetectorMetada
 
 public func hardenerMetadata(from hardenersJSON: Data) throws -> [HardenerMetadata] {
     try JSONDecoder().decode(HardenerReport.self, from: hardenersJSON).hardeners
+}
+
+public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = true) throws -> [DoctorIssue] {
+    var issues = try JSONDecoder().decode(DoctorReport.self, from: doctorJSON).results.flatMap { result in
+        result.issues.map {
+            DoctorIssue(
+                hardener: result.name,
+                kind: $0.kind,
+                command: $0.command,
+                message: $0.message,
+                remediation: $0.remediation,
+                stubPath: $0.stubPath,
+                targetPath: $0.targetPath,
+                resolvedPath: $0.resolvedPath
+            )
+        }
+    }
+    guard !loginShellPATHAvailable else { return issues }
+    issues.removeAll { $0.kind == "stub_not_first_on_path" }
+    issues.append(DoctorIssue(
+        hardener: "PATH",
+        kind: "login_shell_path_unavailable",
+        message: "Unable to inspect the login-shell PATH",
+        remediation: "Ensure the configured login shell starts successfully, then refresh Doctor."
+    ))
+    return issues
 }
 
 public func hardenerNameReferencedByDocumentation(_ documentation: String) -> String? {
@@ -848,10 +946,40 @@ public func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
         .flatMap { try? hardenerMetadata(from: $0) } ?? []
 }
 
-func loadJSON(avExecutableURL: URL, arguments: [String]) -> Data? {
+public func loadDoctorIssues(avExecutableURL: URL) -> [DoctorIssue] {
+    let shellPATH = loginShellPATH()
+    var environment = ProcessInfo.processInfo.environment
+    if let shellPATH {
+        environment["PATH"] = shellPATH
+    }
+    let data = loadJSON(
+        avExecutableURL: avExecutableURL,
+        arguments: ["doctor", "--json"],
+        acceptedTerminationStatuses: [0, 1],
+        environment: environment
+    )
+    return data.flatMap {
+        try? doctorIssues(from: $0, loginShellPATHAvailable: shellPATH != nil)
+    } ?? (shellPATH == nil ? [DoctorIssue(
+        hardener: "PATH",
+        kind: "login_shell_path_unavailable",
+        message: "Unable to inspect the login-shell PATH",
+        remediation: "Ensure the configured login shell starts successfully, then refresh Doctor."
+    )] : [])
+}
+
+func loadJSON(
+    avExecutableURL: URL,
+    arguments: [String],
+    acceptedTerminationStatuses: Set<Int32> = [0],
+    environment: [String: String]? = nil
+) -> Data? {
     let process = Process()
     process.executableURL = avExecutableURL
     process.arguments = arguments
+    if let environment {
+        process.environment = environment
+    }
 
     let output = Pipe()
     process.standardOutput = output
@@ -865,8 +993,38 @@ func loadJSON(avExecutableURL: URL, arguments: [String]) -> Data? {
 
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return nil }
+    guard acceptedTerminationStatuses.contains(process.terminationStatus) else { return nil }
     return data
+}
+
+func loginShellPATH() -> String? {
+    guard let record = getpwuid(getuid()),
+          let shellPointer = record.pointee.pw_shell,
+          let shell = String(validatingCString: shellPointer),
+          !shell.isEmpty
+    else { return nil }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: shell)
+    process.arguments = ["-lic", "/usr/bin/printenv PATH"]
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = Pipe()
+    do {
+        try process.run()
+    } catch {
+        return nil
+    }
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0,
+          let path = String(data: data, encoding: .utf8)?
+            .split(whereSeparator: \.isNewline)
+            .last(where: { $0.hasPrefix("/") })
+            .map(String.init),
+          !path.isEmpty
+    else { return nil }
+    return path
 }
 
 public func defaultAVExecutableURL() -> URL {
