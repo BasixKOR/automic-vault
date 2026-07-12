@@ -493,7 +493,8 @@ func runDashboardSearchSelfCheck() -> Int32 {
         app: appPolicy,
         setProtection: { _ in }
     ).frame(width: 500)).fittingSize.height
-    guard model.count(for: .detectors) == 3,
+    guard DashboardSection.allCases.last == .doctor,
+          model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
@@ -542,11 +543,11 @@ func runDashboardSearchSelfCheck() -> Int32 {
 
 enum DashboardSection: String, CaseIterable, Identifiable {
     case detectors
-    case doctor
     case hardenedTools
     case secretGates
     case allSecrets
     case secretUsage
+    case doctor
 
     var id: String { rawValue }
 
