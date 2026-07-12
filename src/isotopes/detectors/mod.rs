@@ -161,14 +161,24 @@ pub(crate) struct DetectorMetadata {
 struct Detector {
     module: &'static str,
     findings: fn(&Path) -> Vec<Finding>,
+    docs_url: &'static str,
     documentation: &'static str,
 }
+
+#[cfg(test)]
+const DOCS_BASE: &str =
+    "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/";
 
 macro_rules! detector {
     ($module:ident) => {
         Detector {
             module: stringify!($module),
             findings: $module::findings,
+            docs_url: concat!(
+                "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/",
+                stringify!($module),
+                "/detector.md"
+            ),
             documentation: include_str!(concat!(stringify!($module), "/detector.md")),
         }
     };
@@ -176,6 +186,13 @@ macro_rules! detector {
         Detector {
             module: $name,
             findings: $package::$module::findings,
+            docs_url: concat!(
+                "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/",
+                stringify!($package),
+                "/",
+                stringify!($module),
+                ".md"
+            ),
             documentation: include_str!(concat!(
                 stringify!($package),
                 "/",
@@ -348,7 +365,12 @@ const DETECTORS: &[Detector] = &[
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
     for detector in DETECTORS {
-        findings.extend((detector.findings)(home));
+        let mut detected = (detector.findings)(home);
+        for finding in &mut detected {
+            finding.homepage = detector.docs_url;
+            finding.docs_url = detector.docs_url;
+        }
+        findings.extend(detected);
     }
     findings
 }
@@ -360,8 +382,8 @@ pub(crate) fn metadata() -> Vec<DetectorMetadata> {
             let name = detector_name(detector.module);
             DetectorMetadata {
                 documentation: detector.documentation,
-                homepage: detector_homepage(&name),
-                docs_url: detector_docs_url(&name),
+                homepage: detector.docs_url.to_string(),
+                docs_url: detector.docs_url.to_string(),
                 name,
             }
         })
@@ -378,19 +400,6 @@ fn detector_name(module: &str) -> String {
     }
 }
 
-fn detector_homepage(name: &str) -> String {
-    match name {
-        "git-credential-fill" | "git-credential-oauth" | "git-credentials-file" => {
-            "https://git-scm.com/".to_string()
-        }
-        _ => detector_docs_url(name),
-    }
-}
-
-fn detector_docs_url(name: &str) -> String {
-    format!("https://github.com/automic-vault/radioisotopes/tree/main/{name}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,9 +411,10 @@ mod tests {
 
     #[test]
     fn metadata_names_detectors() {
-        let names = metadata()
-            .into_iter()
-            .map(|detector| detector.name)
+        let metadata = metadata();
+        let names = metadata
+            .iter()
+            .map(|detector| detector.name.clone())
             .collect::<Vec<_>>();
 
         assert!(!names.contains(&"aws".to_string()));
@@ -421,5 +431,21 @@ mod tests {
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"sudo".to_string()));
         assert!(names.contains(&"terraform-core".to_string()));
+        assert_eq!(
+            metadata
+                .iter()
+                .find(|detector| detector.name == "homebrew")
+                .unwrap()
+                .homepage,
+            format!("{DOCS_BASE}homebrew/detector.md")
+        );
+        assert_eq!(
+            metadata
+                .iter()
+                .find(|detector| detector.name == "git-credential-fill")
+                .unwrap()
+                .docs_url,
+            format!("{DOCS_BASE}git/credential_fill.md")
+        );
     }
 }

@@ -45,7 +45,9 @@ fn av_scan_reports_findings() {
                 || line.starts_with('│'),
             "{line}"
         );
-        assert!(line.chars().count() <= 78, "{line}");
+        if !line.starts_with("│  https://") {
+            assert!(line.chars().count() <= 78, "{line}");
+        }
     }
     assert_eq!(stderr(&output), "");
 

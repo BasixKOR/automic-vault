@@ -152,12 +152,8 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
                 finding.severity.to_ascii_uppercase(),
             )
         );
-        let _ = writeln!(
-            stdout,
-            "│  {} {}",
-            style.paint("2", "homepage"),
-            finding.homepage
-        );
+        let _ = writeln!(stdout, "│  {}", style.paint("2", "homepage"));
+        let _ = writeln!(stdout, "│  {}", style.paint("36", finding.homepage));
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
         write_wrapped(stdout, "│  ", &finding.explanation, style, None);
@@ -182,7 +178,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
         }
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "read more"));
-        write_wrapped(stdout, "│  ", finding.docs_url, style, Some("36"));
+        let _ = writeln!(stdout, "│  {}", style.paint("36", finding.docs_url));
         let _ = writeln!(stdout, "│");
     }
     if !hidden.is_empty() {
@@ -336,7 +332,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n│  read more\n│  https://example.test/docs/example.md\n│\n╰─ scan complete\n"
+            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage\n│  https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n│  read more\n│  https://example.test/docs/example.md\n│\n╰─ scan complete\n"
         );
     }
 
