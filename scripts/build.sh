@@ -105,6 +105,9 @@ if [[ "$publish" -eq 1 ]]; then
   plutil -insert PostHogAPIKey -string "$POSTHOG_API_KEY" "$CONTENTS/Info.plist"
 fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
+if [[ "$run" -eq 1 && "$install" -eq 0 ]]; then
+  plutil -replace ProgramArguments -json "[\"$MACOS/AutomicVaultMenubar\"]" "$LAUNCH_AGENT_PLIST"
+fi
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
   --compile "$ICON_BUILD" \
