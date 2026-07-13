@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn av_doctor_reports_healthy_and_shadowed_stubs_as_json() {
+fn av_doctor_omits_unhardened_tools_and_reports_hardened_stubs() {
     let root = temp_dir();
     let targets = root.join("targets");
     let stubs = root.join("stubs");
@@ -15,13 +15,13 @@ fn av_doctor_reports_healthy_and_shadowed_stubs_as_json() {
 
     let aggregate = av(&root).args(["doctor", "--json"]).output().unwrap();
     let aggregate: serde_json::Value = serde_json::from_slice(&aggregate.stdout).unwrap();
-    let node = aggregate["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|result| result["name"] == "node")
-        .unwrap();
-    assert_eq!(node["issues"][0]["kind"], "stub_missing");
+    assert!(
+        aggregate["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|result| result["name"] != "node")
+    );
 
     let harden = av(&root)
         .args(["harden", "node", "--yes"])

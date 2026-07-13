@@ -74,9 +74,13 @@ fn diagnose(
     Ok(hardeners
         .into_iter()
         .filter(|hardener| {
-            hardener.detection.applicable
-                && (!hardener.detection.commands.is_empty()
-                    || !hardener.detection.diagnostics.is_empty())
+            hardener.detection.commands.iter().any(|command| {
+                command.hardened
+                    || command
+                        .stub_path
+                        .as_deref()
+                        .is_some_and(|path| fs::symlink_metadata(path).is_ok())
+            })
         })
         .map(|hardener| diagnose_one(hardener, None, path))
         .collect())
@@ -607,11 +611,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn explicit_doctor_reports_missing_target_and_stub() {
+    fn explicit_doctor_can_inspect_tool_omitted_from_aggregate() {
+        let dir = temp_dir("unhardened");
+        let target = executable_file(&dir.join("npm"));
+        let stub = dir.join("stub");
         let hardeners = vec![hardener(
             "node",
             false,
-            command("npm", false, "/missing/stub", "/missing/npm"),
+            command(
+                "npm",
+                false,
+                stub.to_str().unwrap(),
+                target.to_str().unwrap(),
+            ),
         )];
         assert!(
             diagnose(hardeners, None, OsStr::new(""))
@@ -623,7 +635,12 @@ mod tests {
             vec![hardener(
                 "node",
                 false,
-                command("npm", false, "/missing/stub", "/missing/npm"),
+                command(
+                    "npm",
+                    false,
+                    stub.to_str().unwrap(),
+                    target.to_str().unwrap(),
+                ),
             )],
             Some("npm"),
             OsStr::new(""),
@@ -635,8 +652,9 @@ mod tests {
                 .iter()
                 .map(|issue| issue.kind)
                 .collect::<Vec<_>>(),
-            ["target_unavailable", "stub_missing"]
+            ["stub_missing"]
         );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -644,13 +662,14 @@ mod tests {
         let dir = temp_dir("nonexecutable");
         let target = dir.join("npm");
         fs::write(&target, "not executable").unwrap();
+        let stub = executable_file(&dir.join("stub"));
         let hardeners = vec![hardener(
             "node",
             false,
             command(
                 "npm",
                 false,
-                dir.join("stub").to_str().unwrap(),
+                stub.to_str().unwrap(),
                 target.to_str().unwrap(),
             ),
         )];
@@ -661,7 +680,7 @@ mod tests {
                 .iter()
                 .map(|issue| issue.kind)
                 .collect::<Vec<_>>(),
-            ["target_unavailable", "stub_missing"]
+            ["target_unavailable", "stub_content_invalid"]
         );
 
         let results = diagnose(
