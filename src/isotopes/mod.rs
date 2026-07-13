@@ -13,6 +13,10 @@ pub(crate) fn detector_metadata() -> Vec<detectors::DetectorMetadata> {
     detectors::metadata()
 }
 
+pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
+    detectors::documented_solution(documentation)
+}
+
 pub(crate) fn hardener_metadata() -> Vec<hardeners::HardenerMetadata> {
     hardeners::metadata()
 }

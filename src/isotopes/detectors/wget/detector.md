@@ -9,3 +9,11 @@
 
 - `~/.netrc`
 - `~/.wgetrc`
+
+## Why This is not Yet Hardened
+
+Wget can consume credentials from `~/.netrc` and from password options in
+`~/.wgetrc`. Those are generic user config files rather than a stable
+package-owned secret store.
+
+[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).

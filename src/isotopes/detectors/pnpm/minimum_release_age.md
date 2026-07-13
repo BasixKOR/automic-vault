@@ -11,3 +11,7 @@
 - `$XDG_CONFIG_HOME/pnpm/rc`
 - `~/.config/pnpm/rc`
 - `~/Library/Preferences/pnpm/rc`
+
+## Mitigation
+
+Set `minimum-release-age=1440` in the reported pnpm config file.

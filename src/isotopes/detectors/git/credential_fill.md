@@ -10,3 +10,8 @@
 - `~/.gitconfig`
 - `$XDG_CONFIG_HOME/git/config`
 - `~/.config/git/config`
+
+## Mitigation
+
+Remove the affected credential helper from Git config and change GitHub remotes
+to SSH. Reject any cached GitHub credential with `git credential reject`.

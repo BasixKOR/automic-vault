@@ -7,3 +7,7 @@
 ## Sensitive Files
 
 - `~/.yarnrc.yml`
+
+## Mitigation
+
+Set `npmMinimalAgeGate: 1d` in the reported Yarn config file.

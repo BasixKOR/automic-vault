@@ -13,3 +13,10 @@
 - `$XDG_CONFIG_HOME/wget2/wget2rc`
 - `~/.config/wget/wget2rc`
 - `~/.config/wget2/wget2rc`
+
+## Why This is not Yet Hardened
+
+Wget2 can consume credentials from `~/.netrc` and from password options in user
+configuration files such as `~/.wget2rc`.
+
+[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).

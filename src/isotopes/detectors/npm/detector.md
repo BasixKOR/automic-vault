@@ -8,3 +8,7 @@
 
 - `$NPM_CONFIG_USERCONFIG`
 - `~/.npmrc`
+
+## Mitigation
+
+Set `min-release-age=1` in the reported npm config file.

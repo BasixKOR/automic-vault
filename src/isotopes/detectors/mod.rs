@@ -369,10 +369,45 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
         for finding in &mut detected {
             finding.homepage = detector.docs_url;
             finding.docs_url = detector.docs_url;
+            if let Some(solution) = documented_solution(detector.documentation) {
+                finding.solution = solution;
+            }
         }
         findings.extend(detected);
     }
     findings
+}
+
+pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
+    if let Some(mitigation) = documentation
+        .split_once("## Mitigation")
+        .map(|(_, section)| section)
+        .and_then(|section| section.split("\n## ").next())
+    {
+        if let Some(command) = mitigation.lines().find(|line| line.contains("av harden ")) {
+            return Some(format!("Run `{}`.", command.trim()));
+        }
+        let paragraph = first_paragraph(mitigation);
+        if !paragraph.is_empty() {
+            return Some(paragraph);
+        }
+    }
+    documentation
+        .split_once("## Why This is not Yet Hardened")
+        .map(|(_, section)| section)
+        .and_then(|section| section.split("\n## ").next())
+        .map(first_paragraph)
+        .filter(|solution| !solution.is_empty())
+}
+
+fn first_paragraph(section: &str) -> String {
+    section
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| !line.trim().is_empty())
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub(crate) fn metadata() -> Vec<DetectorMetadata> {
@@ -446,6 +481,24 @@ mod tests {
                 .unwrap()
                 .docs_url,
             format!("{DOCS_BASE}git/credential_fill.md")
+        );
+    }
+
+    #[test]
+    fn documentation_supplies_hardening_or_deferred_solution() {
+        assert_eq!(
+            documented_solution("## Mitigation\n\n```sh\nsudo av harden foo\n```"),
+            Some("Run `sudo av harden foo`.".to_string())
+        );
+        assert_eq!(
+            documented_solution("## Mitigation\n\nRemove the reported token.\nThen log in again."),
+            Some("Remove the reported token. Then log in again.".to_string())
+        );
+        assert_eq!(
+            documented_solution(
+                "## Why This is not Yet Hardened\n\nFoo needs a temporary secret file.\nThat is not sufficient.\n\n## Sensitive Files"
+            ),
+            Some("Foo needs a temporary secret file. That is not sufficient.".to_string())
         );
     }
 }

@@ -10,3 +10,12 @@
 - `~/secretlint-output.json`
 - `./secretlint-report.json`
 - `./secretlint-output.json`
+
+## Why This is not Yet Hardened
+
+This finding concerns a report that may already contain copied secrets, not a
+credential that Automic Vault can inject. Delete the report after reviewing it.
+Preventing persistence requires Secretlint to redact findings or keep the report
+in memory.
+
+[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).

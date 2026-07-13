@@ -8,3 +8,8 @@
 
 - `$XDG_CONFIG_HOME/.bunfig.toml`
 - `~/.bunfig.toml`
+
+## Mitigation
+
+Set `minimumReleaseAge = 86400` under `[install]` in the reported Bun config
+file.

@@ -14,3 +14,11 @@
 - `~/.azure/msal_token_cache.json`
 - `~/.azure/service_principal_entries.json`
 - `~/.azure/accessTokens.json`
+
+## Why This is not Yet Hardened
+
+Azure CLI owns a complex, mutable MSAL token cache. A safe fix needs an upstream
+default or migration change, or a source isotope that patches the persistence
+layer.
+
+[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).

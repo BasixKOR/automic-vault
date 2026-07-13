@@ -13,3 +13,11 @@
 - `~/Library/Application Support/OpenVPN/**`
 - `~/Library/Application Support/Tunnelblick/Configurations/**`
 - `auth-user-pass files referenced by scanned profiles`
+
+## Why This is not Yet Hardened
+
+OpenVPN profiles can contain private keys or reference plaintext
+`auth-user-pass` files. This detector reports those local files without changing
+VPN profile semantics.
+
+[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
