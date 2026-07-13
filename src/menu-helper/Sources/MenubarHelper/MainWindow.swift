@@ -611,7 +611,7 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 186, ideal: 215, max: 250)
         } content: {
             DashboardListView(model: model)
-                .navigationSplitViewColumnWidth(min: 168, ideal: 230)
+                .navigationSplitViewColumnWidth(min: 168, ideal: 235)
                 .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
                 .toolbar {
                    if model.selectedSection == .allSecrets {
