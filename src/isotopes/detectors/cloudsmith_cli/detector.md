@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden cloudsmith-cli
+av harden cloudsmith-cli
 ```
 
 ## Sensitive Files

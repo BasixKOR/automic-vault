@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden censys
+av harden censys
 ```
 
 ## Sensitive Files

@@ -103,9 +103,37 @@ fn failed_stub_install_does_not_migrate_credentials() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn cancelled_hardening_changes_nothing() {
+    let root = fixture("cancelled");
+    let config = root.join("doctl.yaml");
+    prepare(&root, "doctl");
+    fs::write(&config, "access-token: do_secret\ncontext: default\n").unwrap();
+
+    let mut command = base_av(&root);
+    command.args(["harden", "doctl"]);
+    let output = command
+        .env("DIGITALOCEAN_CONFIG", &config)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(!root.join("stubs/doctl").exists());
+    assert_eq!(
+        fs::read_to_string(config).unwrap(),
+        "access-token: do_secret\ncontext: default\n"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn av(root: &Path, hardener: &str) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
+    let mut command = base_av(root);
     command.args(["harden", hardener, "--yes"]);
+    command
+}
+
+fn base_av(root: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
     command.env("HOME", root.join("home"));
     command.env("AUTOMIC_VAULT_TEST_EUID", "0");
     command.env(

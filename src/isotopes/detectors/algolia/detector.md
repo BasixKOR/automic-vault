@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden algolia
+av harden algolia
 ```
 
 ## Sensitive Files

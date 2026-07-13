@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden vagrant
+av harden vagrant
 ```
 
 ## Sensitive Files

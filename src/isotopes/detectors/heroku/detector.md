@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden heroku
+av harden heroku
 ```
 
 ## Sensitive Files

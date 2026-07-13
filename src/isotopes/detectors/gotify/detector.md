@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden gotify
+av harden gotify
 ```
 
 ## Sensitive Files

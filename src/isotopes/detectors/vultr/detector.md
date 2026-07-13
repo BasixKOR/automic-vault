@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden vultr
+av harden vultr
 ```
 
 ## Sensitive Files

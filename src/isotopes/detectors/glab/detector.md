@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden glab
+av harden glab
 ```
 
 ## Sensitive Files

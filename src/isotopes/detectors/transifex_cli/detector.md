@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden transifex-cli
+av harden transifex-cli
 ```
 
 ## Sensitive Files

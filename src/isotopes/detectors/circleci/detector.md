@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden circleci
+av harden circleci
 ```
 
 ## Sensitive Files

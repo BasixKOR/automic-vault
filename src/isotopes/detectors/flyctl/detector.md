@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden flyctl
+av harden flyctl
 ```
 
 ## Sensitive Files

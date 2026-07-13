@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden grafanactl
+av harden grafanactl
 ```
 
 ## Sensitive Files

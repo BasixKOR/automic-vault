@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden minio-mc
+av harden minio-mc
 ```
 
 ## Sensitive Files

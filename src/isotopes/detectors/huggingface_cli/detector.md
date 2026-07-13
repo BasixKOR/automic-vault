@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden huggingface-cli
+av harden huggingface-cli
 ```
 
 ## Sensitive Files

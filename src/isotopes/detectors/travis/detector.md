@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden travis
+av harden travis
 ```
 
 ## Sensitive Files

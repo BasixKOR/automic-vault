@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden snyk
+av harden snyk
 ```
 
 ## Sensitive Files

@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden snowflake-cli
+av harden snowflake-cli
 ```
 
 ## Sensitive Files

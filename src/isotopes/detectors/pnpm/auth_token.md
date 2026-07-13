@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden pnpm
+av harden pnpm
 ```
 
 ## Sensitive Files

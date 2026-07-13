@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden k6
+av harden k6
 ```
 
 ## Sensitive Files

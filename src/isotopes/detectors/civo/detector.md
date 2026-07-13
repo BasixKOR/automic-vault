@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden civo
+av harden civo
 ```
 
 ## Sensitive Files

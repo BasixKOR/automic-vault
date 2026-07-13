@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden jfrog-cli
+av harden jfrog-cli
 ```
 
 ## Sensitive Files

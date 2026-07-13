@@ -29,7 +29,10 @@ pub(crate) fn run_target(
 
 pub(crate) fn install_target(target: &str) -> Result<(), String> {
     let wrapper = wrapper(target).ok_or_else(|| format!("unknown hardener `{target}`"))?;
-    if effective_uid() != 0 {
+    if test_stub_dir().is_some() || test_target_dir().is_some() {
+        return Err("test path overrides are forbidden during privileged installation".into());
+    }
+    if actual_uid() != 0 {
         return Err("env-wrapper installation requires root".into());
     }
     preflight(wrapper)?;
@@ -127,7 +130,10 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
 
 fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
     if test_stub_dir().is_some() {
-        return install_target(wrapper.name);
+        for stub in stubs(wrapper) {
+            install_stub(stub)?;
+        }
+        return Ok(());
     }
     validate_privileged_av(Path::new(AV_PATH))?;
     let status = Command::new(SUDO_PATH)
@@ -142,7 +148,7 @@ fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
 }
 
 fn validate_privileged_av(path: &Path) -> Result<(), String> {
-    for trusted in [path.parent().unwrap_or(Path::new("/")), path] {
+    for trusted in path.ancestors() {
         let metadata = trusted
             .metadata()
             .map_err(|err| format!("cannot trust {}: {err}", trusted.display()))?;
@@ -330,7 +336,11 @@ fn effective_uid() -> u32 {
     std::env::var("AUTOMIC_VAULT_TEST_EUID")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| unsafe { geteuid() })
+        .unwrap_or_else(actual_uid)
+}
+
+fn actual_uid() -> u32 {
+    unsafe { geteuid() }
 }
 
 #[derive(Clone, Copy)]

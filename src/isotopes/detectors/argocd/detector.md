@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden argocd
+av harden argocd
 ```
 
 ## Sensitive Files

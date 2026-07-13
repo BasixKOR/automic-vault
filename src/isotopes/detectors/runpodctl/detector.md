@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden runpodctl
+av harden runpodctl
 ```
 
 ## Sensitive Files

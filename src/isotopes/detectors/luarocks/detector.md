@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden luarocks
+av harden luarocks
 ```
 
 ## Sensitive Files

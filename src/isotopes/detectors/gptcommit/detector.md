@@ -8,7 +8,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden gptcommit
+av harden gptcommit
 ```
 
 ## Sensitive Files

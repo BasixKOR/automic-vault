@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden virustotal-cli
+av harden virustotal-cli
 ```
 
 ## Sensitive Files

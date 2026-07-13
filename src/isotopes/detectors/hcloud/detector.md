@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden hcloud
+av harden hcloud
 ```
 
 ## Sensitive Files

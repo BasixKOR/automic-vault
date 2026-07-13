@@ -335,6 +335,47 @@ mod tests {
     }
 
     #[test]
+    fn private_env_wrapper_installer_rejects_unknown_targets() {
+        let (code, stdout, stderr) =
+            run_args(&["av", "__install-env-wrapper", "definitely-not-a-hardener"]);
+
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(stderr, "av: unknown hardener `definitely-not-a-hardener`\n");
+    }
+
+    #[test]
+    fn private_env_wrapper_installer_requires_root() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501") };
+
+        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(stderr, "av: env-wrapper installation requires root\n");
+    }
+
+    #[test]
+    fn private_env_wrapper_installer_rejects_test_path_overrides() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", "/tmp/stubs");
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            "av: test path overrides are forbidden during privileged installation\n"
+        );
+    }
+
+    #[test]
     fn only_scan_is_supported() {
         for args in [&["av"][..], &["av", "harden"], &["av", "scan", "--bad"]] {
             let (code, stdout, stderr) = run_args(args);

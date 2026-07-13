@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden composer
+av harden composer
 ```
 
 ## Sensitive Files

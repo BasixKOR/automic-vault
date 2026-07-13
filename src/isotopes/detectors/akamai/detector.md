@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden akamai
+av harden akamai
 ```
 
 ## Sensitive Files

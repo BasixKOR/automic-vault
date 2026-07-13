@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden wsk
+av harden wsk
 ```
 
 ## Sensitive Files

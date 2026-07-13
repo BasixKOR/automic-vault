@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden qwen-code
+av harden qwen-code
 ```
 
 ## Sensitive Files

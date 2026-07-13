@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden netlify-cli
+av harden netlify-cli
 ```
 
 ## Sensitive Files

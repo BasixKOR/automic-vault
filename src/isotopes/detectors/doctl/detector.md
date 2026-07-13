@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden doctl
+av harden doctl
 ```
 
 ## Sensitive Files

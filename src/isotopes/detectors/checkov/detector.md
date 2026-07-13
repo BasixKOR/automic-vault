@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden checkov
+av harden checkov
 ```
 
 ## Sensitive Files

@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden ast-cli
+av harden ast-cli
 ```
 
 ## Sensitive Files

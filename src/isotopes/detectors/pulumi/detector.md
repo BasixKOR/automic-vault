@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden pulumi
+av harden pulumi
 ```
 
 ## Sensitive Files

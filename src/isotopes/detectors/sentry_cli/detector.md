@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden sentry-cli
+av harden sentry-cli
 ```
 
 ## Sensitive Files

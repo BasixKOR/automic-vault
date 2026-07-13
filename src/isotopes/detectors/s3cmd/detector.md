@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden s3cmd
+av harden s3cmd
 ```
 
 ## Sensitive Files

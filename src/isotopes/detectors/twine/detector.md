@@ -7,7 +7,7 @@
 ## Mitigation
 
 ```sh
-sudo av harden twine
+av harden twine
 ```
 
 ## Sensitive Files
