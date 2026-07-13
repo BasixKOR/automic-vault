@@ -1785,14 +1785,18 @@ private final class ApprovalPanel: NSPanel {
 }
 
 @MainActor
-private func fitApprovalPanel(_ panel: NSPanel, animate: Bool) {
+private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate: Bool) {
     guard let contentView = panel.contentView else { return }
     contentView.layoutSubtreeIfNeeded()
-    let size = contentView.fittingSize
+    var size = contentView.fittingSize
+    size.height = min(size.height, maximumHeight)
     var frame = panel.frame
     let top = frame.maxY
     frame.size = size
     frame.origin.y = top - size.height
+    if let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+        frame.origin.y = max(visibleFrame.minY, min(frame.origin.y, visibleFrame.maxY - size.height))
+    }
     panel.setFrame(frame, display: true, animate: animate)
 }
 
@@ -1826,6 +1830,7 @@ private func showApprovalAlert(
         )
     )
     var decision = ApprovalDecision.denied
+    let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
         styleMask: [.borderless],
@@ -1843,6 +1848,7 @@ private func showApprovalAlert(
     panel.contentView = NSHostingView(
         rootView: ApprovalPromptView(
             content: content,
+            maximumHeight: maximumHeight,
             decide: {
                 decision = $0
                 NSApp.stopModal()
@@ -1851,13 +1857,13 @@ private func showApprovalAlert(
                 Task { @MainActor in
                     await Task.yield()
                     if let panel {
-                        fitApprovalPanel(panel, animate: true)
+                        fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: true)
                     }
                 }
             }
         )
     )
-    fitApprovalPanel(panel, animate: false)
+    fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
     panel.makeKeyAndOrderFront(nil)
     NSApp.runModal(for: panel)
@@ -1983,6 +1989,7 @@ private struct ApprovalPromptContent {
 
 private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
+    var maximumHeight: CGFloat? = nil
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
@@ -2006,6 +2013,7 @@ private struct ApprovalPromptView: View {
             }
 
             ApprovalPromptCommandView(content: content)
+                .layoutPriority(-1)
 
             VStack(alignment: .leading, spacing: 5) {
                 if let title = content.title, !title.isEmpty {
@@ -2064,6 +2072,7 @@ private struct ApprovalPromptView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(28)
+        .frame(maxHeight: maximumHeight)
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
         .background {
@@ -2087,15 +2096,14 @@ private struct ApprovalPromptCommandView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ScrollView(.horizontal) {
+            ScrollView([.horizontal, .vertical]) {
                 Text(content.command)
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.white)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
             }
-            .scrollDisabled(true)
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.visible)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
@@ -2326,6 +2334,23 @@ private func runApprovalSelfCheck() -> Int32 {
             contentSizeDidChange: {}
         )
     ).fittingSize.height
+    let constrainedHeight = NSHostingView(
+        rootView: ApprovalPromptView(
+            content: ApprovalPromptContent(
+                requesterName: requester.name,
+                requesterIconPath: requester.iconPath,
+                command: Array(repeating: "  --long-option \\", count: 100).joined(separator: "\n"),
+                title: nil,
+                detail: nil,
+                cwd: "/tmp",
+                keys: "GH_TOKEN_GITHUB_COM",
+                sections: []
+            ),
+            maximumHeight: 500,
+            decide: { _ in },
+            contentSizeDidChange: {}
+        )
+    ).fittingSize.height
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
@@ -2337,7 +2362,8 @@ private func runApprovalSelfCheck() -> Int32 {
           unverifiedRequester.name == "vaultty-sessiond",
           unverifiedRequester.iconPath == "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
           collapsedHeight > 0,
-          collapsedHeight < 660
+          collapsedHeight < 660,
+          constrainedHeight <= 500
     else {
         return 1
     }
