@@ -164,7 +164,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
         let _ = writeln!(stdout, "│  {}", style.paint("36", finding.homepage));
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
-        write_wrapped(stdout, "│  ", &finding.explanation, style, None);
+        write_wrapped(stdout, "│  ", problem(finding), style, None);
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
         write_wrapped(stdout, "│  ", &finding.solution, style, None);
@@ -198,6 +198,19 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
         let _ = writeln!(stdout, "│");
     }
     let _ = writeln!(stdout, "╰─ {}", style.paint("2", "scan complete"));
+}
+
+fn problem(finding: &Finding) -> &str {
+    finding
+        .affected
+        .iter()
+        .find_map(|affected| {
+            finding
+                .explanation
+                .strip_suffix(&affected.path)
+                .map(|problem| problem.strip_suffix(": ").unwrap_or(problem).trim_end())
+        })
+        .unwrap_or(&finding.explanation)
 }
 
 fn is_hidden(finding: &Finding) -> bool {
@@ -385,6 +398,20 @@ mod tests {
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("│  • /tmp/example.conf\n"));
         assert!(!stdout.contains("/tmp/example.conf:"));
+    }
+
+    #[test]
+    fn print_does_not_repeat_affected_paths_in_problem() {
+        let mut finding = fake_finding();
+        finding.explanation =
+            "Example detector found a risky setting: /tmp/example.conf".to_string();
+        let mut stdout = Vec::new();
+
+        print(&mut stdout, &[finding], Style::plain(), false);
+
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("│  problem\n│  Example detector found a risky setting\n"));
+        assert_eq!(stdout.matches("/tmp/example.conf").count(), 1);
     }
 
     #[test]

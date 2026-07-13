@@ -36,7 +36,7 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     let mut reasons = Vec::new();
     if !prefix_owned_by_automic_vault()? {
         reasons.push(format!(
-            "Homebrew prefix is not owned by automic:vault: {}",
+            "Homebrew prefix is mutable: {}",
             brew_prefix().display()
         ));
     }
@@ -154,7 +154,10 @@ mod tests {
             "AUTOMIC_VAULT_TEST_VAULT_GID",
         ]);
         assert_eq!(reasons.len(), 1);
-        assert!(reasons[0].contains("not owned by automic:vault"));
+        assert_eq!(
+            reasons[0],
+            format!("Homebrew prefix is mutable: {}", dir.display())
+        );
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, "medium");
         let _ = std::fs::remove_dir_all(dir);
