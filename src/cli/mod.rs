@@ -75,6 +75,19 @@ where
     };
 
     match command.to_str() {
+        Some("__install-env-wrapper") if rest.len() == 1 => {
+            let Some(target) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");
+                return 2;
+            };
+            match hardeners::env_wrapper::install_target(target) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
         Some("scan") if rest.is_empty() => scan::run(stdout, style, false),
         Some("scan") if rest == [OsString::from("--show-all")] => scan::run(stdout, style, true),
         Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),

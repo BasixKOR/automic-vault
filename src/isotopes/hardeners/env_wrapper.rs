@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use super::{
     HardenerCommand, HardenerDetection, HardenerMetadata, RequiredExecutable, RequiredIdentity,
@@ -10,6 +11,8 @@ use super::{
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
 const STUB_DIR: &str = "/usr/local/bin";
+const AV_PATH: &str = "/usr/local/bin/av";
+const SUDO_PATH: &str = "/usr/bin/sudo";
 const DOCUMENTATION: &str = "# Environment Wrapper\n\nInstalls a small launcher stub that runs the target tool through `av inject --allow-missing-keys` with the migrated isotope keys. This does not migrate existing plaintext credentials; run `av scan` after hardening to find anything still on disk.\n";
 
 unsafe extern "C" {
@@ -22,6 +25,18 @@ pub(crate) fn run_target(
     yes: bool,
 ) -> Option<Result<(), String>> {
     Some(run(wrapper(target)?, stdout, yes))
+}
+
+pub(crate) fn install_target(target: &str) -> Result<(), String> {
+    let wrapper = wrapper(target).ok_or_else(|| format!("unknown hardener `{target}`"))?;
+    if effective_uid() != 0 {
+        return Err("env-wrapper installation requires root".into());
+    }
+    preflight(wrapper)?;
+    for stub in stubs(wrapper) {
+        install_stub(stub)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
@@ -62,9 +77,31 @@ fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
 }
 
 fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    if effective_uid() != 0 {
-        return Err(format!("run `sudo av harden {}`", wrapper.name));
+    if effective_uid() == 0 && test_stub_dir().is_none() {
+        return Err(format!(
+            "run `av harden {}` without sudo; av will request elevation when needed",
+            wrapper.name
+        ));
     }
+    preflight(wrapper)?;
+
+    writeln!(stdout, "╭─ harden {}", wrapper.name).ok();
+    writeln!(stdout, "│").ok();
+    for stub in stubs(wrapper) {
+        writeln!(stdout, "├─ write {}", stub_path(stub.command).display()).ok();
+    }
+    writeln!(stdout, "│").ok();
+    if !confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
+        return Ok(());
+    }
+
+    install_privileged(wrapper)?;
+    writeln!(stdout, "╰─ hardened {}", wrapper.name).ok();
+    Ok(())
+}
+
+fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
     for stub in stubs(wrapper) {
         let target = target_path(stub);
         if !target.exists() {
@@ -82,22 +119,43 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
             ));
         }
     }
+    Ok(())
+}
 
-    writeln!(stdout, "╭─ harden {}", wrapper.name).ok();
-    writeln!(stdout, "│").ok();
-    for stub in stubs(wrapper) {
-        writeln!(stdout, "├─ write {}", stub_path(stub.command).display()).ok();
+fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
+    if test_stub_dir().is_some() {
+        return install_target(wrapper.name);
     }
-    writeln!(stdout, "│").ok();
-    if !confirm(stdout, yes)? {
-        writeln!(stdout, "╰─ cancelled").ok();
-        return Ok(());
+    validate_privileged_av(Path::new(AV_PATH))?;
+    let status = Command::new(SUDO_PATH)
+        .args([AV_PATH, "__install-env-wrapper", wrapper.name])
+        .status()
+        .map_err(|err| format!("failed to run sudo: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("launcher installation failed: {status}"))
     }
+}
 
-    for stub in stubs(wrapper) {
-        install_stub(stub)?;
+fn validate_privileged_av(path: &Path) -> Result<(), String> {
+    for trusted in [path.parent().unwrap_or(Path::new("/")), path] {
+        let metadata = trusted
+            .metadata()
+            .map_err(|err| format!("cannot trust {}: {err}", trusted.display()))?;
+        if metadata.uid() != 0 || metadata.permissions().mode() & 0o022 != 0 {
+            return Err(format!(
+                "refusing to elevate {} because it is not root-owned and protected from group/world writes",
+                trusted.display()
+            ));
+        }
     }
-    writeln!(stdout, "╰─ hardened {}", wrapper.name).ok();
+    if !super::executable(path) {
+        return Err(format!(
+            "refusing to elevate non-executable {}",
+            path.display()
+        ));
+    }
     Ok(())
 }
 
@@ -696,6 +754,42 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
         }
         assert!(err.contains("is not an Automic Vault env-wrapper stub"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn root_is_only_allowed_to_run_the_install_entrypoint() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0") };
+
+        let err = run(wrapper("doctl").unwrap(), &mut Vec::new(), true).unwrap_err();
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
+        assert_eq!(
+            err,
+            "run `av harden doctl` without sudo; av will request elevation when needed"
+        );
+    }
+
+    #[test]
+    fn install_entrypoint_rejects_unknown_hardeners() {
+        assert_eq!(
+            install_target("not-a-hardener").unwrap_err(),
+            "unknown hardener `not-a-hardener`"
+        );
+    }
+
+    #[test]
+    fn elevation_rejects_user_owned_executables() {
+        let dir = temp_dir("env-wrapper-untrusted-av");
+        fs::create_dir_all(&dir).unwrap();
+        let av = dir.join("av");
+        fs::write(&av, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&av, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = validate_privileged_av(&av).unwrap_err();
+
+        assert!(err.contains("not root-owned"));
         fs::remove_dir_all(dir).unwrap();
     }
 
