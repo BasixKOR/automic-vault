@@ -94,7 +94,7 @@ public struct DoctorIssue: Equatable, Sendable, Identifiable {
     public let resolvedPath: String?
 
     public var id: String {
-        [hardener, command, kind, stubPath, targetPath, resolvedPath]
+        [hardener, command, kind, message, stubPath, targetPath, resolvedPath]
             .compactMap(\.self)
             .joined(separator: "\u{1f}")
     }

@@ -140,6 +140,20 @@ import Testing
     ])
 }
 
+@Test func doctorIssueIDsDistinguishMissingUserAndGroup() throws {
+    let data = Data(#"""
+    {"results":[{"name":"brew","commands":["brew"],"issues":[
+      {"kind":"required_identity_missing","command":"brew","message":"brew hardening requires local user `automic`, but it cannot be resolved","remediation":"Create the user.","stub_path":"/usr/local/bin/brew","target_path":"/opt/homebrew/bin/brew","resolved_path":null},
+      {"kind":"required_identity_missing","command":"brew","message":"brew hardening requires local group `vault`, but it cannot be resolved","remediation":"Create the group.","stub_path":"/usr/local/bin/brew","target_path":"/opt/homebrew/bin/brew","resolved_path":null}
+    ]}]}
+    """#.utf8)
+
+    let issues = try doctorIssues(from: data)
+
+    #expect(issues.count == 2)
+    #expect(Set(issues.map(\.id)).count == 2)
+}
+
 @Test func unavailableLoginShellPATHSuppressesMisleadingPATHIssues() throws {
     let data = Data(#"""
     {"results":[{"name":"aws","commands":["aws"],"issues":[
