@@ -2,8 +2,8 @@
 
 ## Trigger Conditions
 
-- Homebrew exists at `/opt/homebrew/bin/brew` and is not owned by
-  `automic:vault`.
+- Homebrew exists at `/opt/homebrew/bin/brew` and the current user can modify
+  `/opt/homebrew` or one of its immediate child directories.
 
 ## Rationale
 
@@ -36,4 +36,4 @@ sudo av harden brew
 ## Sensitive Files
 
 - `/opt/homebrew`
-- `/opt/homebrew/bin/brew`
+- `/opt/homebrew/*/`
