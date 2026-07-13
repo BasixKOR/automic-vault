@@ -292,19 +292,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
+        recordMenuAccess(record)
+        showAutoApprovedToast(record, below: statusItem.button) { [weak self] in
+            self?.showAutoApproval(id: record.accessRequestID)
+        }
+    }
+
+    private func recordMenuAccess(_ record: AutoApprovalRecord) {
         autoApprovals.insert(record, at: 0)
         let capacity = NSScreen.screens.map { screen in
             Self.visibleAutoApprovalCount + autoApprovalSubmenuCapacity(visibleHeight: screen.visibleFrame.height)
         }.max() ?? Self.visibleAutoApprovalCount
         autoApprovals = Array(autoApprovals.prefix(capacity))
         refreshAutoApprovalMenuItems()
-        showAutoApprovedToast(record, below: statusItem.button) { [weak self] in
-            self?.showAutoApproval(id: record.accessRequestID)
-        }
     }
 
     private func recordAccessRequest(_ record: AccessRequestRecord) {
         appendAccessRequestRecord(record)
+        if record.decision == "Denied", let menuRecord = autoApprovalRecord(record) {
+            recordMenuAccess(menuRecord)
+        }
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
     }
 
@@ -368,10 +375,12 @@ private struct AutoApprovalRecord {
     let tool: String
     let command: String
     let keys: [String]
+    let wasDenied: Bool
 }
 
 private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
-    "\(formatter.string(from: record.date)) – \(record.launcher) used \(record.tool)"
+    let action = record.wasDenied ? "was denied use of" : "used"
+    return "\(formatter.string(from: record.date)) – \(record.launcher) \(action) \(record.tool)"
 }
 
 private func autoApprovalSubmenuCapacity(visibleHeight: CGFloat) -> Int {
@@ -392,14 +401,14 @@ private func autoApprovalRecord(
         launcherIconPath: appBundleURL(containing: launcher.path)?.path ?? launcher.path,
         tool: autoApprovalToolName(request, scriptPath: script?.path),
         command: autoApprovalCommand(request, scriptPath: script?.path),
-        keys: request.keys
+        keys: request.keys,
+        wasDenied: false
     )
 }
 
 private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord? {
-    guard record.decision == "Approved",
-          record.approvalSourceLabel == "Auto"
-    else { return nil }
+    let wasDenied = record.decision == "Denied"
+    guard wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Auto") else { return nil }
     return AutoApprovalRecord(
         accessRequestID: record.id,
         date: record.date,
@@ -407,7 +416,8 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
         launcherIconPath: "",
         tool: record.tool,
         command: record.command,
-        keys: record.keys
+        keys: record.keys,
+        wasDenied: wasDenied
     )
 }
 
@@ -2726,7 +2736,8 @@ private func runMenuStatusSelfCheck() -> Int32 {
                   launcherIconPath: "/Applications/Codex.app",
                   tool: "aws",
                   command: "aws s3 ls",
-                  keys: ["AWS_SECRET_ACCESS_KEY"]
+                  keys: ["AWS_SECRET_ACCESS_KEY"],
+                  wasDenied: false
               ),
               formatter: formatter
           ) == "5:15 AM – Codex used aws",
@@ -2736,21 +2747,23 @@ private func runMenuStatusSelfCheck() -> Int32 {
           restoredApproval.tool == "aws",
           restoredApproval.command == "aws s3 ls",
           restoredApproval.keys == ["AWS_SECRET_ACCESS_KEY"],
-          autoApprovalRecord(AccessRequestRecord(
+          let restoredDenial = autoApprovalRecord(AccessRequestRecord(
               id: recordedApproval.id,
               date: recordedApproval.date,
-              tool: recordedApproval.tool,
-              command: recordedApproval.command,
+              tool: "gh",
+              command: "gh auth token",
               decision: "Denied",
-              approvalSource: "Auto",
-              reason: recordedApproval.reason,
+              approvalSource: "Manual",
+              reason: "Denied in prompt",
               launcher: recordedApproval.launcher,
               callerPath: recordedApproval.callerPath,
               target: recordedApproval.target,
               cwd: recordedApproval.cwd,
               keys: recordedApproval.keys,
               detail: recordedApproval.detail
-          )) == nil,
+          )),
+          restoredDenial.wasDenied,
+          autoApprovalTitle(restoredDenial, formatter: formatter) == "5:15 AM – Codex was denied use of gh",
           autoApprovalCommand(request) == """
           aws \\
             s3 \\
