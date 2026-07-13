@@ -757,6 +757,14 @@ private final class ApprovalServer: @unchecked Sendable {
             handleLoad(message, on: peer)
         case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDelete(message, on: peer)
+        case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
+            handleGhSave(message, on: peer)
+        case "gh-save" where isTrustedGhCaller(path: callerPath, signing: signing):
+            handleGhSave(message, on: peer)
+        case "delete" where isTrustedGhCaller(path: callerPath, signing: signing):
+            handleGhDelete(message, on: peer)
+        case "gh-delete" where isTrustedGhCaller(path: callerPath, signing: signing):
+            handleGhDelete(message, on: peer)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
@@ -975,6 +983,26 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         reply(peer, to: message, ok: true, error: nil, value: value)
+    }
+
+    private func handleGhSave(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              isGhTokenKey(String(cString: keyPointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid GitHub token key")
+            return
+        }
+        handleSave(message, on: peer)
+    }
+
+    private func handleGhDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              isGhTokenKey(String(cString: keyPointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid GitHub token key")
+            return
+        }
+        handleDelete(message, on: peer)
     }
 
     private func handleDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
@@ -1430,6 +1458,10 @@ private func validSecretKeyName(_ key: String) -> Bool {
     return key.unicodeScalars.dropFirst().allSatisfy {
         $0 == "_" || $0.isASCIIAlpha || $0.isASCIIDigit
     }
+}
+
+private func isGhTokenKey(_ key: String) -> Bool {
+    key.hasPrefix("GH_TOKEN_") && validSecretKeyName(key)
 }
 
 private extension UnicodeScalar {
@@ -2496,7 +2528,10 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "gh", request: readOnlyGh) == .readOnly,
           classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["repo", "delete", "owner/name"])) == .mutating,
           classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "token"])) == .secretDump,
-          classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "status", "--show-token"])) == .secretDump
+          classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "status", "--show-token"])) == .secretDump,
+          isGhTokenKey("GH_TOKEN_GITHUB_COM_MXCL"),
+          !isGhTokenKey("GITHUB_TOKEN"),
+          !isGhTokenKey("GH_TOKEN_bad-key")
     else { return 1 }
 
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
