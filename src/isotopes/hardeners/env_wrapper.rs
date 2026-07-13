@@ -13,7 +13,7 @@ const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
 const STUB_DIR: &str = "/usr/local/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
-const DOCUMENTATION: &str = "# Environment Wrapper\n\nInstalls a small launcher stub that runs the target tool through `av inject --allow-missing-keys` with the migrated isotope keys. This does not migrate existing plaintext credentials; run `av scan` after hardening to find anything still on disk.\n";
+const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those isotope keys. Automic Vault requests elevation only to install the launcher stub. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -97,6 +97,9 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
     }
 
     install_privileged(wrapper)?;
+    writeln!(stdout, "├─ migrate existing credentials").ok();
+    super::migrations::run(wrapper.name)
+        .ok_or_else(|| format!("no credential migration registered for {}", wrapper.name))??;
     writeln!(stdout, "╰─ hardened {}", wrapper.name).ok();
     Ok(())
 }
@@ -676,6 +679,7 @@ mod tests {
     #[test]
     fn installs_simple_env_stub() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
+        let previous_home = std::env::var_os("HOME");
         let dir = temp_dir("env-wrapper-simple");
         let target_dir = dir.join("target");
         let stub_dir = dir.join("stub");
@@ -683,6 +687,7 @@ mod tests {
         fs::create_dir_all(&stub_dir).unwrap();
         fs::write(target_dir.join("doctl"), "").unwrap();
         unsafe {
+            std::env::set_var("HOME", &dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &target_dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &stub_dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
@@ -691,6 +696,10 @@ mod tests {
         run(wrapper("doctl").unwrap(), &mut Vec::new(), true).unwrap();
 
         unsafe {
+            match previous_home {
+                Some(home) => std::env::set_var("HOME", home),
+                None => std::env::remove_var("HOME"),
+            }
             std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
@@ -791,6 +800,18 @@ mod tests {
 
         assert!(err.contains("not root-owned"));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn every_wrapper_has_a_credential_migration() {
+        let mut wrappers = WRAPPERS
+            .iter()
+            .map(|wrapper| wrapper.name)
+            .collect::<Vec<_>>();
+        let mut migrations = super::super::migrations::names().collect::<Vec<_>>();
+        wrappers.sort_unstable();
+        migrations.sort_unstable();
+        assert_eq!(wrappers, migrations);
     }
 
     fn temp_dir(label: &str) -> PathBuf {

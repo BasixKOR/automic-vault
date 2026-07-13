@@ -2,6 +2,7 @@ pub(crate) mod aws_cli;
 pub(crate) mod env_wrapper;
 pub(crate) mod gh_cli;
 pub(crate) mod homebrew;
+mod migrations;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 

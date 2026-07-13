@@ -10,11 +10,25 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
         return std::fs::write(&path, value)
             .map_err(|err| format!("failed to write {}: {err}", path.display()));
     }
-    xpc_store_secret(account, value)
+    xpc_secret_request("save", account, Some(value)).map(|_| ())
+}
+
+pub(crate) fn load_secret(account: &str) -> Result<String, String> {
+    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+        let path = PathBuf::from(dir).join(account);
+        return std::fs::read_to_string(&path)
+            .map_err(|err| format!("failed to read {}: {err}", path.display()));
+    }
+    xpc_secret_request("load", account, None)?
+        .ok_or_else(|| format!("failed to load isotope key {account}"))
 }
 
 #[cfg(target_os = "macos")]
-fn xpc_store_secret(account: &str, value: &str) -> Result<(), String> {
+fn xpc_secret_request(
+    operation: &str,
+    account: &str,
+    value: Option<&str>,
+) -> Result<Option<String>, String> {
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int, c_void};
 
@@ -85,9 +99,11 @@ fn xpc_store_secret(account: &str, value: &str) -> Result<(), String> {
     }
 
     unsafe {
-        set_string(message, b"op\0", "save")?;
+        set_string(message, b"op\0", operation)?;
         set_string(message, b"key\0", account)?;
-        set_string(message, b"value\0", value)?;
+        if let Some(value) = value {
+            set_string(message, b"value\0", value)?;
+        }
         xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
     }
 
@@ -117,11 +133,16 @@ fn xpc_store_secret(account: &str, value: &str) -> Result<(), String> {
                 Err(error)
             }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
-            Ok(())
+            let value = xpc_dictionary_get_string(reply, b"value\0".as_ptr().cast());
+            Ok((!value.is_null()).then(|| {
+                std::ffi::CStr::from_ptr(value)
+                    .to_string_lossy()
+                    .into_owned()
+            }))
         } else {
             let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
             Err(if error.is_null() {
-                "secret save failed".into()
+                format!("secret {operation} failed")
             } else {
                 std::ffi::CStr::from_ptr(error)
                     .to_string_lossy()
@@ -134,6 +155,10 @@ fn xpc_store_secret(account: &str, value: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn xpc_store_secret(_account: &str, _value: &str) -> Result<(), String> {
+fn xpc_secret_request(
+    _operation: &str,
+    _account: &str,
+    _value: Option<&str>,
+) -> Result<Option<String>, String> {
     Err("menu bar secret storage is only available on macOS".to_string())
 }

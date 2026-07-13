@@ -751,9 +751,11 @@ private final class ApprovalServer: @unchecked Sendable {
         switch op {
         case "inject", "keys":
             handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
-        case "save":
+        case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer)
-        case "delete":
+        case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleLoad(message, on: peer)
+        case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDelete(message, on: peer)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
@@ -958,6 +960,23 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleLoad(_ message: xpc_object_t, on peer: xpc_connection_t) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
+            reply(peer, to: message, ok: false, error: "invalid load request")
+            return
+        }
+        let key = String(cString: keyPointer)
+        guard validSecretKeyName(key) else {
+            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            return
+        }
+        guard let value = loadStoredSecret(account: key) else {
+            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
+            return
+        }
+        reply(peer, to: message, ok: true, error: nil, value: value)
+    }
+
     private func handleDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
             reply(peer, to: message, ok: false, error: "invalid delete request")
@@ -1037,7 +1056,8 @@ private final class ApprovalServer: @unchecked Sendable {
         to message: xpc_object_t,
         ok: Bool,
         error: String?,
-        secrets: [String: String]? = nil
+        secrets: [String: String]? = nil,
+        value: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
         xpc_dictionary_set_bool(response, "ok", ok)
@@ -1056,6 +1076,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
             }
             xpc_dictionary_set_value(response, "secrets", values)
+        }
+        if let value {
+            value.withCString { xpc_dictionary_set_string(response, "value", $0) }
         }
         xpc_connection_send_message(peer, response)
     }

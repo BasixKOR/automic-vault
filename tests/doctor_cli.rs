@@ -84,6 +84,8 @@ fn av(root: &Path) -> Command {
         root.join("stubs"),
     );
     command.env("AUTOMIC_VAULT_TEST_EUID", "0");
+    command.env("HOME", root.join("home"));
+    command.env_remove("NPM_CONFIG_USERCONFIG");
     command
 }
 
