@@ -116,19 +116,33 @@ fn diagnose_one(
             if !hardener.detection.hardened {
                 issues.push(hardening_issue(
                     hardener.name,
+                    hardener.documentation,
                     None,
                     None,
                     hardener.detection.target_path,
+                    &[],
                 ));
             }
         } else {
             for command in &commands {
                 if !command.hardened {
+                    let key_patterns = hardener
+                        .secret_gate
+                        .as_ref()
+                        .and_then(|gate| {
+                            gate.routes.iter().find(|route| {
+                                route.script_path.as_deref() == command.stub_path.as_deref()
+                            })
+                        })
+                        .map(|route| route.key_patterns.as_slice())
+                        .unwrap_or_default();
                     issues.push(hardening_issue(
                         hardener.name,
+                        hardener.documentation,
                         Some(command.name.clone()),
                         command.stub_path.clone(),
                         Some(command.target_path.clone()),
+                        key_patterns,
                     ));
                     continue;
                 }
@@ -158,8 +172,8 @@ fn target_issue(hardener: &str, command: &HardenerCommand, target: &str) -> Doct
             command.name, target
         ),
         remediation: format!(
-            "Install {hardener} so {} is executable, then rerun `av doctor {}`.",
-            target, command.name
+            "Install `{}` at {target}; the {hardener} hardener cannot wrap a missing target. If it is installed elsewhere, make {target} point to that executable, then rerun `av doctor {}`.",
+            command.name, command.name
         ),
         stub_path: command.stub_path.clone(),
         target_path: Some(target.to_string()),
@@ -169,19 +183,87 @@ fn target_issue(hardener: &str, command: &HardenerCommand, target: &str) -> Doct
 
 fn hardening_issue(
     hardener: &str,
+    documentation: &str,
     command: Option<String>,
     stub_path: Option<String>,
     target_path: Option<String>,
+    key_patterns: &[String],
 ) -> DoctorIssue {
+    let message = match (&command, &stub_path, &target_path) {
+        (Some(command), Some(stub), Some(target)) if Path::new(stub).exists() => format!(
+            "{command} bypasses Automic Vault because {stub} is not a valid {hardener} wrapper; the unhardened target is {target}"
+        ),
+        (Some(command), Some(stub), Some(target)) => format!(
+            "{command} bypasses Automic Vault because the expected wrapper {stub} is missing; the unhardened target is {target}"
+        ),
+        (_, _, Some(target)) => format!(
+            "{hardener} is not hardened because the required configuration at {target} is missing or invalid"
+        ),
+        _ => format!("{hardener} hardening is not applied"),
+    };
+    let manual = manual_repair(
+        hardener,
+        documentation,
+        stub_path.as_deref(),
+        target_path.as_deref(),
+        key_patterns,
+    );
     DoctorIssue {
         kind: "hardening_not_applied",
-        message: format!("{hardener} hardening is not applied or is no longer valid"),
-        remediation: format!("Run `av harden {hardener}` and follow its instructions."),
+        message,
+        remediation: format!(
+            "Run `av harden {hardener}` to repair it automatically. Manual repair: {manual}"
+        ),
         command,
         stub_path,
         target_path,
         resolved_path: None,
     }
+}
+
+fn manual_repair(
+    hardener: &str,
+    documentation: &str,
+    stub_path: Option<&str>,
+    target_path: Option<&str>,
+    key_patterns: &[String],
+) -> String {
+    if hardener == "sudo" {
+        return "add `auth sufficient pam_tid.so` to `/etc/pam.d/sudo_local` as root.".to_string();
+    }
+    if hardener == "aws" {
+        return "move the default profile's `aws_access_key_id` and `aws_secret_access_key` from `~/.aws/credentials` into the macOS Keychain as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, remove those plaintext lines, and install `/usr/local/bin/aws` as an executable wrapper for `/opt/homebrew/bin/aws` through `aws-vault`. Then put `/usr/local/bin` first in PATH and rerun `av doctor aws`.".to_string();
+    }
+    if hardener == "brew" {
+        return "create the `automic` user and `vault` group, change `/opt/homebrew` ownership to `automic:vault`, and install `/usr/local/bin/brew` as the Automic Vault setuid/setgid launcher with mode 06755. Then put `/usr/local/bin` first in PATH and rerun `av doctor brew`.".to_string();
+    }
+    if documentation.starts_with("# Environment Wrapper") {
+        let keys = key_patterns
+            .iter()
+            .map(|key| format!("+{key}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!(
+            "create an executable launcher at {} that runs {} through `av inject --allow-missing-keys {keys}`, forwards every argument, and has mode 0755. Then put its directory before the target directory in PATH and run `av scan` for credentials that still need migration.",
+            stub_path.unwrap_or("the reported stub path"),
+            target_path.unwrap_or("the reported target"),
+        );
+    }
+    let section = documentation
+        .split_once("## What It Does")
+        .or_else(|| documentation.split_once("## What it Does"))
+        .map_or(documentation, |(_, section)| section);
+    let summary = section
+        .split("\n## ")
+        .next()
+        .unwrap_or(section)
+        .split("\n\n")
+        .find(|paragraph| !paragraph.trim().is_empty() && !paragraph.trim().starts_with('#'))
+        .map(|paragraph| paragraph.split_whitespace().collect::<Vec<_>>().join(" "))
+        .unwrap_or_else(|| {
+            "follow the hardener documentation for the expected local changes".into()
+        });
+    format!("{summary} Then rerun `av doctor {hardener}`.")
 }
 
 fn path_issue(command: &HardenerCommand, path: &OsStr) -> Option<DoctorIssue> {
@@ -212,11 +294,15 @@ fn path_issue(command: &HardenerCommand, path: &OsStr) -> Option<DoctorIssue> {
         command: Some(command.name.clone()),
         message,
         remediation: format!(
-            "Put {} before the target directory in PATH.",
-            Path::new(stub)
+            "Put {stub_dir} before {target_dir} in PATH, then start a new shell. For example: `export PATH=\"{stub_dir}:$PATH\"`.",
+            stub_dir = Path::new(stub)
                 .parent()
                 .unwrap_or_else(|| Path::new(stub))
-                .display()
+                .display(),
+            target_dir = Path::new(&command.target_path)
+                .parent()
+                .unwrap_or_else(|| Path::new(&command.target_path))
+                .display(),
         ),
         stub_path: Some(stub.to_string()),
         target_path: Some(command.target_path.clone()),
@@ -280,8 +366,22 @@ fn print_human(stdout: &mut dyn Write, results: &[DoctorResult], issue_count: us
         } else {
             let _ = writeln!(stdout, "├─ {}", result.name);
             for issue in &result.issues {
-                let _ = writeln!(stdout, "│  ├─ {}", style.paint("33", &issue.message));
-                let _ = writeln!(stdout, "│  ╰─ {}", issue.remediation);
+                super::scan::write_wrapped_with_continuation(
+                    stdout,
+                    "│  ├─ ",
+                    "│  │  ",
+                    &issue.message,
+                    style,
+                    Some("33"),
+                );
+                super::scan::write_wrapped_with_continuation(
+                    stdout,
+                    "│  ╰─ ",
+                    "│     ",
+                    &issue.remediation,
+                    style,
+                    None,
+                );
             }
         }
     }
@@ -439,6 +539,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(unhardened[0].issues[0].kind, "hardening_not_applied");
+        assert!(
+            unhardened[0].issues[0]
+                .message
+                .contains("not a valid aws wrapper")
+        );
+        assert!(
+            unhardened[0].issues[0]
+                .remediation
+                .contains("Manual repair:")
+        );
+        assert!(
+            unhardened[0].issues[0]
+                .remediation
+                .contains("av doctor aws")
+        );
 
         let shadowed_path = std::env::join_paths([&target_dir, &stub_dir]).unwrap();
         let shadowed = diagnose(
@@ -461,6 +576,7 @@ mod tests {
             shadowed[0].issues[0].resolved_path.as_deref(),
             target.to_str()
         );
+        assert!(shadowed[0].issues[0].remediation.contains("export PATH="));
 
         let healthy_path = std::env::join_paths([&stub_dir, &target_dir]).unwrap();
         let healthy = diagnose(

@@ -293,7 +293,7 @@ fn write_wrapped<W: Write>(
     write_wrapped_with_continuation(stdout, prefix, prefix, text, style, color);
 }
 
-fn write_wrapped_with_continuation<W: Write>(
+pub(super) fn write_wrapped_with_continuation<W: Write + ?Sized>(
     stdout: &mut W,
     first_prefix: &str,
     continuation_prefix: &str,
