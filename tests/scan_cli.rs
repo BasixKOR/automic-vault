@@ -32,6 +32,7 @@ fn av_scan_reports_findings() {
     assert!(output.status.success());
     assert!(stdout.contains("│  solution\n"));
     assert!(stdout.contains("│  Run `rm"));
+    assert!(!stdout.contains("│  homepage\n"));
     assert!(stdout.contains("│  full details & caveats\n"));
     assert!(!stdout.contains("│  read more\n"));
     assert!(stdout.contains(".git-credentials"));
