@@ -164,10 +164,16 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
         let _ = writeln!(stdout, "│  {}", style.paint("36", finding.homepage));
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
-        write_wrapped(stdout, "│  ", problem(finding), style, None);
+        write_wrapped(stdout, "│  ", &sentence_case(problem(finding)), style, None);
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
-        write_wrapped(stdout, "│  ", &finding.solution, style, None);
+        write_wrapped(
+            stdout,
+            "│  ",
+            &sentence_case(&finding.solution),
+            style,
+            None,
+        );
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "full details & caveats"));
         let _ = writeln!(stdout, "│  {}", style.paint("36", finding.docs_url));
@@ -211,6 +217,20 @@ fn problem(finding: &Finding) -> &str {
                 .map(|problem| problem.strip_suffix(": ").unwrap_or(problem).trim_end())
         })
         .unwrap_or(&finding.explanation)
+}
+
+fn sentence_case(text: &str) -> String {
+    let mut chars = text.trim().chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let mut sentence = first.to_uppercase().collect::<String>();
+    sentence.extend(chars);
+    while matches!(sentence.chars().last(), Some('.' | '!' | '?')) {
+        sentence.pop();
+    }
+    sentence.push('.');
+    sentence
 }
 
 fn is_hidden(finding: &Finding) -> bool {
@@ -357,7 +377,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage\n│  https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  full details & caveats\n│  https://example.test/docs/example.md\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n╰─ scan complete\n"
+            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage\n│  https://example.test/\n│\n│  problem\n│  Example detector found a risky setting.\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  full details & caveats\n│  https://example.test/docs/example.md\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n╰─ scan complete\n"
         );
     }
 
@@ -410,8 +430,16 @@ mod tests {
         print(&mut stdout, &[finding], Style::plain(), false);
 
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("│  problem\n│  Example detector found a risky setting\n"));
+        assert!(stdout.contains("│  problem\n│  Example detector found a risky setting.\n"));
         assert_eq!(stdout.matches("/tmp/example.conf").count(), 1);
+    }
+
+    #[test]
+    fn normalizes_problem_and_solution_sentences() {
+        assert_eq!(sentence_case("lowercase copy"), "Lowercase copy.");
+        assert_eq!(sentence_case("Already punctuated!"), "Already punctuated.");
+        assert_eq!(sentence_case("  spaced copy?  "), "Spaced copy.");
+        assert_eq!(sentence_case(""), "");
     }
 
     #[test]
