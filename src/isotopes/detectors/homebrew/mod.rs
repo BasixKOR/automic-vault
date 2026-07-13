@@ -34,13 +34,6 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     }
 
     let mut reasons = Vec::new();
-    let detection = crate::isotopes::hardeners::homebrew::detect();
-    if !detection.hardened {
-        reasons.push(format!(
-            "Homebrew is not routed through the Automic Vault setuid brew stub: {}",
-            brew_stub_path().display()
-        ));
-    }
     if !prefix_owned_by_automic_vault()? {
         reasons.push(format!(
             "Homebrew prefix is not owned by automic:vault: {}",
@@ -114,16 +107,9 @@ fn brew_target_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/brew"))
 }
 
-fn brew_stub_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_STUB")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/usr/local/bin/brew"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -145,55 +131,48 @@ mod tests {
     }
 
     #[test]
-    fn reports_unhardened_homebrew() {
+    fn reports_mutable_homebrew_prefix() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
-        let dir = temp_path("homebrew-unhardened");
+        let dir = temp_path("homebrew-mutable");
         let target = dir.join("bin/brew");
-        let stub = dir.join("usr-local-bin-brew");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, "").unwrap();
         set_env([
             ("AUTOMIC_VAULT_TEST_BREW_PREFIX", dir.as_path()),
             ("AUTOMIC_VAULT_TEST_BREW_TARGET", target.as_path()),
-            ("AUTOMIC_VAULT_TEST_BREW_STUB", stub.as_path()),
             ("AUTOMIC_VAULT_TEST_AUTOMIC_UID", "99999".as_ref()),
             ("AUTOMIC_VAULT_TEST_VAULT_GID", "99999".as_ref()),
         ]);
 
         let reasons = install_insecurity_reasons().unwrap();
+        let findings = findings(&dir);
 
         clear_env([
             "AUTOMIC_VAULT_TEST_BREW_PREFIX",
             "AUTOMIC_VAULT_TEST_BREW_TARGET",
-            "AUTOMIC_VAULT_TEST_BREW_STUB",
             "AUTOMIC_VAULT_TEST_AUTOMIC_UID",
             "AUTOMIC_VAULT_TEST_VAULT_GID",
         ]);
-        assert_eq!(reasons.len(), 2);
-        assert!(reasons[0].contains("setuid brew stub"));
-        assert!(reasons[1].contains("not owned by automic:vault"));
-        assert!(
-            findings(&dir)
-                .iter()
-                .all(|finding| finding.severity == "medium")
-        );
+        assert_eq!(reasons.len(), 1);
+        assert!(reasons[0].contains("not owned by automic:vault"));
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, "medium");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn accepts_hardened_homebrew() {
+    fn ignores_stub_state_when_prefix_is_protected() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
-        let dir = temp_path("homebrew-hardened");
+        let dir = temp_path("homebrew-protected");
         let target = dir.join("bin/brew");
-        let stub = dir.join("usr-local-bin-brew");
+        let invalid_stub = dir.join("ordinary-brew");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, "").unwrap();
-        std::fs::write(&stub, b"AUTOMIC_VAULT_BREW_STUB_V1").unwrap();
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o6755)).unwrap();
+        std::fs::write(&invalid_stub, "").unwrap();
         set_env([
             ("AUTOMIC_VAULT_TEST_BREW_PREFIX", dir.as_path()),
             ("AUTOMIC_VAULT_TEST_BREW_TARGET", target.as_path()),
-            ("AUTOMIC_VAULT_TEST_BREW_STUB", stub.as_path()),
+            ("AUTOMIC_VAULT_TEST_BREW_STUB", invalid_stub.as_path()),
             ("AUTOMIC_VAULT_TEST_AUTOMIC_UID", uid_string().as_ref()),
             ("AUTOMIC_VAULT_TEST_VAULT_GID", gid_string().as_ref()),
         ]);
