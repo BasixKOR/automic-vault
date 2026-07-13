@@ -40,9 +40,30 @@ pub(crate) struct HardenerDetection {
 pub(crate) struct HardenerCommand {
     pub(crate) name: String,
     pub(crate) hardened: bool,
+    pub(crate) stub_valid: bool,
     pub(crate) stub_path: Option<String>,
     pub(crate) target_path: String,
-    pub(crate) required_paths: Vec<String>,
+    pub(crate) required_paths: Vec<RequiredExecutable>,
+    pub(crate) stub_requirements: Option<StubRequirements>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RequiredExecutable {
+    pub(crate) name: &'static str,
+    pub(crate) path: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct StubRequirements {
+    pub(crate) mode: u32,
+    pub(crate) owner: RequiredIdentity,
+    pub(crate) group: RequiredIdentity,
+}
+
+#[derive(Clone)]
+pub(crate) struct RequiredIdentity {
+    pub(crate) name: &'static str,
+    pub(crate) id: Option<u32>,
 }
 
 impl HardenerDetection {
@@ -64,9 +85,11 @@ impl HardenerDetection {
             commands: vec![HardenerCommand {
                 name: name.into(),
                 hardened,
+                stub_valid: hardened,
                 stub_path,
                 target_path,
                 required_paths: Vec::new(),
+                stub_requirements: None,
             }],
         }
     }

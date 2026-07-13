@@ -1,8 +1,12 @@
 use std::ffi::OsStr;
+use std::fs;
 use std::io::Write;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use crate::isotopes::hardeners::{self, HardenerCommand, HardenerMetadata, executable};
+use crate::isotopes::hardeners::{
+    self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, executable,
+};
 
 use super::scan::Style;
 
@@ -53,19 +57,13 @@ fn diagnose(
     if let Some(selector) = selector {
         let (hardener, command) =
             select(hardeners, selector).ok_or_else(|| format!("unknown command `{selector}`"))?;
-        let hardened = command
-            .as_deref()
-            .map_or(hardener.detection.hardened, |name| {
-                hardener
-                    .detection
-                    .commands
-                    .iter()
-                    .find(|command| command.name == name)
-                    .is_some_and(|command| command.hardened)
-            });
-        if !hardened {
+        let checked = hardener.detection.commands.iter().any(|candidate| {
+            command.as_deref().is_none_or(|name| candidate.name == name)
+                && has_doctor_checks(candidate)
+        });
+        if !checked {
             return Err(format!(
-                "`{selector}` has not been hardened; doctor only checks applied hardening"
+                "`{selector}` has no Doctor-owned checks; use `av scan` for exposure findings"
             ));
         }
         return Ok(vec![diagnose_one(hardener, command.as_deref(), path)]);
@@ -73,9 +71,19 @@ fn diagnose(
 
     Ok(hardeners
         .into_iter()
-        .filter(|hardener| hardener.detection.hardened)
+        .filter(|hardener| {
+            hardener.detection.applicable
+                && hardener.detection.commands.iter().any(has_doctor_checks)
+        })
         .map(|hardener| diagnose_one(hardener, None, path))
         .collect())
+}
+
+fn has_doctor_checks(command: &HardenerCommand) -> bool {
+    command
+        .stub_path
+        .as_deref()
+        .is_some_and(|stub| Path::new(stub) != Path::new(&command.target_path))
 }
 
 fn select(
@@ -114,25 +122,14 @@ fn diagnose_one(
         .detection
         .commands
         .iter()
-        .filter(|command| command_filter.is_none_or(|filter| command.name == filter))
-        .collect::<Vec<_>>();
-    let mut issues = commands
-        .iter()
-        .flat_map(|command| {
-            std::iter::once(command.target_path.as_str())
-                .chain(command.required_paths.iter().map(String::as_str))
-                .filter(|target| !executable(Path::new(target)))
-                .map(|target| target_issue(hardener.name, command, target))
+        .filter(|command| {
+            command_filter.is_none_or(|filter| command.name == filter) && has_doctor_checks(command)
         })
         .collect::<Vec<_>>();
-
-    if issues.is_empty() {
-        for command in &commands {
-            if let Some(issue) = path_issue(command, path) {
-                issues.push(issue);
-            }
-        }
-    }
+    let issues = commands
+        .iter()
+        .flat_map(|command| diagnose_command(hardener.name, command, path))
+        .collect();
 
     DoctorResult {
         name: hardener.name,
@@ -144,7 +141,29 @@ fn diagnose_one(
     }
 }
 
-fn target_issue(hardener: &str, command: &HardenerCommand, target: &str) -> DoctorIssue {
+fn diagnose_command(hardener: &str, command: &HardenerCommand, path: &OsStr) -> Vec<DoctorIssue> {
+    let mut issues = Vec::new();
+    if !executable(Path::new(&command.target_path)) {
+        issues.push(target_issue(hardener, command));
+    }
+    issues.extend(
+        command
+            .required_paths
+            .iter()
+            .filter(|required| !executable(Path::new(&required.path)))
+            .map(|required| dependency_issue(hardener, command, required)),
+    );
+    let stub_issues = stub_issues(hardener, command);
+    let stub_is_healthy = stub_issues.is_empty();
+    issues.extend(stub_issues);
+    if stub_is_healthy {
+        issues.extend(path_issue(command, path));
+    }
+    issues
+}
+
+fn target_issue(hardener: &str, command: &HardenerCommand) -> DoctorIssue {
+    let target = &command.target_path;
     DoctorIssue {
         kind: "target_unavailable",
         command: Some(command.name.clone()),
@@ -157,9 +176,231 @@ fn target_issue(hardener: &str, command: &HardenerCommand, target: &str) -> Doct
             command.name, command.name
         ),
         stub_path: command.stub_path.clone(),
-        target_path: Some(target.to_string()),
+        target_path: Some(target.clone()),
         resolved_path: None,
     }
+}
+
+fn dependency_issue(
+    hardener: &str,
+    command: &HardenerCommand,
+    required: &RequiredExecutable,
+) -> DoctorIssue {
+    DoctorIssue {
+        kind: "dependency_unavailable",
+        command: Some(command.name.clone()),
+        message: format!(
+            "{} hardening requires {} to be an executable file at {}",
+            command.name, required.name, required.path
+        ),
+        remediation: format!(
+            "Install or restore {} at {}, then rerun `av doctor {}`. If it is installed elsewhere, replace that path with a root-owned symlink to the executable.",
+            required.name, required.path, hardener
+        ),
+        stub_path: command.stub_path.clone(),
+        target_path: Some(required.path.clone()),
+        resolved_path: None,
+    }
+}
+
+fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
+    let Some(stub) = command.stub_path.as_deref() else {
+        return Vec::new();
+    };
+    let mut issues = command
+        .stub_requirements
+        .iter()
+        .flat_map(|requirements| identity_issues(hardener, command, stub, requirements))
+        .collect::<Vec<_>>();
+    let metadata = match fs::symlink_metadata(stub) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            issues.push(DoctorIssue {
+                kind: "stub_missing",
+                command: Some(command.name.clone()),
+                message: format!(
+                    "{} hardening is bypassed because its launcher is missing: {stub}",
+                    command.name
+                ),
+                remediation: format!(
+                    "Run `sudo av harden {hardener}` to recreate it. Manual repair: install the documented {hardener} launcher as a regular file at {stub}{}, then rerun `av doctor {}`.",
+                    requirements_summary(command.stub_requirements.as_ref()),
+                    command.name
+                ),
+                stub_path: Some(stub.to_string()),
+                target_path: Some(command.target_path.clone()),
+                resolved_path: None,
+            });
+            return issues;
+        }
+        Err(err) => {
+            issues.push(DoctorIssue {
+                kind: "stub_unreadable",
+                command: Some(command.name.clone()),
+                message: format!("cannot inspect hardened launcher {stub}: {err}"),
+                remediation: format!(
+                    "Ensure every parent directory permits metadata access and that {stub} is readable, then rerun `av doctor {}`.",
+                    command.name
+                ),
+                stub_path: Some(stub.to_string()),
+                target_path: Some(command.target_path.clone()),
+                resolved_path: None,
+            });
+            return issues;
+        }
+    };
+    if !metadata.file_type().is_file() {
+        let actual = if metadata.file_type().is_symlink() {
+            "a symbolic link"
+        } else if metadata.file_type().is_dir() {
+            "a directory"
+        } else {
+            "a non-regular file"
+        };
+        issues.push(DoctorIssue {
+            kind: "stub_wrong_type",
+            command: Some(command.name.clone()),
+            message: format!(
+                "hardened launcher {stub} is {actual}; expected a regular file"
+            ),
+            remediation: format!(
+                "Remove {stub} after reviewing it, then run `sudo av harden {hardener}`. Manual repair: install the documented launcher directly at {stub}; do not use a symlink."
+            ),
+            stub_path: Some(stub.to_string()),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        });
+        return issues;
+    }
+
+    let actual_mode = metadata.permissions().mode() & 0o7777;
+    if !executable(Path::new(stub)) {
+        issues.push(DoctorIssue {
+            kind: "stub_not_executable",
+            command: Some(command.name.clone()),
+            message: format!(
+                "hardened launcher {stub} is not executable (mode {actual_mode:#06o})"
+            ),
+            remediation: format!(
+                "Set the expected mode with `sudo chmod {mode:04o} {stub}`, then rerun `av doctor {}`.",
+                command.name,
+                mode = command
+                    .stub_requirements
+                    .as_ref()
+                    .map_or(0o755, |requirements| requirements.mode),
+            ),
+            stub_path: Some(stub.to_string()),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        });
+    } else if let Some(requirements) = &command.stub_requirements
+        && actual_mode != requirements.mode
+    {
+        issues.push(DoctorIssue {
+            kind: "stub_mode_mismatch",
+            command: Some(command.name.clone()),
+            message: format!(
+                "hardened launcher {stub} has mode {actual_mode:#06o}; expected {:#06o}",
+                requirements.mode
+            ),
+            remediation: format!(
+                "Run `sudo chmod {mode:04o} {stub}`, then rerun `av doctor {}`.",
+                command.name,
+                mode = requirements.mode
+            ),
+            stub_path: Some(stub.to_string()),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        });
+    }
+    if let Some(requirements) = &command.stub_requirements {
+        let owner_mismatch = requirements
+            .owner
+            .id
+            .is_some_and(|expected| metadata.uid() != expected);
+        let group_mismatch = requirements
+            .group
+            .id
+            .is_some_and(|expected| metadata.gid() != expected);
+        if owner_mismatch || group_mismatch {
+            issues.push(DoctorIssue {
+                kind: "stub_owner_mismatch",
+                command: Some(command.name.clone()),
+                message: format!(
+                    "hardened launcher {stub} is owned by uid {} and gid {}; expected {} ({}) and {} ({})",
+                    metadata.uid(),
+                    metadata.gid(),
+                    requirements.owner.name,
+                    requirements.owner.id.map_or_else(|| "missing".into(), |id| id.to_string()),
+                    requirements.group.name,
+                    requirements.group.id.map_or_else(|| "missing".into(), |id| id.to_string()),
+                ),
+                remediation: format!(
+                    "Run `sudo chown {}:{} {stub}`, then rerun `av doctor {}`.",
+                    requirements.owner.name, requirements.group.name, command.name
+                ),
+                stub_path: Some(stub.to_string()),
+                target_path: Some(command.target_path.clone()),
+                resolved_path: None,
+            });
+        }
+    }
+    if !command.stub_valid {
+        issues.push(DoctorIssue {
+            kind: "stub_content_invalid",
+            command: Some(command.name.clone()),
+            message: format!(
+                "launcher {stub} does not contain the expected {hardener} hardening implementation"
+            ),
+            remediation: format!(
+                "Run `sudo av harden {hardener}` to replace it. Manual repair: compare {stub} with the launcher documented or shipped for {hardener}, replace it with that exact implementation, and preserve the existing target at {}.",
+                command.target_path
+            ),
+            stub_path: Some(stub.to_string()),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        });
+    }
+    issues
+}
+
+fn identity_issues(
+    hardener: &str,
+    command: &HardenerCommand,
+    stub: &str,
+    requirements: &StubRequirements,
+) -> Vec<DoctorIssue> {
+    [
+        ("user", &requirements.owner),
+        ("group", &requirements.group),
+    ]
+    .into_iter()
+    .filter(|(_, identity)| identity.id.is_none())
+    .map(|(kind, identity)| DoctorIssue {
+        kind: "required_identity_missing",
+        command: Some(command.name.clone()),
+        message: format!(
+            "{hardener} hardening requires local {kind} `{}`, but it cannot be resolved",
+            identity.name
+        ),
+        remediation: format!(
+            "Run `sudo av harden {hardener}` to recreate the required account metadata. Manual repair: create the documented `{}` {kind}, then set the owner of {stub} accordingly.",
+            identity.name
+        ),
+        stub_path: Some(stub.to_string()),
+        target_path: Some(command.target_path.clone()),
+        resolved_path: None,
+    })
+    .collect()
+}
+
+fn requirements_summary(requirements: Option<&StubRequirements>) -> String {
+    requirements.map_or_else(String::new, |requirements| {
+        format!(
+            ", set mode {:#06o}, and set ownership to {}:{}",
+            requirements.mode, requirements.owner.name, requirements.group.name
+        )
+    })
 }
 
 fn path_issue(command: &HardenerCommand, path: &OsStr) -> Option<DoctorIssue> {
@@ -295,13 +536,15 @@ fn print_human(stdout: &mut dyn Write, results: &[DoctorResult], issue_count: us
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::isotopes::hardeners::{HardenerDetection, HardenerMetadata};
+    use crate::isotopes::hardeners::{
+        HardenerDetection, HardenerMetadata, RequiredIdentity, StubRequirements,
+    };
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn doctor_rejects_unhardened_selection() {
+    fn explicit_doctor_reports_missing_target_and_stub() {
         let hardeners = vec![hardener(
             "node",
             false,
@@ -313,7 +556,7 @@ mod tests {
                 .is_empty()
         );
 
-        let error = diagnose(
+        let results = diagnose(
             vec![hardener(
                 "node",
                 false,
@@ -322,16 +565,19 @@ mod tests {
             Some("npm"),
             OsStr::new(""),
         )
-        .err()
         .unwrap();
         assert_eq!(
-            error,
-            "`npm` has not been hardened; doctor only checks applied hardening"
+            results[0]
+                .issues
+                .iter()
+                .map(|issue| issue.kind)
+                .collect::<Vec<_>>(),
+            ["target_unavailable", "stub_missing"]
         );
     }
 
     #[test]
-    fn aggregate_skips_installed_but_unhardened_targets() {
+    fn aggregate_reports_installed_but_broken_hardening() {
         let dir = temp_dir("nonexecutable");
         let target = dir.join("npm");
         fs::write(&target, "not executable").unwrap();
@@ -346,9 +592,16 @@ mod tests {
             ),
         )];
         let results = diagnose(hardeners, None, OsStr::new("")).unwrap();
-        assert!(results.is_empty());
+        assert_eq!(
+            results[0]
+                .issues
+                .iter()
+                .map(|issue| issue.kind)
+                .collect::<Vec<_>>(),
+            ["target_unavailable", "stub_missing"]
+        );
 
-        let error = diagnose(
+        let results = diagnose(
             vec![hardener(
                 "node",
                 false,
@@ -362,19 +615,15 @@ mod tests {
             Some("node"),
             OsStr::new(""),
         )
-        .err()
         .unwrap();
 
-        assert_eq!(
-            error,
-            "`node` has not been hardened; doctor only checks applied hardening"
-        );
+        assert_eq!(results[0].issues[0].kind, "target_unavailable");
         let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn accepts_homebrew_as_an_explicit_alias() {
-        let error = diagnose(
+        let results = diagnose(
             vec![hardener(
                 "brew",
                 false,
@@ -383,13 +632,10 @@ mod tests {
             Some("homebrew"),
             OsStr::new(""),
         )
-        .err()
         .unwrap();
 
-        assert_eq!(
-            error,
-            "`homebrew` has not been hardened; doctor only checks applied hardening"
-        );
+        assert_eq!(results[0].name, "brew");
+        assert_eq!(results[0].issues[0].kind, "target_unavailable");
     }
 
     #[test]
@@ -397,18 +643,25 @@ mod tests {
         let dir = temp_dir("aliases");
         let jf = executable_file(&dir.join("jf"));
         let jfrog = executable_file(&dir.join("jfrog"));
+        let jf_target = executable_file(&dir.join("jf-target"));
+        let jfrog_target = executable_file(&dir.join("jfrog-target"));
         let hardeners = vec![HardenerMetadata {
             name: "jfrog-cli",
             documentation: "",
             detection: HardenerDetection::commands(
                 true,
                 vec![
-                    command("jf", true, jf.to_str().unwrap(), jf.to_str().unwrap()),
+                    command(
+                        "jf",
+                        true,
+                        jf.to_str().unwrap(),
+                        jf_target.to_str().unwrap(),
+                    ),
                     command(
                         "jfrog",
                         true,
                         jfrog.to_str().unwrap(),
-                        jfrog.to_str().unwrap(),
+                        jfrog_target.to_str().unwrap(),
                     ),
                 ],
             ),
@@ -444,12 +697,8 @@ mod tests {
             Some("aws"),
             stub_dir.as_os_str(),
         )
-        .err()
         .unwrap();
-        assert_eq!(
-            unhardened,
-            "`aws` has not been hardened; doctor only checks applied hardening"
-        );
+        assert_eq!(unhardened[0].issues[0].kind, "stub_content_invalid");
 
         let shadowed_path = std::env::join_paths([&target_dir, &stub_dir]).unwrap();
         let shadowed = diagnose(
@@ -494,6 +743,86 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    #[test]
+    fn reports_each_broken_stub_invariant_precisely() {
+        let dir = temp_dir("stub-invariants");
+        let stub = executable_file(&dir.join("tool"));
+        let target = executable_file(&dir.join("tool-target"));
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o777)).unwrap();
+        let metadata = stub.metadata().unwrap();
+        let mut command = command(
+            "tool",
+            false,
+            stub.to_str().unwrap(),
+            target.to_str().unwrap(),
+        );
+        command.required_paths.push(RequiredExecutable {
+            name: "helper",
+            path: dir.join("missing-helper").display().to_string(),
+        });
+        command.stub_requirements = Some(StubRequirements {
+            mode: 0o755,
+            owner: RequiredIdentity {
+                name: "expected-user",
+                id: Some(metadata.uid() + 1),
+            },
+            group: RequiredIdentity {
+                name: "expected-group",
+                id: Some(metadata.gid()),
+            },
+        });
+
+        let results = diagnose(
+            vec![hardener("tool", false, command)],
+            None,
+            dir.as_os_str(),
+        )
+        .unwrap();
+        let issues = &results[0].issues;
+
+        assert_eq!(
+            issues.iter().map(|issue| issue.kind).collect::<Vec<_>>(),
+            [
+                "dependency_unavailable",
+                "stub_mode_mismatch",
+                "stub_owner_mismatch",
+                "stub_content_invalid"
+            ]
+        );
+        assert!(issues[0].message.contains("missing-helper"));
+        assert!(issues[1].message.contains("0o0777"));
+        assert!(issues[2].remediation.contains("sudo chown"));
+        assert!(issues[3].remediation.contains("Manual repair:"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_symlinked_stubs_even_when_they_resolve_to_an_executable() {
+        let dir = temp_dir("symlink-stub");
+        let target = executable_file(&dir.join("target"));
+        let stub = dir.join("stub");
+        symlink(&target, &stub).unwrap();
+        let results = diagnose(
+            vec![hardener(
+                "tool",
+                true,
+                command(
+                    "tool",
+                    true,
+                    stub.to_str().unwrap(),
+                    target.to_str().unwrap(),
+                ),
+            )],
+            None,
+            dir.as_os_str(),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].issues[0].kind, "stub_wrong_type");
+        assert!(results[0].issues[0].message.contains("symbolic link"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
     fn hardener(name: &'static str, hardened: bool, command: HardenerCommand) -> HardenerMetadata {
         HardenerMetadata {
             name,
@@ -507,9 +836,11 @@ mod tests {
         HardenerCommand {
             name: name.to_string(),
             hardened,
+            stub_valid: hardened,
             stub_path: Some(stub.to_string()),
             target_path: target.to_string(),
             required_paths: Vec::new(),
+            stub_requirements: None,
         }
     }
 

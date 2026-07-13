@@ -1,10 +1,11 @@
 use std::fs;
 use std::io::{self, IsTerminal, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use super::{
-    HardenerCommand, HardenerDetection, HardenerMetadata, SecretGateDescriptor, SecretGateRoute,
+    HardenerCommand, HardenerDetection, HardenerMetadata, RequiredExecutable, RequiredIdentity,
+    SecretGateDescriptor, SecretGateRoute, StubRequirements,
 };
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
@@ -102,16 +103,63 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
 
 fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
     let commands = stubs(wrapper)
-        .map(|stub| HardenerCommand {
-            name: stub.command.to_string(),
-            hardened: is_managed_stub(&stub_path(stub.command), stub),
-            stub_path: Some(stub_path(stub.command).display().to_string()),
-            target_path: target_path(stub).display().to_string(),
-            required_paths: Vec::new(),
+        .map(|stub| {
+            let path = stub_path(stub.command);
+            let stub_valid = is_managed_stub(&path, stub);
+            HardenerCommand {
+                name: stub.command.to_string(),
+                hardened: stub_valid,
+                stub_valid,
+                stub_path: Some(path.display().to_string()),
+                target_path: target_path(stub).display().to_string(),
+                required_paths: if test_stub_dir().is_some() {
+                    Vec::new()
+                } else {
+                    vec![
+                        RequiredExecutable {
+                            name: "Automic Vault CLI",
+                            path: "/usr/local/bin/av".to_string(),
+                        },
+                        RequiredExecutable {
+                            name: "POSIX shell",
+                            path: "/bin/sh".to_string(),
+                        },
+                    ]
+                },
+                stub_requirements: Some(root_stub_requirements(&path)),
+            }
         })
         .collect::<Vec<_>>();
     let hardened = commands.iter().all(|command| command.hardened);
     HardenerDetection::commands(hardened, commands)
+}
+
+fn root_stub_requirements(path: &Path) -> StubRequirements {
+    let test_ids = test_stub_dir().and_then(|_| {
+        path.parent()
+            .and_then(|parent| parent.metadata().ok())
+            .map(|metadata| (metadata.uid(), metadata.gid()))
+    });
+    let (uid, gid) = test_ids.unwrap_or((0, 0));
+    StubRequirements {
+        mode: 0o755,
+        owner: RequiredIdentity {
+            name: if test_ids.is_some() {
+                "test user"
+            } else {
+                "root"
+            },
+            id: Some(uid),
+        },
+        group: RequiredIdentity {
+            name: if test_ids.is_some() {
+                "test group"
+            } else {
+                "wheel"
+            },
+            id: Some(gid),
+        },
+    }
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {

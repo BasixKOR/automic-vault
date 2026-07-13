@@ -1,9 +1,12 @@
 use std::fs;
 use std::io::{self, IsTerminal, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
+use super::{
+    HardenerDetection, RequiredExecutable, RequiredIdentity, SecretGateDescriptor, SecretGateRoute,
+    StubRequirements,
+};
 
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
@@ -104,8 +107,48 @@ pub(crate) fn detect() -> HardenerDetection {
     );
     detection.commands[0]
         .required_paths
-        .push(aws_vault_path().display().to_string());
+        .push(RequiredExecutable {
+            name: "aws-vault",
+            path: aws_vault_path().display().to_string(),
+        });
+    if std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
+        detection.commands[0]
+            .required_paths
+            .push(RequiredExecutable {
+                name: "Automic Vault CLI",
+                path: "/usr/local/bin/av".to_string(),
+            });
+    }
+    detection.commands[0].stub_requirements = Some(root_stub_requirements(&path));
     detection
+}
+
+fn root_stub_requirements(path: &Path) -> StubRequirements {
+    let test_ids = std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").and_then(|_| {
+        path.parent()
+            .and_then(|parent| parent.metadata().ok())
+            .map(|metadata| (metadata.uid(), metadata.gid()))
+    });
+    let (uid, gid) = test_ids.unwrap_or((0, 0));
+    StubRequirements {
+        mode: 0o755,
+        owner: RequiredIdentity {
+            name: if test_ids.is_some() {
+                "test user"
+            } else {
+                "root"
+            },
+            id: Some(uid),
+        },
+        group: RequiredIdentity {
+            name: if test_ids.is_some() {
+                "test group"
+            } else {
+                "wheel"
+            },
+            id: Some(gid),
+        },
+    }
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {

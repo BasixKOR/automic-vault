@@ -5,7 +5,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::HardenerDetection;
+use super::{HardenerDetection, RequiredIdentity, StubRequirements};
 
 const AUTOMIC_USER: &str = "automic";
 const VAULT_GROUP: &str = "vault";
@@ -80,17 +80,32 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 pub(crate) fn detect() -> HardenerDetection {
     let stub = brew_stub_path();
     let target = brew_target_path();
-    let hardened = if let (Some(uid), Some(gid)) = (automic_uid(), vault_gid()) {
+    let uid = automic_uid();
+    let gid = vault_gid();
+    let hardened = if let (Some(uid), Some(gid)) = (uid, gid) {
         is_hardened_stub(&stub, uid, gid)
     } else {
         false
     };
-    HardenerDetection::command(
+    let mut detection = HardenerDetection::command(
         hardened,
         "brew",
         Some(stub.display().to_string()),
         target.display().to_string(),
-    )
+    );
+    detection.commands[0].stub_valid = is_managed_stub_file(&stub);
+    detection.commands[0].stub_requirements = Some(StubRequirements {
+        mode: 0o6755,
+        owner: RequiredIdentity {
+            name: AUTOMIC_USER,
+            id: uid,
+        },
+        group: RequiredIdentity {
+            name: VAULT_GROUP,
+            id: gid,
+        },
+    });
+    detection
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
