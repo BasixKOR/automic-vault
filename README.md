@@ -1,55 +1,118 @@
 # Automic Vault
 
+Automic Vault runs in your menu bar detecting existing and new threats to the
+integrity of your local developer environment’s integrity & security.
+
+We support (optional) “hardening” steps that typically:
+
+- Moves plaintext secrets into the macOS keychain †
+- Installs a `/usr/local/bin` stub as root that federates access to these secrets
+
+> † Thus becoming encrypted at rest, only available to the tools we bless at
+> runtime and with approval gates *under our control*.
+
+Hardened tools gain granular controls for execution. You can configure them
+to require human approval for specific code-signed application identities or
+for all apps/clis at four levels:
+
+1. Approval required for all actions (aka “paranoid mode”)
+2. Approval required for actions with side effects (aka “read-only” mode)
+3. Approval required for actions that reveal secrets (ie. everything runs except `gh auth token` which blocks at a prompt)
+4. No approval required (aka “yolo mode”)
+
+> [!NOTE]
+> We use the proper, thorough macOS security systems to ensure your secrets are
+> both safe and use of them is minimally tedious.
+
+&nbsp;
+
+
 > [!IMPORTANT]
 >
-> I am currently redoing Automic Vault to be much tighter in scope.
-> Do not start using v1! There is a v2 pre-release in releases if you like!
+> # Why Automic Vault?
+>
+> Famously I elected to have Homebrew *not* require `sudo` for `brew install`. A
+> controversial decision that was ultimately seen as acknowledging that
+> developer environments and *system tools* are different and need different
+> security models.
+>
+> That was then. When the only intelligence using your computer was you, the
+> developer, it was reasonable to assume that you were the only one who could
+> exfiltrate secrets from your local environment. This assumption is no
+> longer valid.
+>
+> ## The Threat Model Has Changed
+>
+> - Supply chain attacks target plaintext secrets and other trivial exfiltration
+>   mechanisms (eg. calling `gh auth token`)
+> - Agents change the game. *No longer are we the only intelligence using our
+>   computers.*
+>
+> Also crucially, Apple have made numerous improvements to the underlying security
+> of macOS, eg.:
+>
+> - System Integrity Protection (SIP)
+> - Hardened Runtime
+> - Notarization
+> - Gatekeeper
+> - Privacy protections
+> - App Sandbox
+>
+> ## Modern OS Security Protections Don’t Apply to CLIs
+>
+> These protections apply to the `.app` that runs the command line tool.
+> Which for a developer typically ends up being your terminal.
+> Most developers quickly bypass these protections because they
+> are too inconvenient for a general purpose tool like a terminal.
+>
+> Automic Vault is a small but important step to help developers harden their
+> local environment against these new threats.
 
-[Marketing story at Homepage](https://automicvault.com)
+&nbsp;
 
----
 
-```sh
-$ av scan aws
-🚨 plaintext credentials found in: ~/.aws/credentials
+## Important Notes When Using Automic Vault With Agents
 
-$ av harden aws
-1. Would import `~/.aws/credentials` into the macOS keychain
-2. Would delete plaintext keys from `~/.aws/credentials`
-3. Would `brew install aws-vault`
-4. Would stub `~/.local/bin/aws` to invoke `aws-vault` with hardened approval
-   gates
+If you use agents via their `.app` then it’s easier:
 
-Proceed? [y/N] y
+- Lock down the TCC protections, ie.
+  - Do not give `Codex.app` “Full Disk Access”
+  - Do not let `Claude.app` “Modify Other Applications”
 
-# …
+Computer Use is a problem, but administrator priviledges, code-signing &
+Gate Keeper etc. will protect a good amount of the attack surface. All the same
+ensure your agent is forced to ask before using Computer Use.
 
-$ cat ~/.local/bin/aws
-#!/bin/bash
+If you use agents via their CLI, then the simplest solution is to install the
+`.app` version and symlink the CLI that they all bundle to `/usr/local/bin`.
+This way Automic Vault can verify the caller via its bundled, notarized code
+signature.
 
-set -seo pipefail
+Otherwise you are back to square one where you are approving your terminal to
+have general capabilities in all circumstances.
 
-if [ "$@" = "s3 sync" ]; then
-  av gate `Sensitive action detected`
-  # - human in the loop, agents have to get your approval to do aws mutations
-  # - to avoid all approval gates for your shell use Vaultty or `av repl`
-  #   agents are invited to ask for a temporary token so they can perform
-  #   multiple tasks
-  # - scripts can get pre-approved for specific actions using YAML frontmatter
-fi
+> We aim to fix this, but it's not trivial, Apple’s codesigning mechanics give
+> us good security guarantees.
 
-# snip…
+### Computer Use & Automic Vault
 
-exec /usr/local/bin/av \
-  inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY \
-  aws-vault exec default -- "$@"
-# ^^ the first time av inject will ask you to approve-always for this script SHA
-# you will get a warning every time until you also harden `brew` since the
-# target aws is not immutably installed
-```
+Computer Use can be used by agents (or malware!) to approve Automic Vault gates.
 
-- We do the minimum changes
-- But: the minimum that is as secure as possible
+We provide an iPhone app to mitigate this potential attack vector. The iPhone
+app is a companion to Automic Vault that allows you move Automic Vault gates
+from your Macs to your Phone. This way, even if an agent or malware wanted to
+approve a request itself, they cannot.
 
-For example here we insist on aws-vault because it converts your too powerful
-AWS keys into short-lived session tokens for every invocation.
+&nbsp;
+
+
+## Miscellaneous Details
+
+- Hardening aims to be as non-invasive as possible
+- But we also try to make each tool as secure as possible.
+  eg. we insist on `aws-vault` for `aws` because it converts your too powerful
+  AWS keys into short-lived session tokens for every invocation.
+
+## User Manual
+
+https://www.automicvault.com/docs/
