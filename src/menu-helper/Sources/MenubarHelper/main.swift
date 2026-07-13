@@ -115,6 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         approval?.stop()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openMainWindow()
+        return true
+    }
+
     @MainActor @objc private func quit() {
         NSApp.terminate(nil)
     }

@@ -3,6 +3,7 @@ use std::io::{IsTerminal, Write};
 
 mod doctor;
 mod inject;
+mod open;
 mod save;
 mod scan;
 mod shell_secrets;
@@ -158,6 +159,7 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
+        Some("open") if rest.is_empty() => open::run(stderr),
         Some("save") => save::run(rest, stderr),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
@@ -338,6 +340,7 @@ mod tests {
         assert_eq!(stderr, "");
         assert!(stdout.contains("\n  av harden\n"));
         assert!(!stdout.contains("av harden [--yes]"));
+        assert!(!stdout.contains("av open"));
     }
 
     #[test]
