@@ -105,7 +105,7 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
     let commands = stubs(wrapper)
         .map(|stub| {
             let path = stub_path(stub.command);
-            let stub_valid = is_managed_stub(&path, stub);
+            let stub_valid = is_current_stub(&path, stub);
             HardenerCommand {
                 name: stub.command.to_string(),
                 hardened: stub_valid,
@@ -127,6 +127,12 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
                     ]
                 },
                 stub_requirements: Some(root_stub_requirements(&path)),
+                injected_keys: stub.keys.iter().map(|key| (*key).to_string()).collect(),
+                assignment_keys: stub
+                    .assignment_keys
+                    .iter()
+                    .map(|key| (*key).to_string())
+                    .collect(),
             }
         })
         .collect::<Vec<_>>();
@@ -203,6 +209,10 @@ fn is_managed_stub(path: &Path, stub: &StubSpec) -> bool {
                 ))
         })
         .unwrap_or(false)
+}
+
+fn is_current_stub(path: &Path, stub: &StubSpec) -> bool {
+    fs::read_to_string(path).is_ok_and(|contents| contents == stub_script(stub))
 }
 
 fn stub_script(stub: &StubSpec) -> String {
@@ -646,6 +656,20 @@ mod tests {
         assert!(script.contains("+AKAMAI_ENV_ASSIGNMENTS"));
         assert!(script.contains("for assignment in ${AKAMAI_ENV_ASSIGNMENTS-}"));
         assert!(script.contains("export \"$assignment\""));
+    }
+
+    #[test]
+    fn current_stub_validation_rejects_marker_preserving_edits() {
+        let spec = stub("tool", "/opt/tool/bin/tool", &["TOOL_TOKEN"], &[]);
+        let path = temp_dir("env-wrapper-exact").join("tool");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, stub_script(&spec)).unwrap();
+        assert!(is_current_stub(&path, &spec));
+
+        fs::write(&path, format!("{}\n# modified\n", stub_script(&spec))).unwrap();
+        assert!(is_managed_stub(&path, &spec));
+        assert!(!is_current_stub(&path, &spec));
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

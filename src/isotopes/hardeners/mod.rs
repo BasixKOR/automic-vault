@@ -34,6 +34,14 @@ pub(crate) struct HardenerDetection {
     pub(crate) stub_path: Option<String>,
     pub(crate) target_path: Option<String>,
     pub(crate) commands: Vec<HardenerCommand>,
+    pub(crate) diagnostics: Vec<HardenerDiagnostic>,
+}
+
+pub(crate) struct HardenerDiagnostic {
+    pub(crate) kind: &'static str,
+    pub(crate) message: String,
+    pub(crate) remediation: String,
+    pub(crate) path: Option<String>,
 }
 
 #[derive(Clone)]
@@ -45,6 +53,8 @@ pub(crate) struct HardenerCommand {
     pub(crate) target_path: String,
     pub(crate) required_paths: Vec<RequiredExecutable>,
     pub(crate) stub_requirements: Option<StubRequirements>,
+    pub(crate) injected_keys: Vec<String>,
+    pub(crate) assignment_keys: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -90,7 +100,10 @@ impl HardenerDetection {
                 target_path,
                 required_paths: Vec::new(),
                 stub_requirements: None,
+                injected_keys: Vec::new(),
+                assignment_keys: Vec::new(),
             }],
+            diagnostics: Vec::new(),
         }
     }
 
@@ -109,6 +122,7 @@ impl HardenerDetection {
             stub_path: primary.and_then(|command| command.stub_path.clone()),
             target_path: primary.map(|command| command.target_path.clone()),
             commands,
+            diagnostics: Vec::new(),
         }
     }
 
@@ -123,6 +137,7 @@ impl HardenerDetection {
             stub_path: None,
             target_path,
             commands: Vec::new(),
+            diagnostics: Vec::new(),
         }
     }
 }

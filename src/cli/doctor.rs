@@ -57,10 +57,12 @@ fn diagnose(
     if let Some(selector) = selector {
         let (hardener, command) =
             select(hardeners, selector).ok_or_else(|| format!("unknown command `{selector}`"))?;
-        let checked = hardener.detection.commands.iter().any(|candidate| {
-            command.as_deref().is_none_or(|name| candidate.name == name)
-                && has_doctor_checks(candidate)
-        });
+        let checked = hardener
+            .detection
+            .commands
+            .iter()
+            .any(|candidate| command.as_deref().is_none_or(|name| candidate.name == name))
+            || command.is_none() && !hardener.detection.diagnostics.is_empty();
         if !checked {
             return Err(format!(
                 "`{selector}` has no Doctor-owned checks; use `av scan` for exposure findings"
@@ -73,13 +75,14 @@ fn diagnose(
         .into_iter()
         .filter(|hardener| {
             hardener.detection.applicable
-                && hardener.detection.commands.iter().any(has_doctor_checks)
+                && (!hardener.detection.commands.is_empty()
+                    || !hardener.detection.diagnostics.is_empty())
         })
         .map(|hardener| diagnose_one(hardener, None, path))
         .collect())
 }
 
-fn has_doctor_checks(command: &HardenerCommand) -> bool {
+fn has_stub_checks(command: &HardenerCommand) -> bool {
     command
         .stub_path
         .as_deref()
@@ -122,14 +125,27 @@ fn diagnose_one(
         .detection
         .commands
         .iter()
-        .filter(|command| {
-            command_filter.is_none_or(|filter| command.name == filter) && has_doctor_checks(command)
+        .filter(|command| command_filter.is_none_or(|filter| command.name == filter))
+        .collect::<Vec<_>>();
+    let mut issues = hardener
+        .detection
+        .diagnostics
+        .iter()
+        .map(|diagnostic| DoctorIssue {
+            kind: diagnostic.kind,
+            command: None,
+            message: diagnostic.message.clone(),
+            remediation: diagnostic.remediation.clone(),
+            stub_path: None,
+            target_path: diagnostic.path.clone(),
+            resolved_path: None,
         })
         .collect::<Vec<_>>();
-    let issues = commands
-        .iter()
-        .flat_map(|command| diagnose_command(hardener.name, command, path))
-        .collect();
+    issues.extend(
+        commands
+            .iter()
+            .flat_map(|command| diagnose_command(hardener.name, command, path)),
+    );
 
     DoctorResult {
         name: hardener.name,
@@ -153,11 +169,13 @@ fn diagnose_command(hardener: &str, command: &HardenerCommand, path: &OsStr) -> 
             .filter(|required| !executable(Path::new(&required.path)))
             .map(|required| dependency_issue(hardener, command, required)),
     );
-    let stub_issues = stub_issues(hardener, command);
-    let stub_is_healthy = stub_issues.is_empty();
-    issues.extend(stub_issues);
-    if stub_is_healthy {
-        issues.extend(path_issue(command, path));
+    if has_stub_checks(command) {
+        let stub_issues = stub_issues(hardener, command);
+        let stub_is_healthy = stub_issues.is_empty();
+        issues.extend(stub_issues);
+        if stub_is_healthy {
+            issues.extend(path_issue(command, path));
+        }
     }
     issues
 }
@@ -223,8 +241,8 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
                     command.name
                 ),
                 remediation: format!(
-                    "Run `sudo av harden {hardener}` to recreate it. Manual repair: install the documented {hardener} launcher as a regular file at {stub}{}, then rerun `av doctor {}`.",
-                    requirements_summary(command.stub_requirements.as_ref()),
+                    "Run `sudo av harden {hardener}` to recreate it. Manual repair: {}. Then rerun `av doctor {}`.",
+                    manual_stub_repair(hardener, command, stub),
                     command.name
                 ),
                 stub_path: Some(stub.to_string()),
@@ -353,8 +371,8 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
                 "launcher {stub} does not contain the expected {hardener} hardening implementation"
             ),
             remediation: format!(
-                "Run `sudo av harden {hardener}` to replace it. Manual repair: compare {stub} with the launcher documented or shipped for {hardener}, replace it with that exact implementation, and preserve the existing target at {}.",
-                command.target_path
+                "Run `sudo av harden {hardener}` to replace it. Manual repair: {}",
+                manual_stub_repair(hardener, command, stub)
             ),
             stub_path: Some(stub.to_string()),
             target_path: Some(command.target_path.clone()),
@@ -384,8 +402,8 @@ fn identity_issues(
             identity.name
         ),
         remediation: format!(
-            "Run `sudo av harden {hardener}` to recreate the required account metadata. Manual repair: create the documented `{}` {kind}, then set the owner of {stub} accordingly.",
-            identity.name
+            "Run `sudo av harden {hardener}` to recreate the required account metadata. Manual repair: {}",
+            manual_identity_repair(hardener, kind, identity.name, stub)
         ),
         stub_path: Some(stub.to_string()),
         target_path: Some(command.target_path.clone()),
@@ -394,13 +412,58 @@ fn identity_issues(
     .collect()
 }
 
-fn requirements_summary(requirements: Option<&StubRequirements>) -> String {
-    requirements.map_or_else(String::new, |requirements| {
+fn manual_identity_repair(hardener: &str, kind: &str, name: &str, stub: &str) -> String {
+    match (hardener, kind, name) {
+        ("brew", "group", "vault") => format!(
+            "choose an unused GID from 550–599, then run `sudo dscl . -create /Groups/vault`, `sudo dscl . -create /Groups/vault RealName 'Automic Vault'`, and `sudo dscl . -create /Groups/vault PrimaryGroupID <gid>`; finally run `sudo chown automic:vault {stub}`."
+        ),
+        ("brew", "user", "automic") => format!(
+            "create the `vault` group first, choose an unused UID from 550–599, then create `automic` with `sudo dscl . -create /Users/automic`, setting RealName to `Automic Vault Homebrew`, UserShell to `/usr/bin/false`, NFSHomeDirectory to `/opt/homebrew/var/automic`, UniqueID to the chosen UID, PrimaryGroupID to the vault GID, and Password to `*`; finally run `sudo chown automic:vault {stub}`."
+        ),
+        _ => format!(
+            "create the documented `{name}` {kind}, set the owner of {stub} accordingly, and rerun `av doctor {hardener}`."
+        ),
+    }
+}
+
+fn manual_stub_repair(hardener: &str, command: &HardenerCommand, stub: &str) -> String {
+    if hardener == "brew" {
+        return format!(
+            "copy the matching `av-brew-stub` binary from `/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub` to {stub} with `sudo install -o automic -g vault -m 6755`, after creating the `automic` user and `vault` group"
+        );
+    }
+    if hardener == "aws" {
+        return format!(
+            "install the exact `src/isotopes/hardeners/aws` launcher from this Automic Vault release at {stub}, preserve its `/opt/homebrew/bin/aws-vault` and `/opt/homebrew/bin/aws` paths, then run `sudo chown root:wheel {stub} && sudo chmod 0755 {stub}`"
+        );
+    }
+    let keys = command
+        .injected_keys
+        .iter()
+        .map(|key| format!("+{key}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let assignments = if command.assignment_keys.is_empty() {
+        String::new()
+    } else {
         format!(
-            ", set mode {:#06o}, and set ownership to {}:{}",
-            requirements.mode, requirements.owner.name, requirements.group.name
+            "; before exec, split each newline-delimited value in {} into `NAME=value` entries and export them",
+            command.assignment_keys.join(", ")
         )
-    })
+    };
+    let ownership = command.stub_requirements.as_ref().map_or_else(
+        || "set it executable".to_string(),
+        |requirements| {
+            format!(
+                "run `sudo chown {}:{} {stub} && sudo chmod {:04o} {stub}`",
+                requirements.owner.name, requirements.group.name, requirements.mode
+            )
+        },
+    );
+    format!(
+        "create a regular shell script at {stub} with shebang `#!/usr/local/bin/av inject --allow-missing-keys {keys} /bin/sh` that ends with `exec {} \"$@\"`{assignments}; {ownership}",
+        command.target_path
+    )
 }
 
 fn path_issue(command: &HardenerCommand, path: &OsStr) -> Option<DoctorIssue> {
@@ -823,6 +886,90 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    #[test]
+    fn target_only_hardening_checks_the_isotope_without_inventing_a_stub() {
+        let missing = "/missing/isotope/bin/gh";
+        let results = diagnose(
+            vec![hardener(
+                "gh",
+                false,
+                command("gh", false, missing, missing),
+            )],
+            Some("gh"),
+            OsStr::new(""),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].issues.len(), 1);
+        assert_eq!(results[0].issues[0].kind, "target_unavailable");
+        assert!(results[0].issues[0].message.contains(missing));
+    }
+
+    #[test]
+    fn configuration_exposures_remain_owned_by_scan() {
+        let hardener = HardenerMetadata {
+            name: "sudo",
+            documentation: "",
+            detection: HardenerDetection::configuration(
+                false,
+                true,
+                Some("/etc/pam.d/sudo_local".to_string()),
+            ),
+            secret_gate: None,
+        };
+        let error = diagnose(vec![hardener], Some("sudo"), OsStr::new(""))
+            .err()
+            .unwrap();
+
+        assert_eq!(
+            error,
+            "`sudo` has no Doctor-owned checks; use `av scan` for exposure findings"
+        );
+    }
+
+    #[test]
+    fn every_hardener_has_an_explicit_doctor_or_scan_boundary() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        for hardener in hardeners::metadata() {
+            if hardener.detection.commands.is_empty() {
+                assert_eq!(
+                    hardener.name, "sudo",
+                    "{} needs Doctor checks or an explicit Scan-owned exemption",
+                    hardener.name
+                );
+                continue;
+            }
+            for command in &hardener.detection.commands {
+                if has_stub_checks(command) {
+                    assert!(
+                        command.stub_requirements.is_some(),
+                        "{}:{} lacks stub mode/ownership requirements",
+                        hardener.name,
+                        command.name
+                    );
+                    if hardener.name != "brew" {
+                        assert!(
+                            command
+                                .required_paths
+                                .iter()
+                                .any(|required| required.name == "Automic Vault CLI"),
+                            "{}:{} does not check its av interpreter",
+                            hardener.name,
+                            command.name
+                        );
+                    }
+                } else {
+                    assert!(
+                        matches!(hardener.name, "gh" | "supabase"),
+                        "{}:{} needs explicit target-only Doctor coverage review",
+                        hardener.name,
+                        command.name
+                    );
+                }
+            }
+        }
+    }
+
     fn hardener(name: &'static str, hardened: bool, command: HardenerCommand) -> HardenerMetadata {
         HardenerMetadata {
             name,
@@ -841,6 +988,8 @@ mod tests {
             target_path: target.to_string(),
             required_paths: Vec::new(),
             stub_requirements: None,
+            injected_keys: Vec::new(),
+            assignment_keys: Vec::new(),
         }
     }
 

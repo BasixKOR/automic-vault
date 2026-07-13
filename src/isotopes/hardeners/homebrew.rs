@@ -5,7 +5,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{HardenerDetection, RequiredIdentity, StubRequirements};
+use super::{HardenerDetection, HardenerDiagnostic, RequiredIdentity, StubRequirements};
 
 const AUTOMIC_USER: &str = "automic";
 const VAULT_GROUP: &str = "vault";
@@ -78,6 +78,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 }
 
 pub(crate) fn detect() -> HardenerDetection {
+    let prefix = brew_prefix();
     let stub = brew_stub_path();
     let target = brew_target_path();
     let uid = automic_uid();
@@ -93,7 +94,7 @@ pub(crate) fn detect() -> HardenerDetection {
         Some(stub.display().to_string()),
         target.display().to_string(),
     );
-    detection.commands[0].stub_valid = is_managed_stub_file(&stub);
+    detection.commands[0].stub_valid = stub_matches_source(&stub);
     detection.commands[0].stub_requirements = Some(StubRequirements {
         mode: 0o6755,
         owner: RequiredIdentity {
@@ -105,7 +106,143 @@ pub(crate) fn detect() -> HardenerDetection {
             id: gid,
         },
     });
+    detection.diagnostics = doctor_diagnostics(&prefix, uid, gid);
     detection
+}
+
+fn doctor_diagnostics(
+    prefix: &Path,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> Vec<HardenerDiagnostic> {
+    let mut diagnostics = match (uid, gid) {
+        (Some(uid), Some(gid)) => state_directory_diagnostics(prefix, uid, gid),
+        _ => Vec::new(),
+    };
+    if std::env::var_os("AUTOMIC_VAULT_TEST_AUTOMIC_UID").is_none()
+        && let Some(gid) = gid
+    {
+        diagnostics.extend(account_diagnostics(gid));
+    }
+    diagnostics
+}
+
+fn state_directory_diagnostics(prefix: &Path, uid: u32, gid: u32) -> Vec<HardenerDiagnostic> {
+    [
+        prefix.join("var/automic"),
+        prefix.join("var/automic/tmp"),
+        prefix.join("var/automic/cache"),
+    ]
+    .into_iter()
+    .filter_map(|path| {
+        let path_text = path.display().to_string();
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_dir() => metadata,
+            Ok(metadata) => {
+                let actual = if metadata.file_type().is_symlink() {
+                    "a symbolic link"
+                } else {
+                    "not a directory"
+                };
+                return Some(HardenerDiagnostic {
+                    kind: "state_directory_wrong_type",
+                    message: format!(
+                        "Homebrew hardening state path {path_text} is {actual}; expected a directory"
+                    ),
+                    remediation: format!(
+                        "Review and remove {path_text}, then run `sudo install -d -o {AUTOMIC_USER} -g {VAULT_GROUP} -m 0755 {path_text}`."
+                    ),
+                    path: Some(path_text),
+                });
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                return Some(HardenerDiagnostic {
+                    kind: "state_directory_missing",
+                    message: format!(
+                        "Homebrew's hardened launcher requires state directory {path_text}, but it is missing"
+                    ),
+                    remediation: format!(
+                        "Create it with `sudo install -d -o {AUTOMIC_USER} -g {VAULT_GROUP} -m 0755 {path_text}`, then rerun `av doctor brew`."
+                    ),
+                    path: Some(path_text),
+                });
+            }
+            Err(err) => {
+                return Some(HardenerDiagnostic {
+                    kind: "state_directory_unreadable",
+                    message: format!("cannot inspect Homebrew state directory {path_text}: {err}"),
+                    remediation: format!(
+                        "Check metadata and parent-directory permissions for {path_text}, then rerun `av doctor brew`."
+                    ),
+                    path: Some(path_text),
+                });
+            }
+        };
+        let mode = metadata.permissions().mode() & 0o7777;
+        if metadata.uid() != uid
+            || metadata.gid() != gid
+            || mode & 0o700 != 0o700
+        {
+            return Some(HardenerDiagnostic {
+                kind: "state_directory_permissions_invalid",
+                message: format!(
+                    "Homebrew state directory {path_text} has uid {}, gid {}, and mode {mode:#06o}; expected {AUTOMIC_USER} ({uid}), {VAULT_GROUP} ({gid}), with owner read/write/search access",
+                    metadata.uid(), metadata.gid()
+                ),
+                remediation: format!(
+                    "Run `sudo chown {AUTOMIC_USER}:{VAULT_GROUP} {path_text} && sudo chmod u+rwx {path_text}`, then rerun `av doctor brew`."
+                ),
+                path: Some(path_text),
+            });
+        }
+        None
+    })
+    .collect()
+}
+
+fn account_diagnostics(expected_gid: u32) -> Vec<HardenerDiagnostic> {
+    let actual_gid = dscl_read("/Users/automic", "PrimaryGroupID");
+    let home = dscl_read("/Users/automic", "NFSHomeDirectory");
+    let shell = dscl_read("/Users/automic", "UserShell");
+    let errors = [&actual_gid, &home, &shell]
+        .into_iter()
+        .filter_map(|result| result.as_ref().err())
+        .cloned()
+        .collect::<Vec<_>>();
+    if !errors.is_empty() {
+        return vec![HardenerDiagnostic {
+            kind: "account_unreadable",
+            message: format!(
+                "cannot inspect the local `automic` account with dscl: {}",
+                errors.join("; ")
+            ),
+            remediation: "Run `dscl . -read /Users/automic PrimaryGroupID NFSHomeDirectory UserShell` to inspect the failure, then rerun `sudo av harden brew`.".to_string(),
+            path: None,
+        }];
+    }
+    let (Ok(actual_gid), Ok(home), Ok(shell)) = (actual_gid, home, shell) else {
+        unreachable!();
+    };
+    let expected_gid = expected_gid.to_string();
+    if actual_gid.as_deref() == Some(expected_gid.as_str())
+        && home.as_deref() == Some("/opt/homebrew/var/automic")
+        && shell.as_deref() == Some("/usr/bin/false")
+    {
+        return Vec::new();
+    }
+    vec![HardenerDiagnostic {
+        kind: "account_configuration_invalid",
+        message: format!(
+            "local `automic` account has PrimaryGroupID {}, NFSHomeDirectory {}, and UserShell {}; expected {expected_gid}, /opt/homebrew/var/automic, and /usr/bin/false",
+            actual_gid.as_deref().unwrap_or("missing"),
+            home.as_deref().unwrap_or("missing"),
+            shell.as_deref().unwrap_or("missing"),
+        ),
+        remediation: format!(
+            "Repair it with `sudo dscl . -create /Users/automic PrimaryGroupID {expected_gid}`, `sudo dscl . -create /Users/automic NFSHomeDirectory /opt/homebrew/var/automic`, and `sudo dscl . -create /Users/automic UserShell /usr/bin/false`, then rerun `av doctor brew`."
+        ),
+        path: None,
+    }]
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
@@ -309,7 +446,17 @@ fn is_hardened_stub(path: &Path, uid: u32, gid: u32) -> bool {
     metadata.uid() == uid
         && metadata.gid() == gid
         && metadata.mode() & 0o7777 == 0o6755
-        && is_managed_stub_file(path)
+        && stub_matches_source(path)
+}
+
+fn stub_matches_source(path: &Path) -> bool {
+    let Ok(source) = brew_stub_source_path() else {
+        return false;
+    };
+    fs::read(path)
+        .ok()
+        .zip(fs::read(source).ok())
+        .is_some_and(|(installed, source)| installed == source)
 }
 
 fn is_managed_stub_file(path: &Path) -> bool {
@@ -396,6 +543,7 @@ mod tests {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o6755)).unwrap();
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB", &path);
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &path);
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", "/tmp/brew-target");
             std::env::set_var("AUTOMIC_VAULT_TEST_AUTOMIC_UID", libc::getuid().to_string());
             std::env::set_var("AUTOMIC_VAULT_TEST_VAULT_GID", libc::getgid().to_string());
@@ -405,6 +553,7 @@ mod tests {
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_TARGET");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AUTOMIC_UID");
             std::env::remove_var("AUTOMIC_VAULT_TEST_VAULT_GID");
@@ -412,6 +561,57 @@ mod tests {
         assert!(detection.hardened);
         assert_eq!(detection.stub_path, Some(path.display().to_string()));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn diagnoses_homebrew_state_directories() {
+        let prefix = temp_path("brew-doctor-state");
+        let home = prefix.join("var/automic");
+        let tmp = home.join("tmp");
+        let cache = home.join("cache");
+        fs::create_dir_all(&tmp).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        let metadata = home.metadata().unwrap();
+
+        assert!(state_directory_diagnostics(&prefix, metadata.uid(), metadata.gid()).is_empty());
+
+        fs::remove_dir(&cache).unwrap();
+        let diagnostics = state_directory_diagnostics(&prefix, metadata.uid(), metadata.gid());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, "state_directory_missing");
+        assert!(diagnostics[0].remediation.contains("sudo install -d"));
+
+        fs::create_dir(&cache).unwrap();
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).unwrap();
+        let diagnostics = state_directory_diagnostics(&prefix, metadata.uid(), metadata.gid());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, "state_directory_permissions_invalid");
+        assert!(diagnostics[0].message.contains("mode 0o0600"));
+
+        let _ = fs::remove_dir_all(prefix);
+    }
+
+    #[test]
+    fn stub_validation_requires_the_exact_bundled_binary() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let source = temp_path("brew-stub-source");
+        let installed = temp_path("brew-stub-installed");
+        fs::write(&source, [STUB_MARKER, b" source"].concat()).unwrap();
+        fs::copy(&source, &installed).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &source);
+        }
+        assert!(stub_matches_source(&installed));
+
+        fs::write(&installed, [STUB_MARKER, b" modified"].concat()).unwrap();
+        assert!(is_managed_stub_file(&installed));
+        assert!(!stub_matches_source(&installed));
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
+        }
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(installed);
     }
 
     #[test]

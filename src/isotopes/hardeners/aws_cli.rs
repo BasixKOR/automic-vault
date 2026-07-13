@@ -120,6 +120,10 @@ pub(crate) fn detect() -> HardenerDetection {
             });
     }
     detection.commands[0].stub_requirements = Some(root_stub_requirements(&path));
+    detection.commands[0].injected_keys = vec![
+        AWS_ACCESS_KEY_ID.to_string(),
+        AWS_SECRET_ACCESS_KEY.to_string(),
+    ];
     detection
 }
 
@@ -200,13 +204,7 @@ fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool
 }
 
 fn is_aws_stub(path: &Path) -> bool {
-    fs::read_to_string(path)
-        .map(|contents| {
-            contents == AWS_STUB
-                || (contents.starts_with("#!/usr/local/bin/av inject ")
-                    && contents.contains("aws-vault"))
-        })
-        .unwrap_or(false)
+    fs::read_to_string(path).is_ok_and(|contents| contents == AWS_STUB)
 }
 
 fn aws_vault_path() -> PathBuf {
@@ -350,6 +348,17 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
         assert!(AWS_STUB.contains("${AWS_PROFILE:-default}"));
 
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn aws_stub_validation_requires_exact_contents() {
+        let path = temp_path("aws-stub-exact");
+        fs::write(&path, AWS_STUB).unwrap();
+        assert!(is_aws_stub(&path));
+
+        fs::write(&path, format!("{AWS_STUB}\n# modified\n")).unwrap();
+        assert!(!is_aws_stub(&path));
         let _ = fs::remove_file(path);
     }
 
