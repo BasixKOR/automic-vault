@@ -228,7 +228,7 @@ private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     #expect(gates.count == 1)
     #expect(gates.first?.id == "gh")
     #expect(gates.first?.keyPatterns == ["GH_TOKEN_*"])
-    #expect(gates.first?.defaultProtection == .noAccess)
+    #expect(gates.first?.defaultProtection == .fullExceptSecretDumps)
     #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
@@ -281,7 +281,7 @@ func protectionPolicyMatrix(
     #expect(secretGateProtection(for: requirement, in: gate).protection == .fullExceptSecretDumps)
 }
 
-@Test func defaultNoAccessIsNotPersisted() throws {
+@Test func noAccessDefaultIsPersisted() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     let account = "policies.\(UUID().uuidString)"

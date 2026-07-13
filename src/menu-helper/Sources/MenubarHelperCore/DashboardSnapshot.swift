@@ -597,7 +597,7 @@ public func loadSecretGates(
             id: descriptor.id,
             keyPatterns: descriptor.keyPatterns.uniqueSorted(),
             routes: descriptor.routes,
-            defaultProtection: gateRecords.last(where: { $0.requirement == nil })?.protection ?? .noAccess,
+            defaultProtection: gateRecords.last(where: { $0.requirement == nil })?.protection ?? .fullExceptSecretDumps,
             appPolicies: gateRecords.compactMap { record in
                 record.requirement.map {
                     SecretGatePolicy(
@@ -746,7 +746,7 @@ private func setSecretGatePolicyRecord(
 ) -> OSStatus {
     var records = loadSecretGatePolicyRecords(service: service, account: account)
     records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
-    if record.requirement != nil || record.protection != .noAccess {
+    if record.requirement != nil || record.protection != .fullExceptSecretDumps {
         records.append(record)
     }
     return saveSecretGatePolicyRecords(records, service: service, account: account)
