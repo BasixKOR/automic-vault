@@ -611,8 +611,7 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 186, ideal: 215, max: 250)
         } content: {
             DashboardListView(model: model)
-                .navigationSplitViewColumnWidth(min: 168, ideal: 235)
-                .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
+                .navigationSplitViewColumnWidth(min: 168, ideal: 255)
                 .toolbar {
                    if model.selectedSection == .allSecrets {
                         ToolbarItem {
@@ -625,6 +624,7 @@ struct DashboardRootView: View {
                         }
                     }
                 }
+                .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
         } detail: {
             DashboardDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
@@ -921,7 +921,7 @@ private struct EmptyListView: View {
     var body: some View {
         Text(emptyText)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.tertiary)
     }
 
     private var emptyText: String {
