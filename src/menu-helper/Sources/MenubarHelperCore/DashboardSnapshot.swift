@@ -591,7 +591,11 @@ public func loadSecretGates(
 ) -> [SecretGate] {
     let records = loadSecretGatePolicyRecords(service: service, account: account)
     return hardeners.compactMap { hardener in
-        guard hardener.hardened, let descriptor = hardener.secretGate else { return nil }
+        guard let descriptor = hardener.secretGate,
+              hardener.hardened || descriptor.routes
+                .compactMap(\.scriptPath)
+                .contains(where: FileManager.default.fileExists(atPath:))
+        else { return nil }
         let gateRecords = records.filter { $0.gateID == descriptor.id }
         return SecretGate(
             id: descriptor.id,

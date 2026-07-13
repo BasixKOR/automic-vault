@@ -232,6 +232,33 @@ private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
+@Test func unhealthyInstalledWrapperKeepsItsSecretGate() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stub = directory.appendingPathComponent("aws")
+    try "#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID /bin/zsh".write(
+        to: stub,
+        atomically: true,
+        encoding: .utf8
+    )
+    let route = SecretGateRoute(
+        operation: "inject",
+        scriptPath: stub.path,
+        targetPath: "/bin/zsh",
+        callerIdentifiers: ["com.automicvault.av"],
+        keyPatterns: ["AWS_ACCESS_KEY_ID"],
+        replaceExistingEnv: false,
+        allowMissingKeys: false
+    )
+    let metadata = HardenerMetadata(
+        name: "aws",
+        hardened: false,
+        secretGate: SecretGateDescriptor(id: "aws", keyPatterns: ["AWS_ACCESS_KEY_ID"], routes: [route])
+    )
+
+    #expect(loadSecretGates(hardeners: [metadata]).map(\.id) == ["aws"])
+}
+
 @Test(
     arguments: SecretGateProtection.allCases,
     SecretGateRequestClassification.allCases
