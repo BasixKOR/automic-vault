@@ -169,7 +169,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
         let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
         write_wrapped(stdout, "│  ", &finding.solution, style, None);
         let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "│  {}", style.paint("1", "more details & caveats"));
+        let _ = writeln!(stdout, "│  {}", style.paint("1", "full details & caveats"));
         let _ = writeln!(stdout, "│  {}", style.paint("36", finding.docs_url));
         let _ = writeln!(stdout, "│");
         let _ = writeln!(stdout, "│  {}", style.paint("1", "affected files"));
@@ -340,7 +340,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
-            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage\n│  https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  more details & caveats\n│  https://example.test/docs/example.md\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n╰─ scan complete\n"
+            "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│  homepage\n│  https://example.test/\n│\n│  problem\n│  Example detector found a risky setting\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  full details & caveats\n│  https://example.test/docs/example.md\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n╰─ scan complete\n"
         );
     }
 
