@@ -52,14 +52,19 @@ fn writable_homebrew_paths() -> Result<Vec<PathBuf>, String> {
         }
     }
     paths.sort();
-    paths
+    let checked_count = paths.len();
+    let mut writable = paths
         .into_iter()
         .filter_map(|path| match current_user_can_modify_directory(&path) {
             Ok(true) => Some(Ok(path)),
             Ok(false) => None,
             Err(err) => Some(Err(err)),
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if writable.len() == checked_count {
+        writable.truncate(1);
+    }
+    Ok(writable)
 }
 
 #[cfg(unix)]
@@ -114,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_writable_prefix_and_first_level_directory() {
+    fn collapses_fully_writable_installation_to_prefix() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = temp_path("homebrew-mutable");
         let target = dir.join("bin/brew");
@@ -132,10 +137,10 @@ mod tests {
             "AUTOMIC_VAULT_TEST_BREW_PREFIX",
             "AUTOMIC_VAULT_TEST_BREW_TARGET",
         ]);
-        assert_eq!(paths, vec![dir.clone(), dir.join("bin")]);
+        assert_eq!(paths, vec![dir.clone()]);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, "medium");
-        assert_eq!(findings[0].affected.len(), 2);
+        assert_eq!(findings[0].affected.len(), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
