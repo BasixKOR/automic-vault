@@ -31,5 +31,5 @@ pub(crate) struct Finding {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct AffectedFile {
     path: String,
-    line: usize,
+    line: Option<usize>,
 }

@@ -20,7 +20,7 @@ pub(crate) fn findings(_home: &Path) -> Vec<Finding> {
             solution: "Run `sudo av harden brew`.".to_string(),
             affected: vec![AffectedFile {
                 path: brew_prefix().display().to_string(),
-                line: 1,
+                line: None,
             }],
             docs_url: DOCS_URL,
         })

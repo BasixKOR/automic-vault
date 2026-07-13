@@ -169,8 +169,8 @@ mod tests {
         assert!(findings[1].explanation.contains("OAuth client secret"));
         assert!(findings[0].solution.contains("helper = oauth"));
         assert!(findings[1].solution.contains("oauthClientSecret"));
-        assert_eq!(findings[0].affected[0].line, 2);
-        assert_eq!(findings[1].affected[0].line, 3);
+        assert_eq!(findings[0].affected[0].line, Some(2));
+        assert_eq!(findings[1].affected[0].line, Some(3));
 
         let _ = fs::remove_dir_all(home);
     }

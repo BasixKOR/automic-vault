@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert!(findings[0].explanation.contains("custom-git-credentials"));
         assert!(findings[0].solution.contains("rm "));
-        assert_eq!(findings[0].affected[0].line, 1);
+        assert_eq!(findings[0].affected[0].line, Some(1));
 
         let _ = fs::remove_dir_all(home);
     }

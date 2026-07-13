@@ -262,7 +262,7 @@ fn affected(reason: &str) -> Vec<AffectedFile> {
         .map(|path| {
             vec![AffectedFile {
                 path: path.to_string(),
-                line: 1,
+                line: None,
             }]
         })
         .unwrap_or_default()
@@ -304,7 +304,7 @@ mod tests {
             affected("Stripe CLI config contains plaintext API keys: /tmp/config.toml"),
             vec![AffectedFile {
                 path: "/tmp/config.toml".to_string(),
-                line: 1,
+                line: None,
             }]
         );
     }

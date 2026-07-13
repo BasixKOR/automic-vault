@@ -74,7 +74,7 @@ pub(crate) fn high_unattributed(
 pub(crate) fn affected(path: &Path, line: usize) -> AffectedFile {
     AffectedFile {
         path: path.display().to_string(),
-        line,
+        line: Some(line),
     }
 }
 

@@ -212,7 +212,7 @@ public struct DetectorFinding: Codable, Equatable, Sendable {
 
 public struct AffectedFile: Codable, Equatable, Sendable {
     public let path: String
-    public let line: Int
+    public let line: Int?
 }
 
 public struct HardenedTool: Equatable, Sendable {

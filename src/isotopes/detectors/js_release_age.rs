@@ -60,7 +60,7 @@ fn finding(
         solution: solution.to_string(),
         affected: vec![AffectedFile {
             path: display_path(home, &path),
-            line: 1,
+            line: None,
         }],
         docs_url,
     }

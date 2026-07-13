@@ -177,11 +177,15 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
             let _ = writeln!(stdout, "│  • not reported by this detector");
         } else {
             for affected in &finding.affected {
+                let location = affected.line.map_or_else(
+                    || affected.path.clone(),
+                    |line| format!("{}:{line}", affected.path),
+                );
                 write_wrapped_with_continuation(
                     stdout,
                     "│  • ",
                     "│    ",
-                    &format!("{}:{}", affected.path, affected.line),
+                    &location,
                     style,
                     Some("36"),
                 );
@@ -371,6 +375,19 @@ mod tests {
     }
 
     #[test]
+    fn print_omits_unspecified_line_numbers() {
+        let mut finding = fake_finding();
+        finding.affected[0].line = None;
+        let mut stdout = Vec::new();
+
+        print(&mut stdout, &[finding], Style::plain(), false);
+
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("│  • /tmp/example.conf\n"));
+        assert!(!stdout.contains("/tmp/example.conf:"));
+    }
+
+    #[test]
     fn styled_output_uses_ansi() {
         let mut stdout = Vec::new();
 
@@ -506,7 +523,7 @@ mod tests {
             solution: "Run `examplectl fix` or edit the affected file.".to_string(),
             affected: vec![crate::AffectedFile {
                 path: "/tmp/example.conf".to_string(),
-                line: 7,
+                line: Some(7),
             }],
             docs_url: "https://example.test/docs/example.md",
         }
