@@ -2203,6 +2203,7 @@ private struct ApprovalPromptCommandView: View {
                     .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
+            .defaultScrollAnchor(.topLeading, for: .alignment)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
