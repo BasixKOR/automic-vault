@@ -342,7 +342,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         switch self {
         case .noAccess: "All authenticated commands have approval gates"
         case .readOnly: "Commands without side-effects are approved automatically"
-        case .readOnlyAndUpdates: "Read-only commands and Homebrew updates are approved automatically"
+        case .readOnlyAndUpdates: "Commands without side-effects *and* `brew update` are approved automatically"
         case .fullExceptSecretDumps: "All commands are approved automatically except those that might exfiltrate secrets"
         case .fullIncludingSecretDumps: "All commands are approved automatically"
         }
