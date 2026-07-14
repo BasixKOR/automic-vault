@@ -407,6 +407,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public var scriptPaths: [String] { routes.compactMap(\.scriptPath).uniqueSorted() }
     public var targetPaths: [String] { routes.map(\.targetPath).uniqueSorted() }
+    public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
 
     public var availableProtections: [SecretGateProtection] {
         keyPatterns.isEmpty
@@ -748,7 +749,7 @@ public func secretGateProtection(
     if let requirement, let policy = gate.appPolicies.first(where: { $0.requirement == requirement }) {
         return (policy.protection, policy.bundleIdentifier)
     }
-    return (gate.defaultProtection, "All Other Apps")
+    return (gate.defaultProtection, gate.defaultPolicyLabel)
 }
 
 private struct SecretGatePolicyRecord: Codable, Equatable {

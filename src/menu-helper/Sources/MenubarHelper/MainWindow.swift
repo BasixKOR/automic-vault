@@ -1562,7 +1562,7 @@ private struct DefaultAppPolicyRow: View {
                 .frame(width: 34, height: 34)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text("All Other Apps")
+                Text(gate.defaultPolicyLabel)
                     .font(.system(size: 13, weight: .medium))
                 Text("Default protection")
                     .font(.system(size: 12))

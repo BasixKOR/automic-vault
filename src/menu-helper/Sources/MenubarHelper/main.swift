@@ -1208,7 +1208,7 @@ private func resolveSecretGatePolicy(
     }
     return ResolvedSecretGatePolicy(
         protection: gate.defaultProtection,
-        source: "All Other Apps",
+        source: gate.defaultPolicyLabel,
         launcher: launchers.first
     )
 }

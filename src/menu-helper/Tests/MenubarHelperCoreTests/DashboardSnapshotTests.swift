@@ -366,6 +366,8 @@ func protectionPolicyMatrix(
     let metadata = testGateMetadata()
     var gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     let requirement = #"identifier "com.example.app""#
+    #expect(gate.defaultPolicyLabel == "All Apps")
+    #expect(secretGateProtection(for: nil, in: gate).source == "All Apps")
 
     #expect(setSecretGateDefaultProtection(.fullExceptSecretDumps, for: gate, service: service, account: account) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
@@ -381,12 +383,14 @@ func protectionPolicyMatrix(
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     let appPolicy = try #require(gate.appPolicies.first)
     #expect(appPolicy.protection == .noAccess)
+    #expect(gate.defaultPolicyLabel == "All Other Apps")
     #expect(secretGateProtection(for: requirement, in: gate).protection == .noAccess)
     #expect(secretGateProtection(for: #"identifier "com.other.app""#, in: gate).protection == .fullExceptSecretDumps)
 
     #expect(removeSecretGateAppPolicy(appPolicy, from: gate, service: service, account: account) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     #expect(gate.appPolicies.isEmpty)
+    #expect(gate.defaultPolicyLabel == "All Apps")
     #expect(secretGateProtection(for: requirement, in: gate).protection == .fullExceptSecretDumps)
 }
 
