@@ -16,7 +16,10 @@ const BREW_PREFIX: &str = "/opt/homebrew";
 const BREW_TARGET: &str = "/opt/homebrew/bin/brew";
 const BREW_STUB: &str = "/usr/local/bin/brew";
 const APP_BREW_STUB: &str = "/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub";
+const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
+#[cfg(test)]
 const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V1";
+const STUB_VERSION: u32 = 1;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -147,7 +150,7 @@ pub(crate) fn detect() -> HardenerDetection {
         Some(stub.display().to_string()),
         target.display().to_string(),
     );
-    detection.commands[0].stub_valid = stub_matches_source(&stub);
+    detection.commands[0].stub_valid = stub_is_current(&stub);
     detection.commands[0].stub_requirements = Some(StubRequirements {
         mode: 0o6755,
         owner: RequiredIdentity {
@@ -639,24 +642,28 @@ fn is_hardened_stub(path: &Path, uid: u32, gid: u32) -> bool {
         && is_managed_stub_file(path)
 }
 
-fn stub_matches_source(path: &Path) -> bool {
-    let Ok(source) = brew_stub_source_path() else {
-        return false;
-    };
-    fs::read(path)
-        .ok()
-        .zip(fs::read(source).ok())
-        .is_some_and(|(installed, source)| installed == source)
+fn stub_is_current(path: &Path) -> bool {
+    stub_version(path).is_some_and(|version| version >= STUB_VERSION)
 }
 
 fn is_managed_stub_file(path: &Path) -> bool {
-    fs::read(path)
-        .map(|bytes| {
-            bytes
-                .windows(STUB_MARKER.len())
-                .any(|window| window == STUB_MARKER)
+    stub_version(path).is_some()
+}
+
+fn stub_version(path: &Path) -> Option<u32> {
+    let bytes = fs::read(path).ok()?;
+    bytes
+        .windows(STUB_MARKER_PREFIX.len())
+        .enumerate()
+        .filter(|(_, window)| *window == STUB_MARKER_PREFIX)
+        .find_map(|(offset, _)| {
+            let digits = bytes[offset + STUB_MARKER_PREFIX.len()..]
+                .iter()
+                .copied()
+                .take_while(u8::is_ascii_digit)
+                .collect::<Vec<_>>();
+            std::str::from_utf8(&digits).ok()?.parse().ok()
         })
-        .unwrap_or(false)
 }
 
 fn automic_uid() -> Option<u32> {
@@ -733,7 +740,6 @@ mod tests {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o6755)).unwrap();
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB", &path);
-            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &path);
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", "/tmp/brew-target");
             std::env::set_var("AUTOMIC_VAULT_TEST_AUTOMIC_UID", libc::getuid().to_string());
             std::env::set_var("AUTOMIC_VAULT_TEST_VAULT_GID", libc::getgid().to_string());
@@ -743,7 +749,6 @@ mod tests {
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB");
-            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_TARGET");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AUTOMIC_UID");
             std::env::remove_var("AUTOMIC_VAULT_TEST_VAULT_GID");
@@ -782,36 +787,41 @@ mod tests {
     }
 
     #[test]
-    fn stub_validation_requires_the_exact_bundled_binary() {
-        let _guard = crate::global_test_env_lock().lock().unwrap();
-        let source = temp_path("brew-stub-source");
-        let installed = temp_path("brew-stub-installed");
-        fs::write(&source, [STUB_MARKER, b" source"].concat()).unwrap();
-        fs::copy(&source, &installed).unwrap();
-        unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &source);
-        }
-        assert!(stub_matches_source(&installed));
+    fn stub_version_determines_when_an_upgrade_is_required() {
+        let path = temp_path("brew-stub-version");
 
-        fs::write(&installed, [STUB_MARKER, b" modified"].concat()).unwrap();
-        assert!(is_managed_stub_file(&installed));
-        assert!(!stub_matches_source(&installed));
+        fs::write(&path, [STUB_MARKER, b" different build"].concat()).unwrap();
+        assert!(stub_is_current(&path));
 
-        unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V0 old").unwrap();
+        assert!(is_managed_stub_file(&path));
+        assert!(!stub_is_current(&path));
+
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V2 future").unwrap();
+        assert!(stub_is_current(&path));
+
+        for invalid in [
+            b"ordinary executable".as_slice(),
+            b"AUTOMIC_VAULT_BREW_STUB_V",
+            b"AUTOMIC_VAULT_BREW_STUB_Vnope",
+        ] {
+            fs::write(&path, invalid).unwrap();
+            assert!(!is_managed_stub_file(&path));
+            assert!(!stub_is_current(&path));
         }
-        let _ = fs::remove_file(source);
-        let _ = fs::remove_file(installed);
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn managed_outdated_stub_remains_hardened() {
         let path = temp_path("brew-stub-outdated");
-        fs::write(&path, [STUB_MARKER, b" old"].concat()).unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V0 old").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o6755)).unwrap();
         let metadata = path.metadata().unwrap();
 
         assert!(is_hardened_stub(&path, metadata.uid(), metadata.gid()));
+        assert!(!stub_is_current(&path));
 
         let _ = fs::remove_file(path);
     }
