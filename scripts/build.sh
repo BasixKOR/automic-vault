@@ -15,6 +15,7 @@ VERSION="$(
     package && /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }
   ' "$ROOT/Cargo.toml"
 )"
+APP_VERSION="${APP_VERSION:-$VERSION}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run) run=1 ;;
@@ -65,11 +66,11 @@ publish_release() {
     git -C "$ROOT" tag -f "$tag" "$head"
     git -C "$ROOT" push --force origin "refs/tags/$tag"
     if gh release view "$tag" >/dev/null 2>&1; then
-      gh release upload "$tag" "$dmg#Automic Vault $tag.dmg" --clobber
+      gh release upload "$tag" "$dmg" --clobber
       return
     fi
   fi
-  gh release create "$tag" "$dmg#Automic Vault $tag.dmg" \
+  gh release create "$tag" "$dmg" \
     --target "$head" \
     --title "$tag" \
     --generate-notes
@@ -78,7 +79,7 @@ publish_release() {
 MENU_HELPER="$ROOT/src/menu-helper"
 SWIFT_TARGET="$ROOT/target/swift"
 APP="$SWIFT_TARGET/Automic Vault.app"
-DMG="$SWIFT_TARGET/Automic Vault.dmg"
+DMG="$SWIFT_TARGET/automic-vault-$VERSION.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
 DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
 ICON_BUILD="$SWIFT_TARGET/icon"
@@ -101,6 +102,8 @@ rm -rf "$APP" "$ICON_BUILD"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
 cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"
+plutil -replace CFBundleVersion -string "$APP_VERSION" "$CONTENTS/Info.plist"
 if [[ "$publish" -eq 1 ]]; then
   plutil -insert PostHogAPIKey -string "$POSTHOG_API_KEY" "$CONTENTS/Info.plist"
 fi
