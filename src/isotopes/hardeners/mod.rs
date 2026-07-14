@@ -176,7 +176,7 @@ macro_rules! ungated_hardener {
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     let mut metadata = vec![
         gated_hardener!(aws_cli, "aws"),
-        ungated_hardener!(homebrew, "brew"),
+        gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
         ungated_hardener!(sudo, "sudo"),
         gated_hardener!(supabase, "supabase"),

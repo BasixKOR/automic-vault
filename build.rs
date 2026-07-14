@@ -34,4 +34,5 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cli/xpc_shim.c");
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=av_xpc_shim");
+    println!("cargo:rustc-link-arg-bin=av-brew-stub=-lav_xpc_shim");
 }

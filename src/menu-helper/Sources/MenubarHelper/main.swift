@@ -692,7 +692,8 @@ private final class ApprovalServer: @unchecked Sendable {
 
         let requirement = """
         anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
-        (identifier "com.automicvault.av" or identifier "gh" or identifier "com.github.cli" or \
+        (identifier "com.automicvault.av" or identifier "com.automicvault.av-brew-stub" or \
+        identifier "gh" or identifier "com.github.cli" or \
         identifier "supabase" or identifier "supabase-go" or identifier "com.supabase.cli")
         """
         let status = requirement.withCString {
@@ -749,7 +750,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
 
         switch op {
-        case "inject", "keys":
+        case "inject", "keys", "authorize":
             handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
         case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer)
@@ -1047,7 +1048,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return nil
         }
         let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" else { return nil }
+        guard op == "inject" || op == "keys" || op == "authorize" else { return nil }
 
         return ApprovalRequest(
             op: op,
@@ -1125,6 +1126,9 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if isTrustedGhCaller(path: path, signing: signing) {
         return true
     }
+    if isTrustedBrewStubCaller(path: path, signing: signing) {
+        return true
+    }
     let name = URL(fileURLWithPath: path).lastPathComponent
     return (name == "supabase" || name == "supabase-go")
         && (signing.identifier == "supabase"
@@ -1140,6 +1144,12 @@ private func isTrustedAvCaller(path: String, signing: SigningInfo) -> Bool {
 private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
     URL(fileURLWithPath: path).lastPathComponent == "gh"
         && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
+}
+
+private func isTrustedBrewStubCaller(path: String, signing: SigningInfo) -> Bool {
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    return (name == "brew" || name == "av-brew-stub")
+        && signing.identifier == "com.automicvault.av-brew-stub"
 }
 
 private struct ResolvedSecretGatePolicy {
@@ -1169,6 +1179,7 @@ private func matchingSecretGate(
 }
 
 private func routeKeysMatch(_ patterns: [String], _ keys: [String]) -> Bool {
+    if patterns.isEmpty { return keys.isEmpty }
     guard !keys.isEmpty else { return false }
     if patterns.allSatisfy({ !$0.hasSuffix("*") }) {
         return patterns.sorted() == keys.sorted()
@@ -1219,10 +1230,39 @@ private func classifySecretGateRequest(
         return ghRequestIsReadOnly(request.args) ? .readOnly : .mutating
     case "aws":
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
+    case "brew":
+        return brewRequestIsReadOnly(request.args) ? .readOnly : .mutating
     default:
         return .unknown
     }
 }
+
+private func brewRequestIsReadOnly(_ args: [String]) -> Bool {
+    guard let command = args.first?.lowercased() else { return true }
+    if brewReadOnlyQueryOptions.contains(command) { return true }
+    if command.hasPrefix("-") { return false }
+    if command == "services" {
+        guard args.count >= 2 else { return false }
+        return ["list", "info"].contains(args[1].lowercased())
+    }
+    if command == "bundle" {
+        guard args.count >= 2 else { return false }
+        return ["check", "env", "list"].contains(args[1].lowercased())
+    }
+    return brewReadOnlyCommands.contains(command)
+}
+
+private let brewReadOnlyQueryOptions = Set([
+    "--cache", "--caskroom", "--cellar", "--env", "--prefix", "--repository", "--taps",
+    "--version", "-v"
+])
+
+private let brewReadOnlyCommands = Set([
+    "casks", "cat", "command", "commands", "config", "deps", "desc", "doctor", "formula",
+    "formulae", "help", "info", "leaves", "linkage", "list", "livecheck", "log", "ls",
+    "missing", "options", "outdated", "readall", "search", "shellenv", "source", "tab",
+    "tap-info", "unbottled", "uses", "vulns", "which-formula"
+])
 
 private func ghRequestIsSecretDump(_ args: [String]) -> Bool {
     let words = ghCommandWords(args).map { $0.lowercased() }
@@ -2519,6 +2559,7 @@ private func runApprovalSelfCheck() -> Int32 {
     )
     guard matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
           matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, hardeners: [ghMetadata]) == nil,
+          matchingSecretGate(request: ghRequest(keys: []), signing: ghSigning, hardeners: [ghMetadata]) == nil,
           matchingSecretGate(request: ghRequest(op: "inject"), signing: ghSigning, hardeners: [ghMetadata]) == nil,
           matchingSecretGate(
               request: readOnlyGh,
@@ -2594,6 +2635,45 @@ private func runApprovalSelfCheck() -> Int32 {
           !secretGateProtectionAllows(.readOnly, classification: .unknown),
           !secretGateProtectionAllows(.fullExceptSecretDumps, classification: .secretDump),
           secretGateProtectionAllows(.fullExceptSecretDumps, classification: .unknown)
+    else { return 1 }
+
+    let brewSigning = SigningInfo(identifier: "com.automicvault.av-brew-stub", teamIdentifier: "TEAM")
+    let brewRequest = ApprovalRequest(
+        op: "authorize",
+        keys: [],
+        target: "/opt/homebrew/bin/brew",
+        args: ["info", "ack"],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        tool: "brew",
+        title: nil,
+        detail: nil
+    )
+    let brewMetadata = HardenerMetadata(
+        name: "brew",
+        hardened: true,
+        secretGate: SecretGateDescriptor(
+            id: "brew",
+            keyPatterns: [],
+            routes: [SecretGateRoute(
+                operation: "authorize",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/bin/brew",
+                callerIdentifiers: ["com.automicvault.av-brew-stub"],
+                keyPatterns: [],
+                replaceExistingEnv: false,
+                allowMissingKeys: false
+            )]
+        )
+    )
+    guard matchingSecretGate(request: brewRequest, signing: brewSigning, hardeners: [brewMetadata])?.id == "brew",
+          matchingSecretGate(request: brewRequest, signing: avSigning, hardeners: [brewMetadata]) == nil,
+          classifySecretGateRequest(gateID: "brew", request: brewRequest) == .readOnly,
+          isTrustedBrewStubCaller(path: "/usr/local/bin/brew", signing: brewSigning),
+          !isTrustedBrewStubCaller(path: "/opt/homebrew/bin/brew", signing: avSigning)
     else { return 1 }
 
     return 0
@@ -2712,6 +2792,100 @@ private func runAwsReadOnlySelfCheck() -> Int32 {
         [],
     ]
     guard denied.allSatisfy({ !awsRequestIsReadOnly($0) }) else { return 1 }
+    return 0
+}
+
+private func runBrewReadOnlySelfCheck() -> Int32 {
+    let allowed = [
+        [],
+        ["--version"],
+        ["--prefix", "ack"],
+        ["--cellar"],
+        ["--cache"],
+        ["--repository"],
+        ["--caskroom"],
+        ["--taps"],
+        ["--env"],
+        ["-v"],
+        ["casks"],
+        ["cat", "ack"],
+        ["command", "install"],
+        ["commands"],
+        ["config"],
+        ["deps", "ack"],
+        ["desc", "ack"],
+        ["doctor"],
+        ["formula", "ack"],
+        ["formulae"],
+        ["help", "install"],
+        ["info", "ack"],
+        ["leaves"],
+        ["linkage", "ack"],
+        ["list", "--versions"],
+        ["ls"],
+        ["livecheck", "ack"],
+        ["log", "ack"],
+        ["missing"],
+        ["options", "ack"],
+        ["outdated"],
+        ["readall"],
+        ["search", "ack"],
+        ["shellenv"],
+        ["source", "ack"],
+        ["tab", "ack"],
+        ["tap-info", "homebrew/core"],
+        ["unbottled"],
+        ["uses", "openssl@3"],
+        ["vulns"],
+        ["which-formula", "git"],
+        ["services", "list"],
+        ["services", "info", "postgresql"],
+        ["bundle", "check"],
+        ["bundle", "env"],
+        ["bundle", "list"],
+    ]
+    guard allowed.allSatisfy(brewRequestIsReadOnly) else { return 1 }
+
+    let denied = [
+        ["install", "ack"],
+        ["reinstall", "ack"],
+        ["uninstall", "ack"],
+        ["remove", "ack"],
+        ["rm", "ack"],
+        ["update"],
+        ["up"],
+        ["upgrade"],
+        ["cleanup"],
+        ["autoremove"],
+        ["link", "ack"],
+        ["unlink", "ack"],
+        ["pin", "ack"],
+        ["unpin", "ack"],
+        ["tap", "owner/repo"],
+        ["untap", "owner/repo"],
+        ["services"],
+        ["services", "start", "postgresql"],
+        ["services", "restart", "postgresql"],
+        ["services", "stop", "postgresql"],
+        ["services", "kill", "postgresql"],
+        ["services", "cleanup"],
+        ["bundle"],
+        ["bundle", "install"],
+        ["bundle", "dump"],
+        ["bundle", "add", "ack"],
+        ["bundle", "remove", "ack"],
+        ["bundle", "cleanup"],
+        ["bundle", "edit"],
+        ["bundle", "exec", "echo"],
+        ["bundle", "sh"],
+        ["sh"],
+        ["exec", "echo"],
+        ["fetch", "ack"],
+        ["unknown", "view"],
+        ["--debug", "info", "ack"],
+        ["--"],
+    ]
+    guard denied.allSatisfy({ !brewRequestIsReadOnly($0) }) else { return 1 }
     return 0
 }
 
@@ -2879,6 +3053,10 @@ if CommandLine.arguments.contains("--self-check-gh-read-only") {
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {
     exit(runAwsReadOnlySelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-brew-read-only") {
+    exit(runBrewReadOnlySelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-transient-approvals") {

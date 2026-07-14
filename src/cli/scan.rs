@@ -546,7 +546,9 @@ mod tests {
         assert_eq!(gate("gh")["id"], "gh");
         assert_eq!(gate("supabase")["id"], "supabase");
         assert_eq!(gate("aws")["routes"][0]["operation"], "inject");
-        assert!(gate("brew").is_null());
+        assert_eq!(gate("brew")["id"], "brew");
+        assert_eq!(gate("brew")["routes"][0]["operation"], "authorize");
+        assert_eq!(gate("brew")["key_patterns"], serde_json::json!([]));
         assert!(gate("sudo").is_null());
         assert_eq!(gate("jfrog-cli")["routes"].as_array().unwrap().len(), 2);
     }

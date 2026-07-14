@@ -5,7 +5,10 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{HardenerDetection, HardenerDiagnostic, RequiredIdentity, StubRequirements};
+use super::{
+    HardenerDetection, HardenerDiagnostic, RequiredIdentity, SecretGateDescriptor, SecretGateRoute,
+    StubRequirements,
+};
 
 const AUTOMIC_USER: &str = "automic";
 const VAULT_GROUP: &str = "vault";
@@ -112,6 +115,22 @@ pub(crate) fn detect() -> HardenerDetection {
     });
     detection.diagnostics = doctor_diagnostics(&prefix, uid, gid);
     detection
+}
+
+pub(crate) fn secret_gate() -> SecretGateDescriptor {
+    SecretGateDescriptor {
+        id: "brew",
+        key_patterns: Vec::new(),
+        routes: vec![SecretGateRoute {
+            operation: "authorize",
+            script_path: None,
+            target_path: brew_target_path().display().to_string(),
+            caller_identifiers: vec!["com.automicvault.av-brew-stub"],
+            key_patterns: Vec::new(),
+            replace_existing_env: false,
+            allow_missing_keys: false,
+        }],
+    }
 }
 
 fn doctor_diagnostics(
