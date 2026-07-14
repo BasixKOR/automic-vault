@@ -141,7 +141,7 @@ fn xpc_authorize(request: &AuthorizationRequest) -> Result<(), String> {
         return Err("failed to create approval XPC connection".into());
     }
 
-    let menu_requirement = CString::new(r#"identifier "com.automicvault.menubar-helper""#).unwrap();
+    let menu_requirement = CString::new(r#"identifier "com.automicvault""#).unwrap();
     if unsafe {
         xpc_connection_set_peer_code_signing_requirement(connection, menu_requirement.as_ptr())
     } != 0

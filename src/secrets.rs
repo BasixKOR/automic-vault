@@ -77,7 +77,7 @@ fn xpc_secret_request(
         return Err("failed to create approval XPC connection".into());
     }
 
-    let menu_requirement = CString::new(r#"identifier "com.automicvault.menubar-helper""#).unwrap();
+    let menu_requirement = CString::new(r#"identifier "com.automicvault""#).unwrap();
     let requirement_status = unsafe {
         xpc_connection_set_peer_code_signing_requirement(connection, menu_requirement.as_ptr())
     };
