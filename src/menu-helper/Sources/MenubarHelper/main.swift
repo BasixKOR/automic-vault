@@ -1,4 +1,5 @@
 import AppKit
+import AppUpdater
 import CProcessInfo
 import CoreServices
 import CryptoKit
@@ -21,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
     private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
+    private lazy var checkForUpdatesItem = NSMenuItem(
+        title: "Check for Updates…",
+        action: #selector(checkForUpdates),
+        keyEquivalent: ""
+    )
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
@@ -34,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
+    private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
+    private var isCheckingForUpdates = false
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     private var lastTelemetryFindingCount: Int?
@@ -59,6 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+        checkForUpdatesItem.target = self
+        menu.addItem(checkForUpdatesItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         menu.delegate = self
@@ -107,12 +117,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopServices()
+    }
+
+    private func stopServices() {
+        scanWorkItem?.cancel()
+        scanWorkItem = nil
         if let eventStream {
             FSEventStreamStop(eventStream)
             FSEventStreamInvalidate(eventStream)
             FSEventStreamRelease(eventStream)
+            self.eventStream = nil
         }
         approval?.stop()
+        approval = nil
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -122,6 +140,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @MainActor @objc private func checkForUpdates() {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        checkForUpdatesItem.title = "Checking for Updates…"
+        checkForUpdatesItem.isEnabled = false
+
+        Task { @MainActor [weak self] in
+            await self?.performUpdateCheck()
+        }
+    }
+
+    private func performUpdateCheck() async {
+        var stoppedServices = false
+        defer {
+            isCheckingForUpdates = false
+            checkForUpdatesItem.title = "Check for Updates…"
+            checkForUpdatesItem.isEnabled = true
+        }
+
+        do {
+            guard let update = try await updater.check() else {
+                let alert = NSAlert()
+                alert.messageText = "Automic Vault is up to date"
+                alert.runModal()
+                return
+            }
+
+            let alert = NSAlert()
+            alert.messageText = "An update is ready"
+            alert.informativeText = "Install \(update.assetName) and relaunch Automic Vault?"
+            alert.addButton(withTitle: "Install and Relaunch")
+            alert.addButton(withTitle: "Later")
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                await update.discard()
+                return
+            }
+
+            let prepared = try await update.prepareInstallation()
+            stopServices()
+            stoppedServices = true
+            scanQueue.sync {}
+            try await prepared.installAndRelaunch()
+        } catch {
+            if stoppedServices {
+                startServices()
+            }
+            NSAlert(error: error).runModal()
+        }
     }
 
     @MainActor @objc private func openMainWindow() {
