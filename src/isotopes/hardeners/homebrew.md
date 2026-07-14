@@ -14,6 +14,12 @@ The root phase creates the `automic` user and `vault` group when needed, owns
 - This targets Apple Silicon Homebrew at `/opt/homebrew`.
 - Existing `/usr/local/bin/brew` files are left alone unless they are already
   the Automic Vault brew stub.
+- Hardening copies missing files from the invoking user's `~/.homebrew` into
+  the hardened account, preserving configuration already created there. This
+  includes Homebrew's tap trust store.
+- The invoking user's `~/Library/Caches/Homebrew` contents are merged into the
+  hardened cache and removed from their original location instead of being
+  downloaded again.
 - `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`. After hardening,
   run `hash -r` or start a new shell so it does not keep using a cached path to
   the original `brew` executable.

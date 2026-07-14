@@ -28,6 +28,8 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let target = brew_target_path();
     let stub = brew_stub_path();
     let source = brew_stub_source_path()?;
+    let automic_home = prefix.join("var/automic");
+    let automic_cache = automic_home.join("cache");
 
     if !target.exists() {
         return Err(format!("Homebrew is not installed at {}", target.display()));
@@ -47,6 +49,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
             source.display()
         ));
     }
+    let user_home = source_user_home()?;
 
     writeln!(stdout, "╭─ harden brew").ok();
     writeln!(stdout, "│").ok();
@@ -55,6 +58,29 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         "├─ ensure {AUTOMIC_USER} user and {VAULT_GROUP} group"
     )
     .ok();
+    if let Some(home) = &user_home {
+        let config = home.join(".homebrew");
+        if config.is_dir() {
+            writeln!(
+                stdout,
+                "├─ migrate {} to {}",
+                config.display(),
+                automic_home.join(".homebrew").display()
+            )
+            .ok();
+        }
+        let cache = home.join("Library/Caches/Homebrew");
+        if cache.is_dir() {
+            writeln!(
+                stdout,
+                "├─ move {} to {}",
+                cache.display(),
+                automic_cache.display()
+            )
+            .ok();
+        }
+    }
+    writeln!(stdout, "├─ prepare {}", automic_home.display()).ok();
     writeln!(
         stdout,
         "├─ chown -R -h {AUTOMIC_USER}:{VAULT_GROUP} {}",
@@ -70,11 +96,31 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     let gid = ensure_group()?;
     let uid = ensure_user(gid)?;
-    fs::create_dir_all(prefix.join("var/automic/tmp"))
+    fs::create_dir_all(automic_home.join("tmp"))
         .map_err(|err| format!("failed to create Homebrew automic state dir: {err}"))?;
-    fs::create_dir_all(prefix.join("var/automic/cache"))
+    fs::create_dir_all(&automic_cache)
         .map_err(|err| format!("failed to create Homebrew automic cache dir: {err}"))?;
+    let migration = (|| {
+        if let Some(home) = &user_home {
+            let config = home.join(".homebrew");
+            if config.is_dir() {
+                let count = copy_missing_tree(&config, &automic_home.join(".homebrew"))?;
+                writeln!(
+                    stdout,
+                    "├─ migrated {count} new Homebrew configuration file(s)"
+                )
+                .ok();
+            }
+            let cache = home.join("Library/Caches/Homebrew");
+            if cache.is_dir() {
+                let count = move_cache_contents(&cache, &automic_cache)?;
+                writeln!(stdout, "├─ moved {count} Homebrew cache item(s)").ok();
+            }
+        }
+        Ok::<_, String>(())
+    })();
     chown_recursive(&prefix)?;
+    migration?;
     install_stub(&source, &stub, uid, gid)?;
     writeln!(
         stdout,
@@ -433,6 +479,127 @@ fn chown_recursive(prefix: &Path) -> Result<(), String> {
     ))
 }
 
+fn source_user_home() -> Result<Option<PathBuf>, String> {
+    if let Some(home) = std::env::var_os("AUTOMIC_VAULT_TEST_BREW_USER_HOME") {
+        return Ok(Some(home.into()));
+    }
+    let Some(user) = std::env::var_os("SUDO_USER").and_then(|user| user.into_string().ok()) else {
+        return Ok(None);
+    };
+    if user == "root" || user.is_empty() || user.contains('/') {
+        return Ok(None);
+    }
+    Ok(dscl_read(&format!("/Users/{user}"), "NFSHomeDirectory")?.map(PathBuf::from))
+}
+
+fn copy_missing_tree(source: &Path, destination: &Path) -> Result<usize, String> {
+    if !source.exists() {
+        return Ok(0);
+    }
+    if !source.is_dir() {
+        return Err(format!(
+            "Homebrew configuration path is not a directory: {}",
+            source.display()
+        ));
+    }
+    fs::create_dir_all(destination)
+        .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
+    fs::set_permissions(destination, fs::Permissions::from_mode(0o700))
+        .map_err(|err| format!("failed to chmod {}: {err}", destination.display()))?;
+    let mut copied = 0;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("failed to read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("failed to read {}: {err}", source.display()))?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        let kind = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", from.display()))?;
+        if kind.is_dir() {
+            copied += copy_missing_tree(&from, &to)?;
+        } else if kind.is_file() && !to.exists() {
+            fs::copy(&from, &to).map_err(|err| {
+                format!(
+                    "failed to copy {} to {}: {err}",
+                    from.display(),
+                    to.display()
+                )
+            })?;
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
+fn move_cache_contents(source: &Path, destination: &Path) -> Result<usize, String> {
+    if !source.exists() {
+        return Ok(0);
+    }
+    if !source.is_dir() {
+        return Err(format!(
+            "Homebrew cache path is not a directory: {}",
+            source.display()
+        ));
+    }
+    fs::create_dir_all(destination)
+        .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
+    let mut moved = 0;
+    for entry in
+        fs::read_dir(source).map_err(|err| format!("failed to read {}: {err}", source.display()))?
+    {
+        let entry = entry.map_err(|err| format!("failed to read {}: {err}", source.display()))?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        let kind = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", from.display()))?;
+        if !to.exists() {
+            match fs::rename(&from, &to) {
+                Ok(()) => {
+                    moved += 1;
+                    continue;
+                }
+                Err(_) if kind.is_file() => {
+                    fs::copy(&from, &to).map_err(|err| {
+                        format!(
+                            "failed to move {} to {}: {err}",
+                            from.display(),
+                            to.display()
+                        )
+                    })?;
+                    fs::remove_file(&from)
+                        .map_err(|err| format!("failed to remove {}: {err}", from.display()))?;
+                    moved += 1;
+                    continue;
+                }
+                Err(_) if kind.is_dir() => {}
+                Err(err) => {
+                    return Err(format!(
+                        "failed to move {} to {}: {err}",
+                        from.display(),
+                        to.display()
+                    ));
+                }
+            }
+        }
+        if kind.is_dir() && to.is_dir() {
+            moved += move_cache_contents(&from, &to)?;
+        } else if kind.is_dir() {
+            fs::remove_dir_all(&from).map_err(|err| {
+                format!("failed to remove duplicate cache {}: {err}", from.display())
+            })?;
+        } else {
+            fs::remove_file(&from).map_err(|err| {
+                format!("failed to remove duplicate cache {}: {err}", from.display())
+            })?;
+        }
+    }
+    fs::remove_dir(source)
+        .map_err(|err| format!("failed to remove {}: {err}", source.display()))?;
+    Ok(moved)
+}
+
 fn install_stub(source: &Path, stub: &Path, uid: u32, gid: u32) -> Result<(), String> {
     if let Some(parent) = stub.parent() {
         fs::create_dir_all(parent)
@@ -647,6 +814,62 @@ mod tests {
         assert!(is_hardened_stub(&path, metadata.uid(), metadata.gid()));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn ports_missing_homebrew_configuration_without_overwriting_hardened_state() {
+        let dir = temp_path("brew-config-migration");
+        let source = dir.join("source");
+        let destination = dir.join("destination");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(source.join("trust.json"), "user trust").unwrap();
+        fs::write(source.join("Brewfile"), "brew config").unwrap();
+        fs::write(destination.join("trust.json"), "hardened trust").unwrap();
+
+        assert_eq!(copy_missing_tree(&source, &destination).unwrap(), 1);
+        assert_eq!(
+            fs::read_to_string(destination.join("trust.json")).unwrap(),
+            "hardened trust"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("Brewfile")).unwrap(),
+            "brew config"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn merges_and_removes_the_original_homebrew_cache() {
+        use std::os::unix::fs::symlink;
+
+        let dir = temp_path("brew-cache-migration");
+        let source = dir.join("source");
+        let destination = dir.join("destination");
+        fs::create_dir_all(source.join("downloads")).unwrap();
+        fs::create_dir_all(destination.join("downloads")).unwrap();
+        fs::write(source.join("downloads/new"), "new").unwrap();
+        symlink("downloads/new", source.join("formula--1.0")).unwrap();
+        fs::write(source.join("downloads/existing"), "old").unwrap();
+        fs::write(destination.join("downloads/existing"), "current").unwrap();
+
+        assert_eq!(move_cache_contents(&source, &destination).unwrap(), 2);
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("formula--1.0")).unwrap(),
+            "new"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("downloads/new")).unwrap(),
+            "new"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("downloads/existing")).unwrap(),
+            "current"
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
