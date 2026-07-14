@@ -166,8 +166,9 @@ if [[ "$dmg" -eq 1 ]]; then
   create-dmg \
     --volname "Automic Vault" \
     --volicon "$ICON_BUILD/AppIcon.icns" \
+    --window-size 500 300 \
     --icon "Automic Vault.app" 125 120 \
-    --app-drop-link 425 120 \
+    --app-drop-link 375 120 \
     --codesign "$identity" \
     --overwrite \
     "$DMG" \
