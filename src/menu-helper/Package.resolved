@@ -1,6 +1,15 @@
 {
-  "originHash" : "6e4cfcf6516a6735d8a7bd0c3e692c09daa7514b49b5e62222617867d1bcd27f",
+  "originHash" : "fea69f4712d83647465a6a8908eb687e3953652c30ad8d9eb2f8912234b097ed",
   "pins" : [
+    {
+      "identity" : "appupdater",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mxcl/AppUpdater.git",
+      "state" : {
+        "revision" : "9f91d45d1785deeae57d5caf3271c21af06e3f19",
+        "version" : "3.0.1"
+      }
+    },
     {
       "identity" : "networkimage",
       "kind" : "remoteSourceControl",
@@ -26,6 +35,15 @@
       "state" : {
         "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
         "version" : "2.4.1"
+      }
+    },
+    {
+      "identity" : "version",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mxcl/Version",
+      "state" : {
+        "revision" : "3043fcd2a50375db76d89ff206a612471833d1c2",
+        "version" : "2.2.1"
       }
     }
   ],

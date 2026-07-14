@@ -9,6 +9,7 @@ let package = Package(
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/mxcl/AppUpdater.git", from: "3.0.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
     ],
     targets: [
@@ -17,6 +18,7 @@ let package = Package(
         .executableTarget(
             name: "MenubarHelper",
             dependencies: [
+                "AppUpdater",
                 "CProcessInfo",
                 "MenubarHelperCore",
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
