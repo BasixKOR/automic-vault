@@ -1,5 +1,11 @@
 # Homebrew
 
+## Summary
+
+- Only `brew` can alter `/opt/homebrew`
+- Approval gates can be configured to stop agents installing things behind your
+  back.
+
 ## What it Does
 
 Installs `/usr/local/bin/brew` as a small setuid/setgid Automic Vault launcher
