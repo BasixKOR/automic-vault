@@ -264,16 +264,16 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gates.count == 1)
     #expect(gates.first?.id == "gh")
     #expect(gates.first?.keyPatterns == ["GH_TOKEN_*"])
-    #expect(gates.first?.defaultProtection == .fullExceptSecretDumps)
+    #expect(gates.first?.defaultProtection == .noAccess)
     #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
-@Test func secretlessGateDefaultsToReadAndUpdatePolicy() throws {
+@Test func missingPoliciesFailClosed() throws {
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     let gate = try #require(loadSecretGates(hardeners: [secretlessGateMetadata()], service: service).first)
 
     #expect(gate.keyPatterns.isEmpty)
-    #expect(gate.defaultProtection == .readOnlyAndUpdates)
+    #expect(gate.defaultProtection == .noAccess)
     #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
     #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
@@ -281,6 +281,30 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
     #expect(secretGate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps])
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
+}
+
+@Test func newGateGetsExplicitInitialPolicy() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let metadata = testGateMetadata()
+
+    #expect(initializeSecretGatePolicies(hardeners: [metadata], service: service, account: account) == errSecSuccess)
+    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .fullExceptSecretDumps)
+}
+
+@Test func malformedPoliciesFailClosedAndAreNotReplaced() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let metadata = testGateMetadata()
+    #expect(saveStoredSecret(account: account, value: "not json", service: service) == errSecSuccess)
+
+    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .noAccess)
+    #expect(initializeSecretGatePolicies(hardeners: [metadata], service: service, account: account) != errSecSuccess)
+    #expect(loadStoredSecret(account: account, service: service) == "not json")
 }
 
 @Test func secretlessGateNormalizesLegacyFullPolicy() throws {
@@ -403,6 +427,7 @@ func protectionPolicyMatrix(
     let gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
 
     #expect(setSecretGateDefaultProtection(.noAccess, for: gate, service: service, account: account) == errSecSuccess)
+    #expect(initializeSecretGatePolicies(hardeners: [metadata], service: service, account: account) == errSecSuccess)
     #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .noAccess)
 }
 

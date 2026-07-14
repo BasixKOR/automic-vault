@@ -64,6 +64,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         policyService: String = secretGatePoliciesKeychainService
     ) -> DashboardSnapshot {
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
+        _ = initializeSecretGatePolicies(hardeners: hardenerMetadata, service: policyService)
         let hardenedTools = loadHardenedTools(
             in: stubDirectory,
             ghCLIURL: ghCLIURL,
@@ -415,7 +416,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
             : [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps]
     }
 
-    public var baselineProtection: SecretGateProtection {
+    public var initialProtection: SecretGateProtection {
         keyPatterns.isEmpty ? .readOnlyAndUpdates : .fullExceptSecretDumps
     }
 
@@ -622,8 +623,11 @@ public func loadSecretGates(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
-    let records = loadSecretGatePolicyRecords(service: service, account: account)
-    return hardeners.compactMap { hardener in
+    let records: [SecretGatePolicyRecord] = switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let records): records
+    case .failure: []
+    }
+    return hardeners.compactMap { hardener -> SecretGate? in
         guard let descriptor = hardener.secretGate,
               hardener.hardened || descriptor.routes
                 .compactMap(\.scriptPath)
@@ -634,7 +638,7 @@ public func loadSecretGates(
             id: descriptor.id,
             keyPatterns: descriptor.keyPatterns.uniqueSorted(),
             routes: descriptor.routes,
-            defaultProtection: descriptor.keyPatterns.isEmpty ? .readOnlyAndUpdates : .fullExceptSecretDumps,
+            defaultProtection: .noAccess,
             appPolicies: []
         )
         return SecretGate(
@@ -643,7 +647,7 @@ public func loadSecretGates(
             routes: prototype.routes,
             defaultProtection: prototype.normalizedProtection(
                 gateRecords.last(where: { $0.requirement == nil })?.protection
-                    ?? prototype.baselineProtection
+                    ?? .noAccess
             ),
             appPolicies: gateRecords.compactMap { record in
                 record.requirement.map {
@@ -708,7 +712,6 @@ public func setSecretGateDefaultProtection(
     let protection = gate.normalizedProtection(protection)
     return setSecretGatePolicyRecord(
         SecretGatePolicyRecord(gateID: gate.id, requirement: nil, protection: protection),
-        baselineProtection: gate.baselineProtection,
         service: service,
         account: account
     )
@@ -724,7 +727,6 @@ public func setSecretGateAppProtection(
     let protection = gate.normalizedProtection(protection)
     return setSecretGatePolicyRecord(
         SecretGatePolicyRecord(gateID: gate.id, requirement: requirement, protection: protection),
-        baselineProtection: gate.baselineProtection,
         service: service,
         account: account
     )
@@ -736,7 +738,12 @@ public func removeSecretGateAppPolicy(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
-    let records = loadSecretGatePolicyRecords(service: service, account: account).filter {
+    let loaded: [SecretGatePolicyRecord]
+    switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let records): loaded = records
+    case .failure(let status): return status
+    }
+    let records = loaded.filter {
         !($0.gateID == gate.id && $0.requirement == policy.requirement)
     }
     return saveSecretGatePolicyRecords(records, service: service, account: account)
@@ -758,16 +765,48 @@ private struct SecretGatePolicyRecord: Codable, Equatable {
     let protection: SecretGateProtection
 }
 
+private enum SecretGatePolicyRecordsLoad {
+    case success([SecretGatePolicyRecord])
+    case failure(OSStatus)
+}
+
 private func loadSecretGatePolicyRecords(
     service: String,
     account: String
-) -> [SecretGatePolicyRecord] {
-    guard let data = loadKeychainData(service: service, account: account) else { return [] }
-    do {
-        return try JSONDecoder().decode([SecretGatePolicyRecord].self, from: data)
-    } catch {
-        return []
+) -> SecretGatePolicyRecordsLoad {
+    let data: Data
+    switch loadKeychainDataResult(service: service, account: account) {
+    case .success(let loaded): data = loaded
+    case .notFound: return .success([])
+    case .failure(let status): return .failure(status)
     }
+    do {
+        return .success(try JSONDecoder().decode([SecretGatePolicyRecord].self, from: data))
+    } catch {
+        return .failure(errSecDecode)
+    }
+}
+
+@discardableResult
+public func initializeSecretGatePolicies(
+    hardeners: [HardenerMetadata],
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
+    var records: [SecretGatePolicyRecord]
+    switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let loaded): records = loaded
+    case .failure(let status): return status
+    }
+    let gates = loadSecretGates(hardeners: hardeners, service: service, account: account)
+    for gate in gates where !records.contains(where: { $0.gateID == gate.id && $0.requirement == nil }) {
+        records.append(SecretGatePolicyRecord(
+            gateID: gate.id,
+            requirement: nil,
+            protection: gate.initialProtection
+        ))
+    }
+    return saveSecretGatePolicyRecords(records, service: service, account: account)
 }
 
 private func saveSecretGatePolicyRecords(
@@ -792,15 +831,16 @@ private func saveSecretGatePolicyRecords(
 
 private func setSecretGatePolicyRecord(
     _ record: SecretGatePolicyRecord,
-    baselineProtection: SecretGateProtection,
     service: String,
     account: String
 ) -> OSStatus {
-    var records = loadSecretGatePolicyRecords(service: service, account: account)
-    records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
-    if record.requirement != nil || record.protection != baselineProtection {
-        records.append(record)
+    var records: [SecretGatePolicyRecord]
+    switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let loaded): records = loaded
+    case .failure(let status): return status
     }
+    records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
+    records.append(record)
     return saveSecretGatePolicyRecords(records, service: service, account: account)
 }
 
@@ -919,6 +959,19 @@ public func loadStoredSecret(account: String, service: String = automicVaultKeyc
 }
 
 private func loadKeychainData(service: String, account: String) -> Data? {
+    guard case .success(let data) = loadKeychainDataResult(service: service, account: account) else {
+        return nil
+    }
+    return data
+}
+
+private enum KeychainDataLoad {
+    case success(Data)
+    case notFound
+    case failure(OSStatus)
+}
+
+private func loadKeychainDataResult(service: String, account: String) -> KeychainDataLoad {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
@@ -927,8 +980,10 @@ private func loadKeychainData(service: String, account: String) -> Data? {
         kSecReturnData as String: true,
     ]
     var result: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
-    return result as? Data
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return .notFound }
+    guard status == errSecSuccess, let data = result as? Data else { return .failure(status) }
+    return .success(data)
 }
 
 private func saveKeychainData(_ data: Data, service: String, account: String) -> OSStatus {
