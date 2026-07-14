@@ -268,18 +268,18 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
-@Test func secretlessGateDefaultsToThreeLevelReadOnlyPolicy() throws {
+@Test func secretlessGateDefaultsToReadAndUpdatePolicy() throws {
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     let gate = try #require(loadSecretGates(hardeners: [secretlessGateMetadata()], service: service).first)
 
     #expect(gate.keyPatterns.isEmpty)
-    #expect(gate.defaultProtection == .readOnly)
-    #expect(gate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps])
+    #expect(gate.defaultProtection == .readOnlyAndUpdates)
+    #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
     #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
 
     let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
-    #expect(secretGate.availableProtections == SecretGateProtection.allCases)
+    #expect(secretGate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps])
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
 }
 
@@ -351,6 +351,7 @@ func protectionPolicyMatrix(
     let expected = switch protection {
     case .noAccess: false
     case .readOnly: classification == .readOnly
+    case .readOnlyAndUpdates: classification == .readOnly || classification == .update
     case .fullExceptSecretDumps: classification != .secretDump
     case .fullIncludingSecretDumps: true
     }

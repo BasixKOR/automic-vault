@@ -322,6 +322,7 @@ public struct SecretGateRoute: Codable, Equatable, Sendable {
 public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, Sendable {
     case noAccess
     case readOnly
+    case readOnlyAndUpdates
     case fullExceptSecretDumps
     case fullIncludingSecretDumps
 
@@ -331,6 +332,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         switch self {
         case .noAccess: "No Access"
         case .readOnly: "Read Only Access"
+        case .readOnlyAndUpdates: "Read & Update Access"
         case .fullExceptSecretDumps: "Trusted Access"
         case .fullIncludingSecretDumps: "Full Access"
         }
@@ -340,6 +342,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         switch self {
         case .noAccess: "All authenticated commands have approval gates"
         case .readOnly: "Commands without side-effects are approved automatically"
+        case .readOnlyAndUpdates: "Read-only commands and Homebrew updates are approved automatically"
         case .fullExceptSecretDumps: "All commands are approved automatically except those that might exfiltrate secrets"
         case .fullIncludingSecretDumps: "All commands are approved automatically"
         }
@@ -351,6 +354,8 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
             false
         case .readOnly:
             classification == .readOnly
+        case .readOnlyAndUpdates:
+            classification == .readOnly || classification == .update
         case .fullExceptSecretDumps:
             classification != .secretDump
         case .fullIncludingSecretDumps:
@@ -361,6 +366,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
 public enum SecretGateRequestClassification: CaseIterable, Sendable {
     case readOnly
+    case update
     case mutating
     case secretDump
     case unknown
@@ -404,18 +410,18 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public var availableProtections: [SecretGateProtection] {
         keyPatterns.isEmpty
-            ? [.noAccess, .readOnly, .fullExceptSecretDumps]
-            : SecretGateProtection.allCases
+            ? [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps]
+            : [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps]
     }
 
     public var baselineProtection: SecretGateProtection {
-        keyPatterns.isEmpty ? .readOnly : .fullExceptSecretDumps
+        keyPatterns.isEmpty ? .readOnlyAndUpdates : .fullExceptSecretDumps
     }
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
-        keyPatterns.isEmpty && protection == .fullIncludingSecretDumps
-            ? .fullExceptSecretDumps
-            : protection
+        if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps { return .fullExceptSecretDumps }
+        if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates { return .readOnly }
+        return protection
     }
 
     public func protectionTitle(_ protection: SecretGateProtection) -> String {
@@ -627,7 +633,7 @@ public func loadSecretGates(
             id: descriptor.id,
             keyPatterns: descriptor.keyPatterns.uniqueSorted(),
             routes: descriptor.routes,
-            defaultProtection: descriptor.keyPatterns.isEmpty ? .readOnly : .fullExceptSecretDumps,
+            defaultProtection: descriptor.keyPatterns.isEmpty ? .readOnlyAndUpdates : .fullExceptSecretDumps,
             appPolicies: []
         )
         return SecretGate(

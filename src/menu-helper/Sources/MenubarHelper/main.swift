@@ -1231,10 +1231,16 @@ private func classifySecretGateRequest(
     case "aws":
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
     case "brew":
-        return brewRequestIsReadOnly(request.args) ? .readOnly : .mutating
+        return brewRequestClassification(request.args)
     default:
         return .unknown
     }
+}
+
+private func brewRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    if brewRequestIsReadOnly(args) { return .readOnly }
+    if let command = args.first?.lowercased(), ["update", "up"].contains(command) { return .update }
+    return .mutating
 }
 
 private func brewRequestIsReadOnly(_ args: [String]) -> Bool {
@@ -2669,6 +2675,9 @@ private func runApprovalSelfCheck() -> Int32 {
           !secretGateProtectionAllows(.noAccess, classification: .readOnly),
           secretGateProtectionAllows(.readOnly, classification: .readOnly),
           !secretGateProtectionAllows(.readOnly, classification: .unknown),
+          secretGateProtectionAllows(.readOnlyAndUpdates, classification: .readOnly),
+          secretGateProtectionAllows(.readOnlyAndUpdates, classification: .update),
+          !secretGateProtectionAllows(.readOnlyAndUpdates, classification: .mutating),
           !secretGateProtectionAllows(.fullExceptSecretDumps, classification: .secretDump),
           secretGateProtectionAllows(.fullExceptSecretDumps, classification: .unknown)
     else { return 1 }
@@ -2708,6 +2717,9 @@ private func runApprovalSelfCheck() -> Int32 {
     guard matchingSecretGate(request: brewRequest, signing: brewSigning, hardeners: [brewMetadata])?.id == "brew",
           matchingSecretGate(request: brewRequest, signing: avSigning, hardeners: [brewMetadata]) == nil,
           classifySecretGateRequest(gateID: "brew", request: brewRequest) == .readOnly,
+          brewRequestClassification(["update"]) == .update,
+          brewRequestClassification(["up"]) == .update,
+          brewRequestClassification(["--debug", "update"]) == .mutating,
           isTrustedBrewStubCaller(path: "/usr/local/bin/brew", signing: brewSigning),
           !isTrustedBrewStubCaller(path: "/opt/homebrew/bin/brew", signing: avSigning)
     else { return 1 }
@@ -2888,8 +2900,6 @@ private func runBrewReadOnlySelfCheck() -> Int32 {
         ["uninstall", "ack"],
         ["remove", "ack"],
         ["rm", "ack"],
-        ["update"],
-        ["up"],
         ["upgrade"],
         ["cleanup"],
         ["autoremove"],
