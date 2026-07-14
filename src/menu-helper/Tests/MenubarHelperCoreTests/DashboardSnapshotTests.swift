@@ -235,6 +235,28 @@ private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     )
 }
 
+private func secretlessGateMetadata() -> HardenerMetadata {
+    HardenerMetadata(
+        name: "brew",
+        hardened: true,
+        stubPath: "/usr/local/bin/brew",
+        targetPath: "/opt/homebrew/bin/brew",
+        secretGate: SecretGateDescriptor(
+            id: "brew",
+            keyPatterns: [],
+            routes: [SecretGateRoute(
+                operation: "authorize",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/bin/brew",
+                callerIdentifiers: ["com.automicvault.av-brew-stub"],
+                keyPatterns: [],
+                replaceExistingEnv: false,
+                allowMissingKeys: false
+            )]
+        )
+    )
+}
+
 @Test func hardenedToolGetsOneGateWithoutStoredSecrets() {
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     let gates = loadSecretGates(hardeners: [testGateMetadata(), testGateMetadata(hardened: false)], service: service)
@@ -244,6 +266,51 @@ private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     #expect(gates.first?.keyPatterns == ["GH_TOKEN_*"])
     #expect(gates.first?.defaultProtection == .fullExceptSecretDumps)
     #expect(gates.first?.appPolicies.isEmpty == true)
+}
+
+@Test func secretlessGateDefaultsToThreeLevelReadOnlyPolicy() throws {
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let gate = try #require(loadSecretGates(hardeners: [secretlessGateMetadata()], service: service).first)
+
+    #expect(gate.keyPatterns.isEmpty)
+    #expect(gate.defaultProtection == .readOnly)
+    #expect(gate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps])
+    #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
+    #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
+
+    let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
+    #expect(secretGate.availableProtections == SecretGateProtection.allCases)
+    #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
+}
+
+@Test func secretlessGateNormalizesLegacyFullPolicy() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let legacy = #"[{"gateID":"brew","requirement":null,"protection":"fullIncludingSecretDumps"},{"gateID":"brew","requirement":"identifier \"com.example.app\"","protection":"fullIncludingSecretDumps"}]"#
+    #expect(saveStoredSecret(account: account, value: legacy, service: service) == errSecSuccess)
+
+    var gate = try #require(loadSecretGates(
+        hardeners: [secretlessGateMetadata()],
+        service: service,
+        account: account
+    ).first)
+    #expect(gate.defaultProtection == .fullExceptSecretDumps)
+    #expect(gate.appPolicies.first?.protection == .fullExceptSecretDumps)
+
+    #expect(setSecretGateDefaultProtection(
+        .readOnly,
+        for: gate,
+        service: service,
+        account: account
+    ) == errSecSuccess)
+    gate = try #require(loadSecretGates(
+        hardeners: [secretlessGateMetadata()],
+        service: service,
+        account: account
+    ).first)
+    #expect(gate.defaultProtection == .readOnly)
 }
 
 @Test func unhealthyInstalledWrapperKeepsItsSecretGate() throws {

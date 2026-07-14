@@ -805,7 +805,7 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             do {
                 let secrets = try approvedSecrets(for: request)
-                let reason = "\(resolvedPolicy.protection.title) from \(resolvedPolicy.source)"
+                let reason = "\(configuredGate.protectionTitle(resolvedPolicy.protection)) from \(resolvedPolicy.source)"
                 let accessRequestID = UUID()
                 if let launcher {
                     Task { @MainActor in

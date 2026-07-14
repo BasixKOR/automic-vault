@@ -401,6 +401,32 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public var scriptPaths: [String] { routes.compactMap(\.scriptPath).uniqueSorted() }
     public var targetPaths: [String] { routes.map(\.targetPath).uniqueSorted() }
+
+    public var availableProtections: [SecretGateProtection] {
+        keyPatterns.isEmpty
+            ? [.noAccess, .readOnly, .fullExceptSecretDumps]
+            : SecretGateProtection.allCases
+    }
+
+    public var baselineProtection: SecretGateProtection {
+        keyPatterns.isEmpty ? .readOnly : .fullExceptSecretDumps
+    }
+
+    public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
+        keyPatterns.isEmpty && protection == .fullIncludingSecretDumps
+            ? .fullExceptSecretDumps
+            : protection
+    }
+
+    public func protectionTitle(_ protection: SecretGateProtection) -> String {
+        keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
+    }
+
+    public func protectionSubtitle(_ protection: SecretGateProtection) -> String {
+        keyPatterns.isEmpty && protection == .fullExceptSecretDumps
+            ? "All commands are approved automatically"
+            : protection.subtitle
+    }
 }
 
 public struct StoredSecret: Equatable, Sendable {
@@ -597,17 +623,27 @@ public func loadSecretGates(
                 .contains(where: FileManager.default.fileExists(atPath:))
         else { return nil }
         let gateRecords = records.filter { $0.gateID == descriptor.id }
-        return SecretGate(
+        let prototype = SecretGate(
             id: descriptor.id,
             keyPatterns: descriptor.keyPatterns.uniqueSorted(),
             routes: descriptor.routes,
-            defaultProtection: gateRecords.last(where: { $0.requirement == nil })?.protection ?? .fullExceptSecretDumps,
+            defaultProtection: descriptor.keyPatterns.isEmpty ? .readOnly : .fullExceptSecretDumps,
+            appPolicies: []
+        )
+        return SecretGate(
+            id: prototype.id,
+            keyPatterns: prototype.keyPatterns,
+            routes: prototype.routes,
+            defaultProtection: prototype.normalizedProtection(
+                gateRecords.last(where: { $0.requirement == nil })?.protection
+                    ?? prototype.baselineProtection
+            ),
             appPolicies: gateRecords.compactMap { record in
                 record.requirement.map {
                     SecretGatePolicy(
                         bundleIdentifier: appIdentifier(from: $0) ?? "unknown",
                         requirement: $0,
-                        protection: record.protection
+                        protection: prototype.normalizedProtection(record.protection)
                     )
                 }
             }.uniqueSorted()
@@ -662,8 +698,10 @@ public func setSecretGateDefaultProtection(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
-    setSecretGatePolicyRecord(
+    let protection = gate.normalizedProtection(protection)
+    return setSecretGatePolicyRecord(
         SecretGatePolicyRecord(gateID: gate.id, requirement: nil, protection: protection),
+        baselineProtection: gate.baselineProtection,
         service: service,
         account: account
     )
@@ -676,8 +714,10 @@ public func setSecretGateAppProtection(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
-    setSecretGatePolicyRecord(
+    let protection = gate.normalizedProtection(protection)
+    return setSecretGatePolicyRecord(
         SecretGatePolicyRecord(gateID: gate.id, requirement: requirement, protection: protection),
+        baselineProtection: gate.baselineProtection,
         service: service,
         account: account
     )
@@ -745,12 +785,13 @@ private func saveSecretGatePolicyRecords(
 
 private func setSecretGatePolicyRecord(
     _ record: SecretGatePolicyRecord,
+    baselineProtection: SecretGateProtection,
     service: String,
     account: String
 ) -> OSStatus {
     var records = loadSecretGatePolicyRecords(service: service, account: account)
     records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
-    if record.requirement != nil || record.protection != .fullExceptSecretDumps {
+    if record.requirement != nil || record.protection != baselineProtection {
         records.append(record)
     }
     return saveSecretGatePolicyRecords(records, service: service, account: account)

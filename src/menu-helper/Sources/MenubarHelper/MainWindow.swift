@@ -491,6 +491,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let appPolicy = gate.appPolicies[0]
     let appRowHeight = NSHostingView(rootView: ApprovedAppRow(
         app: appPolicy,
+        gate: gate,
         setProtection: { _ in }
     ).frame(width: 500)).fittingSize.height
     guard DashboardSection.allCases.last == .doctor,
@@ -1458,13 +1459,14 @@ private struct SecretGateDetailView: View {
                     .foregroundStyle(.primary)
 
                 VStack(spacing: 0) {
-                    DefaultAppPolicyRow(protection: gate.defaultProtection) {
+                    DefaultAppPolicyRow(gate: gate, protection: gate.defaultProtection) {
                         model.setDefaultProtection($0, for: gate)
                     }
                     if !gate.appPolicies.isEmpty { hairline }
                     ForEach(gate.appPolicies, id: \.requirement) { app in
                         ApprovedAppRow(
                             app: app,
+                            gate: gate,
                             setProtection: { model.setProtection($0, for: app, in: gate) }
                         )
                         if app.requirement != gate.appPolicies.last?.requirement {
@@ -1511,6 +1513,7 @@ private struct SecretGateField: View {
 
 private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
+    let gate: SecretGate
     let setProtection: (SecretGateProtection) -> Void
 
     private var display: ApprovedAppDisplay {
@@ -1540,7 +1543,7 @@ private struct ApprovedAppRow: View {
                     .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            ProtectionMenu(protection: app.protection, setProtection: setProtection)
+            ProtectionMenu(gate: gate, protection: app.protection, setProtection: setProtection)
                 .frame(width: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
@@ -1548,6 +1551,7 @@ private struct ApprovedAppRow: View {
 }
 
 private struct DefaultAppPolicyRow: View {
+    let gate: SecretGate
     let protection: SecretGateProtection
     let setProtection: (SecretGateProtection) -> Void
 
@@ -1565,7 +1569,7 @@ private struct DefaultAppPolicyRow: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            ProtectionMenu(protection: protection, setProtection: setProtection)
+            ProtectionMenu(gate: gate, protection: protection, setProtection: setProtection)
                 .frame(width: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
@@ -1573,6 +1577,7 @@ private struct DefaultAppPolicyRow: View {
 }
 
 private struct ProtectionMenu: NSViewRepresentable {
+    let gate: SecretGate
     let protection: SecretGateProtection
     let setProtection: (SecretGateProtection) -> Void
 
@@ -1587,10 +1592,24 @@ private struct ProtectionMenu: NSViewRepresentable {
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectProtection(_:))
         button.setAccessibilityLabel("Protection level")
+        configureItems(in: button)
+        updateSelection(in: button)
+        return button
+    }
 
-        for candidate in SecretGateProtection.allCases {
-            button.addItem(withTitle: candidate.title)
-            button.lastItem?.subtitle = candidate.subtitle
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.parent = self
+        configureItems(in: button)
+        updateSelection(in: button)
+    }
+
+    private func configureItems(in button: NSPopUpButton) {
+        let titles = gate.availableProtections.map(gate.protectionTitle)
+        guard button.itemTitles != titles else { return }
+        button.removeAllItems()
+        for candidate in gate.availableProtections {
+            button.addItem(withTitle: gate.protectionTitle(candidate))
+            button.lastItem?.subtitle = gate.protectionSubtitle(candidate)
             if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
                 let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
                 button.lastItem?.image = candidate == .fullIncludingSecretDumps
@@ -1598,17 +1617,10 @@ private struct ProtectionMenu: NSViewRepresentable {
                     : warning
             }
         }
-        updateSelection(in: button)
-        return button
-    }
-
-    func updateNSView(_ button: NSPopUpButton, context: Context) {
-        context.coordinator.parent = self
-        updateSelection(in: button)
     }
 
     private func updateSelection(in button: NSPopUpButton) {
-        guard let selectedIndex = SecretGateProtection.allCases.firstIndex(of: protection) else { return }
+        guard let selectedIndex = gate.availableProtections.firstIndex(of: protection) else { return }
         button.selectItem(at: selectedIndex)
         for (index, item) in button.itemArray.enumerated() {
             item.state = index == selectedIndex ? .on : .off
@@ -1624,7 +1636,7 @@ private struct ProtectionMenu: NSViewRepresentable {
         }
 
         @MainActor @objc func selectProtection(_ sender: NSPopUpButton) {
-            let candidates = SecretGateProtection.allCases
+            let candidates = parent.gate.availableProtections
             let selectedIndex = sender.indexOfSelectedItem
             guard candidates.indices.contains(selectedIndex) else { return }
             parent.setProtection(candidates[selectedIndex])
