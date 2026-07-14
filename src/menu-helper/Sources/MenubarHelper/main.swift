@@ -1910,7 +1910,11 @@ private func showApprovalAlert(
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
-        command: prettyShellCommand(target: request.target, args: request.args),
+        command: prettyShellCommand(
+            target: URL(fileURLWithPath: request.target).lastPathComponent,
+            args: request.args
+        ),
+        commandPath: request.target,
         title: request.title,
         detail: request.detail,
         cwd: request.cwd,
@@ -2075,6 +2079,7 @@ private struct ApprovalPromptContent {
     let requesterName: String
     let requesterIconPath: String
     let command: String
+    let commandPath: String
     let title: String?
     let detail: String?
     let cwd: String
@@ -2192,9 +2197,8 @@ private struct ApprovalPromptCommandView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             ScrollView([.horizontal, .vertical]) {
-                Text(content.command)
+                Text(approvalPromptCommandText(command: content.command, path: content.commandPath))
                     .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.white)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
             }
@@ -2218,6 +2222,21 @@ private struct ApprovalPromptCommandView: View {
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
     }
+}
+
+private func approvalPromptCommandText(command: String, path: String) -> AttributedString {
+    let lineBreak = command.firstIndex(of: "\n") ?? command.endIndex
+    var text = AttributedString(String(command[..<lineBreak]))
+    text.foregroundColor = .white
+    var comment = AttributedString("  # \(path)")
+    comment.foregroundColor = .white.opacity(0.55)
+    text += comment
+    if lineBreak != command.endIndex {
+        var remainder = AttributedString(String(command[lineBreak...]))
+        remainder.foregroundColor = .white
+        text += remainder
+    }
+    return text
 }
 
 private struct ApprovalPromptInlineMeta: View {
@@ -2418,7 +2437,8 @@ private func runApprovalSelfCheck() -> Int32 {
             content: ApprovalPromptContent(
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
-                command: "/opt/homebrew/bin/gh auth token",
+                command: "gh auth token",
+                commandPath: "/opt/homebrew/bin/gh",
                 title: "GitHub token requested",
                 detail: "gh needs the GitHub token",
                 cwd: "/tmp",
@@ -2435,6 +2455,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
                 command: Array(repeating: "  --long-option \\", count: 100).joined(separator: "\n"),
+                commandPath: "/opt/homebrew/bin/gh",
                 title: nil,
                 detail: nil,
                 cwd: "/tmp",
@@ -2446,12 +2467,26 @@ private func runApprovalSelfCheck() -> Int32 {
             contentSizeDidChange: {}
         )
     ).fittingSize.height
+    let commandWithArguments = approvalPromptCommandText(
+        command: prettyShellCommand(target: "gh", args: ["repo", "view"]),
+        path: "/opt/homebrew/bin/gh"
+    )
+    let commandWithoutArguments = approvalPromptCommandText(
+        command: prettyShellCommand(target: "gh", args: []),
+        path: "/opt/homebrew/bin/gh"
+    )
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
       'it'\\''s-ok'
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
+          String(commandWithArguments.characters) == """
+          gh \\  # /opt/homebrew/bin/gh
+            repo \\
+            view
+          """,
+          String(commandWithoutArguments.characters) == "gh  # /opt/homebrew/bin/gh",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
