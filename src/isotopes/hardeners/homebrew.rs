@@ -73,7 +73,11 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         .map_err(|err| format!("failed to create Homebrew automic cache dir: {err}"))?;
     chown_recursive(&prefix)?;
     install_stub(&source, &stub, uid, gid)?;
-    writeln!(stdout, "╰─ hardened brew").ok();
+    writeln!(
+        stdout,
+        "╰─ hardened brew; run `hash -r` (or start a new shell) before using brew"
+    )
+    .ok();
     Ok(())
 }
 

@@ -14,5 +14,8 @@ The root phase creates the `automic` user and `vault` group when needed, owns
 - This targets Apple Silicon Homebrew at `/opt/homebrew`.
 - Existing `/usr/local/bin/brew` files are left alone unless they are already
   the Automic Vault brew stub.
+- `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`. After hardening,
+  run `hash -r` or start a new shell so it does not keep using a cached path to
+  the original `brew` executable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.
