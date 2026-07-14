@@ -71,6 +71,23 @@ for all apps/clis at four levels:
 &nbsp;
 
 
+## How Much Friction is This?
+
+As little as possible!
+
+But we aren’t going to lie: it’s more friction than now. We minimize:
+
+- How invasive Automic Vault is. Mostly we install wrappers that change as
+  little as possible.
+- We make approval gates rare and smart.
+  - By default, secret gates only trigger for secret exfiltration.
+  - This means that the default setting for Automic Vault is merely: keep your secrets safe.
+  - Once you get used to that we recommend playing with the levels, eg.
+    disabling access to *everything* but one Terminal and your agent apps.
+
+&nbsp;
+
+
 ## Important Notes When Using Automic Vault With Agents
 
 If you use agents via their `.app` then it’s easier:
