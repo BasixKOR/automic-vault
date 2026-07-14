@@ -469,7 +469,7 @@ fn is_hardened_stub(path: &Path, uid: u32, gid: u32) -> bool {
     metadata.uid() == uid
         && metadata.gid() == gid
         && metadata.mode() & 0o7777 == 0o6755
-        && stub_matches_source(path)
+        && is_managed_stub_file(path)
 }
 
 fn stub_matches_source(path: &Path) -> bool {
@@ -635,6 +635,18 @@ mod tests {
         }
         let _ = fs::remove_file(source);
         let _ = fs::remove_file(installed);
+    }
+
+    #[test]
+    fn managed_outdated_stub_remains_hardened() {
+        let path = temp_path("brew-stub-outdated");
+        fs::write(&path, [STUB_MARKER, b" old"].concat()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o6755)).unwrap();
+        let metadata = path.metadata().unwrap();
+
+        assert!(is_hardened_stub(&path, metadata.uid(), metadata.gid()));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

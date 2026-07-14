@@ -368,12 +368,25 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
         }
     }
     if !command.stub_valid {
+        let (kind, message) = if command.hardened {
+            (
+                "stub_upgrade_required",
+                format!(
+                    "hardened launcher {stub} is out of date and should be upgraded to the current {hardener} implementation"
+                ),
+            )
+        } else {
+            (
+                "stub_content_invalid",
+                format!(
+                    "launcher {stub} does not contain the expected {hardener} hardening implementation"
+                ),
+            )
+        };
         issues.push(DoctorIssue {
-            kind: "stub_content_invalid",
+            kind,
             command: Some(command.name.clone()),
-            message: format!(
-                "launcher {stub} does not contain the expected {hardener} hardening implementation"
-            ),
+            message,
             remediation: format!(
                 "Run `sudo av harden {hardener}` to replace it. Manual repair: {}",
                 manual_stub_repair(hardener, command, stub)
@@ -822,6 +835,36 @@ mod tests {
         )
         .unwrap();
         assert!(healthy[0].issues.is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn outdated_hardened_stub_reports_upgrade_without_becoming_unhardened() {
+        let dir = temp_dir("stub-upgrade");
+        let stub = executable_file(&dir.join("brew"));
+        let target = executable_file(&dir.join("brew-target"));
+        let mut outdated = command(
+            "brew",
+            true,
+            stub.to_str().unwrap(),
+            target.to_str().unwrap(),
+        );
+        outdated.stub_valid = false;
+
+        let results = diagnose(
+            vec![hardener("brew", true, outdated)],
+            None,
+            dir.as_os_str(),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].issues[0].kind, "stub_upgrade_required");
+        assert!(results[0].issues[0].message.contains("out of date"));
+        assert!(
+            results[0].issues[0]
+                .remediation
+                .contains("sudo av harden brew")
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
