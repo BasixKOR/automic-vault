@@ -104,7 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
             } onAccessRequest: { [weak self] record in
-                Task { @MainActor in self?.recordAccessRequest(record) }
+                appendAccessRequestRecord(record)
+                Task { @MainActor in self?.didRecordAccessRequest(record) }
             }
             try approval.start()
             self.approval = approval
@@ -380,8 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAutoApprovalMenuItems()
     }
 
-    private func recordAccessRequest(_ record: AccessRequestRecord) {
-        appendAccessRequestRecord(record)
+    private func didRecordAccessRequest(_ record: AccessRequestRecord) {
         if record.decision == "Denied", let menuRecord = autoApprovalRecord(record) {
             recordMenuAccess(menuRecord)
         }

@@ -7,6 +7,7 @@ public let automicVaultKeychainService = "com.automicvault.isotope"
 public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
+private let accessRequestLogLock = NSLock()
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]
@@ -861,6 +862,8 @@ public func appendAccessRequestRecord(
     defaults: UserDefaults = .standard,
     key: String = accessRequestLogDefaultsKey
 ) {
+    accessRequestLogLock.lock()
+    defer { accessRequestLogLock.unlock() }
     let records = Array(([record] + loadAccessRequestRecords(defaults: defaults, key: key)).prefix(50))
     if let data = try? JSONEncoder().encode(records) {
         defaults.set(data, forKey: key)
