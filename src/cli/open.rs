@@ -3,7 +3,7 @@ use std::process::Command;
 
 pub(super) fn run<W: Write>(stderr: &mut W) -> i32 {
     match Command::new("/usr/bin/open")
-        .args(["-a", "Automic Vault"])
+        .args(["-a", "Automic Vault", "--args", "--open-main-window"])
         .output()
     {
         Ok(output) if output.status.success() => 0,

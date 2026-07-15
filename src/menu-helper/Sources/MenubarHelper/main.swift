@@ -12,6 +12,8 @@ import SwiftUI
 
 private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
+private let openMainWindowArgument = "--open-main-window"
+private let pendingMainWindowKey = "pendingMainWindow"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
@@ -51,11 +53,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusMenu()
 
         if shouldHandOffToLaunchAgent() {
+            if CommandLine.arguments.contains(openMainWindowArgument) {
+                UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
+            }
             handOffToLaunchAgent()
             return
         }
 
-        startServices()
+        startServicesAndOpenMainWindowIfRequested()
     }
 
     private func installStatusMenu() {
@@ -87,12 +92,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .success(true):
                     NSApp.terminate(nil)
                 case .success(false):
-                    self.startServices()
+                    self.startServicesAndOpenMainWindowIfRequested()
                 case .failure(let error):
+                    UserDefaults.standard.removeObject(forKey: pendingMainWindowKey)
                     NSAlert(error: error).runModal()
                     NSApp.terminate(nil)
                 }
             }
+        }
+    }
+
+    private func consumePendingMainWindow() -> Bool {
+        guard UserDefaults.standard.bool(forKey: pendingMainWindowKey) else { return false }
+        UserDefaults.standard.removeObject(forKey: pendingMainWindowKey)
+        return true
+    }
+
+    private func startServicesAndOpenMainWindowIfRequested() {
+        startServices()
+        if shouldOpenMainWindow(pending: consumePendingMainWindow()) {
+            openMainWindow()
         }
     }
 
@@ -1680,6 +1699,13 @@ private func isLaunchAgentInstance(
     environment["XPC_SERVICE_NAME"] == approvalLaunchAgentName
 }
 
+private func shouldOpenMainWindow(
+    arguments: [String] = CommandLine.arguments,
+    pending: Bool
+) -> Bool {
+    pending || arguments.contains(openMainWindowArgument)
+}
+
 private func runLaunchctl(_ arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
@@ -3136,6 +3162,9 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
           shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
           !shouldHandOffToLaunchAgent(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
           !shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: nil),
+          shouldOpenMainWindow(arguments: ["AutomicVaultMenubar", openMainWindowArgument], pending: false),
+          shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: true),
+          !shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: false),
           plist["ProgramArguments"] as? [String] == [executableURL.path],
           String(decoding: configured, as: UTF8.self).contains("/Applications/") == false
     else {
