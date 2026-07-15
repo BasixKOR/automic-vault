@@ -43,12 +43,20 @@ if [[ "$publish" -eq 1 && -z "${POSTHOG_API_KEY:-}" ]]; then
   echo "error: --publish requires POSTHOG_API_KEY" >&2
   exit 64
 fi
+if [[ "$publish" -eq 1 && -z "${AWS_S3_BUCKET:-}" ]]; then
+  echo "error: --publish requires AWS_S3_BUCKET" >&2
+  exit 64
+fi
 if [[ "$publish" -eq 1 && -z "$VERSION" ]]; then
   echo "error: could not read package.version from Cargo.toml" >&2
   exit 64
 fi
 if [[ "$publish" -eq 1 ]] && ! command -v gh >/dev/null 2>&1; then
   echo "error: --publish requires gh" >&2
+  exit 64
+fi
+if [[ "$publish" -eq 1 ]] && ! command -v aws >/dev/null 2>&1; then
+  echo "error: --publish requires aws" >&2
   exit 64
 fi
 publish_release() {
@@ -74,6 +82,19 @@ publish_release() {
     --target "$head" \
     --title "$tag" \
     --generate-notes
+}
+publish_dmg() {
+  local dmg="$1"
+  local distribution_id
+  aws s3 cp "$dmg" "s3://$AWS_S3_BUCKET/Automic Vault.dmg"
+  distribution_id="$(
+    aws cloudfront list-distributions \
+      --query "DistributionList.Items[?contains(Aliases.Items, \`$AWS_S3_BUCKET\`)].Id | [0]" \
+      --output text
+  )"
+  aws cloudfront create-invalidation \
+    --distribution-id "$distribution_id" \
+    --paths '/*.dmg'
 }
 
 MENU_HELPER="$ROOT/src/menu-helper"
@@ -186,6 +207,7 @@ if [[ "$dmg" -eq 1 ]]; then
   fi
   if [[ "$publish" -eq 1 ]]; then
     publish_release "$VERSION" "$DMG"
+    publish_dmg "$DMG"
   fi
 fi
 if [[ "$install" -eq 1 ]]; then
