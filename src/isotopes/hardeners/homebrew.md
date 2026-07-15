@@ -15,6 +15,19 @@ The root phase creates the `automic` user and `vault` group when needed, owns
 `/opt/homebrew` as `automic:vault`, and installs the launcher as
 `06755 automic:vault`.
 
+## Rationale
+
+Modern macOS has numerous protections to prevent malware or agents from
+altering installed sofware.
+
+These protections apply to `.apps` and other bundle types, not to command line
+tools. Command line tools are protected by their parent `.app` which is often
+a Terminal but nowadays is often an Agent Harness.
+
+Thus we need to apply UNIX security permissions to our command line tools to
+ensure what is installed *remains what is installed*. Automic Vault hardening
+is that solution.
+
 ## Details
 
 - This targets Apple Silicon Homebrew at `/opt/homebrew`.
