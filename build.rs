@@ -3,11 +3,17 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let profile_dir = out.ancestors().nth(3).unwrap();
+    println!(
+        "cargo:rustc-env=AV_CARGO_PROFILE_DIR={}",
+        profile_dir.display()
+    );
+
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
 
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let object = out.join("xpc_shim.o");
     let library = out.join("libav_xpc_shim.a");
 

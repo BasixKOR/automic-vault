@@ -286,7 +286,7 @@ fn build_env(
 }
 
 fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
-    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+    if let Some(dir) = crate::test_keychain_dir() {
         let path = std::path::PathBuf::from(dir).join(key);
         return match std::fs::read_to_string(&path) {
             Ok(value) => Ok(Some(value)),
@@ -336,7 +336,7 @@ pub(super) fn validate_key_name(key: &str) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn approve_injection(request: &ApprovalRequest) -> Result<SecretValues, String> {
-    if std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some() {
+    if crate::test_keychain_dir().is_some() {
         return Ok(SecretValues::new());
     }
     xpc_approve_injection(request)

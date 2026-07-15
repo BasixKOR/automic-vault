@@ -3,7 +3,7 @@ use std::path::PathBuf;
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 
 pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
-    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+    if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
             .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
         let path = PathBuf::from(dir).join(account);
@@ -14,7 +14,7 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
 }
 
 pub(crate) fn load_secret(account: &str) -> Result<String, String> {
-    if let Some(dir) = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR") {
+    if let Some(dir) = crate::test_keychain_dir() {
         let path = PathBuf::from(dir).join(account);
         return std::fs::read_to_string(&path)
             .map_err(|err| format!("failed to read {}: {err}", path.display()));

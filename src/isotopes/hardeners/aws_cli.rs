@@ -25,7 +25,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
     }
     let is_root = unsafe { geteuid() } == 0;
-    let has_test_keychain = std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").is_some();
+    let has_test_keychain = crate::test_keychain_dir().is_some();
     let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
     let credentials_path = if should_import_credentials {
         Some(aws_credentials_path()?)

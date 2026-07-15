@@ -88,6 +88,28 @@ fn av_inject_preserves_existing_env_without_replace() {
     let _ = fs::remove_dir_all(home);
 }
 
+#[test]
+fn relocated_cli_cannot_enable_the_test_keychain_hook() {
+    let home = temp_home("inject-relocated");
+    let keychain = home.join("keychain");
+    let relocated = home.join("av");
+    fs::create_dir_all(&keychain).unwrap();
+    fs::write(keychain.join("SOME_SECRET"), "must-not-leak").unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_av"), &relocated).unwrap();
+    fs::set_permissions(&relocated, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(&relocated)
+        .args(["inject", "+SOME_SECRET", "--", "env"])
+        .env("HOME", &home)
+        .env("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(!stdout(&output).contains("must-not-leak"));
+    let _ = fs::remove_dir_all(home);
+}
+
 fn stdout(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
