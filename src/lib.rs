@@ -4,6 +4,8 @@ mod secrets;
 
 pub use cli::{run, run_terminal};
 
+pub const MENU_HELPER_CODE_SIGNING_REQUIREMENT: &str = r#"anchor apple generic and certificate leaf[subject.OU] = ZU76A67LGU and identifier "com.automicvault""#;
+
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     cli::bash_shell_secret_insecurity_reasons()
 }
