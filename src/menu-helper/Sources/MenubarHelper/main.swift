@@ -370,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
         recordMenuAccess(record)
-        showAutoApprovedToast(record, below: statusItem.button) { [weak self] in
+        showAutomaticAccessToast(record, below: statusItem.button) { [weak self] in
             self?.showAutoApproval(id: record.accessRequestID)
         }
     }
@@ -387,6 +387,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func didRecordAccessRequest(_ record: AccessRequestRecord) {
         if record.decision == "Denied", let menuRecord = autoApprovalRecord(record) {
             recordMenuAccess(menuRecord)
+            if shouldShowAutomaticAccessToast(record) {
+                showAutomaticAccessToast(menuRecord, below: statusItem.button) { [weak self] in
+                    self?.showAutoApproval(id: menuRecord.accessRequestID)
+                }
+            }
         }
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
     }
@@ -496,6 +501,10 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
         keys: record.keys,
         wasDenied: wasDenied
     )
+}
+
+private func shouldShowAutomaticAccessToast(_ record: AccessRequestRecord) -> Bool {
+    record.decision == "Denied" && record.approvalSourceLabel == "Auto"
 }
 
 private func accessRequestRecord(
@@ -2383,7 +2392,15 @@ private struct ApprovalPromptSectionView: View {
     }
 }
 
-private struct AutoApprovedToastView: View {
+private func automaticAccessDecisionLabel(wasDenied: Bool) -> String {
+    wasDenied ? "AUTO REJECTED" : "AUTO APPROVED"
+}
+
+private func automaticAccessDecisionSymbol(wasDenied: Bool) -> String {
+    wasDenied ? "xmark.shield.fill" : "checkmark.shield.fill"
+}
+
+private struct AutomaticAccessToastView: View {
     let record: AutoApprovalRecord
     let open: () -> Void
 
@@ -2392,7 +2409,7 @@ private struct AutoApprovedToastView: View {
             content
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Open approval details for \(record.command)")
+        .accessibilityLabel("Open \(record.wasDenied ? "rejection" : "approval") details for \(record.command)")
     }
 
     private var content: some View {
@@ -2408,17 +2425,17 @@ private struct AutoApprovedToastView: View {
                     Text(record.launcher)
                         .font(.headline)
                         .lineLimit(1)
-                    Text("AUTO APPROVED")
+                    Text(automaticAccessDecisionLabel(wasDenied: record.wasDenied))
                         .font(.caption2.weight(.semibold))
                         .tracking(1.2)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "checkmark.shield.fill")
+                Image(systemName: automaticAccessDecisionSymbol(wasDenied: record.wasDenied))
                     .font(.title2)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.green)
-                    .accessibilityLabel("Approved")
+                    .foregroundStyle(record.wasDenied ? .red : .green)
+                    .accessibilityLabel(record.wasDenied ? "Rejected" : "Approved")
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -2456,7 +2473,7 @@ private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: 
 }
 
 @MainActor
-private func showAutoApprovedToast(
+private func showAutomaticAccessToast(
     _ record: AutoApprovalRecord,
     below button: NSStatusBarButton?,
     open: @escaping () -> Void
@@ -2469,7 +2486,7 @@ private func showAutoApprovedToast(
         backing: .buffered,
         defer: false
     )
-    let hostingView = NSHostingView(rootView: AutoApprovedToastView(record: record) { [weak window] in
+    let hostingView = NSHostingView(rootView: AutomaticAccessToastView(record: record) { [weak window] in
         if let window {
             window.orderOut(nil)
             toastWindows.removeAll { $0 === window }
@@ -3177,7 +3194,39 @@ private func runMenuStatusSelfCheck() -> Int32 {
               keys: recordedApproval.keys,
               detail: recordedApproval.detail
           )),
+          shouldShowAutomaticAccessToast(AccessRequestRecord(
+              date: recordedApproval.date,
+              tool: "gh",
+              command: "gh auth status",
+              decision: "Denied",
+              approvalSource: "Auto",
+              reason: "Unknown launcher",
+              launcher: "vaulty-sessiond",
+              callerPath: recordedApproval.callerPath,
+              target: recordedApproval.target,
+              cwd: recordedApproval.cwd,
+              keys: recordedApproval.keys,
+              detail: recordedApproval.detail
+          )),
+          !shouldShowAutomaticAccessToast(AccessRequestRecord(
+              date: recordedApproval.date,
+              tool: "gh",
+              command: "gh auth token",
+              decision: "Denied",
+              approvalSource: "Manual",
+              reason: "Denied in prompt",
+              launcher: recordedApproval.launcher,
+              callerPath: recordedApproval.callerPath,
+              target: recordedApproval.target,
+              cwd: recordedApproval.cwd,
+              keys: recordedApproval.keys,
+              detail: recordedApproval.detail
+          )),
           restoredDenial.wasDenied,
+          automaticAccessDecisionLabel(wasDenied: restoredDenial.wasDenied) == "AUTO REJECTED",
+          automaticAccessDecisionSymbol(wasDenied: restoredDenial.wasDenied) == "xmark.shield.fill",
+          automaticAccessDecisionLabel(wasDenied: restoredApproval.wasDenied) == "AUTO APPROVED",
+          automaticAccessDecisionSymbol(wasDenied: restoredApproval.wasDenied) == "checkmark.shield.fill",
           autoApprovalTitle(restoredDenial, formatter: formatter) == "5:15 AM – Codex was denied use of gh",
           autoApprovalCommand(request) == """
           aws \\
