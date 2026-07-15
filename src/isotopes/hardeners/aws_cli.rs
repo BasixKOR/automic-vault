@@ -111,7 +111,7 @@ pub(crate) fn detect() -> HardenerDetection {
             name: "aws-vault",
             path: aws_vault_path().display().to_string(),
         });
-    if std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
         detection.commands[0]
             .required_paths
             .push(RequiredExecutable {
@@ -128,7 +128,7 @@ pub(crate) fn detect() -> HardenerDetection {
 }
 
 fn root_stub_requirements(path: &Path) -> StubRequirements {
-    let test_ids = std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").and_then(|_| {
+    let test_ids = crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").and_then(|_| {
         path.parent()
             .and_then(|parent| parent.metadata().ok())
             .map(|metadata| (metadata.uid(), metadata.gid()))
@@ -208,13 +208,13 @@ fn is_aws_stub(path: &Path) -> bool {
 }
 
 fn aws_vault_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(AWS_VAULT_PATH))
 }
 
 fn aws_stub_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_AWS_STUB_PATH")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(AWS_STUB_PATH))
 }

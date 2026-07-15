@@ -107,7 +107,7 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 }
 
 fn supabase_cli_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(SUPABASE_CLI_PATH).to_path_buf())
 }
@@ -143,7 +143,7 @@ fn read_plaintext_tokens(paths: &[PathBuf]) -> Result<Vec<String>, String> {
 }
 
 fn read_legacy_keychain_tokens() -> Vec<String> {
-    if let Ok(token) = std::env::var("AUTOMIC_VAULT_TEST_SUPABASE_LEGACY_TOKEN") {
+    if let Some(token) = crate::test_env_string("AUTOMIC_VAULT_TEST_SUPABASE_LEGACY_TOKEN") {
         return vec![token];
     }
     KEYCHAIN_ACCOUNTS
@@ -173,7 +173,7 @@ fn remove_plaintext_token(path: &Path) -> Result<(), String> {
 }
 
 fn delete_legacy_keychain_token(account: &str) -> Result<(), String> {
-    if std::env::var_os("AUTOMIC_VAULT_TEST_SUPABASE_LEGACY_TOKEN").is_some() {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_SUPABASE_LEGACY_TOKEN").is_some() {
         return Ok(());
     }
     let output = Command::new("/usr/bin/security")

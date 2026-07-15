@@ -325,16 +325,15 @@ fn stub_path(command: &str) -> PathBuf {
 }
 
 fn test_target_dir() -> Option<PathBuf> {
-    std::env::var_os("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR").map(PathBuf::from)
+    crate::test_env_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR").map(PathBuf::from)
 }
 
 fn test_stub_dir() -> Option<PathBuf> {
-    std::env::var_os("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR").map(PathBuf::from)
+    crate::test_env_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR").map(PathBuf::from)
 }
 
 fn effective_uid() -> u32 {
-    std::env::var("AUTOMIC_VAULT_TEST_EUID")
-        .ok()
+    crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
         .and_then(|value| value.parse().ok())
         .unwrap_or_else(actual_uid)
 }

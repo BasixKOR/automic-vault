@@ -294,7 +294,7 @@ fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
             Err(err) => Err(format!("failed to read {}: {err}", path.display())),
         };
     }
-    if let Ok(value) = std::env::var(format!("AUTOMIC_VAULT_TEST_{key}")) {
+    if let Some(value) = crate::test_env_string(&format!("AUTOMIC_VAULT_TEST_{key}")) {
         return Ok(Some(value));
     }
     Ok(None)

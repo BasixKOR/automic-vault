@@ -191,7 +191,7 @@ fn doctor_diagnostics(
         (Some(uid), Some(gid)) => state_directory_diagnostics(prefix, uid, gid),
         _ => Vec::new(),
     };
-    if std::env::var_os("AUTOMIC_VAULT_TEST_AUTOMIC_UID").is_none()
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_AUTOMIC_UID").is_none()
         && let Some(gid) = gid
     {
         diagnostics.extend(account_diagnostics(gid));
@@ -483,7 +483,7 @@ fn chown_recursive(prefix: &Path) -> Result<(), String> {
 }
 
 fn source_user_home() -> Result<Option<PathBuf>, String> {
-    if let Some(home) = std::env::var_os("AUTOMIC_VAULT_TEST_BREW_USER_HOME") {
+    if let Some(home) = crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_USER_HOME") {
         return Ok(Some(home.into()));
     }
     let Some(user) = std::env::var_os("SUDO_USER").and_then(|user| user.into_string().ok()) else {
@@ -691,29 +691,29 @@ fn effective_uid() -> u32 {
 }
 
 fn test_u32(name: &str) -> Option<u32> {
-    std::env::var(name).ok()?.parse().ok()
+    crate::test_env_string(name)?.parse().ok()
 }
 
 fn brew_prefix() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_PREFIX")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(BREW_PREFIX))
 }
 
 fn brew_target_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_TARGET")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_TARGET")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(BREW_TARGET))
 }
 
 fn brew_stub_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_STUB")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_STUB")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(BREW_STUB))
 }
 
 fn brew_stub_source_path() -> Result<PathBuf, String> {
-    if let Some(path) = std::env::var_os("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE") {
+    if let Some(path) = crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE") {
         return Ok(PathBuf::from(path));
     }
     let app_stub = PathBuf::from(APP_BREW_STUB);

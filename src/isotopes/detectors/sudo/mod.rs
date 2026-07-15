@@ -26,13 +26,13 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
 }
 
 fn pam_dir() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(PAM_DIR))
 }
 
 pub(crate) fn biometrics_available() -> bool {
-    if let Some(value) = std::env::var_os("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE") {
+    if let Some(value) = crate::test_env_var("AUTOMIC_VAULT_TEST_BIOMETRICS_AVAILABLE") {
         return value != "0";
     }
 

@@ -113,7 +113,7 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 }
 
 fn gh_cli_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_GH_CLI_PATH")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(GH_CLI_PATH).to_path_buf())
 }
@@ -240,7 +240,7 @@ fn configured_hosts(hosts_paths: &[PathBuf]) -> Vec<(String, Option<String>)> {
 }
 
 fn legacy_token(host: &str, user: Option<&str>) -> Option<String> {
-    if let Ok(token) = std::env::var("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN") {
+    if let Some(token) = crate::test_env_string("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN") {
         return Some(token);
     }
     let service = format!("gh:{host}");
@@ -294,7 +294,7 @@ fn remove_plaintext_tokens(path: &Path) -> Result<(), String> {
 }
 
 fn delete_legacy_keychain_tokens(host: &str, user: Option<&str>) -> Result<(), String> {
-    if std::env::var_os("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN").is_some() {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN").is_some() {
         return Ok(());
     }
     let service = format!("gh:{host}");

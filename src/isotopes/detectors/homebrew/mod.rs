@@ -83,13 +83,13 @@ fn current_user_can_modify_directory(path: &Path) -> Result<bool, String> {
 }
 
 fn brew_prefix() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_PREFIX")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew"))
 }
 
 fn brew_target_path() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_BREW_TARGET")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_TARGET")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/brew"))
 }

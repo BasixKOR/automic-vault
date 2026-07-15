@@ -6,7 +6,7 @@ pub use cli::{run, run_terminal};
 
 pub const MENU_HELPER_CODE_SIGNING_REQUIREMENT: &str = r#"anchor apple generic and certificate leaf[subject.OU] = ZU76A67LGU and identifier "com.automicvault""#;
 
-fn test_keychain_dir() -> Option<std::path::PathBuf> {
+fn test_env_var(name: &str) -> Option<std::ffi::OsString> {
     if !cfg!(debug_assertions) {
         return None;
     }
@@ -16,9 +16,16 @@ fn test_keychain_dir() -> Option<std::path::PathBuf> {
         .ok()?;
     executable
         .starts_with(cargo_profile)
-        .then(|| std::env::var_os("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR"))
+        .then(|| std::env::var_os(name))
         .flatten()
-        .map(Into::into)
+}
+
+fn test_env_string(name: &str) -> Option<String> {
+    test_env_var(name)?.into_string().ok()
+}
+
+fn test_keychain_dir() -> Option<std::path::PathBuf> {
+    test_env_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR").map(Into::into)
 }
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {

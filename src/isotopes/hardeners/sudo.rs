@@ -41,7 +41,7 @@ fn green(text: &str, color: bool) -> String {
 }
 
 fn pam_dir() -> PathBuf {
-    std::env::var_os("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR")
+    crate::test_env_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(PAM_DIR))
 }
