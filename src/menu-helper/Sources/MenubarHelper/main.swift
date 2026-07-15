@@ -470,11 +470,12 @@ private func autoApprovalRecord(
     script: ScriptApproval?,
     launcher: LauncherIdentity
 ) -> AutoApprovalRecord {
-    AutoApprovalRecord(
+    let requester = approvalPromptRequester(launcher: launcher, fallback: launcher.path)
+    return AutoApprovalRecord(
         accessRequestID: accessRequestID,
         date: Date(),
-        launcher: shortAppName(launcher.identifier),
-        launcherIconPath: appBundleURL(containing: launcher.path)?.path ?? launcher.path,
+        launcher: requester.name,
+        launcherIconPath: requester.iconPath,
         tool: autoApprovalToolName(request, scriptPath: script?.path),
         command: autoApprovalCommand(request, scriptPath: script?.path),
         keys: request.keys,
@@ -514,7 +515,7 @@ private func accessRequestRecord(
         decision: decision,
         approvalSource: approvalSource,
         reason: reason,
-        launcher: launcher.map { shortAppName($0.identifier) },
+        launcher: launcher.map { approvalPromptRequester(launcher: $0, fallback: $0.path).name },
         callerPath: callerPath,
         target: request.target,
         cwd: request.cwd,
@@ -2068,7 +2069,9 @@ private func approvalPromptRequester(
     if let appURL = appBundleURL(containing: launcher.path)
         ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: launcher.identifier)
     {
-        let name = Bundle(url: appURL)?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let bundle = Bundle(url: appURL)
+        let name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? appURL.deletingPathExtension().lastPathComponent
         return (name, appURL.path)
     }
