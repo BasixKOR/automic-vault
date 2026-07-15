@@ -135,9 +135,6 @@ if [[ "$publish" -eq 1 ]]; then
   plutil -insert PostHogAPIKey -string "$POSTHOG_API_KEY" "$CONTENTS/Info.plist"
 fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
-if [[ "$run" -eq 1 && "$install" -eq 0 ]]; then
-  plutil -replace ProgramArguments -json "[\"$MACOS/AutomicVaultMenubar\"]" "$LAUNCH_AGENT_PLIST"
-fi
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
   --compile "$ICON_BUILD" \
@@ -235,6 +232,9 @@ if [[ "$install" -eq 1 ]]; then
   sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
+  plutil -replace ProgramArguments -json \
+    "[\"$INSTALLED_APP/Contents/MacOS/AutomicVaultMenubar\"]" \
+    "$INSTALLED_LAUNCH_AGENT"
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT"
   launchctl enable "gui/$(id -u)/$LAUNCH_AGENT_NAME"

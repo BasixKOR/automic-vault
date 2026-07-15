@@ -6,7 +6,7 @@
   <string>com.automicvault.menubar-helper</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar</string>
+    <string>@AUTOMIC_VAULT_EXECUTABLE@</string>
   </array>
   <key>MachServices</key>
   <dict>

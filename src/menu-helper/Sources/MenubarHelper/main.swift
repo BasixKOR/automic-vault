@@ -1622,7 +1622,8 @@ private struct AppError: LocalizedError {
 
 private func handOffToLaunchAgentIfNeeded() throws -> Bool {
     guard shouldHandOffToLaunchAgent(),
-          let launchAgent = bundledLaunchAgentURL()
+          let launchAgent = bundledLaunchAgentURL(),
+          let executableURL = Bundle.main.executableURL
     else {
         return false
     }
@@ -1633,8 +1634,9 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
         at: installed.deletingLastPathComponent(),
         withIntermediateDirectories: true
     )
-    try? FileManager.default.removeItem(at: installed)
-    try FileManager.default.copyItem(at: launchAgent, to: installed)
+    let template = try Data(contentsOf: launchAgent)
+    try configuredLaunchAgent(template: template, executableURL: executableURL)
+        .write(to: installed, options: .atomic)
 
     let domain = "gui/\(getuid())"
     try? runLaunchctl(["bootout", "\(domain)/\(approvalLaunchAgentName)"])
@@ -1647,6 +1649,15 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
     try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
     try runLaunchctl(["kickstart", "\(domain)/\(approvalLaunchAgentName)"])
     return true
+}
+
+private func configuredLaunchAgent(template: Data, executableURL: URL) throws -> Data {
+    guard var plist = try PropertyListSerialization.propertyList(from: template, format: nil) as? [String: Any]
+    else {
+        throw AppError("The bundled launch agent is invalid.")
+    }
+    plist["ProgramArguments"] = [executableURL.path]
+    return try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
 }
 
 private func shouldHandOffToLaunchAgent(
@@ -3108,11 +3119,24 @@ private func runTransientApprovalSelfCheck() -> Int32 {
 }
 
 private func runLaunchAgentHandoffSelfCheck() -> Int32 {
+    let template = try! PropertyListSerialization.data(
+        fromPropertyList: [
+            "Label": approvalLaunchAgentName,
+            "ProgramArguments": ["@AUTOMIC_VAULT_EXECUTABLE@"],
+        ],
+        format: .xml,
+        options: 0
+    )
+    let executableURL = URL(fileURLWithPath: "/Users/example/My Apps/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar")
+    let configured = try! configuredLaunchAgent(template: template, executableURL: executableURL)
+    let plist = try! PropertyListSerialization.propertyList(from: configured, format: nil) as! [String: Any]
     guard !isLaunchAgentInstance(environment: [:]),
           isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]),
           shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
           !shouldHandOffToLaunchAgent(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
-          !shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: nil)
+          !shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: nil),
+          plist["ProgramArguments"] as? [String] == [executableURL.path],
+          String(decoding: configured, as: UTF8.self).contains("/Applications/") == false
     else {
         return 1
     }
