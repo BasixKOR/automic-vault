@@ -64,11 +64,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
         menu.addItem(.separator())
+        checkForUpdatesItem.target = self
+        menu.addItem(checkForUpdatesItem)
+        menu.addItem(.separator())
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
-        checkForUpdatesItem.target = self
-        menu.addItem(checkForUpdatesItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         menu.delegate = self
