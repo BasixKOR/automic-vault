@@ -42,9 +42,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "│").ok();
     writeln!(stdout, "◆ This will use aws-vault for AWS credentials.").ok();
     writeln!(stdout, "│").ok();
-    if !should_import_credentials {
-        writeln!(stdout, "├─ skip credential import while running as root").ok();
-    } else if credentials.is_some() {
+    if credentials.is_some() {
         let credentials_path = credentials_path.as_ref().unwrap();
         writeln!(
             stdout,
@@ -93,7 +91,12 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         return Ok(());
     }
     install_aws_stub(&aws_stub_path())?;
-    writeln!(stdout, "╰─ wrote {AWS_STUB_PATH}").ok();
+    if should_import_credentials {
+        writeln!(stdout, "╰─ wrote {AWS_STUB_PATH}").ok();
+    } else {
+        writeln!(stdout, "├─ wrote {AWS_STUB_PATH}").ok();
+        writeln!(stdout, "╰─ next: run `av harden aws` to import credentials").ok();
+    }
     Ok(())
 }
 
