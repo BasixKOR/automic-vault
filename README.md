@@ -1,6 +1,26 @@
 # Automic Vault
 
-> The missing security layer for the macOS command line.
+> The missing command‐line security‐layer for Mac.
+
+## Quickstart
+
+- Download:
+  - https://github.com/automic-vault/automic-vault/releases/latest
+- Homebrew:
+  ```sh
+  brew install --cask automic-vault/isotopes/automic-vault \
+    && av open
+  ```
+- cURL one-liner:
+  ```sh
+  curl -fsSL https://www.automicvault.com/install.sh | bash && av open
+  # ^^ read it first
+  ```
+
+&nbsp;
+
+
+## What is Automic Vault?
 
 Automic Vault runs in your menu bar detecting existing and new threats to the
 integrity of your local developer environment’s integrity & security.
