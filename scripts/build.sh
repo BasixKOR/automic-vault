@@ -159,6 +159,12 @@ if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
   security cms -D -i "$MENU_HELPER_PROFILE" |
     plutil -extract Entitlements xml1 -o "$MENU_HELPER_ENTITLEMENTS" -
+  # Existing releases stored items in the wildcard because it was the first
+  # access group. Put the private group first so the app can migrate them.
+  # Remove the wildcard after the migration release has been deployed.
+  plutil -replace keychain-access-groups -json \
+    "[\"${APPLE_TEAM_ID}.com.automicvault\",\"${APPLE_TEAM_ID}.*\"]" \
+    "$MENU_HELPER_ENTITLEMENTS"
   app_codesign_args+=(--entitlements "$MENU_HELPER_ENTITLEMENTS")
 fi
 codesign "${app_codesign_args[@]}" "$APP"

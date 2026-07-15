@@ -8,6 +8,8 @@ public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 private let accessRequestLogLock = NSLock()
+private let canonicalKeychainAccessGroup = "ZU76A67LGU.com.automicvault"
+private let legacyWildcardKeychainAccessGroup = "ZU76A67LGU.*"
 
 public struct DashboardSnapshot: Equatable, Sendable {
     public var detectors: [DetectorMetadata]
@@ -873,13 +875,15 @@ public func appendAccessRequestRecord(
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
-    let query: [String: Any] = [
+    migrateLegacyKeychainItems(service: service)
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecUseDataProtectionKeychain as String: true,
         kSecReturnAttributes as String: true,
         kSecMatchLimit as String: kSecMatchLimitAll,
     ]
+    addCanonicalAccessGroup(to: &query)
     var result: CFTypeRef?
     guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
           let items = result as? [[String: Any]]
@@ -939,22 +943,24 @@ public func saveStoredSecret(account: String, value: String, service: String = a
 }
 
 public func renameStoredSecret(account: String, to newAccount: String, service: String = automicVaultKeychainService) -> OSStatus {
-    let query: [String: Any] = [
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
     ]
+    addCanonicalAccessGroup(to: &query)
     return SecItemUpdate(query as CFDictionary, [kSecAttrAccount as String: newAccount] as CFDictionary)
 }
 
 public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
-    let query: [String: Any] = [
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
     ]
+    addCanonicalAccessGroup(to: &query)
     return SecItemDelete(query as CFDictionary)
 }
 
@@ -977,27 +983,33 @@ private enum KeychainDataLoad {
 }
 
 private func loadKeychainDataResult(service: String, account: String) -> KeychainDataLoad {
-    let query: [String: Any] = [
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
         kSecReturnData as String: true,
     ]
+    addCanonicalAccessGroup(to: &query)
     var result: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    var status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound, migrateLegacyKeychainItem(service: service, account: account) {
+        result = nil
+        status = SecItemCopyMatching(query as CFDictionary, &result)
+    }
     if status == errSecItemNotFound { return .notFound }
     guard status == errSecSuccess, let data = result as? Data else { return .failure(status) }
     return .success(data)
 }
 
 private func saveKeychainData(_ data: Data, service: String, account: String) -> OSStatus {
-    let query: [String: Any] = [
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
     ]
+    addCanonicalAccessGroup(to: &query)
     let attributes: [String: Any] = [
         kSecValueData as String: data,
         kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
@@ -1010,6 +1022,72 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     addQuery[kSecValueData as String] = data
     addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
     return SecItemAdd(addQuery as CFDictionary, nil)
+}
+
+private func addCanonicalAccessGroup(to query: inout [String: Any]) {
+    // Swift package tests are not signed as the app and cannot claim its group.
+    guard Bundle.main.bundleIdentifier == "com.automicvault" else { return }
+    query[kSecAttrAccessGroup as String] = canonicalKeychainAccessGroup
+}
+
+private func migrateLegacyKeychainItems(service: String) {
+    guard Bundle.main.bundleIdentifier == "com.automicvault" else { return }
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccessGroup as String: legacyWildcardKeychainAccessGroup,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecReturnAttributes as String: true,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let items = result as? [[String: Any]]
+    else { return }
+    for item in items {
+        guard let account = item[kSecAttrAccount as String] as? String else { continue }
+        _ = migrateLegacyKeychainItem(service: service, account: account)
+    }
+}
+
+@discardableResult
+private func migrateLegacyKeychainItem(service: String, account: String) -> Bool {
+    guard Bundle.main.bundleIdentifier == "com.automicvault" else { return false }
+    let legacyQuery: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecAttrAccessGroup as String: legacyWildcardKeychainAccessGroup,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecReturnData as String: true,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(legacyQuery as CFDictionary, &result) == errSecSuccess,
+          let data = result as? Data
+    else { return false }
+
+    var addQuery: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecAttrAccessGroup as String: canonicalKeychainAccessGroup,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecValueData as String: data,
+        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+    ]
+    let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+    guard addStatus == errSecSuccess || addStatus == errSecDuplicateItem else { return false }
+    addQuery.removeValue(forKey: kSecValueData as String)
+    addQuery.removeValue(forKey: kSecAttrAccessible as String)
+    var exactResult: CFTypeRef?
+    addQuery[kSecReturnData as String] = true
+    guard SecItemCopyMatching(addQuery as CFDictionary, &exactResult) == errSecSuccess,
+          exactResult as? Data == data
+    else { return false }
+
+    var deleteQuery = legacyQuery
+    deleteQuery.removeValue(forKey: kSecReturnData as String)
+    return SecItemDelete(deleteQuery as CFDictionary) == errSecSuccess
 }
 
 func appIdentifier(from requirement: String) -> String? {
