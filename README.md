@@ -9,7 +9,7 @@
 - Homebrew:
   ```sh
   brew install --cask automic-vault/isotopes/automic-vault \
-    && av open
+    && open -a "Automic Vault"
   ```
 - cURL one-liner:
   ```sh
