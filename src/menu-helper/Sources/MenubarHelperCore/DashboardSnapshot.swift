@@ -7,6 +7,7 @@ public let automicVaultKeychainService = "com.automicvault.isotope"
 public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
+public let accessRequestLogKeychainService = "com.automicvault.access-log"
 private let accessRequestLogLock = NSLock()
 private let canonicalKeychainAccessGroup = "ZU76A67LGU.com.automicvault"
 private let legacyWildcardKeychainAccessGroup = "ZU76A67LGU.*"
@@ -848,10 +849,31 @@ private func setSecretGatePolicyRecord(
 }
 
 public func loadAccessRequestRecords(
-    defaults: UserDefaults = .standard,
+    defaults: UserDefaults? = nil,
     key: String = accessRequestLogDefaultsKey
 ) -> [AccessRequestRecord] {
-    guard let data = defaults.data(forKey: key),
+    if let defaults {
+        return decodeAccessRequestRecords(defaults.data(forKey: key))
+    }
+    switch loadKeychainDataResult(service: accessRequestLogKeychainService, account: key) {
+    case .success(let data):
+        return decodeAccessRequestRecords(data)
+    case .failure:
+        return []
+    case .notFound:
+        let legacy = decodeAccessRequestRecords(UserDefaults.standard.data(forKey: key))
+        guard !legacy.isEmpty,
+              let data = try? JSONEncoder().encode(legacy),
+              saveKeychainData(data, service: accessRequestLogKeychainService, account: key) == errSecSuccess
+        else { return legacy }
+        UserDefaults.standard.removeObject(forKey: key)
+        _ = UserDefaults.standard.synchronize()
+        return legacy
+    }
+}
+
+private func decodeAccessRequestRecords(_ data: Data?) -> [AccessRequestRecord] {
+    guard let data,
           let records = try? JSONDecoder().decode([AccessRequestRecord].self, from: data)
     else {
         return []
@@ -862,15 +884,21 @@ public func loadAccessRequestRecords(
 @discardableResult
 public func appendAccessRequestRecord(
     _ record: AccessRequestRecord,
-    defaults: UserDefaults = .standard,
+    defaults: UserDefaults? = nil,
     key: String = accessRequestLogDefaultsKey
 ) -> Bool {
     accessRequestLogLock.lock()
     defer { accessRequestLogLock.unlock() }
     let records = Array(([record] + loadAccessRequestRecords(defaults: defaults, key: key)).prefix(50))
     guard let data = try? JSONEncoder().encode(records) else { return false }
-    defaults.set(data, forKey: key)
-    guard defaults.synchronize() else { return false }
+    if let defaults {
+        defaults.set(data, forKey: key)
+        guard defaults.synchronize() else { return false }
+    } else {
+        guard saveKeychainData(data, service: accessRequestLogKeychainService, account: key) == errSecSuccess else {
+            return false
+        }
+    }
     return loadAccessRequestRecords(defaults: defaults, key: key).first?.id == record.id
 }
 

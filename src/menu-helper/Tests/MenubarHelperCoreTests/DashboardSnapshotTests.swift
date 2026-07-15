@@ -505,6 +505,33 @@ func protectionPolicyMatrix(
     #expect(records.last?.command == "aws s3 ls 5")
 }
 
+@Test func productionAccessRequestLogIgnoresUserDefaultsTampering() {
+    guard dataProtectionKeychainAvailable() else { return }
+    let key = "AccessRequestLogTests-\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: key, service: accessRequestLogKeychainService) }
+    defer { UserDefaults.standard.removeObject(forKey: key) }
+    let record = AccessRequestRecord(
+        date: Date(),
+        tool: "aws",
+        command: "aws s3 ls",
+        decision: "Approved",
+        approvalSource: "Auto",
+        reason: "Read Only Access",
+        launcher: "Codex",
+        callerPath: "/usr/local/bin/av",
+        target: "/opt/homebrew/bin/aws",
+        cwd: "/tmp",
+        keys: ["AWS_ACCESS_KEY_ID"],
+        detail: nil
+    )
+
+    #expect(appendAccessRequestRecord(record, key: key))
+    UserDefaults.standard.set(Data("[]".utf8), forKey: key)
+    _ = UserDefaults.standard.synchronize()
+
+    #expect(loadAccessRequestRecords(key: key).map(\.id) == [record.id])
+}
+
 @Test func accessRequestLogInfersSourceForOlderRecords() throws {
     let data = Data("""
     [{
