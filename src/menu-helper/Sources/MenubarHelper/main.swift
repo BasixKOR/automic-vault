@@ -862,7 +862,7 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             hardeners: hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
         )
-        let resolvedPolicy = configuredGate.map { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
+        let resolvedPolicy = configuredGate.flatMap { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
         let launcher = resolvedPolicy?.launcher ?? launchers.first
         if let configuredGate,
            let resolvedPolicy,
@@ -1276,7 +1276,8 @@ private func routeKeysMatch(_ patterns: [String], _ keys: [String]) -> Bool {
 private func resolveSecretGatePolicy(
     gate: SecretGate,
     launchers: [LauncherIdentity]
-) -> ResolvedSecretGatePolicy {
+) -> ResolvedSecretGatePolicy? {
+    guard let firstLauncher = launchers.first else { return nil }
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
             return ResolvedSecretGatePolicy(
@@ -1289,7 +1290,7 @@ private func resolveSecretGatePolicy(
     return ResolvedSecretGatePolicy(
         protection: gate.defaultProtection,
         source: gate.defaultPolicyLabel,
-        launcher: launchers.first
+        launcher: firstLauncher
     )
 }
 
@@ -2663,6 +2664,25 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     }
     let readOnlyGh = ghRequest()
+    let blockedRequirement = #"identifier "com.openai.codex" and anchor apple generic"#
+    let policyGate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .fullExceptSecretDumps,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: "com.openai.codex",
+            requirement: blockedRequirement,
+            protection: .noAccess
+        )]
+    )
+    let blockedLauncher = LauncherIdentity(
+        pid: 42,
+        path: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
+        identifier: "com.openai.codex",
+        teamIdentifier: "TEAM",
+        designatedRequirement: blockedRequirement
+    )
     let ghMetadata = HardenerMetadata(
         name: "gh",
         hardened: true,
@@ -2680,7 +2700,9 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
-    guard matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
+    guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
+          resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
+          matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
           matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, hardeners: [ghMetadata]) == nil,
           matchingSecretGate(request: ghRequest(keys: []), signing: ghSigning, hardeners: [ghMetadata]) == nil,
           matchingSecretGate(request: ghRequest(op: "inject"), signing: ghSigning, hardeners: [ghMetadata]) == nil,
