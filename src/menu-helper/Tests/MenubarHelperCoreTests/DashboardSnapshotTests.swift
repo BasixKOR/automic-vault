@@ -482,7 +482,7 @@ func protectionPolicyMatrix(
     defer { defaults.removePersistentDomain(forName: defaultsName) }
 
     for index in 0..<55 {
-        appendAccessRequestRecord(AccessRequestRecord(
+        #expect(appendAccessRequestRecord(AccessRequestRecord(
             date: Date(timeIntervalSince1970: TimeInterval(index)),
             tool: "aws",
             command: "aws s3 ls \(index)",
@@ -495,7 +495,7 @@ func protectionPolicyMatrix(
             cwd: "/tmp",
             keys: ["AWS_ACCESS_KEY_ID"],
             detail: nil
-        ), defaults: defaults)
+        ), defaults: defaults))
     }
 
     let records = loadAccessRequestRecords(defaults: defaults)

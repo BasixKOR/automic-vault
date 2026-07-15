@@ -104,8 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
             } onAccessRequest: { [weak self] record in
-                appendAccessRequestRecord(record)
-                Task { @MainActor in self?.didRecordAccessRequest(record) }
+                let recorded = appendAccessRequestRecord(record)
+                if recorded {
+                    Task { @MainActor in self?.didRecordAccessRequest(record) }
+                }
+                return recorded
             }
             try approval.start()
             self.approval = approval
@@ -727,7 +730,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let teamIdentifier: String
     private let hardeners: [HardenerMetadata]?
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
-    private let onAccessRequest: @Sendable (AccessRequestRecord) -> Void
+    private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
@@ -736,7 +739,7 @@ private final class ApprovalServer: @unchecked Sendable {
         serviceName: String,
         hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
-        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Void = { appendAccessRequestRecord($0) }
+        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
@@ -875,6 +878,19 @@ private final class ApprovalServer: @unchecked Sendable {
                 let secrets = try approvedSecrets(for: request)
                 let reason = "\(configuredGate.protectionTitle(resolvedPolicy.protection)) from \(resolvedPolicy.source)"
                 let accessRequestID = UUID()
+                let record = accessRequestRecord(
+                    id: accessRequestID,
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Approved",
+                    approvalSource: "Auto",
+                    reason: reason,
+                    launcher: launcher
+                )
+                guard onAccessRequest(record) else {
+                    reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    return
+                }
                 if let launcher {
                     Task { @MainActor in
                         self.onAutoApproval(autoApprovalRecord(
@@ -885,18 +901,9 @@ private final class ApprovalServer: @unchecked Sendable {
                         ))
                     }
                 }
-                onAccessRequest(accessRequestRecord(
-                    id: accessRequestID,
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Approved",
-                    approvalSource: "Auto",
-                    reason: reason,
-                    launcher: launcher
-                ))
                 reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
-                onAccessRequest(accessRequestRecord(
+                _ = onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
                     decision: "Failed",
@@ -929,7 +936,7 @@ private final class ApprovalServer: @unchecked Sendable {
             let cachedDecision = self.transientApprovals.decision(for: transientApproval)
             if let decision = cachedDecision {
                 if decision == .denied {
-                    self.onAccessRequest(accessRequestRecord(
+                    _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
                         decision: "Denied",
@@ -942,17 +949,21 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
                 do {
                     let secrets = try self.approvedSecrets(for: request)
-                    self.onAccessRequest(accessRequestRecord(
+                    let record = accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
                         decision: "Approved",
                         approvalSource: "Auto",
                         reason: "Reused recent approval",
                         launcher: launcher
-                    ))
+                    )
+                    guard self.onAccessRequest(record) else {
+                        self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                        return
+                    }
                     self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
                 } catch {
-                    self.onAccessRequest(accessRequestRecord(
+                    _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
                         decision: "Failed",
@@ -979,7 +990,7 @@ private final class ApprovalServer: @unchecked Sendable {
             )
             guard decision != .denied else {
                 self.transientApprovals.remember(.denied, for: transientApproval)
-                self.onAccessRequest(accessRequestRecord(
+                _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
                     decision: "Denied",
@@ -990,20 +1001,24 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
-            self.transientApprovals.remember(.approved, for: transientApproval)
             do {
                 let secrets = try self.approvedSecrets(for: request)
-                self.onAccessRequest(accessRequestRecord(
+                let record = accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
                     decision: "Approved",
                     approvalSource: "Manual",
                     reason: "Approved in prompt",
                     launcher: launcher
-                ))
+                )
+                guard self.onAccessRequest(record) else {
+                    self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    return
+                }
+                self.transientApprovals.remember(.approved, for: transientApproval)
                 self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
-                self.onAccessRequest(accessRequestRecord(
+                _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
                     decision: "Failed",

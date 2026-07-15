@@ -857,17 +857,19 @@ public func loadAccessRequestRecords(
     return Array(records.prefix(50))
 }
 
+@discardableResult
 public func appendAccessRequestRecord(
     _ record: AccessRequestRecord,
     defaults: UserDefaults = .standard,
     key: String = accessRequestLogDefaultsKey
-) {
+) -> Bool {
     accessRequestLogLock.lock()
     defer { accessRequestLogLock.unlock() }
     let records = Array(([record] + loadAccessRequestRecords(defaults: defaults, key: key)).prefix(50))
-    if let data = try? JSONEncoder().encode(records) {
-        defaults.set(data, forKey: key)
-    }
+    guard let data = try? JSONEncoder().encode(records) else { return false }
+    defaults.set(data, forKey: key)
+    guard defaults.synchronize() else { return false }
+    return loadAccessRequestRecords(defaults: defaults, key: key).first?.id == record.id
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
