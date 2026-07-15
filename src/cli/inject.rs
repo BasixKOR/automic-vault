@@ -241,17 +241,11 @@ fn os_display(value: &OsString) -> String {
 }
 
 fn infer_shebang_script(options: &Options) -> Option<OsString> {
-    let script = options.args.first()?;
-    let first_line = std::fs::read_to_string(script)
-        .ok()?
-        .lines()
-        .next()?
-        .to_string();
-    if first_line.starts_with("#!") && first_line.contains("av inject") {
-        Some(script.clone())
-    } else {
-        None
-    }
+    options.args.iter().find_map(|script| {
+        let contents = std::fs::read_to_string(script).ok()?;
+        let first_line = contents.lines().next()?;
+        (first_line.starts_with("#!") && first_line.contains("av inject")).then(|| script.clone())
+    })
 }
 
 fn build_env(
@@ -641,6 +635,24 @@ mod tests {
             keys: vec!["A".into()],
             target: "/bin/zsh".into(),
             args: vec![script.clone().into_os_string()],
+            shebang_script: None,
+        };
+
+        assert_eq!(
+            infer_shebang_script(&options),
+            Some(script.into_os_string())
+        );
+    }
+
+    #[test]
+    fn infers_split_shebang_script_after_interpreter_options() {
+        let script = temp_script("#!/usr/local/bin/av inject +A /bin/zsh -f\n");
+        let options = Options {
+            replace_existing_env: false,
+            allow_missing_keys: false,
+            keys: vec!["A".into()],
+            target: "/bin/zsh".into(),
+            args: vec!["-f".into(), script.clone().into_os_string(), "s3".into()],
             shebang_script: None,
         };
 
