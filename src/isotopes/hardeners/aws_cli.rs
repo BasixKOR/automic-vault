@@ -338,6 +338,7 @@ pub(crate) fn store_keychain_secret(account: &str, value: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -346,7 +347,18 @@ mod tests {
         install_aws_stub(&path).unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
-        assert!(AWS_STUB.contains("${AWS_PROFILE:-default}"));
+        assert!(AWS_STUB.contains("${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}"));
+        assert!(AWS_STUB.contains("--profile=*)"));
+        assert!(AWS_STUB.contains("AWS_CONFIG_FILE=/dev/null"));
+        assert!(AWS_STUB.contains("/opt/homebrew/bin/aws --no-cli-pager"));
+        assert!(AWS_STUB.contains("mktemp -d"));
+        assert!(!AWS_STUB.contains("aws-vault-pass.$$"));
+
+        let status = std::process::Command::new("/bin/zsh")
+            .args(["-n", path.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(status.success());
 
         let _ = fs::remove_file(path);
     }
@@ -360,6 +372,88 @@ mod tests {
         fs::write(&path, format!("{AWS_STUB}\n# modified\n")).unwrap();
         assert!(!is_aws_stub(&path));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn aws_stub_isolates_the_real_cli_and_uses_the_command_profile() {
+        let dir = temp_path("aws-stub-runtime");
+        let capture = dir.join("capture");
+        let temp = dir.join("tmp");
+        let wrapper = dir.join("aws");
+        let aws_vault = dir.join("aws-vault");
+        let aws = dir.join("real-aws");
+        fs::create_dir_all(&capture).unwrap();
+        fs::create_dir_all(&temp).unwrap();
+
+        fs::write(
+            &aws_vault,
+            format!(
+                "#!/bin/zsh\nprint -r -- \"$@\" > {}/vault-args\nwhile [[ $1 != -- ]]; do shift; done\nshift\nexec \"$@\"\n",
+                capture.display()
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &aws,
+            format!(
+                "#!/bin/zsh\nprint -r -- \"$@\" > {0}/aws-args\nprint -r -- \"${{HOME-}}\" > {0}/home\nprint -r -- \"${{AWS_CONFIG_FILE-}}\" > {0}/config\nprint -r -- \"${{AWS_SHARED_CREDENTIALS_FILE-}}\" > {0}/credentials\nprint -r -- \"${{AWS_PAGER-unset}}\" > {0}/pager\nprint -r -- \"${{AWS_ACCESS_KEY_ID-unset}}\" > {0}/access-key\n",
+                capture.display()
+            ),
+        )
+        .unwrap();
+        for path in [&aws_vault, &aws] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let script = AWS_STUB
+            .replacen(
+                "#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh",
+                "#!/bin/zsh",
+                1,
+            )
+            .replace(
+                "/opt/homebrew/bin/aws-vault",
+                &aws_vault.display().to_string(),
+            )
+            .replace("/opt/homebrew/bin/aws", &aws.display().to_string());
+        fs::write(&wrapper, script).unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let status = Command::new(&wrapper)
+            .args(["--profile", "dev", "s3", "ls"])
+            .env("AWS_PROFILE", "wrong-profile")
+            .env("AWS_ACCESS_KEY_ID", "long-term-key")
+            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
+            .env("TMPDIR", &temp)
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+        assert!(
+            fs::read_to_string(capture.join("vault-args"))
+                .unwrap()
+                .starts_with("exec dev --server -- ")
+        );
+        assert_eq!(
+            fs::read_to_string(capture.join("aws-args")).unwrap(),
+            "--no-cli-pager s3 ls\n"
+        );
+        assert_eq!(
+            fs::read_to_string(capture.join("config")).unwrap(),
+            "/dev/null\n"
+        );
+        assert_eq!(fs::read_to_string(capture.join("pager")).unwrap(), "\n");
+        assert_eq!(
+            fs::read_to_string(capture.join("access-key")).unwrap(),
+            "unset\n"
+        );
+        let isolated_home = fs::read_to_string(capture.join("home")).unwrap();
+        let isolated_credentials = fs::read_to_string(capture.join("credentials")).unwrap();
+        assert!(isolated_home.starts_with(&temp.display().to_string()));
+        assert!(isolated_credentials.starts_with(&temp.display().to_string()));
+        assert_eq!(fs::read_dir(&temp).unwrap().count(), 0);
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

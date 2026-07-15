@@ -14,8 +14,10 @@ lines from the credentials file.
 The root phase writes `/usr/local/bin/aws`. That wrapper uses `av inject` to
 provide the keychain-backed AWS keys only for the command run, creates a
 temporary `pass` backend shim for `aws-vault`, and executes
-`/opt/homebrew/bin/aws-vault exec "${AWS_PROFILE:-default}" --server --
-/opt/homebrew/bin/aws "$@"`.
+`/opt/homebrew/bin/aws-vault exec PROFILE --server -- /opt/homebrew/bin/aws` in
+an isolated runtime environment. `PROFILE` comes from the command's
+`--profile`, then `AWS_PROFILE`, then `AWS_DEFAULT_PROFILE`, and finally
+`default`.
 
 ## How It Protects You
 
@@ -28,11 +30,17 @@ The temporary `pass` shim discards `aws-vault` session-cache writes, so the
 wrapper does not leave the generated AWS session material in the temporary
 password store after the command exits.
 
+The real AWS CLI receives an empty home and credential/config files plus
+`--no-cli-pager`. This prevents user-controlled AWS aliases, credential
+processes, plugins, cached login credentials, and output pagers from running
+inside the credential-bearing process.
+
 ## Caveats
 
 - The import phase only migrates the `default` profile from the shared
-  credentials file. The runtime wrapper still uses `${AWS_PROFILE:-default}` and
-  follows `source_profile` when preparing the temporary `aws-vault` store.
+  credentials file. Named runtime profiles must derive from that imported
+  profile through `source_profile`; independent named access keys are not
+  migrated.
 - This assumes Homebrew paths: `/opt/homebrew/bin/aws-vault`,
   `/opt/homebrew/bin/aws`, and `/usr/local/bin/aws`.
 - `/usr/local/bin` must come before the real AWS CLI in `PATH`; otherwise the
