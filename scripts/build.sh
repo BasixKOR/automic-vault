@@ -116,6 +116,11 @@ LAUNCH_AGENT_PLIST="$LAUNCH_AGENTS/$LAUNCH_AGENT_NAME.plist"
 INSTALLED_LAUNCH_AGENT="$HOME/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist"
 
 cargo build --release --manifest-path "$ROOT/Cargo.toml"
+AV_CLI_REVISION="$("$ROOT/target/release/av" __version)"
+if [[ ! "$AV_CLI_REVISION" =~ ^[0-9]+$ ]]; then
+  echo "error: invalid av install revision: $AV_CLI_REVISION" >&2
+  exit 64
+fi
 swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET"
 SWIFT_BIN="$(swift build -c release --package-path "$MENU_HELPER" --build-path "$SWIFT_TARGET" --show-bin-path)"
 
@@ -125,6 +130,7 @@ cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"
 plutil -replace CFBundleVersion -string "$APP_VERSION" "$CONTENTS/Info.plist"
+plutil -replace AVCLIRevision -integer "$AV_CLI_REVISION" "$CONTENTS/Info.plist"
 if [[ "$publish" -eq 1 ]]; then
   plutil -insert PostHogAPIKey -string "$POSTHOG_API_KEY" "$CONTENTS/Info.plist"
 fi

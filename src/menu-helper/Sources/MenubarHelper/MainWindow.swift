@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import MenubarHelperCore
 import Security
 import SwiftUI
@@ -72,15 +73,13 @@ final class DashboardModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
     @Published var searchText = ""
+    @Published private(set) var cliInstallState: CLIInstallState?
 
     private var reloadTask: Task<Void, Never>?
 
-    init(snapshot: DashboardSnapshot = .empty) {
+    init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
-    }
-
-    var shouldOfferCLIInstall: Bool {
-        !FileManager.default.isExecutableFile(atPath: installedAVCLIPath)
+        self.cliInstallState = cliInstallState
     }
 
     var items: [DashboardItem] {
@@ -223,11 +222,12 @@ final class DashboardModel: ObservableObject {
         reloadTask?.cancel()
         isReloading = true
         reloadTask = Task {
-            let next = await Task.detached(priority: .background) {
-                DashboardSnapshot.load()
+            let (next, cliInstallState) = await Task.detached(priority: .background) {
+                (DashboardSnapshot.load(), currentCLIInstallState())
             }.value
             guard !Task.isCancelled else { return }
             snapshot = next
+            self.cliInstallState = cliInstallState
             if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
                 selectedItemID = nil
             }
@@ -408,10 +408,100 @@ final class DashboardModel: ObservableObject {
 
 private let installedAVCLIPath = "/usr/local/bin/av"
 
+enum CLIInstallState: Sendable {
+    case missing
+    case current
+    case outdated
+
+    var actionTitle: String? {
+        switch self {
+        case .missing: "Install av CLI"
+        case .outdated: "Update av CLI"
+        case .current: nil
+        }
+    }
+}
+
 private var bundledAVURL: URL? {
     guard let macOSURL = Bundle.main.executableURL?.deletingLastPathComponent() else { return nil }
     let url = macOSURL.appendingPathComponent("av")
     return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+}
+
+private func currentCLIInstallState(
+    installedURL: URL = URL(fileURLWithPath: installedAVCLIPath),
+    bundledURL: URL? = bundledAVURL,
+    expectedRevision: Int? = Bundle.main.object(forInfoDictionaryKey: "AVCLIRevision") as? Int
+) -> CLIInstallState {
+    var metadata = stat()
+    guard lstat(installedURL.path, &metadata) == 0 else {
+        return errno == ENOENT ? .missing : .outdated
+    }
+    guard let bundledURL,
+          expectedRevision != nil,
+          metadata.st_mode & S_IFMT == S_IFREG,
+          metadata.st_uid == 0,
+          FileManager.default.isExecutableFile(atPath: installedURL.path),
+          executable(at: installedURL, satisfiesDesignatedRequirementOf: bundledURL)
+    else {
+        return .outdated
+    }
+    return cliInstallState(
+        installedExists: true,
+        installedTrusted: true,
+        expectedRevision: expectedRevision,
+        installedRevision: executableRevision(at: installedURL)
+    )
+}
+
+private func cliInstallState(
+    installedExists: Bool,
+    installedTrusted: Bool,
+    expectedRevision: Int?,
+    installedRevision: Int?
+) -> CLIInstallState {
+    guard installedExists else { return .missing }
+    guard installedTrusted,
+          let expectedRevision,
+          installedRevision == expectedRevision
+    else { return .outdated }
+    return .current
+}
+
+private func executableRevision(at url: URL) -> Int? {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = url
+    process.arguments = ["__version"]
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    do {
+        try process.run()
+        process.waitUntilExit()
+    } catch {
+        return nil
+    }
+    guard process.terminationStatus == 0 else { return nil }
+    let value = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return Int(value)
+}
+
+private func executable(at candidate: URL, satisfiesDesignatedRequirementOf trusted: URL) -> Bool {
+    var trustedCode: SecStaticCode?
+    var candidateCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(trusted as CFURL, [], &trustedCode) == errSecSuccess,
+          let trustedCode,
+          SecStaticCodeCreateWithPath(candidate as CFURL, [], &candidateCode) == errSecSuccess,
+          let candidateCode
+    else { return false }
+
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(trustedCode, SecCSFlags(rawValue: kSecCSRequirementInformation), &information) == errSecSuccess,
+          let dictionary = information as? [CFString: Any],
+          let requirement = dictionary[kSecCodeInfoDesignatedRequirement] as! SecRequirement?
+    else { return false }
+    return SecStaticCodeCheckValidity(candidateCode, [], requirement) == errSecSuccess
 }
 
 private func installCLICommand(bundleAVPath: String) -> String {
@@ -522,6 +612,16 @@ func runDashboardSearchSelfCheck() -> Int32 {
           installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
             .contains("sudo install \"$bundle_av\" /usr/local/bin/av")
     else { return 1 }
+    guard cliInstallState(installedExists: false, installedTrusted: false, expectedRevision: 1, installedRevision: nil) == .missing,
+          cliInstallState(installedExists: true, installedTrusted: true, expectedRevision: 1, installedRevision: 1) == .current,
+          cliInstallState(installedExists: true, installedTrusted: true, expectedRevision: 1, installedRevision: 2) == .outdated,
+          cliInstallState(installedExists: true, installedTrusted: true, expectedRevision: 1, installedRevision: nil) == .outdated,
+          cliInstallState(installedExists: true, installedTrusted: false, expectedRevision: 1, installedRevision: 1) == .outdated,
+          cliInstallState(installedExists: true, installedTrusted: true, expectedRevision: nil, installedRevision: 1) == .outdated,
+          CLIInstallState.missing.actionTitle == "Install av CLI",
+          CLIInstallState.outdated.actionTitle == "Update av CLI",
+          CLIInstallState.current.actionTitle == nil
+    else { return 1 }
     guard detectorSeverityLevel(["medium"]) == .medium,
           detectorSeverityLevel(["medium", "mid"]) == .medium,
           detectorSeverityLevel(["medium", "high"]) == .high,
@@ -631,14 +731,14 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
                 .toolbar {
                     Spacer()
-                    if model.shouldOfferCLIInstall {
+                    if let cliActionTitle = model.cliInstallState?.actionTitle {
                         Button {
                             model.installCLI()
                         } label: {
-                            Label("Install av-cli", systemImage: "terminal")
+                            Label(cliActionTitle, systemImage: "terminal")
                         }
                         .labelStyle(.titleAndIcon)
-                        .help("Install /usr/local/bin/av")
+                        .help("\(cliActionTitle) at /usr/local/bin/av")
                     }
                     if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
                         Button {

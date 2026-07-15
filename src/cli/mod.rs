@@ -20,6 +20,8 @@ Usage:
   av save KEY
   av harden";
 
+const INSTALL_REVISION: u32 = 1;
+
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
 }
@@ -61,6 +63,14 @@ where
     };
     if command == "help" || command == "--help" || command == "-h" {
         let _ = writeln!(stdout, "{USAGE}");
+        return 0;
+    }
+    if command == "--version" || command == "-V" {
+        let _ = writeln!(stdout, "av {}", env!("CARGO_PKG_VERSION"));
+        return 0;
+    }
+    if command == "__version" {
+        let _ = writeln!(stdout, "{INSTALL_REVISION}");
         return 0;
     }
     let mut rest = args.collect::<Vec<_>>();
@@ -397,7 +407,20 @@ mod tests {
             assert!(!stdout.contains("av harden [--yes]"));
             assert!(!stdout.contains("av open"));
             assert!(!stdout.contains("av help"));
+            assert!(!stdout.contains("__version"));
         }
+    }
+
+    #[test]
+    fn versions_are_reported_separately() {
+        let (code, stdout, stderr) = run_args(&["av", "--version"]);
+        assert_eq!(
+            (code, stdout.as_str(), stderr.as_str()),
+            (0, concat!("av ", env!("CARGO_PKG_VERSION"), "\n"), "")
+        );
+
+        let (code, stdout, stderr) = run_args(&["av", "__version"]);
+        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "1\n", ""));
     }
 
     #[test]
