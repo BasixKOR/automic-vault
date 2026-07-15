@@ -445,6 +445,16 @@ func protectionPolicyMatrix(
     #expect(loadStoredSecrets(service: service).isEmpty)
 }
 
+@Test func storedSecretExistenceDoesNotRequireLoadingItsValue() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(!storedSecretExists(account: "API_TOKEN", service: service))
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    #expect(storedSecretExists(account: "API_TOKEN", service: service))
+}
+
 @Test func storedSecretsUseDataProtectionKeychain() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
