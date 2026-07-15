@@ -100,7 +100,7 @@ publish_dmg() {
 MENU_HELPER="$ROOT/src/menu-helper"
 SWIFT_TARGET="$ROOT/target/swift"
 APP="$SWIFT_TARGET/Automic Vault.app"
-DMG="$SWIFT_TARGET/automic-vault-$VERSION.dmg"
+DMG="$SWIFT_TARGET/Automic-Vault-$VERSION.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
 DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
 ICON_BUILD="$SWIFT_TARGET/icon"
