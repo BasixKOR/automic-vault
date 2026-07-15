@@ -24,7 +24,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !aws_vault.exists() {
         return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
     }
-    let is_root = unsafe { geteuid() } == 0;
+    let is_root = effective_uid() == 0;
     let has_test_keychain = crate::test_keychain_dir().is_some();
     let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
     let credentials_path = if should_import_credentials {
@@ -42,28 +42,28 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "│").ok();
     writeln!(stdout, "◆ This will use aws-vault for AWS credentials.").ok();
     writeln!(stdout, "│").ok();
-    if credentials.is_some() {
-        let credentials_path = credentials_path.as_ref().unwrap();
-        writeln!(
-            stdout,
-            "├─ import {AWS_HARDEN_PROFILE} keys from {} into the login keychain",
-            credentials_path.display()
-        )
-        .ok();
-        writeln!(
-            stdout,
-            "├─ delete {AWS_HARDEN_PROFILE} plaintext keys from {}",
-            credentials_path.display()
-        )
-        .ok();
-    } else {
-        let credentials_path = credentials_path.as_ref().unwrap();
-        writeln!(
-            stdout,
-            "├─ no {AWS_HARDEN_PROFILE} plaintext keys found in {}",
-            credentials_path.display()
-        )
-        .ok();
+    if let Some(credentials_path) = &credentials_path {
+        if credentials.is_some() {
+            writeln!(
+                stdout,
+                "├─ import {AWS_HARDEN_PROFILE} keys from {} into the login keychain",
+                credentials_path.display()
+            )
+            .ok();
+            writeln!(
+                stdout,
+                "├─ delete {AWS_HARDEN_PROFILE} plaintext keys from {}",
+                credentials_path.display()
+            )
+            .ok();
+        } else {
+            writeln!(
+                stdout,
+                "├─ no {AWS_HARDEN_PROFILE} plaintext keys found in {}",
+                credentials_path.display()
+            )
+            .ok();
+        }
     }
 
     if let Some(credentials) = credentials {
@@ -204,6 +204,12 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 
 fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool {
     !is_root || has_test_keychain
+}
+
+fn effective_uid() -> u32 {
+    crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| unsafe { geteuid() })
 }
 
 fn is_aws_stub(path: &Path) -> bool {
@@ -499,6 +505,37 @@ mod tests {
         assert!(!should_import_aws_credentials(true, false));
         assert!(should_import_aws_credentials(true, true));
         assert!(should_import_aws_credentials(false, false));
+    }
+
+    #[test]
+    fn root_hardening_skips_credentials_and_installs_stub() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("aws-root");
+        let aws_vault = dir.join("aws-vault");
+        let aws_stub = dir.join("aws");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&aws_vault, "").unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH", &aws_vault);
+            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub);
+        }
+
+        let mut stdout = Vec::new();
+        run_aws(&mut stdout, true).unwrap();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
+        }
+        assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
+        assert!(
+            !String::from_utf8(stdout)
+                .unwrap()
+                .contains("plaintext keys")
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
