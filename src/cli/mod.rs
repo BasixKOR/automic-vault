@@ -59,7 +59,7 @@ where
         let _ = writeln!(stderr, "{USAGE}");
         return 2;
     };
-    if command == "--help" || command == "-h" {
+    if command == "help" || command == "--help" || command == "-h" {
         let _ = writeln!(stdout, "{USAGE}");
         return 0;
     }
@@ -387,14 +387,17 @@ mod tests {
 
     #[test]
     fn help_prints_one_command_per_line() {
-        let (code, stdout, stderr) = run_args(&["av", "--help"]);
+        for help in ["help", "--help"] {
+            let (code, stdout, stderr) = run_args(&["av", help]);
 
-        assert_eq!(code, 0);
-        assert_eq!(stdout, format!("{USAGE}\n"));
-        assert_eq!(stderr, "");
-        assert!(stdout.contains("\n  av harden\n"));
-        assert!(!stdout.contains("av harden [--yes]"));
-        assert!(!stdout.contains("av open"));
+            assert_eq!(code, 0);
+            assert_eq!(stdout, format!("{USAGE}\n"));
+            assert_eq!(stderr, "");
+            assert!(stdout.contains("\n  av harden\n"));
+            assert!(!stdout.contains("av harden [--yes]"));
+            assert!(!stdout.contains("av open"));
+            assert!(!stdout.contains("av help"));
+        }
     }
 
     #[test]
