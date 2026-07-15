@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh
+#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh -f
 set -euo pipefail
 
 profile=${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}
@@ -66,8 +66,8 @@ mkdir -p "$marker:h"
 
 # The shim exposes av-injected keys only through pass stdout, never disk.
 cat > "$shim" <<'EOF'
-#!/bin/zsh
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 case "$1" in
   show)

@@ -544,13 +544,10 @@ private func autoApprovalToolName(_ request: ApprovalRequest, scriptPath: String
 private func autoApprovalCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
     let scriptPath = scriptPath ?? resolvedShebangScriptPath(request)
     var args = request.args
-    if let scriptPath, let first = args.first {
-        let firstPath = first.hasPrefix("/")
-            ? URL(fileURLWithPath: first)
-            : URL(fileURLWithPath: request.cwd).appendingPathComponent(first)
-        if firstPath.standardizedFileURL.path == URL(fileURLWithPath: scriptPath).standardizedFileURL.path {
-            args.removeFirst()
-        }
+    if let scriptPath,
+       let scriptIndex = args.firstIndex(where: { standardizedPath($0, cwd: request.cwd) == scriptPath })
+    {
+        args.removeFirst(scriptIndex + 1)
     }
     return prettyShellCommand(target: autoApprovalToolName(request, scriptPath: scriptPath), args: args)
 }
@@ -1375,12 +1372,13 @@ private func awsRequestIsReadOnly(_ args: [String]) -> Bool {
 
 private func awsCommandWords(_ request: ApprovalRequest) -> [String] {
     guard let scriptPath = resolvedShebangScriptPath(request),
-          let firstArg = request.args.first,
-          standardizedPath(firstArg, cwd: request.cwd) == scriptPath
+          let scriptIndex = request.args.firstIndex(where: {
+              standardizedPath($0, cwd: request.cwd) == scriptPath
+          })
     else {
         return []
     }
-    return Array(request.args.dropFirst())
+    return Array(request.args.dropFirst(scriptIndex + 1))
 }
 
 private func awsCommandWords(_ args: [String]) -> [String] {
@@ -2703,7 +2701,7 @@ private func runApprovalSelfCheck() -> Int32 {
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-        args: [String] = ["/usr/local/bin/aws", "s3", "ls"],
+        args: [String] = ["-f", "/usr/local/bin/aws", "s3", "ls"],
         shebangScript: String? = "/usr/local/bin/aws"
     ) -> ApprovalRequest {
         ApprovalRequest(
@@ -2750,7 +2748,7 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "aws", request: readOnlyAws) == .readOnly,
           classifySecretGateRequest(
               gateID: "aws",
-              request: awsRequest(args: ["/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
+              request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
           ) == .mutating,
           SecretGateRequestClassification.allCases.allSatisfy({
               secretGateProtectionAllows(.fullIncludingSecretDumps, classification: $0)
