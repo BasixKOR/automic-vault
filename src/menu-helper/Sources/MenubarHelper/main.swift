@@ -2571,11 +2571,11 @@ private func runApprovalSelfCheck() -> Int32 {
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           String(commandWithArguments.characters) == """
-          gh \\  # /opt/homebrew/bin/gh
+          gh \\  # → /opt/homebrew/bin/gh
             repo \\
             view
           """,
-          String(commandWithoutArguments.characters) == "gh  # /opt/homebrew/bin/gh",
+          String(commandWithoutArguments.characters) == "gh  # → /opt/homebrew/bin/gh",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
