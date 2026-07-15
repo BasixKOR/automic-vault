@@ -68,9 +68,9 @@ Secret Gates shadow commands on PATH; they do not mediate `exec`. A caller can r
 
 Generic wrappers inject a secret into the target process. The target can load plugins, invoke helpers, or expose its environment. Automic Vault cannot promise “all commands except secret dumps” for an arbitrary third-party CLI from argv classification alone. Trusted Access therefore means trusting that target's complete runtime, configuration, and child-process behavior. No Access or per-command approval is the defensible setting for an untrusted launcher.
 
-### Keychain migration window
+### Keychain migration
 
-The migration build signs with the exact private group first and the legacy wildcard second. It copies each legacy item, verifies the bytes in the private group, then deletes the old item. A later release must remove `ZU76A67LGU.*` from the signed entitlement after users have run the migration build.
+The single-user migration completed on 2026-07-14. The signed transitional build copied each legacy item, verified the bytes in the private group, deleted the old item, and verified that the wildcard group was empty. Production source now signs only for `ZU76A67LGU.com.automicvault`; the wildcard entitlement and migration helper have been removed.
 
 ### Local audit scope
 
@@ -78,4 +78,4 @@ Keychain storage prevents ordinary same-user apps from rewriting the access list
 
 ### Deployment
 
-The source fixes do not update `/usr/local/bin/aws`, `/usr/local/bin/av`, the installed app, GH, or Supabase. Rebuild and install all affected artifacts together. Mixing the new isotope clients with the old `com.automicvault.menu-helper` app identifier will fail closed at XPC peer verification.
+Rebuild and install all affected artifacts together. Mixing the new isotope clients with the old `com.automicvault.menu-helper` app identifier will fail closed at XPC peer verification.
