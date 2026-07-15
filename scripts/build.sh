@@ -94,7 +94,7 @@ publish_dmg() {
   )"
   aws cloudfront create-invalidation \
     --distribution-id "$distribution_id" \
-    --paths '/*.dmg'
+    --paths '/av.dmg' '/Automic%20Vault.dmg'
 }
 
 MENU_HELPER="$ROOT/src/menu-helper"
