@@ -140,11 +140,10 @@ ensure_fork_branch() {
   local branch="$2"
   local current_default="$3"
   local repo_dir="$clone_root/$repo_name"
-  local fork_repo="$org/$repo_name"
   local current_branch
 
   if [[ "$dry_run" == true ]]; then
-    echo "Would ensure $fork_repo default branch is $branch"
+    echo "Would ensure the mirrored branch is $branch"
     return 0
   fi
 
@@ -156,7 +155,6 @@ ensure_fork_branch() {
     git -C "$repo_dir" diff --quiet &&
     git -C "$repo_dir" diff --cached --quiet &&
     ! git_rebase_in_progress "$repo_dir"; then
-    gh repo edit "$fork_repo" --default-branch "$branch"
     return 0
   fi
 
@@ -171,7 +169,6 @@ ensure_fork_branch() {
     git -C "$repo_dir" branch -M "$branch"
     git -C "$repo_dir" push origin "HEAD:$branch"
   fi
-  gh repo edit "$fork_repo" --default-branch "$branch"
 }
 
 set_upstream_remote() {
