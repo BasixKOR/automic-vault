@@ -1,5 +1,7 @@
 # Automic Vault
 
+> The missing security layer for the macOS command line.
+
 Automic Vault runs in your menu bar detecting existing and new threats to the
 integrity of your local developer environment’s integrity & security.
 
@@ -19,10 +21,6 @@ for all apps/clis at four levels:
 2. Approval required for actions with side effects (aka “read-only” mode)
 3. Approval required for actions that reveal secrets (ie. everything runs except `gh auth token` which blocks at a prompt)
 4. No approval required (aka “yolo mode”)
-
-> [!NOTE]
-> We use the proper, thorough macOS security systems to ensure your secrets are
-> both safe and use of them is minimally tedious.
 
 &nbsp;
 
@@ -58,15 +56,16 @@ for all apps/clis at four levels:
 > - Privacy protections
 > - App Sandbox
 >
-> ## Modern OS Security Protections Don’t Apply to CLIs
+> **These security measures do not typically apply to command line tools.**
 >
-> These protections apply to the `.app` that runs the command line tool.
+> They apply to the `.app` that *runs* the command line tool.
 > Which for a developer typically ends up being your terminal.
 > Most developers quickly bypass these protections because they
 > are too inconvenient for a general purpose tool like a terminal.
 >
-> Automic Vault is a small but important step to help developers harden their
-> local environment against these new threats.
+> Automic Vault is the adapter that applies the macOS operating system’s
+> security model to command line tools, while minimizing friction for the
+> developer.
 
 &nbsp;
 

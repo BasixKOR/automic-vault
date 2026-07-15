@@ -2320,7 +2320,7 @@ private func approvalPromptCommandText(command: String, path: String) -> Attribu
     let lineBreak = command.firstIndex(of: "\n") ?? command.endIndex
     var text = AttributedString(String(command[..<lineBreak]))
     text.foregroundColor = .white
-    var comment = AttributedString("  # → \(path)")
+    var comment = AttributedString("    # \(path)")
     comment.foregroundColor = .white.opacity(0.55)
     text += comment
     if lineBreak != command.endIndex {
@@ -2574,7 +2574,7 @@ private func runApprovalSelfCheck() -> Int32 {
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           String(commandWithArguments.characters) == """
-          gh \\  # → /opt/homebrew/bin/gh
+          gh \\    # /opt/homebrew/bin/gh
             repo \\
             view
           """,
