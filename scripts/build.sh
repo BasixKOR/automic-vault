@@ -31,6 +31,10 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+if [[ "$run" -eq 1 && "$install" -ne 1 ]]; then
+  echo "error: --run requires --install" >&2
+  exit 64
+fi
 if [[ "$notarize" -eq 1 && "$dmg" -ne 1 ]]; then
   echo "error: --notarize requires --dmg" >&2
   exit 64
@@ -229,7 +233,9 @@ if [[ "$install" -eq 1 ]]; then
     trap - EXIT
     rm -rf "$DMG_MOUNT"
   fi
-  sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
+  if [[ "$(/usr/local/bin/av __version 2>/dev/null || true)" != "$AV_CLI_REVISION" ]]; then
+    sudo install -m 0755 "$INSTALLED_APP/Contents/MacOS/av" /usr/local/bin/av
+  fi
   mkdir -p "$HOME/Library/LaunchAgents"
   cp "$INSTALLED_APP/Contents/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist" "$INSTALLED_LAUNCH_AGENT"
   plutil -replace ProgramArguments -json \
@@ -243,9 +249,6 @@ if [[ "$install" -eq 1 ]]; then
     pkill -x AutomicVaultMenubar || true
     open -n "$INSTALLED_APP"
   fi
-elif [[ "$run" -eq 1 ]]; then
-  pkill -x AutomicVaultMenubar || true
-  open -n "$APP"
 fi
 if [[ "$dmg" -eq 1 ]]; then
   echo "$DMG"
