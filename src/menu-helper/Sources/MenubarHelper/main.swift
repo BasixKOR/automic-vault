@@ -540,7 +540,7 @@ private func accessRequestRecord(
         id: id,
         date: Date(),
         tool: autoApprovalToolName(request),
-        command: ([autoApprovalToolName(request)] + request.args).joined(separator: " "),
+        command: autoApprovalCommand(request),
         decision: decision,
         approvalSource: approvalSource,
         reason: reason,
@@ -580,6 +580,10 @@ private func autoApprovalCommand(_ request: ApprovalRequest, scriptPath: String?
         args.removeFirst(scriptIndex + 1)
     }
     return prettyShellCommand(target: autoApprovalToolName(request, scriptPath: scriptPath), args: args)
+}
+
+private func approvalCommandPath(_ request: ApprovalRequest) -> String {
+    resolvedShebangScriptPath(request) ?? request.target
 }
 
 private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
@@ -2055,11 +2059,8 @@ private func showApprovalAlert(
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
-        command: prettyShellCommand(
-            target: URL(fileURLWithPath: request.target).lastPathComponent,
-            args: request.args
-        ),
-        commandPath: request.target,
+        command: autoApprovalCommand(request),
+        commandPath: approvalCommandPath(request),
         title: request.title,
         detail: request.detail,
         cwd: request.cwd,
@@ -3201,6 +3202,20 @@ private func runMenuStatusSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let envWrapperRequest = ApprovalRequest(
+        op: "inject",
+        keys: ["PULUMI_ACCESS_TOKEN"],
+        target: "/bin/sh",
+        args: ["/usr/local/bin/pulumi", "stack", "ls"],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: true,
+        envConflicts: [],
+        shebangScript: "/usr/local/bin/pulumi",
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
     let recordedApproval = AccessRequestRecord(
         date: Date(timeIntervalSince1970: 18_900),
         tool: "aws",
@@ -3221,6 +3236,13 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
           autoApprovalToolName(request) == "aws",
+          approvalCommandPath(request) == "/usr/local/bin/aws",
+          approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",
+          autoApprovalCommand(envWrapperRequest) == """
+          pulumi \\
+            stack \\
+            ls
+          """,
           scanAlertLevel([["severity": "medium"]]) == .medium,
           scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
           autoApprovalTitle(
@@ -3292,6 +3314,18 @@ private func runMenuStatusSelfCheck() -> Int32 {
           automaticAccessDecisionSymbol(wasDenied: restoredApproval.wasDenied) == "checkmark.shield.fill",
           autoApprovalTitle(restoredDenial, formatter: formatter) == "5:15 AM – Codex was denied use of gh",
           autoApprovalCommand(request) == """
+          aws \\
+            s3 \\
+            ls
+          """,
+          accessRequestRecord(
+              request: request,
+              callerPath: "/usr/local/bin/av",
+              decision: "Approved",
+              approvalSource: "Manual",
+              reason: "Approved in prompt",
+              launcher: nil
+          ).command == """
           aws \\
             s3 \\
             ls
