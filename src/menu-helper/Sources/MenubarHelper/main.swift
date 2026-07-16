@@ -2041,7 +2041,6 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String
 ) -> ApprovalDecision {
-    NSApp.activate(ignoringOtherApps: true)
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
         requesterName: requester.name,
@@ -2068,7 +2067,7 @@ private func showApprovalAlert(
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
-        styleMask: [.borderless],
+        styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered,
         defer: false
     )
