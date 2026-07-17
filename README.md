@@ -4,8 +4,7 @@
 
 ## Quickstart
 
-- Download:
-  - https://github.com/automic-vault/automic-vault/releases/latest
+- Direct download: https://github.com/automic-vault/automic-vault/releases/latest
 - Homebrew:
   ```sh
   brew install --cask automic-vault/isotopes/automic-vault \
