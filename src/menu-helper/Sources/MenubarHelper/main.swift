@@ -897,12 +897,25 @@ private final class ApprovalServer: @unchecked Sendable {
             hardeners: hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
         )
         let resolvedPolicy = configuredGate.flatMap { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
+        let classification = configuredGate.map {
+            classifySecretGateRequest(gateID: $0.id, request: request)
+        }
+        let automaticApprovalExplanation: String?
+        if resolvedPolicy == nil,
+           classification == .readOnly,
+           let failure = launcherAppVerificationFailure(for: identity)
+        {
+            automaticApprovalExplanation = failure.explanation
+        } else {
+            automaticApprovalExplanation = nil
+        }
         let launcher = resolvedPolicy?.launcher ?? launchers.first
         if let configuredGate,
            let resolvedPolicy,
+           let classification,
            secretGateProtectionAllows(
                resolvedPolicy.protection,
-               classification: classifySecretGateRequest(gateID: configuredGate.id, request: request)
+               classification: classification
            )
         {
             do {
@@ -1017,7 +1030,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 scriptApproval: scriptApproval,
                 launcher: launcher,
-                launcherFallbackPath: launcherFallbackPath
+                launcherFallbackPath: launcherFallbackPath,
+                automaticApprovalExplanation: automaticApprovalExplanation
             )
             guard decision != .denied else {
                 self.transientApprovals.remember(.denied, for: transientApproval)
@@ -1885,6 +1899,18 @@ private struct StaticSigningInfo {
     let designatedRequirement: String
 }
 
+private struct LauncherAppVerificationFailure {
+    let appName: String
+    let resourcesUnreadable: Bool
+
+    var explanation: String {
+        if resourcesUnreadable {
+            return "Automatic approval was unavailable because \(appName) contains signed app resources that Automic Vault cannot read, so its identity could not be securely verified. Manual approval is required to fail closed."
+        }
+        return "Automatic approval was unavailable because \(appName)’s code signature could not be securely verified. Manual approval is required to fail closed."
+    }
+}
+
 private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
     var code: SecCode?
     let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
@@ -1983,6 +2009,53 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
     )
 }
 
+private func launcherAppVerificationFailure(
+    for identity: AVProcessIdentity
+) -> LauncherAppVerificationFailure? {
+    var checkedApps = Set<String>()
+    for startPID in launcherAncestorStartPIDs(identity) {
+        var pid = startPID
+        var seenPIDs = Set<pid_t>()
+        for _ in 0..<32 {
+            guard pid > 1, seenPIDs.insert(pid).inserted else { break }
+            var ancestor = AVProcessIdentity()
+            guard av_process_identity(pid, &ancestor) else { break }
+            let path = pathString(ancestor)
+            if let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) {
+                let appURLs = appBundleURLs(containing: path)
+                    + appBundleURLs(containing: signing.mainExecutable)
+                    + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
+                for appURL in appURLs where checkedApps.insert(appURL.path).inserted {
+                    if let failure = appBundleVerificationFailure(appURL) { return failure }
+                }
+            }
+            pid = ancestor.ppid
+        }
+    }
+    return nil
+}
+
+private func appBundleVerificationFailure(_ url: URL) -> LauncherAppVerificationFailure? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else {
+        return nil
+    }
+    let status = SecStaticCodeCheckValidity(staticCode, [], nil)
+    guard status != errSecSuccess else { return nil }
+    let name = url.deletingPathExtension().lastPathComponent
+    let executableOnly = SecCSFlags(
+        rawValue: kSecCSCheckAllArchitectures | kSecCSDoNotValidateResources
+    )
+    let resourcesUnreadable = status == OSStatus(100_000 + EACCES)
+        && SecStaticCodeCheckValidity(staticCode, executableOnly, nil) == errSecSuccess
+    return LauncherAppVerificationFailure(
+        appName: name,
+        resourcesUnreadable: resourcesUnreadable
+    )
+}
+
 private func requirementString(_ requirement: SecRequirement) -> String? {
     var text: CFString?
     guard SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
@@ -2072,7 +2145,8 @@ private func showApprovalAlert(
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
     launcher: LauncherIdentity?,
-    launcherFallbackPath: String
+    launcherFallbackPath: String,
+    automaticApprovalExplanation: String?
 ) -> ApprovalDecision {
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
@@ -2082,6 +2156,7 @@ private func showApprovalAlert(
         commandPath: approvalCommandPath(request),
         title: request.title,
         detail: request.detail,
+        automaticApprovalExplanation: automaticApprovalExplanation,
         cwd: request.cwd,
         keys: request.keys.joined(separator: ", "),
         sections: approvalPromptSections(
@@ -2249,6 +2324,7 @@ private struct ApprovalPromptContent {
     let commandPath: String
     let title: String?
     let detail: String?
+    let automaticApprovalExplanation: String?
     let cwd: String
     let keys: String
     let sections: [ApprovalPromptSection]
@@ -2300,6 +2376,21 @@ private struct ApprovalPromptView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let explanation = content.automaticApprovalExplanation {
+                Label {
+                    Text(explanation)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .foregroundStyle(.orange)
+                }
+                .font(.callout)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityElement(children: .combine)
+            }
 
             DisclosureGroup(isExpanded: $showsDetails) {
                 ScrollView {
@@ -2608,6 +2699,10 @@ private func runApprovalSelfCheck() -> Int32 {
         launcher: nil,
         fallback: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"
     )
+    let automaticApprovalExplanation = LauncherAppVerificationFailure(
+        appName: "ChatGPT",
+        resourcesUnreadable: true
+    ).explanation
     let collapsedHeight = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -2617,6 +2712,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 commandPath: "/opt/homebrew/bin/gh",
                 title: "GitHub token requested",
                 detail: "gh needs the GitHub token",
+                automaticApprovalExplanation: automaticApprovalExplanation,
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 sections: []
@@ -2634,6 +2730,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 commandPath: "/opt/homebrew/bin/gh",
                 title: nil,
                 detail: nil,
+                automaticApprovalExplanation: nil,
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 sections: []
@@ -2667,6 +2764,8 @@ private func runApprovalSelfCheck() -> Int32 {
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
           unverifiedRequester.iconPath == "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
+          automaticApprovalExplanation.contains("ChatGPT contains signed app resources"),
+          automaticApprovalExplanation.contains("Manual approval is required to fail closed"),
           collapsedHeight > 0,
           collapsedHeight < 660,
           constrainedHeight <= 500
