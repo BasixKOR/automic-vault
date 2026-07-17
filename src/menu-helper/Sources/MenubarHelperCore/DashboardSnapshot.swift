@@ -326,6 +326,7 @@ public struct SecretGateRoute: Codable, Equatable, Sendable {
 public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, Sendable {
     case noAccess
     case readOnly
+    case readOnlyAndLocalWrites
     case readOnlyAndUpdates
     case fullExceptSecretDumps
     case fullIncludingSecretDumps
@@ -336,6 +337,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         switch self {
         case .noAccess: "No Access"
         case .readOnly: "Read Only Access"
+        case .readOnlyAndLocalWrites: "Local Write Access"
         case .readOnlyAndUpdates: "Read & Update Access"
         case .fullExceptSecretDumps: "Trusted Access"
         case .fullIncludingSecretDumps: "Full Access"
@@ -346,6 +348,8 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         switch self {
         case .noAccess: "All authenticated commands have approval gates"
         case .readOnly: "Commands without side-effects are approved automatically"
+        case .readOnlyAndLocalWrites:
+            "Read-only commands and commands that only change local files are approved automatically"
         case .readOnlyAndUpdates: "Commands without side-effects *and* `brew update` are approved automatically"
         case .fullExceptSecretDumps: "All commands are approved automatically except those that might exfiltrate secrets"
         case .fullIncludingSecretDumps: "All commands are approved automatically"
@@ -358,6 +362,8 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
             false
         case .readOnly:
             classification == .readOnly
+        case .readOnlyAndLocalWrites:
+            classification == .readOnly || classification == .localWrite
         case .readOnlyAndUpdates:
             classification == .readOnly || classification == .update
         case .fullExceptSecretDumps:
@@ -370,6 +376,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
 public enum SecretGateRequestClassification: CaseIterable, Sendable {
     case readOnly
+    case localWrite
     case update
     case mutating
     case secretDump
@@ -414,9 +421,19 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
 
     public var availableProtections: [SecretGateProtection] {
-        keyPatterns.isEmpty
-            ? [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps]
-            : [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps]
+        if keyPatterns.isEmpty {
+            return [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps]
+        }
+        if id == "gh" {
+            return [
+                .noAccess,
+                .readOnly,
+                .readOnlyAndLocalWrites,
+                .fullExceptSecretDumps,
+                .fullIncludingSecretDumps,
+            ]
+        }
+        return [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps]
     }
 
     public var initialProtection: SecretGateProtection {
@@ -425,6 +442,8 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
         if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps { return .fullExceptSecretDumps }
+        if keyPatterns.isEmpty, protection == .readOnlyAndLocalWrites { return .readOnly }
+        if id != "gh", protection == .readOnlyAndLocalWrites { return .readOnly }
         if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates { return .readOnly }
         return protection
     }

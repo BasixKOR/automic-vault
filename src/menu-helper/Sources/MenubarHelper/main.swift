@@ -1355,8 +1355,7 @@ private func classifySecretGateRequest(
 ) -> SecretGateRequestClassification {
     switch gateID {
     case "gh":
-        if ghRequestIsSecretDump(request.args) { return .secretDump }
-        return ghRequestIsReadOnly(request.args) ? .readOnly : .mutating
+        return ghRequestClassification(request.args)
     case "aws":
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
     case "brew":
@@ -1507,19 +1506,45 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     case "pr":
         return ["view", "status", "checks", "diff"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "run":
-        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "workflow":
         return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "release":
-        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "gist":
         return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "cache", "secret", "variable", "ruleset", "org", "label", "gpg-key", "ssh-key":
         return ghSubcommandIsList(subcommand) || (command == "ruleset" && subcommand == "view")
     case "attestation":
-        return ["verify", "download", "trusted-root"].contains(subcommand)
+        return ["verify", "trusted-root"].contains(subcommand)
     case "agent-task":
         return ["view", "list"].contains(subcommand)
+    default:
+        return false
+    }
+}
+
+private func ghRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    if ghRequestIsSecretDump(args) { return .secretDump }
+    if ghRequestIsReadOnly(args) { return .readOnly }
+    if ghRequestIsLocalWrite(args) { return .localWrite }
+    return .mutating
+}
+
+private func ghRequestIsLocalWrite(_ args: [String]) -> Bool {
+    let words = ghCommandWords(args)
+    guard words.count >= 2 else { return false }
+    let command = ghCanonicalCommand(words[0].lowercased())
+    let subcommand = words[1].lowercased()
+    switch command {
+    case "repo":
+        return subcommand == "clone"
+    case "pr":
+        return subcommand == "checkout"
+    case "gist":
+        return subcommand == "clone"
+    case "run", "release", "attestation":
+        return subcommand == "download"
     default:
         return false
     }
@@ -2987,6 +3012,9 @@ private func runApprovalSelfCheck() -> Int32 {
           !secretGateProtectionAllows(.noAccess, classification: .readOnly),
           secretGateProtectionAllows(.readOnly, classification: .readOnly),
           !secretGateProtectionAllows(.readOnly, classification: .unknown),
+          secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .readOnly),
+          secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .localWrite),
+          !secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .mutating),
           secretGateProtectionAllows(.readOnlyAndUpdates, classification: .readOnly),
           secretGateProtectionAllows(.readOnlyAndUpdates, classification: .update),
           !secretGateProtectionAllows(.readOnlyAndUpdates, classification: .mutating),
@@ -3058,12 +3086,10 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["pr", "diff"],
         ["run", "view"],
         ["run", "list"],
-        ["run", "download"],
         ["workflow", "view"],
         ["workflow", "list"],
         ["release", "view"],
         ["release", "list"],
-        ["release", "download"],
         ["gist", "view"],
         ["gist", "list"],
         ["cache", "list"],
@@ -3075,10 +3101,8 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["rs", "list"],
         ["rs", "ls"],
         ["attestation", "verify"],
-        ["attestation", "download"],
         ["attestation", "trusted-root"],
         ["at", "verify"],
-        ["at", "download"],
         ["at", "trusted-root"],
         ["agent-task", "view"],
         ["agent-task", "list"],
@@ -3098,6 +3122,18 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "--paginate", "repos/owner/repo/actions/runs", "--jq", ".workflow_runs[].id"],
     ]
     guard allowed.allSatisfy(ghRequestIsReadOnly) else { return 1 }
+
+    let localWrites = [
+        ["repo", "clone", "owner/repo"],
+        ["pr", "checkout", "123"],
+        ["gist", "clone", "0123456789abcdef"],
+        ["run", "download", "123456"],
+        ["release", "download", "v1.0.0"],
+        ["attestation", "download", "owner/repo"],
+        ["at", "download", "owner/repo"],
+        ["-R", "owner/repo", "repo", "clone"],
+    ]
+    guard localWrites.allSatisfy({ ghRequestClassification($0) == .localWrite }) else { return 1 }
 
     let denied = [
         ["api"],
@@ -3120,7 +3156,10 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["unknown", "view"],
         ["--unknown", "repo", "view"],
     ]
-    guard denied.allSatisfy({ !ghRequestIsReadOnly($0) }) else { return 1 }
+    guard denied.allSatisfy({
+        let classification = ghRequestClassification($0)
+        return classification != .readOnly && classification != .localWrite
+    }) else { return 1 }
     return 0
 }
 
