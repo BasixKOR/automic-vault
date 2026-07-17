@@ -15,7 +15,6 @@ VERSION="$(
     package && /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }
   ' "$ROOT/Cargo.toml"
 )"
-APP_VERSION="${APP_VERSION:-$VERSION}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run) run=1 ;;
@@ -24,13 +23,26 @@ while [[ $# -gt 0 ]]; do
     --notarize) notarize=1 ;;
     --publish) publish=1; dmg=1; notarize=1 ;;
     --clobber) clobber=1 ;;
+    --version)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "error: --version requires a value" >&2
+        exit 64
+      fi
+      VERSION="$2"
+      shift
+      ;;
     *)
-      echo "usage: $0 [--run] [--install] [--dmg] [--notarize] [--publish] [--clobber]" >&2
+      echo "usage: $0 [--run] [--install] [--dmg] [--notarize] [--publish] [--clobber] [--version VERSION]" >&2
       exit 64
       ;;
   esac
   shift
 done
+APP_VERSION="${APP_VERSION:-$VERSION}"
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: version must be in MAJOR.MINOR.PATCH format" >&2
+  exit 64
+fi
 if [[ "$run" -eq 1 && "$install" -ne 1 ]]; then
   echo "error: --run requires --install" >&2
   exit 64
