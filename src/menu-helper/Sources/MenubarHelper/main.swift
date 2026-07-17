@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
+    private var isUserSessionActive = true
+    private var areScreensAwake = true
     private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
     private var isCheckingForUpdates = false
     #if !DEBUG
@@ -61,6 +63,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         startServicesAndOpenMainWindowIfRequested()
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(
+            self,
+            selector: #selector(userSessionDidResignActive(_:)),
+            name: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(userSessionDidBecomeActive(_:)),
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(screensDidSleep(_:)),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(screensDidWake(_:)),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func userSessionDidResignActive(_ notification: Notification) {
+        isUserSessionActive = false
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
+    }
+
+    @objc private func userSessionDidBecomeActive(_ notification: Notification) {
+        isUserSessionActive = true
+    }
+
+    @objc private func screensDidSleep(_ notification: Notification) {
+        areScreensAwake = false
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
+    }
+
+    @objc private func screensDidWake(_ notification: Notification) {
+        areScreensAwake = true
     }
 
     private func installStatusMenu() {
@@ -129,6 +181,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Task { @MainActor in self?.didRecordAccessRequest(record) }
                 }
                 return recorded
+            } canRequestHumanApproval: { [weak self] in
+                self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
             try approval.start()
             self.approval = approval
@@ -141,6 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         stopServices()
     }
 
@@ -762,6 +817,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let hardeners: [HardenerMetadata]?
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
+    private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
@@ -770,7 +826,8 @@ private final class ApprovalServer: @unchecked Sendable {
         serviceName: String,
         hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
-        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) }
+        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
+        canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
@@ -780,6 +837,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.hardeners = hardeners
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
+        self.canRequestHumanApproval = canRequestHumanApproval
     }
 
     func start() throws {
@@ -1017,6 +1075,24 @@ private final class ApprovalServer: @unchecked Sendable {
                     ))
                     self.reply(peer, to: message, ok: false, error: error.localizedDescription)
                 }
+                return
+            }
+
+            guard self.canRequestHumanApproval() else {
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    approvalSource: "Auto",
+                    reason: "User session is inactive",
+                    launcher: launcher
+                ))
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: "\(request.op) denied while user session is inactive"
+                )
                 return
             }
 
