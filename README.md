@@ -49,6 +49,21 @@ for all apps/clis at four levels:
 &nbsp;
 
 
+## How Does Automic Vault Work?
+
+Automic Vault moves secrets out of plaintext files and into the macOS Data
+Protection Keychain. Hardened commands request only the named secrets they need;
+the menu bar app releases them only when your gate policy allows it or you approve.
+
+For app-specific policy, we walk the process’s launcher chain, validate its code
+signature with macOS and match its designated requirement against the identity
+you approved. If we cannot verify that identity, automatic approval fails closed.
+Code signing proves identity and integrity—not good intentions. You still choose
+which apps to trust.
+
+&nbsp;
+
+
 > [!NOTE]
 >
 > # Why Automic Vault?
