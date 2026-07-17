@@ -1821,18 +1821,20 @@ private func launcherIdentities(startingAt startPID: pid_t) -> [LauncherIdentity
 
         var identity = AVProcessIdentity()
         guard av_process_identity(pid, &identity) else { return launchers }
-        if let launcher = launcherIdentity(pid: pid, identity: identity) {
-            launchers.append(launcher)
-        }
+        launchers.append(contentsOf: launcherIdentities(pid: pid, identity: identity))
         pid = identity.ppid
     }
     return launchers
 }
 
 private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> LauncherIdentity? {
+    launcherIdentities(pid: pid, identity: identity).first
+}
+
+private func launcherIdentities(pid: pid_t, identity: AVProcessIdentity) -> [LauncherIdentity] {
     let path = pathString(identity)
-    guard let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) else { return nil }
-    return launcherIdentity(pid: pid, path: path, signing: signing)
+    guard let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) else { return [] }
+    return launcherIdentities(pid: pid, path: path, signing: signing)
 }
 
 private func launcherIdentity(
@@ -1841,21 +1843,32 @@ private func launcherIdentity(
     signing: LiveSigningInfo,
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
 ) -> LauncherIdentity? {
-    guard !signing.isAdHoc,
-          let appURL = appBundleURL(containing: path)
-              ?? appBundleURL(containing: signing.mainExecutable)
-              ?? associatedAppBundleURL(path: path, signing: signing),
-          let app = appSigning(appURL)
-    else {
-        return nil
+    launcherIdentities(pid: pid, path: path, signing: signing, appSigning: appSigning).first
+}
+
+private func launcherIdentities(
+    pid: pid_t,
+    path: String,
+    signing: LiveSigningInfo,
+    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
+) -> [LauncherIdentity] {
+    guard !signing.isAdHoc else { return [] }
+    var seen = Set<String>()
+    let appURLs = (
+        appBundleURLs(containing: path)
+        + appBundleURLs(containing: signing.mainExecutable)
+        + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
+    ).filter { seen.insert($0.path).inserted }
+    return appURLs.compactMap { appURL in
+        guard let app = appSigning(appURL) else { return nil }
+        return LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: app.identifier,
+            teamIdentifier: app.teamIdentifier,
+            designatedRequirement: app.designatedRequirement
+        )
     }
-    return LauncherIdentity(
-        pid: pid,
-        path: path,
-        identifier: app.identifier,
-        teamIdentifier: app.teamIdentifier,
-        designatedRequirement: app.designatedRequirement
-    )
 }
 
 private struct LiveSigningInfo {
@@ -1945,7 +1958,8 @@ private func executableSigningInfo(path: String) -> LiveSigningInfo? {
 private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
-          let staticCode
+          let staticCode,
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
     else {
         return nil
     }
@@ -1984,14 +1998,19 @@ private func isAppBundleExecutable(_ path: String) -> Bool {
 }
 
 private func appBundleURL(containing path: String) -> URL? {
+    appBundleURLs(containing: path).first
+}
+
+private func appBundleURLs(containing path: String) -> [URL] {
     var url = URL(fileURLWithPath: path)
+    var apps: [URL] = []
     while url.path != "/" {
         if url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
-            return url
+            apps.append(url)
         }
         url.deleteLastPathComponent()
     }
-    return nil
+    return apps
 }
 
 private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> URL? {
@@ -2673,6 +2692,13 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#
     )
+    let nestedMenuSigning = LiveSigningInfo(
+        identifier: "dev.mxcl.pmm.menu",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "dev.mxcl.pmm.menu" and anchor apple generic"#,
+        mainExecutable: "/Applications/Package Manager Manager.app/Contents/Library/LoginItems/Package Manager Manager Menu.app/Contents/MacOS/PMMMenuBar",
+        isAdHoc: false
+    )
     var detachedCaller = AVProcessIdentity()
     detachedCaller.ppid = 1
     detachedCaller.sid = 43
@@ -2702,11 +2728,27 @@ private func runApprovalSelfCheck() -> Int32 {
         signing: vaulttyBridgeSigning,
         appSigning: { _ in vaulttyAppSigning }
     )
+    let nestedLaunchers = launcherIdentities(
+        pid: 45,
+        path: nestedMenuSigning.mainExecutable,
+        signing: nestedMenuSigning,
+        appSigning: { url in
+            let identifier = url.lastPathComponent == "Package Manager Manager.app"
+                ? "dev.mxcl.pmm"
+                : "dev.mxcl.pmm.menu"
+            return StaticSigningInfo(
+                identifier: identifier,
+                teamIdentifier: "TEAM",
+                designatedRequirement: "identifier \"\(identifier)\" and anchor apple generic"
+            )
+        }
+    )
     guard parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
+          nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
-          launcherIdentity(pid: 45, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
-          launcherIdentity(pid: 46, path: "/usr/local/bin/av", signing: unbundledSigning) == nil
+          launcherIdentity(pid: 46, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
+          launcherIdentity(pid: 47, path: "/usr/local/bin/av", signing: unbundledSigning) == nil
     else {
         return 1
     }
