@@ -2012,7 +2012,17 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
 }
 
 private final class ApprovalPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    private var allowsKey = false
+
+    override var canBecomeKey: Bool { allowsKey }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow {
+            allowsKey = true
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor
@@ -2041,7 +2051,6 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String
 ) -> ApprovalDecision {
-    NSApp.activate(ignoringOtherApps: true)
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
         requesterName: requester.name,
@@ -2068,7 +2077,7 @@ private func showApprovalAlert(
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
-        styleMask: [.borderless],
+        styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered,
         defer: false
     )
@@ -2100,7 +2109,7 @@ private func showApprovalAlert(
     )
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
-    panel.makeKeyAndOrderFront(nil)
+    panel.orderFrontRegardless()
     NSApp.runModal(for: panel)
     panel.orderOut(nil)
     return decision
