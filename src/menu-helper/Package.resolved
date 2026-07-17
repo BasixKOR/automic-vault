@@ -1,5 +1,5 @@
 {
-  "originHash" : "9d1857e23e0c2e7e0078be292b28a43488fa2ccfbe7f08d5bf9b10f92622394b",
+  "originHash" : "ede9a93651619bce39b9270df330f1f9a27d39a0bd130a594bac382d7e7a0e6c",
   "pins" : [
     {
       "identity" : "appupdater",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "2e9a9bccebdb381e2738119a20f3eee85ab60280",
         "version" : "3.0.6"
+      }
+    },
+    {
+      "identity" : "graphql",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/GraphQLSwift/GraphQL.git",
+      "state" : {
+        "revision" : "2d27d8f477c1112b668dff24493a2d5e0b6c5b00",
+        "version" : "4.2.0"
       }
     },
     {
@@ -26,6 +35,15 @@
       "state" : {
         "revision" : "924936d0427cb25a61169739a7660230bffa6ea6",
         "version" : "0.8.0"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections",
+      "state" : {
+        "revision" : "a0cb0954ecb21e4e31b0070e6ed5674e8556685a",
+        "version" : "1.6.0"
       }
     },
     {
