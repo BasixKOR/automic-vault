@@ -2011,6 +2011,20 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
+private final class ApprovalPanel: NSPanel {
+    private var allowsKey = false
+
+    override var canBecomeKey: Bool { allowsKey }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow {
+            allowsKey = true
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+}
+
 @MainActor
 private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate: Bool) {
     guard let contentView = panel.contentView else { return }
@@ -2061,7 +2075,7 @@ private func showApprovalAlert(
     )
     var decision = ApprovalDecision.denied
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = NSPanel(
+    let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
         styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered,
