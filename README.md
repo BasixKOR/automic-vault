@@ -17,6 +17,11 @@
   # ^^ read it first
   ```
 
+> [!IMPORTANT]
+>
+> At this time Automic Vault *requires* Homebrew.
+> We will loosen this restriction in future, we’re still a pretty new project.
+
 &nbsp;
 
 
@@ -45,7 +50,7 @@ for all apps/clis at four levels:
 &nbsp;
 
 
-> [!IMPORTANT]
+> [!NOTE]
 >
 > # Why Automic Vault?
 >
