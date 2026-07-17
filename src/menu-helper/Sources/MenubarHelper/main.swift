@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func userSessionDidBecomeActive(_ notification: Notification) {
         isUserSessionActive = true
+        _ = migrateBackgroundKeychainItems()
     }
 
     @objc private func screensDidSleep(_ notification: Notification) {
@@ -170,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startServices() {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
+        _ = migrateBackgroundKeychainItems()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
         do {
