@@ -2011,10 +2011,6 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
-private final class ApprovalPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
-
 @MainActor
 private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate: Bool) {
     guard let contentView = panel.contentView else { return }
@@ -2065,7 +2061,7 @@ private func showApprovalAlert(
     )
     var decision = ApprovalDecision.denied
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = ApprovalPanel(
+    let panel = NSPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
         styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered,
@@ -2099,7 +2095,7 @@ private func showApprovalAlert(
     )
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
-    panel.makeKeyAndOrderFront(nil)
+    panel.orderFrontRegardless()
     NSApp.runModal(for: panel)
     panel.orderOut(nil)
     return decision
