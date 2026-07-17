@@ -626,7 +626,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .secretUsage) == 1,
           model.selectedStoredSecret?.accessibility == .afterFirstUnlock,
           gateHeight > 0,
-          secretDetailHeight.map { $0 > 0 } == true,
+          secretDetailHeight.map({ $0 > 0 }) == true,
           appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
