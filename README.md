@@ -115,13 +115,19 @@ As little as possible!
 
 But we aren’t going to lie: it’s more friction than now. We minimize:
 
-- How invasive Automic Vault is. Mostly we install wrappers that change as
-  little as possible.
+- How invasive Automic Vault is.
+  - Mostly we install wrappers that change as little as possible.
+  - When security requires more, we say so: AWS hardening insists on
+    `aws-vault`, which converts your too-powerful AWS keys into short-lived
+    session tokens for each invocation.
 - We make approval gates rare and smart.
   - By default, secret gates only trigger for secret exfiltration.
-  - This means that the default setting for Automic Vault is merely: keep your secrets safe.
+  - This means that the default setting for Automic Vault is merely: keep your
+    secrets safe.
   - Once you get used to that we recommend playing with the levels, eg.
     disabling access to *everything* but one Terminal and your agent apps.
+  - We also try to be smart, eg. `gh` even decodes GraphQL queries to determine
+    what safety rating they apply to.
 
 &nbsp;
 
@@ -160,13 +166,6 @@ approve a request itself, they cannot.
 
 &nbsp;
 
-
-## Miscellaneous Details
-
-- Hardening aims to be as non-invasive as possible
-- But we also try to make each tool as secure as possible.
-  eg. we insist on `aws-vault` for `aws` because it converts your too powerful
-  AWS keys into short-lived session tokens for every invocation.
 
 ## User Manual
 
