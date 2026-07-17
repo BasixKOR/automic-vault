@@ -1959,7 +1959,7 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
           let staticCode,
-          staticCodeIsValidForLauncherIdentity(staticCode)
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
     else {
         return nil
     }
@@ -1981,19 +1981,6 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         designatedRequirement: requirementText
     )
-}
-
-private func staticCodeIsValidForLauncherIdentity(_ code: SecStaticCode) -> Bool {
-    let status = SecStaticCodeCheckValidity(code, [], nil)
-    if status == errSecSuccess { return true }
-
-    // Some privacy-protected app bundles deny Security.framework access to a
-    // sealed resource even though Gatekeeper and every executable signature are
-    // valid. Keep rejecting actual signature/resource failures; only retry the
-    // Unix permission-denied case while still validating every executable slice.
-    guard status == OSStatus(100_000 + EACCES) else { return false }
-    let executableOnly = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSDoNotValidateResources)
-    return SecStaticCodeCheckValidity(code, executableOnly, nil) == errSecSuccess
 }
 
 private func requirementString(_ requirement: SecRequirement) -> String? {
@@ -2967,7 +2954,6 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["issue", "status"],
         ["pr", "view"],
         ["pr", "list"],
-        ["pr", "list", "--head", "codex/local-pr-52", "--author", "@me", "--state", "all", "--json", "number,url,state,headRefName", "--repo", "automic-vault/automic-vault"],
         ["pr", "status"],
         ["pr", "checks"],
         ["pr", "diff"],
