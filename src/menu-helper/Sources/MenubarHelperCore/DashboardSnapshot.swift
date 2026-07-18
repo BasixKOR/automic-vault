@@ -923,6 +923,18 @@ public func loadStoredSecrets(service: String = automicVaultKeychainService) -> 
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
 }
 
+public func storedSecretExists(account: String, service: String = automicVaultKeychainService) -> Bool {
+    var query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    addCanonicalAccessGroup(to: &query)
+    return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+}
+
 private func keychainProperties(for item: [String: Any], dataProtection: Bool) -> [String] {
     [
         dataProtection ? "Data Protection Enabled" : nil,

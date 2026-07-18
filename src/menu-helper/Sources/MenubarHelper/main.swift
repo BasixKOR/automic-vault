@@ -708,6 +708,17 @@ private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
     cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
+private func missingRequiredSecret(
+    for request: ApprovalRequest,
+    exists: (String) -> Bool = { storedSecretExists(account: $0) }
+) -> String? {
+    guard !request.allowMissingKeys else { return nil }
+    let conflicts = Set(request.envConflicts)
+    return request.keys.first {
+        (request.replaceExistingEnv || !conflicts.contains($0)) && !exists($0)
+    }
+}
+
 private struct TransientApprovalCache {
     private enum Key: Hashable {
         case approval(TransientApprovalKey)
@@ -883,6 +894,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) {
         guard let request = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
+            return
+        }
+        if let key = missingRequiredSecret(for: request) {
+            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
             return
         }
         let scriptApproval = scriptApproval(for: request)
@@ -2946,7 +2961,10 @@ private func runApprovalSelfCheck() -> Int32 {
     func awsRequest(
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
         args: [String] = ["-f", "/usr/local/bin/aws", "s3", "ls"],
-        shebangScript: String? = "/usr/local/bin/aws"
+        shebangScript: String? = "/usr/local/bin/aws",
+        replaceExistingEnv: Bool = false,
+        allowMissingKeys: Bool = false,
+        envConflicts: [String] = []
     ) -> ApprovalRequest {
         ApprovalRequest(
             op: "inject",
@@ -2954,9 +2972,9 @@ private func runApprovalSelfCheck() -> Int32 {
             target: "/bin/zsh",
             args: args,
             cwd: "/tmp",
-            replaceExistingEnv: false,
-            allowMissingKeys: false,
-            envConflicts: [],
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            envConflicts: envConflicts,
             shebangScript: shebangScript,
             tool: nil,
             title: nil,
@@ -2982,6 +3000,21 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     )
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
+          missingRequiredSecret(for: readOnlyAws, exists: { $0 == "AWS_SECRET_ACCESS_KEY" }) == "AWS_ACCESS_KEY_ID",
+          missingRequiredSecret(for: readOnlyAws, exists: { _ in true }) == nil,
+          missingRequiredSecret(for: awsRequest(allowMissingKeys: true), exists: { _ in false }) == nil,
+          missingRequiredSecret(
+              for: awsRequest(keys: ["AWS_ACCESS_KEY_ID"], envConflicts: ["AWS_ACCESS_KEY_ID"]),
+              exists: { _ in false }
+          ) == nil,
+          missingRequiredSecret(
+              for: awsRequest(
+                  keys: ["AWS_ACCESS_KEY_ID"],
+                  replaceExistingEnv: true,
+                  envConflicts: ["AWS_ACCESS_KEY_ID"]
+              ),
+              exists: { _ in false }
+          ) == "AWS_ACCESS_KEY_ID",
           matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, hardeners: [awsMetadata]) == nil,
           matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, hardeners: [awsMetadata]) == nil,
           matchingSecretGate(
