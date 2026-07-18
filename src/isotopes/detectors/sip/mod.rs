@@ -11,6 +11,10 @@ pub(crate) fn findings(_home: &Path) -> Vec<Finding> {
         return Vec::new();
     }
 
+    if let Some(status) = crate::test_env_string("AUTOMIC_VAULT_TEST_SIP_STATUS") {
+        return finding_for_status(&status).into_iter().collect();
+    }
+
     let Ok(output) = Command::new("/usr/bin/csrutil").arg("status").output() else {
         return Vec::new();
     };
