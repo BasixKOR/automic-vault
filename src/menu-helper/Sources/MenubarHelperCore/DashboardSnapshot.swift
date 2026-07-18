@@ -440,12 +440,40 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 }
 
+public enum StoredSecretAccessibility: Equatable, Sendable {
+    case whenUnlocked
+    case afterFirstUnlock
+
+    public var isAvailableWhileLocked: Bool {
+        self == .afterFirstUnlock
+    }
+
+    fileprivate var keychainValue: CFString {
+        switch self {
+        case .whenUnlocked: kSecAttrAccessibleWhenUnlocked
+        case .afterFirstUnlock: kSecAttrAccessibleAfterFirstUnlock
+        }
+    }
+
+    fileprivate init(keychainValue: Any?) {
+        self = keychainValue as? String == kSecAttrAccessibleAfterFirstUnlock as String
+            ? .afterFirstUnlock
+            : .whenUnlocked
+    }
+}
+
 public struct StoredSecret: Equatable, Sendable {
     public let account: String
+    public let accessibility: StoredSecretAccessibility
     public let keychainProperties: [String]
 
-    public init(account: String, keychainProperties: [String] = []) {
+    public init(
+        account: String,
+        accessibility: StoredSecretAccessibility = .whenUnlocked,
+        keychainProperties: [String] = []
+    ) {
         self.account = account
+        self.accessibility = accessibility
         self.keychainProperties = keychainProperties
     }
 
@@ -826,7 +854,12 @@ private func saveSecretGatePolicyRecords(
             [$0.gateID, $0.requirement ?? ""].joined(separator: "\u{1f}")
                 .localizedStandardCompare([$1.gateID, $1.requirement ?? ""].joined(separator: "\u{1f}")) == .orderedAscending
         }
-        return saveKeychainData(try JSONEncoder().encode(sorted), service: service, account: account)
+        return saveKeychainData(
+            try JSONEncoder().encode(sorted),
+            service: service,
+            account: account,
+            accessibility: .afterFirstUnlock
+        )
     } catch {
         return errSecParam
     }
@@ -849,12 +882,13 @@ private func setSecretGatePolicyRecord(
 
 public func loadAccessRequestRecords(
     defaults: UserDefaults? = nil,
-    key: String = accessRequestLogDefaultsKey
+    key: String = accessRequestLogDefaultsKey,
+    service: String = accessRequestLogKeychainService
 ) -> [AccessRequestRecord] {
     if let defaults {
         return decodeAccessRequestRecords(defaults.data(forKey: key))
     }
-    switch loadKeychainDataResult(service: accessRequestLogKeychainService, account: key) {
+    switch loadKeychainDataResult(service: service, account: key) {
     case .success(let data):
         return decodeAccessRequestRecords(data)
     case .failure:
@@ -863,7 +897,12 @@ public func loadAccessRequestRecords(
         let legacy = decodeAccessRequestRecords(UserDefaults.standard.data(forKey: key))
         guard !legacy.isEmpty,
               let data = try? JSONEncoder().encode(legacy),
-              saveKeychainData(data, service: accessRequestLogKeychainService, account: key) == errSecSuccess
+              saveKeychainData(
+                  data,
+                  service: service,
+                  account: key,
+                  accessibility: .afterFirstUnlock
+              ) == errSecSuccess
         else { return legacy }
         UserDefaults.standard.removeObject(forKey: key)
         _ = UserDefaults.standard.synchronize()
@@ -884,21 +923,29 @@ private func decodeAccessRequestRecords(_ data: Data?) -> [AccessRequestRecord] 
 public func appendAccessRequestRecord(
     _ record: AccessRequestRecord,
     defaults: UserDefaults? = nil,
-    key: String = accessRequestLogDefaultsKey
+    key: String = accessRequestLogDefaultsKey,
+    service: String = accessRequestLogKeychainService
 ) -> Bool {
     accessRequestLogLock.lock()
     defer { accessRequestLogLock.unlock() }
-    let records = Array(([record] + loadAccessRequestRecords(defaults: defaults, key: key)).prefix(50))
+    let records = Array(
+        ([record] + loadAccessRequestRecords(defaults: defaults, key: key, service: service)).prefix(50)
+    )
     guard let data = try? JSONEncoder().encode(records) else { return false }
     if let defaults {
         defaults.set(data, forKey: key)
         guard defaults.synchronize() else { return false }
     } else {
-        guard saveKeychainData(data, service: accessRequestLogKeychainService, account: key) == errSecSuccess else {
+        guard saveKeychainData(
+            data,
+            service: service,
+            account: key,
+            accessibility: .afterFirstUnlock
+        ) == errSecSuccess else {
             return false
         }
     }
-    return loadAccessRequestRecords(defaults: defaults, key: key).first?.id == record.id
+    return loadAccessRequestRecords(defaults: defaults, key: key, service: service).first?.id == record.id
 }
 
 public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
@@ -918,7 +965,13 @@ public func loadStoredSecrets(service: String = automicVaultKeychainService) -> 
     }
     return items.compactMap { item in
         guard let account = item[kSecAttrAccount as String] as? String else { return nil }
-        return StoredSecret(account: account, keychainProperties: keychainProperties(for: item, dataProtection: true))
+        return StoredSecret(
+            account: account,
+            accessibility: StoredSecretAccessibility(
+                keychainValue: item[kSecAttrAccessible as String]
+            ),
+            keychainProperties: keychainProperties(for: item, dataProtection: true)
+        )
     }
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
 }
@@ -976,8 +1029,26 @@ private func accessibleLabel(_ value: Any?) -> String? {
     }
 }
 
-public func saveStoredSecret(account: String, value: String, service: String = automicVaultKeychainService) -> OSStatus {
-    saveKeychainData(Data(value.utf8), service: service, account: account)
+public func saveStoredSecret(
+    account: String,
+    value: String,
+    accessibility: StoredSecretAccessibility = .whenUnlocked,
+    service: String = automicVaultKeychainService
+) -> OSStatus {
+    saveKeychainData(
+        Data(value.utf8),
+        service: service,
+        account: account,
+        accessibility: accessibility
+    )
+}
+
+public func setStoredSecretAccessibility(
+    account: String,
+    accessibility: StoredSecretAccessibility,
+    service: String = automicVaultKeychainService
+) -> OSStatus {
+    setKeychainAccessibility(accessibility, service: service, account: account)
 }
 
 public func renameStoredSecret(account: String, to newAccount: String, service: String = automicVaultKeychainService) -> OSStatus {
@@ -1036,7 +1107,49 @@ private func loadKeychainDataResult(service: String, account: String) -> Keychai
     return .success(data)
 }
 
-private func saveKeychainData(_ data: Data, service: String, account: String) -> OSStatus {
+@discardableResult
+public func migrateBackgroundKeychainItems(
+    policyService: String = secretGatePoliciesKeychainService,
+    policyAccount: String = secretGatePoliciesKeychainAccount,
+    accessLogService: String = accessRequestLogKeychainService,
+    accessLogAccount: String = accessRequestLogDefaultsKey
+) -> OSStatus {
+    for (service, account) in [
+        (policyService, policyAccount),
+        (accessLogService, accessLogAccount),
+    ] {
+        let status = setKeychainAccessibility(.afterFirstUnlock, service: service, account: account)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            return status
+        }
+    }
+    return errSecSuccess
+}
+
+private func setKeychainAccessibility(
+    _ accessibility: StoredSecretAccessibility,
+    service: String,
+    account: String
+) -> OSStatus {
+    var query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
+    ]
+    addCanonicalAccessGroup(to: &query)
+    return SecItemUpdate(
+        query as CFDictionary,
+        [kSecAttrAccessible as String: accessibility.keychainValue] as CFDictionary
+    )
+}
+
+private func saveKeychainData(
+    _ data: Data,
+    service: String,
+    account: String,
+    accessibility: StoredSecretAccessibility = .whenUnlocked
+) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
@@ -1046,7 +1159,7 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     addCanonicalAccessGroup(to: &query)
     let attributes: [String: Any] = [
         kSecValueData as String: data,
-        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        kSecAttrAccessible as String: accessibility.keychainValue,
     ]
     let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     if status != errSecItemNotFound {
@@ -1054,7 +1167,7 @@ private func saveKeychainData(_ data: Data, service: String, account: String) ->
     }
     var addQuery = query
     addQuery[kSecValueData as String] = data
-    addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+    addQuery[kSecAttrAccessible as String] = accessibility.keychainValue
     return SecItemAdd(addQuery as CFDictionary, nil)
 }
 
