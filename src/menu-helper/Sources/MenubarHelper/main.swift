@@ -1581,15 +1581,15 @@ private func standardizedPath(_ path: String, cwd: String) -> String {
 }
 
 private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
-    let words = ghCommandWords(args).map { $0.lowercased() }
+    let words = ghCommandWords(args)
     guard let firstWord = words.first else { return false }
-    let command = ghCanonicalCommand(firstWord)
+    let command = ghCanonicalCommand(firstWord.lowercased())
     if words.contains("--show-token") { return false }
     if command == "api" { return ghApiRequestIsReadOnly(Array(words.dropFirst())) }
     if ["alias", "extension", "config", "skill"].contains(command) { return false }
     if ["status", "browse", "search"].contains(command) { return true }
     guard words.count >= 2 else { return false }
-    let subcommand = words[1]
+    let subcommand = words[1].lowercased()
     switch command {
     case "auth":
         return subcommand == "status"
@@ -1637,25 +1637,27 @@ private func ghSubcommandIsList(_ subcommand: String) -> Bool {
 
 private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
     var index = 0
-    var endpointSeen = false
+    var endpoints: [String] = []
     var method: String?
     var hasFields = false
+    var graphQLArguments = GhGraphQLArguments()
     while index < args.count {
         let arg = args[index]
         switch arg {
         case "--":
             return false
-        case "-x", "--method":
+        case "-X", "--method":
             guard index + 1 < args.count else { return false }
             method = args[index + 1].uppercased()
             index += 2
-        case "-f", "--field", "--raw-field":
+        case "-f", "--raw-field", "-F", "--field":
             guard index + 1 < args.count else { return false }
             hasFields = true
+            graphQLArguments.add(field: args[index + 1], readsFile: arg == "-F" || arg == "--field")
             index += 2
         case "--input":
             return false
-        case "-h", "--header", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
+        case "-H", "--header", "-p", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
             guard index + 1 < args.count else { return false }
             index += 2
         case "-i", "--include", "--paginate", "--slurp", "--silent", "--verbose":
@@ -1663,8 +1665,12 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
         default:
             if let value = arg.value(afterOption: "--method=") {
                 method = value.uppercased()
-            } else if arg.hasPrefix("--field=") || arg.hasPrefix("--raw-field=") {
+            } else if let field = arg.value(afterOption: "--field=") {
                 hasFields = true
+                graphQLArguments.add(field: field, readsFile: true)
+            } else if let field = arg.value(afterOption: "--raw-field=") {
+                hasFields = true
+                graphQLArguments.add(field: field, readsFile: false)
             } else if arg.hasPrefix("--input=") {
                 return false
             } else if arg.hasPrefix("--header=")
@@ -1674,19 +1680,62 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
                 || arg.hasPrefix("--template=")
                 || arg.hasPrefix("--hostname=") {
                 // read-only option with inline value
-            } else if arg.hasPrefix("-x"), arg.count > 2 {
+            } else if arg.hasPrefix("-X"), arg.count > 2 {
                 method = String(arg.dropFirst(2)).uppercased()
-            } else if arg.hasPrefix("-f") {
+            } else if arg.hasPrefix("-f"), arg.count > 2 {
                 hasFields = true
+                graphQLArguments.add(field: String(arg.dropFirst(2)), readsFile: false)
+            } else if arg.hasPrefix("-F"), arg.count > 2 {
+                hasFields = true
+                graphQLArguments.add(field: String(arg.dropFirst(2)), readsFile: true)
             } else if arg.hasPrefix("-") {
                 return false
             } else {
-                endpointSeen = true
+                endpoints.append(arg)
             }
             index += 1
         }
     }
-    return endpointSeen && (method ?? (hasFields ? "POST" : "GET")) == "GET"
+    guard endpoints.count == 1 else { return false }
+    if endpoints[0] == "graphql" {
+        return graphQLArguments.isReadOnly
+    }
+    return (method ?? (hasFields ? "POST" : "GET")) == "GET"
+}
+
+private struct GhGraphQLArguments {
+    private var queries: [String] = []
+    private var operationNames: [String] = []
+    private var hasIndirectFieldInput = false
+
+    mutating func add(field: String, readsFile: Bool) {
+        let parts = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return }
+
+        let name = String(parts[0])
+        let value = String(parts[1])
+        if readsFile, value.hasPrefix("@") {
+            hasIndirectFieldInput = true
+            return
+        }
+        guard name == "query" || name == "operationName" else { return }
+        if name == "query" {
+            queries.append(value)
+        } else {
+            operationNames.append(value)
+        }
+    }
+
+    var isReadOnly: Bool {
+        guard !hasIndirectFieldInput,
+              queries.count == 1,
+              operationNames.count <= 1,
+              let query = queries.first
+        else {
+            return false
+        }
+        return graphQLRequestIsReadOnly(query: query, operationName: operationNames.first)
+    }
 }
 
 private func ghCommandWords(_ args: [String]) -> [String] {
@@ -3033,7 +3082,9 @@ private func runApprovalSelfCheck() -> Int32 {
           isGhTokenKey("GH_TOKEN_GITHUB_COM_MXCL"),
           !isGhTokenKey("GITHUB_TOKEN"),
           !isGhTokenKey("GH_TOKEN_bad-key")
-    else { return 1 }
+    else {
+        return 1
+    }
 
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
@@ -3220,6 +3271,17 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "-XGET", "-H", "Accept: application/vnd.github+json", "repos/owner/repo/releases/latest"],
         ["api", "--method=GET", "-f", "per_page=1", "search/issues"],
         ["api", "--paginate", "repos/owner/repo/actions/runs", "--jq", ".workflow_runs[].id"],
+        ["api", "graphql", "-f", "query=query { viewer { login } }"],
+        ["api", "graphql", "-fquery={ viewer { login } }"],
+        [
+            "api", "graphql",
+            "-f", "query=query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { body bodyHTML } } }",
+            "-f", "owner=automic-vault",
+            "-f", "repo=automic-vault",
+            "-F", "number=49",
+            "--hostname", "github.com",
+        ],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }", "-f", "operationName=Read"],
     ]
     guard allowed.allSatisfy(ghRequestIsReadOnly) else { return 1 }
 
@@ -3229,6 +3291,15 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "-X", "DELETE", "repos/owner/repo"],
         ["api", "-f", "name=value", "repos/owner/repo"],
         ["api", "--input", "body.json", "repos/owner/repo"],
+        ["api", "graphql"],
+        ["api", "graphql", "-f", "query=mutation { addStar(input: {}) { clientMutationId } }"],
+        ["api", "graphql", "-f", "query=subscription { viewer { login } }"],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }"],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }", "-f", "operationName=Write"],
+        ["api", "graphql", "-F", "query=@query.graphql"],
+        ["api", "graphql", "-f", "query={ viewer { login } }", "-F", "secret=@/etc/passwd"],
+        ["api", "graphql", "-f", "query={ viewer { login } }", "-f", "query={ viewer { name } }"],
+        ["api", "graphql", "--input", "body.json"],
         ["auth", "token"],
         ["auth", "status", "--show-token"],
         ["alias", "set", "x", "repo view"],
