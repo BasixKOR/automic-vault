@@ -279,7 +279,14 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
 
     let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
-    #expect(secretGate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps])
+    #expect(secretGate.availableProtections == [
+        .noAccess,
+        .readOnly,
+        .readOnlyAndLocalWrites,
+        .fullExceptSecretDumps,
+        .fullIncludingSecretDumps,
+    ])
+    #expect(secretGate.protectionTitle(.readOnlyAndLocalWrites) == "Local Write Access")
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
 }
 
@@ -376,6 +383,7 @@ func protectionPolicyMatrix(
     let expected = switch protection {
     case .noAccess: false
     case .readOnly: classification == .readOnly
+    case .readOnlyAndLocalWrites: classification == .readOnly || classification == .localWrite
     case .readOnlyAndUpdates: classification == .readOnly || classification == .update
     case .fullExceptSecretDumps: classification != .secretDump
     case .fullIncludingSecretDumps: true
