@@ -1166,6 +1166,9 @@ private struct StoredSecretDetailView: View {
                 InfoBlock(title: "Error", text: error)
             }
         }
+        .onChange(of: secret.accessibility) { _, accessibility in
+            isAvailableWhileLocked = accessibility.isAvailableWhileLocked
+        }
     }
 
     private var availabilityBinding: Binding<Bool> {
