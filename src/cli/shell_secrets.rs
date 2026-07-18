@@ -11,10 +11,12 @@ pub(crate) fn bash_reasons() -> Result<Vec<String>, String> {
     if let Some(path) = std::env::var_os("BASH_ENV").filter(|value| !value.is_empty()) {
         paths.push(PathBuf::from(path));
     }
-    reasons(
+    let mut reasons = reasons(
         paths,
         "Bash startup file contains plaintext-looking credential assignment",
-    )
+    )?;
+    reasons.extend(path_reasons("Bash"));
+    Ok(reasons)
 }
 
 pub(crate) fn zsh_reasons() -> Result<Vec<String>, String> {
@@ -23,12 +25,27 @@ pub(crate) fn zsh_reasons() -> Result<Vec<String>, String> {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or(home);
-    reasons(
+    let mut reasons = reasons(
         [".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"]
             .into_iter()
             .map(|file| root.join(file)),
         "Zsh startup file contains plaintext-looking credential assignment",
-    )
+    )?;
+    reasons.extend(path_reasons("Zsh"));
+    Ok(reasons)
+}
+
+fn path_reasons(shell: &str) -> Vec<String> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    crate::path_security::user_writable_entries_before_system_paths(&path)
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "{shell} PATH has a user-writable directory before protected system directories: {}",
+                entry.display()
+            )
+        })
+        .collect()
 }
 
 fn reasons(paths: impl IntoIterator<Item = PathBuf>, message: &str) -> Result<Vec<String>, String> {

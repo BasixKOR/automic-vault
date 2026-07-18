@@ -65,6 +65,7 @@ mod js_release_age;
 mod k6;
 mod kubernetes_cli;
 mod luarocks;
+mod macos;
 mod maestro;
 mod mariadb;
 mod maven;
@@ -275,6 +276,7 @@ const DETECTORS: &[Detector] = &[
     detector!(kubernetes_cli),
     detector!(luarocks),
     detector!(maestro),
+    detector!(macos),
     detector!(mariadb),
     detector!(maven),
     detector!(mcp_remote),
@@ -378,6 +380,10 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     findings
 }
 
+pub(crate) fn macos_gui_path() -> Option<std::ffi::OsString> {
+    macos::gui_path()
+}
+
 pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
     if let Some(mitigation) = documentation
         .split_once("## Mitigation")
@@ -429,6 +435,7 @@ fn detector_name(module: &str) -> String {
     match module {
         "mysql_8_0" => "mysql@8.0".to_string(),
         "mysql_8_4" => "mysql@8.4".to_string(),
+        "macos" => "macOS".to_string(),
         "node_18" => "node@18".to_string(),
         "openssl_3" => "openssl@3".to_string(),
         _ => module.replace('_', "-"),
@@ -441,7 +448,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 156);
+        assert_eq!(DETECTORS.len(), 157);
     }
 
     #[test]
@@ -462,6 +469,7 @@ mod tests {
         assert!(names.contains(&"git-credential-oauth".to_string()));
         assert!(names.contains(&"git-credentials-file".to_string()));
         assert!(names.contains(&"homebrew".to_string()));
+        assert!(names.contains(&"macOS".to_string()));
         assert!(names.contains(&"sip".to_string()));
         assert!(names.contains(&"mysql@8.0".to_string()));
         assert!(names.contains(&"sudo".to_string()));

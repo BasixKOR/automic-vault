@@ -8,10 +8,14 @@ fn av_scan_reports_clean_home() {
     let output = av_scan(&home);
 
     assert!(output.status.success());
-    assert_eq!(
-        stdout(&output),
-        "╭─ system exposure audit\n│\n◇ No problems found\n│\n╰─ vault sealed\n"
-    );
+    let stdout = stdout(&output);
+    assert!(stdout.starts_with("╭─ system exposure audit\n│\n"));
+    #[cfg(target_os = "macos")]
+    assert!(stdout.contains("◇ GUI PATH (before shells)\n"));
+    #[cfg(not(target_os = "macos"))]
+    assert!(!stdout.contains("GUI PATH"));
+    assert!(stdout.contains("◇ No problems found\n"));
+    assert!(stdout.ends_with("╰─ vault sealed\n"));
     assert_eq!(stderr(&output), "");
 
     let _ = fs::remove_dir_all(home);
@@ -42,6 +46,7 @@ fn av_scan_reports_findings() {
         assert!(
             line.starts_with('╭')
                 || line.starts_with('◆')
+                || line.starts_with('◇')
                 || line.starts_with('└')
                 || line.starts_with('├')
                 || line.starts_with('╰')
@@ -88,6 +93,7 @@ fn av_scan(home: &std::path::Path) -> Output {
         )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .output()
         .unwrap()
 }
@@ -102,6 +108,7 @@ fn av_scan_json(home: &std::path::Path) -> Output {
         )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .output()
         .unwrap()
 }
