@@ -2148,6 +2148,7 @@ private func showApprovalAlert(
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?
 ) -> ApprovalDecision {
+    let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
         requesterName: requester.name,
@@ -2165,7 +2166,8 @@ private func showApprovalAlert(
             pid: pid,
             signing: signing,
             scriptApproval: scriptApproval,
-            launcher: launcher
+            launcher: launcher,
+            receivedAt: receivedAt
         )
     )
     var decision = ApprovalDecision.denied
@@ -2252,9 +2254,13 @@ private func approvalPromptSections(
     pid: pid_t,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
-    launcher: LauncherIdentity?
+    launcher: LauncherIdentity?,
+    receivedAt: Date
 ) -> [ApprovalPromptSection] {
     var sections = [
+        ApprovalPromptSection("Request", "clock", [
+            ApprovalPromptRow("Received", approvalPromptTimestamp(receivedAt)),
+        ]),
         ApprovalPromptSection("Environment", "arrow.triangle.2.circlepath", [
             ApprovalPromptRow("Existing", request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", ")),
             ApprovalPromptRow("Replace existing", request.replaceExistingEnv ? "yes" : "no"),
@@ -2289,6 +2295,13 @@ private func approvalPromptSections(
     }
 
     return sections
+}
+
+private func approvalPromptTimestamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .long
+    return formatter.string(from: date)
 }
 
 private struct ApprovalPromptSection: Identifiable {
