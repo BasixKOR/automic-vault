@@ -1613,7 +1613,7 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
 private struct GhGraphQLArguments {
     private var queries: [String] = []
     private var operationNames: [String] = []
-    private var hasIndirectOperationInput = false
+    private var hasIndirectFieldInput = false
 
     mutating func add(field: String, readsFile: Bool) {
         let parts = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -1621,11 +1621,11 @@ private struct GhGraphQLArguments {
 
         let name = String(parts[0])
         let value = String(parts[1])
-        guard name == "query" || name == "operationName" else { return }
         if readsFile, value.hasPrefix("@") {
-            hasIndirectOperationInput = true
+            hasIndirectFieldInput = true
             return
         }
+        guard name == "query" || name == "operationName" else { return }
         if name == "query" {
             queries.append(value)
         } else {
@@ -1634,7 +1634,7 @@ private struct GhGraphQLArguments {
     }
 
     var isReadOnly: Bool {
-        guard !hasIndirectOperationInput,
+        guard !hasIndirectFieldInput,
               queries.count == 1,
               operationNames.count <= 1,
               let query = queries.first
@@ -3173,6 +3173,7 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }"],
         ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }", "-f", "operationName=Write"],
         ["api", "graphql", "-F", "query=@query.graphql"],
+        ["api", "graphql", "-f", "query={ viewer { login } }", "-F", "secret=@/etc/passwd"],
         ["api", "graphql", "-f", "query={ viewer { login } }", "-f", "query={ viewer { name } }"],
         ["api", "graphql", "--input", "body.json"],
         ["auth", "token"],
