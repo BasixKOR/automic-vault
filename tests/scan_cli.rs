@@ -86,6 +86,10 @@ fn av_scan(home: &std::path::Path) -> Output {
             "AUTOMIC_VAULT_TEST_BREW_TARGET",
             home.join("missing-opt-homebrew/bin/brew"),
         )
+        .env(
+            "AUTOMIC_VAULT_TEST_SIP_STATUS",
+            "System Integrity Protection status: enabled.",
+        )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
         .output()
@@ -99,6 +103,10 @@ fn av_scan_json(home: &std::path::Path) -> Output {
         .env(
             "AUTOMIC_VAULT_TEST_BREW_TARGET",
             home.join("missing-opt-homebrew/bin/brew"),
+        )
+        .env(
+            "AUTOMIC_VAULT_TEST_SIP_STATUS",
+            "System Integrity Protection status: enabled.",
         )
         .env("AUTOMIC_VAULT_DISABLE_GIT_CREDENTIAL_FILL_DETECTOR", "1")
         .env("AUTOMIC_VAULT_DISABLE_SUDO_DETECTOR", "1")
