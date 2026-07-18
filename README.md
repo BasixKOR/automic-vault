@@ -26,8 +26,8 @@
 
 ## What is Automic Vault?
 
-Automic Vault runs in your menu bar detecting existing and new threats to the
-integrity of your local developer environment’s integrity & security.
+Automic Vault runs in your menu bar detecting existing and emerging
+vulnerabilities in your command line tool stacks.
 
 We support (optional) “hardening” steps that typically:
 
