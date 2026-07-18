@@ -6,13 +6,12 @@ use std::path::{Path, PathBuf};
 pub(crate) fn user_writable_entries_before_system_paths(path: &OsStr) -> Vec<PathBuf> {
     let entries = std::env::split_paths(path)
         .map(|entry| {
+            let writable = !entry.is_absolute() || is_user_writable_or_creatable(&entry);
             let displayed = if entry.as_os_str().is_empty() {
                 PathBuf::from(".")
             } else {
                 entry
             };
-            let checked = absolute_path(&displayed);
-            let writable = is_user_writable_or_creatable(&checked);
             (displayed, writable)
         })
         .collect::<Vec<_>>();
@@ -30,16 +29,6 @@ pub(crate) fn user_writable_entries_before_system_paths(path: &OsStr) -> Vec<Pat
         })
         .filter_map(|(_, (entry, _))| seen.insert(entry.as_os_str().to_owned()).then_some(entry))
         .collect()
-}
-
-fn absolute_path(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/"))
-            .join(path)
-    }
 }
 
 fn is_user_writable_or_creatable(path: &Path) -> bool {
@@ -114,17 +103,21 @@ mod tests {
     }
 
     #[test]
-    fn treats_creatable_and_empty_entries_as_user_writable() {
+    fn treats_creatable_relative_and_empty_entries_as_user_writable() {
         let root = temp_dir("creatable");
         let missing = root.join("missing");
         let protected = root.join("protected");
         std::fs::create_dir_all(&protected).unwrap();
         std::fs::set_permissions(&protected, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let path = OsString::from(format!(":{}:{}", missing.display(), protected.display()));
+        let path = OsString::from(format!(
+            ":relative:{}:{}",
+            missing.display(),
+            protected.display()
+        ));
 
         assert_eq!(
             user_writable_entries_before_system_paths(&path),
-            vec![PathBuf::from("."), missing]
+            vec![PathBuf::from("."), PathBuf::from("relative"), missing]
         );
         std::fs::set_permissions(&protected, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::remove_dir_all(root).unwrap();
